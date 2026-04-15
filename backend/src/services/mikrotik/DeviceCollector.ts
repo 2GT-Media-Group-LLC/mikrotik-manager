@@ -1771,10 +1771,17 @@ export class DeviceCollector {
       if (servers[1]) ntpConfig['secondary-ntp'] = (servers[1] as Record<string, string>)['address'] || '';
     }
 
+    // RouterOS 7 DNS returns booleans as "true"/"false" instead of "yes"/"no"
+    const dnsRaw = (dns[0] as Record<string, string>) || {};
+    const dnsNormalized: Record<string, string> = {};
+    for (const [k, v] of Object.entries(dnsRaw)) {
+      dnsNormalized[k] = v === 'true' ? 'yes' : v === 'false' ? 'no' : v;
+    }
+
     return {
       identity: (identity[0] as Record<string, string>)?.['name'] || '',
       ntp: ntpConfig,
-      dns: (dns[0] as Record<string, string>) || {},
+      dns: dnsNormalized,
     };
   }
 
@@ -2205,6 +2212,13 @@ export class DeviceCollector {
 
   // DHCP ────────────────────────────────────────────────────────────────────────
 
+  async getDhcpInterfaces(): Promise<Record<string, string>[]> {
+    const all = await this.client.execute('/interface/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+    // Exclude interface types that can't meaningfully serve as a DHCP binding
+    const excluded = new Set(['pppoe-out', 'pptp-client', 'l2tp-client', 'ovpn-client', 'sstp-client', 'lte', 'lo', 'ipip', 'eoip', 'gre', 'vxlan', 'wireguard']);
+    return all.filter(i => !excluded.has(i['type'] || ''));
+  }
+
   async getDhcpServers(protocol: 'ipv4' | 'ipv6'): Promise<Record<string, string>[]> {
     const cmd = protocol === 'ipv4' ? '/ip/dhcp-server/print' : '/ipv6/dhcp-server/print';
     return this.client.execute(cmd, { detail: '' }).catch(() => [] as Record<string, string>[]);
@@ -2267,7 +2281,13 @@ export class DeviceCollector {
 
   async getDnsSettings(): Promise<Record<string, string>> {
     const rows = await this.client.execute('/ip/dns/print', {}).catch(() => [] as Record<string, string>[]);
-    return rows[0] ?? {};
+    const row = rows[0] ?? {};
+    // RouterOS 7 DNS returns booleans as "true"/"false" instead of "yes"/"no"
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(row)) {
+      out[k] = v === 'true' ? 'yes' : v === 'false' ? 'no' : v;
+    }
+    return out;
   }
 
   async setDnsSettings(settings: {
@@ -2314,13 +2334,24 @@ export class DeviceCollector {
     server: Record<string, string>;
     client: Record<string, string>;
   }> {
+    // RouterOS 7 NTP module returns boolean fields as "true"/"false" rather than
+    // the "yes"/"no" used by every other RouterOS API. Normalize here so the rest
+    // of the app can use a consistent contract.
+    const normalizeBools = (r: Record<string, string>): Record<string, string> => {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(r)) {
+        out[k] = v === 'true' ? 'yes' : v === 'false' ? 'no' : v;
+      }
+      return out;
+    };
+
     const [server, client] = await Promise.allSettled([
-      this.client.execute('/system/ntp/server/print', {}).then(r => r[0] ?? {}),
-      this.client.execute('/system/ntp/client/print', {}).then(r => r[0] ?? {}),
+      this.client.execute('/system/ntp/server/print', {}).then(r => normalizeBools(r[0] ?? {})),
+      this.client.execute('/system/ntp/client/print', {}).then(r => normalizeBools(r[0] ?? {})),
     ]);
     return {
-      server: server.status === 'fulfilled' ? server.value as Record<string, string> : {},
-      client: client.status === 'fulfilled' ? client.value as Record<string, string> : {},
+      server: server.status === 'fulfilled' ? server.value : {},
+      client: client.status === 'fulfilled' ? client.value : {},
     };
   }
 
@@ -2337,7 +2368,7 @@ export class DeviceCollector {
     if (settings.server_broadcast !== undefined) serverParams['broadcast'] = settings.server_broadcast ? 'yes' : 'no';
     if (settings.server_manycast !== undefined) serverParams['manycast'] = settings.server_manycast ? 'yes' : 'no';
     if (Object.keys(serverParams).length > 0) {
-      await this.client.execute('/system/ntp/server/set', serverParams).catch(() => {});
+      await this.client.execute('/system/ntp/server/set', serverParams);
     }
 
     const clientParams: Record<string, string> = {};
@@ -2345,7 +2376,7 @@ export class DeviceCollector {
     if (settings.client_mode) clientParams['mode'] = settings.client_mode;
     if (settings.client_servers !== undefined) clientParams['servers'] = settings.client_servers;
     if (Object.keys(clientParams).length > 0) {
-      await this.client.execute('/system/ntp/client/set', clientParams).catch(() => {});
+      await this.client.execute('/system/ntp/client/set', clientParams);
     }
   }
 

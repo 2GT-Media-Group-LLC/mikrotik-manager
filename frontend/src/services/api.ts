@@ -520,7 +520,7 @@ export const networkServicesApi = {
 
   // ── DHCP ──────────────────────────────────────────────────────────────────
   getDhcp: (deviceId: number) =>
-    api.get<{ ipv4: NS[]; ipv6: NS[]; pools_v4: NS[]; pools_v6: NS[] }>(
+    api.get<{ ipv4: NS[]; ipv6: NS[]; pools_v4: NS[]; pools_v6: NS[]; interfaces: NS[] }>(
       '/network-services/dhcp', { params: { deviceId } }
     ),
   addDhcpServer: (deviceId: number, body: NS & { protocol: 'ipv4' | 'ipv6' }) =>

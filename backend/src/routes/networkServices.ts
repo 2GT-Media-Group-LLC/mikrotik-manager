@@ -85,17 +85,19 @@ router.get('/overview', async (_req: Request, res: Response) => {
 router.get('/dhcp', async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
-    const [v4, v6, pv4, pv6] = await Promise.allSettled([
+    const [v4, v6, pv4, pv6, ifaces] = await Promise.allSettled([
       collector.getDhcpServers('ipv4'),
       collector.getDhcpServers('ipv6'),
       collector.getDhcpPools('ipv4'),
       collector.getDhcpPools('ipv6'),
+      collector.getDhcpInterfaces(),
     ]);
     res.json({
       ipv4: v4.status === 'fulfilled' ? v4.value : [],
       ipv6: v6.status === 'fulfilled' ? v6.value : [],
       pools_v4: pv4.status === 'fulfilled' ? pv4.value : [],
       pools_v6: pv6.status === 'fulfilled' ? pv6.value : [],
+      interfaces: ifaces.status === 'fulfilled' ? ifaces.value : [],
     });
   });
 });

@@ -40,16 +40,33 @@ interface ServerFormProps {
   protocol: 'ipv4' | 'ipv6';
   existing?: NS;
   pools: NS[];
+  interfaces: NS[];
   deviceId: number;
   onClose: () => void;
+  conflictDevices?: { name: string }[];
 }
 
-function ServerForm({ protocol, existing, pools, deviceId, onClose }: ServerFormProps) {
+function ServerForm({ protocol, existing, pools, interfaces, deviceId, onClose, conflictDevices }: ServerFormProps) {
   const qc = useQueryClient();
   const [name, setName] = useState(existing?.['name'] || '');
   const [iface, setIface] = useState(existing?.['interface'] || '');
   const [pool, setPool] = useState(existing?.['address-pool'] || '');
   const [leaseTime, setLeaseTime] = useState(existing?.['lease-time'] || '00:10:00');
+
+  // Group interfaces for the dropdown
+  const vlanIfaces  = interfaces.filter(i => i['type'] === 'vlan');
+  const bridgeIfaces = interfaces.filter(i => i['type'] === 'bridge');
+  const otherIfaces  = interfaces.filter(i => i['type'] !== 'vlan' && i['type'] !== 'bridge');
+
+  function ifaceLabel(i: NS): string {
+    const base = i['name'];
+    if (i['type'] === 'vlan') {
+      const vid = i['vlan-id'];
+      const parent = i['interface'];
+      return vid ? `${base}  —  VLAN ${vid}${parent ? ` on ${parent}` : ''}` : base;
+    }
+    return i['comment'] ? `${base}  —  ${i['comment']}` : base;
+  }
 
   const save = useMutation({
     mutationFn: () => {
@@ -81,7 +98,37 @@ function ServerForm({ protocol, existing, pools, deviceId, onClose }: ServerForm
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Interface *</label>
-            <input className="input w-full" value={iface} onChange={e => setIface(e.target.value)} placeholder="bridge1" />
+            {interfaces.length > 0 ? (
+              <select className="input w-full" value={iface} onChange={e => setIface(e.target.value)}>
+                <option value="">— select interface —</option>
+                {vlanIfaces.length > 0 && (
+                  <optgroup label="VLAN Interfaces">
+                    {vlanIfaces.map(i => (
+                      <option key={i['name']} value={i['name']}>{ifaceLabel(i)}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {bridgeIfaces.length > 0 && (
+                  <optgroup label="Bridge Interfaces">
+                    {bridgeIfaces.map(i => (
+                      <option key={i['name']} value={i['name']}>{ifaceLabel(i)}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {otherIfaces.length > 0 && (
+                  <optgroup label="Physical / Other">
+                    {otherIfaces.map(i => (
+                      <option key={i['name']} value={i['name']}>{ifaceLabel(i)}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            ) : (
+              <input className="input w-full" value={iface} onChange={e => setIface(e.target.value)} placeholder="bridge1, vlan10, ether1" />
+            )}
+            <p className="mt-0.5 text-xs text-gray-400 dark:text-slate-500">
+              VLAN interfaces scope the DHCP server to that VLAN. Bridge interfaces serve all untagged clients.
+            </p>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Address Pool</label>
@@ -100,6 +147,14 @@ function ServerForm({ protocol, existing, pools, deviceId, onClose }: ServerForm
             <p className="mt-0.5 text-xs text-gray-400">Format: HH:MM:SS or e.g. 10m, 1h, 1d</p>
           </div>
         </div>
+        {!existing && conflictDevices && conflictDevices.length > 0 && (
+          <div className="px-5 pb-3">
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-xs text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>Active {protocol.toUpperCase()} DHCP server(s) already running on: <strong>{conflictDevices.map(d => d.name).join(', ')}</strong>. Multiple DHCP servers on the same network may cause IP address conflicts.</span>
+            </div>
+          </div>
+        )}
         <div className="px-5 pb-4 flex items-center gap-3">
           <button
             onClick={() => save.mutate()}
@@ -358,6 +413,23 @@ export default function NetworkServicesDHCPPage() {
     onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['ns-leases', deviceId, vars.protocol] }),
   });
 
+  // Cross-device conflict detection
+  const { data: overview = [] } = useQuery({
+    queryKey: ['network-services-overview'],
+    queryFn: () => networkServicesApi.overview().then(r => r.data as Record<string, unknown>[]),
+    staleTime: 60_000,
+  });
+  const conflictDevicesV4 = overview.filter(d => {
+    if ((d.id as number) === deviceId) return false;
+    const v4 = d.dhcp_v4 as { total: number; enabled: number } | null;
+    return (v4?.enabled ?? 0) > 0;
+  });
+  const conflictDevicesV6 = overview.filter(d => {
+    if ((d.id as number) === deviceId) return false;
+    const v6 = d.dhcp_v6 as { total: number; enabled: number } | null;
+    return (v6?.enabled ?? 0) > 0;
+  });
+
   function ServerTable({ servers, protocol }: { servers: NS[]; protocol: 'ipv4' | 'ipv6' }) {
     if (servers.length === 0) {
       return <div className="px-5 py-6 text-sm text-gray-400 dark:text-slate-500 text-center">No servers configured.</div>;
@@ -388,7 +460,16 @@ export default function NetworkServicesDHCPPage() {
                   {canWrite && (
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => toggleServer.mutate({ id: s['.id'], disabled: !disabled, protocol })} title={disabled ? 'Enable' : 'Disable'}
+                        <button onClick={() => {
+                          if (disabled) {
+                            const conflicts = protocol === 'ipv4' ? conflictDevicesV4 : conflictDevicesV6;
+                            if (conflicts.length > 0) {
+                              const names = conflicts.map(d => d.name as string).join(', ');
+                              if (!confirm(`Active ${protocol.toUpperCase()} DHCP server(s) already running on: ${names}.\n\nEnabling another DHCP server on the same network may cause IP address conflicts. Continue?`)) return;
+                            }
+                          }
+                          toggleServer.mutate({ id: s['.id'], disabled: !disabled, protocol });
+                        }} title={disabled ? 'Enable' : 'Disable'}
                           className={clsx('p-1.5 rounded-lg transition-colors', disabled ? 'text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20' : 'text-green-600 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20')}>
                           <Power className="w-3.5 h-3.5" />
                         </button>
@@ -499,8 +580,10 @@ export default function NetworkServicesDHCPPage() {
           protocol={serverForm.protocol}
           existing={serverForm.existing}
           pools={serverForm.protocol === 'ipv4' ? (dhcp?.pools_v4 || []) : (dhcp?.pools_v6 || [])}
+          interfaces={dhcp?.interfaces || []}
           deviceId={deviceId}
           onClose={() => setServerForm(null)}
+          conflictDevices={serverForm.protocol === 'ipv4' ? conflictDevicesV4 as { name: string }[] : conflictDevicesV6 as { name: string }[]}
         />
       )}
       {poolForm && <PoolForm protocol={poolForm} deviceId={deviceId} onClose={() => setPoolForm(null)} />}
@@ -544,6 +627,20 @@ export default function NetworkServicesDHCPPage() {
           </div>
         )}
       </div>
+
+      {/* Cross-device conflict warnings */}
+      {conflictDevicesV4.length > 0 && deviceId > 0 && (
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-sm text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>Active IPv4 DHCP server(s) already running on: <strong>{conflictDevicesV4.map(d => d.name as string).join(', ')}</strong>. Adding another DHCP server on the same network may cause IP address conflicts.</span>
+        </div>
+      )}
+      {conflictDevicesV6.length > 0 && deviceId > 0 && (
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-sm text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>Active IPv6 DHCP server(s) already running on: <strong>{conflictDevicesV6.map(d => d.name as string).join(', ')}</strong>. Adding another DHCP server on the same network may cause IP address conflicts.</span>
+        </div>
+      )}
 
       {deviceId === 0 && <div className="card p-8 text-center text-sm text-gray-400 dark:text-slate-500">Select a device above.</div>}
       {deviceId > 0 && isLoading && <div className="card p-8 text-center text-sm text-gray-400 dark:text-slate-500">Loading…</div>}
