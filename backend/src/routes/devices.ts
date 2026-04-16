@@ -1464,7 +1464,7 @@ router.post('/:id/tools/wol', requireWrite, async (req: Request, res: Response) 
   if (!iface) return res.status(400).json({ error: 'interface is required' });
 
   // Basic MAC validation
-  if (!/^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$/.test(mac)) {
+  if (!/^([0-9A-Fa-f]{2}[-:]){5}[0-9A-Fa-f]{2}$/.test(mac)) {
     return res.status(400).json({ error: 'Invalid MAC address format' });
   }
 

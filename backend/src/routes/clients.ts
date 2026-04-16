@@ -251,7 +251,7 @@ router.get('/:mac/signal', async (req: Request, res: Response) => {
 // POST /api/clients/:mac/wol — send Wake-on-LAN magic packet
 router.post('/:mac/wol', requireWrite, async (req: Request, res: Response) => {
   const mac = req.params.mac.replace(/[^0-9a-fA-F:.-]/g, '');
-  const hexMac = mac.replace(/[:\-\.]/g, '');
+  const hexMac = mac.replace(/[:\-.]/g, '');
   if (hexMac.length !== 12) {
     return res.status(400).json({ error: 'Invalid MAC address' });
   }

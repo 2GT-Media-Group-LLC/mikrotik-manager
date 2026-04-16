@@ -299,7 +299,7 @@ export class PollerService {
     try {
       const { redis } = await import('../config/redis');
       await redis.set(key, String(ts), 'EX', 600);
-    } catch {}
+    } catch { /* redis unavailable — timestamp not cached */ }
   }
 
   private startWorkers(): void {
