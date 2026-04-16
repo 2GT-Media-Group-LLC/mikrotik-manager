@@ -7,9 +7,6 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "frontend"
 
   # Backend npm dependencies
   - package-ecosystem: "npm"
@@ -18,9 +15,6 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "backend"
 
   # Docker dependencies (docker-compose.yml base images)
   - package-ecosystem: "docker"
@@ -28,18 +22,12 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-    labels:
-      - "dependencies"
-      - "docker"
 
   - package-ecosystem: "docker"
     directory: "/nginx"
     schedule:
       interval: "weekly"
       day: "monday"
-    labels:
-      - "dependencies"
-      - "docker"
 
   # GitHub Actions workflow dependencies
   - package-ecosystem: "github-actions"
@@ -47,6 +35,3 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-    labels:
-      - "dependencies"
-      - "github-actions"
