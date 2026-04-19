@@ -1,0 +1,118 @@
+version: '3.8'
+
+# Pre-built image deployment — no source code or build toolchain required.
+# For development/build-from-source, use docker-compose.yml instead.
+
+services:
+  nginx:
+    image: ghcr.io/2gt-media-group-llc/mikrotik-manager-nginx:latest
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - certs_data:/certs
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  backend:
+    image: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:latest
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://mikrotik:${DB_PASSWORD:-mikrotik_secure_pw}@postgres:5432/mikrotik_manager
+      REDIS_URL: redis://redis:6379
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-mytoken123456789}
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-mikrotik-manager}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-metrics}
+      JWT_SECRET: ${JWT_SECRET:-changeme_use_a_long_random_secret}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-changeme32byteslongencryptionkey}
+      PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    volumes:
+      - backups_data:/app/backups
+      - certs_data:/certs
+    cap_add:
+      - NET_RAW
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: mikrotik_manager
+      POSTGRES_USER: mikrotik
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mikrotik_secure_pw}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mikrotik -d mikrotik_manager"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  influxdb:
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD:-admin_password_123}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-mikrotik-manager}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-metrics}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-mytoken123456789}
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  redis_data:
+  influxdb_data:
+  backups_data:
+  certs_data:
+
+networks:
+  app-network:
+    driver: bridge

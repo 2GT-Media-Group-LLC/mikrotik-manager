@@ -206,7 +206,49 @@ Instant search across devices, clients, and events from the top navigation bar.
 
 ---
 
-## Quick Start
+## Quick Deploy (Pre-built Images)
+
+No source code or build toolchain required — just Docker and Docker Compose.
+
+### 1. Download the compose file
+
+```bash
+curl -O https://raw.githubusercontent.com/2GT-Media-Group-LLC/mikrotik-manager/main/docker-compose.ghcr.yml
+```
+
+### 2. Create your environment file
+
+```bash
+curl -O https://raw.githubusercontent.com/2GT-Media-Group-LLC/mikrotik-manager/main/.env.example
+mv .env.example .env
+```
+
+Edit `.env` and set at minimum:
+
+```env
+JWT_SECRET=your_long_random_jwt_secret_here
+ENCRYPTION_KEY=your_32_character_encryption_key_
+```
+
+### 3. Start the application
+
+```bash
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Docker pulls the pre-built images from GitHub Container Registry and starts the stack. No compilation, no cloning.
+
+### 4. Open the app
+
+Navigate to **https://localhost** (or your server's IP/hostname) and log in with `admin` / `admin`.
+
+> To update to the latest release: `docker compose -f docker-compose.ghcr.yml pull && docker compose -f docker-compose.ghcr.yml up -d`
+
+---
+
+## Quick Start (Build from Source)
+
+For contributors or anyone who wants to build the images locally.
 
 ### 1. Clone the repository
 
