@@ -55,7 +55,7 @@ services:
       start_period: 30s
 
   postgres:
-    image: postgres:15-alpine
+    image: pgautoupgrade/pgautoupgrade:latest
     environment:
       POSTGRES_DB: mikrotik_manager
       POSTGRES_USER: mikrotik
