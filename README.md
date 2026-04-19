@@ -188,7 +188,7 @@ Instant search across devices, clients, and events from the top navigation bar.
 | **Maps** | Leaflet |
 | **Terminal** | xterm.js |
 | **Backend** | Node.js, Express, TypeScript |
-| **Primary DB** | PostgreSQL 15 |
+| **Primary DB** | PostgreSQL (latest) |
 | **Time-series DB** | InfluxDB 2.7 |
 | **Cache / Queue** | Redis 7, BullMQ |
 | **Real-time** | Socket.IO |
