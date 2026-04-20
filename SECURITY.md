@@ -43,3 +43,14 @@ MikroTik Manager is designed to be run on your local network. A few things to ke
 - HTTPS is enforced by default. The included nginx configuration redirects all HTTP traffic to HTTPS.
 - Default credentials should be changed immediately after first login.
 - The built-in role-based access control (Admin / Operator / Viewer) should be used to limit user privileges.
+
+## AI-Assisted Security Infrastructure
+
+The security measures in this project were designed and implemented with the assistance of [Claude](https://claude.ai) by Anthropic, including:
+
+- **ESLint security rules** — static analysis configured with `eslint-plugin-security` to catch common vulnerabilities (injection risks, unsafe regex, insecure randomness, etc.)
+- **Unit tests** — test coverage for security-critical code paths including AES-256-GCM encryption/decryption, JWT signing and verification, and role-based access control middleware
+- **CI pipeline** — automated linting, type-checking, dependency auditing (`npm audit`), and CodeQL analysis on every push and pull request
+- **Credential handling** — encryption-at-rest design for stored device credentials, JWT secret management, and `.env`-based secrets isolation
+
+AI-generated security infrastructure is reviewed and validated the same as any other code. If you discover a gap or vulnerability, please report it using the process above.

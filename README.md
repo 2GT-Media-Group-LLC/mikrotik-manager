@@ -6,6 +6,7 @@ A self-hosted, full-stack network management platform for MikroTik devices. Moni
 ![License](https://img.shields.io/badge/license-AGPLv3-blue)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
+![Built with Claude](https://img.shields.io/badge/built%20with-Claude%20AI-blueviolet?logo=anthropic&logoColor=white)
 
 ---
 
@@ -410,6 +411,14 @@ This project is licensed under the **GNU Affero General Public License v3.0 (AGP
 - Any distributed copies or derivatives must also carry the AGPLv3 license.
 
 This license was chosen to ensure that improvements made to this project — including those deployed as a service — remain open and available to the community.
+
+---
+
+## AI Assistance
+
+This project was designed and built with the help of [Claude](https://claude.ai) by Anthropic. AI assistance was used throughout development — including architecture decisions, backend services, frontend components, the CI/CD pipeline, security configuration, and unit tests.
+
+We believe in being transparent about how software is made. The code has also been review and tested using AI, and is maintained by the project authors.
 
 ---
 
