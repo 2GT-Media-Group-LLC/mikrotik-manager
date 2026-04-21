@@ -344,6 +344,19 @@ All configuration is done via environment variables in `.env`:
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
 
+### Credential encryption (`ENCRYPTION_KEY`)
+
+Device API and SSH passwords stored in PostgreSQL are encrypted at rest using **AES-256-GCM** (`backend/src/utils/crypto.ts`). The key material comes from the **`ENCRYPTION_KEY` environment variable** (see table above). If the value is exactly 32 bytes long it is used as-is; otherwise the implementation derives a 32-byte key with SHA-256 (still driven by that env var).
+
+**If the key is lost:** ciphertext cannot be decrypted; you must re-enter credentials on each device (or restore a database backup that was encrypted with the old key).
+
+**If the key is rotated (compromise or policy):** there is no automatic bulk re-encryption in the app today. Operational recovery is:
+
+1. Set a new `ENCRYPTION_KEY` and restart the backend.
+2. For each managed device, update API/SSH credentials via the UI (or API) so the server stores new ciphertext under the new key. Old rows still hold ciphertext from the previous key until updated.
+
+For a planned rotation with many devices, restore from backup or script updates against the API using plaintext passwords from your vault.
+
 ---
 
 ## Updating

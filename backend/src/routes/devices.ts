@@ -285,8 +285,14 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
          FROM devices WHERE id = $1`,
         [existingBySerial.id]
       );
+      if (!updatedExisting) {
+        return res.status(500).json({
+          error: 'Duplicate merge succeeded but device row could not be reloaded',
+          device_id: existingBySerial.id,
+        });
+      }
       return res.status(200).json({
-        ...(updatedExisting || {}),
+        ...updatedExisting,
         merged_from_duplicate: true,
       });
     }

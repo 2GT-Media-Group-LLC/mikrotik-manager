@@ -1,3 +1,11 @@
+/**
+ * AES-256-GCM helpers for encrypting device credentials at rest in PostgreSQL.
+ *
+ * Key material: set `ENCRYPTION_KEY` in the environment (see README). If unset,
+ * a development-only default is used — production deployments must set a
+ * strong secret. Key rotation / recovery is documented under README
+ * "Credential encryption (ENCRYPTION_KEY)".
+ */
 import * as crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';

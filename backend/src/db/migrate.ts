@@ -175,6 +175,9 @@ ALTER TABLE topology_links ADD COLUMN IF NOT EXISTS neighbor_caps VARCHAR(255);
 ALTER TABLE topology_links ADD COLUMN IF NOT EXISTS discovered_by VARCHAR(50);
 -- RouterOS can return a long comma-separated discovered-by list; 50 chars was too small.
 ALTER TABLE topology_links ALTER COLUMN discovered_by TYPE VARCHAR(512);
+-- Interface names from neighbor discovery can exceed 50 chars (long bridge/bond names).
+ALTER TABLE topology_links ALTER COLUMN from_interface TYPE VARCHAR(512);
+ALTER TABLE topology_links ALTER COLUMN to_interface TYPE VARCHAR(512);
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_update_available BOOLEAN DEFAULT FALSE;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS latest_ros_version VARCHAR(20);
 
