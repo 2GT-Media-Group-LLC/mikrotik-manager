@@ -173,6 +173,8 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS rack_name VARCHAR(100);
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS rack_slot VARCHAR(20);
 ALTER TABLE topology_links ADD COLUMN IF NOT EXISTS neighbor_caps VARCHAR(255);
 ALTER TABLE topology_links ADD COLUMN IF NOT EXISTS discovered_by VARCHAR(50);
+-- RouterOS can return a long comma-separated discovered-by list; 50 chars was too small.
+ALTER TABLE topology_links ALTER COLUMN discovered_by TYPE VARCHAR(512);
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_update_available BOOLEAN DEFAULT FALSE;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS latest_ros_version VARCHAR(20);
 

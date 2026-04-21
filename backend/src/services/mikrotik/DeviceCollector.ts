@@ -794,10 +794,11 @@ export class DeviceCollector {
         // first entry is always the physical port; the rest are the bridge/bond parents.
         // Store only the physical port so topology edges show the actual cable endpoint.
         const rawInterface = nb['interface'] || '';
-        const fromInterface = rawInterface.split(',')[0].trim() || rawInterface;
+        const fromInterface = (rawInterface.split(',')[0].trim() || rawInterface).slice(0, 50);
 
         // interface-name is the neighbor's own outgoing interface (format: bridge/port or just port)
-        const toInterface = (nb['interface-name'] || '').trim() || null;
+        const toInterfaceRaw = (nb['interface-name'] || '').trim() || null;
+        const toInterface = toInterfaceRaw ? toInterfaceRaw.slice(0, 50) : null;
 
         // discovered-by lists protocols that found this neighbor: lldp, cdp, mndp, etc.
         // Rank them by reliability: lldp (point-to-point) > cdp (also flooded in ROS but
@@ -808,6 +809,11 @@ export class DeviceCollector {
         else if (discoveredByRaw.includes('cdp'))  discoveredBy = 'cdp';
         else if (discoveredByRaw.includes('mndp')) discoveredBy = 'mndp';
         else                                        discoveredBy = discoveredByRaw || 'mndp';
+        // Store the full RouterOS list in discovered_by (column is VARCHAR(512)); the raw
+        // string can be a long comma-separated list and used to exceed VARCHAR(50).
+        const discoveredByStored = (discoveredByRaw || null)
+          ? (discoveredByRaw.length > 512 ? discoveredByRaw.slice(0, 512) : discoveredByRaw)
+          : null;
 
         // RouterOS v7+ may put an IPv6 link-local in 'address'. Try all known
         // IPv4 field names, split on whitespace/commas in case multiple are packed
@@ -825,10 +831,10 @@ export class DeviceCollector {
         const neighborAddress = ipv4FromNeighbor
           || (mac ? macToIpv4[mac] ?? null : null)
           || (mac ? serverArpMap[mac] ?? null : null);
-        const neighborIdentity = nb['identity'] || '';
-        const neighborPlatform = nb['platform'] || '';
-        const neighborMac = nb['mac-address'] || null;
-        const neighborCaps = nb['system-caps-enabled'] || nb['system-caps'] || '';
+        const neighborIdentity = (nb['identity'] || '').slice(0, 255);
+        const neighborPlatform = (nb['platform'] || '').slice(0, 255);
+        const neighborMac = nb['mac-address'] ? String(nb['mac-address']).slice(0, 17) : null;
+        const neighborCaps = (nb['system-caps-enabled'] || nb['system-caps'] || '').slice(0, 255);
 
         if (!fromInterface) continue;
 
@@ -837,8 +843,18 @@ export class DeviceCollector {
              (from_device_id, from_interface, to_interface, neighbor_address, neighbor_identity,
               neighbor_platform, neighbor_mac, neighbor_caps, link_type, discovered_by, discovered_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
-          [this.device.id, fromInterface, toInterface, neighborAddress, neighborIdentity,
-           neighborPlatform, neighborMac, neighborCaps || null, discoveredBy, discoveredByRaw || null]
+          [
+            this.device.id,
+            fromInterface,
+            toInterface,
+            neighborAddress ? String(neighborAddress).slice(0, 45) : null,
+            neighborIdentity,
+            neighborPlatform,
+            neighborMac,
+            neighborCaps || null,
+            discoveredBy,
+            discoveredByStored,
+          ]
         );
       }
 
