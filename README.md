@@ -418,7 +418,7 @@ This license was chosen to ensure that improvements made to this project — inc
 
 This project was designed and built with the help of [Claude](https://claude.ai) by Anthropic. AI assistance was used throughout development — including architecture decisions, backend services, frontend components, the CI/CD pipeline, security configuration, and unit tests.
 
-We believe in being transparent about how software is made. The code has also been review and tested using AI, and is maintained by the project authors.
+We believe in being transparent about how software is made. The code has also been reviewed and tested using AI and is maintained by the project authors.
 
 ---
 
