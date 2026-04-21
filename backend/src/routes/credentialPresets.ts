@@ -2,9 +2,16 @@ import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { encrypt } from '../utils/crypto';
+import { rateLimitMutations } from '../middleware/rateLimitMutations';
 
 const router = Router();
 router.use(requireAuth);
+
+const presetMutationLimiter = rateLimitMutations({
+  windowMs: 60_000,
+  max: 30,
+  keyPrefix: 'credential-preset',
+});
 
 export interface CredentialPresetRow {
   id: number;
@@ -62,7 +69,7 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // POST /api/credential-presets — admin only
-router.post('/', requireAdmin, async (req: Request, res: Response) => {
+router.post('/', requireAdmin, presetMutationLimiter, async (req: Request, res: Response) => {
   const {
     name,
     api_username,
@@ -121,7 +128,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // PUT /api/credential-presets/:id — admin only
-router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
+router.put('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
 
@@ -200,7 +207,7 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/credential-presets/:id — admin only
-router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await query(

@@ -88,10 +88,46 @@ export interface DuplicateSerialError {
   };
 }
 
+export interface BulkAddDeviceItem {
+  name?: string;
+  ip_address?: string;
+  device_type?: string;
+  notes?: string;
+  credential_preset_id?: number;
+  api_username?: string;
+  api_password?: string;
+  api_port?: number;
+  ssh_username?: string;
+  ssh_password?: string;
+  ssh_port?: number;
+}
+
+export interface BulkAddJobResponse {
+  job_id: string;
+  total: number;
+}
+
+export interface BulkAddJobStatus {
+  job_id: string;
+  status?: string;
+  total?: number;
+  processed?: number;
+  current_name?: string | null;
+  results?: { ip: string; identity: string; ok: boolean; message: string }[];
+  error?: string;
+  [key: string]: unknown;
+}
+
 export const devicesApi = {
   list: () => api.get<Device[]>('/devices'),
   discovered: () => api.get<DiscoveredDevice[]>('/devices/discovered'),
   get: (id: number) => api.get<Device>(`/devices/${id}`),
+  bulkAddEnqueue: (items: BulkAddDeviceItem[]) =>
+    api.post<BulkAddJobResponse>('/devices/bulk-add/jobs', { items }),
+  bulkAddStatus: (jobId: string) =>
+    api.get<BulkAddJobStatus>(`/devices/bulk-add/jobs/${encodeURIComponent(jobId)}`),
+  bulkAddCancel: (jobId: string) =>
+    api.post<{ message: string }>(`/devices/bulk-add/jobs/${encodeURIComponent(jobId)}/cancel`),
   create: (
     data: (Partial<Device> & {
       api_password?: string;

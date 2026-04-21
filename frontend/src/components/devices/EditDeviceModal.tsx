@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, Loader2, Network } from 'lucide-react';
 import { devicesApi } from '../../services/api';
+import { parsePort } from '../../utils/parsePort';
 import type { Device, DeviceType, IpAddress } from '../../types';
 
 interface Props {
@@ -90,9 +91,9 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
       const payload: Record<string, unknown> = {
         name: form.name,
         ip_address: form.ip_address,
-        api_port: parseInt(form.api_port, 10) || 8728,
+        api_port: parsePort(form.api_port, 8728),
         api_username: form.api_username,
-        ssh_port: parseInt(form.ssh_port, 10) || 22,
+        ssh_port: parsePort(form.ssh_port, 22),
         ssh_username: form.ssh_username || null,
         device_type: form.device_type as DeviceType,
         notes: form.notes,

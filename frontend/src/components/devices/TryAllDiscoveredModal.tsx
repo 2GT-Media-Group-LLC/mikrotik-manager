@@ -1,13 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Loader2, CheckCircle, AlertCircle, KeyRound } from 'lucide-react';
 import {
   credentialPresetsApi,
   devicesApi,
+  type BulkAddDeviceItem,
   type DiscoveredDevice,
-  type DuplicateSerialError,
 } from '../../services/api';
 import type { DeviceType } from '../../types';
+import { parsePort } from '../../utils/parsePort';
 
 interface Props {
   discoveredDevices: DiscoveredDevice[];
@@ -17,11 +18,6 @@ interface Props {
 
 type ResultItem = { ip: string; identity: string; ok: boolean; message: string };
 
-function isDuplicateSerialError(v: unknown): v is DuplicateSerialError {
-  if (!v || typeof v !== 'object') return false;
-  const obj = v as { error?: unknown; code?: unknown; existing_device?: unknown };
-  return obj.error === 'duplicate_serial' && obj.code === 'duplicate_serial' && !!obj.existing_device;
-}
 export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSuccess }: Props) {
   const [mode, setMode] = useState<'preset' | 'manual'>('preset');
   const [presetId, setPresetId] = useState<number | null>(null);
@@ -37,13 +33,14 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<ResultItem[] | null>(null);
   const [cancelled, setCancelled] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ current: number; total: number; currentName: string }>({
     current: 0,
     total: 0,
     currentName: '',
   });
   const [error, setError] = useState('');
-  const cancelRef = useRef(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: presets = [] } = useQuery({
     queryKey: ['credential-presets'],
@@ -56,11 +53,75 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
     [discoveredDevices]
   );
 
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  const buildItems = (): BulkAddDeviceItem[] => {
+    return targets.map((d) => {
+      const name = d.identity || d.address;
+      if (mode === 'preset') {
+        return {
+          name,
+          ip_address: d.address,
+          credential_preset_id: presetId!,
+        };
+      }
+      return {
+        name,
+        ip_address: d.address,
+        api_username: manual.api_username,
+        api_password: manual.api_password,
+        api_port: parsePort(manual.api_port, 8728),
+        ssh_username: manual.ssh_username || undefined,
+        ssh_password: manual.ssh_password || undefined,
+        ssh_port: parsePort(manual.ssh_port, 22),
+        device_type: manual.device_type,
+      };
+    });
+  };
+
+  const pollOnce = async (id: string) => {
+    try {
+      const { data } = await devicesApi.bulkAddStatus(id);
+      const total = typeof data.total === 'number' ? data.total : 0;
+      const processed = typeof data.processed === 'number' ? data.processed : 0;
+      const currentName = typeof data.current_name === 'string' ? data.current_name : '';
+      setProgress({
+        current: Math.min(processed, total || 1),
+        total: total || targets.length,
+        currentName,
+      });
+      if (Array.isArray(data.results)) {
+        setResults(data.results as ResultItem[]);
+      }
+      const st = String(data.status || '');
+      if (st === 'completed' || st === 'failed' || st === 'cancelled') {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        setRunning(false);
+        setJobId(null);
+        if (st === 'cancelled') setCancelled(true);
+        if (st === 'failed' && data.error) {
+          setError(String(data.error));
+        }
+        const ok = (data.results as ResultItem[] | undefined)?.filter((r) => r.ok).length ?? 0;
+        if (ok > 0) onSuccess();
+      }
+    } catch {
+      // keep polling unless job missing
+    }
+  };
+
   const handleRun = async () => {
     setError('');
     setCancelled(false);
-    cancelRef.current = false;
     setResults(null);
+    setJobId(null);
     if (!targets.length) {
       setError('No discovered devices with a usable IP address.');
       return;
@@ -76,52 +137,36 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
 
     setRunning(true);
     setProgress({ current: 0, total: targets.length, currentName: '' });
-    const out: ResultItem[] = [];
-    for (let i = 0; i < targets.length; i++) {
-      if (cancelRef.current) break;
-      const d = targets[i];
-      const name = d.identity || d.address;
-      setProgress({ current: i + 1, total: targets.length, currentName: name });
-      const payload =
-        mode === 'preset'
-          ? {
-              name,
-              ip_address: d.address,
-              credential_preset_id: presetId!,
-            }
-          : {
-              name,
-              ip_address: d.address,
-              api_username: manual.api_username,
-              api_password: manual.api_password,
-              api_port: parseInt(manual.api_port, 10) || 8728,
-              ssh_username: manual.ssh_username || undefined,
-              ssh_password: manual.ssh_password || undefined,
-              ssh_port: parseInt(manual.ssh_port, 10) || 22,
-              device_type: manual.device_type,
-            };
-      try {
-        await devicesApi.create(payload);
-        out.push({ ip: d.address, identity: name, ok: true, message: 'Added' });
-        setResults([...out]);
-      } catch (err: unknown) {
-        const data = (err as { response?: { data?: unknown } })?.response?.data;
 
-        const msg = isDuplicateSerialError(data)
-          ? `Duplicate serial mismatch: candidate ${data.candidate.serial_number}, existing ${data.existing_device.serial_number}. Review manually before combining.`
-          : ((data as { message?: string; error?: string } | undefined)?.message ||
-             (typeof (data as { error?: unknown } | undefined)?.error === 'string'
-               ? String((data as { error?: string }).error)
-               : '') ||
-             'Failed');
-        out.push({ ip: d.address, identity: name, ok: false, message: msg });
-        setResults([...out]);
+    try {
+      const items = buildItems();
+      const { data } = await devicesApi.bulkAddEnqueue(items);
+      const id = data.job_id;
+      setJobId(id);
+      setProgress({ current: 0, total: data.total, currentName: '' });
+      await pollOnce(id);
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(() => {
+        void pollOnce(id);
+      }, 1200);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        'Failed to start bulk add job';
+      setError(msg);
+      setRunning(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (jobId) {
+      try {
+        await devicesApi.bulkAddCancel(jobId);
+      } catch {
+        // ignore
       }
     }
-    setResults(out);
-    setRunning(false);
-    setProgress((p) => ({ ...p, currentName: '' }));
-    if (cancelRef.current) setCancelled(true);
+    setCancelled(true);
   };
 
   const okCount = results?.filter((r) => r.ok).length ?? 0;
@@ -140,12 +185,14 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
         <div className="p-5 space-y-4">
           <p className="text-sm text-gray-600 dark:text-slate-300">
             Attempt to add <strong>{targets.length}</strong> discovered device(s) in one run.
+            Progress runs <strong>on the server</strong> — you can leave this page and reopen later (job id is shown while running).
           </p>
 
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setMode('preset')}
+              disabled={running}
               className={`px-3 py-1.5 rounded-lg text-sm border ${mode === 'preset' ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-600 dark:text-slate-300 border-gray-300 dark:border-slate-600'}`}
             >
               Use Preset
@@ -153,6 +200,7 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
             <button
               type="button"
               onClick={() => setMode('manual')}
+              disabled={running}
               className={`px-3 py-1.5 rounded-lg text-sm border ${mode === 'manual' ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-600 dark:text-slate-300 border-gray-300 dark:border-slate-600'}`}
             >
               Enter Manually
@@ -162,7 +210,7 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
           {mode === 'preset' ? (
             <div>
               <label className="label flex items-center gap-1.5"><KeyRound className="w-3.5 h-3.5" />Credential Preset</label>
-              <select className="input" value={presetId ?? ''} onChange={(e) => setPresetId(e.target.value ? parseInt(e.target.value, 10) : null)}>
+              <select className="input" value={presetId ?? ''} onChange={(e) => setPresetId(e.target.value ? parseInt(e.target.value, 10) : null)} disabled={running}>
                 <option value="">Select preset...</option>
                 {presets.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -175,29 +223,33 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">API Username *</label>
-                <input className="input" value={manual.api_username} onChange={(e) => setManual((m) => ({ ...m, api_username: e.target.value }))} />
+                <input className="input" value={manual.api_username} disabled={running} onChange={(e) => setManual((m) => ({ ...m, api_username: e.target.value }))} />
               </div>
               <div>
                 <label className="label">API Port</label>
-                <input className="input" type="number" value={manual.api_port} onChange={(e) => setManual((m) => ({ ...m, api_port: e.target.value }))} />
+                <input className="input" type="number" value={manual.api_port} disabled={running} onChange={(e) => setManual((m) => ({ ...m, api_port: e.target.value }))} />
               </div>
               <div className="col-span-2">
                 <label className="label">API Password *</label>
-                <input className="input" type="password" value={manual.api_password} onChange={(e) => setManual((m) => ({ ...m, api_password: e.target.value }))} />
+                <input className="input" type="password" value={manual.api_password} disabled={running} onChange={(e) => setManual((m) => ({ ...m, api_password: e.target.value }))} />
               </div>
               <div>
                 <label className="label">SSH Username</label>
-                <input className="input" value={manual.ssh_username} onChange={(e) => setManual((m) => ({ ...m, ssh_username: e.target.value }))} />
+                <input className="input" value={manual.ssh_username} disabled={running} onChange={(e) => setManual((m) => ({ ...m, ssh_username: e.target.value }))} />
               </div>
               <div>
                 <label className="label">SSH Port</label>
-                <input className="input" type="number" value={manual.ssh_port} onChange={(e) => setManual((m) => ({ ...m, ssh_port: e.target.value }))} />
+                <input className="input" type="number" value={manual.ssh_port} disabled={running} onChange={(e) => setManual((m) => ({ ...m, ssh_port: e.target.value }))} />
               </div>
               <div className="col-span-2">
                 <label className="label">SSH Password</label>
-                <input className="input" type="password" value={manual.ssh_password} onChange={(e) => setManual((m) => ({ ...m, ssh_password: e.target.value }))} />
+                <input className="input" type="password" value={manual.ssh_password} disabled={running} onChange={(e) => setManual((m) => ({ ...m, ssh_password: e.target.value }))} />
               </div>
             </div>
+          )}
+
+          {jobId && running && (
+            <p className="text-xs text-gray-500 dark:text-slate-400 font-mono break-all">Job: {jobId}</p>
           )}
 
           {error && (
@@ -226,7 +278,7 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
               <div className="flex justify-end">
                 <button
                   type="button"
-                  onClick={() => { cancelRef.current = true; }}
+                  onClick={() => void handleCancel()}
                   className="btn-secondary text-xs py-1 px-2"
                 >
                   Stop / Cancel
@@ -279,7 +331,7 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
             <button type="button" onClick={onClose} className="btn-secondary">Close</button>
             <button
               type="button"
-              onClick={handleRun}
+              onClick={() => void handleRun()}
               disabled={running}
               className="btn-primary flex items-center gap-2"
             >

@@ -9,6 +9,7 @@ import {
   type CredentialPreset,
   type CredentialPresetInput,
 } from '../../services/api';
+import { parsePort } from '../../utils/parsePort';
 
 interface FormState {
   name: string;
@@ -38,9 +39,9 @@ function toInput(f: FormState, isEdit: boolean): CredentialPresetInput {
   const input: CredentialPresetInput = {
     name: f.name || undefined,
     api_username: f.api_username || undefined,
-    api_port: f.api_port ? parseInt(f.api_port, 10) : null,
+    api_port: f.api_port ? parsePort(f.api_port, 8728) : null,
     ssh_username: f.ssh_username || null,
-    ssh_port: f.ssh_port ? parseInt(f.ssh_port, 10) : null,
+    ssh_port: f.ssh_port ? parsePort(f.ssh_port, 22) : null,
     notes: f.notes || null,
   };
   if (f.api_password) input.api_password = f.api_password;

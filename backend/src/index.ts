@@ -18,6 +18,11 @@ import { redis } from './config/redis';
 import { runMigrations } from './db/migrate';
 import { errorHandler } from './middleware/errorHandler';
 import { PollerService } from './services/PollerService';
+import {
+  setBulkAddPollerService,
+  startBulkAddWorker,
+  stopBulkAddWorker,
+} from './services/DeviceBulkAddWorker';
 import { verifyToken } from './middleware/auth';
 import { decrypt } from './utils/crypto';
 
@@ -234,9 +239,11 @@ async function start(): Promise<void> {
   const pollerService = new PollerService();
   pollerService.setSocketServer(io);
   setDevicesPoller(pollerService);
+  setBulkAddPollerService(pollerService);
   setTopologyPoller(pollerService);
   setClientsPoller(pollerService);
   await pollerService.start();
+  await startBulkAddWorker();
 
   // Start HTTP server
   httpServer.listen(PORT, '0.0.0.0', () => {
@@ -246,6 +253,7 @@ async function start(): Promise<void> {
   // Graceful shutdown
   const shutdown = async () => {
     console.log('Shutting down...');
+    await stopBulkAddWorker();
     await pollerService.stop();
     await redis.quit().catch(() => {});
     await pool.end();

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { encrypt, decrypt } from '../utils/crypto';
@@ -6,6 +7,10 @@ import { RouterOSClient } from '../services/mikrotik/RouterOSClient';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { PollerService } from '../services/PollerService';
 import type { CredentialPresetRow } from './credentialPresets';
+import { createDeviceFromBody, type CreateDeviceInput } from '../services/deviceCreation';
+import { parsePort } from '../utils/parsePort';
+import { redis } from '../config/redis';
+import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
 
 // Resolve a credential preset id into decrypted credentials. Returns null if
 // no id was provided; throws a readable error if the id is invalid.
@@ -165,165 +170,55 @@ router.get('/discovered', async (_req: Request, res: Response) => {
 
 // POST /api/devices
 router.post('/', requireWrite, async (req: Request, res: Response) => {
-  const {
-    name, ip_address, device_type = 'router', notes,
-    credential_preset_id,
-  } = req.body as { name?: string; ip_address?: string; device_type?: string; notes?: string; credential_preset_id?: number | null };
+  const result = await createDeviceFromBody(req.body, pollerService);
+  return res.status(result.status).json(result.body);
+});
 
-  // If a preset is supplied, its credentials win over anything else in the
-  // body — the client just needs to say "use preset 3". Anything the body
-  // also sends (like ssh_username) is ignored in favor of preset values, so
-  // "deploying" a preset always produces a consistent device record.
-  let preset: Awaited<ReturnType<typeof loadCredentialPreset>> = null;
-  try {
-    preset = await loadCredentialPreset(credential_preset_id ?? null);
-  } catch (err) {
-    return res.status(400).json({ error: (err as Error).message });
+const BULK_ADD_META_TTL_SEC = 86400;
+
+// POST /api/devices/bulk-add/jobs — enqueue Try-All style adds (survives tab close)
+router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) => {
+  const { items } = req.body as { items?: unknown };
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'items must be a non-empty array' });
   }
-
-  const api_username: string | undefined = preset?.api_username ?? req.body.api_username;
-  const api_password: string | undefined = preset?.api_password ?? req.body.api_password;
-  const parsePort = (v: unknown, fallback: number): number => {
-    if (v == null || v === '') return fallback;
-    const n = typeof v === 'number' ? v : parseInt(String(v), 10);
-    return Number.isFinite(n) ? n : fallback;
-  };
-  const api_port: number = preset?.api_port ?? parsePort(req.body.api_port, 8728);
-  const ssh_username: string | null = preset ? preset.ssh_username : (req.body.ssh_username ?? null);
-  const ssh_password: string | null = preset ? preset.ssh_password : (req.body.ssh_password ?? null);
-  const ssh_port: number = preset?.ssh_port ?? parsePort(req.body.ssh_port, 22);
-  const combineWithDeviceId =
-    typeof req.body.combine_with_device_id === 'number' ? req.body.combine_with_device_id : null;
-  const forceReplaceBySerial = req.body.force_replace_existing_by_serial === true;
-
-  if (!name || !ip_address || !api_username || !api_password) {
-    return res.status(400).json({ error: 'name, ip_address, api_username, api_password are required' });
+  if (items.length > 500) {
+    return res.status(400).json({ error: 'items array exceeds maximum of 500' });
   }
-
-  // Test connection and detect hardware serial before saving
-  const testClient = new RouterOSClient(ip_address, api_port, api_username, api_password, 10_000);
-  let detectedSerial: string | null = null;
-  try {
-    await testClient.connect();
-    const rb = await testClient.execute('/system/routerboard/print').catch(() => [] as Record<string, string>[]);
-    detectedSerial = (rb[0]?.['serial-number'] || '').trim() || null;
-  } catch (err) {
-    return res.status(422).json({
-      error: `Cannot connect to device: ${(err as Error).message}`,
-    });
-  } finally {
-    testClient.disconnect();
-  }
-
-  if (detectedSerial) {
-    const existingBySerial = await queryOne<{
-      id: number;
-      name: string;
-      ip_address: string;
-      serial_number: string;
-    }>(
-      `SELECT id, name, ip_address, serial_number
-         FROM devices
-        WHERE serial_number = $1`,
-      [detectedSerial]
-    );
-
-    if (existingBySerial) {
-      const shouldCombine =
-        combineWithDeviceId != null && combineWithDeviceId === existingBySerial.id;
-      if (!shouldCombine && !forceReplaceBySerial) {
-        return res.status(409).json({
-          error: 'duplicate_serial',
-          code: 'duplicate_serial',
-          existing_device: existingBySerial,
-          candidate: {
-            serial_number: detectedSerial,
-            identity: name,
-            ip_address,
-          },
-        });
-      }
-
-      const encryptedPass = encrypt(api_password);
-      const encryptedSshPass = ssh_password ? encrypt(ssh_password) : null;
-      await query(
-        `UPDATE devices SET
-           name=COALESCE($1,name),
-           ip_address=$2,
-           api_port=$3,
-           api_username=$4,
-           api_password_encrypted=$5,
-           ssh_port=$6,
-           ssh_username=COALESCE($7,ssh_username),
-           ssh_password_encrypted=COALESCE($8,ssh_password_encrypted),
-           device_type=COALESCE($9,device_type),
-           notes=COALESCE($10,notes),
-           updated_at=NOW()
-         WHERE id = $11`,
-        [
-          name,
-          ip_address,
-          api_port,
-          api_username,
-          encryptedPass,
-          ssh_port,
-          ssh_username,
-          encryptedSshPass,
-          device_type,
-          notes || null,
-          existingBySerial.id,
-        ]
-      );
-
-      if (pollerService) {
-        await pollerService.scheduleDeviceSync(existingBySerial.id, 'full');
-      }
-
-      const updatedExisting = await queryOne(
-        `SELECT id, name, ip_address, api_port, api_username, model, serial_number,
-                firmware_version, ros_version, device_type, status, last_seen, notes, created_at
-         FROM devices WHERE id = $1`,
-        [existingBySerial.id]
-      );
-      if (!updatedExisting) {
-        return res.status(500).json({
-          error: 'Duplicate merge succeeded but device row could not be reloaded',
-          device_id: existingBySerial.id,
-        });
-      }
-      return res.status(200).json({
-        ...updatedExisting,
-        merged_from_duplicate: true,
-      });
-    }
-  }
-
-  const encryptedPass = encrypt(api_password);
-  const encryptedSshPass = ssh_password ? encrypt(ssh_password) : null;
-
-  const rows = await query<{ id: number }>(
-    `INSERT INTO devices (name, ip_address, api_port, api_username, api_password_encrypted,
-                          ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'unknown') RETURNING id`,
-    [name, ip_address, api_port, api_username, encryptedPass,
-     ssh_port, ssh_username || null, encryptedSshPass, device_type, notes || null]
+  const jobId = randomUUID();
+  await redis.set(
+    `device-bulk-add:${jobId}:meta`,
+    JSON.stringify({
+      status: 'queued',
+      total: items.length,
+      processed: 0,
+      created_at: new Date().toISOString(),
+    }),
+    'EX',
+    BULK_ADD_META_TTL_SEC
   );
+  await redis.set(`device-bulk-add:${jobId}:results`, '[]', 'EX', BULK_ADD_META_TTL_SEC);
+  await enqueueBulkAddJob(jobId, items as CreateDeviceInput[]);
+  return res.status(202).json({ job_id: jobId, total: items.length });
+});
 
-  const newId = rows[0].id;
+// POST /api/devices/bulk-add/jobs/:jobId/cancel — request cooperative cancel
+router.post('/bulk-add/jobs/:jobId/cancel', requireWrite, async (req: Request, res: Response) => {
+  await redis.set(`device-bulk-add:${req.params.jobId}:cancel`, '1', 'EX', BULK_ADD_META_TTL_SEC);
+  return res.json({ message: 'Cancel requested' });
+});
 
-  // Trigger full sync in background
-  if (pollerService) {
-    await pollerService.scheduleDeviceSync(newId, 'full');
+// GET /api/devices/bulk-add/jobs/:jobId — poll job status and incremental results
+router.get('/bulk-add/jobs/:jobId', async (req: Request, res: Response) => {
+  const state = await getBulkAddJobState(req.params.jobId);
+  if (!state.found) {
+    return res.status(404).json({ error: 'Job not found or expired' });
   }
-
-  const device = await queryOne(
-    `SELECT id, name, ip_address, api_port, api_username, model, serial_number,
-            firmware_version, ros_version, device_type, status, last_seen, notes, created_at
-     FROM devices WHERE id = $1`,
-    [newId]
-  );
-
-  return res.status(201).json(device);
+  return res.json({
+    job_id: req.params.jobId,
+    ...state.meta,
+    results: state.results,
+  });
 });
 
 // GET /api/devices/:id
@@ -390,12 +285,6 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
     device_type?: string;
     notes?: string;
     credential_preset_id?: number | null;
-  };
-
-  const parsePort = (v: unknown, fallback: number): number => {
-    if (v == null || v === '') return fallback;
-    const n = typeof v === 'number' ? v : parseInt(String(v), 10);
-    return Number.isFinite(n) ? n : fallback;
   };
 
   const existing = await queryOne<{
