@@ -176,6 +176,11 @@ ALTER TABLE topology_links ADD COLUMN IF NOT EXISTS discovered_by VARCHAR(50);
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS firmware_update_available BOOLEAN DEFAULT FALSE;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS latest_ros_version VARCHAR(20);
 
+-- Cached IPv4/IPv6 addresses from /ip/address (per device) for topology resolution:
+-- neighbors seen only by IP (CDP/MNDP) can be matched to managed devices even
+-- when the address is not the device's management IP.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS ip_addresses_jsonb JSONB;
+
 -- Allow multiple neighbors per interface (one row per neighbor, not per port)
 ALTER TABLE topology_links DROP CONSTRAINT IF EXISTS topology_links_from_device_id_from_interface_key;
 

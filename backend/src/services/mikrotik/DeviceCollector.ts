@@ -57,6 +57,7 @@ export class DeviceCollector {
 
   async collectSlow(): Promise<void> {
     await this.collectInterfaces();
+    await this.collectIpAddressesCache();
     await this.collectVlans();
     await this.collectSystemInfo();
     await this.collectStp();
@@ -77,6 +78,7 @@ export class DeviceCollector {
   async collectAll(): Promise<void> {
     await this.collectSystemInfo();
     await this.collectInterfaces();
+    await this.collectIpAddressesCache();
     await this.collectVlans();
     await this.collectInterfaceTraffic();
     await this.collectResourceUsage();
@@ -266,6 +268,29 @@ export class DeviceCollector {
       }
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect interfaces:`, err);
+    }
+  }
+
+  /** Store /ip/address rows (sanitized) for topology matching of neighbor IPs. */
+  async collectIpAddressesCache(): Promise<void> {
+    try {
+      const rows = await this.client
+        .execute('/ip/address/print', { detail: '' })
+        .catch(() => [] as Record<string, string>[]);
+      const minimalist = rows
+        .filter((r) => r['disabled'] !== 'true' && r['invalid'] !== 'true')
+        .map((r) => ({
+          address: (r['address'] || '').trim(),
+          interface: (r['interface'] || '').trim(),
+          dynamic: r['dynamic'] === 'true',
+        }))
+        .filter((x) => x.address.length > 0);
+      await query(
+        `UPDATE devices SET ip_addresses_jsonb = $1::jsonb, updated_at = NOW() WHERE id = $2`,
+        [JSON.stringify(minimalist), this.device.id]
+      );
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to cache IP addresses:`, err);
     }
   }
 

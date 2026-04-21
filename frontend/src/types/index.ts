@@ -190,6 +190,8 @@ export interface TopologyDevice {
   device_type: DeviceType;
   status: DeviceStatus;
   ros_version?: string;
+  /** Cached /ip/address rows from the device (set by backend sync). */
+  ip_addresses_jsonb?: { address: string; interface?: string; dynamic?: boolean }[];
 }
 
 export interface TopologyLink {

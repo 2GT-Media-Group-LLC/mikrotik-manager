@@ -39,7 +39,8 @@ router.get('/', async (_req: Request, res: Response) => {
 
   const [devices, allLinks] = await Promise.all([
     query(
-      `SELECT id, name, ip_address, model, device_type, status, ros_version
+      `SELECT id, name, ip_address, model, device_type, status, ros_version,
+              ip_addresses_jsonb
        FROM devices ORDER BY name ASC`
     ),
     query<LinkRow>(
@@ -69,6 +70,51 @@ router.get('/', async (_req: Request, res: Response) => {
     }
   }
   const links = Array.from(bestLinks.values());
+
+  // ── Resolve neighbor IP → managed device (any IP on that device, not just mgmt) ──
+  // CDP/MNDP often report only an IP. We cache /ip/address per device during sync;
+  // if a neighbor address matches any managed device's known address, treat the
+  // link as device-to-device instead of creating an external node.
+  const stripCidr = (addr: string): string => {
+    const a = addr.trim();
+    const slash = a.indexOf('/');
+    return slash === -1 ? a : a.slice(0, slash);
+  };
+  const normIp = (addr: string): string => stripCidr(addr).toLowerCase();
+
+  const ipToDevice = new Map<string, { id: number; name: string }>();
+  for (const d of devices as {
+    id: number; name: string; ip_address: string;
+    ip_addresses_jsonb?: unknown;
+  }[]) {
+    if (d.ip_address) {
+      const k = normIp(d.ip_address);
+      if (k && !ipToDevice.has(k)) ipToDevice.set(k, { id: d.id, name: d.name });
+    }
+    const list = d.ip_addresses_jsonb;
+    if (Array.isArray(list)) {
+      for (const entry of list) {
+        const raw = typeof entry === 'object' && entry && 'address' in entry
+          ? String((entry as { address?: string }).address || '')
+          : '';
+        const k = normIp(raw);
+        if (k && !ipToDevice.has(k)) ipToDevice.set(k, { id: d.id, name: d.name });
+      }
+    }
+  }
+
+  for (const link of links) {
+    if (link.to_device_id) continue;
+    const na = link.neighbor_address?.trim();
+    if (!na || na.includes('%')) continue; // skip zone-id style
+    const key = normIp(na);
+    if (!key) continue;
+    const hit = ipToDevice.get(key);
+    if (hit && hit.id !== link.from_device_id) {
+      link.to_device_id = hit.id;
+      link.to_device_name = hit.name;
+    }
+  }
 
   // Build synthetic external nodes from unresolved neighbor entries
   const externalMap = new Map<string, {
