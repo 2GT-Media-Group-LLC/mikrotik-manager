@@ -71,6 +71,32 @@ router.get('/discovered', async (_req: Request, res: Response) => {
     ORDER BY tl.discovered_at DESC
   `);
 
+  // Build lookup tables for "is this actually a managed device we already know?"
+  // We match a discovered neighbor to a managed device by any of:
+  //   - its MAC matching any interface MAC of a managed device,
+  //   - its IP matching the managed device's primary ip_address,
+  //   - its identity matching the managed device's name.
+  const [managedByMac, managedByIp, managedByName] = await Promise.all([
+    query<{ device_id: number; device_name: string; mac: string }>(
+      `SELECT i.device_id AS device_id, d.name AS device_name, LOWER(i.mac_address) AS mac
+         FROM interfaces i
+         JOIN devices d ON d.id = i.device_id
+        WHERE i.mac_address IS NOT NULL AND i.mac_address <> ''`
+    ),
+    query<{ id: number; name: string; ip_address: string }>(
+      `SELECT id, name, ip_address FROM devices WHERE ip_address IS NOT NULL AND ip_address <> ''`
+    ),
+    query<{ id: number; name: string }>(
+      `SELECT id, name FROM devices WHERE name IS NOT NULL AND name <> ''`
+    ),
+  ]);
+  const macToDevice = new Map<string, { id: number; name: string }>();
+  for (const r of managedByMac) macToDevice.set(r.mac, { id: r.device_id, name: r.device_name });
+  const ipToDevice = new Map<string, { id: number; name: string }>();
+  for (const r of managedByIp) ipToDevice.set(r.ip_address, { id: r.id, name: r.name });
+  const nameToDevice = new Map<string, { id: number; name: string }>();
+  for (const r of managedByName) nameToDevice.set(r.name.toLowerCase(), { id: r.id, name: r.name });
+
   // Deduplicate by MAC (most reliable), fallback to IP, then identity
   const seen = new Map<string, typeof rows[0] & { seen_by_list: string[] }>();
   for (const row of rows) {
@@ -86,14 +112,24 @@ router.get('/discovered', async (_req: Request, res: Response) => {
     }
   }
 
-  const results = Array.from(seen.values()).map((r) => ({
-    identity: r.neighbor_identity || '',
-    address: r.neighbor_address || '',
-    mac_address: r.neighbor_mac || '',
-    platform: r.neighbor_platform || '',
-    discovered_at: r.discovered_at,
-    seen_by: r.seen_by_list.join(', '),
-  }));
+  const results = Array.from(seen.values()).map((r) => {
+    const mac = (r.neighbor_mac || '').toLowerCase();
+    const match =
+      (mac && macToDevice.get(mac)) ||
+      (r.neighbor_address && ipToDevice.get(r.neighbor_address)) ||
+      (r.neighbor_identity && nameToDevice.get(r.neighbor_identity.toLowerCase())) ||
+      null;
+    return {
+      identity: r.neighbor_identity || '',
+      address: r.neighbor_address || '',
+      mac_address: r.neighbor_mac || '',
+      platform: r.neighbor_platform || '',
+      discovered_at: r.discovered_at,
+      seen_by: r.seen_by_list.join(', '),
+      duplicate_of_device_id: match ? match.id : null,
+      duplicate_of_device_name: match ? match.name : null,
+    };
+  });
 
   res.json(results);
 });
@@ -204,28 +240,58 @@ router.patch('/:id/location', requireWrite, async (req: Request, res: Response) 
 
 // PUT /api/devices/:id
 router.put('/:id', requireWrite, async (req: Request, res: Response) => {
-  const { name, api_port, api_username, api_password, ssh_port, ssh_username,
+  const { name, ip_address, api_port, api_username, api_password, ssh_port, ssh_username,
           ssh_password, device_type, notes } = req.body;
 
-  const existing = await queryOne<{ id: number; api_password_encrypted: string }>(
-    `SELECT id, api_password_encrypted FROM devices WHERE id = $1`,
+  const existing = await queryOne<{
+    id: number;
+    ip_address: string;
+    api_port: number;
+    api_username: string;
+    api_password_encrypted: string;
+  }>(
+    `SELECT id, ip_address, api_port, api_username, api_password_encrypted
+       FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!existing) return res.status(404).json({ error: 'Device not found' });
+
+  // If the user is changing the IP (or port / username / password), verify the
+  // RouterOS API is still reachable with the new values before persisting —
+  // otherwise we could silently brick the device record.
+  const ipChanged = typeof ip_address === 'string' && ip_address && ip_address !== existing.ip_address;
+  const portChanged = typeof api_port === 'number' && api_port !== existing.api_port;
+  const userChanged = typeof api_username === 'string' && api_username && api_username !== existing.api_username;
+  if (ipChanged || portChanged || userChanged || api_password) {
+    const testIp = ip_address ?? existing.ip_address;
+    const testPort = api_port ?? existing.api_port;
+    const testUser = api_username ?? existing.api_username;
+    const testPass = api_password ? api_password : decrypt(existing.api_password_encrypted);
+    const testClient = new RouterOSClient(testIp, testPort, testUser, testPass, 10_000);
+    try {
+      await testClient.connect();
+      testClient.disconnect();
+    } catch (err) {
+      return res.status(422).json({
+        error: `Cannot connect to device with new settings: ${(err as Error).message}`,
+      });
+    }
+  }
 
   const encPass = api_password ? encrypt(api_password) : existing.api_password_encrypted;
   const encSshPass = ssh_password ? encrypt(ssh_password) : null;
 
   await query(
     `UPDATE devices SET
-       name=COALESCE($1,name), api_port=COALESCE($2,api_port),
-       api_username=COALESCE($3,api_username), api_password_encrypted=$4,
-       ssh_port=COALESCE($5,ssh_port), ssh_username=COALESCE($6,ssh_username),
-       ssh_password_encrypted=COALESCE($7,ssh_password_encrypted),
-       device_type=COALESCE($8,device_type), notes=COALESCE($9,notes),
+       name=COALESCE($1,name), ip_address=COALESCE($2,ip_address),
+       api_port=COALESCE($3,api_port),
+       api_username=COALESCE($4,api_username), api_password_encrypted=$5,
+       ssh_port=COALESCE($6,ssh_port), ssh_username=COALESCE($7,ssh_username),
+       ssh_password_encrypted=COALESCE($8,ssh_password_encrypted),
+       device_type=COALESCE($9,device_type), notes=COALESCE($10,notes),
        updated_at=NOW()
-     WHERE id = $10`,
-    [name, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id]
+     WHERE id = $11`,
+    [name, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id]
   );
 
   const updated = await queryOne(

@@ -59,6 +59,11 @@ export interface DiscoveredDevice {
   platform: string;
   discovered_at: string;
   seen_by: string;
+  // When the neighbor matches a device that's already managed (by interface
+  // MAC, primary IP, or system identity) the backend fills these in so the
+  // UI can hide the row as a duplicate.
+  duplicate_of_device_id: number | null;
+  duplicate_of_device_name: string | null;
 }
 
 export const devicesApi = {

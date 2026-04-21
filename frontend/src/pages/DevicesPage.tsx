@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, Router, Wifi, Trash2, ChevronRight, Search, Radar, ArrowUpCircle } from 'lucide-react';
+import { Plus, RefreshCw, Router, Wifi, Trash2, ChevronRight, Search, Radar, ArrowUpCircle, Pencil } from 'lucide-react';
 import { devicesApi, topologyApi } from '../services/api';
 import type { Device } from '../types';
 import type { DiscoveredDevice } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import clsx from 'clsx';
 import AddDeviceModal from '../components/devices/AddDeviceModal';
+import EditDeviceModal from '../components/devices/EditDeviceModal';
 
 function StatusDot({ status }: { status: Device['status'] }) {
   return (
@@ -43,9 +44,11 @@ export default function DevicesPage() {
   const canWrite = useCanWrite();
   const [showAddModal, setShowAddModal] = useState(false);
   const [addPrefill, setAddPrefill] = useState<{ name?: string; ip_address?: string } | undefined>();
+  const [editDevice, setEditDevice] = useState<Device | null>(null);
   const [search, setSearch] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
+  const [hideDuplicates, setHideDuplicates] = useState(true);
 
   const { data: devices = [], isLoading } = useQuery({
     queryKey: ['devices'],
@@ -78,6 +81,16 @@ export default function DevicesPage() {
       d.name.toLowerCase().includes(search.toLowerCase()) ||
       d.ip_address.includes(search) ||
       d.model?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const discoveredList = discovered as DiscoveredDevice[];
+  const duplicateCount = useMemo(
+    () => discoveredList.filter((d) => d.duplicate_of_device_id != null).length,
+    [discoveredList]
+  );
+  const visibleDiscovered = useMemo(
+    () => (hideDuplicates ? discoveredList.filter((d) => d.duplicate_of_device_id == null) : discoveredList),
+    [discoveredList, hideDuplicates]
   );
 
   return (
@@ -231,6 +244,13 @@ export default function DevicesPage() {
                               className={clsx('w-3.5 h-3.5', syncMutation.isPending && 'animate-spin')}
                             />
                           </button>
+                          <button
+                            onClick={() => setEditDevice(device)}
+                            className="p-1.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            title="Edit device"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
                           {deleteConfirm === device.id ? (
                             <div className="flex items-center gap-1">
                               <button
@@ -269,9 +289,9 @@ export default function DevicesPage() {
       )}
 
       {/* Discovered (unmanaged) MikroTik neighbors */}
-      {discovered.length > 0 && (
+      {discoveredList.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Radar className="w-4 h-4 text-amber-500" />
             <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-300">
               Discovered Devices
@@ -279,7 +299,37 @@ export default function DevicesPage() {
             <span className="text-xs text-gray-400 dark:text-slate-500">
               — Mikrotik neighbors seen by your managed devices, not yet added to management
             </span>
+            <label
+              className={clsx(
+                'ml-auto flex items-center gap-2 text-xs select-none',
+                duplicateCount === 0
+                  ? 'text-gray-300 dark:text-slate-600 cursor-not-allowed'
+                  : 'text-gray-600 dark:text-slate-400 cursor-pointer'
+              )}
+              title={
+                duplicateCount === 0
+                  ? 'No duplicates of already-managed devices detected'
+                  : `${duplicateCount} row(s) match a device that's already managed (by MAC, IP, or identity)`
+              }
+            >
+              <input
+                type="checkbox"
+                className="rounded border-gray-300 dark:border-slate-600"
+                checked={hideDuplicates}
+                disabled={duplicateCount === 0}
+                onChange={(e) => setHideDuplicates(e.target.checked)}
+              />
+              Hide duplicates of managed devices
+              {duplicateCount > 0 && (
+                <span className="text-gray-400 dark:text-slate-500">({duplicateCount})</span>
+              )}
+            </label>
           </div>
+          {visibleDiscovered.length === 0 ? (
+            <div className="card p-4 text-xs text-gray-500 dark:text-slate-400 text-center">
+              All {discoveredList.length} discovered neighbor(s) are already managed devices.
+            </div>
+          ) : (
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -294,10 +344,27 @@ export default function DevicesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
-                {(discovered as DiscoveredDevice[]).map((d, i) => (
-                  <tr key={d.mac_address || d.address || i} className="hover:bg-amber-50/50 dark:hover:bg-amber-900/10">
+                {visibleDiscovered.map((d, i) => (
+                  <tr
+                    key={d.mac_address || d.address || i}
+                    className={clsx(
+                      'hover:bg-amber-50/50 dark:hover:bg-amber-900/10',
+                      d.duplicate_of_device_id != null && 'opacity-70'
+                    )}
+                  >
                     <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">
-                      {d.identity || '—'}
+                      <div className="flex items-center gap-2">
+                        <span>{d.identity || '—'}</span>
+                        {d.duplicate_of_device_id != null && (
+                          <span
+                            className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                            title={`Matches managed device: ${d.duplicate_of_device_name ?? ''}`}
+                          >
+                            Already managed
+                            {d.duplicate_of_device_name ? ` · ${d.duplicate_of_device_name}` : ''}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-gray-600 dark:text-slate-400">
                       {d.address ? (
@@ -318,7 +385,7 @@ export default function DevicesPage() {
                       {new Date(d.discovered_at).toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5">
-                      {canWrite && (
+                      {canWrite && d.duplicate_of_device_id == null && (
                         <button
                           onClick={() => {
                             setAddPrefill({ name: d.identity || '', ip_address: d.address });
@@ -337,6 +404,7 @@ export default function DevicesPage() {
             </table>
             </div>
           </div>
+          )}
         </div>
       )}
 
@@ -346,6 +414,18 @@ export default function DevicesPage() {
           onClose={() => setShowAddModal(false)}
           onSuccess={() => {
             setShowAddModal(false);
+            queryClient.invalidateQueries({ queryKey: ['devices'] });
+            queryClient.invalidateQueries({ queryKey: ['devices-discovered'] });
+          }}
+        />
+      )}
+
+      {editDevice && (
+        <EditDeviceModal
+          device={editDevice}
+          onClose={() => setEditDevice(null)}
+          onSuccess={() => {
+            setEditDevice(null);
             queryClient.invalidateQueries({ queryKey: ['devices'] });
             queryClient.invalidateQueries({ queryKey: ['devices-discovered'] });
           }}
