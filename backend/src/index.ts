@@ -36,6 +36,7 @@ import routersRoutes from './routes/routers';
 import alertsRoutes from './routes/alerts';
 import wirelessRoutes from './routes/wireless';
 import networkServicesRoutes from './routes/networkServices';
+import credentialPresetsRoutes from './routes/credentialPresets';
 
 const app = express();
 const httpServer = createServer(app);
@@ -197,6 +198,7 @@ app.use('/api/routers', routersRoutes);
 app.use('/api/alerts', alertsRoutes);
 app.use('/api/wireless', wirelessRoutes);
 app.use('/api/network-services', networkServicesRoutes);
+app.use('/api/credential-presets', credentialPresetsRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);

@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
-  ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send,
+  ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound,
 } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi } from '../services/api';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
@@ -10,6 +10,7 @@ import { useAuthStore } from '../store/authStore';
 import { useThemeStore } from '../store/themeStore';
 import type { User, UserRole } from '../types';
 import clsx from 'clsx';
+import CredentialPresetsSettings from '../components/settings/CredentialPresetsSettings';
 
 const ROLE_META: Record<UserRole, { label: string; color: string; desc: string }> = {
   admin:    { label: 'Admin',    color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',    desc: 'Full access including user management' },
@@ -41,7 +42,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore();
   const isAdmin = user?.role === 'admin';
   const canWrite = user?.role !== 'viewer';
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'security' | 'certificate' | 'alerting'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'credentials' | 'security' | 'certificate' | 'alerting'>('general');
 
   // ─── App settings ─────────────────────────────────────────────────────────
   const { data: settings = {} } = useQuery({
@@ -279,6 +280,7 @@ export default function SettingsPage() {
   const tabs = [
     { key: 'general' as const, label: 'General', icon: Settings },
     { key: 'users' as const, label: 'Users & Roles', icon: Users },
+    { key: 'credentials' as const, label: 'Device Credentials', icon: KeyRound },
     { key: 'security' as const, label: 'My Password', icon: Key },
     { key: 'certificate' as const, label: 'Certificate', icon: Lock },
     { key: 'alerting' as const, label: 'Alerting', icon: Bell },
@@ -616,6 +618,11 @@ export default function SettingsPage() {
             </div>
           </div>}
         </div>
+      )}
+
+      {/* ── Device Credential Presets ── */}
+      {activeTab === 'credentials' && (
+        <CredentialPresetsSettings isAdmin={isAdmin} />
       )}
 
       {/* ── My Password ── */}

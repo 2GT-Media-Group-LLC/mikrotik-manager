@@ -260,6 +260,24 @@ CREATE TABLE IF NOT EXISTS ap_scan_data (
 CREATE INDEX IF NOT EXISTS idx_ap_scan_device
   ON ap_scan_data(device_id, scanned_at DESC);
 
+-- Device credential presets — reusable API/SSH credential sets, referenced
+-- by name when adding or editing a managed device. Passwords are stored
+-- encrypted at rest (same scheme as devices.api_password_encrypted) so the
+-- plaintext never leaves the backend.
+CREATE TABLE IF NOT EXISTS credential_presets (
+  id                      SERIAL PRIMARY KEY,
+  name                    VARCHAR(100) NOT NULL UNIQUE,
+  api_username            VARCHAR(50)  NOT NULL,
+  api_password_encrypted  TEXT         NOT NULL,
+  api_port                INTEGER,
+  ssh_username            VARCHAR(50),
+  ssh_password_encrypted  TEXT,
+  ssh_port                INTEGER,
+  notes                   TEXT,
+  created_at              TIMESTAMPTZ DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Wireless security profiles (WPA/WPA2/WPA3 config)
 CREATE TABLE IF NOT EXISTS wireless_security_profiles (
   id                    SERIAL PRIMARY KEY,
