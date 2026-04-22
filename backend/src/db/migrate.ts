@@ -320,6 +320,8 @@ const DEFAULT_SETTINGS = [
   { key: 'spectral_scan_interval_hours', value: 24 },
   { key: 'ap_scan_enabled', value: false },
   { key: 'ap_scan_interval_hours', value: 24 },
+  { key: 'login_rate_limit_window_sec', value: 60 },
+  { key: 'login_rate_limit_max', value: 10 },
 ];
 
 export async function runMigrations(): Promise<void> {

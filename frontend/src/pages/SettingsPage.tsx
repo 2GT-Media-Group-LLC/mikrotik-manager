@@ -366,6 +366,38 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Login Rate Limit */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Login Rate Limiting</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
+              Limits login attempts per IP address to protect against brute-force attacks.
+            </p>
+            <div className="space-y-3">
+              {[
+                { key: 'login_rate_limit_max', label: 'Max attempts', unit: 'attempts' },
+                { key: 'login_rate_limit_window_sec', label: 'Time window', unit: 'sec' },
+              ].map(({ key, label, unit }) => (
+                <div key={key} className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 dark:text-slate-300">{label}</div>
+                    <div className="text-xs text-gray-400">{unit}</div>
+                  </div>
+                  <input
+                    type="number"
+                    className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    value={settings[key] as number ?? ''}
+                    onChange={(e) =>
+                      updateSettingsMutation.mutate({ [key]: parseInt(e.target.value) })
+                    }
+                    min="1"
+                    step="1"
+                    disabled={!isAdmin}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* MAC Scan */}
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-1">MAC Scan</h3>

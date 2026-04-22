@@ -45,6 +45,8 @@ import networkServicesRoutes from './routes/networkServices';
 import credentialPresetsRoutes from './routes/credentialPresets';
 
 const app = express();
+// nginx sits exactly one hop in front; trust its X-Forwarded-For so req.ip is the real client IP
+app.set('trust proxy', 1);
 const httpServer = createServer(app);
 const PORT = parseInt(process.env.PORT || '3001', 10);
 

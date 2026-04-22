@@ -49,6 +49,8 @@ export const authApi = {
   me: () => api.get('/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.put('/auth/password', { currentPassword, newPassword }),
+  securityStatus: () =>
+    api.get<{ warnings: string[] }>('/auth/security-status'),
 };
 
 // ─── Devices ──────────────────────────────────────────────────────────────────

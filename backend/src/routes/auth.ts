@@ -2,10 +2,34 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { query, queryOne } from '../config/database';
 import { signToken, requireAuth } from '../middleware/auth';
+import { loginRateLimit } from '../middleware/rateLimitRedis';
 
 const router = Router();
 
-router.post('/login', async (req: Request, res: Response) => {
+const DEFAULT_JWT_SECRET = 'changeme';
+const DEFAULT_ENCRYPTION_KEY = 'defaultkey32byteslongencryptkey!';
+
+router.get('/security-status', requireAuth, async (_req: Request, res: Response) => {
+  const warnings: string[] = [];
+
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === DEFAULT_JWT_SECRET) {
+    warnings.push('jwt_secret_default');
+  }
+  if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY === DEFAULT_ENCRYPTION_KEY) {
+    warnings.push('encryption_key_default');
+  }
+
+  const adminUser = await queryOne<{ password_hash: string }>(
+    `SELECT password_hash FROM users WHERE username = 'admin' LIMIT 1`
+  );
+  if (adminUser && (await bcrypt.compare('admin', adminUser.password_hash))) {
+    warnings.push('admin_password_default');
+  }
+
+  return res.json({ warnings });
+});
+
+router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
