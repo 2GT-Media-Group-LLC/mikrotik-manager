@@ -32,6 +32,7 @@ services:
       INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-metrics}
       JWT_SECRET: ${JWT_SECRET:-changeme_use_a_long_random_secret}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-changeme32byteslongencryptionkey}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost,http://localhost,https://127.0.0.1,http://127.0.0.1}
       PORT: 3001
     depends_on:
       postgres:

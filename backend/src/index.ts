@@ -18,8 +18,14 @@ import { redis } from './config/redis';
 import { runMigrations } from './db/migrate';
 import { errorHandler } from './middleware/errorHandler';
 import { PollerService } from './services/PollerService';
+import {
+  setBulkAddPollerService,
+  startBulkAddWorker,
+  stopBulkAddWorker,
+} from './services/DeviceBulkAddWorker';
 import { verifyToken } from './middleware/auth';
 import { decrypt } from './utils/crypto';
+import { corsMiddlewareOptions, socketIoCorsOptions } from './utils/corsOrigins';
 
 import authRoutes from './routes/auth';
 import devicesRoutes, { setPollerService as setDevicesPoller } from './routes/devices';
@@ -44,7 +50,7 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 
 // ─── Socket.io ────────────────────────────────────────────────────────────────
 const io = new SocketServer(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: socketIoCorsOptions(),
   path: '/socket.io',
 });
 
@@ -168,7 +174,7 @@ terminalNs.on('connection', (socket) => {
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: '*', credentials: true }));
+app.use(cors(corsMiddlewareOptions()));
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -234,9 +240,11 @@ async function start(): Promise<void> {
   const pollerService = new PollerService();
   pollerService.setSocketServer(io);
   setDevicesPoller(pollerService);
+  setBulkAddPollerService(pollerService);
   setTopologyPoller(pollerService);
   setClientsPoller(pollerService);
   await pollerService.start();
+  await startBulkAddWorker();
 
   // Start HTTP server
   httpServer.listen(PORT, '0.0.0.0', () => {
@@ -246,6 +254,7 @@ async function start(): Promise<void> {
   // Graceful shutdown
   const shutdown = async () => {
     console.log('Shutting down...');
+    await stopBulkAddWorker();
     await pollerService.stop();
     await redis.quit().catch(() => {});
     await pool.end();

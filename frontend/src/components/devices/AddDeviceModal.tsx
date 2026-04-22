@@ -7,6 +7,7 @@ import {
   type DuplicateSerialError,
 } from '../../services/api';
 import ConfirmDuplicateModal from './ConfirmDuplicateModal';
+import { parsePort } from '../../utils/parsePort';
 
 interface Props {
   onClose: () => void;
@@ -62,10 +63,10 @@ export default function AddDeviceModal({ onClose, onSuccess, prefill }: Props) {
     return {
       name: form.name,
       ip_address: form.ip_address,
-      api_port: parseInt(form.api_port, 10),
+      api_port: parsePort(form.api_port, 8728),
       api_username: form.api_username,
       api_password: form.api_password,
-      ssh_port: parseInt(form.ssh_port, 10),
+      ssh_port: parsePort(form.ssh_port, 22),
       ssh_username: form.ssh_username || undefined,
       ssh_password: form.ssh_password || undefined,
       device_type: form.device_type as import('../../types').DeviceType,
