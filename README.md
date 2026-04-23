@@ -2,7 +2,7 @@
 
 A self-hosted, full-stack network management platform for MikroTik devices. Monitor, configure, and manage your entire MikroTik infrastructure — routers, switches, and wireless access points — from a single web interface.
 
-![Version](https://img.shields.io/badge/version-0.10.6_Beta-blue)
+![Version](https://img.shields.io/badge/version-0.10.7_Beta-blue)
 ![License](https://img.shields.io/badge/license-AGPLv3-blue)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
@@ -150,6 +150,7 @@ Each service supports multi-device management with conflict detection:
 - Filter by device, type, active status, or search by MAC/IP/hostname
 - Client detail page with connection history and vendor identification
 - Historical client count metrics
+- Configurable list refresh interval (Not Updating / 30 s / 1 min / 3 min) with preference saved per browser
 
 ### Backups
 - Trigger RouterOS backups on demand via SSH

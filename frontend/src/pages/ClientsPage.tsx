@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Search, Wifi, Network, Users, X, Pencil, Trash2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Search, Wifi, Network, Users, X, Pencil, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw } from 'lucide-react';
 import { clientsApi } from '../services/api';
 import type { Client } from '../types';
 import { useCanWrite } from '../hooks/useCanWrite';
@@ -9,6 +9,22 @@ import { useSocket } from '../hooks/useSocket';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
 
+
+const REFRESH_OPTIONS = [
+  { label: 'Not Updating', value: null },
+  { label: '30 seconds',   value: 30_000 },
+  { label: '1 minute',     value: 60_000 },
+  { label: '3 minutes',    value: 180_000 },
+] as const;
+
+const STORAGE_KEY = 'clients-refresh-interval';
+
+function readStoredInterval(): number | null {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw === 'null') return null;
+  const n = Number(raw);
+  return REFRESH_OPTIONS.some((o) => o.value === n) ? n : 30_000;
+}
 
 function ClientModal({
   client,
@@ -113,7 +129,16 @@ export default function ClientsPage() {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [sortCol, setSortCol] = useState<string>('last_seen');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [refreshInterval, setRefreshInterval] = useState<number | null>(readStoredInterval);
+  const refreshIntervalRef = useRef(refreshInterval);
+  refreshIntervalRef.current = refreshInterval;
   const PAGE_SIZE = 50;
+
+  const handleIntervalChange = (val: number | null) => {
+    setRefreshInterval(val);
+    refreshIntervalRef.current = val;
+    localStorage.setItem(STORAGE_KEY, String(val));
+  };
 
   const toggleSort = (col: string) => {
     if (sortCol === col) setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
@@ -126,7 +151,7 @@ export default function ClientsPage() {
       clientsApi
         .list({ search: search || undefined, active: showAll ? undefined : true, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
         .then((r) => r.data),
-    refetchInterval: 30_000,
+    refetchInterval: refreshInterval ?? false,
   });
 
   const [purgeResult, setPurgeResult] = useState('');
@@ -140,7 +165,11 @@ export default function ClientsPage() {
   });
 
   useSocket({
-    'clients:updated': () => queryClient.invalidateQueries({ queryKey: ['clients'] }),
+    'clients:updated': () => {
+      if (refreshIntervalRef.current !== null) {
+        queryClient.invalidateQueries({ queryKey: ['clients'] });
+      }
+    },
   });
 
   const rawClients = data?.clients ?? [];
@@ -227,6 +256,23 @@ export default function ClientsPage() {
         {purgeResult && (
           <span className="text-xs text-green-600 dark:text-green-400">{purgeResult}</span>
         )}
+        <div className="flex items-center gap-1.5 ml-auto">
+          <RefreshCw className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500" />
+          <select
+            value={String(refreshInterval)}
+            onChange={(e) => {
+              const raw = e.target.value;
+              handleIntervalChange(raw === 'null' ? null : Number(raw));
+            }}
+            className="text-sm rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {REFRESH_OPTIONS.map((o) => (
+              <option key={String(o.value)} value={String(o.value)}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {isLoading ? (
