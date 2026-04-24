@@ -23,7 +23,7 @@
     "lucide-react": "^0.309.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.21.1",
+    "react-router-dom": "^7.14.1",
     "recharts": "^2.10.3",
     "socket.io-client": "^4.7.3",
     "tailwind-merge": "^3.5.0",
