@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Router, Users, Bell, GitBranch, HardDrive,
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
-  Server, Globe, Clock, Shield,
+  Server, Globe, Clock, Shield, FileText,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { APP_VERSION } from '../../version';
@@ -40,7 +40,8 @@ const networkServicesSubItems = [
   { to: '/network-services/dhcp',       icon: Server,   label: 'DHCP' },
   { to: '/network-services/dns',        icon: Globe,    label: 'DNS' },
   { to: '/network-services/ntp',        icon: Clock,    label: 'NTP' },
-  { to: '/network-services/wireguard',  icon: Shield,   label: 'WireGuard' },
+  { to: '/network-services/wireguard',  icon: Shield,    label: 'WireGuard' },
+  { to: '/network-services/syslog',     icon: FileText,  label: 'Syslog' },
 ];
 
 interface SidebarProps {

@@ -1,6 +1,6 @@
 {
   "name": "mikrotik-manager-backend",
-  "version": "0.10.7-beta",
+  "version": "0.10.8-beta",
   "description": "Mikrotik Network Management Platform - Backend API",
   "main": "dist/index.js",
   "scripts": {

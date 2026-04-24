@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Server, RefreshCw, CheckCircle, XCircle, MinusCircle,
-  Globe, Clock, Shield, Wifi,
+  Globe, Clock, Shield, Wifi, FileText,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi } from '../services/api';
@@ -16,6 +16,7 @@ interface DeviceServiceRow {
   dns: { allow_remote: boolean; servers: string } | null;
   ntp: { server_enabled: boolean; client_enabled: boolean } | null;
   wireguard: { total: number; running: number } | null;
+  syslog: { remote_count: number } | null;
   error?: string;
 }
 
@@ -58,7 +59,8 @@ export default function NetworkServicesOverviewPage() {
     { key: 'dhcp_v6', label: 'DHCP v6', icon: Server, href: '/network-services/dhcp' },
     { key: 'dns',     label: 'DNS',     icon: Globe,  href: '/network-services/dns' },
     { key: 'ntp',     label: 'NTP',     icon: Clock,  href: '/network-services/ntp' },
-    { key: 'wireguard', label: 'WireGuard', icon: Shield, href: '/network-services/wireguard' },
+    { key: 'wireguard', label: 'WireGuard', icon: Shield,    href: '/network-services/wireguard' },
+    { key: 'syslog',    label: 'Syslog',    icon: FileText,  href: '/network-services/syslog' },
   ] as const;
 
   // KPI: for each service, how many devices have it active?
@@ -72,6 +74,7 @@ export default function NetworkServicesOverviewPage() {
       if (col.key === 'dns') return (svc as { allow_remote: boolean }).allow_remote;
       if (col.key === 'ntp') return (svc as { server_enabled: boolean }).server_enabled || (svc as { client_enabled: boolean }).client_enabled;
       if (col.key === 'wireguard') return (svc as { running: number }).running > 0;
+      if (col.key === 'syslog') return (svc as { remote_count: number }).remote_count > 0;
       return false;
     }).length;
     return { ...col, active, total: data.length };
@@ -100,6 +103,10 @@ export default function NetworkServicesOverviewPage() {
       const s = svc as { total: number; running: number };
       if (s.total === 0) return <ServiceCell active={null} label="None" />;
       return <ServiceCell active={s.running > 0} label={`${s.running}/${s.total} up`} />;
+    }
+    if (key === 'syslog') {
+      const s = svc as { remote_count: number };
+      return <ServiceCell active={s.remote_count > 0} label={s.remote_count > 0 ? `${s.remote_count} remote` : 'No remote'} />;
     }
     return <ServiceCell active={null} />;
   }

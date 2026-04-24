@@ -44,19 +44,21 @@ router.get('/overview', async (_req: Request, res: Response) => {
       const collector = new DeviceCollector(device);
       try {
         await collector.connect();
-        const [dhcpV4, dhcpV6, dns, ntp, wg] = await Promise.allSettled([
+        const [dhcpV4, dhcpV6, dns, ntp, wg, syslogActions] = await Promise.allSettled([
           collector.getDhcpServers('ipv4'),
           collector.getDhcpServers('ipv6'),
           collector.getDnsSettings(),
           collector.getNtpSettings(),
           collector.getWireGuardInterfaces(),
+          collector.getSyslogActions(),
         ]);
 
-        const v4Servers = dhcpV4.status === 'fulfilled' ? dhcpV4.value : [];
-        const v6Servers = dhcpV6.status === 'fulfilled' ? dhcpV6.value : [];
-        const dnsRow    = dns.status === 'fulfilled' ? dns.value : null;
-        const ntpRow    = ntp.status === 'fulfilled' ? ntp.value : null;
-        const wgIfaces  = wg.status === 'fulfilled' ? wg.value : [];
+        const v4Servers    = dhcpV4.status === 'fulfilled' ? dhcpV4.value : [];
+        const v6Servers    = dhcpV6.status === 'fulfilled' ? dhcpV6.value : [];
+        const dnsRow       = dns.status === 'fulfilled' ? dns.value : null;
+        const ntpRow       = ntp.status === 'fulfilled' ? ntp.value : null;
+        const wgIfaces     = wg.status === 'fulfilled' ? wg.value : [];
+        const syslogActs   = syslogActions.status === 'fulfilled' ? syslogActions.value : [];
 
         return {
           id: device.id, name: device.name, ip_address: device.ip_address,
@@ -65,10 +67,11 @@ router.get('/overview', async (_req: Request, res: Response) => {
           dns: dnsRow ? { allow_remote: dnsRow['allow-remote-requests'] === 'yes', servers: dnsRow['servers'] || '' } : null,
           ntp: ntpRow ? { server_enabled: ntpRow.server['enabled'] === 'yes', client_enabled: ntpRow.client['enabled'] === 'yes' } : null,
           wireguard: { total: wgIfaces.length, running: wgIfaces.filter(i => i['running'] === 'true').length },
+          syslog: { remote_count: syslogActs.filter(a => a['type'] === 'remote').length },
         };
       } catch (err) {
         return { id: device.id, name: device.name, ip_address: device.ip_address,
-          dhcp_v4: null, dhcp_v6: null, dns: null, ntp: null, wireguard: null,
+          dhcp_v4: null, dhcp_v6: null, dns: null, ntp: null, wireguard: null, syslog: null,
           error: (err as Error).message };
       } finally {
         collector.disconnect();
@@ -394,6 +397,93 @@ router.delete('/wireguard/peer/:id', requireWrite, async (req: Request, res: Res
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.removeWireGuardPeer(req.params.id);
+    res.json({ success: true });
+  });
+});
+
+// ─── Syslog ───────────────────────────────────────────────────────────────────
+
+// GET /api/network-services/syslog?deviceId=X
+router.get('/syslog', async (req: Request, res: Response) => {
+  const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  await withDevice(deviceId, res, async (collector) => {
+    const [actions, rules] = await Promise.allSettled([
+      collector.getSyslogActions(),
+      collector.getSyslogRules(),
+    ]);
+    res.json({
+      actions: actions.status === 'fulfilled' ? actions.value : [],
+      rules: rules.status === 'fulfilled' ? rules.value : [],
+    });
+  });
+});
+
+// POST /api/network-services/syslog/action?deviceId=X
+router.post('/syslog/action', requireWrite, async (req: Request, res: Response) => {
+  const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  await withDevice(deviceId, res, async (collector) => {
+    await collector.addSyslogAction(req.body);
+    const updated = await collector.getSyslogActions();
+    res.json(updated);
+  });
+});
+
+// PUT /api/network-services/syslog/action/:id?deviceId=X
+router.put('/syslog/action/:id', requireWrite, async (req: Request, res: Response) => {
+  const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  await withDevice(deviceId, res, async (collector) => {
+    await collector.updateSyslogAction(req.params.id, req.body);
+    const updated = await collector.getSyslogActions();
+    res.json(updated);
+  });
+});
+
+// DELETE /api/network-services/syslog/action/:id?deviceId=X
+router.delete('/syslog/action/:id', requireWrite, async (req: Request, res: Response) => {
+  const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  await withDevice(deviceId, res, async (collector) => {
+    await collector.removeSyslogAction(req.params.id);
+    res.json({ success: true });
+  });
+});
+
+// PUT /api/network-services/syslog/rule/toggle?deviceId=X — must be before /:id
+router.put('/syslog/rule/toggle', requireWrite, async (req: Request, res: Response) => {
+  const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  const { ruleId, disabled } = req.body;
+  if (!ruleId) return res.status(400).json({ error: 'ruleId is required' });
+  if (typeof disabled !== 'boolean') return res.status(400).json({ error: 'disabled (boolean) is required' });
+  await withDevice(deviceId, res, async (collector) => {
+    await collector.toggleSyslogRule(ruleId, disabled);
+    res.json({ success: true });
+  });
+});
+
+// POST /api/network-services/syslog/rule?deviceId=X
+router.post('/syslog/rule', requireWrite, async (req: Request, res: Response) => {
+  const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  await withDevice(deviceId, res, async (collector) => {
+    await collector.addSyslogRule(req.body);
+    const updated = await collector.getSyslogRules();
+    res.json(updated);
+  });
+});
+
+// PUT /api/network-services/syslog/rule/:id?deviceId=X
+router.put('/syslog/rule/:id', requireWrite, async (req: Request, res: Response) => {
+  const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  await withDevice(deviceId, res, async (collector) => {
+    await collector.updateSyslogRule(req.params.id, req.body);
+    const updated = await collector.getSyslogRules();
+    res.json(updated);
+  });
+});
+
+// DELETE /api/network-services/syslog/rule/:id?deviceId=X
+router.delete('/syslog/rule/:id', requireWrite, async (req: Request, res: Response) => {
+  const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  await withDevice(deviceId, res, async (collector) => {
+    await collector.removeSyslogRule(req.params.id);
     res.json({ success: true });
   });
 });

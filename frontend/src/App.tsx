@@ -23,6 +23,7 @@ import NetworkServicesDHCPPage from './pages/NetworkServicesDHCPPage';
 import NetworkServicesDNSPage from './pages/NetworkServicesDNSPage';
 import NetworkServicesNTPPage from './pages/NetworkServicesNTPPage';
 import NetworkServicesWireGuardPage from './pages/NetworkServicesWireGuardPage';
+import NetworkServicesSyslogPage from './pages/NetworkServicesSyslogPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="network-services/dns" element={<NetworkServicesDNSPage />} />
           <Route path="network-services/ntp" element={<NetworkServicesNTPPage />} />
           <Route path="network-services/wireguard" element={<NetworkServicesWireGuardPage />} />
+          <Route path="network-services/syslog" element={<NetworkServicesSyslogPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

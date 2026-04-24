@@ -2476,6 +2476,44 @@ export class DeviceCollector {
     }
   }
 
+  // Syslog (logging actions + rules) ───────────────────────────────────────────
+
+  async getSyslogActions(): Promise<Record<string, string>[]> {
+    return this.client.execute('/system/logging/action/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+  }
+
+  async addSyslogAction(params: Record<string, string>): Promise<void> {
+    await this.client.execute('/system/logging/action/add', params);
+  }
+
+  async updateSyslogAction(id: string, params: Record<string, string>): Promise<void> {
+    await this.client.execute('/system/logging/action/set', { '.id': id, ...params });
+  }
+
+  async removeSyslogAction(id: string): Promise<void> {
+    await this.client.execute('/system/logging/action/remove', { '.id': id });
+  }
+
+  async getSyslogRules(): Promise<Record<string, string>[]> {
+    return this.client.execute('/system/logging/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+  }
+
+  async addSyslogRule(params: Record<string, string>): Promise<void> {
+    await this.client.execute('/system/logging/add', params);
+  }
+
+  async updateSyslogRule(id: string, params: Record<string, string>): Promise<void> {
+    await this.client.execute('/system/logging/set', { '.id': id, ...params });
+  }
+
+  async removeSyslogRule(id: string): Promise<void> {
+    await this.client.execute('/system/logging/remove', { '.id': id });
+  }
+
+  async toggleSyslogRule(id: string, disabled: boolean): Promise<void> {
+    await this.client.execute('/system/logging/set', { '.id': id, 'disabled': disabled ? 'yes' : 'no' });
+  }
+
   // WireGuard ───────────────────────────────────────────────────────────────────
 
   async getWireGuardInterfaces(): Promise<Record<string, string>[]> {

@@ -684,6 +684,24 @@ export const networkServicesApi = {
   }) =>
     api.put<{ server: NS; client: NS }>('/network-services/ntp', settings, { params: { deviceId } }),
 
+  // ── Syslog ────────────────────────────────────────────────────────────────
+  getSyslog: (deviceId: number) =>
+    api.get<{ actions: NS[]; rules: NS[] }>('/network-services/syslog', { params: { deviceId } }),
+  addSyslogAction: (deviceId: number, body: NS) =>
+    api.post<NS[]>('/network-services/syslog/action', body, { params: { deviceId } }),
+  updateSyslogAction: (deviceId: number, id: string, body: NS) =>
+    api.put<NS[]>(`/network-services/syslog/action/${encodeURIComponent(id)}`, body, { params: { deviceId } }),
+  deleteSyslogAction: (deviceId: number, id: string) =>
+    api.delete(`/network-services/syslog/action/${encodeURIComponent(id)}`, { params: { deviceId } }),
+  addSyslogRule: (deviceId: number, body: NS) =>
+    api.post<NS[]>('/network-services/syslog/rule', body, { params: { deviceId } }),
+  updateSyslogRule: (deviceId: number, id: string, body: NS) =>
+    api.put<NS[]>(`/network-services/syslog/rule/${encodeURIComponent(id)}`, body, { params: { deviceId } }),
+  deleteSyslogRule: (deviceId: number, id: string) =>
+    api.delete(`/network-services/syslog/rule/${encodeURIComponent(id)}`, { params: { deviceId } }),
+  toggleSyslogRule: (deviceId: number, ruleId: string, disabled: boolean) =>
+    api.put('/network-services/syslog/rule/toggle', { ruleId, disabled }, { params: { deviceId } }),
+
   // ── WireGuard ─────────────────────────────────────────────────────────────
   getWireGuard: (deviceId: number) =>
     api.get<{ interfaces: NS[]; peers: NS[] }>('/network-services/wireguard', { params: { deviceId } }),
