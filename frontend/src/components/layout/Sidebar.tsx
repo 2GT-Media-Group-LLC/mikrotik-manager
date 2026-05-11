@@ -86,6 +86,34 @@ function NavItem({
   );
 }
 
+function GroupHeader({
+  icon: Icon,
+  label,
+  isActive,
+  isOpen,
+  onToggle,
+}: {
+  icon: React.ElementType;
+  label: string;
+  isActive: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className={clsx(
+        'w-full flex items-center gap-[10px] px-[10px] py-[7px] rounded-[6px] text-[13px] font-medium transition-colors duration-150 border-l-2 border-transparent',
+        isActive ? 'text-accent' : 'text-ink-2 hover:bg-surface-3 hover:text-ink'
+      )}
+    >
+      <Icon className="w-[15px] h-[15px] flex-shrink-0" />
+      <span className="flex-1 text-left">{label}</span>
+      <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', isOpen ? 'rotate-0' : '-rotate-90')} />
+    </button>
+  );
+}
+
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
@@ -123,33 +151,6 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const handleNavClick = () => {
     onMobileClose();
   };
-
-  // Group header button (Switches / Routers / Wireless / Network Services)
-  const GroupHeader = ({
-    icon: Icon,
-    label,
-    isActive,
-    isOpen,
-    onToggle,
-  }: {
-    icon: React.ElementType;
-    label: string;
-    isActive: boolean;
-    isOpen: boolean;
-    onToggle: () => void;
-  }) => (
-    <button
-      onClick={onToggle}
-      className={clsx(
-        'w-full flex items-center gap-[10px] px-[10px] py-[7px] rounded-[6px] text-[13px] font-medium transition-colors duration-150 border-l-2 border-transparent',
-        isActive ? 'text-accent' : 'text-ink-2 hover:bg-surface-3 hover:text-ink'
-      )}
-    >
-      <Icon className="w-[15px] h-[15px] flex-shrink-0" />
-      <span className="flex-1 text-left">{label}</span>
-      <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', isOpen ? 'rotate-0' : '-rotate-90')} />
-    </button>
-  );
 
   return (
     <aside

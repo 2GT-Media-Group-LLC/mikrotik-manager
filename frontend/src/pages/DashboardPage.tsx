@@ -274,14 +274,13 @@ function SummaryView(props: Record<string, any>) {
     router:      { label: 'Routers',     color: 'var(--violet)' },
   };
 
-  const chartDomain = useMemo<[number, number]>(
-    () => {
-      const ranges: Record<string, number> = { '1h': 1, '6h': 6, '24h': 24, '7d': 168 };
-      const hrs = ranges[chartRange] ?? 24;
-      return [Date.now() - hrs * 60 * 60 * 1000, Date.now()];
-    },
-    [chartRange, clientsOverTime] // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  const chartDomain: [number, number] = (() => {
+    const ranges: Record<string, number> = { '1h': 1, '6h': 6, '24h': 24, '7d': 168 };
+    const hrs = ranges[chartRange] ?? 24;
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    return [now - hrs * 60 * 60 * 1000, now];
+  })();
 
   return (
     <div className="space-y-4">

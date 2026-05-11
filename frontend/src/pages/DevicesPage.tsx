@@ -161,14 +161,15 @@ export default function DevicesPage() {
       enabled: d.status === 'online',
     })),
   });
-  const cpuHistories = useMemo(() => {
-    const map: Record<number, number[]> = {};
-    devices.forEach((d, i) => {
-      const pts = cpuHistoryResults[i]?.data ?? [];
-      map[d.id] = pts.map((p: { cpu_load?: number }) => p.cpu_load ?? 0).filter((v: number) => v > 0);
-    });
-    return map;
-  }, [devices, cpuHistoryResults]);
+  const cpuHistories = useMemo(
+    () => Object.fromEntries(
+      devices.map((d, i) => {
+        const pts = cpuHistoryResults[i]?.data ?? [];
+        return [d.id, pts.map((p: { cpu_load?: number }) => p.cpu_load ?? 0).filter((v: number) => v > 0)];
+      })
+    ) as Record<number, number[]>,
+    [devices, cpuHistoryResults],
+  );
 
   const filtered = useMemo(() => {
     const base = devices.filter(d => {
@@ -205,7 +206,7 @@ export default function DevicesPage() {
       return deviceSort.dir === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [devices, search, deviceSort]);
+  }, [devices, search, statusFilter, typeFilter, deviceSort]);
 
   const discoveredList = discovered as DiscoveredDevice[];
   const duplicateCount = useMemo(
