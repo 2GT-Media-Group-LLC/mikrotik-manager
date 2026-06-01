@@ -45,9 +45,9 @@ const deviceIcon: Record<string, string> = {
 function capsLabel(caps: string | undefined): string {
   if (!caps) return '';
   const c = caps.toLowerCase();
-  if (c.includes('bridge'))   return 'Switch';
-  if (c.includes('router'))   return 'Router';
-  if (c.includes('wlan-ap'))  return 'AP';
+  if (c.includes('bridge')) return 'Switch';
+  if (c.includes('router')) return 'Router';
+  if (c.includes('wlan-ap')) return 'AP';
   if (c.includes('telephone')) return 'Phone';
   return '';
 }
@@ -58,8 +58,8 @@ const handleStyleVisible = { width: 12, height: 12, background: '#3b82f6', borde
 // ─── Node components ──────────────────────────────────────────────────────────
 
 function DeviceNode({ data }: { data: Record<string, unknown> }) {
-  const device  = data as unknown as TopologyDevice & { isRootBridge: boolean; connectMode: boolean; orphan: boolean };
-  const hStyle  = device.connectMode ? handleStyleVisible : handleStyle;
+  const device = data as unknown as TopologyDevice & { isRootBridge: boolean; connectMode: boolean; orphan: boolean };
+  const hStyle = device.connectMode ? handleStyleVisible : handleStyle;
   return (
     <div
       className={clsx('card px-3 py-2 min-w-[148px] text-xs shadow-md select-none', device.orphan && 'opacity-60')}
@@ -68,10 +68,10 @@ function DeviceNode({ data }: { data: Record<string, unknown> }) {
         borderWidth: device.isRootBridge ? 2 : 1,
       }}
     >
-      <Handle type="target" position={Position.Top}    isConnectable={!!device.connectMode} style={hStyle} />
-      <Handle type="target" position={Position.Left}   isConnectable={!!device.connectMode} style={hStyle} />
+      <Handle type="target" position={Position.Top} isConnectable={!!device.connectMode} style={hStyle} />
+      <Handle type="target" position={Position.Left} isConnectable={!!device.connectMode} style={hStyle} />
       <Handle type="source" position={Position.Bottom} isConnectable={!!device.connectMode} style={hStyle} />
-      <Handle type="source" position={Position.Right}  isConnectable={!!device.connectMode} style={hStyle} />
+      <Handle type="source" position={Position.Right} isConnectable={!!device.connectMode} style={hStyle} />
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-base leading-none">{deviceIcon[device.device_type] || '◈'}</span>
         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: statusColor[device.status] ?? '#94a3b8' }} />
@@ -90,10 +90,10 @@ function ExternalNode({ data }: { data: Record<string, unknown> }) {
   if (node.caps === 'segment') {
     return (
       <div className="px-3 py-2 min-w-[140px] text-xs rounded-lg bg-amber-50 dark:bg-amber-900/20 shadow-sm select-none" style={{ border: '2px dashed #f59e0b' }}>
-        <Handle type="target" position={Position.Top}    isConnectable={false} style={handleStyle} />
-        <Handle type="target" position={Position.Left}   isConnectable={false} style={handleStyle} />
+        <Handle type="target" position={Position.Top} isConnectable={false} style={handleStyle} />
+        <Handle type="target" position={Position.Left} isConnectable={false} style={handleStyle} />
         <Handle type="source" position={Position.Bottom} isConnectable={false} style={handleStyle} />
-        <Handle type="source" position={Position.Right}  isConnectable={false} style={handleStyle} />
+        <Handle type="source" position={Position.Right} isConnectable={false} style={handleStyle} />
         <div className="font-semibold text-amber-700 dark:text-amber-400 mb-0.5">⊕ Shared Segment</div>
         {node.platform && <div className="text-amber-600 dark:text-amber-500">{node.platform}</div>}
         <div className="text-amber-400 dark:text-amber-600 mt-0.5 text-[10px]">Unmanaged L2 switch / hub</div>
@@ -103,10 +103,10 @@ function ExternalNode({ data }: { data: Record<string, unknown> }) {
   const cl = capsLabel(node.caps);
   return (
     <div className="px-3 py-2 min-w-[130px] text-xs rounded-lg bg-gray-100 dark:bg-slate-700/60 shadow-sm select-none" style={{ border: '1.5px dashed #94a3b8' }}>
-      <Handle type="target" position={Position.Top}    isConnectable={false} style={handleStyle} />
-      <Handle type="target" position={Position.Left}   isConnectable={false} style={handleStyle} />
+      <Handle type="target" position={Position.Top} isConnectable={false} style={handleStyle} />
+      <Handle type="target" position={Position.Left} isConnectable={false} style={handleStyle} />
       <Handle type="source" position={Position.Bottom} isConnectable={false} style={handleStyle} />
-      <Handle type="source" position={Position.Right}  isConnectable={false} style={handleStyle} />
+      <Handle type="source" position={Position.Right} isConnectable={false} style={handleStyle} />
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-base leading-none text-gray-400">◌</span>
         <span className="font-semibold truncate text-gray-600 dark:text-slate-300">{node.name}{cl ? ` (${cl})` : ''}</span>
@@ -214,14 +214,14 @@ function buildGraph(
   onDeleteManual: (edgeId: string) => void,
 ): { nodes: Node[]; edges: Edge[] } {
 
-  const manualLinks  = links.filter((l) => l.link_type === 'manual');
-  const activeLinks  = links.filter((l) => l.link_type !== 'manual');
-  const allExtNodes  = externalNodes;
+  const manualLinks = links.filter((l) => l.link_type === 'manual');
+  const activeLinks = links.filter((l) => l.link_type !== 'manual');
+  const allExtNodes = externalNodes;
 
   // ── Build adjacency (for layout) ────────────────────────────────────────────
   const deviceIds = new Set(devices.map((d) => String(d.id)));
   const adj = new Map<string, Set<string>>();
-  for (const d of devices)    adj.set(String(d.id), new Set());
+  for (const d of devices) adj.set(String(d.id), new Set());
   for (const e of allExtNodes) adj.set(e.id, new Set());
 
   const linkToExtId = new Map<number, string>();
@@ -234,8 +234,8 @@ function buildGraph(
     } else {
       const ext = allExtNodes.find(
         (e) => (link.neighbor_address && e.address === link.neighbor_address) ||
-               (link.neighbor_mac && e.mac === link.neighbor_mac) ||
-               (!link.neighbor_address && !link.neighbor_mac && link.neighbor_identity && e.name === link.neighbor_identity)
+          (link.neighbor_mac && e.mac === link.neighbor_mac) ||
+          (!link.neighbor_address && !link.neighbor_mac && link.neighbor_identity && e.name === link.neighbor_identity)
       );
       if (ext) { dst = ext.id; linkToExtId.set(link.id, ext.id); }
     }
@@ -299,7 +299,7 @@ function buildGraph(
     components.filter((c) => c.length === 1 && deviceIds.has(c[0])).map((c) => c[0])
   );
   const connectedComponents = components.filter((c) => c.length > 1 || !deviceIds.has(c[0]));
-  const orphanComponents    = components.filter((c) => c.length === 1 && deviceIds.has(c[0]));
+  const orphanComponents = components.filter((c) => c.length === 1 && deviceIds.has(c[0]));
 
   // ── Tidy-tree layout ─────────────────────────────────────────────────────────
   const positions = new Map<string, { x: number; y: number }>();
@@ -309,9 +309,9 @@ function buildGraph(
   for (const comp of connectedComponents) {
     if (!comp.length) continue;
     const compSet = new Set(comp);
-    const rootId  = pickRoot(comp);
+    const rootId = pickRoot(comp);
 
-    const depth    = new Map<string, number>();
+    const depth = new Map<string, number>();
     const children = new Map<string, string[]>();
     const bfs = [rootId];
     depth.set(rootId, 0);
@@ -373,7 +373,7 @@ function buildGraph(
 
   // ── Orphan row at the bottom ─────────────────────────────────────────────────
   const orphanY = (globalMaxDepth + 1) * (NODE_H + V_GAP) + ORPHAN_ROW_GAP;
-  let orphanX   = 0;
+  let orphanX = 0;
   for (const [oc] of orphanComponents.map((c) => [c[0]])) {
     positions.set(oc, { x: orphanX, y: orphanY });
     orphanX += NODE_SLOT;
@@ -419,13 +419,13 @@ function buildGraph(
     seen.add(edgeKey);
 
     let stroke = '#94a3b8', strokeDasharray: string | undefined, animated = false;
-    if (link.stp_role === 'root')      { stroke = '#3b82f6'; animated = true; }
+    if (link.stp_role === 'root') { stroke = '#3b82f6'; animated = true; }
     else if (link.stp_role === 'designated') { stroke = '#22c55e'; }
     else if (link.stp_role === 'alternate' || link.stp_role === 'backup') {
       stroke = '#ef4444'; strokeDasharray = '6,3';
     }
 
-    const stpLabel  = link.stp_role ? ` [${link.stp_role}]` : '';
+    const stpLabel = link.stp_role ? ` [${link.stp_role}]` : '';
     const portLabel = link.from_interface
       ? (link.to_interface ? `${link.from_interface} ↔ ${link.to_interface}` : link.from_interface)
       : (link.to_interface ?? '');
@@ -471,7 +471,7 @@ function buildGraph(
     // Find the real manual link id (positive int) for deletion
     const realId = manualLinkIds.find(
       (m) => (m.from_device_id === ml.from_device_id && m.to_device_id === ml.to_device_id) ||
-             (m.from_device_id === ml.to_device_id  && m.to_device_id === ml.from_device_id)
+        (m.from_device_id === ml.to_device_id && m.to_device_id === ml.from_device_id)
     )?.id;
 
     edges.push({
@@ -538,9 +538,39 @@ export default function TopologyPage() {
   }, [data, connectMode, handleDeleteManual]);
 
   useEffect(() => {
-    setNodes(graph.nodes);
-    setEdges(graph.edges);
-  }, [graph, setNodes, setEdges]);
+    // Avoid triggering repeated updates/unbounded render loop by only
+    // applying the new nodes/edges when they actually differ from the
+    // current state. React Flow mutates node objects internally which can
+    // otherwise cause identity changes on every render.
+    setNodes((curr) => {
+      if (curr.length === graph.nodes.length) {
+        let same = true;
+        for (let i = 0; i < curr.length; i++) {
+          const a = curr[i];
+          const b = graph.nodes[i];
+          if (a.id !== b.id) { same = false; break; }
+          const ax = (a.position as any)?.x ?? (a.positionAbsolute as any)?.x;
+          const ay = (a.position as any)?.y ?? (a.positionAbsolute as any)?.y;
+          const bx = (b.position as any)?.x ?? (b.positionAbsolute as any)?.x;
+          const by = (b.position as any)?.y ?? (b.positionAbsolute as any)?.y;
+          if (ax !== bx || ay !== by) { same = false; break; }
+        }
+        if (same) return curr;
+      }
+      return graph.nodes;
+    });
+
+    setEdges((curr) => {
+      if (curr.length === graph.edges.length) {
+        let same = true;
+        for (let i = 0; i < curr.length; i++) {
+          if (curr[i].id !== graph.edges[i].id) { same = false; break; }
+        }
+        if (same) return curr;
+      }
+      return graph.edges;
+    });
+  }, [graph]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -568,16 +598,16 @@ export default function TopologyPage() {
   }
 
   const hasData = (data?.devices?.length ?? 0) > 0;
-  const hasStp  = (data?.links as TopologyLink[])?.some((l) => l.stp_role);
-  const links   = (data?.links as TopologyLink[]) ?? [];
+  const hasStp = (data?.links as TopologyLink[])?.some((l) => l.stp_role);
+  const links = (data?.links as TopologyLink[]) ?? [];
   const orphanCount = (data?.devices?.length ?? 0) > 0
     ? (data!.devices as TopologyDevice[]).filter((d) => {
-        const id = String(d.id);
-        return !links.some((l) => String(l.from_device_id) === id || String(l.to_device_id) === id) &&
-               !((data!.manualLinkIds ?? []) as { from_device_id: number; to_device_id: number }[]).some(
-                 (m) => m.from_device_id === d.id || m.to_device_id === d.id
-               );
-      }).length
+      const id = String(d.id);
+      return !links.some((l) => String(l.from_device_id) === id || String(l.to_device_id) === id) &&
+        !((data!.manualLinkIds ?? []) as { from_device_id: number; to_device_id: number }[]).some(
+          (m) => m.from_device_id === d.id || m.to_device_id === d.id
+        );
+    }).length
     : 0;
 
   return (
@@ -752,9 +782,9 @@ export default function TopologyPage() {
                       {link.link_type ? (
                         <span className={clsx('px-1.5 py-0.5 rounded font-medium uppercase',
                           link.link_type === 'lldp' && 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-                          link.link_type === 'cdp'  && 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+                          link.link_type === 'cdp' && 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
                           link.link_type === 'mndp' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-                          !['lldp','cdp','mndp'].includes(link.link_type) && 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300',
+                          !['lldp', 'cdp', 'mndp'].includes(link.link_type) && 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300',
                         )}>
                           {link.link_type}
                         </span>
