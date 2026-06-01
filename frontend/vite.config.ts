@@ -27,10 +27,15 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          charts: ['recharts'],
-          flow: ['@xyflow/react'],
+        // Vite 8 (rolldown) requires manualChunks as a function, not an object.
+        // Order matters: match the more specific packages (@xyflow/react, recharts)
+        // before the generic react match, otherwise '@xyflow/react' — which contains
+        // the substring 'react' — would be pulled into the vendor chunk.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('@xyflow/react')) return 'flow';
+          if (id.includes('recharts')) return 'charts';
+          if (/[\\/]node_modules[\\/]react(-dom|-router|-router-dom)?[\\/]/.test(id)) return 'vendor';
         },
       },
     },
