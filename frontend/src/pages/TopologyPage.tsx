@@ -549,10 +549,10 @@ export default function TopologyPage() {
           const a = curr[i];
           const b = graph.nodes[i];
           if (a.id !== b.id) { same = false; break; }
-          const ax = (a.position as any)?.x ?? (a.positionAbsolute as any)?.x;
-          const ay = (a.position as any)?.y ?? (a.positionAbsolute as any)?.y;
-          const bx = (b.position as any)?.x ?? (b.positionAbsolute as any)?.x;
-          const by = (b.position as any)?.y ?? (b.positionAbsolute as any)?.y;
+          const ax = (a.position as any)?.x ?? ((a as any).positionAbsolute as any)?.x;
+          const ay = (a.position as any)?.y ?? ((a as any).positionAbsolute as any)?.y;
+          const bx = (b.position as any)?.x ?? ((b as any).positionAbsolute as any)?.x;
+          const by = (b.position as any)?.y ?? ((b as any).positionAbsolute as any)?.y;
           if (ax !== bx || ay !== by) { same = false; break; }
         }
         if (same) return curr;
