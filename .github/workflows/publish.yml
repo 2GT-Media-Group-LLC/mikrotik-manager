@@ -9,8 +9,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend
-  NGINX_IMAGE: ghcr.io/2gt-media-group-llc/mikrotik-manager-nginx
+  BACKEND_IMAGE: ghcr.io/bencos17/mikrotik-manager-backend
+  NGINX_IMAGE: ghcr.io/bencos17/mikrotik-manager-nginx
 
 jobs:
   publish-backend:
