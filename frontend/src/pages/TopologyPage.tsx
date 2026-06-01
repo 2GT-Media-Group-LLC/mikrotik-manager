@@ -516,10 +516,17 @@ export default function TopologyPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['topology'] }),
   });
 
+  // Depend on the stable `.mutate` function rather than the whole mutation object.
+  // TanStack Query recreates the mutation result object on every render but keeps
+  // `.mutate` referentially stable, so this keeps handleDeleteManual stable too.
+  // Depending on the whole object would make handleDeleteManual — and therefore the
+  // `graph` memo and the node/edge sync effect below — re-run on every render,
+  // causing an infinite setNodes/setEdges loop (React error #185).
+  const deleteManualLinkMutate = deleteManualLinkMutation.mutate;
   const handleDeleteManual = useCallback((edgeId: string) => {
     const id = parseInt(edgeId);
-    if (!isNaN(id)) deleteManualLinkMutation.mutate(id);
-  }, [deleteManualLinkMutation]);
+    if (!isNaN(id)) deleteManualLinkMutate(id);
+  }, [deleteManualLinkMutate]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
