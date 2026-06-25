@@ -20,7 +20,7 @@
     "clsx": "^2.1.0",
     "date-fns": "^3.2.0",
     "leaflet": "^1.9.4",
-    "lucide-react": "^1.17.0",
+    "lucide-react": "^1.21.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.5",
     "react-router-dom": "^6.21.1",
