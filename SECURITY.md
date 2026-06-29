@@ -4,7 +4,7 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.10.x (current beta) | Yes |
+| 0.16.x (current beta) | Yes |
 | Earlier versions | No |
 
 MikroTik Manager is currently in beta. Security fixes will be applied to the latest release only.
