@@ -15,7 +15,7 @@
     "@types/leaflet": "^1.9.21",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "@xyflow/react": "^12.10.2",
+    "@xyflow/react": "^12.11.1",
     "axios": "^1.18.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.2.0",
