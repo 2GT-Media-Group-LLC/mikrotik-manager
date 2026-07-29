@@ -2,6 +2,40 @@ import { Request, Response, NextFunction } from 'express';
 import { redis } from '../config/redis';
 import { query } from '../config/database';
 
+// Per-process sliding-window fallback used ONLY when Redis is unavailable, so
+// throttling degrades gracefully (esp. for /login) instead of failing fully
+// open exactly when infrastructure is under stress. It's best-effort and not
+// shared across replicas, but far better than no limit during a Redis outage.
+const memBuckets = new Map<string, number[]>();
+let lastSweep = Date.now();
+
+// The Redis client uses maxRetriesPerRequest:null, so commands QUEUE (hang)
+// rather than throw when Redis is down. Bound each call so an outage fails fast
+// into the in-memory fallback instead of stalling the request.
+const REDIS_OP_TIMEOUT_MS = 800;
+function withTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('redis timeout')), REDIS_OP_TIMEOUT_MS)),
+  ]);
+}
+
+function memoryLimitExceeded(key: string, windowSec: number, max: number): boolean {
+  const now = Date.now();
+  const windowMs = windowSec * 1000;
+  if (now - lastSweep > 60_000) {
+    for (const [k, ts] of memBuckets) {
+      const kept = ts.filter((t) => now - t < windowMs);
+      if (kept.length) memBuckets.set(k, kept); else memBuckets.delete(k);
+    }
+    lastSweep = now;
+  }
+  const recent = (memBuckets.get(key) ?? []).filter((t) => now - t < windowMs);
+  recent.push(now);
+  memBuckets.set(key, recent);
+  return recent.length > max;
+}
+
 /**
  * Fixed-window rate limit using Redis INCR (shared across API replicas).
  */
@@ -21,19 +55,24 @@ export function rateLimitRedis(options: {
     const uid = req.user?.userId;
     const key = `rl:${keyPrefix}:${uid != null ? `u:${uid}` : `ip:${req.ip || 'unknown'}`}`;
     try {
-      const n = await redis.incr(key);
+      const n = await withTimeout(redis.incr(key));
       if (n === 1) {
-        await redis.expire(key, windowSec);
+        await withTimeout(redis.expire(key, windowSec));
       }
       if (n > max) {
-        const ttl = await redis.ttl(key);
+        const ttl = await withTimeout(redis.ttl(key));
         const retryAfterSec = Math.max(1, ttl > 0 ? ttl : windowSec);
         res.setHeader('Retry-After', String(retryAfterSec));
         res.status(429).json({ error: 'Too many requests. Please try again later.' });
         return;
       }
     } catch (e) {
-      console.warn('[rateLimitRedis] Redis error, allowing request:', (e as Error).message);
+      console.warn('[rateLimitRedis] Redis error, using in-memory fallback:', (e as Error).message);
+      if (memoryLimitExceeded(key, windowSec, max)) {
+        res.setHeader('Retry-After', String(windowSec));
+        res.status(429).json({ error: 'Too many requests. Please try again later.' });
+        return;
+      }
     }
     next();
   };
@@ -68,21 +107,28 @@ export function loginRateLimit(): (req: Request, res: Response, next: NextFuncti
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const ip = req.ip || 'unknown';
     const key = `rl:login:ip:${ip}`;
+    // Resolved outside the try so the fallback can reuse the limits on Redis failure
+    // (getLoginLimits has its own catch and never throws).
+    const { windowSec, max } = await getLoginLimits();
     try {
-      const { windowSec, max } = await getLoginLimits();
-      const n = await redis.incr(key);
+      const n = await withTimeout(redis.incr(key));
       if (n === 1) {
-        await redis.expire(key, windowSec);
+        await withTimeout(redis.expire(key, windowSec));
       }
       if (n > max) {
-        const ttl = await redis.ttl(key);
+        const ttl = await withTimeout(redis.ttl(key));
         const retryAfterSec = Math.max(1, ttl > 0 ? ttl : windowSec);
         res.setHeader('Retry-After', String(retryAfterSec));
         res.status(429).json({ error: 'Too many login attempts. Please try again later.' });
         return;
       }
     } catch (e) {
-      console.warn('[loginRateLimit] Redis error, allowing request:', (e as Error).message);
+      console.warn('[loginRateLimit] Redis error, using in-memory fallback:', (e as Error).message);
+      if (memoryLimitExceeded(key, windowSec, max)) {
+        res.setHeader('Retry-After', String(windowSec));
+        res.status(429).json({ error: 'Too many login attempts. Please try again later.' });
+        return;
+      }
     }
     next();
   };

@@ -54,8 +54,8 @@ export const authApi = {
     ),
   totpVerify: (totp_token: string, code: string) =>
     api.post<{ token: string; user: import('../types').User }>('/auth/totp/verify', { totp_token, code }),
-  totpSetup: () =>
-    api.post<{ secret: string; uri: string; qr: string }>('/auth/totp/setup'),
+  totpSetup: (password: string) =>
+    api.post<{ secret: string; uri: string; qr: string }>('/auth/totp/setup', { password }),
   totpConfirm: (code: string) =>
     api.post<{ ok: boolean }>('/auth/totp/confirm', { code }),
   totpDisable: (password: string) =>

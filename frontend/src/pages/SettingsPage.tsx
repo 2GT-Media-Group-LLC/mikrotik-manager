@@ -137,6 +137,7 @@ export default function SettingsPage() {
   // ─── TOTP / 2FA ────────────────────────────────────────────────────────────
   const [totpSetupData, setTotpSetupData] = useState<{ secret: string; uri: string; qr: string } | null>(null);
   const [totpConfirmCode, setTotpConfirmCode] = useState('');
+  const [totpSetupPassword, setTotpSetupPassword] = useState('');
   const [totpDisablePassword, setTotpDisablePassword] = useState('');
   const [totpMsg, setTotpMsg] = useState('');
   const [totpError, setTotpError] = useState('');
@@ -148,8 +149,8 @@ export default function SettingsPage() {
   });
 
   const startTotpSetupMutation = useMutation({
-    mutationFn: () => authApi.totpSetup(),
-    onSuccess: (res) => { setTotpSetupData(res.data); setTotpConfirmCode(''); setTotpError(''); },
+    mutationFn: () => authApi.totpSetup(totpSetupPassword),
+    onSuccess: (res) => { setTotpSetupData(res.data); setTotpConfirmCode(''); setTotpSetupPassword(''); setTotpError(''); },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setTotpError(msg || 'Failed to start TOTP setup');
@@ -1157,14 +1158,26 @@ export default function SettingsPage() {
               </div>
             ) : (
               /* Not enabled, not in setup */
+              <div className="space-y-3">
+                <div>
+                  <label className="label">Confirm your password to set up 2FA</label>
+                  <input
+                    type="password"
+                    className="input max-w-xs"
+                    value={totpSetupPassword}
+                    onChange={(e) => setTotpSetupPassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                </div>
               <button
                 onClick={() => startTotpSetupMutation.mutate()}
-                disabled={startTotpSetupMutation.isPending}
+                disabled={!totpSetupPassword || startTotpSetupMutation.isPending}
                 className="btn-primary"
               >
                 <ShieldCheck className="w-4 h-4" />
                 Set up 2FA
               </button>
+              </div>
             )}
           </div>
         </div>

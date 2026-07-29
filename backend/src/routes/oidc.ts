@@ -86,8 +86,15 @@ router.put('/config', requireAuth, requireAdmin, async (req: Request, res: Respo
   const body = req.body as Partial<OidcConfig> & { client_secret?: string };
 
   const validRole = (r: unknown): r is AppRole => APP_ROLES.includes(r as AppRole);
-  if (body.default_role !== undefined && !validRole(body.default_role)) {
-    return res.status(400).json({ error: 'Invalid default_role' });
+  if (body.default_role !== undefined) {
+    if (!validRole(body.default_role)) {
+      return res.status(400).json({ error: 'Invalid default_role' });
+    }
+    // Auto-provisioning strangers straight to admin is almost never intended —
+    // admin must be granted via an explicit group mapping, not the fallback.
+    if (body.default_role === 'admin') {
+      return res.status(400).json({ error: 'default_role cannot be admin — grant admin via an explicit group → role mapping instead' });
+    }
   }
   if (body.group_role_map !== undefined) {
     if (typeof body.group_role_map !== 'object' || body.group_role_map === null) {

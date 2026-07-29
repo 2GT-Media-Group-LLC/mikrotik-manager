@@ -99,8 +99,24 @@ router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: '
   return res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
 });
 
-// Generate a new TOTP secret + QR code for the current user (does not enable yet)
+// Generate a new TOTP secret + QR code for the current user (does not enable yet).
+// Requires the current password so a hijacked session can't enroll 2FA and lock
+// the legitimate user out.
 router.post('/totp/setup', requireAuth, async (req: Request, res: Response) => {
+  const { password } = req.body as { password?: string };
+  if (!password) return res.status(400).json({ error: 'Current password is required to set up 2FA' });
+
+  const account = await queryOne<{ password_hash: string | null }>(
+    `SELECT password_hash FROM users WHERE id = $1`,
+    [req.user!.userId]
+  );
+  if (!account?.password_hash) {
+    return res.status(400).json({ error: 'This account has no local password (SSO). Set a password before enabling 2FA.' });
+  }
+  if (!(await bcrypt.compare(password, account.password_hash))) {
+    return res.status(401).json({ error: 'Incorrect password' });
+  }
+
   const secret = new OTPAuth.Secret({ size: 20 });
   const totp = new OTPAuth.TOTP({
     issuer: 'MikroTik Manager',
