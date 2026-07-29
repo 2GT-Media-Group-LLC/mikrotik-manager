@@ -77,10 +77,19 @@ jobs:
         with:
           node-version: '20'
 
+      # Audit production dependencies only (dev/build tooling isn't in the shipped
+      # image: the backend installs with --omit=dev and the frontend ships a static
+      # build). audit-ci lets us fail on high+ prod advisories while allowlisting
+      # ones that don't apply.
+      #
+      # Allowlisted:
+      #   GHSA-qwww-vcr4-c8h2 — React Router "RSC Mode CSRF Bypass". This is a
+      #   client-side SPA (BrowserRouter); we don't use RSC mode, and there is no
+      #   forward-compatible fix for react-router-dom 7.x (only a downgrade).
       - name: Audit frontend dependencies
-        run: npm audit --audit-level=high
+        run: npx --yes audit-ci@^7 --high --skip-dev --allowlist GHSA-qwww-vcr4-c8h2
         working-directory: frontend
 
       - name: Audit backend dependencies
-        run: npm audit --audit-level=high
+        run: npx --yes audit-ci@^7 --high --skip-dev
         working-directory: backend
