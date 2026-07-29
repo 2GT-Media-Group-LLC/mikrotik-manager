@@ -667,6 +667,64 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Configuration Snapshots */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Configuration Snapshots</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
+              Periodically captures each device&apos;s <code className="font-mono">/export</code> for the Config History / drift detection feature.
+              This runs <strong>over SSH</strong>, so it only executes on devices that have <strong>SSH credentials configured</strong> — devices without them are skipped (no connection is attempted).
+            </p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Enable config snapshots</div>
+                <button
+                  onClick={() => isAdmin && updateSettingsMutation.mutate({ config_snapshot_enabled: settings['config_snapshot_enabled'] === false })}
+                  disabled={!isAdmin}
+                  className={clsx(
+                    'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
+                    isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
+                    settings['config_snapshot_enabled'] !== false ? 'bg-blue-600' : 'bg-gray-300 dark:bg-slate-600'
+                  )}
+                >
+                  <span className={clsx(
+                    'inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200',
+                    settings['config_snapshot_enabled'] !== false ? 'translate-x-5' : 'translate-x-0'
+                  )} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Snapshot interval</div>
+                  <div className="text-xs text-gray-400">minutes</div>
+                </div>
+                <input
+                  type="number"
+                  className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={settings['config_snapshot_interval_min'] as number ?? 60}
+                  onChange={(e) => updateSettingsMutation.mutate({ config_snapshot_interval_min: parseInt(e.target.value) })}
+                  min="15"
+                  step="15"
+                  disabled={!isAdmin || settings['config_snapshot_enabled'] === false}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Retention</div>
+                  <div className="text-xs text-gray-400">snapshots kept per device</div>
+                </div>
+                <input
+                  type="number"
+                  className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={settings['config_snapshot_retention'] as number ?? 30}
+                  onChange={(e) => updateSettingsMutation.mutate({ config_snapshot_retention: parseInt(e.target.value) })}
+                  min="1"
+                  step="1"
+                  disabled={!isAdmin || settings['config_snapshot_enabled'] === false}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Reverse DNS */}
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Reverse DNS Lookup</h3>

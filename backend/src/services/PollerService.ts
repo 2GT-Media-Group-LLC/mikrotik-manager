@@ -691,6 +691,12 @@ export class PollerService {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
 
+    // Config snapshots capture `/export` over SSH. Only attempt this automatically
+    // when SSH credentials are actually configured — otherwise we'd repeatedly try
+    // (and fail) SSH auth using the API credentials, flooding the device logs on
+    // devices where SSH was never set up. Manual "Capture snapshot" is unaffected.
+    if (!device.ssh_username || !device.ssh_password_encrypted) return;
+
     const collector = new DeviceCollector(device);
     try {
       await collector.connect();
