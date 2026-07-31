@@ -143,6 +143,13 @@ export class DeviceCollector {
     await this.updateClients();
     await this.collectEvents();
     await this.collectNeighbors();
+    // Wireless data belongs in a full resync too — without this, a manual sync
+    // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
+    // the UI could only catch up on the 5-minute slow poll.
+    if (this.device.device_type === 'wireless_ap') {
+      await this.collectWirelessInterfaces();
+      await this.collectSecurityProfiles();
+    }
     await this.saveFullConfig();
     await this.updateDeviceStatus('online');
   }
@@ -324,6 +331,15 @@ export class DeviceCollector {
           console.error(`[${this.device.name}] Failed to insert interface ${name}:`, insertErr);
         }
       }
+
+      // Drop rows for interfaces removed on the device (deleted VLAN/bridge/bond).
+      // Safe: /interface/print above throws on failure, so reaching this point
+      // means we have an authoritative list rather than a failed fetch.
+      const presentNames = allIfaces.map((i) => i['name']).filter(Boolean);
+      await query(
+        `DELETE FROM interfaces WHERE device_id = $1 AND NOT (name = ANY($2::text[]))`,
+        [this.device.id, presentNames]
+      );
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect interfaces:`, err);
     }
@@ -1293,12 +1309,15 @@ export class DeviceCollector {
       const pkg = await this.detectWifiPackage();
       if (pkg === 'none') return;
 
+      // null = the fetch itself failed. Distinguished from an empty list (device
+      // genuinely has no wireless interfaces) so a transient API error can never
+      // be mistaken for "everything was deleted" during the prune below.
       const rawList = pkg === 'wifi'
-        ? await this.client.execute('/interface/wifi/print').catch(() => [] as Record<string, string>[])
-        : await this.client.execute('/interface/wireless/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+        ? await this.client.execute('/interface/wifi/print').catch(() => null)
+        : await this.client.execute('/interface/wireless/print', { detail: '' }).catch(() => null);
+      if (rawList === null) return;
 
       const wlans = pkg === 'wifi' ? rawList.map(r => this.normalizeWifiInterface(r)) : rawList;
-      if (wlans.length === 0) return;
 
       // New wifi package: the configured channel is usually "auto", so
       // /interface/wifi/print returns no frequency. Pull the live operating
@@ -1361,6 +1380,15 @@ export class DeviceCollector {
           ]
         );
       }
+
+      // Drop rows for interfaces that no longer exist on the device (e.g. a
+      // virtual AP removed directly in WinBox/WebFig). Without this the upsert
+      // above only ever adds, so deleted radios linger in the UI forever.
+      const present = wlans.map((w) => w['name']).filter(Boolean);
+      await query(
+        `DELETE FROM wireless_interfaces WHERE device_id = $1 AND NOT (name = ANY($2::text[]))`,
+        [this.device.id, present]
+      );
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect wireless interfaces:`, err);
     }
@@ -1455,6 +1483,14 @@ export class DeviceCollector {
     }
   }
 
+  /** Remove stored security profiles that no longer exist on the device. */
+  private async pruneSecurityProfiles(present: string[]): Promise<void> {
+    await query(
+      `DELETE FROM wireless_security_profiles WHERE device_id = $1 AND NOT (name = ANY($2::text[]))`,
+      [this.device.id, present]
+    );
+  }
+
   // ─── Security Profiles → Postgres ─────────────────────────────────────────
 
   async collectSecurityProfiles(): Promise<void> {
@@ -1465,19 +1501,27 @@ export class DeviceCollector {
       if (pkg === 'wifi') {
         // Try named /interface/wifi/security profiles first.
         // Fall back to synthesizing from interface inline security.* fields if none exist.
-        const named = await this.client.execute('/interface/wifi/security/print').catch(() => [] as Record<string, string>[]);
-        const sourceList: Array<{ name: string; raw: Record<string, string> }> = named.length > 0
-          ? named.map(p => ({ name: p['name'], raw: p }))
-          : (await this.client.execute('/interface/wifi/print').catch(() => [] as Record<string, string>[]))
-              .filter(r => r['security.authentication-types'] || r['security.passphrase'])
-              .map(r => ({
-                name: r['name'],
-                raw: {
-                  'authentication-types': r['security.authentication-types'] || '',
-                  passphrase:             r['security.passphrase'] || '',
-                  encryption:             r['security.encryption'] || '',
-                },
-              }));
+        // null = fetch failed (leave existing rows alone); [] = genuinely none.
+        const named = await this.client.execute('/interface/wifi/security/print').catch(() => null);
+        if (named === null) return;
+
+        let sourceList: Array<{ name: string; raw: Record<string, string> }>;
+        if (named.length > 0) {
+          sourceList = named.map(p => ({ name: p['name'], raw: p }));
+        } else {
+          const ifaceList = await this.client.execute('/interface/wifi/print').catch(() => null);
+          if (ifaceList === null) return;
+          sourceList = ifaceList
+            .filter(r => r['security.authentication-types'] || r['security.passphrase'])
+            .map(r => ({
+              name: r['name'],
+              raw: {
+                'authentication-types': r['security.authentication-types'] || '',
+                passphrase:             r['security.passphrase'] || '',
+                encryption:             r['security.encryption'] || '',
+              },
+            }));
+        }
 
         for (const { name, raw } of sourceList) {
           if (!name) continue;
@@ -1497,13 +1541,15 @@ export class DeviceCollector {
             ]
           );
         }
+        await this.pruneSecurityProfiles(sourceList.map((s) => s.name).filter(Boolean));
         return;
       }
 
       // Legacy wireless package
       const profiles = await this.client
         .execute('/interface/wireless/security-profiles/print')
-        .catch(() => [] as Record<string, string>[]);
+        .catch(() => null);
+      if (profiles === null) return;
 
       for (const p of profiles) {
         const name = p['name'];
@@ -1529,6 +1575,7 @@ export class DeviceCollector {
           ]
         );
       }
+      await this.pruneSecurityProfiles(profiles.map((p) => p['name']).filter(Boolean));
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect security profiles:`, err);
     }
