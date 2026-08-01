@@ -1,4 +1,4 @@
-import { decodePacket, TemplateCache } from '../decoder';
+import { decodePacket, pruneTemplateCache, TemplateCache } from '../decoder';
 
 // ─── Fixture builders ─────────────────────────────────────────────────────────
 
@@ -268,6 +268,47 @@ describe('IPFIX decoding', () => {
     expect(result.flows).toHaveLength(1);
     expect(result.flows[0].srcAddr).toMatch(/^fd00:/);
   });
+
+  it('renders IPv6 canonically and unwraps IPv4-mapped addresses', () => {
+    const V6_FIELDS: FieldSpec[] = [
+      { id: 27, length: 16 },
+      { id: 28, length: 16 },
+      { id: 1, length: 4 },
+    ];
+    // Decode one flow whose src/dst are the given raw 16-byte addresses
+    const decodePair = (src: Buffer, dst: Buffer, templateId: number) => {
+      const cache: TemplateCache = new Map();
+      const packet = ipfixPacket(7, [
+        flowset(2, templateBody(templateId, V6_FIELDS)),
+        flowset(templateId, Buffer.concat([src, dst, u32(100)])),
+      ]);
+      return decodePacket(packet, '10.0.0.1', cache).flows[0];
+    };
+
+    // 2001:db8::1 — interior zero run compressed, not fully expanded
+    const compressible = Buffer.alloc(16);
+    compressible.writeUInt16BE(0x2001, 0);
+    compressible.writeUInt16BE(0x0db8, 2);
+    compressible[15] = 1;
+    // ::ffff:192.0.2.1 — IPv4-mapped
+    const mapped = Buffer.alloc(16);
+    mapped.writeUInt16BE(0xffff, 10);
+    Buffer.from([192, 0, 2, 1]).copy(mapped, 12);
+
+    const flow = decodePair(compressible, mapped, 310);
+    expect(flow.srcAddr).toBe('2001:db8::1');
+    expect(flow.dstAddr).toBe('192.0.2.1');
+
+    // Loopback (all zeros but the last group) and a no-run address
+    const loopback = Buffer.alloc(16);
+    loopback[15] = 1;
+    const noRun = Buffer.alloc(16);
+    for (let i = 0; i < 8; i++) noRun.writeUInt16BE(0x2000 + i, i * 2);
+
+    const flow2 = decodePair(loopback, noRun, 311);
+    expect(flow2.srcAddr).toBe('::1');
+    expect(flow2.dstAddr).toBe('2000:2001:2002:2003:2004:2005:2006:2007');
+  });
 });
 
 describe('malformed / hostile packets', () => {
@@ -330,6 +371,43 @@ describe('malformed / hostile packets', () => {
     ]);
     const result = decodePacket(truncated, '10.0.0.9', cache);
     expect(result.flows).toHaveLength(0);
+  });
+
+  it('bounds the template cache by TTL and hard cap', () => {
+    const cache: TemplateCache = new Map();
+    const mkTemplate = (lastUsed: number) => ({
+      fields: [{ id: 1, length: 4, enterprise: false }],
+      minLength: 4,
+      lastUsed,
+    });
+
+    // Idle templates age out; recently-used ones survive
+    cache.set('a', mkTemplate(0));
+    cache.set('b', mkTemplate(9_000));
+    expect(pruneTemplateCache(cache, 5_000, 100, 10_000)).toBe(1);
+    expect([...cache.keys()]).toEqual(['b']);
+
+    // Hard cap evicts least-recently-used first
+    cache.clear();
+    for (let i = 0; i < 50; i++) cache.set(`t${i}`, mkTemplate(i));
+    pruneTemplateCache(cache, 1_000_000, 10, 100);
+    expect(cache.size).toBe(10);
+    expect(cache.has('t49')).toBe(true); // newest kept
+    expect(cache.has('t0')).toBe(false); // oldest evicted
+  });
+
+  it('keeps a template alive while it is actively decoding data', () => {
+    const cache: TemplateCache = new Map();
+    decodePacket(v9Packet(0, [flowset(0, templateBody(256, V9_FIELDS))]), '10.0.0.1', cache);
+    const key = [...cache.keys()][0];
+    cache.get(key)!.lastUsed = 0; // pretend it went idle
+
+    decodePacket(
+      v9Packet(0, [flowset(256, record('192.168.1.10', '1.1.1.1', 50000, 53, 17, 120, 2))]),
+      '10.0.0.1',
+      cache
+    );
+    expect(cache.get(key)!.lastUsed).toBeGreaterThan(0);
   });
 
   it('still decodes valid traffic after rejecting a malformed template', () => {

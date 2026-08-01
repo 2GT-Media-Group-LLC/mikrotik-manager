@@ -8,13 +8,30 @@ import * as dgram from 'dgram';
 import { Point } from '@influxdata/influxdb-client';
 import { query } from '../../config/database';
 import { getWriteApi } from '../../config/influxdb';
-import { decodePacket, TemplateCache } from './decoder';
+import { decodePacket, pruneTemplateCache, TemplateCache } from './decoder';
 import { classifyApp, APP_LAN } from './appCategories';
 import { FlowAggregator, CLIENT_UNKNOWN, Direction } from './FlowAggregator';
+import { PacketRateLimiter } from './rateLimiter';
 
 const FLUSH_INTERVAL_MS = 60_000;
 const MAP_REFRESH_MS = 60_000;
 const SETTINGS_RECONCILE_MS = 60_000;
+
+// Smallest packet that could carry a usable header (v9 needs 20, IPFIX 16).
+const MIN_PACKET_BYTES = 16;
+
+// Templates unused for this long are dropped, and the cache is hard-capped, so a
+// hostile or churning sender can't grow it without bound.
+const TEMPLATE_TTL_MS = 30 * 60_000;
+const MAX_TEMPLATES = 10_000;
+
+// Bounds on per-source bookkeeping for senders we can't match to a device.
+const MAX_UNKNOWN_EXPORTERS = 500;
+const OVERFLOW_EXPORTER_ID = -999_999;
+
+// Generous for real exporters (a busy RouterOS device sends far less), tight
+// enough that a flood can't monopolise the event loop.
+const RATE_LIMIT = { windowMs: 1_000, maxPerSource: 2_000, maxSources: 1_000 };
 
 export interface ExporterStats {
   deviceId: number;
@@ -32,6 +49,8 @@ export interface CollectorStats {
   flowsAttributed: number;
   packetsFromUnknownExporter: number;
   recordsWithoutTemplate: number;
+  packetsDropped: number;
+  templatesCached: number;
   exporters: ExporterStats[];
 }
 
@@ -76,8 +95,14 @@ export class NetflowCollector {
 
   // Pseudo-exporter ids for sources that don't match a managed device (e.g.
   // routers exporting from behind NAT). Negative so they can never collide
-  // with real device ids.
+  // with real device ids. Capped at MAX_UNKNOWN_EXPORTERS; sources beyond that
+  // share OVERFLOW_EXPORTER_ID (client attribution doesn't depend on exporter
+  // identity, so this only coarsens per-exporter stats).
   private unknownExporterIds = new Map<string, number>();
+  private nextPseudoId = -1;
+
+  private rateLimiter = new PacketRateLimiter(RATE_LIMIT);
+  private packetsDropped = 0;
 
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private mapTimer: ReturnType<typeof setInterval> | null = null;
@@ -99,6 +124,8 @@ export class NetflowCollector {
     }, FLUSH_INTERVAL_MS);
     this.mapTimer = setInterval(() => {
       this.refreshMaps().catch(() => {});
+      // Expire idle templates and cap the cache on the same cadence.
+      pruneTemplateCache(this.templates, TEMPLATE_TTL_MS, MAX_TEMPLATES);
     }, MAP_REFRESH_MS);
     this.reconcileTimer = setInterval(() => {
       this.reconcile().catch(() => {});
@@ -138,6 +165,9 @@ export class NetflowCollector {
       flowsAttributed: this.flowsAttributed,
       packetsFromUnknownExporter: this.packetsFromUnknownExporter,
       recordsWithoutTemplate: this.recordsWithoutTemplate,
+      // packetsDropped already counts both undersized and rate-limited drops.
+      packetsDropped: this.packetsDropped,
+      templatesCached: this.templates.size,
       exporters: Array.from(this.exporterStats.values()),
     };
   }
@@ -194,6 +224,19 @@ export class NetflowCollector {
 
   private onMessage(msg: Buffer, rinfo: dgram.RemoteInfo): void {
     this.packetsReceived++;
+
+    // Cheap guards before any parsing work: undersized datagrams can't carry a
+    // usable header, and a single source must not be able to monopolise the
+    // event loop (the socket is unauthenticated by protocol design).
+    if (msg.length < MIN_PACKET_BYTES) {
+      this.packetsDropped++;
+      return;
+    }
+    if (this.rateLimiter.shouldDrop(rinfo.address)) {
+      this.packetsDropped++;
+      return;
+    }
+
     let exporter = this.exporterByIp.get(rinfo.address);
     if (!exporter) {
       // Source doesn't match any managed device — common when the exporting
@@ -205,11 +248,19 @@ export class NetflowCollector {
       if (!this.settings.acceptUnknown) return;
       let pseudoId = this.unknownExporterIds.get(rinfo.address);
       if (pseudoId === undefined) {
-        pseudoId = -(this.unknownExporterIds.size + 1);
-        this.unknownExporterIds.set(rinfo.address, pseudoId);
-        console.log(`[NetFlow] Accepting flows from unidentified exporter ${rinfo.address} (NAT in path?)`);
+        if (this.unknownExporterIds.size >= MAX_UNKNOWN_EXPORTERS) {
+          // Too many distinct unidentified sources to track individually; fold
+          // them into one bucket so the maps stay bounded.
+          exporter = { deviceId: OVERFLOW_EXPORTER_ID, deviceName: 'Unidentified (many sources)' };
+        } else {
+          pseudoId = this.nextPseudoId--;
+          this.unknownExporterIds.set(rinfo.address, pseudoId);
+          console.log(`[NetFlow] Accepting flows from unidentified exporter ${rinfo.address} (NAT in path?)`);
+        }
       }
-      exporter = { deviceId: pseudoId, deviceName: `Unidentified (${rinfo.address})` };
+      if (!exporter) {
+        exporter = { deviceId: pseudoId as number, deviceName: `Unidentified (${rinfo.address})` };
+      }
     }
 
     const result = decodePacket(msg, rinfo.address, this.templates);

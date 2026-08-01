@@ -24,11 +24,43 @@ interface Template {
   fields: TemplateField[];
   // Minimum bytes a record can occupy (var-length fields count as 1)
   minLength: number;
+  // Epoch ms of the last time this template was stored or used to decode data.
+  // Drives TTL/LRU eviction so a hostile or churning sender can't grow the cache
+  // without bound (see pruneTemplateCache).
+  lastUsed: number;
 }
 
 // Keyed by `${exporterKey}|${sourceId}|${templateId}` so two exporters (or two
 // observation domains on one exporter) can't clobber each other's templates.
 export type TemplateCache = Map<string, Template>;
+
+/**
+ * Evict templates unused for longer than `ttlMs`, then enforce `max` entries by
+ * dropping the least-recently-used. Returns how many were removed.
+ */
+export function pruneTemplateCache(
+  cache: TemplateCache,
+  ttlMs: number,
+  max: number,
+  now: number = Date.now()
+): number {
+  let removed = 0;
+  const cutoff = now - ttlMs;
+  for (const [key, tpl] of cache) {
+    if (tpl.lastUsed < cutoff) {
+      cache.delete(key);
+      removed++;
+    }
+  }
+  if (cache.size > max) {
+    const byAge = [...cache.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+    for (let i = 0; i < byAge.length - max; i++) {
+      cache.delete(byAge[i][0]);
+      removed++;
+    }
+  }
+  return removed;
+}
 
 export interface DecodeResult {
   flows: FlowRecord[];
@@ -65,11 +97,35 @@ function formatIPv4(buf: Buffer, offset: number): string {
 }
 
 function formatIPv6(buf: Buffer, offset: number): string {
-  const parts: string[] = [];
-  for (let i = 0; i < 8; i++) {
-    parts.push(buf.readUInt16BE(offset + i * 2).toString(16));
+  const groups: number[] = [];
+  for (let i = 0; i < 8; i++) groups.push(buf.readUInt16BE(offset + i * 2));
+
+  // IPv4-mapped (::ffff:a.b.c.d) — report the underlying IPv4 address so these
+  // flows match client/exporter IPs and don't look like separate IPv6 endpoints.
+  if (groups[0] === 0 && groups[1] === 0 && groups[2] === 0 && groups[3] === 0 &&
+      groups[4] === 0 && groups[5] === 0xffff) {
+    return formatIPv4(buf, offset + 12);
   }
-  return parts.join(':');
+
+  // RFC 5952: compress the longest run of 2+ zero groups to '::'
+  let bestStart = -1;
+  let bestLen = 0;
+  let runStart = -1;
+  let runLen = 0;
+  for (let i = 0; i < 8; i++) {
+    if (groups[i] === 0) {
+      if (runStart === -1) runStart = i;
+      runLen++;
+      if (runLen > bestLen) { bestStart = runStart; bestLen = runLen; }
+    } else {
+      runStart = -1;
+      runLen = 0;
+    }
+  }
+
+  const parts = groups.map((g) => g.toString(16));
+  if (bestLen < 2) return parts.join(':');
+  return `${parts.slice(0, bestStart).join(':')}::${parts.slice(bestStart + bestLen).join(':')}`;
 }
 
 function parseTemplates(
@@ -113,7 +169,7 @@ function parseTemplates(
       minLength += length === 0xffff ? 1 : length;
     }
     if (!ok || minLength === 0) break;
-    cache.set(`${exporterKey}|${sourceId}|${templateId}`, { fields, minLength });
+    cache.set(`${exporterKey}|${sourceId}|${templateId}`, { fields, minLength, lastUsed: Date.now() });
     parsed++;
   }
   return parsed;
@@ -223,6 +279,7 @@ export function decodePacket(buf: Buffer, exporterKey: string, cache: TemplateCa
     } else if (!isOptionsSet && setId >= 256) {
       const template = cache.get(`${exporterKey}|${sourceId}|${setId}`);
       if (template) {
+        template.lastUsed = Date.now(); // keep actively-used templates alive
         parseDataSet(buf, setStart, setEnd, template, result.flows);
       } else {
         result.recordsWithoutTemplate++;
