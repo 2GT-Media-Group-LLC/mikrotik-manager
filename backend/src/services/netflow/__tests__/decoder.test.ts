@@ -269,3 +269,84 @@ describe('IPFIX decoding', () => {
     expect(result.flows[0].srcAddr).toMatch(/^fd00:/);
   });
 });
+
+describe('malformed / hostile packets', () => {
+  // Regression: a template field of length 0 made a record zero-width, so the
+  // data-set loop never advanced and spun forever — a single unauthenticated UDP
+  // packet could hang the whole (single-threaded) backend. If this regresses the
+  // decode call never returns, so these tests hang rather than fail — that is
+  // still a loud CI failure, and the cache assertions pin the actual guard.
+  it('rejects a template containing a zero-length field instead of looping forever', () => {
+    const cache: TemplateCache = new Map();
+    const packet = ipfixPacket(1, [
+      flowset(2, templateBody(256, [{ id: 1, length: 0 }])),
+      flowset(256, Buffer.alloc(4)),
+    ]);
+
+    const result = decodePacket(packet, '10.0.0.9', cache);
+    expect(result.templatesParsed).toBe(0);
+    expect(cache.size).toBe(0);
+    expect(result.flows).toHaveLength(0);
+  });
+
+  it('rejects the whole template when a zero-length field sits among valid ones', () => {
+    const cache: TemplateCache = new Map();
+    const packet = ipfixPacket(1, [
+      flowset(2, templateBody(257, [
+        { id: 8, length: 4 },
+        { id: 12, length: 0 }, // malformed
+        { id: 1, length: 4 },
+      ])),
+    ]);
+
+    expect(decodePacket(packet, '10.0.0.9', cache).templatesParsed).toBe(0);
+    expect(cache.size).toBe(0);
+  });
+
+  it('terminates on a variable-length field whose length byte is zero', () => {
+    const cache: TemplateCache = new Map();
+    const packet = ipfixPacket(1, [
+      flowset(2, templateBody(258, [{ id: 1, length: 0xffff }])),
+      flowset(258, Buffer.alloc(8)), // every length byte reads as 0
+    ]);
+
+    const result = decodePacket(packet, '10.0.0.9', cache);
+    expect(result.templatesParsed).toBe(1);
+    expect(result.flows).toHaveLength(0);
+  });
+
+  it('handles absurd field lengths and truncated records without throwing', () => {
+    const cache: TemplateCache = new Map();
+    const huge = ipfixPacket(1, [
+      flowset(2, templateBody(259, [{ id: 1, length: 60000 }])),
+      flowset(259, Buffer.alloc(8)),
+    ]);
+    expect(() => decodePacket(huge, '10.0.0.9', cache)).not.toThrow();
+
+    // Declares a 16-byte IPv6 field but supplies only 4 bytes of data
+    const truncated = ipfixPacket(1, [
+      flowset(2, templateBody(260, [{ id: 27, length: 16 }, { id: 1, length: 4 }])),
+      flowset(260, Buffer.alloc(4)),
+    ]);
+    const result = decodePacket(truncated, '10.0.0.9', cache);
+    expect(result.flows).toHaveLength(0);
+  });
+
+  it('still decodes valid traffic after rejecting a malformed template', () => {
+    const cache: TemplateCache = new Map();
+    decodePacket(
+      ipfixPacket(1, [flowset(2, templateBody(256, [{ id: 1, length: 0 }]))]),
+      '10.0.0.9',
+      cache
+    );
+
+    const good = v9Packet(0, [
+      flowset(0, templateBody(256, V9_FIELDS)),
+      flowset(256, record('192.168.1.10', '1.1.1.1', 50000, 53, 17, 120, 2)),
+    ]);
+    const result = decodePacket(good, '10.0.0.9', cache);
+    expect(result.templatesParsed).toBe(1);
+    expect(result.flows).toHaveLength(1);
+    expect(result.flows[0].bytes).toBe(120);
+  });
+});

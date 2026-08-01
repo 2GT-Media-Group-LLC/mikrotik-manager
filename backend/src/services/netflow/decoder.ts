@@ -106,10 +106,13 @@ function parseTemplates(
         id = id & 0x7fff;
         enterprise = true;
       }
+      // A zero-length field is meaningless in v9/IPFIX and makes a record
+      // zero-width, which would spin parseDataSet forever. Reject the template.
+      if (length === 0) { ok = false; break; }
       fields.push({ id, length, enterprise });
       minLength += length === 0xffff ? 1 : length;
     }
-    if (!ok) break;
+    if (!ok || minLength === 0) break;
     cache.set(`${exporterKey}|${sourceId}|${templateId}`, { fields, minLength });
     parsed++;
   }
@@ -126,6 +129,7 @@ function parseDataSet(
   let off = start;
   // Records are packed back to back; trailing bytes < minLength are padding
   while (off + template.minLength <= setEnd) {
+    const recordStart = off;
     let srcAddr = '';
     let dstAddr = '';
     let srcPort = 0;
@@ -167,6 +171,10 @@ function parseDataSet(
     }
 
     if (!valid) break;
+    // Forward-progress guard: a record that consumed no bytes would loop forever.
+    // Template validation should prevent this, but never let a malformed packet
+    // hang the (single-threaded) event loop.
+    if (off <= recordStart) break;
     // Only emit records that look like flows (options/stats records lack these)
     if (srcAddr && dstAddr && bytes >= 0) {
       flows.push({ srcAddr, dstAddr, srcPort, dstPort, protocol, bytes, packets });
