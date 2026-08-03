@@ -476,6 +476,28 @@ CREATE TABLE IF NOT EXISTS client_traffic_daily (
 );
 CREATE INDEX IF NOT EXISTS idx_client_traffic_daily_day ON client_traffic_daily(day DESC);
 
+-- Change Guard: in-flight and historical "safe apply" operations. A pending row
+-- means a restore point + auto-revert scheduler are armed on the device; the
+-- manager either commits (disarms) or leaves the device to restore itself.
+CREATE TABLE IF NOT EXISTS device_change_guards (
+  id             SERIAL PRIMARY KEY,
+  device_id      INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  token          VARCHAR(64) NOT NULL,
+  mode           VARCHAR(10) NOT NULL DEFAULT 'binary',
+  restore_point  VARCHAR(64),
+  scheduler_name VARCHAR(64),
+  status         VARCHAR(16) NOT NULL DEFAULT 'pending',
+  change_kind    VARCHAR(64),
+  change_summary TEXT,
+  note           TEXT,
+  user_id        INTEGER,
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  expires_at     TIMESTAMPTZ,
+  committed_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_change_guards_device ON device_change_guards(device_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_change_guards_pending ON device_change_guards(status, expires_at);
+
 -- Wireless security profiles (WPA/WPA2/WPA3 config)
 CREATE TABLE IF NOT EXISTS wireless_security_profiles (
   id                    SERIAL PRIMARY KEY,
@@ -522,6 +544,9 @@ const DEFAULT_SETTINGS = [
   { key: 'netflow_accept_unknown', value: true },
   { key: 'netflow_retention_days', value: 30 },
   { key: 'netflow_daily_retention_days', value: 365 },
+  { key: 'change_guard_enabled', value: true },
+  { key: 'change_guard_mode', value: 'binary' },
+  { key: 'change_guard_timeout_sec', value: 120 },
 ];
 
 export async function runMigrations(): Promise<void> {

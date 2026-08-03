@@ -28,6 +28,7 @@ import { verifyToken, type AuthPayload } from './middleware/auth';
 import { rateLimitRedis } from './middleware/rateLimitRedis';
 import { initSecrets } from './utils/secrets';
 import { reencryptStaleCredentials } from './db/reencryptCredentials';
+import { reconcileStaleGuards } from './services/changeGuard/ChangeGuard';
 import { decrypt } from './utils/crypto';
 import { corsMiddlewareOptions, socketIoCorsOptions } from './utils/corsOrigins';
 
@@ -353,6 +354,10 @@ async function start(): Promise<void> {
   reencryptStaleCredentials().catch((e) =>
     console.warn('[secrets] credential re-encryption sweep skipped:', (e as Error).message)
   );
+
+  // Guards left 'pending' belong to a manager that stopped mid-change; the device
+  // has since restored itself, so settle those rows.
+  reconcileStaleGuards().catch(() => {});
 
   // Reset vendor entries that were previously set to '' due to API rate-limiting,
   // so they get re-resolved by the new local OUI database.

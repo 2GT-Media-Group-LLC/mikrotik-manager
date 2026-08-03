@@ -2715,16 +2715,40 @@ export class DeviceCollector {
     return policy;
   }
 
+  /**
+   * Bridge-port attributes that must survive a port being re-created. PVID above
+   * all: re-adding a port without it silently drops the port back to VLAN 1, which
+   * breaks tagged management even though the port looks bridged again.
+   */
+  private static readonly BRIDGE_PORT_CARRY = [
+    'pvid', 'frame-types', 'ingress-filtering', 'edge', 'horizon', 'point-to-point',
+  ] as const;
+
+  private static carryBridgePortAttrs(port: Record<string, string> | undefined): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (!port) return out;
+    for (const key of DeviceCollector.BRIDGE_PORT_CARRY) {
+      const value = port[key];
+      if (value !== undefined && value !== '') out[key] = value;
+    }
+    return out;
+  }
+
   async createBond(name: string, slaves: string[], mode: string, opts: {
     lacpRate?: string; hashPolicy?: string; mtu?: number; minLinks?: number;
   }): Promise<void> {
-    // Remove each slave from any bridge, recording the first bridge found
+    // Remove each slave from any bridge, recording the first bridge found along
+    // with its port settings so the bond can inherit them.
     let originalBridge: string | null = null;
+    let carry: Record<string, string> = {};
     for (const slave of slaves) {
       const bridgePorts = await this.client.execute('/interface/bridge/port/print', {}, [`?interface=${slave}`]).catch(() => []);
       for (const bp of bridgePorts) {
         if (bp['.id']) {
-          if (!originalBridge) originalBridge = bp['bridge'] ?? null;
+          if (!originalBridge) {
+            originalBridge = bp['bridge'] ?? null;
+            carry = DeviceCollector.carryBridgePortAttrs(bp);
+          }
           await this.client.execute('/interface/bridge/port/remove', { '.id': bp['.id'] });
         }
       }
@@ -2735,12 +2759,23 @@ export class DeviceCollector {
     if (opts.mtu)        params['mtu'] = String(opts.mtu);
     if (opts.minLinks != null) params['min-links'] = String(opts.minLinks);
     await this.client.execute('/interface/bonding/add', params);
-    // Add the new bond interface to the same bridge the slaves were removed from
+    // Put the new bond into the bridge the slaves came out of. If this fails the
+    // member ports are left unbridged — never swallow it, the device may be
+    // unreachable and the caller must know.
     if (originalBridge) {
-      await this.client.execute('/interface/bridge/port/add', {
-        bridge: originalBridge,
-        interface: name,
-      }).catch(() => {});
+      try {
+        await this.client.execute('/interface/bridge/port/add', {
+          bridge: originalBridge,
+          interface: name,
+          ...carry,
+        });
+      } catch (err) {
+        throw new Error(
+          `Bond '${name}' was created, but adding it to bridge '${originalBridge}' failed: ` +
+          `${(err as Error).message}. The member ports (${slaves.join(', ')}) are no longer bridged ` +
+          `and may not forward traffic — check the device.`
+        );
+      }
     }
   }
 
@@ -2763,21 +2798,42 @@ export class DeviceCollector {
     const id = list[0]?.['.id'];
     if (!id) throw new Error(`Bond '${name}' not found on device`);
     const slaves = (list[0]?.['slaves'] ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
-    // Check if the bond is itself a bridge member
+    // Capture the bond's bridge membership *and its port settings* before removing
+    // it, so the freed slaves can inherit them (notably PVID).
     const bondBridgePorts = await this.client.execute('/interface/bridge/port/print', {}, [`?interface=${name}`]).catch(() => []);
-    const bridgeName = bondBridgePorts[0]?.['bridge'] ?? null;
-    if (bondBridgePorts[0]?.['.id']) {
-      await this.client.execute('/interface/bridge/port/remove', { '.id': bondBridgePorts[0]['.id'] });
+    const bondPort = bondBridgePorts[0];
+    const bridgeName = bondPort?.['bridge'] ?? null;
+    const carry = DeviceCollector.carryBridgePortAttrs(bondPort);
+
+    if (bondPort?.['.id']) {
+      await this.client.execute('/interface/bridge/port/remove', { '.id': bondPort['.id'] });
     }
     await this.client.execute('/interface/bonding/remove', { '.id': id });
-    // Re-add each slave to the bridge the bond was in
+
+    // Removing a bond releases its slaves as standalone interfaces. If the bond was
+    // bridged, put each slave back in that bridge with the same port settings —
+    // otherwise the physical ports stop forwarding and the device can drop off the
+    // network. A failure here is exactly how a switch goes silently offline, so it
+    // is reported rather than swallowed.
+    const failures: string[] = [];
     if (bridgeName) {
       for (const slave of slaves) {
-        await this.client.execute('/interface/bridge/port/add', {
-          bridge: bridgeName,
-          interface: slave,
-        }).catch(() => {});
+        try {
+          await this.client.execute('/interface/bridge/port/add', {
+            bridge: bridgeName,
+            interface: slave,
+            ...carry,
+          });
+        } catch (err) {
+          failures.push(`${slave} (${(err as Error).message})`);
+        }
       }
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        `Bond '${name}' was removed, but restoring bridge membership on '${bridgeName}' failed for: ` +
+        `${failures.join('; ')}. Those ports may not forward traffic — check the device.`
+      );
     }
   }
 

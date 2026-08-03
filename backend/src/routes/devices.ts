@@ -12,6 +12,7 @@ import { createDeviceFromBody, type CreateDeviceInput, type CreateDeviceContext 
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
 import { detectLockoutRisk } from '../utils/firewallSafety';
+import { withSafeApply, type GuardDevice } from '../services/changeGuard/ChangeGuard';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
 
@@ -910,6 +911,60 @@ router.post('/:id/nat/move', requireWrite, async (req: Request, res: Response) =
 // ─── Firewall Address Lists ─────────────────────────────────────────────────────
 // Shared helper for the security-feature routes below (DRYs the device fetch +
 // connect/disconnect lifecycle the rest of this file uses inline).
+/**
+ * Run a device mutation under the Change Guard safety net (see
+ * services/changeGuard/ChangeGuard.ts): the device saves a restore point and arms
+ * a self-restore before the change, and disarms it only once we prove the device
+ * is still reachable. Used for changes that can sever the manager's own path.
+ *
+ * The response always carries a `guard` block so the UI can say whether the change
+ * was confirmed, is being auto-reverted, or ran unprotected.
+ */
+async function withGuardedChange<T>(
+  id: string,
+  req: Request,
+  res: Response,
+  meta: { kind: string; summary: string },
+  fn: (c: DeviceCollector) => Promise<T>,
+  afterConfirmed?: (c: DeviceCollector) => Promise<void>
+): Promise<void> {
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]);
+  if (!deviceRow) { res.status(404).json({ error: 'Device not found' }); return; }
+
+  const collector = new DeviceCollector(deviceRow);
+  try {
+    const outcome = await withSafeApply(
+      deviceRow as unknown as GuardDevice,
+      { ...meta, userId: req.user?.userId ?? null },
+      async () => {
+        await collector.connect();
+        return fn(collector);
+      }
+    );
+
+    // Only re-read the device once we know it's still reachable.
+    if (outcome.confirmed && afterConfirmed) {
+      await afterConfirmed(collector).catch(() => { /* best effort */ });
+    }
+
+    res.json({
+      ...(typeof outcome.result === 'object' && outcome.result !== null
+        ? outcome.result as Record<string, unknown>
+        : { result: outcome.result }),
+      guard: {
+        protected: !outcome.unprotectedReason,
+        confirmed: outcome.confirmed,
+        auto_reverting: outcome.autoReverting,
+        unprotected_reason: outcome.unprotectedReason ?? null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  } finally {
+    try { collector.disconnect(); } catch { /* device may be gone */ }
+  }
+}
+
 async function withCollector<T>(
   id: string,
   res: Response,
@@ -1004,7 +1059,42 @@ router.get('/:id/services', async (req, res) => {
 
 router.put('/:id/services/:serviceId', requireWrite, async (req, res) => {
   if (typeof req.body.disabled !== 'boolean') return res.status(400).json({ error: 'disabled (boolean) is required' });
-  await withCollector(req.params.id, res, async (c) => { await c.setServiceDisabled(req.params.serviceId, req.body.disabled); return c.getServices(); });
+
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+
+  // Disabling the very service MikroTik Manager talks to is an immediate, certain
+  // self-lockout — and unlike other changes there is no legitimate way to do it
+  // from here, so it is refused outright rather than merely guarded.
+  if (req.body.disabled === true) {
+    const mgmtService = deviceRow.api_port === 8729 ? 'api-ssl' : 'api';
+    const collector = new DeviceCollector(deviceRow);
+    try {
+      await collector.connect();
+      const services = await collector.getServices();
+      const target = (services as Record<string, string>[]).find((s) => s['.id'] === req.params.serviceId);
+      if (target && target['name'] === mgmtService) {
+        return res.status(409).json({
+          lockout: true,
+          reason: `'${mgmtService}' is the service MikroTik Manager uses to reach this device. `
+            + `Disabling it would make the device unmanageable from here.`,
+        });
+      }
+    } catch { /* fall through to the guarded path */ } finally {
+      collector.disconnect();
+    }
+  }
+
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'service.toggle', summary: `${req.body.disabled ? 'Disable' : 'Enable'} IP service` },
+    async (c) => {
+      await c.setServiceDisabled(req.params.serviceId, req.body.disabled);
+      return { services: await c.getServices() };
+    }
+  );
 });
 
 // GET /api/devices/:id/security-posture — computes a hardening checklist.
@@ -1769,22 +1859,21 @@ router.post('/:id/bonds', requireWrite, async (req: Request, res: Response) => {
   if (!name || !mode || !Array.isArray(slaves) || slaves.length < 2) {
     return res.status(400).json({ error: 'name, mode, and at least 2 slaves are required' });
   }
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.createBond(name, slaves, mode, {
-      lacpRate: lacp_rate, hashPolicy: transmit_hash_policy, mtu, minLinks: min_links,
-    });
-    await collector.collectInterfaces();
-    const ports = await query(`SELECT * FROM interfaces WHERE device_id = $1 ORDER BY name`, [req.params.id]);
-    return res.status(201).json(ports.find((p: Record<string, unknown>) => p['name'] === name) ?? { message: 'Bond created' });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  // Guarded: creating a bond pulls its member ports out of their bridge first, so a
+  // failure part-way through can strand the uplink.
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'bond.create', summary: `Create bond '${name}' over ${slaves.join(', ')}` },
+    async (c) => {
+      await c.createBond(name, slaves, mode, {
+        lacpRate: lacp_rate, hashPolicy: transmit_hash_policy, mtu, minLinks: min_links,
+      });
+      return { message: 'Bond created' };
+    },
+    async (c) => { await c.collectInterfaces(); }
+  );
 });
 
 // PUT /api/devices/:id/bonds/:bondName
@@ -1811,39 +1900,44 @@ router.put('/:id/bonds/:bondName', requireWrite, async (req: Request, res: Respo
 });
 
 // DELETE /api/devices/:id/bonds/:bondName
+// Guarded: removing a bond releases its member ports, which can take the device
+// off the network even when the bond looks unused.
 router.delete('/:id/bonds/:bondName', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.deleteBond(req.params.bondName);
-    await query(`DELETE FROM interfaces WHERE device_id = $1 AND name = $2`, [req.params.id, req.params.bondName]);
-    await collector.collectInterfaces();
-    return res.json({ message: 'Bond deleted' });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'bond.delete', summary: `Delete bond '${req.params.bondName}'` },
+    async (c) => {
+      await c.deleteBond(req.params.bondName);
+      return { message: 'Bond deleted' };
+    },
+    async (c) => {
+      await query(`DELETE FROM interfaces WHERE device_id = $1 AND name = $2`, [req.params.id, req.params.bondName]);
+      await c.collectInterfaces();
+    }
+  );
 });
 
 // PUT /api/devices/:id/bridge/:bridgeName/vlan-filtering
 router.put('/:id/bridge/:bridgeName/vlan-filtering', requireWrite, async (req: Request, res: Response) => {
   const { enabled } = req.body as { enabled: boolean };
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.setBridgeVlanFiltering(req.params.bridgeName, Boolean(enabled));
-    await collector.collectInterfaces();
-    return res.json({ success: true, vlan_filtering: enabled });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  // Guarded: turning on vlan-filtering with untagged management on the bridge is
+  // the single most common way to lock yourself out of a MikroTik.
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    {
+      kind: 'bridge.vlan-filtering',
+      summary: `${enabled ? 'Enable' : 'Disable'} VLAN filtering on bridge '${req.params.bridgeName}'`,
+    },
+    async (c) => {
+      await c.setBridgeVlanFiltering(req.params.bridgeName, Boolean(enabled));
+      return { success: true, vlan_filtering: enabled };
+    },
+    async (c) => { await c.collectInterfaces(); }
+  );
 });
 
 // GET /api/devices/:id/hardware (live health: temps, voltages, fans, PSU)

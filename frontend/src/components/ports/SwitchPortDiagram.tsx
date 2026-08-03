@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, X, Check, AlertCircle, Activity, Cpu, Link2, Trash2, Plus, Network, Users, Wifi } from 'lucide-react';
+import { RefreshCw, X, Check, AlertCircle, Activity, Cpu, Link2, Trash2, Plus, Network, Users, Wifi, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { devicesApi, metricsApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import ChangeGuardDialog, { guardOutcomeMessage, type GuardResult } from '../ChangeGuardDialog';
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -596,6 +597,8 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
   const [trafficRange, setTrafficRange] = useState('1h');
   const [showCreateTrunkModal, setShowCreateTrunkModal] = useState(false);
   const [editingBond, setEditingBond] = useState<SwitchPort | null>(null);
+  const [confirmDestroyBond, setConfirmDestroyBond] = useState<string | null>(null);
+  const [guardNotice, setGuardNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
   const [editForm, setEditForm] = useState<PortEditForm>({
     disabled: false,
     comment: '',
@@ -713,10 +716,17 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
 
   const deleteBondMutation = useMutation({
     mutationFn: (name: string) => devicesApi.deleteBond(deviceId, name),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
       setEditingBond(null);
+      setConfirmDestroyBond(null);
       setBondError('');
+      // Report what the safety net did — especially "the device is restoring itself".
+      const notice = guardOutcomeMessage((res?.data as { guard?: GuardResult })?.guard);
+      if (notice) {
+        setGuardNotice(notice);
+        if (notice.tone === 'ok') setTimeout(() => setGuardNotice(null), 6000);
+      }
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -1792,11 +1802,7 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
                 <button
                   disabled={deleteBondMutation.isPending}
                   className="btn-danger flex items-center gap-2 text-sm"
-                  onClick={() => {
-                    if (confirm(`Destroy bond "${editingBond.name}"? Member ports will become individual interfaces.`)) {
-                      deleteBondMutation.mutate(editingBond.name);
-                    }
-                  }}
+                  onClick={() => setConfirmDestroyBond(editingBond.name)}
                 >
                   {deleteBondMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   Destroy Bond
@@ -1906,6 +1912,40 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
           </div>
         );
       })()}
+
+      {confirmDestroyBond && (
+        <ChangeGuardDialog
+          title="Destroy bond?"
+          description={`Bond "${confirmDestroyBond}" will be removed and its member ports released as individual interfaces.`}
+          reason={
+            'If this bond carries the link this device is managed over, removing it can take the '
+            + 'device offline — even if the bond itself looks unused.'
+          }
+          confirmLabel="Destroy bond"
+          pending={deleteBondMutation.isPending}
+          onConfirm={() => deleteBondMutation.mutate(confirmDestroyBond)}
+          onCancel={() => setConfirmDestroyBond(null)}
+        />
+      )}
+
+      {guardNotice && (
+        <div
+          className={clsx(
+            'fixed bottom-4 right-4 z-[70] max-w-md rounded-lg border p-3 text-sm shadow-lg',
+            guardNotice.tone === 'ok'
+              ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
+              : 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300'
+          )}
+        >
+          <div className="flex items-start gap-2">
+            {guardNotice.tone === 'ok'
+              ? <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              : <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />}
+            <span>{guardNotice.text}</span>
+            <button onClick={() => setGuardNotice(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

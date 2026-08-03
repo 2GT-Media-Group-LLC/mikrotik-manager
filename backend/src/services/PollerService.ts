@@ -254,7 +254,8 @@ export class PollerService {
                        'retention_clients_days', 'spectral_scan_enabled',
                        'spectral_scan_interval_hours', 'ap_scan_enabled',
                        'ap_scan_interval_hours', 'backup_schedule_enabled',
-                       'backup_schedule_cron')`
+                       'backup_schedule_cron', 'config_snapshot_enabled',
+                       'config_snapshot_interval_min')`
       );
       const map: Record<string, unknown> = {};
       for (const row of rows) map[row.key] = row.value;
