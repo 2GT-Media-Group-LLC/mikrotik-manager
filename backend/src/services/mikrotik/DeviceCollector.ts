@@ -2773,7 +2773,8 @@ export class DeviceCollector {
         throw new Error(
           `Bond '${name}' was created, but adding it to bridge '${originalBridge}' failed: ` +
           `${(err as Error).message}. The member ports (${slaves.join(', ')}) are no longer bridged ` +
-          `and may not forward traffic — check the device.`
+          `and may not forward traffic — check the device.`,
+          { cause: err }
         );
       }
     }
