@@ -518,32 +518,30 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
 });
 
 // PUT /api/devices/:id/ports/:name/vlan - configure VLAN for a switch port
+// Guarded: changing a port's PVID or its tagged/untagged membership is one of the
+// most common ways to strand the management VLAN on a switch.
 router.put('/:id/ports/:name/vlan', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
   const { pvid, tagged_vlans = [], untagged_vlans = [] } = req.body;
   if (pvid !== undefined && (typeof pvid !== 'number' || pvid < 1 || pvid > 4094)) {
     return res.status(400).json({ error: 'pvid must be 1-4094' });
   }
 
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.setPortVlanConfig(
-      req.params.name,
-      pvid ?? 1,
-      tagged_vlans as number[],
-      untagged_vlans as number[]
-    );
-    await collector.collectVlans();
-    return res.json({ message: 'VLAN configuration applied' });
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'port.vlan', summary: `VLAN config on port ${req.params.name} (pvid ${pvid ?? 1})` },
+    async (c) => {
+      await c.setPortVlanConfig(
+        req.params.name,
+        pvid ?? 1,
+        tagged_vlans as number[],
+        untagged_vlans as number[]
+      );
+      return { message: 'VLAN configuration applied' };
+    },
+    async (c) => { await c.collectVlans(); }
+  );
 });
 
 // GET /api/devices/:id/vlans
@@ -1292,44 +1290,38 @@ router.get('/:id/ip-addresses', async (req: Request, res: Response) => {
 
 // POST /api/devices/:id/ip-addresses
 router.post('/:id/ip-addresses', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
   const { address, interface: iface } = req.body;
   if (!address || !iface) {
     return res.status(400).json({ error: 'address and interface are required' });
   }
 
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addIpAddress(address, iface);
-    const addresses = await collector.getIpAddresses();
-    return res.status(201).json(addresses);
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'ip.add', summary: `Add ${address} on ${iface}` },
+    async (c) => {
+      await c.addIpAddress(address, iface);
+      return { message: `Address ${address} added` };
+    },
+    async (c) => { await c.collectIpAddressesCache(); }
+  );
 });
 
 // DELETE /api/devices/:id/ip-addresses/:addrId
+// Guarded: removing the address the manager connects to is an immediate, total cut.
 router.delete('/:id/ip-addresses/:addrId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'ip.remove', summary: `Remove IP address ${req.params.addrId}` },
+    async (c) => {
+      await c.removeIpAddress(req.params.addrId);
+      return { message: 'IP address removed' };
+    },
+    async (c) => { await c.collectIpAddressesCache(); }
   );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.removeIpAddress(req.params.addrId);
-    return res.json({ message: 'IP address removed' });
-  } finally {
-    collector.disconnect();
-  }
 });
 
 // POST /api/devices/:id/check-update
@@ -1486,44 +1478,38 @@ router.put('/:id/clock', requireWrite, async (req: Request, res: Response) => {
 });
 
 // POST /api/devices/:id/routing (add static route)
+// Guarded: a new low-distance default route can re-point the path back to the manager.
 router.post('/:id/routing', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
   const { dst_address, gateway, distance, comment } = req.body;
   if (!dst_address || !gateway) {
     return res.status(400).json({ error: 'dst_address and gateway are required' });
   }
 
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addRoute(dst_address, gateway, distance, comment);
-    return res.status(201).json({ message: 'Route added' });
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'route.add', summary: `Add route ${dst_address} via ${gateway}` },
+    async (c) => {
+      await c.addRoute(dst_address, gateway, distance, comment);
+      return { message: 'Route added' };
+    }
+  );
 });
 
 // DELETE /api/devices/:id/routing/:routeId
+// Guarded: removing the default route cuts off any manager that isn't on-subnet.
 router.delete('/:id/routing/:routeId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'route.remove', summary: `Remove route ${req.params.routeId}` },
+    async (c) => {
+      await c.removeRoute(req.params.routeId);
+      return { message: 'Route removed' };
+    }
   );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.removeRoute(req.params.routeId);
-    return res.json({ message: 'Route removed' });
-  } finally {
-    collector.disconnect();
-  }
 });
 
 // ─── OSPF ─────────────────────────────────────────────────────────────────────
@@ -1725,28 +1711,25 @@ router.get('/:id/routing/router-id', async (req: Request, res: Response) => {
 });
 
 // POST /api/devices/:id/vlans (add bridge VLAN)
+// Guarded: bridge VLAN table edits decide which ports (and the bridge/CPU port
+// itself) may carry the management VLAN.
 router.post('/:id/vlans', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
   const { bridge, vlan_id, tagged_ports = [], untagged_ports = [] } = req.body;
   if (!bridge || !vlan_id || vlan_id < 1 || vlan_id > 4094) {
     return res.status(400).json({ error: 'bridge and vlan_id (1-4094) are required' });
   }
 
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addBridgeVlan(bridge, vlan_id, tagged_ports, untagged_ports);
-    await collector.collectVlans();
-    const vlans = await query(`SELECT * FROM vlans WHERE device_id = $1 ORDER BY vlan_id ASC`, [req.params.id]);
-    return res.status(201).json(vlans);
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'vlan.add', summary: `Add VLAN ${vlan_id} on ${bridge}` },
+    async (c) => {
+      await c.addBridgeVlan(bridge, vlan_id, tagged_ports, untagged_ports);
+      return { message: `VLAN ${vlan_id} added` };
+    },
+    async (c) => { await c.collectVlans(); }
+  );
 });
 
 // PUT /api/devices/:id/vlans/:vlanDbId (update tagged/untagged ports)
@@ -1757,24 +1740,19 @@ router.put('/:id/vlans/:vlanDbId', requireWrite, async (req: Request, res: Respo
   );
   if (!vlan) return res.status(404).json({ error: 'VLAN not found' });
 
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
   const { tagged_ports = [], untagged_ports = [] } = req.body;
 
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.updateBridgeVlan(vlan.bridge, vlan.vlan_id, tagged_ports, untagged_ports);
-    await collector.collectVlans();
-    const vlans = await query(`SELECT * FROM vlans WHERE device_id = $1 ORDER BY vlan_id ASC`, [req.params.id]);
-    return res.json(vlans);
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'vlan.update', summary: `Update VLAN ${vlan.vlan_id} membership on ${vlan.bridge}` },
+    async (c) => {
+      await c.updateBridgeVlan(vlan.bridge, vlan.vlan_id, tagged_ports, untagged_ports);
+      return { message: `VLAN ${vlan.vlan_id} updated` };
+    },
+    async (c) => { await c.collectVlans(); }
+  );
 });
 
 // DELETE /api/devices/:id/vlans/:vlanDbId
@@ -1785,21 +1763,19 @@ router.delete('/:id/vlans/:vlanDbId', requireWrite, async (req: Request, res: Re
   );
   if (!vlan) return res.status(404).json({ error: 'VLAN not found' });
 
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'vlan.delete', summary: `Remove VLAN ${vlan.vlan_id} from ${vlan.bridge}` },
+    async (c) => {
+      await c.removeBridgeVlan(vlan.bridge, vlan.vlan_id);
+      return { message: 'VLAN removed' };
+    },
+    // Only drop the local row once the device is confirmed reachable — if the
+    // change auto-reverts, the VLAN still exists on the device.
+    async () => { await query(`DELETE FROM vlans WHERE id = $1`, [req.params.vlanDbId]); }
   );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.removeBridgeVlan(vlan.bridge, vlan.vlan_id);
-    await query(`DELETE FROM vlans WHERE id = $1`, [req.params.vlanDbId]);
-    return res.json({ message: 'VLAN removed' });
-  } finally {
-    collector.disconnect();
-  }
 });
 
 // POST /api/devices/:id/vlans/copy (bulk copy VLANs from another switch)
