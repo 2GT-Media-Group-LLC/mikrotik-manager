@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
 import { devicesApi } from '../../services/api';
@@ -77,7 +78,7 @@ function SectionHeader({ title, onRefresh, isFetching }: { title: string; onRefr
 }
 
 // ─── Routes sub-tab (original) ────────────────────────────────────────────────
-function RoutesSubTab({ deviceId }: { deviceId: number }) {
+function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
 
@@ -90,30 +91,47 @@ function RoutesSubTab({ deviceId }: { deviceId: number }) {
   const [form, setForm] = useState({ dst_address: '', gateway: '', distance: '1', comment: '' });
   const [addError, setAddError] = useState('');
   const [deleteError, setDeleteError] = useState('');
+  // 409 + verdict from the lockout predictor, with the retry that confirms it.
+  const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
   const addMutation = useMutation({
-    mutationFn: () => devicesApi.addRoute(deviceId, {
+    mutationFn: (confirm: boolean) => devicesApi.addRoute(deviceId, {
       dst_address: form.dst_address,
       gateway: form.gateway,
       distance: form.distance ? parseInt(form.distance, 10) : undefined,
       comment: form.comment || undefined,
+      ...(confirm ? { confirm_lockout: true } : {}),
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['routing', deviceId] });
       setForm({ dst_address: '', gateway: '', distance: '1', comment: '' });
       setShowAdd(false);
       setAddError('');
+      setLockout(null);
     },
-    onError: (err: unknown) => setAddError(errMsg(err)),
+    onError: (err: unknown) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) { setLockout({ verdict, retry: () => addMutation.mutate(true) }); return; }
+      setAddError(errMsg(err));
+    },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (routeId: string) => devicesApi.deleteRoute(deviceId, routeId),
+    mutationFn: ({ routeId, confirm = false }: { routeId: string; confirm?: boolean }) =>
+      devicesApi.deleteRoute(deviceId, routeId, confirm),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['routing', deviceId] });
       setDeleteError('');
+      setLockout(null);
     },
-    onError: (err: unknown) => setDeleteError(errMsg(err)),
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => deleteMutation.mutate({ routeId: vars.routeId, confirm: true }) });
+        return;
+      }
+      setDeleteError(errMsg(err));
+    },
   });
 
   const isDynamic = (r: Record<string, string>) =>
@@ -158,7 +176,7 @@ function RoutesSubTab({ deviceId }: { deviceId: number }) {
           </div>
           {addError && <div className="flex items-center gap-2 text-sm text-red-500"><AlertCircle className="w-4 h-4" />{addError}</div>}
           <div className="flex gap-2">
-            <button onClick={() => addMutation.mutate()} disabled={!form.dst_address || !form.gateway || addMutation.isPending} className="btn-primary flex items-center gap-2 text-sm">
+            <button onClick={() => addMutation.mutate(false)} disabled={!form.dst_address || !form.gateway || addMutation.isPending} className="btn-primary flex items-center gap-2 text-sm">
               {addMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add Route
             </button>
             <button onClick={() => setShowAdd(false)} className="btn-secondary text-sm">Cancel</button>
@@ -206,7 +224,7 @@ function RoutesSubTab({ deviceId }: { deviceId: number }) {
                       <td className="px-4 py-2.5">
                         {!dynamic && routeId && (
                           <button
-                            onClick={() => { if (confirm(`Remove route to ${r['dst-address']}?`)) deleteMutation.mutate(routeId); }}
+                            onClick={() => { if (confirm(`Remove route to ${r['dst-address']}?`)) deleteMutation.mutate({ routeId }); }}
                             disabled={deleteMutation.isPending}
                             className="p-1 rounded text-gray-400 hover:text-red-500 transition-colors"
                           >
@@ -222,6 +240,16 @@ function RoutesSubTab({ deviceId }: { deviceId: number }) {
           </table>
         )}
       </div>
+
+      {lockout && (
+        <LockoutVerdictDialog
+          verdict={lockout.verdict}
+          confirmPhrase={deviceName || 'confirm'}
+          pending={addMutation.isPending || deleteMutation.isPending}
+          onConfirm={lockout.retry}
+          onCancel={() => setLockout(null)}
+        />
+      )}
     </div>
   );
 }
@@ -682,7 +710,7 @@ function TablesSubTab({ deviceId }: { deviceId: number }) {
 }
 
 // ─── Main RoutingTab with sub-tabs ────────────────────────────────────────────
-export default function RoutingTab({ deviceId }: { deviceId: number }) {
+export default function RoutingTab({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('Routes');
 
   return (
@@ -706,7 +734,7 @@ export default function RoutingTab({ deviceId }: { deviceId: number }) {
       </div>
 
       {/* Sub-tab content */}
-      {activeSubTab === 'Routes'        && <RoutesSubTab deviceId={deviceId} />}
+      {activeSubTab === 'Routes'        && <RoutesSubTab deviceId={deviceId} deviceName={deviceName} />}
       {activeSubTab === 'OSPF'          && <OspfSubTab deviceId={deviceId} />}
       {activeSubTab === 'BGP'           && <BgpSubTab deviceId={deviceId} />}
       {activeSubTab === 'Route Filters' && <RouteFiltersSubTab deviceId={deviceId} />}

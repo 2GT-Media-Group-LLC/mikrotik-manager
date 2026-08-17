@@ -217,7 +217,7 @@ export const devicesApi = {
   deleteFirewallRule: (id: number, ruleId: string) =>
     api.delete(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`),
   getResources: (id: number) => api.get<Record<string, string>>(`/devices/${id}/resources`),
-  configurePortVlan: (id: number, name: string, data: PortVlanConfig) =>
+  configurePortVlan: (id: number, name: string, data: PortVlanConfig & { confirm_lockout?: boolean }) =>
     api.put(`/devices/${id}/ports/${encodeURIComponent(name)}/vlan`, data),
   getSystemConfig: (id: number) => api.get<SystemConfig>(`/devices/${id}/system-config`),
   updateSystemConfig: (id: number, data: Partial<{
@@ -229,10 +229,11 @@ export const devicesApi = {
     dns_allow_remote: boolean;
   }>) => api.put(`/devices/${id}/system-config`, data),
   getIpAddresses: (id: number) => api.get<IpAddress[]>(`/devices/${id}/ip-addresses`),
-  addIpAddress: (id: number, data: { address: string; interface: string }) =>
+  addIpAddress: (id: number, data: { address: string; interface: string; confirm_lockout?: boolean }) =>
     api.post<IpAddress[]>(`/devices/${id}/ip-addresses`, data),
-  removeIpAddress: (id: number, addrId: string) =>
-    api.delete(`/devices/${id}/ip-addresses/${encodeURIComponent(addrId)}`),
+  removeIpAddress: (id: number, addrId: string, confirmLockout = false) =>
+    api.delete(`/devices/${id}/ip-addresses/${encodeURIComponent(addrId)}`,
+      confirmLockout ? { data: { confirm_lockout: true } } : undefined),
   checkUpdate: (id: number) =>
     api.post<Record<string, string>>(`/devices/${id}/check-update`),
   checkRouterboard: (id: number) =>
@@ -244,10 +245,11 @@ export const devicesApi = {
   getClock: (id: number) => api.get<{ date: string; time: string; timezone: string }>(`/devices/${id}/clock`),
   setClock: (id: number, data: { date?: string; time?: string; timezone?: string }) =>
     api.put(`/devices/${id}/clock`, data),
-  addRoute: (id: number, data: { dst_address: string; gateway: string; distance?: number; comment?: string }) =>
+  addRoute: (id: number, data: { dst_address: string; gateway: string; distance?: number; comment?: string; confirm_lockout?: boolean }) =>
     api.post(`/devices/${id}/routing`, data),
-  deleteRoute: (id: number, routeId: string) =>
-    api.delete(`/devices/${id}/routing/${encodeURIComponent(routeId)}`),
+  deleteRoute: (id: number, routeId: string, confirmLockout = false) =>
+    api.delete(`/devices/${id}/routing/${encodeURIComponent(routeId)}`,
+      confirmLockout ? { data: { confirm_lockout: true } } : undefined),
   // confirm_lockout overrides a predicted-lockout refusal (HTTP 409) after the user
   // has seen and accepted the verdict.
   addVlan: (id: number, data: { bridge: string; vlan_id: number; tagged_ports?: string[]; untagged_ports?: string[]; confirm_lockout?: boolean }) =>
@@ -266,15 +268,18 @@ export const devicesApi = {
   createBond: (id: number, data: {
     name: string; mode: string; slaves: string[];
     lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number;
+    confirm_lockout?: boolean;
   }) => api.post(`/devices/${id}/bonds`, data),
   updateBond: (id: number, bondName: string, data: {
     mode: string; slaves: string[];
     lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number;
   }) => api.put(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`, data),
-  deleteBond: (id: number, bondName: string) =>
-    api.delete(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`),
-  setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean) =>
-    api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`, { enabled }),
+  deleteBond: (id: number, bondName: string, confirmLockout = false) =>
+    api.delete(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`,
+      confirmLockout ? { data: { confirm_lockout: true } } : undefined),
+  setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean, confirmLockout = false) =>
+    api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`,
+      { enabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
   getNat: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/nat`),
   addNatRule: (id: number, data: Record<string, unknown>) =>
     api.post<Record<string, string>[]>(`/devices/${id}/nat`, data),
@@ -310,8 +315,9 @@ export const devicesApi = {
     api.delete(`/devices/${id}/queues/${encodeURIComponent(queueId)}`),
   // IP services + security posture
   getServices: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/services`),
-  setServiceDisabled: (id: number, serviceId: string, disabled: boolean) =>
-    api.put<Record<string, string>[]>(`/devices/${id}/services/${encodeURIComponent(serviceId)}`, { disabled }),
+  setServiceDisabled: (id: number, serviceId: string, disabled: boolean, confirmLockout = false) =>
+    api.put<Record<string, string>[]>(`/devices/${id}/services/${encodeURIComponent(serviceId)}`,
+      { disabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
   getSecurityPosture: (id: number) =>
     api.get<{ score: number; checks: SecurityCheck[] }>(`/devices/${id}/security-posture`),
   patchLocation: (id: number, data: {

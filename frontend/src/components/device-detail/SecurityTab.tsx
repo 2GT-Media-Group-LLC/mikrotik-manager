@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock } from 'lucide-react';
 import { devicesApi } from '../../services/api';
 import type { SecurityCheck } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import clsx from 'clsx';
 
 type Row = Record<string, string> & { '.id': string };
@@ -20,9 +22,11 @@ function scoreColor(score: number) {
   return 'text-red-600 dark:text-red-400';
 }
 
-export default function SecurityTab({ deviceId }: { deviceId: number }) {
+export default function SecurityTab({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
+  const [serviceError, setServiceError] = useState('');
+  const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
   const { data: posture, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['security-posture', deviceId],
@@ -47,8 +51,23 @@ export default function SecurityTab({ deviceId }: { deviceId: number }) {
     qc.invalidateQueries({ queryKey: ['services', deviceId] });
   };
   const toggleSvc = useMutation({
-    mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) => devicesApi.setServiceDisabled(deviceId, id, disabled),
-    onSuccess: invalidate,
+    mutationFn: ({ id, disabled, confirm = false }: { id: string; disabled: boolean; confirm?: boolean }) =>
+      devicesApi.setServiceDisabled(deviceId, id, disabled, confirm),
+    onSuccess: () => { invalidate(); setLockout(null); },
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({
+          verdict,
+          retry: () => toggleSvc.mutate({ id: vars.id, disabled: vars.disabled, confirm: true }),
+        });
+        return;
+      }
+      // The management service has its own hard refusal (409 with a reason but no
+      // verdict) — surface that text rather than a generic failure.
+      const r = (err as { response?: { data?: { reason?: string; error?: string } } })?.response?.data;
+      setServiceError(r?.reason || r?.error || 'Failed to update service');
+    },
   });
 
   const checks: SecurityCheck[] = posture?.checks ?? [];
@@ -163,6 +182,22 @@ export default function SecurityTab({ deviceId }: { deviceId: number }) {
             </table>
           </div>
         </>
+      )}
+
+      {serviceError && (
+        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+          {serviceError}
+        </div>
+      )}
+
+      {lockout && (
+        <LockoutVerdictDialog
+          verdict={lockout.verdict}
+          confirmPhrase={deviceName || 'confirm'}
+          pending={toggleSvc.isPending}
+          onConfirm={lockout.retry}
+          onCancel={() => setLockout(null)}
+        />
       )}
     </div>
   );

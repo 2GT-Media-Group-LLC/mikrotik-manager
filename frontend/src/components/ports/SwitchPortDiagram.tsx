@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, X, Check, AlertCircle, Activity, Cpu, Link2, Trash2, Plus, Network, Users, Wifi, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { devicesApi, metricsApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
-import ChangeGuardDialog, { guardOutcomeMessage, type GuardResult } from '../ChangeGuardDialog';
+import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVerdictOf, type GuardResult, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -15,6 +15,7 @@ import clsx from 'clsx';
 
 interface Props {
   deviceId: number;
+  deviceName?: string;
   autoOpenBridge?: string;
   onBridgeOpened?: () => void;
 }
@@ -586,7 +587,7 @@ function PortClientsCard({ deviceId, portName }: { deviceId: number; portName: s
   );
 }
 
-export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOpened }: Props) {
+export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge, onBridgeOpened }: Props) {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [selectedPorts, setSelectedPorts] = useState<Set<string>>(new Set());
@@ -599,6 +600,8 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
   const [editingBond, setEditingBond] = useState<SwitchPort | null>(null);
   const [confirmDestroyBond, setConfirmDestroyBond] = useState<string | null>(null);
   const [guardNotice, setGuardNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
+  // Predicted lockout (409 + verdict) and the retry that re-sends with confirm_lockout.
+  const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
   const [editForm, setEditForm] = useState<PortEditForm>({
     disabled: false,
     comment: '',
@@ -655,6 +658,7 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
     if (bridgePort) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setBridgeError('');
+      setLockout(null);
       setEditingBridge(bridgePort);
       onBridgeOpened?.();
     }
@@ -674,27 +678,39 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
   });
 
   const updateVlanMutation = useMutation({
-    mutationFn: ({ name, data }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[] } }) =>
-      devicesApi.configurePortVlan(deviceId, name, data),
+    mutationFn: ({ name, data, confirm }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[] }; confirm?: boolean }) =>
+      devicesApi.configurePortVlan(deviceId, name, confirm ? { ...data, confirm_lockout: true } : data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
+      setLockout(null);
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => updateVlanMutation.mutate({ ...vars, confirm: true }) });
+        return;
+      }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setSaveError(msg || 'Failed to apply VLAN config');
     },
   });
 
   const createBondMutation = useMutation({
-    mutationFn: (d: { name: string; mode: string; slaves: string[]; lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number }) =>
+    mutationFn: (d: { name: string; mode: string; slaves: string[]; lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number; confirm_lockout?: boolean }) =>
       devicesApi.createBond(deviceId, d),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
       setShowCreateTrunkModal(false);
       setSelectedPorts(new Set());
       setBondError('');
+      setLockout(null);
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => createBondMutation.mutate({ ...vars, confirm_lockout: true }) });
+        return;
+      }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setBondError(msg || 'Failed to create bond');
     },
@@ -707,6 +723,7 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
       setEditingBond(null);
       setBondError('');
+      setLockout(null);
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -715,12 +732,14 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
   });
 
   const deleteBondMutation = useMutation({
-    mutationFn: (name: string) => devicesApi.deleteBond(deviceId, name),
+    mutationFn: ({ name, confirm = false }: { name: string; confirm?: boolean }) =>
+      devicesApi.deleteBond(deviceId, name, confirm),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
       setEditingBond(null);
       setConfirmDestroyBond(null);
       setBondError('');
+      setLockout(null);
       // Report what the safety net did — especially "the device is restoring itself".
       const notice = guardOutcomeMessage((res?.data as { guard?: GuardResult })?.guard);
       if (notice) {
@@ -728,25 +747,39 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
         if (notice.tone === 'ok') setTimeout(() => setGuardNotice(null), 6000);
       }
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => deleteBondMutation.mutate({ name: vars.name, confirm: true }) });
+        return;
+      }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setBondError(msg || 'Failed to delete bond');
     },
   });
 
   const setBridgeVlanFilteringMutation = useMutation({
-    mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) =>
-      devicesApi.setBridgeVlanFiltering(deviceId, name, enabled),
+    mutationFn: ({ name, enabled, confirm = false }: { name: string; enabled: boolean; confirm?: boolean }) =>
+      devicesApi.setBridgeVlanFiltering(deviceId, name, enabled, confirm),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
       setBridgeError('');
+      setLockout(null);
       // Update editingBridge locally so the toggle reflects the new state immediately
       setEditingBridge((b) => b ? {
         ...b,
         config_json: { ...(b.config_json ?? {}), 'vlan-filtering': setBridgeVlanFilteringMutation.variables?.enabled ? 'true' : 'false' },
       } : null);
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({
+          verdict,
+          retry: () => setBridgeVlanFilteringMutation.mutate({ ...vars, confirm: true }),
+        });
+        return;
+      }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setBridgeError(msg || 'Failed to update VLAN filtering');
     },
@@ -802,6 +835,7 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
   const openEditPanel = (port: SwitchPort) => {
     if (isBridge(port)) {
       setBridgeError('');
+      setLockout(null);
       setEditingBridge(port);
       return;
     }
@@ -816,6 +850,7 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
         members: slaves,
       });
       setBondError('');
+      setLockout(null);
       setEditingBond(port);
       return;
     }
@@ -993,6 +1028,7 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
                 onClick={() => {
                   setCreateTrunkForm({ name: `bond${bondPorts.length + 1}`, mode: '802.3ad', lacp_rate: 'slow', transmit_hash_policy: '', mtu: '', min_links: '' });
                   setBondError('');
+      setLockout(null);
                   setShowCreateTrunkModal(true);
                 }}
               >
@@ -1923,8 +1959,21 @@ export default function SwitchPortDiagram({ deviceId, autoOpenBridge, onBridgeOp
           }
           confirmLabel="Destroy bond"
           pending={deleteBondMutation.isPending}
-          onConfirm={() => deleteBondMutation.mutate(confirmDestroyBond)}
+          onConfirm={() => deleteBondMutation.mutate({ name: confirmDestroyBond })}
           onCancel={() => setConfirmDestroyBond(null)}
+        />
+      )}
+
+      {lockout && (
+        <LockoutVerdictDialog
+          verdict={lockout.verdict}
+          confirmPhrase={deviceName || 'confirm'}
+          pending={
+            updateVlanMutation.isPending || createBondMutation.isPending
+            || deleteBondMutation.isPending || setBridgeVlanFilteringMutation.isPending
+          }
+          onConfirm={lockout.retry}
+          onCancel={() => setLockout(null)}
         />
       )}
 

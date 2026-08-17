@@ -370,6 +370,7 @@ export default function DeviceDetailPage() {
       {activeTab === 'ports' && (
         <SwitchPortDiagram
           deviceId={deviceId}
+          deviceName={device?.name}
           autoOpenBridge={autoOpenBridge ?? undefined}
           onBridgeOpened={() => setAutoOpenBridge(null)}
         />
@@ -382,9 +383,9 @@ export default function DeviceDetailPage() {
           onGoToPorts={(bridgeName) => { setAutoOpenBridge(bridgeName); setActiveTab('ports'); }}
         />
       )}
-      {activeTab === 'routing' && <RoutingTab deviceId={deviceId} />}
+      {activeTab === 'routing' && <RoutingTab deviceId={deviceId} deviceName={device.name} />}
       {activeTab === 'firewall' && <FirewallTab deviceId={deviceId} />}
-      {activeTab === 'security' && <SecurityTab deviceId={deviceId} />}
+      {activeTab === 'security' && <SecurityTab deviceId={deviceId} deviceName={device.name} />}
       {activeTab === 'queues' && <QueuesTab deviceId={deviceId} />}
       {activeTab === 'connections' && <ConnectionsTab deviceId={deviceId} />}
       {activeTab === 'config' && <SystemConfigTab deviceId={deviceId} device={device} />}

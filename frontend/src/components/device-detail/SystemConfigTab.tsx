@@ -4,6 +4,7 @@ import {
   RefreshCw, Plus, Trash2, CheckCircle, AlertCircle, Download, Server, Cpu, FileText,
 } from 'lucide-react';
 import { devicesApi } from '../../services/api';
+import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { Device, IpAddress, Interface } from '../../types';
 import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
@@ -98,23 +99,42 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
 
   const [newIp, setNewIp] = useState({ address: '', interface: '' });
   const [ipError, setIpError] = useState('');
+  // Predicted lockout (409 + verdict) plus the retry that confirms it.
+  const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
   const addIpMutation = useMutation({
-    mutationFn: () => devicesApi.addIpAddress(deviceId, newIp),
+    mutationFn: (confirm: boolean) =>
+      devicesApi.addIpAddress(deviceId, confirm ? { ...newIp, confirm_lockout: true } : newIp),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ip-addresses', deviceId] });
       setNewIp({ address: '', interface: '' });
       setIpError('');
+      setLockout(null);
     },
     onError: (err: unknown) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) { setLockout({ verdict, retry: () => addIpMutation.mutate(true) }); return; }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setIpError(msg || 'Failed to add IP address');
     },
   });
 
   const removeIpMutation = useMutation({
-    mutationFn: (id: string) => devicesApi.removeIpAddress(deviceId, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ip-addresses', deviceId] }),
+    mutationFn: ({ id, confirm = false }: { id: string; confirm?: boolean }) =>
+      devicesApi.removeIpAddress(deviceId, id, confirm),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ip-addresses', deviceId] });
+      setLockout(null);
+    },
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => removeIpMutation.mutate({ id: vars.id, confirm: true }) });
+        return;
+      }
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setIpError(msg || 'Failed to remove IP address');
+    },
   });
 
   // ─── RouterOS update check / install ─────────────────────────────────────
@@ -471,7 +491,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
                       <button
                         onClick={() => {
                           if (confirm(`Remove ${ip.address} from ${ip.interface}?`)) {
-                            removeIpMutation.mutate(ip['.id']);
+                            removeIpMutation.mutate({ id: ip['.id'] });
                           }
                         }}
                         className="p-1 rounded text-gray-400 hover:text-red-500 transition-colors"
@@ -511,7 +531,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
               </select>
             </div>
             <button
-              onClick={() => addIpMutation.mutate()}
+              onClick={() => addIpMutation.mutate(false)}
               disabled={!newIp.address || !newIp.interface || addIpMutation.isPending}
               className="btn-primary flex items-center gap-2"
             >
@@ -722,6 +742,16 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
           )}
         </div>
       </div>
+
+      {lockout && (
+        <LockoutVerdictDialog
+          verdict={lockout.verdict}
+          confirmPhrase={device.name}
+          pending={addIpMutation.isPending || removeIpMutation.isPending}
+          onConfirm={lockout.retry}
+          onCancel={() => setLockout(null)}
+        />
+      )}
     </div>
   );
 }
