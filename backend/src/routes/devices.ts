@@ -13,6 +13,8 @@ import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
 import { detectLockoutRisk } from '../utils/firewallSafety';
 import { withSafeApply, type GuardDevice } from '../services/changeGuard/ChangeGuard';
+import { captureSnapshot, resolveManagementPath } from '../services/changeGuard/pathModel';
+import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
 
@@ -530,7 +532,17 @@ router.put('/:id/ports/:name/vlan', requireWrite, async (req: Request, res: Resp
     req.params.id,
     req,
     res,
-    { kind: 'port.vlan', summary: `VLAN config on port ${req.params.name} (pvid ${pvid ?? 1})` },
+    {
+      kind: 'port.vlan',
+      summary: `VLAN config on port ${req.params.name} (pvid ${pvid ?? 1})`,
+      change: {
+        kind: 'port.vlan',
+        port: req.params.name,
+        pvid: pvid ?? 1,
+        tagged: tagged_vlans as number[],
+        untagged: untagged_vlans as number[],
+      },
+    },
     async (c) => {
       await c.setPortVlanConfig(
         req.params.name,
@@ -922,12 +934,46 @@ async function withGuardedChange<T>(
   id: string,
   req: Request,
   res: Response,
-  meta: { kind: string; summary: string },
+  meta: { kind: string; summary: string; change?: PlannedChange },
   fn: (c: DeviceCollector) => Promise<T>,
   afterConfirmed?: (c: DeviceCollector) => Promise<void>
 ): Promise<void> {
   const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]);
   if (!deviceRow) { res.status(404).json({ error: 'Device not found' }); return; }
+
+  // Pre-flight: simulate the change against live state and refuse a predicted
+  // lockout unless the user has explicitly accepted it. Analysis failures must
+  // never block a legitimate change — the auto-revert net still applies.
+  if (meta.change && req.body?.confirm_lockout !== true) {
+    try {
+      const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);
+      const verdict = analyzeChange(snap, deviceRow as unknown as GuardDevice, meta.change);
+      if (verdict.severity === 'critical') {
+        res.status(409).json({
+          lockout: true,
+          reason: verdict.headline,
+          verdict: {
+            severity: verdict.severity,
+            headline: verdict.headline,
+            violations: verdict.violations,
+            warnings: verdict.warnings,
+            path: {
+              mgmt_interface: verdict.path.mgmtInterface,
+              bridge: verdict.path.bridge,
+              mgmt_vlan_id: verdict.path.mgmtVlanId,
+              tagged_management: verdict.path.taggedManagement,
+              ingress_port: verdict.path.ingressPort,
+              ingress_port_source: verdict.path.ingressPortSource,
+              hops: verdict.path.hops,
+            },
+          },
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn(`[preflight] analysis skipped for device ${id}: ${(err as Error).message}`);
+    }
+  }
 
   const collector = new DeviceCollector(deviceRow);
   try {
@@ -981,6 +1027,38 @@ async function withCollector<T>(
     collector.disconnect();
   }
 }
+
+// GET /api/devices/:id/management-path — how the manager reaches this device, and
+// which objects are therefore load-bearing. Read-only; useful on its own and as the
+// explanation behind a lockout warning.
+router.get('/:id/management-path', async (req: Request, res: Response) => {
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  try {
+    const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);
+    const path = resolveManagementPath(snap, deviceRow as unknown as GuardDevice);
+    return res.json(path);
+  } catch (err) {
+    return res.status(502).json({ error: `Could not read device state: ${(err as Error).message}` });
+  }
+});
+
+// POST /api/devices/:id/preflight — analyse a change WITHOUT applying it, so the UI
+// can warn while the user is still editing. Body: { change: PlannedChange }.
+router.post('/:id/preflight', requireWrite, async (req: Request, res: Response) => {
+  const change = req.body?.change as PlannedChange | undefined;
+  if (!change || typeof change !== 'object' || !('kind' in change)) {
+    return res.status(400).json({ error: 'change (with a kind) is required' });
+  }
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  try {
+    const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);
+    return res.json(analyzeChange(snap, deviceRow as unknown as GuardDevice, change));
+  } catch (err) {
+    return res.status(502).json({ error: `Could not read device state: ${(err as Error).message}` });
+  }
+});
 
 router.get('/:id/address-lists', async (req, res) => {
   await withCollector(req.params.id, res, (c) => c.getAddressLists());
@@ -1315,7 +1393,11 @@ router.delete('/:id/ip-addresses/:addrId', requireWrite, async (req: Request, re
     req.params.id,
     req,
     res,
-    { kind: 'ip.remove', summary: `Remove IP address ${req.params.addrId}` },
+    {
+      kind: 'ip.remove',
+      summary: `Remove IP address ${req.params.addrId}`,
+      change: { kind: 'ip.remove', addressId: req.params.addrId },
+    },
     async (c) => {
       await c.removeIpAddress(req.params.addrId);
       return { message: 'IP address removed' };
@@ -1504,7 +1586,11 @@ router.delete('/:id/routing/:routeId', requireWrite, async (req: Request, res: R
     req.params.id,
     req,
     res,
-    { kind: 'route.remove', summary: `Remove route ${req.params.routeId}` },
+    {
+      kind: 'route.remove',
+      summary: `Remove route ${req.params.routeId}`,
+      change: { kind: 'route.remove', routeId: req.params.routeId },
+    },
     async (c) => {
       await c.removeRoute(req.params.routeId);
       return { message: 'Route removed' };
@@ -1723,7 +1809,11 @@ router.post('/:id/vlans', requireWrite, async (req: Request, res: Response) => {
     req.params.id,
     req,
     res,
-    { kind: 'vlan.add', summary: `Add VLAN ${vlan_id} on ${bridge}` },
+    {
+      kind: 'vlan.add',
+      summary: `Add VLAN ${vlan_id} on ${bridge}`,
+      change: { kind: 'vlan.add', bridge, vlanId: vlan_id, tagged: tagged_ports, untagged: untagged_ports },
+    },
     async (c) => {
       await c.addBridgeVlan(bridge, vlan_id, tagged_ports, untagged_ports);
       return { message: `VLAN ${vlan_id} added` };
@@ -1746,7 +1836,14 @@ router.put('/:id/vlans/:vlanDbId', requireWrite, async (req: Request, res: Respo
     req.params.id,
     req,
     res,
-    { kind: 'vlan.update', summary: `Update VLAN ${vlan.vlan_id} membership on ${vlan.bridge}` },
+    {
+      kind: 'vlan.update',
+      summary: `Update VLAN ${vlan.vlan_id} membership on ${vlan.bridge}`,
+      change: {
+        kind: 'vlan.update', bridge: vlan.bridge, vlanId: vlan.vlan_id,
+        tagged: tagged_ports, untagged: untagged_ports,
+      },
+    },
     async (c) => {
       await c.updateBridgeVlan(vlan.bridge, vlan.vlan_id, tagged_ports, untagged_ports);
       return { message: `VLAN ${vlan.vlan_id} updated` };
@@ -1767,7 +1864,11 @@ router.delete('/:id/vlans/:vlanDbId', requireWrite, async (req: Request, res: Re
     req.params.id,
     req,
     res,
-    { kind: 'vlan.delete', summary: `Remove VLAN ${vlan.vlan_id} from ${vlan.bridge}` },
+    {
+      kind: 'vlan.delete',
+      summary: `Remove VLAN ${vlan.vlan_id} from ${vlan.bridge}`,
+      change: { kind: 'vlan.delete', bridge: vlan.bridge, vlanId: vlan.vlan_id },
+    },
     async (c) => {
       await c.removeBridgeVlan(vlan.bridge, vlan.vlan_id);
       return { message: 'VLAN removed' };
@@ -1883,7 +1984,11 @@ router.delete('/:id/bonds/:bondName', requireWrite, async (req: Request, res: Re
     req.params.id,
     req,
     res,
-    { kind: 'bond.delete', summary: `Delete bond '${req.params.bondName}'` },
+    {
+      kind: 'bond.delete',
+      summary: `Delete bond '${req.params.bondName}'`,
+      change: { kind: 'bond.delete', name: req.params.bondName },
+    },
     async (c) => {
       await c.deleteBond(req.params.bondName);
       return { message: 'Bond deleted' };
@@ -1907,6 +2012,11 @@ router.put('/:id/bridge/:bridgeName/vlan-filtering', requireWrite, async (req: R
     {
       kind: 'bridge.vlan-filtering',
       summary: `${enabled ? 'Enable' : 'Disable'} VLAN filtering on bridge '${req.params.bridgeName}'`,
+      change: {
+        kind: 'bridge.vlan-filtering',
+        bridge: req.params.bridgeName,
+        enabled: Boolean(enabled),
+      },
     },
     async (c) => {
       await c.setBridgeVlanFiltering(req.params.bridgeName, Boolean(enabled));
