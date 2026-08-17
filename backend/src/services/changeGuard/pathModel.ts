@@ -21,7 +21,12 @@
  */
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
 import { decrypt } from '../../utils/crypto';
+import { expandVlanIds } from '../../utils/vlan';
 import type { GuardDevice } from './ChangeGuard';
+
+// Re-exported so the analysis modules keep importing VLAN handling from the path
+// model they reason about, while the collector shares the same implementation.
+export { expandVlanIds };
 
 export type RosRow = Record<string, string>;
 
@@ -32,6 +37,8 @@ export interface DeviceSnapshot {
   bridges: RosRow[];
   bridgePorts: RosRow[];
   bridgeVlans: RosRow[];
+  /** Bonding interfaces with their slave lists; used by the config audit. */
+  bonds: RosRow[];
   routes: RosRow[];
   arp: RosRow[];
   bridgeHosts: RosRow[];
@@ -100,7 +107,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
 
     const [
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
-      bridgeVlans, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
+      bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
     ] = await Promise.all([
       run('/ip/address/print', { detail: '' }),
       run('/interface/print', { detail: '' }),
@@ -108,6 +115,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       run('/interface/bridge/print', { detail: '' }),
       run('/interface/bridge/port/print', { detail: '' }),
       run('/interface/bridge/vlan/print', { detail: '' }),
+      run('/interface/bonding/print', { detail: '' }),
       run('/ip/route/print', { detail: '' }),
       run('/ip/arp/print'),
       run('/interface/bridge/host/print'),
@@ -119,7 +127,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
 
     return {
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
-      bridgeVlans, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
+      bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
     };
   } finally {
     client.disconnect();
@@ -132,25 +140,6 @@ const stripCidr = (addr: string): string => (addr || '').split('/')[0].trim();
 const isTrue = (v: string | undefined): boolean => v === 'true' || v === 'yes';
 const csv = (v: string | undefined): string[] =>
   (v || '').split(',').map((s) => s.trim()).filter(Boolean);
-
-/** RouterOS vlan-ids may be a list and/or ranges: "10", "10,20", "10-12". */
-export function expandVlanIds(spec: string | undefined): number[] {
-  const out: number[] = [];
-  for (const part of csv(spec)) {
-    const range = part.match(/^(\d+)\s*-\s*(\d+)$/);
-    if (range) {
-      const from = parseInt(range[1], 10);
-      const to = parseInt(range[2], 10);
-      if (!isNaN(from) && !isNaN(to) && to >= from) {
-        for (let v = from; v <= to; v++) out.push(v);
-      }
-      continue;
-    }
-    const n = parseInt(part, 10);
-    if (!isNaN(n)) out.push(n);
-  }
-  return out;
-}
 
 /**
  * Effective membership for a VLAN on a bridge. RouterOS exposes `current-tagged`

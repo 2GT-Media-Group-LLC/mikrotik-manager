@@ -6,6 +6,7 @@ import { Point } from '@influxdata/influxdb-client';
 import { decrypt } from '../../utils/crypto';
 import { lookupVendor } from '../../utils/oui';
 import { buildServerArpMap } from '../../utils/serverArp';
+import { aggregateBridgeVlans, portVlanMembership, expandVlanIds } from '../../utils/vlan';
 import { BackupService } from '../BackupService';
 import { alertService } from '../AlertService';
 
@@ -309,11 +310,18 @@ export class DeviceCollector {
         const mtu = !isNaN(rawMtu) && rawMtu > 0 ? rawMtu : null;
 
         try {
+          // Only bridges have vlan-filtering; null everywhere else keeps the column
+          // meaningful for queries rather than defaulting to a misleading false.
+          const vlanFiltering = resolvedType === 'bridge'
+            ? enrichedIface['vlan-filtering'] === 'true'
+            : null;
+
           await query(
-            `INSERT INTO interfaces (device_id, name, type, mac_address, mtu, running, disabled, comment, speed, config_json, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+            `INSERT INTO interfaces (device_id, name, type, mac_address, mtu, running, disabled, comment, speed, vlan_filtering, config_json, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
              ON CONFLICT (device_id, name) DO UPDATE SET
-               type=$3, mac_address=$4, mtu=$5, running=$6, disabled=$7, comment=$8, speed=$9, config_json=$10, updated_at=NOW()`,
+               type=$3, mac_address=$4, mtu=$5, running=$6, disabled=$7, comment=$8, speed=$9,
+               vlan_filtering=$10, config_json=$11, updated_at=NOW()`,
             [
               this.device.id,
               name,
@@ -324,6 +332,7 @@ export class DeviceCollector {
               enrichedIface['disabled'] === 'true',
               enrichedIface['comment'] || null,
               enrichedIface['speed'] || null,
+              vlanFiltering,
               JSON.stringify(enrichedIface),
             ]
           );
@@ -372,56 +381,104 @@ export class DeviceCollector {
 
   async collectVlans(): Promise<void> {
     try {
-      // Bridge VLAN table (CRS switches / bridge-based switching)
-      const bridgeVlans = await this.client
-        .execute('/interface/bridge/vlan/print', { detail: '' })
-        .catch(() => []);
+      // Bridge VLAN table (CRS switches / bridge-based switching).
+      //
+      // Both fetches are tracked for success separately: a stale cache beats a
+      // wrongly-empty one, so pruning only happens when we know the device
+      // actually reported an authoritative list.
+      let bridgeVlans: Record<string, string>[] = [];
+      let bridgeVlansOk = true;
+      try {
+        bridgeVlans = await this.client.execute('/interface/bridge/vlan/print', { detail: '' });
+      } catch {
+        bridgeVlansOk = false;
+      }
 
-      for (const vlan of bridgeVlans) {
-        const vlanId = parseInt(vlan['vlan-ids'] || '0', 10);
-        if (!vlanId) continue;
+      const agg = aggregateBridgeVlans(bridgeVlans);
 
+      for (const v of agg) {
         await query(
-          `INSERT INTO vlans (device_id, vlan_id, name, bridge, tagged_ports, untagged_ports, config_json)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
-           ON CONFLICT (device_id, vlan_id) DO UPDATE SET
-             name=$3, bridge=$4, tagged_ports=$5, untagged_ports=$6, config_json=$7`,
+          `INSERT INTO vlans (device_id, vlan_id, name, bridge, vlan_ids, tagged_ports, untagged_ports, config_json, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+           ON CONFLICT (device_id, bridge, vlan_id) DO UPDATE SET
+             name=$3, vlan_ids=$5, tagged_ports=$6, untagged_ports=$7, config_json=$8, updated_at=NOW()`,
           [
             this.device.id,
-            vlanId,
-            vlan['comment'] || `VLAN ${vlanId}`,
-            vlan['bridge'] || null,
-            this.parseList(vlan['tagged']),
-            this.parseList(vlan['untagged']),
-            JSON.stringify(vlan),
+            v.vlanId,
+            v.name || `VLAN ${v.vlanId}`,
+            v.bridge,
+            v.spec,
+            v.tagged,
+            v.untagged,
+            JSON.stringify(v.rows.length === 1 ? v.rows[0] : v.rows),
           ]
         );
       }
+      const seenVlans = agg.map((v) => ({ bridge: v.bridge, vlanId: v.vlanId }));
 
-      // Also collect bridge port PVIDs
-      const bridgePorts = await this.client
-        .execute('/interface/bridge/port/print', { detail: '' })
-        .catch(() => []);
+      if (bridgeVlansOk) {
+        // Drop VLANs deleted on the device. Comparing composite keys needs two
+        // parallel arrays because Postgres has no tuple-array membership test.
+        await query(
+          `DELETE FROM vlans
+           WHERE device_id = $1
+             AND NOT (bridge || ':' || vlan_id::text = ANY($2::text[]))`,
+          [this.device.id, seenVlans.map((v) => `${v.bridge}:${v.vlanId}`)]
+        );
+      }
 
+      // Per-port membership, derived from the same VLAN table so the port editor
+      // can tell a trunk from an access port.
+      let bridgePorts: Record<string, string>[] = [];
+      let bridgePortsOk = true;
+      try {
+        bridgePorts = await this.client.execute('/interface/bridge/port/print', { detail: '' });
+      } catch {
+        bridgePortsOk = false;
+      }
+
+      const membership = portVlanMembership(bridgeVlans);
+
+      const seenPorts: string[] = [];
       for (const port of bridgePorts) {
         const pvid = parseInt(port['pvid'] || '1', 10);
         const bridge = port['bridge'] || '';
         const portName = port['interface'] || '';
         if (!portName || !bridge) continue;
+        seenPorts.push(`${bridge}:${portName}`);
+
+        const m = membership.get(portName) ?? { tagged: [], untagged: [] };
+        const taggedIds = m.tagged.map(String);
+        const untaggedIds = m.untagged.map(String);
+        const allIds = [...new Set([...m.tagged, ...m.untagged])].sort((a, b) => a - b).map(String);
 
         await query(
-          `INSERT INTO bridge_vlan_entries (device_id, bridge, port, pvid, tagged, config_json, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,NOW())
+          `INSERT INTO bridge_vlan_entries
+             (device_id, bridge, port, pvid, tagged, vlan_ids, tagged_vlan_ids, untagged_vlan_ids, config_json, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
            ON CONFLICT (device_id, bridge, port) DO UPDATE SET
-             pvid=$4, tagged=$5, config_json=$6, updated_at=NOW()`,
+             pvid=$4, tagged=$5, vlan_ids=$6, tagged_vlan_ids=$7, untagged_vlan_ids=$8,
+             config_json=$9, updated_at=NOW()`,
           [
             this.device.id,
             bridge,
             portName,
             pvid,
-            false,
+            taggedIds.length > 0,
+            allIds,
+            taggedIds,
+            untaggedIds,
             JSON.stringify(port),
           ]
+        );
+      }
+
+      if (bridgePortsOk) {
+        await query(
+          `DELETE FROM bridge_vlan_entries
+           WHERE device_id = $1
+             AND NOT (bridge || ':' || port = ANY($2::text[]))`,
+          [this.device.id, seenPorts]
         );
       }
     } catch (err) {
@@ -2689,11 +2746,31 @@ export class DeviceCollector {
   }
 
   async removeBridgeVlan(bridge: string, vlanId: number): Promise<void> {
+    // Matching is done here rather than with a `?vlan-ids=` server-side filter:
+    // that filter compares the raw string, so it misses a row written as a range
+    // or list ("10-20") that nonetheless contains this VLAN — and missing it would
+    // fail silently, leaving the VLAN in place while reporting success.
     const entries = await this.client
-      .execute('/interface/bridge/vlan/print', {}, [`?bridge=${bridge}`, `?vlan-ids=${vlanId}`])
+      .execute('/interface/bridge/vlan/print', { detail: '' }, [`?bridge=${bridge}`])
       .catch(() => []);
-    for (const entry of entries) {
-      const id = (entry as Record<string, string>)['.id'];
+
+    const matches = (entries as Record<string, string>[]).filter((e) =>
+      expandVlanIds(e['vlan-ids']).includes(vlanId)
+    );
+
+    const multi = matches.find((e) => expandVlanIds(e['vlan-ids']).length > 1);
+    if (multi) {
+      throw new Error(
+        `VLAN ${vlanId} on ${bridge} is part of the multi-VLAN entry "${multi['vlan-ids']}". `
+        + `Removing it here would delete every VLAN in that entry, so it must be split on the device first.`
+      );
+    }
+
+    for (const entry of matches) {
+      // Dynamic rows cannot be removed; RouterOS rejects the attempt and the row
+      // reappears from the port PVID that created it.
+      if (entry['dynamic'] === 'true') continue;
+      const id = entry['.id'];
       if (id) await this.client.execute('/interface/bridge/vlan/remove', { numbers: id }).catch(() => {});
     }
   }

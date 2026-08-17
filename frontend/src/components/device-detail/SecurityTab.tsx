@@ -5,6 +5,7 @@ import { devicesApi } from '../../services/api';
 import type { SecurityCheck } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
+import ConfigHealthCard from './ConfigHealthCard';
 import clsx from 'clsx';
 
 type Row = Record<string, string> & { '.id': string };
@@ -189,6 +190,12 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
           {serviceError}
         </div>
       )}
+
+      {/* Correctness rather than hardening: configurations the device accepted and
+          will never complain about, but that do not do what they appear to. */}
+      <div className="pt-2 border-t border-gray-200 dark:border-slate-700">
+        <ConfigHealthCard deviceId={deviceId} />
+      </div>
 
       {lockout && (
         <LockoutVerdictDialog

@@ -118,6 +118,165 @@ export async function probeCapability(device: GuardDevice): Promise<{ ok: boolea
   }
 }
 
+export interface UndoProbeResult {
+  /** True only when an undo was performed and verified to have taken effect. */
+  ok: boolean;
+  /** `/system/history/print` is reachable over the binary API. */
+  historyReadable: boolean;
+  /** The device marked the probe action as undoable. */
+  actionUndoable: boolean;
+  /** Entries currently in the history buffer (RouterOS caps this at 100). */
+  historyDepth: number;
+  /** RouterOS version, since history/undo support varies across releases. */
+  rosVersion: string | null;
+  /** What each candidate undo command did, so a failure says which forms were tried. */
+  attempts: { command: string; error: string }[];
+  reason?: string;
+}
+
+/**
+ * In the CLI, `undo` is a global command used after `/system history print` rather
+ * than a child of that path, and releases differ on whether it can be pointed at a
+ * specific entry or only steps back from the most recent one. Rather than betting on
+ * one spelling, the probe tries each form and reports what every one of them did.
+ *
+ * `targeted: false` means the command takes no entry id and simply undoes the newest
+ * undoable action on the device — which is only safe when we know the newest action
+ * is ours.
+ */
+const UNDO_COMMANDS: { command: string; targeted: boolean }[] = [
+  { command: '/system/history/undo', targeted: true },
+  { command: '/undo', targeted: true },
+  { command: '/undo', targeted: false },
+  { command: '/system/history/unset', targeted: true },
+];
+
+/**
+ * Can this device revert a change through `/system history` instead of a binary
+ * restore?
+ *
+ * A binary restore reboots. `/system history` records every action with its exact
+ * inverse, so undoing would be surgical and take no outage at all — but MikroTik
+ * documents the history/undo pair for the CLI, not the binary API, and the buffer
+ * is capped at 100 actions. Whether it works at all is an empirical question, so
+ * this answers it on the real device rather than assuming either way.
+ *
+ * The probe is non-destructive: it adds the same harmless scheduler `probeCapability`
+ * uses, undoes that one action, and confirms the scheduler is gone. If the undo does
+ * not work the scheduler is removed directly, so the device is unchanged either way.
+ *
+ * Measured on RouterOS 7.23.1 and 7.23.3 (CRS switches, binary API):
+ *   `/system/history/print`      works
+ *   `/system/history/undo`       "no such command"
+ *   `/undo numbers=<id>`         "unknown parameter numbers"
+ *   `/undo`                      works — reverts the newest undoable action, no reboot
+ *
+ * So undo is real over the API but **untargeted**, and it cannot replace the
+ * scheduler-based auto-revert: the dead-man switch has to fire when the manager has
+ * *lost* contact, and issuing an undo requires the contact we just lost. Its value is
+ * as an operator-driven rollback while the device is still reachable, and only when
+ * our action is verifiably the newest entry — which is why the untargeted form is
+ * guarded by that check below.
+ */
+export async function probeUndoCapability(device: GuardDevice): Promise<UndoProbeResult> {
+  const client = newClient(device);
+  const probeName = `mtm-undo-probe-${token()}`;
+  const attempts: { command: string; error: string }[] = [];
+  const fail = (over: Partial<UndoProbeResult>): UndoProbeResult => ({
+    ok: false, historyReadable: false, actionUndoable: false, historyDepth: 0,
+    rosVersion: null, attempts, ...over,
+  });
+
+  let rosVersion: string | null = null;
+  let created = false;
+
+  try {
+    await client.connect();
+
+    rosVersion = (await client.execute('/system/resource/print').catch(() => []))[0]?.['version'] ?? null;
+
+    let before: Record<string, string>[];
+    try {
+      before = await client.execute('/system/history/print');
+    } catch (err) {
+      return fail({ rosVersion, reason: `/system/history/print is not available: ${(err as Error).message}` });
+    }
+    const beforeIds = new Set(before.map((h) => h['.id']).filter(Boolean));
+
+    await client.execute('/system/scheduler/add', {
+      name: probeName,
+      interval: '1d',
+      'on-event': ':log info "mtm-undo-probe"',
+    });
+    created = true;
+
+    const after = await client.execute('/system/history/print');
+    const entry = after.find((h) => h['.id'] && !beforeIds.has(h['.id']));
+    const base = {
+      historyReadable: true,
+      historyDepth: after.length,
+      rosVersion,
+    };
+
+    if (!entry) {
+      return fail({ ...base, reason: 'the scheduler was created but no matching history entry appeared' });
+    }
+    const actionUndoable = entry['undoable'] !== 'false';
+    if (!actionUndoable) {
+      return fail({ ...base, reason: 'the device recorded the action as not undoable' });
+    }
+
+    for (const { command, targeted } of UNDO_COMMANDS) {
+      const label = targeted ? `${command} numbers=<id>` : command;
+      // An untargeted undo steps back from whatever is newest on the device, so only
+      // try it while our own action is still the most recent entry.
+      if (!targeted) {
+        const newest = (await client.execute('/system/history/print').catch(() => []))[0];
+        if (newest?.['.id'] !== entry['.id']) {
+          attempts.push({ command: label, error: 'skipped — our action is no longer the newest history entry' });
+          continue;
+        }
+      }
+      try {
+        await client.execute(command, targeted ? { numbers: entry['.id'] } : {});
+      } catch (err) {
+        attempts.push({ command: label, error: (err as Error).message });
+        continue;
+      }
+
+      // Only the observable result counts: a command that returns without error but
+      // leaves the scheduler in place is not an undo we can build a revert mode on.
+      const stillThere = (await client.execute('/system/scheduler/print'))
+        .some((s) => s['name'] === probeName);
+      if (stillThere) {
+        attempts.push({ command: label, error: 'accepted, but the change was still applied' });
+        continue;
+      }
+
+      created = false;
+      return { ok: true, ...base, actionUndoable, attempts };
+    }
+
+    return fail({
+      ...base,
+      actionUndoable,
+      reason: `no undo command worked — ${attempts.map((a) => `${a.command}: ${a.error}`).join('; ')}`,
+    });
+  } catch (err) {
+    return fail({ rosVersion, reason: (err as Error).message });
+  } finally {
+    // Never leave the probe behind, whatever went wrong above.
+    if (created) {
+      const leftover = (await client.execute('/system/scheduler/print').catch(() => []))
+        .find((s) => s['name'] === probeName);
+      if (leftover?.['.id']) {
+        await client.execute('/system/scheduler/remove', { '.id': leftover['.id'] }).catch(() => {});
+      }
+    }
+    client.disconnect();
+  }
+}
+
 /** Prove reachability on a brand-new connection, retried across the window. */
 async function verifyReachable(device: GuardDevice, attempts = VERIFY_ATTEMPTS): Promise<boolean> {
   for (let i = 0; i < attempts; i++) {
@@ -174,7 +333,10 @@ async function setGuardStatus(id: number | undefined, status: string, note?: str
     `UPDATE device_change_guards
      SET status = $2::varchar,
          note = COALESCE($3::text, note),
-         committed_at = CASE WHEN $2::varchar <> 'pending' THEN NOW() ELSE committed_at END
+         -- Only a genuine commit is a commit. Stamping this on 'failed' or
+         -- 'reverted' made the ledger read as though the change had been kept.
+         committed_at = CASE WHEN $2::varchar = 'committed' THEN NOW() ELSE committed_at END,
+         resolved_at = CASE WHEN $2::varchar <> 'pending' THEN NOW() ELSE resolved_at END
      WHERE id = $1`,
     [id, status, note ?? null]
   ).catch((e) => {
@@ -247,31 +409,56 @@ export async function withSafeApply<T>(
     }
 
     // ── Apply ──────────────────────────────────────────────────────────────
-    let result: T;
+    //
+    // A thrown error here does NOT mean the change failed. The most dangerous
+    // changes sever the very connection carrying them: deleting the management
+    // address makes `/ip/address/remove` succeed on the device and then time out
+    // waiting for a reply we can never receive. Proven on hardware — the switch
+    // locked itself out, self-restored and came back, while the API reported only
+    // "Read timeout waiting for API response".
+    //
+    // So reachability, not the exception, decides what happened. Disarming here on
+    // the assumption of failure would be the worst possible move: it would strip the
+    // safety net off a device that has just gone silent.
+    let result: T | undefined;
+    let applyError: unknown;
     try {
       result = await applyFn();
     } catch (err) {
-      // The change itself failed. Disarm so the device isn't rebooted for nothing.
-      await cleanup(client, restorePoint, schedulerName, mode).catch(() => {});
-      await setGuardStatus(guardId, 'failed', (err as Error).message);
-      armed = false;
-      throw err;
+      applyError = err;
     }
 
     // ── Verify ─────────────────────────────────────────────────────────────
     const reachable = await verifyReachable(device);
     if (!reachable) {
       // Leave the scheduler armed: the device will restore itself and come back.
-      await setGuardStatus(guardId, 'reverted', 'Device unreachable after change; left to self-restore');
+      const note = applyError
+        ? `Contact lost while applying (${(applyError as Error).message}); left to self-restore`
+        : 'Device unreachable after change; left to self-restore';
+      await setGuardStatus(guardId, 'reverted', note);
       armed = false; // deliberately not cleaned up
-      return { result, confirmed: false, autoReverting: true, guardId };
+      // `result` is undefined when the change took the connection with it. The
+      // caller only reports the outcome in that case, so the guard fields carry the
+      // meaning rather than the result.
+      return { result: result as T, confirmed: false, autoReverting: true, guardId };
+    }
+
+    if (applyError) {
+      // Still reachable, so the change genuinely failed and nothing needs undoing.
+      // Disarm, or the device would reboot for no reason.
+      await cleanup(client, restorePoint, schedulerName, mode).catch(() => {});
+      await setGuardStatus(guardId, 'failed', (applyError as Error).message);
+      armed = false;
+      throw applyError;
     }
 
     // ── Commit ─────────────────────────────────────────────────────────────
     await cleanup(client, restorePoint, schedulerName, mode);
     armed = false;
     await setGuardStatus(guardId, 'committed');
-    return { result, confirmed: true, autoReverting: false, guardId };
+    // Reaching here means applyFn returned normally, so `result` is assigned; the
+    // optional type only exists for the severed-connection path above.
+    return { result: result as T, confirmed: true, autoReverting: false, guardId };
   } finally {
     if (armed) await setGuardStatus(guardId, 'pending');
     client.disconnect();

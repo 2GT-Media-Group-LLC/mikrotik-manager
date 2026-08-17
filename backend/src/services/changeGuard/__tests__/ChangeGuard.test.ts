@@ -134,6 +134,44 @@ describe('withSafeApply', () => {
     expect(deviceSchedulers).toHaveLength(0);
   });
 
+  /**
+   * Observed on real hardware: deleting the management address applies on the device
+   * and then times out, because the reply has to travel over the address that just
+   * disappeared. Treating that throw as "the change failed" would disarm the guard on
+   * a device that has already gone silent — stripping the safety net at the exact
+   * moment it is needed — and would report a raw timeout instead of telling the user
+   * the device is restoring itself.
+   */
+  it('treats a change that severs the connection as auto-reverting, not as a failure', async () => {
+    unreachableAfterApply = true;
+
+    const out = await withSafeApply(device, { kind: 'ip.remove', summary: 's' }, async () => {
+      applyDone = true;
+      throw new Error('Read timeout waiting for API response');
+    });
+
+    expect(out.autoReverting).toBe(true);
+    expect(out.confirmed).toBe(false);
+    // The safety net must survive: the device restores itself from these.
+    expect(deviceSchedulers).toHaveLength(1);
+    expect(deviceFiles).toHaveLength(1);
+  }, 30_000);
+
+  it('records a severed-connection guard as reverted, never as committed', async () => {
+    unreachableAfterApply = true;
+    await withSafeApply(device, { kind: 'ip.remove', summary: 's' }, async () => {
+      applyDone = true;
+      throw new Error('Read timeout waiting for API response');
+    });
+
+    const statuses = mockedQuery.mock.calls
+      .filter(([sql]) => String(sql).includes('UPDATE device_change_guards'))
+      .map(([, params]) => (params as unknown[])[1]);
+    expect(statuses).toContain('reverted');
+    expect(statuses).not.toContain('committed');
+    expect(statuses).not.toContain('failed');
+  }, 30_000);
+
   it('still applies the change when protection cannot be armed, and says so', async () => {
     MockedClient.mockImplementation(() => ({
       connect: jest.fn(async () => {}),

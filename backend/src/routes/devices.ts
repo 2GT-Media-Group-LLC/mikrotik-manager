@@ -12,9 +12,11 @@ import { createDeviceFromBody, type CreateDeviceInput, type CreateDeviceContext 
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
 import { detectLockoutRisk } from '../utils/firewallSafety';
-import { withSafeApply, type GuardDevice } from '../services/changeGuard/ChangeGuard';
+import { withSafeApply, probeCapability, probeUndoCapability, type GuardDevice } from '../services/changeGuard/ChangeGuard';
 import { captureSnapshot, resolveManagementPath } from '../services/changeGuard/pathModel';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
+import { runConfigHealth } from '../services/changeGuard/configHealth';
+import { isMultiVlanSpec } from '../utils/vlan';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
 
@@ -995,6 +997,11 @@ async function withGuardedChange<T>(
       ...(typeof outcome.result === 'object' && outcome.result !== null
         ? outcome.result as Record<string, unknown>
         : { result: outcome.result }),
+      // A change that severed the connection produces no result — the request never
+      // got a reply. Say what is happening rather than returning a bare guard block.
+      ...(outcome.result === undefined && outcome.autoReverting
+        ? { message: 'Contact with the device was lost while applying this change. It is restoring itself and should come back shortly.' }
+        : {}),
       guard: {
         protected: !outcome.unprotectedReason,
         confirmed: outcome.confirmed,
@@ -1055,6 +1062,64 @@ router.post('/:id/preflight', requireWrite, async (req: Request, res: Response) 
   try {
     const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);
     return res.json(analyzeChange(snap, deviceRow as unknown as GuardDevice, change));
+  } catch (err) {
+    return res.status(502).json({ error: `Could not read device state: ${(err as Error).message}` });
+  }
+});
+
+// POST /api/devices/:id/change-guard/probe — what safety mechanisms this device
+// actually supports. Non-destructive: both probes create and remove a harmless
+// scheduler, and neither leaves anything behind.
+router.post('/:id/change-guard/probe', requireWrite, async (req: Request, res: Response) => {
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const device = deviceRow as unknown as GuardDevice;
+  try {
+    // Sequential, not parallel: both add a scheduler, and overlapping them would
+    // make each one's history diff ambiguous.
+    const scheduler = await probeCapability(device);
+    const undo = await probeUndoCapability(device);
+    return res.json({ scheduler, undo });
+  } catch (err) {
+    return res.status(502).json({ error: `Could not probe device: ${(err as Error).message}` });
+  }
+});
+
+// GET /api/devices/:id/config-health — the standing audit's latest findings, read
+// from cache so the page loads without touching the device.
+router.get('/:id/config-health', async (req: Request, res: Response) => {
+  const device = await queryOne<{ config_health_checked_at: string | null }>(
+    `SELECT config_health_checked_at FROM devices WHERE id = $1`,
+    [req.params.id]
+  );
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  const findings = await query(
+    `SELECT rule, severity, title, detail, remediation, doc_url, objects, first_seen, last_seen
+     FROM device_config_findings
+     WHERE device_id = $1
+     ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, rule`,
+    [req.params.id]
+  );
+  return res.json({ findings, checked_at: device.config_health_checked_at });
+});
+
+// POST /api/devices/:id/config-health/scan — audit now instead of waiting for the
+// scheduled pass. Read-only on the device, but it opens a connection.
+router.post('/:id/config-health/scan', requireWrite, async (req: Request, res: Response) => {
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  try {
+    const { findings, checkedAt } = await runConfigHealth(deviceRow as unknown as GuardDevice);
+    // Same shape as the cached GET, so the UI has one contract for both.
+    return res.json({
+      findings: findings.map((f) => ({
+        rule: f.rule, severity: f.severity, title: f.title, detail: f.detail,
+        remediation: f.remediation, doc_url: f.docUrl, objects: f.objects,
+        first_seen: null, last_seen: checkedAt.toISOString(),
+      })),
+      checked_at: checkedAt.toISOString(),
+    });
   } catch (err) {
     return res.status(502).json({ error: `Could not read device state: ${(err as Error).message}` });
   }
@@ -1797,6 +1862,18 @@ router.get('/:id/routing/router-id', async (req: Request, res: Response) => {
 });
 
 // POST /api/devices/:id/vlans (add bridge VLAN)
+/**
+ * A single RouterOS bridge VLAN row can cover a range or list ("10-20"), which the
+ * cache expands into one row per VLAN. Editing or deleting one of those rows would
+ * rewrite the whole entry, silently taking the other VLANs with it — so refuse, and
+ * refuse *before* arming the guard, since a mid-apply failure would cost a reboot.
+ */
+function multiVlanRefusal(vlan: { vlan_id: number; bridge: string; vlan_ids: string | null }): string | null {
+  if (!isMultiVlanSpec(vlan.vlan_ids ?? undefined)) return null;
+  return `VLAN ${vlan.vlan_id} on ${vlan.bridge} is part of the multi-VLAN entry "${vlan.vlan_ids}". `
+    + `Changing it here would affect every VLAN in that entry, so split the entry on the device first.`;
+}
+
 // Guarded: bridge VLAN table edits decide which ports (and the bridge/CPU port
 // itself) may carry the management VLAN.
 router.post('/:id/vlans', requireWrite, async (req: Request, res: Response) => {
@@ -1824,11 +1901,13 @@ router.post('/:id/vlans', requireWrite, async (req: Request, res: Response) => {
 
 // PUT /api/devices/:id/vlans/:vlanDbId (update tagged/untagged ports)
 router.put('/:id/vlans/:vlanDbId', requireWrite, async (req: Request, res: Response) => {
-  const vlan = await queryOne<{ id: number; vlan_id: number; bridge: string }>(
-    `SELECT id, vlan_id, bridge FROM vlans WHERE id = $1 AND device_id = $2`,
+  const vlan = await queryOne<{ id: number; vlan_id: number; bridge: string; vlan_ids: string | null }>(
+    `SELECT id, vlan_id, bridge, vlan_ids FROM vlans WHERE id = $1 AND device_id = $2`,
     [req.params.vlanDbId, req.params.id]
   );
   if (!vlan) return res.status(404).json({ error: 'VLAN not found' });
+  const multi = multiVlanRefusal(vlan);
+  if (multi) return res.status(409).json({ error: multi, reason: multi });
 
   const { tagged_ports = [], untagged_ports = [] } = req.body;
 
@@ -1854,11 +1933,13 @@ router.put('/:id/vlans/:vlanDbId', requireWrite, async (req: Request, res: Respo
 
 // DELETE /api/devices/:id/vlans/:vlanDbId
 router.delete('/:id/vlans/:vlanDbId', requireWrite, async (req: Request, res: Response) => {
-  const vlan = await queryOne<{ vlan_id: number; bridge: string }>(
-    `SELECT vlan_id, bridge FROM vlans WHERE id = $1 AND device_id = $2`,
+  const vlan = await queryOne<{ vlan_id: number; bridge: string; vlan_ids: string | null }>(
+    `SELECT vlan_id, bridge, vlan_ids FROM vlans WHERE id = $1 AND device_id = $2`,
     [req.params.vlanDbId, req.params.id]
   );
   if (!vlan) return res.status(404).json({ error: 'VLAN not found' });
+  const multi = multiVlanRefusal(vlan);
+  if (multi) return res.status(409).json({ error: multi, reason: multi });
 
   await withGuardedChange(
     req.params.id,

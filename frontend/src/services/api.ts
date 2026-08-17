@@ -176,6 +176,28 @@ export interface SecurityCheck {
   serviceId?: string;
 }
 
+/**
+ * A configuration RouterOS accepted but that does not work. Produced by the
+ * standing Config Health audit, which encodes MikroTik's documented Layer2
+ * misconfigurations plus the latent lockout cases.
+ */
+export interface ConfigFinding {
+  rule: string;
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  detail: string;
+  remediation: string | null;
+  doc_url: string | null;
+  objects: string[];
+  first_seen: string | null;
+  last_seen: string | null;
+}
+
+export interface ConfigHealthResponse {
+  findings: ConfigFinding[];
+  checked_at: string | null;
+}
+
 export const devicesApi = {
   list: () => api.get<Device[]>('/devices'),
   discovered: () => api.get<DiscoveredDevice[]>('/devices/discovered'),
@@ -320,6 +342,11 @@ export const devicesApi = {
       { disabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
   getSecurityPosture: (id: number) =>
     api.get<{ score: number; checks: SecurityCheck[] }>(`/devices/${id}/security-posture`),
+  // Config Health — cached findings load instantly; the scan re-reads the device.
+  getConfigHealth: (id: number) =>
+    api.get<ConfigHealthResponse>(`/devices/${id}/config-health`),
+  scanConfigHealth: (id: number) =>
+    api.post<ConfigHealthResponse>(`/devices/${id}/config-health/scan`),
   patchLocation: (id: number, data: {
     location_address?: string | null;
     location_lat?: number | null;

@@ -870,7 +870,9 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
       speed: '',
       vlan_mode: bridgeTagged ? 'trunk' : bridgePvid > 1 ? 'access' : 'none',
       pvid: bridgePvid,
-      tagged_vlans: '',
+      // Prefill from the port's actual tagged membership so opening the dialog and
+      // saving does not silently strip the trunk's VLANs.
+      tagged_vlans: (port.bridgeInfo?.tagged_vlan_ids ?? []).join(','),
     });
   };
 

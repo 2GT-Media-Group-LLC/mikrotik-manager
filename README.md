@@ -2,7 +2,7 @@
 
 A self-hosted, full-stack network management platform for MikroTik devices. Monitor, configure, and manage your entire MikroTik infrastructure — routers, switches, and wireless access points — from a single web interface.
 
-![Version](https://img.shields.io/badge/version-0.19.2_Beta-blue)
+![Version](https://img.shields.io/badge/version-0.20.0_Beta-blue)
 ![License](https://img.shields.io/badge/license-AGPLv3-blue)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
@@ -137,6 +137,81 @@ A Meraki/UniFi-grade firewall experience built on the full RouterOS feature set:
 - **Security posture audit** — per-device hardening checklist (insecure services like telnet/ftp/www/api, missing input-chain firewall, SNMP exposure, outdated RouterOS/RouterBOOT firmware) with a score and one-click remediation, plus a management-services table
 - **Bandwidth control** — simple-queue management with up/down caps per IP, subnet, or interface, and a one-click "Limit this client" action on the client detail page
 - **Active connections viewer** — live connection-tracking table (source/destination, protocol, state, rate, bytes) with search
+
+### Lockout Protection & Config Health
+RouterOS applies every command immediately and independently. There is no transaction and no
+cross-object validation, so it will accept a change that severs its own management path — MikroTik's
+documented advice for enabling VLAN filtering is literally to have a serial console ready. Three
+layers close that gap:
+
+- **Change Guard (device-side auto-revert)** — before a risky change, the device saves a restore
+  point and arms a scheduler to reapply it. The change is applied, then reachability is proven on a
+  brand-new connection. Confirmed → the scheduler is disarmed; unreachable → the device restores
+  itself and comes back on its own. All over the RouterOS API, so it works without SSH credentials.
+  Covers 12 change types: bridge VLAN filtering, port PVID/tagging, bridge VLAN add/update/delete,
+  IP address add/remove, route add/remove, bond create/delete, and management service toggles
+- **Lockout prediction** — rather than blocklisting "dangerous" operations (which only catches what
+  someone thought of), the platform reads live device state, resolves the actual management path,
+  simulates the proposed change against it, and reports any invariant that flips from satisfied to
+  violated. The ingress port is taken from the bridge forwarding table and the manager's own address
+  from the device's connection tracking, so the warning names the real mechanism: *"management
+  arrives untagged on sfp28-1 (PVID 1) — the gateway's MAC is learned there — but VLAN 1 has no
+  bridge VLAN entry listing bridge1 as an untagged member."* A predicted lockout is refused with a
+  409 and an explanation of the hop chain; overriding a critical verdict requires typing the device
+  name, and the change then runs under Change Guard anyway
+- **Config Health (standing audit)** — a scheduled, read-only audit for configurations RouterOS
+  accepted and will never complain about, encoding MikroTik's documented Layer2 misconfigurations:
+  an IP address or VLAN interface on a bridge slave port, a VLAN interface added as a bridge port,
+  a bond slave that is also a bridge port, MTU above L2MTU, a multi-VLAN bridge entry with untagged
+  ports, several bridges competing for hardware offload, a port belonging to no VLAN on a filtering
+  bridge, a PVID that `frame-type=admit-only-vlan-tagged` makes inert, and management that survives
+  only on a dynamic VLAN entry. Each finding explains what it actually does to the network, how to
+  fix it, how long it has been present, and links the MikroTik documentation. Findings appear on the
+  device's Security tab and in the dashboard's "Things to handle"
+
+- **Capability probe** — `POST /api/devices/:id/change-guard/probe` reports what safety mechanisms a
+  device actually supports, tested on the device rather than assumed. Non-destructive: it creates and
+  removes a harmless scheduler and leaves nothing behind. It also establishes whether `/system history`
+  can revert a change without a reboot — on RouterOS 7.23 over the binary API, `/system/history/print`
+  works and a bare `/undo` reverts the newest action, while `/system/history/undo` and `/undo numbers=`
+  do not exist. Undo is therefore untargeted, and it cannot replace auto-revert (a dead-man switch has
+  to fire once the manager has already lost contact), so binary restore remains the default
+
+#### What you see when auto-revert fires
+
+Verified end to end on a CRS running RouterOS 7.23.3, by deliberately deleting a switch's own
+management address and letting the safety net recover it unattended:
+
+```
+T+0      restore point saved, revert scheduler armed, change applied
+T+0s     device drops off the network
+T+40s    manager gives up after 4 fresh connection attempts and reports back
+T+120s   device restores its own backup and reboots
+T+3m     device is back, change undone, scheduler and restore point gone
+```
+
+The request returns **HTTP 200** with `guard.auto_reverting: true` and *"Contact with the device was
+lost while applying this change. It is restoring itself and should come back shortly."* — not an
+error. This matters: the most dangerous changes sever the very connection carrying them, so the API
+call times out even though the change succeeded on the device. Reachability, not the exception,
+decides the outcome; a change that throws while the device is still reachable is a genuine failure
+and is disarmed immediately so nothing reboots for nothing.
+
+Two consequences worth knowing before you rely on it:
+
+- **Binary mode reboots the device** to restore. That is the cost of a restore that recovers deleted
+  interfaces exactly. Script mode (`/export` + `/import`) avoids the reboot but is additive, so it
+  cannot recover a deletion.
+- **The restore point is saved before the scheduler is armed**, so a rollback returns a configuration
+  containing neither the scheduler nor the change. It is self-cleaning, and a revert loop is
+  impossible.
+
+Guard history is recorded per device in `device_change_guards`: `committed` (change kept),
+`reverted` (device left to rescue itself), `failed` (change rejected, nothing applied).
+
+Configure under **Settings → Change Guard** (`change_guard_enabled`, `change_guard_mode`,
+`change_guard_timeout_sec`) and **Config Health** (`config_health_enabled`,
+`config_health_interval_min`, default 60 minutes).
 
 ### Switches
 - VLAN management (create, edit, delete VLANs)
@@ -459,6 +534,22 @@ All configuration is done via environment variables in `.env`:
 | `INFLUXDB_ADMIN_PASSWORD` | `admin_password_123` | InfluxDB admin UI password |
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
+
+### Change Guard & Config Health settings
+
+These live in `app_settings` (Settings UI), not `.env`, so they can be changed without a restart:
+
+| Setting | Default | Description |
+|---|---|---|
+| `change_guard_enabled` | `true` | Master switch. When off, guarded changes still apply but with no safety net and no lockout refusal. |
+| `change_guard_mode` | `binary` | `binary` = `/system backup` restore; recovers deletions exactly, **reboots the device**. `script` = `/export` + `/import`; no reboot, but additive, so it cannot undo a deletion. |
+| `change_guard_timeout_sec` | `120` | How long the device waits before rescuing itself. Must exceed the time the manager needs to verify reachability (~40s), with margin for a slow device. |
+| `config_health_enabled` | `true` | Runs the standing configuration audit. |
+| `config_health_interval_min` | `60` | Audit cadence per device. Each pass is a read-only snapshot over the API. |
+
+Overriding a predicted lockout is a deliberate act: the API requires `confirm_lockout: true` in the
+request body, and the UI requires typing the device name. The change then runs under Change Guard
+regardless, so an override is a decision to rely on auto-revert rather than to bypass protection.
 
 ### Secret management (self-healing)
 

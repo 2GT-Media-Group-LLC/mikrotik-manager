@@ -36,6 +36,7 @@ function baseSnapshot(over: Partial<DeviceSnapshot> = {}): DeviceSnapshot {
       { bridge: 'bridge', 'vlan-ids': '10', tagged: 'sfp28-1', untagged: '',
         'current-tagged': 'sfp28-1', 'current-untagged': '' },
     ],
+    bonds: [],
     routes: [
       { '.id': '*A', 'dst-address': '0.0.0.0/0', gateway: '192.168.0.1', active: 'true' },
       { '.id': '*B', 'dst-address': '192.168.0.0/24', gateway: 'bridge', active: 'true' },

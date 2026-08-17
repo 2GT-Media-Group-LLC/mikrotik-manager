@@ -278,6 +278,38 @@ router.get('/insights', async (_req: Request, res: Response) => {
     }
   } catch { /* scan data unavailable */ }
 
+  // Config Health — configurations RouterOS accepted but that do not work. These
+  // are latent: nothing alerts on them because the device reports no error, so the
+  // dashboard is where they surface. Grouped per device to avoid flooding the feed.
+  try {
+    const findings = await query<{
+      device_id: number; name: string; severity: string; title: string; rule: string; count: string;
+    }>(`
+      SELECT f.device_id, d.name, f.severity, f.title, f.rule,
+             COUNT(*) OVER (PARTITION BY f.device_id, f.severity) AS count
+      FROM device_config_findings f
+      JOIN devices d ON d.id = f.device_id
+      WHERE f.severity IN ('critical', 'warning')
+      ORDER BY f.device_id, CASE f.severity WHEN 'critical' THEN 0 ELSE 1 END, f.rule`);
+
+    const seen = new Set<string>();
+    for (const f of findings) {
+      const key = `${f.device_id}:${f.severity}`;
+      if (seen.has(key)) continue;      // one item per device+severity, naming the first
+      seen.add(key);
+      const extra = parseInt(f.count, 10) - 1;
+      attention.push({
+        sev: f.severity === 'critical' ? 'error' : 'warn',
+        category: 'config',
+        title: `${f.name}: ${f.title}`,
+        body: extra > 0
+          ? `RouterOS accepted this configuration without complaint. ${extra} more ${f.severity} finding${extra !== 1 ? 's' : ''} on this device.`
+          : 'RouterOS accepted this configuration without complaint.',
+        action: 'Open Config Health', path: `/devices/${f.device_id}?tab=security`,
+      });
+    }
+  } catch { /* findings table unavailable */ }
+
   // Baseline anomalies (client counts, CPU, error bursts)
   const anomalies = await detectAnomalies();
   for (const a of anomalies) attention.push(a);

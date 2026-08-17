@@ -498,6 +498,64 @@ CREATE TABLE IF NOT EXISTS device_change_guards (
 CREATE INDEX IF NOT EXISTS idx_change_guards_device ON device_change_guards(device_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_change_guards_pending ON device_change_guards(status, expires_at);
 
+-- Change Guard ledger: committed_at used to be stamped for every terminal status,
+-- so an abandoned or failed guard read as though the change had been kept. It now
+-- means what it says, and resolved_at records when the guard finished either way.
+ALTER TABLE device_change_guards ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
+UPDATE device_change_guards
+   SET resolved_at = COALESCE(resolved_at, committed_at)
+ WHERE status <> 'pending' AND resolved_at IS NULL;
+UPDATE device_change_guards SET committed_at = NULL WHERE status <> 'committed';
+
+-- VLAN cache correctness.
+--
+-- The original key, UNIQUE(device_id, vlan_id), assumed a VID is unique per device.
+-- It is not: RouterOS keys the bridge VLAN table on (bridge, vlan-ids), so the same
+-- VID on two bridges collapsed onto one row and each poll overwrote the other. The
+-- collector also stored only the first VID of a spec like "10-20"; it now expands
+-- ranges into one row per VID and records the spec it came from in vlan_ids.
+ALTER TABLE vlans ADD COLUMN IF NOT EXISTS vlan_ids TEXT;
+ALTER TABLE vlans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+UPDATE vlans SET bridge = '' WHERE bridge IS NULL;
+ALTER TABLE vlans ALTER COLUMN bridge SET DEFAULT '';
+ALTER TABLE vlans ALTER COLUMN bridge SET NOT NULL;
+ALTER TABLE vlans DROP CONSTRAINT IF EXISTS vlans_device_id_vlan_id_key;
+-- Collapse rows the old key could not distinguish, keeping the most recent.
+DELETE FROM vlans a USING vlans b
+  WHERE a.id < b.id AND a.device_id = b.device_id AND a.bridge = b.bridge AND a.vlan_id = b.vlan_id;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vlans_device_bridge_vid ON vlans (device_id, bridge, vlan_id);
+
+-- Per-port VLAN membership. vlan_ids was declared but never written and tagged
+-- was hardcoded false, which left the port editor unable to tell a trunk from an
+-- access port. Both are now derived from the bridge VLAN table.
+ALTER TABLE bridge_vlan_entries ADD COLUMN IF NOT EXISTS tagged_vlan_ids TEXT[];
+ALTER TABLE bridge_vlan_entries ADD COLUMN IF NOT EXISTS untagged_vlan_ids TEXT[];
+
+-- Bridge VLAN filtering lived only inside interfaces.config_json, so nothing could
+-- query for it. Null for non-bridge interfaces.
+ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS vlan_filtering BOOLEAN;
+
+-- Config Health: standing audit findings, one row per (device, distinct problem).
+-- Rows are refreshed in place so first_seen shows how long a problem has existed,
+-- and findings absent from the latest scan are pruned.
+CREATE TABLE IF NOT EXISTS device_config_findings (
+  id           SERIAL PRIMARY KEY,
+  device_id    INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  rule         VARCHAR(64)  NOT NULL,
+  fingerprint  VARCHAR(160) NOT NULL,
+  severity     VARCHAR(16)  NOT NULL,
+  title        TEXT         NOT NULL,
+  detail       TEXT         NOT NULL,
+  remediation  TEXT,
+  doc_url      TEXT,
+  objects      TEXT[]       NOT NULL DEFAULT '{}',
+  first_seen   TIMESTAMPTZ  DEFAULT NOW(),
+  last_seen    TIMESTAMPTZ  DEFAULT NOW(),
+  UNIQUE(device_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_config_findings_device ON device_config_findings(device_id, severity);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS config_health_checked_at TIMESTAMPTZ;
+
 -- Wireless security profiles (WPA/WPA2/WPA3 config)
 CREATE TABLE IF NOT EXISTS wireless_security_profiles (
   id                    SERIAL PRIMARY KEY,
@@ -547,6 +605,8 @@ const DEFAULT_SETTINGS = [
   { key: 'change_guard_enabled', value: true },
   { key: 'change_guard_mode', value: 'binary' },
   { key: 'change_guard_timeout_sec', value: 120 },
+  { key: 'config_health_enabled', value: true },
+  { key: 'config_health_interval_min', value: 60 },
 ];
 
 export async function runMigrations(): Promise<void> {

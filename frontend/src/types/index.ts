@@ -103,6 +103,8 @@ export interface Vlan {
   vlan_id: number;
   name?: string;
   bridge?: string;
+  /** Raw RouterOS spec this row came from; a range/list means the entry covers several VLANs. */
+  vlan_ids?: string | null;
   tagged_ports?: string[];
   untagged_ports?: string[];
 }
@@ -112,7 +114,11 @@ export interface BridgeVlanEntry {
   bridge: string;
   port: string;
   pvid?: number;
+  /** Every VLAN this port belongs to, tagged or untagged. */
   vlan_ids?: string[];
+  tagged_vlan_ids?: string[];
+  untagged_vlan_ids?: string[];
+  /** True when the port is a tagged member of at least one VLAN (i.e. a trunk). */
   tagged: boolean;
 }
 

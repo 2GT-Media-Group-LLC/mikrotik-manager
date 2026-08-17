@@ -6,10 +6,12 @@ import { Server as SocketServer } from 'socket.io';
 import { getWriteApi } from '../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { alertService } from './AlertService';
+import { runConfigHealth } from './changeGuard/configHealth';
+import type { GuardDevice } from './changeGuard/ChangeGuard';
 
 interface PollJob {
   deviceId: number;
-  type: 'fast' | 'slow' | 'logs' | 'full' | 'macscan' | 'spectral' | 'apscan' | 'configsnap';
+  type: 'fast' | 'slow' | 'logs' | 'full' | 'macscan' | 'spectral' | 'apscan' | 'configsnap' | 'confighealth';
 }
 
 export class PollerService {
@@ -75,6 +77,8 @@ export class PollerService {
       await this.slowQueue.add('device-apscan', jobData, { attempts: 1 });
     } else if (type === 'configsnap') {
       await this.slowQueue.add('device-configsnap', jobData, { attempts: 1 });
+    } else if (type === 'confighealth') {
+      await this.slowQueue.add('device-confighealth', jobData, { attempts: 1 });
     }
   }
 
@@ -102,6 +106,8 @@ export class PollerService {
       const backupScheduleCron    = (appSettings['backup_schedule_cron'] as string) || '0 2 * * *';
       const configSnapEnabled      = appSettings['config_snapshot_enabled'] !== false;
       const configSnapIntervalMin  = (appSettings['config_snapshot_interval_min'] as number) || 60;
+      const configHealthEnabled     = appSettings['config_health_enabled'] !== false;
+      const configHealthIntervalMin = (appSettings['config_health_interval_min'] as number) || 60;
 
       const devices = await query<DeviceRow>(
         `SELECT * FROM devices WHERE status != 'disabled'`
@@ -169,6 +175,17 @@ export class PollerService {
             // Keep the gate key alive for the full interval (+ buffer) so the
             // snapshot honours the configured cadence rather than the default TTL.
             await this.setTimestamp(configKey, now, configSnapIntervalMin * 60 + 120);
+          }
+        }
+
+        // Config Health — audit for configurations RouterOS accepted but that do
+        // not work. Own cadence (default 60min) because it costs a full state read.
+        if (configHealthEnabled) {
+          const healthKey = `poll:confighealth:${device.id}`;
+          const lastHealth = await this.getTimestamp(healthKey);
+          if (now - lastHealth > configHealthIntervalMin * 60_000) {
+            await this.scheduleDeviceSync(device.id, 'confighealth');
+            await this.setTimestamp(healthKey, now, configHealthIntervalMin * 60 + 120);
           }
         }
       }
@@ -709,6 +726,25 @@ export class PollerService {
     }
   }
 
+  /**
+   * Audit the device for configurations RouterOS accepted but that do not work.
+   * Read-only over the API, and failures are non-fatal: a device we cannot read is
+   * left with its previous findings rather than being wrongly reported as clean.
+   */
+  private async processConfigHealthJob(data: PollJob): Promise<void> {
+    const device = await this.getDevice(data.deviceId);
+    if (!device) return;
+    try {
+      const { findings } = await runConfigHealth(device as unknown as GuardDevice);
+      const critical = findings.filter((f) => f.severity === 'critical').length;
+      if (critical > 0) {
+        this.io?.emit('device:updated', { deviceId: device.id });
+      }
+    } catch (err) {
+      console.error(`[Poller] Config health audit failed for ${device.name}:`, (err as Error).message);
+    }
+  }
+
   private async processSlowJob(data: PollJob): Promise<void> {
     if (data.type === 'spectral') {
       return this.processSpectralJob(data);
@@ -718,6 +754,9 @@ export class PollerService {
     }
     if (data.type === 'configsnap') {
       return this.processConfigSnapJob(data);
+    }
+    if (data.type === 'confighealth') {
+      return this.processConfigHealthJob(data);
     }
 
     const device = await this.getDevice(data.deviceId);
