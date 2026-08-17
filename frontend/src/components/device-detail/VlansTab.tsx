@@ -6,6 +6,7 @@ import type { Vlan, SwitchPort } from '../../types';
 import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import CopyVlanModal from './CopyVlanModal';
+import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 
 interface PortForm {
   tagged_ports: string;
@@ -20,6 +21,9 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
 }) {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
+  // A predicted lockout comes back as 409 with a verdict; hold it plus the retry
+  // that re-sends the same change with confirm_lockout once the user accepts.
+  const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
   const { data: vlans = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['vlans', deviceId],
@@ -58,7 +62,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
 
   // ── Mutations ──
   const addMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (confirm: boolean) => {
       const tagged = addForm.tagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
       const untagged = addForm.untagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
       return devicesApi.addVlan(deviceId, {
@@ -66,6 +70,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
         vlan_id: parseInt(addForm.vlan_id, 10),
         tagged_ports: tagged,
         untagged_ports: untagged,
+        ...(confirm ? { confirm_lockout: true } : {}),
       });
     },
     onSuccess: () => {
@@ -73,41 +78,55 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
       setAddForm({ vlan_id: '', bridge: bridgeOptions[0] || '', tagged_ports: '', untagged_ports: '' });
       setShowAdd(false);
       setAddError('');
+      setLockout(null);
     },
     onError: (err: unknown) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) { setLockout({ verdict, retry: () => addMutation.mutate(true) }); return; }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setAddError(msg || 'Failed to add VLAN');
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (confirm: boolean) => {
       if (!editingVlan) throw new Error('No VLAN selected');
       const tagged = editForm.tagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
       const untagged = editForm.untagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
       return devicesApi.updateVlan(deviceId, editingVlan.id, {
         tagged_ports: tagged,
         untagged_ports: untagged,
+        ...(confirm ? { confirm_lockout: true } : {}),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vlans', deviceId] });
       setEditingVlan(null);
       setEditError('');
+      setLockout(null);
     },
     onError: (err: unknown) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) { setLockout({ verdict, retry: () => updateMutation.mutate(true) }); return; }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setEditError(msg || 'Failed to update VLAN');
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (vlanDbId: number) => devicesApi.deleteVlan(deviceId, vlanDbId),
+    mutationFn: ({ vlanDbId, confirm = false }: { vlanDbId: number; confirm?: boolean }) =>
+      devicesApi.deleteVlan(deviceId, vlanDbId, confirm),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vlans', deviceId] });
       setDeleteError('');
+      setLockout(null);
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => deleteMutation.mutate({ vlanDbId: vars.vlanDbId, confirm: true }) });
+        return;
+      }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setDeleteError(msg || 'Failed to delete VLAN');
     },
@@ -257,7 +276,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
           )}
           <div className="flex gap-2">
             <button
-              onClick={() => addMutation.mutate()}
+              onClick={() => addMutation.mutate(false)}
               disabled={!addForm.vlan_id || !addForm.bridge || addMutation.isPending}
               className="btn-primary flex items-center gap-2 text-sm"
             >
@@ -317,7 +336,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
 
           <div className="flex gap-2">
             <button
-              onClick={() => updateMutation.mutate()}
+              onClick={() => updateMutation.mutate(false)}
               disabled={updateMutation.isPending}
               className="btn-primary flex items-center gap-2 text-sm"
             >
@@ -416,7 +435,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
                         <button
                           onClick={() => {
                             if (confirm(`Remove VLAN ${vlan.vlan_id} from ${vlan.bridge}?`)) {
-                              deleteMutation.mutate(vlan.id);
+                              deleteMutation.mutate({ vlanDbId: vlan.id });
                             }
                           }}
                           disabled={deleteMutation.isPending}
@@ -434,6 +453,16 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
           </table>
         )}
       </div>
+
+      {lockout && (
+        <LockoutVerdictDialog
+          verdict={lockout.verdict}
+          confirmPhrase={deviceName || 'confirm'}
+          pending={addMutation.isPending || updateMutation.isPending || deleteMutation.isPending}
+          onConfirm={lockout.retry}
+          onCancel={() => setLockout(null)}
+        />
+      )}
     </div>
   );
 }

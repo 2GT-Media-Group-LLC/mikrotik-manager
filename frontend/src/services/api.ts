@@ -248,11 +248,14 @@ export const devicesApi = {
     api.post(`/devices/${id}/routing`, data),
   deleteRoute: (id: number, routeId: string) =>
     api.delete(`/devices/${id}/routing/${encodeURIComponent(routeId)}`),
-  addVlan: (id: number, data: { bridge: string; vlan_id: number; tagged_ports?: string[]; untagged_ports?: string[] }) =>
+  // confirm_lockout overrides a predicted-lockout refusal (HTTP 409) after the user
+  // has seen and accepted the verdict.
+  addVlan: (id: number, data: { bridge: string; vlan_id: number; tagged_ports?: string[]; untagged_ports?: string[]; confirm_lockout?: boolean }) =>
     api.post(`/devices/${id}/vlans`, data),
-  updateVlan: (id: number, vlanDbId: number, data: { tagged_ports: string[]; untagged_ports: string[] }) =>
+  updateVlan: (id: number, vlanDbId: number, data: { tagged_ports: string[]; untagged_ports: string[]; confirm_lockout?: boolean }) =>
     api.put(`/devices/${id}/vlans/${vlanDbId}`, data),
-  deleteVlan: (id: number, vlanDbId: number) => api.delete(`/devices/${id}/vlans/${vlanDbId}`),
+  deleteVlan: (id: number, vlanDbId: number, confirmLockout = false) =>
+    api.delete(`/devices/${id}/vlans/${vlanDbId}`, confirmLockout ? { data: { confirm_lockout: true } } : undefined),
   copyVlans: (id: number, operations: Array<{ action: 'add' | 'update'; vlan_id: number; bridge: string; tagged_ports: string[]; untagged_ports: string[] }>) =>
     api.post<{ results: Array<{ vlan_id: number; action: string; success: boolean; error?: string }>; vlans: Vlan[] }>(`/devices/${id}/vlans/copy`, { operations }),
   reboot: (id: number) => api.post<{ message: string }>(`/devices/${id}/reboot`),
