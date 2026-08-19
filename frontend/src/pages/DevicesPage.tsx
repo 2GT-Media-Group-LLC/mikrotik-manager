@@ -14,7 +14,7 @@ import AddDeviceModal from '../components/devices/AddDeviceModal';
 import EditDeviceModal from '../components/devices/EditDeviceModal';
 import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
 
-type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'ros_version' | 'status' | 'last_seen';
+type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen';
 type DiscoveredSortKey = 'identity' | 'address' | 'mac_address' | 'seen_by' | 'discovered_at';
 type SortDir = 'asc' | 'desc';
 
@@ -85,9 +85,13 @@ function TypePill({ type }: { type: Device['device_type'] }) {
 
 function CpuValue({ value }: { value: number | undefined }) {
   if (value == null) return <span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>—</span>;
+  // The series behind this is a 5-minute mean from InfluxDB, so a raw value is
+  // routinely something like 1.3333333333333333. Round for display only — the
+  // sparkline keeps the unrounded points so its curve stays smooth.
+  const shown = Math.round(value);
   const color = value > 70 ? 'var(--bad)' : value > 40 ? 'var(--warn)' : 'var(--accent)';
   return (
-    <span className="mono num-tab text-[12px] font-medium" style={{ color }}>{value}%</span>
+    <span className="mono num-tab text-[12px] font-medium" style={{ color }}>{shown}%</span>
   );
 }
 
@@ -193,7 +197,8 @@ export default function DevicesPage() {
       if (search &&
         !d.name.toLowerCase().includes(search.toLowerCase()) &&
         !d.ip_address.includes(search) &&
-        !d.model?.toLowerCase().includes(search.toLowerCase())
+        !d.model?.toLowerCase().includes(search.toLowerCase()) &&
+        !d.serial_number?.toLowerCase().includes(search.toLowerCase())
       ) return false;
       if (statusFilter === 'online' && d.status !== 'online') return false;
       if (statusFilter === 'offline' && d.status !== 'offline') return false;
@@ -210,6 +215,7 @@ export default function DevicesPage() {
           case 'name': return x.name || '';
           case 'ip_address': return x.ip_address || '';
           case 'model': return x.model || '';
+          case 'serial_number': return x.serial_number || '';
           case 'ros_version': return x.ros_version || '';
           case 'status': return x.status || '';
           case 'last_seen': return x.last_seen ? new Date(x.last_seen).getTime() : 0;
@@ -402,6 +408,7 @@ export default function DevicesPage() {
                     { key: 'name',       label: 'DEVICE',     w: null },
                     { key: null,         label: 'TYPE',       w: 72  },
                     { key: 'model',      label: 'MODEL',      w: null },
+                    { key: 'serial_number', label: 'SERIAL',  w: 130  },
                     { key: 'ip_address', label: 'IP ADDRESS', w: null },
                     { key: 'ros_version',label: 'ROS',        w: 110 },
                     { key: null,         label: 'CPU',        w: 110 },
@@ -464,6 +471,15 @@ export default function DevicesPage() {
                       </td>
                       <td className="px-4 py-[12px]">
                         <span className="mono text-[11.5px]" style={{ color: 'var(--ink-2)' }}>{device.model || '—'}</span>
+                      </td>
+                      <td className="px-4 py-[12px]">
+                        <span
+                          className="mono text-[11.5px] block truncate"
+                          style={{ color: 'var(--ink-3)', maxWidth: 130 }}
+                          title={device.serial_number || undefined}
+                        >
+                          {device.serial_number || '—'}
+                        </span>
                       </td>
                       <td className="px-4 py-[12px]">
                         <span className="mono num-tab text-[12px]" style={{ color: 'var(--ink-2)' }}>{device.ip_address}</span>
