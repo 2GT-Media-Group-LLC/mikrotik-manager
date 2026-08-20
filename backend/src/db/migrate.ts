@@ -498,6 +498,67 @@ CREATE TABLE IF NOT EXISTS device_change_guards (
 CREATE INDEX IF NOT EXISTS idx_change_guards_device ON device_change_guards(device_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_change_guards_pending ON device_change_guards(status, expires_at);
 
+-- CAPsMAN support (github issue #94).
+--
+-- A CAPsMAN-managed AP holds none of its own wireless configuration, so reading
+-- /interface/wifi/print on it yields blank SSID/security/band. Recording the
+-- device's role, and marking which interfaces are provisioned rather than local,
+-- lets the UI say "managed by CAPsMAN" instead of showing an AP that looks broken.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_role VARCHAR(16);
+ALTER TABLE wireless_interfaces ADD COLUMN IF NOT EXISTS managed_by_capsman BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE wireless_interfaces ADD COLUMN IF NOT EXISTS radio_mac VARCHAR(17);
+ALTER TABLE wireless_interfaces ADD COLUMN IF NOT EXISTS capsman_controller_mac VARCHAR(17);
+
+-- Radios a controller manages, local and remote. matched_device_id is resolved by
+-- radio MAC against the fleet's interface MACs; it stays NULL for a CAP that is not
+-- itself a managed device, which is a legitimate state rather than an error.
+CREATE TABLE IF NOT EXISTS capsman_radios (
+  id                   SERIAL PRIMARY KEY,
+  controller_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  radio_mac            VARCHAR(17) NOT NULL,
+  interface_name       VARCHAR(64),
+  local                BOOLEAN NOT NULL DEFAULT FALSE,
+  hw_type              VARCHAR(64),
+  current_channel      TEXT,
+  remote_cap_name      VARCHAR(128),
+  matched_device_id    INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+  config_json          JSONB,
+  updated_at           TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(controller_device_id, radio_mac)
+);
+CREATE INDEX IF NOT EXISTS idx_capsman_radios_device ON capsman_radios(matched_device_id);
+
+-- Named configurations and the provisioning rules that bind them to radios. Both
+-- are read-only for now; editing them would push to every bound AP at once.
+CREATE TABLE IF NOT EXISTS capsman_configurations (
+  id                   SERIAL PRIMARY KEY,
+  controller_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  name                 VARCHAR(128) NOT NULL,
+  ssid                 VARCHAR(128),
+  mode                 VARCHAR(32),
+  band                 VARCHAR(64),
+  security             VARCHAR(128),
+  authentication_types VARCHAR(128),
+  config_json          JSONB,
+  updated_at           TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(controller_device_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS capsman_provisioning (
+  id                   SERIAL PRIMARY KEY,
+  controller_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  ros_id               VARCHAR(32) NOT NULL,
+  action               VARCHAR(64),
+  master_configuration VARCHAR(128),
+  slave_configurations TEXT,
+  radio_mac            VARCHAR(17),
+  comment              TEXT,
+  disabled             BOOLEAN NOT NULL DEFAULT FALSE,
+  config_json          JSONB,
+  updated_at           TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(controller_device_id, ros_id)
+);
+
 -- ntfy.sh notification channel (github issue #93). The channel type is a CHECK
 -- constraint rather than a lookup table, so widening it means replacing it.
 ALTER TABLE alert_channels DROP CONSTRAINT IF EXISTS alert_channels_type_check;

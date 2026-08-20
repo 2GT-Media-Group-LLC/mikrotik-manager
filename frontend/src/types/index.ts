@@ -334,6 +334,10 @@ export interface WirelessInterface {
   security_profile?: string;
   noise_floor?: number;
   registered_clients: number;
+  /** Configuration is owned by a CAPsMAN controller, not by this device. */
+  managed_by_capsman?: boolean;
+  radio_mac?: string | null;
+  capsman_controller_mac?: string | null;
   config_json?: Record<string, string>;
   updated_at?: string;
 }

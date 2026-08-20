@@ -11,7 +11,7 @@ router.use(requireAuth);
 
 async function getAP(id: number): Promise<DeviceRow | null> {
   const rows = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE id = $1 AND device_type = 'wireless_ap'`,
+    `SELECT * FROM devices WHERE id = $1 AND (device_type = 'wireless_ap' OR wifi_role IN ('cap','controller','controller_cap'))`,
     [id]
   );
   return rows[0] ?? null;
@@ -32,7 +32,7 @@ router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
 
   const placeholders = apIds.map((_, i) => `$${i + 1}`).join(',');
   const aps = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE id IN (${placeholders}) AND device_type = 'wireless_ap'`,
+    `SELECT * FROM devices WHERE id IN (${placeholders}) AND (device_type = 'wireless_ap' OR wifi_role IN ('cap','controller','controller_cap'))`,
     apIds
   );
 
@@ -102,11 +102,107 @@ router.get('/', async (_req: Request, res: Response) => {
            COUNT(DISTINCT wi.id) FILTER (WHERE wi.ssid IS NOT NULL AND wi.disabled = false) AS ssid_count
     FROM devices d
     LEFT JOIN wireless_interfaces wi ON wi.device_id = d.id
-    WHERE d.device_type = 'wireless_ap'
+    WHERE (d.device_type = 'wireless_ap' OR d.wifi_role IN ('cap','controller','controller_cap'))
     GROUP BY d.id
     ORDER BY d.name ASC
   `);
   res.json(aps);
+});
+
+// ─── CAPsMAN (issue #94) ──────────────────────────────────────────────────────
+
+/**
+ * GET /api/wireless/capsman — every controller in the fleet with the radios it
+ * manages, grouped by the access point each radio physically lives on.
+ *
+ * Read-only. Reads the cache rather than the devices, so the page loads instantly
+ * and works while a CAP is offline — the controller still knows what it provisioned.
+ */
+router.get('/capsman', async (_req: Request, res: Response) => {
+  const controllers = await query<{
+    id: number; name: string; ip_address: string; model: string | null;
+    status: string; wifi_role: string | null;
+  }>(`
+    SELECT id, name, ip_address, model, status, wifi_role
+    FROM devices
+    WHERE wifi_role IN ('controller', 'controller_cap')
+    ORDER BY name ASC
+  `);
+
+  if (controllers.length === 0) return res.json({ controllers: [] });
+
+  const ids = controllers.map((c) => c.id);
+  const [radios, configs, provisioning] = await Promise.all([
+    query(`
+      SELECT r.controller_device_id, r.radio_mac, r.interface_name, r.local, r.hw_type,
+             r.current_channel, r.remote_cap_name, r.matched_device_id,
+             d.name AS matched_device_name, d.status AS matched_device_status
+      FROM capsman_radios r
+      LEFT JOIN devices d ON d.id = r.matched_device_id
+      WHERE r.controller_device_id = ANY($1::int[])
+      ORDER BY r.local DESC, d.name NULLS LAST, r.interface_name
+    `, [ids]),
+    query(`
+      SELECT controller_device_id, name, ssid, mode, band, security, authentication_types
+      FROM capsman_configurations
+      WHERE controller_device_id = ANY($1::int[])
+      ORDER BY name
+    `, [ids]),
+    query(`
+      SELECT controller_device_id, ros_id, action, master_configuration,
+             slave_configurations, radio_mac, comment, disabled
+      FROM capsman_provisioning
+      WHERE controller_device_id = ANY($1::int[])
+      ORDER BY ros_id
+    `, [ids]),
+  ]);
+
+  // SSIDs actually broadcasting, so the view shows what is live rather than only
+  // what was configured.
+  const interfaces = await query(`
+    SELECT wi.device_id, wi.name, wi.ssid, wi.band, wi.frequency, wi.disabled, wi.running,
+           wi.managed_by_capsman, wi.radio_mac, wi.registered_clients, d.name AS device_name
+    FROM wireless_interfaces wi
+    JOIN devices d ON d.id = wi.device_id
+    WHERE wi.managed_by_capsman = TRUE
+    ORDER BY d.name, wi.name
+  `);
+
+  const byController = <T extends { controller_device_id: number }>(rows: T[], id: number) =>
+    rows.filter((r) => r.controller_device_id === id);
+
+  res.json({
+    controllers: controllers.map((c) => {
+      const cRadios = byController(radios as { controller_device_id: number; matched_device_id: number | null; matched_device_name: string | null }[], c.id);
+
+      // Group radios by the AP they sit on. An unmatched radio means a CAP that is
+      // not a managed device — worth showing rather than hiding, since it is often
+      // the reason an AP is missing from the fleet.
+      const groups = new Map<string, { device_id: number | null; device_name: string; radios: unknown[] }>();
+      for (const r of cRadios) {
+        const key = r.matched_device_id != null ? `d:${r.matched_device_id}` : `u:${(r as { remote_cap_name?: string }).remote_cap_name ?? 'unknown'}`;
+        const g = groups.get(key) ?? {
+          device_id: r.matched_device_id,
+          device_name: r.matched_device_name ?? (r as { remote_cap_name?: string }).remote_cap_name ?? 'Unmanaged CAP',
+          radios: [],
+        };
+        g.radios.push(r);
+        groups.set(key, g);
+      }
+
+      const ssids = (interfaces as { device_id: number }[]).filter((i) =>
+        cRadios.some((r) => r.matched_device_id === i.device_id)
+      );
+
+      return {
+        ...c,
+        access_points: [...groups.values()],
+        configurations: byController(configs as { controller_device_id: number }[], c.id),
+        provisioning: byController(provisioning as { controller_device_id: number }[], c.id),
+        ssids,
+      };
+    }),
+  });
 });
 
 // ─── Wireless interfaces (SSIDs) ──────────────────────────────────────────────
@@ -719,7 +815,7 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
            wi.band, wi.frequency, wi.channel_width, wi.registered_clients
     FROM wireless_interfaces wi
     JOIN devices d ON d.id = wi.device_id
-    WHERE d.device_type = 'wireless_ap'
+    WHERE (d.device_type = 'wireless_ap' OR d.wifi_role IN ('cap','controller','controller_cap'))
       AND wi.disabled = FALSE
       AND wi.frequency IS NOT NULL AND wi.frequency > 0
       AND (wi.config_json->>'master-interface') IS NULL

@@ -2,7 +2,7 @@
 
 A self-hosted, full-stack network management platform for MikroTik devices. Monitor, configure, and manage your entire MikroTik infrastructure — routers, switches, and wireless access points — from a single web interface.
 
-![Version](https://img.shields.io/badge/version-0.21.0_Beta-blue)
+![Version](https://img.shields.io/badge/version-0.22.0_Beta-blue)
 ![License](https://img.shields.io/badge/license-AGPLv3-blue)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
@@ -236,6 +236,31 @@ Configure under **Settings → Change Guard** (`change_guard_enabled`, `change_g
   - **AP radio TX retries** histogram (0%→35%+) with a band selector, derived from per-client CCQ (legacy `wireless` driver)
   - **WiFi connectivity success** funnel (Association / Authentication / DHCP) derived from device logs
 - **Rogue & neighbor AP detection** — cross-references stored AP-scan results against your own SSIDs and radio MACs. A foreign BSSID broadcasting one of *your* SSIDs is flagged as a **rogue / evil-twin** (and raised in Operations → Things to handle); everything else is a ranked neighbor-network inventory
+
+### CAPsMAN
+Access points provisioned centrally by CAPsMAN hold none of their own wireless configuration — the
+controller owns it — so reading an AP directly returns blank SSID, security and band. The platform
+now recognises that instead of showing an access point that looks broken:
+
+- **Role detection** — each device is classified as standalone, CAP, controller, or controller-with-
+  local-radios (a supported MikroTik arrangement) from `/interface/wifi/capsman` and `/interface/wifi/cap`
+- **Provisioned interfaces are labelled** — a CAPsMAN badge on the Radios tab, and an explanation that
+  the blank fields live on the controller, with the controller's MAC. SSID, mode and channel are
+  recovered from RouterOS's status line where present
+- **CAPsMAN panel on the Wireless page** — every controller with the access points it provisions,
+  grouped per AP: radios, hardware type, live channel, provisioned SSIDs with client counts, named
+  configurations, and the provisioning rules that bind them
+- **CAPs are matched to managed devices by radio MAC**, taken from the controller's own
+  `/interface/wifi/radio` list. A MAC is hardware identity and globally unique, so unlike an IP it
+  cannot mean two devices on two segments. A CAP that is *not* in the fleet is surfaced rather than
+  hidden, since that is usually why an AP appears to be missing
+- **Controllers are no longer excluded** — the wireless section previously required
+  `device_type = 'wireless_ap'`, which hid a dedicated controller (normally classified as a router)
+
+**Read-only for now.** Editing a CAPsMAN configuration applies it to every access point bound to it
+at once, so provisioning and config edits are deliberately not exposed until they carry the same
+prediction-and-revert protection that device changes do. Legacy `/caps-man` (the pre-RouterOS 7
+controller) is a separate API tree and is not covered yet.
 
 ### Guest WiFi (Hotspot)
 A one-click captive-portal guest network on RouterOS Hotspot, under **Wireless → Guest WiFi**:

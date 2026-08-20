@@ -890,9 +890,78 @@ export const certApi = {
 };
 
 // ─── Wireless ─────────────────────────────────────────────────────────────────
+/**
+ * A CAPsMAN controller and the access points it provisions. Read-only: the
+ * configuration lives on the controller and pushing an edit would reach every bound
+ * AP at once, so that is deliberately not exposed yet (issue #94).
+ */
+export interface CapsmanRadio {
+  radio_mac: string;
+  interface_name: string | null;
+  local: boolean;
+  hw_type: string | null;
+  current_channel: string | null;
+  remote_cap_name: string | null;
+  matched_device_id: number | null;
+  matched_device_name: string | null;
+  matched_device_status: string | null;
+}
+
+export interface CapsmanAccessPoint {
+  device_id: number | null;
+  device_name: string;
+  radios: CapsmanRadio[];
+}
+
+export interface CapsmanConfiguration {
+  name: string;
+  ssid: string | null;
+  mode: string | null;
+  band: string | null;
+  security: string | null;
+  authentication_types: string | null;
+}
+
+export interface CapsmanProvisioning {
+  ros_id: string;
+  action: string | null;
+  master_configuration: string | null;
+  slave_configurations: string | null;
+  radio_mac: string | null;
+  comment: string | null;
+  disabled: boolean;
+}
+
+export interface CapsmanSsid {
+  device_id: number;
+  device_name: string;
+  name: string;
+  ssid: string | null;
+  band: string | null;
+  frequency: number | null;
+  disabled: boolean;
+  running: boolean;
+  registered_clients: number | null;
+}
+
+export interface CapsmanController {
+  id: number;
+  name: string;
+  ip_address: string;
+  model: string | null;
+  status: string;
+  wifi_role: string | null;
+  access_points: CapsmanAccessPoint[];
+  configurations: CapsmanConfiguration[];
+  provisioning: CapsmanProvisioning[];
+  ssids: CapsmanSsid[];
+}
+
 export const wirelessApi = {
   // Section overview
   list: () => api.get('/wireless'),
+  // CAPsMAN controllers with the APs they provision (read-only)
+  capsman: () => api.get<{ controllers: CapsmanController[] }>('/wireless/capsman'),
 
   // Multi-AP SSID deployment
   bulkCreateInterfaces: (data: { apIds: number[] } & Record<string, unknown>) =>

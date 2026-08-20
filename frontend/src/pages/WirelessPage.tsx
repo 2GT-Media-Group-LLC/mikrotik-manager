@@ -7,6 +7,7 @@ import { wirelessApi } from '../services/api';
 import type { WirelessAP } from '../types';
 import RfHealth from '../components/wireless/RfHealth';
 import RogueApsCard from '../components/wireless/RogueApsCard';
+import CapsmanPanel from '../components/wireless/CapsmanPanel';
 import clsx from 'clsx';
 
 function timeAgo(ts: string | undefined): string {
@@ -104,6 +105,8 @@ export default function WirelessPage() {
 
       {/* Rogue & neighbor AP detection (from stored AP scans) */}
       {aps.length > 0 && <RogueApsCard />}
+
+      <CapsmanPanel />
 
       {/* AP table */}
       <div className="card overflow-hidden">

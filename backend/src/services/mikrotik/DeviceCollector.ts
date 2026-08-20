@@ -7,6 +7,11 @@ import { decrypt } from '../../utils/crypto';
 import { lookupVendor } from '../../utils/oui';
 import { buildServerArpMap } from '../../utils/serverArp';
 import { aggregateBridgeVlans, portVlanMembership, expandVlanIds } from '../../utils/vlan';
+import {
+  classifyWifiRole, isCapsmanManaged, parseCapsmanStatus, parseCapStatus,
+  normalizeRadios, lookupDeviceForMac, macIndexKeys,
+  type WifiRole,
+} from './capsman';
 import { BackupService } from '../BackupService';
 import { alertService } from '../AlertService';
 
@@ -114,15 +119,32 @@ export class DeviceCollector {
 
   // ─── Slow poll (every 5 min) ───────────────────────────────────────────────
 
+  /**
+   * Should wireless data be collected from this device?
+   *
+   * `device_type` alone is wrong for CAPsMAN: a dedicated controller is usually
+   * classified as a router, has no radios of its own, and yet owns the wireless
+   * configuration of the entire fleet. Probing every device once and remembering
+   * the answer costs one call on first sight and nothing afterwards, which beats
+   * both probing forever and never noticing a controller.
+   */
+  private shouldCollectWireless(): boolean {
+    if (this.device.device_type === 'wireless_ap') return true;
+    const role = (this.device as unknown as { wifi_role?: string | null }).wifi_role;
+    if (role == null) return true;                 // never determined — probe once
+    return role !== 'none' && role !== 'standalone';
+  }
+
   async collectSlow(): Promise<void> {
     await this.collectInterfaces();
     await this.collectIpAddressesCache();
     await this.collectVlans();
     await this.collectSystemInfo();
     await this.collectStp();
-    if (this.device.device_type === 'wireless_ap') {
+    if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
+      await this.collectCapsman();
     }
   }
 
@@ -147,9 +169,10 @@ export class DeviceCollector {
     // Wireless data belongs in a full resync too — without this, a manual sync
     // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
     // the UI could only catch up on the 5-minute slow poll.
-    if (this.device.device_type === 'wireless_ap') {
+    if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
+      await this.collectCapsman();
     }
     await this.saveFullConfig();
     await this.updateDeviceStatus('online');
@@ -1319,6 +1342,175 @@ export class DeviceCollector {
     );
   }
 
+  // ─── CAPsMAN ──────────────────────────────────────────────────────────────
+
+  private wifiRoleCache: WifiRole | null = null;
+
+  /**
+   * Is this device a CAPsMAN controller, a CAP, both, or neither?
+   *
+   * Read from the two feature toggles rather than inferred from missing data — an
+   * AP whose SSID is blank because the controller owns it looks identical to one
+   * that is simply unconfigured, and only this tells them apart.
+   */
+  async detectWifiRole(): Promise<WifiRole> {
+    if (this.wifiRoleCache !== null) return this.wifiRoleCache;
+    const pkg = await this.detectWifiPackage();
+    if (pkg !== 'wifi') {
+      // Legacy /caps-man is a separate API tree and is not covered yet; treat the
+      // old wireless package as standalone rather than guessing.
+      this.wifiRoleCache = pkg === 'none' ? 'none' : 'standalone';
+      return this.wifiRoleCache;
+    }
+
+    const [capsman, cap, ifaces] = await Promise.all([
+      this.client.execute('/interface/wifi/capsman/print').catch(() => null),
+      this.client.execute('/interface/wifi/cap/print').catch(() => null),
+      this.client.execute('/interface/wifi/print').catch(() => [] as Record<string, string>[]),
+    ]);
+    this.wifiRoleCache = classifyWifiRole(capsman, cap, ifaces.length > 0);
+    return this.wifiRoleCache;
+  }
+
+  /**
+   * Controller-side inventory: the radios it manages, the named configurations, and
+   * the provisioning rules binding them together.
+   *
+   * Remote radios are attributed to managed devices by MAC. That is a hardware
+   * identity and therefore globally unique, so unlike an address it cannot mean two
+   * different devices in two different segments — the failure that made topology
+   * unreliable before v0.20.1.
+   */
+  async collectCapsman(): Promise<void> {
+    try {
+      const role = await this.detectWifiRole();
+      if (role !== 'controller' && role !== 'controller_cap') {
+        // Not a controller: clear any inventory left from when it was one.
+        await query(`DELETE FROM capsman_radios WHERE controller_device_id = $1`, [this.device.id]);
+        await query(`DELETE FROM capsman_configurations WHERE controller_device_id = $1`, [this.device.id]);
+        await query(`DELETE FROM capsman_provisioning WHERE controller_device_id = $1`, [this.device.id]);
+        return;
+      }
+
+      const [radioRows, configRows, provRows] = await Promise.all([
+        this.client.execute('/interface/wifi/radio/print').catch(() => null),
+        this.client.execute('/interface/wifi/configuration/print', { detail: '' }).catch(() => null),
+        this.client.execute('/interface/wifi/provisioning/print', { detail: '' }).catch(() => null),
+      ]);
+
+      // Fleet-wide MAC → device index, including a five-octet prefix key because a
+      // radio MAC often differs from the interface MAC in the final octet only.
+      const macRows = await query<{ device_id: number; mac_address: string }>(
+        `SELECT device_id, mac_address FROM interfaces WHERE mac_address IS NOT NULL
+         UNION
+         SELECT device_id, mac_address FROM wireless_interfaces WHERE mac_address IS NOT NULL`
+      ).catch(() => []);
+      const macIndex = new Map<string, number>();
+      for (const r of macRows) {
+        for (const key of macIndexKeys(r.mac_address)) {
+          if (!macIndex.has(key)) macIndex.set(key, r.device_id);
+        }
+      }
+
+      if (radioRows !== null) {
+        const radios = normalizeRadios(radioRows);
+        const seen: string[] = [];
+        for (const radio of radios) {
+          if (!radio.radioMac) continue;
+          seen.push(radio.radioMac);
+          const capInfo = parseCapStatus(radio.raw);
+          const matched = radio.local
+            ? this.device.id
+            : lookupDeviceForMac(radio.radioMac, macIndex);
+
+          await query(
+            `INSERT INTO capsman_radios
+               (controller_device_id, radio_mac, interface_name, local, hw_type,
+                current_channel, remote_cap_name, matched_device_id, config_json, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+             ON CONFLICT (controller_device_id, radio_mac) DO UPDATE SET
+               interface_name=$3, local=$4, hw_type=$5, current_channel=$6,
+               remote_cap_name=$7, matched_device_id=$8, config_json=$9, updated_at=NOW()`,
+            [
+              this.device.id, radio.radioMac, radio.interfaceName, radio.local,
+              radio.hwType, radio.currentChannel,
+              capInfo?.capMac ?? radio.raw['name'] ?? null,
+              matched, JSON.stringify(radio.raw),
+            ]
+          );
+        }
+        await query(
+          `DELETE FROM capsman_radios WHERE controller_device_id = $1 AND NOT (radio_mac = ANY($2::text[]))`,
+          [this.device.id, seen]
+        );
+      }
+
+      if (configRows !== null) {
+        const seen: string[] = [];
+        for (const cfg of configRows) {
+          const name = cfg['name'];
+          if (!name) continue;
+          seen.push(name);
+          await query(
+            `INSERT INTO capsman_configurations
+               (controller_device_id, name, ssid, mode, band, security, authentication_types, config_json, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+             ON CONFLICT (controller_device_id, name) DO UPDATE SET
+               ssid=$3, mode=$4, band=$5, security=$6, authentication_types=$7,
+               config_json=$8, updated_at=NOW()`,
+            [
+              this.device.id, name,
+              cfg['ssid'] ?? null,
+              cfg['mode'] ?? null,
+              cfg['channel.band'] ?? cfg['band'] ?? null,
+              cfg['security'] ?? null,
+              cfg['security.authentication-types'] ?? null,
+              JSON.stringify(cfg),
+            ]
+          );
+        }
+        await query(
+          `DELETE FROM capsman_configurations WHERE controller_device_id = $1 AND NOT (name = ANY($2::text[]))`,
+          [this.device.id, seen]
+        );
+      }
+
+      if (provRows !== null) {
+        const seen: string[] = [];
+        for (const prov of provRows) {
+          const rosId = prov['.id'];
+          if (!rosId) continue;
+          seen.push(rosId);
+          await query(
+            `INSERT INTO capsman_provisioning
+               (controller_device_id, ros_id, action, master_configuration, slave_configurations,
+                radio_mac, comment, disabled, config_json, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+             ON CONFLICT (controller_device_id, ros_id) DO UPDATE SET
+               action=$3, master_configuration=$4, slave_configurations=$5, radio_mac=$6,
+               comment=$7, disabled=$8, config_json=$9, updated_at=NOW()`,
+            [
+              this.device.id, rosId,
+              prov['action'] ?? null,
+              prov['master-configuration'] ?? null,
+              prov['slave-configurations'] ?? null,
+              (prov['radio-mac'] || '').toUpperCase() || null,
+              prov['comment'] ?? null,
+              prov['disabled'] === 'true',
+              JSON.stringify(prov),
+            ]
+          );
+        }
+        await query(
+          `DELETE FROM capsman_provisioning WHERE controller_device_id = $1 AND NOT (ros_id = ANY($2::text[]))`,
+          [this.device.id, seen]
+        );
+      }
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to collect CAPsMAN data:`, (err as Error).message);
+    }
+  }
+
   // ─── Wifi package detection ───────────────────────────────────────────────
 
   private wifiPackageCache: 'wifi' | 'wireless' | 'none' | null = null;
@@ -1366,6 +1558,12 @@ export class DeviceCollector {
       const pkg = await this.detectWifiPackage();
       if (pkg === 'none') return;
 
+      // Recorded per device so the UI can explain a blank SSID as delegation to a
+      // controller rather than leaving it looking like an unconfigured radio.
+      const role = await this.detectWifiRole();
+      await query(`UPDATE devices SET wifi_role = $2 WHERE id = $1`, [this.device.id, role])
+        .catch(() => { /* role is advisory; never fail collection over it */ });
+
       // null = the fetch itself failed. Distinguished from an empty list (device
       // genuinely has no wireless interfaces) so a transient API error can never
       // be mistaken for "everything was deleted" during the prune below.
@@ -1397,32 +1595,46 @@ export class DeviceCollector {
       for (const wlan of wlans) {
         const name = wlan['name'];
         if (!name) continue;
+        // A CAP holds no local configuration for provisioned interfaces, so the
+        // status line is the only place an SSID or channel appears. Fall back to it
+        // rather than storing nulls that render as an empty, broken-looking AP.
+        const capsmanStatus = parseCapsmanStatus(wlan);
+        const managed = isCapsmanManaged(wlan, role);
         const master = wlan['master-interface'];
         const liveF = liveFreq[name] ?? (master ? liveFreq[master] : undefined);
         const liveW = liveWidth[name] ?? (master ? liveWidth[master] : undefined);
         const freq  = liveF ?? parseInt(wlan['frequency'] || '0', 10);
         const txPow = parseInt(wlan['tx-power'] || '0', 10);
         const gain  = parseInt(wlan['antenna-gain'] || '0', 10);
-        const bandStr = wlan['band'] || (liveF ? bandPrefix(liveF) : null);
+        // "channel: 5280/ax/eCee" — frequency first, then the PHY mode.
+        const statusFreq = parseInt((capsmanStatus?.channel ?? '').split('/')[0] || '', 10);
+        const effFreq = !isNaN(freq) && freq > 0
+          ? freq
+          : (!isNaN(statusFreq) && statusFreq > 0 ? statusFreq : freq);
+        const bandStr = wlan['band']
+          || (liveF ? bandPrefix(liveF) : null)
+          || (!isNaN(statusFreq) && statusFreq > 0 ? bandPrefix(statusFreq) : null);
         const widthStr = wlan['channel-width'] || liveW || null;
 
         await query(
           `INSERT INTO wireless_interfaces
             (device_id, name, ssid, mode, band, frequency, channel_width, tx_power,
              tx_power_mode, antenna_gain, country, installation, disabled, running,
-             mac_address, security_profile, config_json, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
+             mac_address, security_profile, config_json, managed_by_capsman, radio_mac,
+             capsman_controller_mac, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW())
            ON CONFLICT (device_id, name) DO UPDATE SET
              ssid=$3, mode=$4, band=$5, frequency=$6, channel_width=$7, tx_power=$8,
              tx_power_mode=$9, antenna_gain=$10, country=$11, installation=$12,
              disabled=$13, running=$14, mac_address=$15, security_profile=$16,
-             config_json=$17, updated_at=NOW()`,
+             config_json=$17, managed_by_capsman=$18, radio_mac=$19,
+             capsman_controller_mac=$20, updated_at=NOW()`,
           [
             this.device.id, name,
-            wlan['ssid'] || null,
-            wlan['mode'] || null,
+            wlan['ssid'] || capsmanStatus?.ssid || null,
+            wlan['mode'] || capsmanStatus?.mode || null,
             bandStr || null,
-            !isNaN(freq) && freq > 0 ? freq : null,
+            !isNaN(effFreq) && effFreq > 0 ? effFreq : null,
             widthStr,
             !isNaN(txPow) && txPow > 0 ? txPow : null,
             wlan['tx-power-mode'] || null,
@@ -1434,6 +1646,9 @@ export class DeviceCollector {
             wlan['mac-address'] || null,
             wlan['security-profile'] || null,
             JSON.stringify(wlan),
+            managed,
+            (wlan['radio-mac'] || '').toUpperCase() || null,
+            capsmanStatus?.controllerMac ?? null,
           ]
         );
       }
@@ -1738,9 +1953,27 @@ export class DeviceCollector {
       this.getBridgePorts(),
     ]);
 
-    const ifaces = pkg === 'wifi'
+    const rawNormalized = pkg === 'wifi'
       ? rawIfaces.map(r => this.normalizeWifiInterface(r))
       : rawIfaces;
+
+    // This endpoint reads the device live rather than the cache, so the CAPsMAN
+    // annotation has to be applied here too — otherwise the Radios tab shows blank
+    // fields with no indication that a controller owns them.
+    const role = await this.detectWifiRole();
+    const ifaces = rawNormalized.map((iface, i) => {
+      const status = parseCapsmanStatus(rawIfaces[i] ?? iface);
+      const managed = isCapsmanManaged(rawIfaces[i] ?? iface, role);
+      if (!managed && !status) return iface;
+      return {
+        ...iface,
+        managed_by_capsman: 'true',
+        ...(status?.controllerMac ? { capsman_controller_mac: status.controllerMac } : {}),
+        ...(status?.ssid && !iface['ssid'] ? { ssid: status.ssid } : {}),
+        ...(status?.mode && !iface['mode'] ? { mode: status.mode } : {}),
+        ...(status?.channel ? { capsman_channel: status.channel } : {}),
+      };
+    });
 
     // Enrich each interface with its bridge port membership (if any)
     const portByIface = new Map(bridgePorts.map(p => [p['interface'], p]));

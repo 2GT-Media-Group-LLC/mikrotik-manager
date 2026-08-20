@@ -1034,6 +1034,14 @@ export default function RadiosTab({ deviceId, deviceStatus }: Props) {
                         {iface.ssid}
                       </span>
                     )}
+                    {iface.managed_by_capsman && (
+                      <span
+                        className="px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50 rounded text-xs font-medium"
+                        title="Configuration is held by a CAPsMAN controller, not on this device"
+                      >
+                        CAPsMAN
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={clsx(
@@ -1055,6 +1063,18 @@ export default function RadiosTab({ deviceId, deviceStatus }: Props) {
                 {/* Expandable body */}
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-1 border-t border-gray-100 dark:border-slate-700/60">
+                    {iface.managed_by_capsman && (
+                      <div className="mb-3 rounded-lg border border-amber-200 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
+                        <p className="text-xs text-amber-800 dark:text-amber-300">
+                          Provisioned by CAPsMAN
+                          {iface.capsman_controller_mac && (
+                            <> from controller <span className="font-mono font-medium">{iface.capsman_controller_mac}</span></>
+                          )}
+                          . This access point holds no local configuration for the interface, so any
+                          blank fields below live on the controller — edit them there.
+                        </p>
+                      </div>
+                    )}
                     {isVirtual && iface.config_json?.['master-interface'] && (
                       <p className="text-xs text-purple-600 dark:text-purple-400 mb-3">
                         Virtual AP — shares radio with <span className="font-mono font-medium">{iface.config_json['master-interface']}</span>
