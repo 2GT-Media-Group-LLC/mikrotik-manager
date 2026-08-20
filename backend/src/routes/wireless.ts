@@ -42,6 +42,18 @@ router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
       try {
         await collector.connect();
         const pkg = await collector.detectWifiPackage();
+
+        // Widening the device selector so CAPsMAN controllers stop being invisible
+        // also let CAPs through here. An SSID created on a provisioned radio is
+        // discarded by the controller, so refuse rather than report success.
+        const { local: localRadios, capsmanOwned } = await collector.partitionRadios();
+        if (localRadios.length === 0 && capsmanOwned.length > 0) {
+          throw new Error(
+            `${ap.name}: every radio is provisioned by CAPsMAN (${capsmanOwned.join(', ')}). `
+            + `Add this SSID to the controller's configuration instead.`
+          );
+        }
+
         const autoName = await collector.getNextInterfaceName();
 
         // Normalize mode to the correct value for this AP's package type
@@ -98,7 +110,15 @@ router.get('/', async (_req: Request, res: Response) => {
     SELECT d.id, d.name, d.ip_address, d.model, d.device_type, d.status, d.last_seen,
            d.ros_version, d.firmware_version, d.serial_number, d.rack_name, d.rack_slot,
            COUNT(DISTINCT wi.id)                           AS radio_count,
-           COALESCE(SUM(wi.registered_clients), 0)        AS client_count,
+           -- A CAP's own registration table is empty when the controller processes
+           -- traffic centrally, so its per-interface counts read zero. GREATEST
+           -- prefers whichever source actually has the clients without adding the
+           -- two together on a controller that is also a CAP.
+           GREATEST(
+             COALESCE(SUM(wi.registered_clients), 0),
+             COALESCE((SELECT SUM(cr.registered_peers) FROM capsman_radios cr
+                        WHERE cr.matched_device_id = d.id), 0)
+           )                                              AS client_count,
            COUNT(DISTINCT wi.id) FILTER (WHERE wi.ssid IS NOT NULL AND wi.disabled = false) AS ssid_count
     FROM devices d
     LEFT JOIN wireless_interfaces wi ON wi.device_id = d.id
@@ -158,8 +178,8 @@ router.get('/capsman', async (_req: Request, res: Response) => {
     `, [ids]),
   ]);
 
-  // SSIDs actually broadcasting, so the view shows what is live rather than only
-  // what was configured.
+  // Interfaces provisioned onto the CAPs, joined to their radio so the UI can show
+  // one row per interface with the access point it lives on.
   const interfaces = await query(`
     SELECT wi.device_id, wi.name, wi.ssid, wi.band, wi.frequency, wi.disabled, wi.running,
            wi.managed_by_capsman, wi.radio_mac, wi.registered_clients, d.name AS device_name
@@ -208,8 +228,17 @@ router.get('/capsman', async (_req: Request, res: Response) => {
           ...g,
           client_count: peers(g.radios as { registered_peers?: number | null }[]),
         })),
-        configurations: byController(configs as { controller_device_id: number }[], c.id),
-        provisioning: byController(provisioning as { controller_device_id: number }[], c.id),
+        configurations: byController(configs as { controller_device_id: number; name: string }[], c.id)
+          .map((cfg) => ({
+            ...cfg,
+            // The rule and the configuration it applies are one idea; showing them in
+            // separate boxes made the reader join them by eye (#94).
+            rules: byController(provisioning as { controller_device_id: number; master_configuration: string | null }[], c.id)
+              .filter((p) => p.master_configuration === cfg.name),
+          })),
+        provisioning: byController(provisioning as { controller_device_id: number; master_configuration: string | null }[], c.id)
+          .filter((p) => !configs.some((cfg) => (cfg as { controller_device_id: number; name: string }).controller_device_id === c.id
+            && (cfg as { name: string }).name === p.master_configuration)),
         ssids,
       };
     }),
@@ -277,6 +306,16 @@ router.post('/:id/interfaces', requireWrite, async (req: Request, res: Response)
   const collector = new DeviceCollector(ap);
   try {
     await collector.connect();
+
+    // A virtual AP created on a CAPsMAN-provisioned radio is discarded by the
+    // controller at the next provision, so refuse instead of reporting success.
+    const { local: localRadios, capsmanOwned } = await collector.partitionRadios();
+    if (localRadios.length === 0 && capsmanOwned.length > 0) {
+      return res.status(409).json({
+        error: `Every radio on ${ap.name} is provisioned by CAPsMAN (${capsmanOwned.join(', ')}). `
+          + `Add this SSID to the controller's configuration so it is provisioned to the access points.`,
+      });
+    }
 
     // Auto-generate the next available interface name (e.g. wifi3, wifi4 …)
     const autoName = await collector.getNextInterfaceName();
@@ -358,6 +397,7 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
   const collector = new DeviceCollector(ap);
   try {
     await collector.connect();
+    await collector.assertNotCapsmanManaged(ifaceName);
     await collector.setWirelessInterface(ifaceName, params);
     // Bridge port membership — only touched when 'bridge' key is present in the request
     if (body.bridge !== undefined) {
@@ -386,6 +426,7 @@ router.delete('/:id/interfaces/:name', requireWrite, async (req: Request, res: R
   const collector = new DeviceCollector(ap);
   try {
     await collector.connect();
+    await collector.assertNotCapsmanManaged(req.params.name);
     await collector.removeWirelessInterface(req.params.name);
     await query(
       `DELETE FROM wireless_interfaces WHERE device_id=$1 AND name=$2`,

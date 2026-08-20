@@ -927,6 +927,8 @@ export interface CapsmanConfiguration {
   band: string | null;
   security: string | null;
   authentication_types: string | null;
+  /** Provisioning rules that apply this configuration. */
+  rules: CapsmanProvisioning[];
 }
 
 export interface CapsmanProvisioning {
@@ -943,6 +945,8 @@ export interface CapsmanSsid {
   device_id: number;
   device_name: string;
   name: string;
+  /** Radio this interface sits on, used to join live channel and client counts. */
+  radio_mac: string | null;
   ssid: string | null;
   band: string | null;
   frequency: number | null;

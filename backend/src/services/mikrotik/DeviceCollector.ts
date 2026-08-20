@@ -1344,6 +1344,63 @@ export class DeviceCollector {
   }
 
   // ─── CAPsMAN ──────────────────────────────────────────────────────────────
+  /**
+   * Split this device's physical radios into ones we may configure locally and ones
+   * a CAPsMAN controller owns.
+   *
+   * Writing to a provisioned radio does not reliably take effect: the change is
+   * either rejected or silently replaced the next time the controller provisions the
+   * CAP, while the API reports success. Callers use this to skip those radios and
+   * say so rather than claim a change that will not survive.
+   */
+  async partitionRadios(): Promise<{ local: Record<string, string>[]; capsmanOwned: string[] }> {
+    const pkg = await this.detectWifiPackage();
+    if (pkg === 'none') return { local: [], capsmanOwned: [] };
+
+    const raw = pkg === 'wifi'
+      ? await this.client.execute('/interface/wifi/print', { detail: '' }).catch(() => [] as Record<string, string>[])
+      : await this.client.execute('/interface/wireless/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+
+    const physicals = raw.filter((r) => !r['master-interface'] && r['name']);
+    if (pkg !== 'wifi') return { local: physicals, capsmanOwned: [] };
+
+    const role = await this.detectWifiRole();
+    const owned = physicals.filter((r) => isCapsmanManaged(r, role));
+    return {
+      local: physicals.filter((r) => !isCapsmanManaged(r, role)),
+      capsmanOwned: owned.map((r) => r['name']).filter(Boolean),
+    };
+  }
+
+  /**
+   * Refuse a local edit to an interface a controller owns.
+   *
+   * RouterOS will not let a provisioned interface be changed or removed locally, and
+   * where it appears to accept one the controller undoes it. Failing here with an
+   * explanation beats reporting success for a change that never happened — which is
+   * what the delete path did, removing the cached row while the interface stayed.
+   */
+  async assertNotCapsmanManaged(interfaceName: string): Promise<void> {
+    const pkg = await this.detectWifiPackage();
+    if (pkg !== 'wifi') return;
+    const role = await this.detectWifiRole();
+    if (role !== 'cap' && role !== 'controller_cap') return;
+
+    const rows = await this.client.execute('/interface/wifi/print', { detail: '' })
+      .catch(() => [] as Record<string, string>[]);
+    const row = rows.find((r) => r['name'] === interfaceName);
+    if (!row || !isCapsmanManaged(row, role)) return;
+
+    const status = parseCapsmanStatus(row);
+    throw new Error(
+      `${interfaceName} is provisioned by CAPsMAN`
+      + (status?.controllerMac ? ` from controller ${status.controllerMac}` : '')
+      + `, so it cannot be changed on this device. Edit it in the controller's configuration `
+      + `instead — a local change would be discarded the next time the CAP is provisioned.`
+    );
+  }
+
+
 
   private wifiRoleCache: WifiRole | null = null;
 
@@ -1446,9 +1503,12 @@ export class DeviceCollector {
           seen.push(radio.radioMac);
           const capInfo = parseCapStatus(radio.raw);
           const st = radio.interfaceName ? live.get(radio.interfaceName) : undefined;
+          // A remote radio belongs to a CAP, never to the controller — so a
+          // near-miss prefix match against the controller's own MAC block must not
+          // pull it back onto the controller.
           const matched = radio.local
             ? this.device.id
-            : lookupDeviceForMac(radio.radioMac, macIndex);
+            : lookupDeviceForMac(radio.radioMac, macIndex, this.device.id);
 
           await query(
             `INSERT INTO capsman_radios
@@ -2429,21 +2489,15 @@ export class DeviceCollector {
       const pkg = await this.detectWifiPackage();
       if (pkg === 'none') throw new Error('No wireless package detected on this device — cannot create a guest SSID');
       const raw = pkg === 'wifi'
-        ? await this.client.execute('/interface/wifi/print').catch(() => [] as Record<string, string>[])
-        : await this.client.execute('/interface/wireless/print').catch(() => [] as Record<string, string>[]);
-      let physicals = raw.filter(r => !r['master-interface'] && r['name']);
-      if (physicals.length === 0) throw new Error('No physical radios found to attach the guest SSID to');
+        ? await this.client.execute('/interface/wifi/print', { detail: '' }).catch(() => [] as Record<string, string>[])
+        : await this.client.execute('/interface/wireless/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
 
-      // A CAPsMAN-provisioned radio is owned by the controller. Adding a local
-      // virtual AP to it does not reliably take effect and can be wiped or
-      // contradicted the next time the controller provisions the CAP — so skip
-      // those radios and say so, rather than reporting success for something that
-      // silently will not work. Raised by the reporter of issue #94.
-      const role = await this.detectWifiRole();
-      const managedRadios = physicals.filter(r => isCapsmanManaged(r, role));
-      if (managedRadios.length > 0) {
-        physicals = physicals.filter(r => !isCapsmanManaged(r, role));
-        const names = managedRadios.map(r => r['name']).join(', ');
+      const { local: physicals, capsmanOwned } = await this.partitionRadios();
+      if (physicals.length === 0 && capsmanOwned.length === 0) {
+        throw new Error('No physical radios found to attach the guest SSID to');
+      }
+      if (capsmanOwned.length > 0) {
+        const names = capsmanOwned.join(', ');
         if (physicals.length === 0) {
           throw new Error(
             `Every radio on this device (${names}) is provisioned by CAPsMAN, so a guest SSID `

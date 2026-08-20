@@ -302,7 +302,7 @@ router.get('/:id', async (req: Request, res: Response) => {
             notes, location_address,
             location_lat::float8 AS location_lat,
             location_lng::float8 AS location_lng,
-            rack_name, rack_slot, created_at, updated_at
+            rack_name, rack_slot, wifi_role, created_at, updated_at
      FROM devices WHERE id = $1`,
     [req.params.id]
   );
@@ -339,11 +339,11 @@ router.patch('/:id/location', requireWrite, async (req: Request, res: Response) 
 
   const updated = await queryOne(
     `SELECT id, name, ip_address, api_port, api_username, ssh_port, ssh_username, model,
-            serial_number, firmware_version, ros_version, device_type, status, last_seen,
+            serial_number, firmware_version, ros_version, device_type, status, last_seen, wifi_role,
             notes, location_address,
             location_lat::float8 AS location_lat,
             location_lng::float8 AS location_lng,
-            rack_name, rack_slot, created_at, updated_at
+            rack_name, rack_slot, wifi_role, created_at, updated_at
      FROM devices WHERE id = $1`,
     [req.params.id]
   );

@@ -209,3 +209,71 @@ describe('buildTopology — behaviour preserved for unambiguous fleets', () => {
     expect(graph.links[0].to_device_id).toBeNull();
   });
 });
+
+/**
+ * Issue #95. Two managed devices connected by a trunk port. LLDP across a trunk
+ * carries no IP, so address matching has nothing to work with — but it does carry
+ * the peer's port MAC. Without MAC resolution both devices were drawn twice: once
+ * as themselves and once as an external node.
+ */
+describe('buildTopology — neighbours identified only by MAC (#95)', () => {
+  const devices = [
+    dev(12, 'legacy-core-rt-001', '10.99.0.1'),
+    dev(13, 'legacy-core-sw-001', '10.99.0.2'),
+  ];
+  // Trunk-port MACs, which differ from the management-VLAN MACs the devices answer on.
+  const macs = [
+    { device_id: 12, mac_address: '04:F4:1C:9F:3D:A9' },
+    { device_id: 13, mac_address: '04:F4:1C:36:B5:E9' },
+  ];
+  const trunkLinks = () => [
+    link({
+      from_device_id: 12, from_interface: 'trunk1', link_type: 'lldp',
+      neighbor_mac: '04:F4:1C:36:B5:E9', neighbor_identity: 'legacy-core-sw-001',
+      neighbor_address: null, from_device_name: 'legacy-core-rt-001',
+    }),
+    link({
+      from_device_id: 13, from_interface: 'sfp-sfpplus2', link_type: 'lldp',
+      neighbor_mac: '04:F4:1C:9F:3D:A9', neighbor_identity: 'legacy-core-rt-001',
+      neighbor_address: null, from_device_name: 'legacy-core-sw-001',
+    }),
+  ];
+
+  it('resolves both directions to the managed devices', () => {
+    const graph = buildTopology(devices, trunkLinks(), [], macs);
+    for (const l of graph.links) expect(l.to_device_id).not.toBeNull();
+  });
+
+  it('draws no external node duplicating a managed device', () => {
+    const graph = buildTopology(devices, trunkLinks(), [], macs);
+    expect(graph.externalNodes.filter((n) => n.caps !== 'segment')).toHaveLength(0);
+  });
+
+  it('collapses the bidirectional pair into one link', () => {
+    const graph = buildTopology(devices, trunkLinks(), [], macs);
+    expect(graph.links).toHaveLength(1);
+    expect(graph.links[0].from_device_id).toBe(12);
+    expect(graph.links[0].to_device_id).toBe(13);
+  });
+
+  it('still produces external nodes for genuinely unmanaged neighbours', () => {
+    const graph = buildTopology(devices, [
+      link({ from_device_id: 12, from_interface: 'ether5', link_type: 'lldp',
+             neighbor_mac: 'FF:FF:FF:00:00:01', neighbor_identity: 'some-switch' }),
+    ], [], macs);
+    expect(graph.externalNodes.filter((n) => n.caps !== 'segment')).toHaveLength(1);
+  });
+
+  it('never resolves a device to itself through its own MAC', () => {
+    const graph = buildTopology(devices, [
+      link({ from_device_id: 12, from_interface: 'ether1', link_type: 'lldp',
+             neighbor_mac: '04:F4:1C:9F:3D:A9' }),
+    ], [], macs);
+    expect(graph.links[0].to_device_id).toBeNull();
+  });
+
+  it('works without a MAC index, as before', () => {
+    const graph = buildTopology(devices, trunkLinks(), []);
+    expect(graph.links.every((l) => l.to_device_id === null)).toBe(true);
+  });
+});

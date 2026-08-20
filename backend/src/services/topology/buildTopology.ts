@@ -188,10 +188,38 @@ function makeNeighborKey() {
 export function buildTopology(
   devices: TopoDevice[],
   allLinks: LinkRow[],
-  manualLinks: ManualLinkRow[]
+  manualLinks: ManualLinkRow[],
+  deviceMacs: { device_id: number; mac_address: string }[] = []
 ): TopologyGraph {
   const amb = findAmbiguousIdentifiers(devices, allLinks);
   const neighborKey = makeNeighborKey();
+
+  // ── Step 0: Resolve neighbours by MAC ──────────────────────────────────────
+  //
+  // Runs before everything else because a MAC identifies hardware and is unique
+  // fleet-wide, which no other neighbour field is. It also covers the case address
+  // matching cannot: a trunk port carries no IP, so LLDP across one reports a MAC
+  // and an identity but no address. Those links stayed unresolved and rendered as
+  // external nodes duplicating devices already on the map
+  // (github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/95).
+  const macToDevice = new Map<string, { id: number; name: string }>();
+  const deviceNames = new Map(devices.map((d) => [d.id, d.name]));
+  for (const row of deviceMacs) {
+    if (!row.mac_address) continue;
+    const key = row.mac_address.toUpperCase();
+    if (!macToDevice.has(key)) {
+      macToDevice.set(key, { id: row.device_id, name: deviceNames.get(row.device_id) ?? '' });
+    }
+  }
+
+  for (const link of allLinks) {
+    if (link.to_device_id || !link.neighbor_mac) continue;
+    const hit = macToDevice.get(link.neighbor_mac.toUpperCase());
+    if (hit && hit.id !== link.from_device_id) {
+      link.to_device_id = hit.id;
+      link.to_device_name = hit.name || link.to_device_name;
+    }
+  }
 
   // ── Step 1: Per-(device, neighbor) best-protocol dedup ─────────────────────
   const bestByPair = new Map<string, LinkRow>();

@@ -69,6 +69,8 @@ export interface Device {
   location_lng?: number;
   rack_name?: string;
   rack_slot?: string;
+  /** Detected wireless role: none | standalone | cap | controller | controller_cap. */
+  wifi_role?: string | null;
   created_at: string;
   updated_at?: string;
   tags?: { id: number; name: string; color: string }[];

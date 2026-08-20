@@ -267,3 +267,30 @@ describe('clientsPerRadio', () => {
     expect(clientsPerRadio(interfaces, []).size).toBe(0);
   });
 });
+
+describe('lookupDeviceForMac — prefix must not steal a CAP for the controller (#94)', () => {
+  it('refuses a prefix match against the excluded device', () => {
+    // Controller (id 3) owns AA:BB:CC:00:00:01; a CAP radio one octet away must not
+    // be attributed to it.
+    const idx = new Map(macIndexKeys('AA:BB:CC:00:00:01').map((k) => [k, 3] as [string, number]));
+    expect(lookupDeviceForMac('AA:BB:CC:00:00:09', idx, 3)).toBeNull();
+  });
+
+  it('still honours an exact match even against the excluded device', () => {
+    const idx = new Map(macIndexKeys('AA:BB:CC:00:00:01').map((k) => [k, 3] as [string, number]));
+    expect(lookupDeviceForMac('AA:BB:CC:00:00:01', idx, 3)).toBe(3);
+  });
+
+  it('still prefix-matches a different device', () => {
+    const idx = new Map(macIndexKeys('AA:BB:CC:00:00:01').map((k) => [k, 7] as [string, number]));
+    expect(lookupDeviceForMac('AA:BB:CC:00:00:09', idx, 3)).toBe(7);
+  });
+
+  it('prefers an exact match over a prefix match', () => {
+    const idx = new Map<string, number>([
+      ['AA:BB:CC:00:00', 7],          // prefix → device 7
+      ['AA:BB:CC:00:00:09', 9],       // exact  → device 9
+    ]);
+    expect(lookupDeviceForMac('AA:BB:CC:00:00:09', idx)).toBe(9);
+  });
+});

@@ -20,7 +20,7 @@ export function setPollerService(p: PollerService): void {
 
 // GET /api/topology
 router.get('/', async (_req: Request, res: Response) => {
-  const [devices, allLinks, manualLinks] = await Promise.all([
+  const [devices, allLinks, manualLinks, deviceMacs] = await Promise.all([
     query<TopoDevice>(
       `SELECT id, name, ip_address, model, device_type, status, ros_version, ip_addresses_jsonb
        FROM devices ORDER BY name ASC`
@@ -40,9 +40,16 @@ router.get('/', async (_req: Request, res: Response) => {
        JOIN devices fd ON fd.id = ml.from_device_id
        JOIN devices td ON td.id = ml.to_device_id`
     ),
+    // Every interface MAC in the fleet, so a neighbour seen only by MAC — an LLDP
+    // sighting across a trunk port carries no address — still resolves to its device.
+    query<{ device_id: number; mac_address: string }>(
+      `SELECT device_id, mac_address FROM interfaces WHERE mac_address IS NOT NULL
+       UNION
+       SELECT device_id, mac_address FROM wireless_interfaces WHERE mac_address IS NOT NULL`
+    ),
   ]);
 
-  const graph = buildTopology(devices, allLinks, manualLinks);
+  const graph = buildTopology(devices, allLinks, manualLinks, deviceMacs);
 
   res.json({
     devices,

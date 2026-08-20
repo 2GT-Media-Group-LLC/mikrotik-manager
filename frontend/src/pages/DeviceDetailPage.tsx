@@ -104,7 +104,11 @@ export default function DeviceDetailPage() {
     );
   }
 
-  const isWirelessAP = device.device_type === 'wireless_ap';
+  // Show the Radios tab when the device actually has radios, not when someone
+  // tagged it "wireless_ap". A router can carry radios, and a CAPsMAN controller is
+  // normally tagged a router — both had no way to reach this tab (#94).
+  const isWirelessAP = device.device_type === 'wireless_ap'
+    || (device.wifi_role != null && device.wifi_role !== 'none');
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },

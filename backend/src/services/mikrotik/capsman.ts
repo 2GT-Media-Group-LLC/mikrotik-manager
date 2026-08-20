@@ -212,15 +212,31 @@ export function macIndexKeys(mac: string): string[] {
   return [norm, parts.slice(0, 5).join(':')];
 }
 
-/** Look up a device for a radio MAC, falling back to the five-octet prefix. */
+/**
+ * Look up a device for a radio MAC, falling back to the five-octet prefix.
+ *
+ * `excludeOnPrefix` refuses a *prefix* match against a given device — used to stop a
+ * remote CAP being attributed to the controller when the two happen to share the
+ * first five octets. An exact match is still honoured, since that is hardware
+ * identity rather than a near-miss. Reported on #94, where a CAP's radio was grouped
+ * under the controller instead of its access point.
+ */
 export function lookupDeviceForMac(
   mac: string | null,
-  index: Map<string, number>
+  index: Map<string, number>,
+  excludeOnPrefix?: number
 ): number | null {
   if (!mac) return null;
-  for (const key of macIndexKeys(mac)) {
+  const keys = macIndexKeys(mac);
+
+  const exact = index.get(keys[0]);
+  if (exact !== undefined) return exact;
+
+  for (const key of keys.slice(1)) {
     const hit = index.get(key);
-    if (hit !== undefined) return hit;
+    if (hit === undefined) continue;
+    if (excludeOnPrefix !== undefined && hit === excludeOnPrefix) continue;
+    return hit;
   }
   return null;
 }

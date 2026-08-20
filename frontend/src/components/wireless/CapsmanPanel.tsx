@@ -1,22 +1,77 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Radio, RefreshCw, Server, Wifi, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Server, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
-import { wirelessApi, type CapsmanController } from '../../services/api';
+import { wirelessApi, type CapsmanController, type CapsmanRadio } from '../../services/api';
 import clsx from 'clsx';
 
+/** One row of the unified radio/interface table. */
+interface Row {
+  key: string;
+  deviceId: number | null;
+  deviceName: string;
+  local: boolean;
+  interfaceName: string;
+  ssid: string | null;
+  band: string | null;
+  frequency: number | null;
+  channel: string | null;
+  clients: number | null;
+  running: boolean | null;
+  disabled: boolean | null;
+}
+
 /**
- * CAPsMAN controllers and the access points they provision.
+ * Flatten a controller into one row per interface.
  *
- * Read-only by design. A CAPsMAN configuration is applied to every AP bound to it,
- * so an edit here would change the whole wireless fleet at once — that needs the
- * same prediction-and-revert treatment device changes get, and is held back until
- * it does (issue #94).
+ * Radios and provisioned interfaces were two separate tables describing the same
+ * things from different angles, which left the reader joining them by eye. Each
+ * interface is emitted against the access point it lives on; a radio with no
+ * provisioned interface still appears, so a CAP that is up but carrying nothing is
+ * visible rather than absent.
  */
+function toRows(c: CapsmanController): Row[] {
+  const rows: Row[] = [];
+  const radioOf = new Map<string, CapsmanRadio>();
+  for (const ap of c.access_points) for (const r of ap.radios) radioOf.set(r.radio_mac, r);
+
+  for (const ap of c.access_points) {
+    const ifaces = c.ssids.filter((s) => s.device_id === ap.device_id);
+    if (ifaces.length > 0) {
+      for (const s of ifaces) {
+        const radio = s.radio_mac ? radioOf.get(s.radio_mac) : undefined;
+        rows.push({
+          key: `${ap.device_id ?? ap.device_name}:${s.name}`,
+          deviceId: ap.device_id, deviceName: ap.device_name,
+          local: ap.radios[0]?.local ?? false,
+          interfaceName: s.name, ssid: s.ssid,
+          band: s.band, frequency: s.frequency,
+          channel: radio?.current_channel ?? null,
+          clients: radio?.registered_peers ?? null,
+          running: s.running, disabled: s.disabled,
+        });
+      }
+      continue;
+    }
+    // No provisioned interface reported — still show the radio itself.
+    for (const r of ap.radios) {
+      rows.push({
+        key: `${ap.device_id ?? ap.device_name}:${r.radio_mac}`,
+        deviceId: ap.device_id, deviceName: ap.device_name, local: r.local,
+        interfaceName: r.interface_name || r.radio_mac,
+        ssid: null, band: null, frequency: null,
+        channel: r.current_channel, clients: r.registered_peers,
+        running: r.state === 'running', disabled: null,
+      });
+    }
+  }
+  return rows;
+}
+
 function Controller({ c }: { c: CapsmanController }) {
   const [open, setOpen] = useState(true);
   const unmanaged = c.access_points.filter((ap) => ap.device_id == null);
-  const radioCount = c.access_points.reduce((n, ap) => n + ap.radios.length, 0);
+  const rows = toRows(c);
 
   return (
     <div className="card overflow-hidden">
@@ -44,9 +99,8 @@ function Controller({ c }: { c: CapsmanController }) {
           </div>
           <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
             {c.access_points.length} access point{c.access_points.length !== 1 ? 's' : ''} ·{' '}
-            {radioCount} radio{radioCount !== 1 ? 's' : ''} ·{' '}
-            {c.client_count} client{c.client_count !== 1 ? 's' : ''} ·{' '}
-            {c.configurations.length} configuration{c.configurations.length !== 1 ? 's' : ''}
+            {rows.length} interface{rows.length !== 1 ? 's' : ''} ·{' '}
+            {c.client_count} client{c.client_count !== 1 ? 's' : ''}
           </div>
         </div>
       </button>
@@ -64,91 +118,56 @@ function Controller({ c }: { c: CapsmanController }) {
             </div>
           )}
 
-          {/* Radios grouped by the AP they physically live on */}
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">
-              Access points
-            </div>
-            <div className="space-y-2">
-              {c.access_points.map((ap, i) => (
-                <div key={ap.device_id ?? `u${i}`} className="rounded-lg border border-gray-200 dark:border-slate-700 p-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Wifi className="w-3.5 h-3.5 text-gray-400" />
-                    {ap.device_id != null ? (
-                      <Link to={`/devices/${ap.device_id}`} className="text-sm font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400">
-                        {ap.device_name}
-                      </Link>
-                    ) : (
-                      <span className="text-sm font-medium text-gray-500 dark:text-slate-400">{ap.device_name}</span>
-                    )}
-                    {ap.radios[0]?.local && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300">on controller</span>
-                    )}
-                    <span className="ml-auto text-[11px] text-gray-500 dark:text-slate-400">
-                      {ap.client_count} client{ap.client_count !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {ap.radios.map((r) => (
-                      <div key={r.radio_mac} className="flex items-center gap-1.5 text-[11px] rounded px-2 py-1 bg-gray-50 dark:bg-slate-800">
-                        <Radio className={clsx('w-3 h-3', r.state === 'running' ? 'text-green-500' : 'text-gray-400')} />
-                        <span className="font-medium text-gray-700 dark:text-slate-200">{r.interface_name || r.radio_mac}</span>
-                        {r.current_channel && <span className="mono text-gray-500 dark:text-slate-400">{r.current_channel}</span>}
-                        {r.registered_peers != null && (
-                          <span className="text-gray-500 dark:text-slate-400">{r.registered_peers} client{r.registered_peers !== 1 ? 's' : ''}</span>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-slate-700">
+                  {['Access point', 'Interface', 'SSID', 'Band', 'Frequency', 'Channel', 'Clients', 'Status'].map((h) => (
+                    <th key={h} className="table-header px-3 py-2 text-left whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                {rows.map((r) => (
+                  <tr key={r.key} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        {r.deviceId != null ? (
+                          <Link to={`/devices/${r.deviceId}`} className="text-xs font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400">
+                            {r.deviceName}
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-gray-500 dark:text-slate-400">{r.deviceName}</span>
                         )}
-                        {r.tx_power != null && <span className="text-gray-400">{r.tx_power} dBm</span>}
-                        {r.hw_type && <span className="text-gray-400 hidden sm:inline">{r.hw_type}</span>}
+                        {r.local && (
+                          <span className="text-[9px] px-1 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300">local</span>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+                    </td>
+                    <td className="px-3 py-2 mono text-xs text-gray-600 dark:text-slate-300 whitespace-nowrap">{r.interfaceName}</td>
+                    <td className="px-3 py-2 text-xs font-medium text-gray-900 dark:text-white">{r.ssid || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-3 py-2 mono text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{r.band || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-3 py-2 mono num-tab text-xs text-gray-500 dark:text-slate-400">{r.frequency ?? <span className="text-gray-400">—</span>}</td>
+                    <td className="px-3 py-2 mono text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{r.channel || <span className="text-gray-400">—</span>}</td>
+                    <td className="px-3 py-2 mono num-tab text-xs text-gray-600 dark:text-slate-300">
+                      {r.clients ?? <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <span className={clsx(
+                        'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        r.disabled ? 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400'
+                          : r.running ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                      )}>
+                        {r.disabled ? 'disabled' : r.running ? 'running' : 'enabled'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
-          {/* Provisioned SSIDs actually broadcasting */}
-          {c.ssids.length > 0 && (
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">
-                Provisioned interfaces
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 dark:border-slate-700">
-                      {['Access point', 'Interface', 'SSID', 'Band', ''].map((h, i) => (
-                        <th key={i} className="table-header px-3 py-2 text-left">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-                    {c.ssids.map((s, i) => (
-                      <tr key={`${s.device_id}:${s.name}:${i}`}>
-                        <td className="px-3 py-2 text-xs text-gray-700 dark:text-slate-200">{s.device_name}</td>
-                        <td className="px-3 py-2 mono text-xs text-gray-500 dark:text-slate-400">{s.name}</td>
-                        <td className="px-3 py-2 text-xs font-medium text-gray-900 dark:text-white">{s.ssid || '—'}</td>
-                        <td className="px-3 py-2 mono text-xs text-gray-500 dark:text-slate-400">
-                          {s.band || '—'}{s.frequency ? ` · ${s.frequency}` : ''}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span className={clsx(
-                            'text-[10px] px-1.5 py-0.5 rounded font-medium',
-                            s.disabled ? 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400'
-                                       : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          )}>
-                            {s.disabled ? 'disabled' : 'active'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Configurations and the rules binding them to radios */}
           {c.configurations.length > 0 && (
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">
@@ -156,22 +175,37 @@ function Controller({ c }: { c: CapsmanController }) {
               </div>
               <div className="flex flex-wrap gap-2">
                 {c.configurations.map((cfg) => (
-                  <div key={cfg.name} className="rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-2">
+                  <div key={cfg.name} className="rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-2 max-w-sm">
                     <div className="text-xs font-medium text-gray-900 dark:text-white">{cfg.name}</div>
                     <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
                       {[cfg.ssid && `SSID ${cfg.ssid}`, cfg.band, cfg.mode, cfg.security]
                         .filter(Boolean).join(' · ') || 'no details reported'}
                     </div>
+                    {/* The rule and the configuration it applies are one idea. */}
+                    {cfg.rules.length > 0 && (
+                      <ul className="mt-1.5 space-y-0.5 border-t border-gray-100 dark:border-slate-700 pt-1.5">
+                        {cfg.rules.map((p) => (
+                          <li key={p.ros_id} className="text-[11px] text-gray-500 dark:text-slate-400">
+                            <span className="mono text-gray-400">{p.action || 'rule'}</span>
+                            {p.radio_mac && <span className="mono text-gray-400"> {p.radio_mac}</span>}
+                            {p.disabled && <span className="text-gray-400"> · disabled</span>}
+                            {p.comment && <span className="text-gray-400"> — {p.comment}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
 
+          {/* Rules that reference no configuration we collected — worth surfacing
+              rather than dropping, since that usually means a stale reference. */}
           {c.provisioning.length > 0 && (
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">
-                Provisioning rules
+                Unmatched provisioning rules
               </div>
               <ul className="space-y-1">
                 {c.provisioning.map((p) => (
@@ -179,7 +213,6 @@ function Controller({ c }: { c: CapsmanController }) {
                     <span className="mono text-gray-400">{p.action || 'rule'}</span>
                     {p.master_configuration && <> → <span className="font-medium">{p.master_configuration}</span></>}
                     {p.radio_mac && <span className="mono text-gray-400"> ({p.radio_mac})</span>}
-                    {p.disabled && <span className="ml-1 text-gray-400">· disabled</span>}
                     {p.comment && <span className="text-gray-400"> — {p.comment}</span>}
                   </li>
                 ))}
@@ -200,8 +233,7 @@ export default function CapsmanPanel() {
   });
 
   const controllers = data?.controllers ?? [];
-  // Nothing to show on a fleet with no controller — this panel should be invisible
-  // rather than an empty box everyone has to scroll past.
+  // Invisible on a fleet with no controller rather than an empty box to scroll past.
   if (isLoading || controllers.length === 0) return null;
 
   return (
