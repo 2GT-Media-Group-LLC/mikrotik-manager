@@ -33,7 +33,7 @@ interface AlertRule {
 interface AlertChannel {
   id: number;
   name: string;
-  type: 'email' | 'slack' | 'discord' | 'telegram';
+  type: 'email' | 'slack' | 'discord' | 'telegram' | 'ntfy';
   enabled: boolean;
   config: Record<string, unknown>;
 }
@@ -203,6 +203,7 @@ export class AlertService {
       case 'slack':    await this.sendSlack(ch.config, eventType, message, ctx); break;
       case 'discord':  await this.sendDiscord(ch.config, eventType, message, ctx); break;
       case 'telegram': await this.sendTelegram(ch.config, eventType, message, ctx); break;
+      case 'ntfy':     await this.sendNtfy(ch.config, eventType, message, ctx); break;
     }
   }
 
@@ -329,9 +330,96 @@ export class AlertService {
     await this.postJson(url, body);
   }
 
+  /**
+   * ntfy (https://ntfy.sh, or a self-hosted instance).
+   *
+   * Published as JSON to the server root rather than `POST /{topic}` with header
+   * metadata: the header form requires ASCII, and the titles here carry per-event
+   * emoji. The JSON body is UTF-8 and keeps the emoji intact.
+   *
+   * `server_url` is operator-supplied so self-hosted instances work — which is the
+   * common case for infrastructure alerting. That is the same trust model as the
+   * existing Slack and Discord webhook URLs: an admin can point any of them at an
+   * internal address, and only an admin can configure them.
+   */
+  private async sendNtfy(
+    cfg: Record<string, unknown>,
+    eventType: string,
+    message: string,
+    ctx: AlertContext
+  ): Promise<void> {
+    const topic = (cfg.topic as string | undefined)?.trim();
+    if (!topic) throw new Error('ntfy channel missing topic');
+
+    const serverUrl = ((cfg.server_url as string | undefined)?.trim() || 'https://ntfy.sh').replace(/\/+$/, '');
+    let parsed: URL;
+    try {
+      parsed = new URL(serverUrl);
+    } catch {
+      throw new Error(`ntfy channel has an invalid server_url: ${serverUrl}`);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('ntfy server_url must be http or https');
+    }
+
+    const label  = EVENT_LABELS[eventType] ?? eventType;
+    const emoji  = EVENT_EMOJI[eventType] ?? '\u{1F514}';
+
+    const lines = [message];
+    if (ctx.deviceName) lines.push(`Device: ${ctx.deviceName}`);
+    if (ctx.details)    lines.push(ctx.details);
+
+    const body: Record<string, unknown> = {
+      topic,
+      title:    `${emoji} ${label}`,
+      message:  lines.join('\n'),
+      priority: this.ntfyPriority(eventType),
+      // The event type doubles as a filterable tag, so a phone can be set to only
+      // wake for device_offline without the manager needing per-event channels.
+      tags:     [eventType],
+    };
+
+    // Optional deep link back into the manager, when it knows its own address.
+    const clickBase = (cfg.click_url as string | undefined)?.trim().replace(/\/+$/, '');
+    if (clickBase) {
+      body.click = ctx.deviceId != null ? `${clickBase}/devices/${ctx.deviceId}` : clickBase;
+    }
+
+    await this.postJson(serverUrl, JSON.stringify(body), this.ntfyAuthHeaders(cfg));
+  }
+
+  /**
+   * Access token if present, otherwise basic auth. Infrastructure alerts should not
+   * require a world-writable topic, so both of ntfy's schemes are supported and the
+   * token is preferred — it can be scoped and revoked without changing a password.
+   */
+  private ntfyAuthHeaders(cfg: Record<string, unknown>): Record<string, string> {
+    const token = (cfg.token as string | undefined)?.trim();
+    if (token) return { Authorization: `Bearer ${token}` };
+
+    const username = (cfg.username as string | undefined)?.trim();
+    const password = (cfg.password as string | undefined) ?? '';
+    if (username) {
+      const encoded = Buffer.from(`${username}:${password}`).toString('base64');
+      return { Authorization: `Basic ${encoded}` };
+    }
+    return {};
+  }
+
+  /**
+   * ntfy priority runs 1 (min) to 5 (max); 4 and above bypasses a phone's
+   * do-not-disturb. Reserve that for things that mean something is down, so the
+   * channel stays worth being woken by.
+   */
+  private ntfyPriority(eventType: string): number {
+    if (['device_offline', 'log_error', 'high_cpu', 'high_memory'].includes(eventType)) return 4;
+    if (['device_online', 'device_discovered'].includes(eventType)) return 2;
+    return 3;
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  private postJson(url: string, body: string): Promise<void> {
+  private postJson(url: string, body: string, extraHeaders: Record<string, string> = {}): Promise<void> {
     return new Promise((resolve, reject) => {
       const parsed   = new URL(url);
       const isHttps  = parsed.protocol === 'https:';
@@ -344,6 +432,7 @@ export class AlertService {
         headers:  {
           'Content-Type':   'application/json',
           'Content-Length': Buffer.byteLength(body),
+          ...extraHeaders,
         },
       };
 

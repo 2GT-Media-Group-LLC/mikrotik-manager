@@ -2,7 +2,7 @@
 
 A self-hosted, full-stack network management platform for MikroTik devices. Monitor, configure, and manage your entire MikroTik infrastructure — routers, switches, and wireless access points — from a single web interface.
 
-![Version](https://img.shields.io/badge/version-0.20.1_Beta-blue)
+![Version](https://img.shields.io/badge/version-0.21.0_Beta-blue)
 ![License](https://img.shields.io/badge/license-AGPLv3-blue)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white)
@@ -327,7 +327,16 @@ Configurable alert rules with cooldown periods:
 - New device discovered
 - Configuration changed (drift detection)
 
-Alert delivery channels: **Email**, **Slack**, **Discord**, **Telegram**
+Alert delivery channels: **Email**, **Slack**, **Discord**, **Telegram**, **ntfy**
+
+**ntfy** (`https://ntfy.sh` or your own instance) is configured with a topic and, optionally, an
+access token or username/password — a publicly-writable topic lets anyone spoof your alerts, so
+protecting it is worth the extra field. Alert severity maps onto ntfy's priority scale so the
+notifications that mean something is *down* (device offline, log errors, CPU/memory pressure) arrive
+at priority 4 and break through a phone's do-not-disturb, recoveries and discoveries arrive quietly
+at 2, and everything else sits at the default 3. Each notification is tagged with its event type, so
+a client can be filtered to wake only for the events you care about. Set the optional **Manager URL**
+and notifications become tappable, opening the device they refer to.
 
 ### Maintenance Windows
 - Schedule planned downtime windows per device or group of devices to suppress alerts automatically

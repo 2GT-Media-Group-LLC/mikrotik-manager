@@ -1750,8 +1750,8 @@ export default function SettingsPage() {
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Type</label>
                   <select className="input w-full" value={chForm.type} onChange={(e) => setChForm((f) => ({ ...f, type: e.target.value as AlertChannel['type'], config: {} }))} disabled={chModal.mode === 'edit'}>
-                    {(['slack', 'discord', 'telegram', 'email'] as const).map((t) => (
-                      <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                    {(['slack', 'discord', 'telegram', 'ntfy', 'email'] as const).map((t) => (
+                      <option key={t} value={t}>{t === 'ntfy' ? 'ntfy' : t.charAt(0).toUpperCase() + t.slice(1)}</option>
                     ))}
                   </select>
                 </div>
@@ -1782,6 +1782,40 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Chat ID</label>
                     <input className="input w-full" value={cfgStr('chat_id')} onChange={(e) => setCfg('chat_id', e.target.value)} placeholder="-100123456789" />
+                  </div>
+                </>
+              ) : chForm.type === 'ntfy' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Server URL</label>
+                    <input className="input w-full font-mono text-xs" value={cfgStr('server_url')} onChange={(e) => setCfg('server_url', e.target.value)} placeholder="https://ntfy.sh" />
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">Leave blank for the public ntfy.sh, or point at your own instance.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Topic</label>
+                    <input className="input w-full font-mono text-xs" value={cfgStr('topic')} onChange={(e) => setCfg('topic', e.target.value)} placeholder="mikrotik-alerts" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Access Token</label>
+                    <input type="password" className="input w-full font-mono text-xs" value={cfgStr('token')} onChange={(e) => setCfg('token', e.target.value)} placeholder="tk_..." />
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">
+                      Preferred over a username and password. Anyone who can publish to an unprotected topic can spoof your alerts.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Username</label>
+                      <input className="input w-full" value={cfgStr('username')} onChange={(e) => setCfg('username', e.target.value)} placeholder="(optional)" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Password</label>
+                      <input type="password" className="input w-full" value={cfgStr('password')} onChange={(e) => setCfg('password', e.target.value)} placeholder="••••••••" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Manager URL (optional)</label>
+                    <input className="input w-full font-mono text-xs" value={cfgStr('click_url')} onChange={(e) => setCfg('click_url', e.target.value)} placeholder="https://mikrotik.example.com" />
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">Makes each notification tappable, opening the device it refers to.</p>
                   </div>
                 </>
               ) : (

@@ -825,7 +825,7 @@ export interface AlertRule {
 export interface AlertChannel {
   id: number;
   name: string;
-  type: 'email' | 'slack' | 'discord' | 'telegram';
+  type: 'email' | 'slack' | 'discord' | 'telegram' | 'ntfy';
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;

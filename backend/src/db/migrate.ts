@@ -283,7 +283,7 @@ CREATE TABLE IF NOT EXISTS alert_rules (
 CREATE TABLE IF NOT EXISTS alert_channels (
   id          SERIAL PRIMARY KEY,
   name        VARCHAR(100) NOT NULL,
-  type        VARCHAR(20)  NOT NULL CHECK (type IN ('email','slack','discord','telegram')),
+  type        VARCHAR(20)  NOT NULL CHECK (type IN ('email','slack','discord','telegram','ntfy')),
   enabled     BOOLEAN      NOT NULL DEFAULT true,
   config      JSONB        NOT NULL DEFAULT '{}',
   created_at  TIMESTAMPTZ  DEFAULT NOW(),
@@ -497,6 +497,12 @@ CREATE TABLE IF NOT EXISTS device_change_guards (
 );
 CREATE INDEX IF NOT EXISTS idx_change_guards_device ON device_change_guards(device_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_change_guards_pending ON device_change_guards(status, expires_at);
+
+-- ntfy.sh notification channel (github issue #93). The channel type is a CHECK
+-- constraint rather than a lookup table, so widening it means replacing it.
+ALTER TABLE alert_channels DROP CONSTRAINT IF EXISTS alert_channels_type_check;
+ALTER TABLE alert_channels ADD CONSTRAINT alert_channels_type_check
+  CHECK (type IN ('email','slack','discord','telegram','ntfy'));
 
 -- Change Guard ledger: committed_at used to be stamped for every terminal status,
 -- so an abandoned or failed guard read as though the change had been kept. It now

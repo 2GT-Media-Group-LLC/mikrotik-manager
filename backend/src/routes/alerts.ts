@@ -81,7 +81,7 @@ router.post('/channels', requireWrite, async (req, res) => {
   if (!name || !type) {
     return res.status(400).json({ error: 'name and type are required' });
   }
-  const validTypes = ['email', 'slack', 'discord', 'telegram'];
+  const validTypes = ['email', 'slack', 'discord', 'telegram', 'ntfy'];
   if (!validTypes.includes(type)) {
     return res.status(400).json({ error: `type must be one of: ${validTypes.join(', ')}` });
   }
@@ -171,6 +171,8 @@ const SENSITIVE_KEYS: Record<string, string[]> = {
   slack:    [],
   discord:  [],
   telegram: ['bot_token'],
+  // ntfy accepts either an access token or basic auth; both are secrets.
+  ntfy:     ['token', 'password'],
 };
 
 function maskConfig(type: string, config: Record<string, unknown>): Record<string, unknown> {

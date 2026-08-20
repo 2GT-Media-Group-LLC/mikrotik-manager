@@ -148,3 +148,147 @@ describe('discordColor', () => {
     expect(discordColor('device_offline')).toBe(0xef4444);
   });
 });
+
+// ── ntfy (issue #93) ─────────────────────────────────────────────────────────
+
+type NtfyService = {
+  ntfyPriority(eventType: string): number;
+  ntfyAuthHeaders(cfg: Record<string, unknown>): Record<string, string>;
+  sendNtfy(
+    cfg: Record<string, unknown>,
+    eventType: string,
+    message: string,
+    ctx: { deviceId?: number; deviceName?: string; details?: string }
+  ): Promise<void>;
+  postJson(url: string, body: string, headers?: Record<string, string>): Promise<void>;
+};
+
+const asNtfy = (s: AlertService) => s as unknown as NtfyService;
+
+describe('ntfyPriority', () => {
+  const p = (et: string) => asNtfy(new AlertService()).ntfyPriority(et);
+
+  it('raises priority above do-not-disturb only for things that are down', () => {
+    expect(p('device_offline')).toBe(4);
+    expect(p('log_error')).toBe(4);
+    expect(p('high_cpu')).toBe(4);
+  });
+
+  it('keeps recovery and discovery quiet', () => {
+    expect(p('device_online')).toBe(2);
+    expect(p('device_discovered')).toBe(2);
+  });
+
+  it('leaves everything else at the default', () => {
+    expect(p('cert_expiry')).toBe(3);
+    expect(p('config_drift')).toBe(3);
+    expect(p('something_new')).toBe(3);
+  });
+});
+
+describe('ntfyAuthHeaders', () => {
+  const h = (cfg: Record<string, unknown>) => asNtfy(new AlertService()).ntfyAuthHeaders(cfg);
+
+  it('prefers an access token over basic auth', () => {
+    expect(h({ token: 'tk_abc', username: 'u', password: 'p' }))
+      .toEqual({ Authorization: 'Bearer tk_abc' });
+  });
+
+  it('falls back to basic auth', () => {
+    expect(h({ username: 'alice', password: 'secret' }))
+      .toEqual({ Authorization: `Basic ${Buffer.from('alice:secret').toString('base64')}` });
+  });
+
+  it('sends no auth for an unprotected topic', () => {
+    expect(h({})).toEqual({});
+  });
+
+  it('ignores whitespace-only credentials rather than sending an empty bearer', () => {
+    expect(h({ token: '   ' })).toEqual({});
+  });
+});
+
+describe('sendNtfy', () => {
+  function capture() {
+    const service = new AlertService();
+    const calls: { url: string; body: Record<string, unknown>; headers?: Record<string, string> }[] = [];
+    asNtfy(service).postJson = async (url, body, headers) => {
+      calls.push({ url, body: JSON.parse(body), headers });
+    };
+    return { service, calls };
+  }
+
+  it('posts to the public server by default with topic, title, priority and tag', async () => {
+    const { service, calls } = capture();
+    await asNtfy(service).sendNtfy({ topic: 'mt' }, 'device_offline', 'sw1 is unreachable', {});
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('https://ntfy.sh');
+    expect(calls[0].body.topic).toBe('mt');
+    expect(calls[0].body.priority).toBe(4);
+    expect(calls[0].body.tags).toEqual(['device_offline']);
+    expect(String(calls[0].body.title)).toContain('Device Offline');
+  });
+
+  it('honours a self-hosted server and strips a trailing slash', async () => {
+    const { service, calls } = capture();
+    await asNtfy(service).sendNtfy(
+      { topic: 'mt', server_url: 'https://ntfy.internal.example.com/' },
+      'device_online', 'back', {}
+    );
+    expect(calls[0].url).toBe('https://ntfy.internal.example.com');
+  });
+
+  it('includes the device name and details in the body', async () => {
+    const { service, calls } = capture();
+    await asNtfy(service).sendNtfy({ topic: 'mt' }, 'log_error', 'errors seen', {
+      deviceName: 'sw1', details: 'login failure',
+    });
+    const msg = String(calls[0].body.message);
+    expect(msg).toContain('errors seen');
+    expect(msg).toContain('Device: sw1');
+    expect(msg).toContain('login failure');
+  });
+
+  it('deep-links to the device when a manager URL is configured', async () => {
+    const { service, calls } = capture();
+    await asNtfy(service).sendNtfy(
+      { topic: 'mt', click_url: 'https://mgr.example.com/' },
+      'device_offline', 'down', { deviceId: 42 }
+    );
+    expect(calls[0].body.click).toBe('https://mgr.example.com/devices/42');
+  });
+
+  it('omits the click link entirely when no manager URL is set', async () => {
+    const { service, calls } = capture();
+    await asNtfy(service).sendNtfy({ topic: 'mt' }, 'device_offline', 'down', { deviceId: 42 });
+    expect(calls[0].body.click).toBeUndefined();
+  });
+
+  it('rejects a missing topic rather than posting somewhere unintended', async () => {
+    const { service, calls } = capture();
+    await expect(asNtfy(service).sendNtfy({}, 'device_offline', 'x', {}))
+      .rejects.toThrow(/missing topic/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('rejects a non-http server URL', async () => {
+    const { service } = capture();
+    await expect(
+      asNtfy(service).sendNtfy({ topic: 'mt', server_url: 'file:///etc/passwd' }, 'device_offline', 'x', {})
+    ).rejects.toThrow(/must be http/);
+  });
+
+  it('rejects an unparseable server URL', async () => {
+    const { service } = capture();
+    await expect(
+      asNtfy(service).sendNtfy({ topic: 'mt', server_url: 'not a url' }, 'device_offline', 'x', {})
+    ).rejects.toThrow(/invalid server_url/);
+  });
+
+  it('passes the auth header through to the request', async () => {
+    const { service, calls } = capture();
+    await asNtfy(service).sendNtfy({ topic: 'mt', token: 'tk_1' }, 'device_offline', 'x', {});
+    expect(calls[0].headers).toEqual({ Authorization: 'Bearer tk_1' });
+  });
+});
