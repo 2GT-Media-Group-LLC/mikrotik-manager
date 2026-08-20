@@ -136,6 +136,7 @@ router.get('/capsman', async (_req: Request, res: Response) => {
     query(`
       SELECT r.controller_device_id, r.radio_mac, r.interface_name, r.local, r.hw_type,
              r.current_channel, r.remote_cap_name, r.matched_device_id,
+             r.state, r.registered_peers, r.authorized_peers, r.tx_power,
              d.name AS matched_device_name, d.status AS matched_device_status
       FROM capsman_radios r
       LEFT JOIN devices d ON d.id = r.matched_device_id
@@ -194,9 +195,19 @@ router.get('/capsman', async (_req: Request, res: Response) => {
         cRadios.some((r) => r.matched_device_id === i.device_id)
       );
 
+      // Peer counts come from the controller's own monitor output. The CAP's local
+      // registration table is empty whenever traffic is processed centrally, which
+      // is why every row previously read zero.
+      const peers = (rows: { registered_peers?: number | null }[]) =>
+        rows.reduce((n, r) => n + (r.registered_peers ?? 0), 0);
+
       return {
         ...c,
-        access_points: [...groups.values()],
+        client_count: peers(cRadios as { registered_peers?: number | null }[]),
+        access_points: [...groups.values()].map((g) => ({
+          ...g,
+          client_count: peers(g.radios as { registered_peers?: number | null }[]),
+        })),
         configurations: byController(configs as { controller_device_id: number }[], c.id),
         provisioning: byController(provisioning as { controller_device_id: number }[], c.id),
         ssids,

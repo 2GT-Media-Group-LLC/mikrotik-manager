@@ -45,6 +45,7 @@ function Controller({ c }: { c: CapsmanController }) {
           <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
             {c.access_points.length} access point{c.access_points.length !== 1 ? 's' : ''} ·{' '}
             {radioCount} radio{radioCount !== 1 ? 's' : ''} ·{' '}
+            {c.client_count} client{c.client_count !== 1 ? 's' : ''} ·{' '}
             {c.configurations.length} configuration{c.configurations.length !== 1 ? 's' : ''}
           </div>
         </div>
@@ -83,14 +84,21 @@ function Controller({ c }: { c: CapsmanController }) {
                     {ap.radios[0]?.local && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300">on controller</span>
                     )}
+                    <span className="ml-auto text-[11px] text-gray-500 dark:text-slate-400">
+                      {ap.client_count} client{ap.client_count !== 1 ? 's' : ''}
+                    </span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {ap.radios.map((r) => (
                       <div key={r.radio_mac} className="flex items-center gap-1.5 text-[11px] rounded px-2 py-1 bg-gray-50 dark:bg-slate-800">
-                        <Radio className="w-3 h-3 text-gray-400" />
+                        <Radio className={clsx('w-3 h-3', r.state === 'running' ? 'text-green-500' : 'text-gray-400')} />
                         <span className="font-medium text-gray-700 dark:text-slate-200">{r.interface_name || r.radio_mac}</span>
-                        {r.hw_type && <span className="text-gray-400">{r.hw_type}</span>}
                         {r.current_channel && <span className="mono text-gray-500 dark:text-slate-400">{r.current_channel}</span>}
+                        {r.registered_peers != null && (
+                          <span className="text-gray-500 dark:text-slate-400">{r.registered_peers} client{r.registered_peers !== 1 ? 's' : ''}</span>
+                        )}
+                        {r.tx_power != null && <span className="text-gray-400">{r.tx_power} dBm</span>}
+                        {r.hw_type && <span className="text-gray-400 hidden sm:inline">{r.hw_type}</span>}
                       </div>
                     ))}
                   </div>
@@ -103,13 +111,13 @@ function Controller({ c }: { c: CapsmanController }) {
           {c.ssids.length > 0 && (
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">
-                Provisioned SSIDs
+                Provisioned interfaces
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-slate-700">
-                      {['Access point', 'Interface', 'SSID', 'Band', 'Clients', ''].map((h, i) => (
+                      {['Access point', 'Interface', 'SSID', 'Band', ''].map((h, i) => (
                         <th key={i} className="table-header px-3 py-2 text-left">{h}</th>
                       ))}
                     </tr>
@@ -123,7 +131,6 @@ function Controller({ c }: { c: CapsmanController }) {
                         <td className="px-3 py-2 mono text-xs text-gray-500 dark:text-slate-400">
                           {s.band || '—'}{s.frequency ? ` · ${s.frequency}` : ''}
                         </td>
-                        <td className="px-3 py-2 mono num-tab text-xs text-gray-600 dark:text-slate-300">{s.registered_clients ?? 0}</td>
                         <td className="px-3 py-2">
                           <span className={clsx(
                             'text-[10px] px-1.5 py-0.5 rounded font-medium',

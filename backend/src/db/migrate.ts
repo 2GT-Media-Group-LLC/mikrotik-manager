@@ -559,6 +559,18 @@ CREATE TABLE IF NOT EXISTS capsman_provisioning (
   UNIQUE(controller_device_id, ros_id)
 );
 
+-- CAPsMAN radio live state (issue #94 follow-up). current-channels from
+-- /interface/wifi/radio is the list of channels the radio *supports* — kilobytes of
+-- text — not the one it is operating on. The operating channel, link state, peer
+-- counts and TX power come from /interface/wifi/monitor instead.
+ALTER TABLE capsman_radios ADD COLUMN IF NOT EXISTS state VARCHAR(32);
+ALTER TABLE capsman_radios ADD COLUMN IF NOT EXISTS registered_peers INTEGER;
+ALTER TABLE capsman_radios ADD COLUMN IF NOT EXISTS authorized_peers INTEGER;
+ALTER TABLE capsman_radios ADD COLUMN IF NOT EXISTS tx_power INTEGER;
+-- Stored channel is now the operating channel; drop the capability lists already
+-- collected so no one is left looking at two kilobytes of text.
+UPDATE capsman_radios SET current_channel = NULL WHERE length(current_channel) > 64;
+
 -- ntfy.sh notification channel (github issue #93). The channel type is a CHECK
 -- constraint rather than a lookup table, so widening it means replacing it.
 ALTER TABLE alert_channels DROP CONSTRAINT IF EXISTS alert_channels_type_check;

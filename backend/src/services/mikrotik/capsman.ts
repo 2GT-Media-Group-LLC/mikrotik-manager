@@ -224,3 +224,109 @@ export function lookupDeviceForMac(
   }
   return null;
 }
+
+export interface RadioLiveState {
+  state: string | null;
+  /** Operating channel, e.g. `5500/ax/Ceee/D`. */
+  channel: string | null;
+  registeredPeers: number | null;
+  authorizedPeers: number | null;
+  txPower: number | null;
+}
+
+/**
+ * Read live radio state from a `/interface/wifi/monitor ... once` row.
+ *
+ * This exists because `/interface/wifi/radio`'s `current-channels` is the list of
+ * channels the radio *supports* — kilobytes of text on a multi-band radio — not the
+ * channel it is using. Monitor reports the operating channel, and it also carries
+ * the peer counts, which under CAPsMAN the controller knows and the CAP does not.
+ */
+export function parseRadioMonitor(row: Record<string, string> | undefined): RadioLiveState {
+  const num = (v: string | undefined): number | null => {
+    if (v == null || v === '') return null;
+    const n = parseInt(v, 10);
+    return isNaN(n) ? null : n;
+  };
+  return {
+    state: row?.['state'] || null,
+    channel: row?.['channel'] || null,
+    registeredPeers: num(row?.['registered-peers']),
+    authorizedPeers: num(row?.['authorized-peers']),
+    txPower: num(row?.['tx-power']),
+  };
+}
+
+/**
+ * Resolve which bridge and VLAN a wifi interface lands on.
+ *
+ * A CAPsMAN-provisioned interface is not a local bridge port, so looking it up in
+ * the AP's own bridge port table finds nothing and the UI ends up claiming the
+ * interface has no network at all. The answer lives in the datapath — either inline
+ * on the interface row or in a named datapath the interface references.
+ */
+export function resolveDatapath(
+  iface: Record<string, string>,
+  datapaths: Record<string, string>[]
+): { bridge: string | null; vlanId: string | null } {
+  const inlineBridge = iface['datapath.bridge'];
+  const inlineVlan = iface['datapath.vlan-id'];
+  if (inlineBridge || inlineVlan) {
+    return { bridge: inlineBridge || null, vlanId: inlineVlan || null };
+  }
+
+  const name = iface['datapath'];
+  if (name && !name.startsWith('*')) {
+    const dp = datapaths.find((d) => d['name'] === name);
+    if (dp) return { bridge: dp['bridge'] || null, vlanId: dp['vlan-id'] || null };
+  }
+  // `.id` reference rather than a name.
+  if (name) {
+    const dp = datapaths.find((d) => d['.id'] === name);
+    if (dp) return { bridge: dp['bridge'] || null, vlanId: dp['vlan-id'] || null };
+  }
+  return { bridge: null, vlanId: null };
+}
+
+/**
+ * Count registered clients per radio.
+ *
+ * Clients do not register on the physical radio — they register on the virtual AP
+ * carrying the SSID. `/interface/wifi/monitor` on a physical radio therefore reports
+ * zero even when the access point is busy, and `/interface/wifi/radio` lists only the
+ * physical radios. Measured on a wAP ax with ten clients: wifi1 and wifi2 reported
+ * `registered-peers=0`, while wifi3–wifi6 held all ten.
+ *
+ * So the registration table is the source of truth, and each entry is attributed to
+ * its radio by following `master-interface` up to the interface that owns a
+ * `radio-mac`. Requires `/interface/wifi/print detail` — the field is absent without it.
+ */
+export function clientsPerRadio(
+  interfaces: Record<string, string>[],
+  registrations: Record<string, string>[]
+): Map<string, number> {
+  const byName = new Map(interfaces.filter((i) => i['name']).map((i) => [i['name'], i]));
+
+  /** Walk up to the interface that owns a radio, guarding against a cyclic chain. */
+  const radioOf = (name: string): string | null => {
+    let cur = byName.get(name);
+    for (let hops = 0; cur && hops < 8; hops++) {
+      const mac = cur['radio-mac'];
+      if (mac) return mac.toUpperCase();
+      const parent = cur['master-interface'];
+      if (!parent || parent === cur['name']) return null;
+      cur = byName.get(parent);
+    }
+    return null;
+  };
+
+  const counts = new Map<string, number>();
+  for (const reg of registrations) {
+    const iface = reg['interface'];
+    if (!iface) continue;
+    const mac = radioOf(iface);
+    if (!mac) continue;
+    counts.set(mac, (counts.get(mac) ?? 0) + 1);
+  }
+  return counts;
+}

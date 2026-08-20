@@ -900,7 +900,12 @@ export interface CapsmanRadio {
   interface_name: string | null;
   local: boolean;
   hw_type: string | null;
+  /** Operating channel from /interface/wifi/monitor, not the supported-channel list. */
   current_channel: string | null;
+  state: string | null;
+  registered_peers: number | null;
+  authorized_peers: number | null;
+  tx_power: number | null;
   remote_cap_name: string | null;
   matched_device_id: number | null;
   matched_device_name: string | null;
@@ -911,6 +916,8 @@ export interface CapsmanAccessPoint {
   device_id: number | null;
   device_name: string;
   radios: CapsmanRadio[];
+  /** Clients as the controller sees them; a CAP's own table is empty under central forwarding. */
+  client_count: number;
 }
 
 export interface CapsmanConfiguration {
@@ -951,6 +958,7 @@ export interface CapsmanController {
   model: string | null;
   status: string;
   wifi_role: string | null;
+  client_count: number;
   access_points: CapsmanAccessPoint[];
   configurations: CapsmanConfiguration[];
   provisioning: CapsmanProvisioning[];

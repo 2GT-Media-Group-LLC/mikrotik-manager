@@ -916,7 +916,7 @@ export default function WirelessSettingsPage() {
           <div className="card overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-                  SSIDs / Wireless Interfaces
+                  Wireless Interfaces
                 </h2>
                 <div className="flex items-center gap-2">
                   <button
@@ -975,8 +975,21 @@ export default function WirelessSettingsPage() {
                           </td>
                           <td className="px-4 py-3 text-xs text-gray-600 dark:text-slate-400">
                             {iface.bridge
-                              ? <span className="font-mono">{iface.bridge}{iface['bridge-pvid'] ? <span className="text-gray-400"> VLAN {iface['bridge-pvid']}</span> : ''}</span>
-                              : <span className="text-amber-500 font-medium">no network</span>}
+                              ? (
+                                <span
+                                  className="font-mono"
+                                  title={iface['network_source'] === 'capsman-datapath'
+                                    ? 'From the CAPsMAN datapath, not a local bridge port'
+                                    : undefined}
+                                >
+                                  {iface.bridge}
+                                  {iface['bridge-pvid'] ? <span className="text-gray-400"> VLAN {iface['bridge-pvid']}</span> : ''}
+                                  {iface['network_source'] === 'capsman-datapath' && <span className="text-gray-400"> (datapath)</span>}
+                                </span>
+                              )
+                              : iface['managed_by_capsman']
+                                ? <span className="text-gray-400" title="This interface is provisioned by CAPsMAN and its datapath does not name a bridge">via controller</span>
+                                : <span className="text-amber-500 font-medium">no network</span>}
                           </td>
                           <td className="px-4 py-3 text-xs text-gray-600 dark:text-slate-400">
                             {iface.band || '—'}
@@ -997,11 +1010,11 @@ export default function WirelessSettingsPage() {
                               </span>
                             ) : iface.running === 'true' ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-                                <CheckCircle className="w-3 h-3" />Serving Clients
+                                <CheckCircle className="w-3 h-3" />Running
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
-                                <Power className="w-3 h-3" />Enabled
+                                <Power className="w-3 h-3" />Enabled, not running
                               </span>
                             )}
                           </td>

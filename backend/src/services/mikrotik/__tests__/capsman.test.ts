@@ -158,3 +158,112 @@ describe('lookupDeviceForMac', () => {
     expect(lookupDeviceForMac(null, new Map())).toBeNull();
   });
 });
+
+// ── live radio state and datapath (issue #94 follow-up) ──────────────────────
+
+import { parseRadioMonitor, resolveDatapath, clientsPerRadio } from '../capsman';
+
+describe('parseRadioMonitor', () => {
+  // Shape reported by the issue author from `/interface/wifi/monitor wifi1 once`.
+  const row = {
+    state: 'running',
+    channel: '5500/ax/Ceee/D',
+    'registered-peers': '10',
+    'authorized-peers': '10',
+    'tx-power': '24',
+  };
+
+  it('reads the operating channel and peer counts', () => {
+    const s = parseRadioMonitor(row);
+    expect(s.state).toBe('running');
+    expect(s.channel).toBe('5500/ax/Ceee/D');
+    expect(s.registeredPeers).toBe(10);
+    expect(s.authorizedPeers).toBe(10);
+    expect(s.txPower).toBe(24);
+  });
+
+  it('returns nulls rather than zeros when monitor gave nothing', () => {
+    const s = parseRadioMonitor(undefined);
+    expect(s.channel).toBeNull();
+    expect(s.registeredPeers).toBeNull();   // absent must not read as "0 clients"
+  });
+
+  it('treats an empty peer count as unknown, not zero', () => {
+    expect(parseRadioMonitor({ 'registered-peers': '' }).registeredPeers).toBeNull();
+  });
+});
+
+describe('resolveDatapath', () => {
+  const datapaths: Record<string, string>[] = [
+    { '.id': '*3', name: 'guest-dp', bridge: 'bridge1', 'vlan-id': '20' },
+    { '.id': '*4', name: 'mgmt-dp', bridge: 'bridge1' },
+  ];
+
+  it('prefers inline datapath fields on the interface', () => {
+    expect(resolveDatapath({ 'datapath.bridge': 'bridge9', 'datapath.vlan-id': '99' }, datapaths))
+      .toEqual({ bridge: 'bridge9', vlanId: '99' });
+  });
+
+  it('follows a named datapath reference', () => {
+    expect(resolveDatapath({ datapath: 'guest-dp' }, datapaths))
+      .toEqual({ bridge: 'bridge1', vlanId: '20' });
+  });
+
+  it('follows an .id datapath reference', () => {
+    expect(resolveDatapath({ datapath: '*3' }, datapaths))
+      .toEqual({ bridge: 'bridge1', vlanId: '20' });
+  });
+
+  it('reports a datapath with no VLAN as untagged rather than inventing one', () => {
+    expect(resolveDatapath({ datapath: 'mgmt-dp' }, datapaths))
+      .toEqual({ bridge: 'bridge1', vlanId: null });
+  });
+
+  it('returns nulls when the interface has no datapath at all', () => {
+    expect(resolveDatapath({ name: 'wifi1' }, datapaths))
+      .toEqual({ bridge: null, vlanId: null });
+  });
+});
+
+describe('clientsPerRadio', () => {
+  // Shape taken from a live wAP ax: virtual APs carry the clients and reference
+  // their physical radio through master-interface.
+  const interfaces: Record<string, string>[] = [
+    { name: 'wifi1', 'radio-mac': 'D0:EA:11:0A:DE:78', master: 'true' },
+    { name: 'wifi2', 'radio-mac': 'D0:EA:11:0A:DE:79', master: 'true' },
+    { name: 'wifi3', 'master-interface': 'wifi1', master: 'false' },
+    { name: 'wifi5', 'master-interface': 'wifi1', master: 'false' },
+    { name: 'wifi6', 'master-interface': 'wifi2', master: 'false' },
+  ];
+
+  it('attributes clients on a virtual AP to its physical radio', () => {
+    const counts = clientsPerRadio(interfaces, [
+      { interface: 'wifi3' }, { interface: 'wifi3' }, { interface: 'wifi3' },
+      { interface: 'wifi5' }, { interface: 'wifi5' },
+      { interface: 'wifi6' },
+    ]);
+    expect(counts.get('D0:EA:11:0A:DE:78')).toBe(5);   // wifi3 + wifi5
+    expect(counts.get('D0:EA:11:0A:DE:79')).toBe(1);   // wifi6
+  });
+
+  it('counts clients registered directly on a physical radio', () => {
+    const counts = clientsPerRadio(interfaces, [{ interface: 'wifi1' }]);
+    expect(counts.get('D0:EA:11:0A:DE:78')).toBe(1);
+  });
+
+  it('ignores registrations on an interface it cannot resolve', () => {
+    expect(clientsPerRadio(interfaces, [{ interface: 'ghost' }]).size).toBe(0);
+  });
+
+  it('does not hang on a cyclic master-interface chain', () => {
+    const cyclic: Record<string, string>[] = [
+      { name: 'a', 'master-interface': 'b' },
+      { name: 'b', 'master-interface': 'a' },
+    ];
+    expect(clientsPerRadio(cyclic, [{ interface: 'a' }]).size).toBe(0);
+  });
+
+  it('returns an empty map when nothing is connected', () => {
+    expect(clientsPerRadio(interfaces, []).size).toBe(0);
+  });
+});

@@ -9,7 +9,8 @@ import { buildServerArpMap } from '../../utils/serverArp';
 import { aggregateBridgeVlans, portVlanMembership, expandVlanIds } from '../../utils/vlan';
 import {
   classifyWifiRole, isCapsmanManaged, parseCapsmanStatus, parseCapStatus,
-  normalizeRadios, lookupDeviceForMac, macIndexKeys,
+  normalizeRadios, lookupDeviceForMac, macIndexKeys, parseRadioMonitor, resolveDatapath,
+  clientsPerRadio,
   type WifiRole,
 } from './capsman';
 import { BackupService } from '../BackupService';
@@ -1392,11 +1393,20 @@ export class DeviceCollector {
         return;
       }
 
-      const [radioRows, configRows, provRows] = await Promise.all([
+      const [radioRows, configRows, provRows, ifaceRows, regRows] = await Promise.all([
         this.client.execute('/interface/wifi/radio/print').catch(() => null),
         this.client.execute('/interface/wifi/configuration/print', { detail: '' }).catch(() => null),
         this.client.execute('/interface/wifi/provisioning/print', { detail: '' }).catch(() => null),
+        // `detail` is required: master-interface, which links a virtual AP to its
+        // radio, is absent from the plain listing.
+        this.client.execute('/interface/wifi/print', { detail: '' }).catch(() => [] as Record<string, string>[]),
+        this.client.execute('/interface/wifi/registration-table/print').catch(() => [] as Record<string, string>[]),
       ]);
+
+      // Clients register on the virtual AP, not the physical radio, so monitor's
+      // registered-peers reads zero on a busy access point. Count from the
+      // registration table and attribute each entry to its owning radio instead.
+      const clientCounts = clientsPerRadio(ifaceRows, regRows);
 
       // Fleet-wide MAC → device index, including a five-octet prefix key because a
       // radio MAC often differs from the interface MAC in the final octet only.
@@ -1414,11 +1424,28 @@ export class DeviceCollector {
 
       if (radioRows !== null) {
         const radios = normalizeRadios(radioRows);
+
+        // `current-channels` from /interface/wifi/radio lists every channel the
+        // radio *supports* — kilobytes of text on a multi-band radio — not the one
+        // it is on. Monitor reports the operating channel, and it carries the peer
+        // counts too, which under CAPsMAN only the controller knows: the CAP's own
+        // registration table is empty when traffic is processed centrally.
+        const live = new Map<string, ReturnType<typeof parseRadioMonitor>>();
+        await Promise.all(radios.map(async (radio) => {
+          const iface = radio.interfaceName;
+          if (!iface) return;
+          const mon = await this.client
+            .execute('/interface/wifi/monitor', { '.id': iface, once: '' })
+            .catch(() => [] as Record<string, string>[]);
+          live.set(iface, parseRadioMonitor(mon[0]));
+        }));
+
         const seen: string[] = [];
         for (const radio of radios) {
           if (!radio.radioMac) continue;
           seen.push(radio.radioMac);
           const capInfo = parseCapStatus(radio.raw);
+          const st = radio.interfaceName ? live.get(radio.interfaceName) : undefined;
           const matched = radio.local
             ? this.device.id
             : lookupDeviceForMac(radio.radioMac, macIndex);
@@ -1426,16 +1453,22 @@ export class DeviceCollector {
           await query(
             `INSERT INTO capsman_radios
                (controller_device_id, radio_mac, interface_name, local, hw_type,
-                current_channel, remote_cap_name, matched_device_id, config_json, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+                current_channel, remote_cap_name, matched_device_id, config_json,
+                state, registered_peers, authorized_peers, tx_power, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
              ON CONFLICT (controller_device_id, radio_mac) DO UPDATE SET
                interface_name=$3, local=$4, hw_type=$5, current_channel=$6,
-               remote_cap_name=$7, matched_device_id=$8, config_json=$9, updated_at=NOW()`,
+               remote_cap_name=$7, matched_device_id=$8, config_json=$9,
+               state=$10, registered_peers=$11, authorized_peers=$12, tx_power=$13,
+               updated_at=NOW()`,
             [
               this.device.id, radio.radioMac, radio.interfaceName, radio.local,
-              radio.hwType, radio.currentChannel,
+              radio.hwType, st?.channel ?? null,
               capInfo?.capMac ?? radio.raw['name'] ?? null,
               matched, JSON.stringify(radio.raw),
+              st?.state ?? null,
+              clientCounts.get(radio.radioMac) ?? st?.registeredPeers ?? null,
+              st?.authorizedPeers ?? null, st?.txPower ?? null,
             ]
           );
         }
@@ -1946,11 +1979,14 @@ export class DeviceCollector {
     const pkg = await this.detectWifiPackage();
     if (pkg === 'none') return [];
 
-    const [rawIfaces, bridgePorts] = await Promise.all([
+    const [rawIfaces, bridgePorts, datapaths] = await Promise.all([
       pkg === 'wifi'
         ? this.client.execute('/interface/wifi/print').catch(() => [] as Record<string, string>[])
         : this.client.execute('/interface/wireless/print', { detail: '' }).catch(() => [] as Record<string, string>[]),
       this.getBridgePorts(),
+      pkg === 'wifi'
+        ? this.client.execute('/interface/wifi/datapath/print', { detail: '' }).catch(() => [] as Record<string, string>[])
+        : Promise.resolve([] as Record<string, string>[]),
     ]);
 
     const rawNormalized = pkg === 'wifi'
@@ -1977,9 +2013,21 @@ export class DeviceCollector {
 
     // Enrich each interface with its bridge port membership (if any)
     const portByIface = new Map(bridgePorts.map(p => [p['interface'], p]));
-    return ifaces.map(iface => {
+    return ifaces.map((iface, i) => {
       const port = portByIface.get(iface['name']);
-      if (!port) return iface;
+      if (!port) {
+        // A CAPsMAN-provisioned interface is not a local bridge port, so the port
+        // table has nothing for it and the UI would claim it has no network at all.
+        // The bridge and VLAN it actually lands on come from the datapath.
+        const dp = resolveDatapath(rawIfaces[i] ?? iface, datapaths);
+        if (!dp.bridge && !dp.vlanId) return iface;
+        return {
+          ...iface,
+          ...(dp.bridge ? { bridge: dp.bridge } : {}),
+          ...(dp.vlanId ? { 'bridge-pvid': dp.vlanId } : {}),
+          network_source: 'capsman-datapath',
+        };
+      }
       return {
         ...iface,
         bridge:           port['bridge'] || '',
@@ -2383,8 +2431,31 @@ export class DeviceCollector {
       const raw = pkg === 'wifi'
         ? await this.client.execute('/interface/wifi/print').catch(() => [] as Record<string, string>[])
         : await this.client.execute('/interface/wireless/print').catch(() => [] as Record<string, string>[]);
-      const physicals = raw.filter(r => !r['master-interface'] && r['name']);
+      let physicals = raw.filter(r => !r['master-interface'] && r['name']);
       if (physicals.length === 0) throw new Error('No physical radios found to attach the guest SSID to');
+
+      // A CAPsMAN-provisioned radio is owned by the controller. Adding a local
+      // virtual AP to it does not reliably take effect and can be wiped or
+      // contradicted the next time the controller provisions the CAP — so skip
+      // those radios and say so, rather than reporting success for something that
+      // silently will not work. Raised by the reporter of issue #94.
+      const role = await this.detectWifiRole();
+      const managedRadios = physicals.filter(r => isCapsmanManaged(r, role));
+      if (managedRadios.length > 0) {
+        physicals = physicals.filter(r => !isCapsmanManaged(r, role));
+        const names = managedRadios.map(r => r['name']).join(', ');
+        if (physicals.length === 0) {
+          throw new Error(
+            `Every radio on this device (${names}) is provisioned by CAPsMAN, so a guest SSID `
+            + `created here would be overwritten by the controller. Create the guest network on the `
+            + `CAPsMAN controller instead, so it is provisioned to the access points.`
+          );
+        }
+        warnings.push(
+          `Skipped ${names}: provisioned by CAPsMAN, so a locally created SSID would be `
+          + `overwritten by the controller. Add it to the controller's configuration instead.`
+        );
+      }
 
       const existingBySsid = raw.filter(r =>
         (r['ssid'] || r['configuration.ssid'] || '') === ssid.ssid && r['master-interface']);
