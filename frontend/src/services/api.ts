@@ -903,6 +903,8 @@ export interface CapsmanRadio {
   /** Operating channel from /interface/wifi/monitor, not the supported-channel list. */
   current_channel: string | null;
   state: string | null;
+  /** SSID the controller provisioned onto this radio; the CAP itself does not know it. */
+  ssid: string | null;
   registered_peers: number | null;
   authorized_peers: number | null;
   tx_power: number | null;

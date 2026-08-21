@@ -571,6 +571,10 @@ ALTER TABLE capsman_radios ADD COLUMN IF NOT EXISTS tx_power INTEGER;
 -- collected so no one is left looking at two kilobytes of text.
 UPDATE capsman_radios SET current_channel = NULL WHERE length(current_channel) > 64;
 
+-- A CAP holds no local configuration, so its interface rows carry no SSID. The
+-- controller does know it, on its own mirror of the CAP interface (#94).
+ALTER TABLE capsman_radios ADD COLUMN IF NOT EXISTS ssid VARCHAR(128);
+
 -- ntfy.sh notification channel (github issue #93). The channel type is a CHECK
 -- constraint rather than a lookup table, so widening it means replacing it.
 ALTER TABLE alert_channels DROP CONSTRAINT IF EXISTS alert_channels_type_check;

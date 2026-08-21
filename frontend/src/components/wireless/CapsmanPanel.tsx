@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Server, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
-import { wirelessApi, type CapsmanController, type CapsmanRadio } from '../../services/api';
+import { wirelessApi, type CapsmanController } from '../../services/api';
 import clsx from 'clsx';
 
 /** One row of the unified radio/interface table. */
@@ -13,55 +13,33 @@ interface Row {
   local: boolean;
   interfaceName: string;
   ssid: string | null;
-  band: string | null;
-  frequency: number | null;
   channel: string | null;
   clients: number | null;
-  running: boolean | null;
-  disabled: boolean | null;
+  running: boolean;
 }
 
 /**
- * Flatten a controller into one row per interface.
+ * Flatten a controller into one row per radio.
  *
- * Radios and provisioned interfaces were two separate tables describing the same
- * things from different angles, which left the reader joining them by eye. Each
- * interface is emitted against the access point it lives on; a radio with no
- * provisioned interface still appears, so a CAP that is up but carrying nothing is
- * visible rather than absent.
+ * Driven by the controller's radio list rather than by the CAPs' own interface rows.
+ * A CAP holds no configuration — its rows report a generic name and null SSID, band
+ * and frequency — whereas the controller knows the provisioned SSID, the operating
+ * channel and the client count for every radio it manages.
  */
 function toRows(c: CapsmanController): Row[] {
   const rows: Row[] = [];
-  const radioOf = new Map<string, CapsmanRadio>();
-  for (const ap of c.access_points) for (const r of ap.radios) radioOf.set(r.radio_mac, r);
-
   for (const ap of c.access_points) {
-    const ifaces = c.ssids.filter((s) => s.device_id === ap.device_id);
-    if (ifaces.length > 0) {
-      for (const s of ifaces) {
-        const radio = s.radio_mac ? radioOf.get(s.radio_mac) : undefined;
-        rows.push({
-          key: `${ap.device_id ?? ap.device_name}:${s.name}`,
-          deviceId: ap.device_id, deviceName: ap.device_name,
-          local: ap.radios[0]?.local ?? false,
-          interfaceName: s.name, ssid: s.ssid,
-          band: s.band, frequency: s.frequency,
-          channel: radio?.current_channel ?? null,
-          clients: radio?.registered_peers ?? null,
-          running: s.running, disabled: s.disabled,
-        });
-      }
-      continue;
-    }
-    // No provisioned interface reported — still show the radio itself.
     for (const r of ap.radios) {
       rows.push({
         key: `${ap.device_id ?? ap.device_name}:${r.radio_mac}`,
-        deviceId: ap.device_id, deviceName: ap.device_name, local: r.local,
+        deviceId: ap.device_id,
+        deviceName: ap.device_name,
+        local: r.local,
         interfaceName: r.interface_name || r.radio_mac,
-        ssid: null, band: null, frequency: null,
-        channel: r.current_channel, clients: r.registered_peers,
-        running: r.state === 'running', disabled: null,
+        ssid: r.ssid,
+        channel: r.current_channel,
+        clients: r.registered_peers,
+        running: r.state === 'running',
       });
     }
   }
@@ -99,7 +77,7 @@ function Controller({ c }: { c: CapsmanController }) {
           </div>
           <div className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
             {c.access_points.length} access point{c.access_points.length !== 1 ? 's' : ''} ·{' '}
-            {rows.length} interface{rows.length !== 1 ? 's' : ''} ·{' '}
+            {rows.length} radio{rows.length !== 1 ? 's' : ''} ·{' '}
             {c.client_count} client{c.client_count !== 1 ? 's' : ''}
           </div>
         </div>
@@ -122,7 +100,7 @@ function Controller({ c }: { c: CapsmanController }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-slate-700">
-                  {['Access point', 'Interface', 'SSID', 'Band', 'Frequency', 'Channel', 'Clients', 'Status'].map((h) => (
+                  {['Access point', 'Interface', 'SSID', 'Channel', 'Clients', 'Status'].map((h) => (
                     <th key={h} className="table-header px-3 py-2 text-left whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -146,8 +124,6 @@ function Controller({ c }: { c: CapsmanController }) {
                     </td>
                     <td className="px-3 py-2 mono text-xs text-gray-600 dark:text-slate-300 whitespace-nowrap">{r.interfaceName}</td>
                     <td className="px-3 py-2 text-xs font-medium text-gray-900 dark:text-white">{r.ssid || <span className="text-gray-400">—</span>}</td>
-                    <td className="px-3 py-2 mono text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{r.band || <span className="text-gray-400">—</span>}</td>
-                    <td className="px-3 py-2 mono num-tab text-xs text-gray-500 dark:text-slate-400">{r.frequency ?? <span className="text-gray-400">—</span>}</td>
                     <td className="px-3 py-2 mono text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{r.channel || <span className="text-gray-400">—</span>}</td>
                     <td className="px-3 py-2 mono num-tab text-xs text-gray-600 dark:text-slate-300">
                       {r.clients ?? <span className="text-gray-400">—</span>}
@@ -155,11 +131,10 @@ function Controller({ c }: { c: CapsmanController }) {
                     <td className="px-3 py-2 whitespace-nowrap">
                       <span className={clsx(
                         'text-[10px] px-1.5 py-0.5 rounded font-medium',
-                        r.disabled ? 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400'
-                          : r.running ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                        r.running ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
                       )}>
-                        {r.disabled ? 'disabled' : r.running ? 'running' : 'enabled'}
+                        {r.running ? 'running' : 'idle'}
                       </span>
                     </td>
                   </tr>

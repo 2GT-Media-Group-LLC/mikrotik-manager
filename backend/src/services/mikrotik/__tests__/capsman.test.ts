@@ -1,6 +1,6 @@
 import {
   classifyWifiRole, parseCapsmanStatus, parseCapStatus, isCapsmanManaged,
-  normalizeRadios, matchRadiosToDevices, lookupDeviceForMac, macIndexKeys,
+  normalizeRadios, matchRadiosToDevices, lookupDeviceForMac, macIndexKeys, buildMacIndex,
 } from '../capsman';
 
 describe('classifyWifiRole', () => {
@@ -116,7 +116,7 @@ describe('normalizeRadios', () => {
 });
 
 describe('matchRadiosToDevices', () => {
-  const index = new Map<string, number>([['AA:BB:CC:00:00:01', 7]]);
+  const index = buildMacIndex([{ device_id: 7, mac_address: 'AA:BB:CC:00:00:01' }]);
 
   it('attributes a local radio to the controller itself', () => {
     const radios = normalizeRadios([{ 'radio-mac': 'FF:FF:FF:00:00:09', local: 'true' }]);
@@ -136,7 +136,7 @@ describe('matchRadiosToDevices', () => {
 
 describe('lookupDeviceForMac', () => {
   it('matches exactly when the MAC is known', () => {
-    const idx = new Map([['AA:BB:CC:00:00:01', 5]]);
+    const idx = buildMacIndex([{ device_id: 5, mac_address: 'AA:BB:CC:00:00:01' }]);
     expect(lookupDeviceForMac('aa:bb:cc:00:00:01', idx)).toBe(5);
   });
 
@@ -145,17 +145,17 @@ describe('lookupDeviceForMac', () => {
    * octet, so an exact-only lookup would leave real CAPs unattributed.
    */
   it('falls back to the five-octet prefix when the last octet differs', () => {
-    const idx = new Map(macIndexKeys('AA:BB:CC:00:00:01').map((k) => [k, 5] as [string, number]));
+    const idx = buildMacIndex([{ device_id: 5, mac_address: 'AA:BB:CC:00:00:01' }]);
     expect(lookupDeviceForMac('AA:BB:CC:00:00:07', idx)).toBe(5);
   });
 
   it('does not match a different device sharing only an OUI', () => {
-    const idx = new Map(macIndexKeys('AA:BB:CC:00:00:01').map((k) => [k, 5] as [string, number]));
+    const idx = buildMacIndex([{ device_id: 5, mac_address: 'AA:BB:CC:00:00:01' }]);
     expect(lookupDeviceForMac('AA:BB:CC:99:99:99', idx)).toBeNull();
   });
 
   it('returns null for a missing MAC', () => {
-    expect(lookupDeviceForMac(null, new Map())).toBeNull();
+    expect(lookupDeviceForMac(null, new Map<string, number[]>())).toBeNull();
   });
 });
 
@@ -268,29 +268,83 @@ describe('clientsPerRadio', () => {
   });
 });
 
-describe('lookupDeviceForMac — prefix must not steal a CAP for the controller (#94)', () => {
+describe('lookupDeviceForMac — a remote radio never belongs to the controller (#94)', () => {
   it('refuses a prefix match against the excluded device', () => {
-    // Controller (id 3) owns AA:BB:CC:00:00:01; a CAP radio one octet away must not
-    // be attributed to it.
-    const idx = new Map(macIndexKeys('AA:BB:CC:00:00:01').map((k) => [k, 3] as [string, number]));
+    const idx = buildMacIndex([{ device_id: 3, mac_address: 'AA:BB:CC:00:00:01' }]);
     expect(lookupDeviceForMac('AA:BB:CC:00:00:09', idx, 3)).toBeNull();
   });
 
-  it('still honours an exact match even against the excluded device', () => {
-    const idx = new Map(macIndexKeys('AA:BB:CC:00:00:01').map((k) => [k, 3] as [string, number]));
-    expect(lookupDeviceForMac('AA:BB:CC:00:00:01', idx, 3)).toBe(3);
+  /**
+   * The case that survived the first fix. A controller mirrors each CAP interface
+   * locally, so the CAP's radio MAC is an *exact* match against the controller too.
+   * Excluding only prefix matches left half a fleet's radios on the controller.
+   */
+  it('refuses an exact match against the excluded device', () => {
+    const idx = buildMacIndex([{ device_id: 12, mac_address: '04:F4:1C:A2:C4:66' }]);
+    expect(lookupDeviceForMac('04:F4:1C:A2:C4:66', idx, 12)).toBeNull();
+  });
+
+  it('picks the real access point when both it and the controller carry the MAC', () => {
+    // Exactly the shape reported: the controller mirrors the CAP's interface, so
+    // both devices index the same radio MAC.
+    const idx = buildMacIndex([
+      { device_id: 12, mac_address: '04:F4:1C:A2:C4:66' },   // controller's mirror
+      { device_id: 22, mac_address: '04:F4:1C:A2:C4:66' },   // the CAP itself
+    ]);
+    expect(lookupDeviceForMac('04:F4:1C:A2:C4:66', idx, 12)).toBe(22);
+  });
+
+  it('is order-independent — the CAP wins whichever row was indexed first', () => {
+    const idx = buildMacIndex([
+      { device_id: 22, mac_address: '04:F4:1C:A2:C4:66' },
+      { device_id: 12, mac_address: '04:F4:1C:A2:C4:66' },
+    ]);
+    expect(lookupDeviceForMac('04:F4:1C:A2:C4:66', idx, 12)).toBe(22);
   });
 
   it('still prefix-matches a different device', () => {
-    const idx = new Map(macIndexKeys('AA:BB:CC:00:00:01').map((k) => [k, 7] as [string, number]));
+    const idx = buildMacIndex([{ device_id: 7, mac_address: 'AA:BB:CC:00:00:01' }]);
     expect(lookupDeviceForMac('AA:BB:CC:00:00:09', idx, 3)).toBe(7);
   });
 
   it('prefers an exact match over a prefix match', () => {
-    const idx = new Map<string, number>([
-      ['AA:BB:CC:00:00', 7],          // prefix → device 7
-      ['AA:BB:CC:00:00:09', 9],       // exact  → device 9
+    const idx = buildMacIndex([
+      { device_id: 7, mac_address: 'AA:BB:CC:00:00:01' },
+      { device_id: 9, mac_address: 'AA:BB:CC:00:00:09' },
     ]);
     expect(lookupDeviceForMac('AA:BB:CC:00:00:09', idx)).toBe(9);
+  });
+});
+
+/**
+ * The reporter's fleet: a router acting purely as controller, mirroring six CAP
+ * interfaces. Before the fix these resolved to the controller or the CAP depending
+ * on database row order, so the same AP appeared in both places between polls.
+ */
+describe('matchRadiosToDevices — controller mirrors (#94 field report)', () => {
+  const CONTROLLER = 12;
+  const index = buildMacIndex([
+    { device_id: CONTROLLER, mac_address: '04:F4:1C:A2:C4:65' },   // mirrors
+    { device_id: CONTROLLER, mac_address: '04:F4:1C:A2:C4:66' },
+    { device_id: 22, mac_address: '04:F4:1C:A2:C4:65' },           // bathroom AP
+    { device_id: 22, mac_address: '04:F4:1C:A2:C4:66' },
+  ]);
+
+  it('puts both radios of one AP on that AP, not the controller', () => {
+    const radios = normalizeRadios([
+      { 'radio-mac': '04:F4:1C:A2:C4:65', interface: 'wifi-legacy-bathroom-ap-001-main-5g', local: 'false' },
+      { 'radio-mac': '04:F4:1C:A2:C4:66', interface: 'wifi-legacy-bathroom-ap-001-main-2g', local: 'false' },
+    ]);
+    expect(matchRadiosToDevices(radios, index, CONTROLLER).map((m) => m.deviceId)).toEqual([22, 22]);
+  });
+
+  it('still keeps a genuinely local radio on the controller', () => {
+    const radios = normalizeRadios([{ 'radio-mac': 'FF:FF:FF:00:00:01', local: 'true' }]);
+    expect(matchRadiosToDevices(radios, index, CONTROLLER)[0].deviceId).toBe(CONTROLLER);
+  });
+
+  it('leaves a CAP that is not in the fleet unattributed rather than on the controller', () => {
+    const radios = normalizeRadios([{ 'radio-mac': '04:F4:1C:99:99:99', local: 'false' }]);
+    expect(matchRadiosToDevices(radios, index, CONTROLLER)[0].deviceId).toBeNull();
   });
 });

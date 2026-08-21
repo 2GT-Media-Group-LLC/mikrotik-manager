@@ -9,8 +9,8 @@ import { buildServerArpMap } from '../../utils/serverArp';
 import { aggregateBridgeVlans, portVlanMembership, expandVlanIds } from '../../utils/vlan';
 import {
   classifyWifiRole, isCapsmanManaged, parseCapsmanStatus, parseCapStatus,
-  normalizeRadios, lookupDeviceForMac, macIndexKeys, parseRadioMonitor, resolveDatapath,
-  clientsPerRadio,
+  normalizeRadios, macIndexKeys, parseRadioMonitor, resolveDatapath,
+  clientsPerRadio, buildMacIndex, matchRadiosToDevices,
   type WifiRole,
 } from './capsman';
 import { BackupService } from '../BackupService';
@@ -1472,12 +1472,7 @@ export class DeviceCollector {
          UNION
          SELECT device_id, mac_address FROM wireless_interfaces WHERE mac_address IS NOT NULL`
       ).catch(() => []);
-      const macIndex = new Map<string, number>();
-      for (const r of macRows) {
-        for (const key of macIndexKeys(r.mac_address)) {
-          if (!macIndex.has(key)) macIndex.set(key, r.device_id);
-        }
-      }
+      const macIndex = buildMacIndex(macRows);
 
       if (radioRows !== null) {
         const radios = normalizeRadios(radioRows);
@@ -1497,30 +1492,39 @@ export class DeviceCollector {
           live.set(iface, parseRadioMonitor(mon[0]));
         }));
 
+        // The controller mirrors each CAP interface locally, which is also where the
+        // provisioned SSID is visible — the CAP's own row has none.
+        const ssidByRadioMac = new Map<string, string>();
+        for (const iface of ifaceRows) {
+          const mac = (iface['radio-mac'] || '').toUpperCase();
+          const ssid = iface['configuration.ssid'] || iface['ssid'];
+          if (mac && ssid && !ssidByRadioMac.has(mac)) ssidByRadioMac.set(mac, ssid);
+        }
+
+        const attributed = new Map(
+          matchRadiosToDevices(radios, macIndex, this.device.id)
+            .map((m) => [m.radio.radioMac ?? '', m.deviceId])
+        );
+
         const seen: string[] = [];
         for (const radio of radios) {
           if (!radio.radioMac) continue;
           seen.push(radio.radioMac);
           const capInfo = parseCapStatus(radio.raw);
           const st = radio.interfaceName ? live.get(radio.interfaceName) : undefined;
-          // A remote radio belongs to a CAP, never to the controller — so a
-          // near-miss prefix match against the controller's own MAC block must not
-          // pull it back onto the controller.
-          const matched = radio.local
-            ? this.device.id
-            : lookupDeviceForMac(radio.radioMac, macIndex, this.device.id);
+          const matched = attributed.get(radio.radioMac) ?? null;
 
           await query(
             `INSERT INTO capsman_radios
                (controller_device_id, radio_mac, interface_name, local, hw_type,
                 current_channel, remote_cap_name, matched_device_id, config_json,
-                state, registered_peers, authorized_peers, tx_power, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+                state, registered_peers, authorized_peers, tx_power, ssid, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
              ON CONFLICT (controller_device_id, radio_mac) DO UPDATE SET
                interface_name=$3, local=$4, hw_type=$5, current_channel=$6,
                remote_cap_name=$7, matched_device_id=$8, config_json=$9,
                state=$10, registered_peers=$11, authorized_peers=$12, tx_power=$13,
-               updated_at=NOW()`,
+               ssid=$14, updated_at=NOW()`,
             [
               this.device.id, radio.radioMac, radio.interfaceName, radio.local,
               radio.hwType, st?.channel ?? null,
@@ -1529,6 +1533,7 @@ export class DeviceCollector {
               st?.state ?? null,
               clientCounts.get(radio.radioMac) ?? st?.registeredPeers ?? null,
               st?.authorizedPeers ?? null, st?.txPower ?? null,
+              ssidByRadioMac.get(radio.radioMac) ?? null,
             ]
           );
         }

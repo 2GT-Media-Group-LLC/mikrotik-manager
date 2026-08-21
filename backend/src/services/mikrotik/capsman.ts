@@ -187,15 +187,46 @@ export function normalizeRadios(rows: Record<string, string>[]): RadioRow[] {
  * on hardware identity alone: a MAC is globally unique, so unlike an address it
  * cannot mean two different devices on two different segments.
  */
+/**
+ * Index every known interface MAC to the device(s) carrying it.
+ *
+ * Multi-valued deliberately. A CAPsMAN controller mirrors each CAP's interfaces
+ * locally, so a CAP's radio MAC legitimately appears under both the CAP and the
+ * controller. A single-valued first-wins index picked whichever row the database
+ * returned first, which attributed half a fleet's radios to the controller and
+ * shuffled between polls (#94).
+ */
+export function buildMacIndex(
+  rows: { device_id: number; mac_address: string | null }[]
+): Map<string, number[]> {
+  const index = new Map<string, number[]>();
+  for (const row of rows) {
+    if (!row.mac_address) continue;
+    for (const key of macIndexKeys(row.mac_address)) {
+      const list = index.get(key) ?? [];
+      if (!list.includes(row.device_id)) list.push(row.device_id);
+      index.set(key, list);
+    }
+  }
+  return index;
+}
+
+/**
+ * Attribute each radio a controller reports to a managed device, by MAC.
+ *
+ * A radio the controller flags `local: false` physically lives on a CAP, so the
+ * controller is never the answer — even when its mirror of that interface makes the
+ * MAC look like its own. Matching is on hardware identity: a MAC is globally unique,
+ * so unlike an address it cannot mean two devices on two segments.
+ */
 export function matchRadiosToDevices(
   radios: RadioRow[],
-  macToDevice: Map<string, number>,
+  macToDevice: Map<string, number[]>,
   controllerDeviceId: number
 ): { radio: RadioRow; deviceId: number | null }[] {
   return radios.map((radio) => {
     if (radio.local) return { radio, deviceId: controllerDeviceId };
-    const hit = radio.radioMac ? macToDevice.get(radio.radioMac.toUpperCase()) : undefined;
-    return { radio, deviceId: hit ?? null };
+    return { radio, deviceId: lookupDeviceForMac(radio.radioMac, macToDevice, controllerDeviceId) };
   });
 }
 
@@ -215,28 +246,22 @@ export function macIndexKeys(mac: string): string[] {
 /**
  * Look up a device for a radio MAC, falling back to the five-octet prefix.
  *
- * `excludeOnPrefix` refuses a *prefix* match against a given device — used to stop a
- * remote CAP being attributed to the controller when the two happen to share the
- * first five octets. An exact match is still honoured, since that is hardware
- * identity rather than a near-miss. Reported on #94, where a CAP's radio was grouped
- * under the controller instead of its access point.
+ * `excludeDeviceId` is rejected at both exact and prefix strength. That is not a
+ * tie-break heuristic: the caller passes the controller for a radio the controller
+ * itself reported as remote, so the controller is known to be the wrong answer, and
+ * an exact match against it only means the controller mirrors that CAP's interface.
  */
 export function lookupDeviceForMac(
   mac: string | null,
-  index: Map<string, number>,
-  excludeOnPrefix?: number
+  index: Map<string, number[]>,
+  excludeDeviceId?: number
 ): number | null {
   if (!mac) return null;
-  const keys = macIndexKeys(mac);
-
-  const exact = index.get(keys[0]);
-  if (exact !== undefined) return exact;
-
-  for (const key of keys.slice(1)) {
-    const hit = index.get(key);
-    if (hit === undefined) continue;
-    if (excludeOnPrefix !== undefined && hit === excludeOnPrefix) continue;
-    return hit;
+  for (const key of macIndexKeys(mac)) {
+    const candidates = index.get(key);
+    if (!candidates) continue;
+    const hit = candidates.find((id) => id !== excludeDeviceId);
+    if (hit !== undefined) return hit;
   }
   return null;
 }

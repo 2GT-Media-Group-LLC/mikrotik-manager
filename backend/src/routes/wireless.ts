@@ -156,7 +156,7 @@ router.get('/capsman', async (_req: Request, res: Response) => {
     query(`
       SELECT r.controller_device_id, r.radio_mac, r.interface_name, r.local, r.hw_type,
              r.current_channel, r.remote_cap_name, r.matched_device_id,
-             r.state, r.registered_peers, r.authorized_peers, r.tx_power,
+             r.state, r.registered_peers, r.authorized_peers, r.tx_power, r.ssid,
              d.name AS matched_device_name, d.status AS matched_device_status
       FROM capsman_radios r
       LEFT JOIN devices d ON d.id = r.matched_device_id
