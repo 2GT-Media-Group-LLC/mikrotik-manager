@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.23.3_Beta-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.23.4_Beta-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -33,7 +33,7 @@
   - [Visibility and troubleshooting](#visibility-and-troubleshooting)
   - [Fleet operations](#fleet-operations)
   - [Access control and platform](#access-control-and-platform)
-- [Reference](#reference)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -259,28 +259,9 @@ The layers described [above](#what-makes-it-different), plus the surrounding mac
 - **Capability probe** — `POST /api/devices/:id/change-guard/probe` reports what safety mechanisms a device actually supports, tested rather than assumed, and leaves nothing behind
 - **Guard history** — every protected change recorded per device as `committed`, `reverted`, or `failed`
 
-<details>
-<summary><b>What you see when auto-revert fires</b></summary>
-
-<br>
-
-The request returns **HTTP 200** with `guard.auto_reverting: true` and *"Contact with the device was
-lost while applying this change. It is restoring itself and should come back shortly."* — not an error.
-
-This matters: the most dangerous changes sever the very connection carrying them, so the API call times
-out even though the change succeeded on the device. **Reachability, not the exception, decides the
-outcome.** A change that throws while the device is still reachable is a genuine failure, and the guard
-is disarmed immediately so nothing reboots for nothing.
-
-Two consequences worth knowing before relying on it:
-
-- **Binary mode reboots the device** to restore. That is the price of a restore that recovers deleted
-  interfaces exactly. Script mode (`/export` + `/import`) avoids the reboot but is additive, so it
-  cannot recover a deletion.
-- **The restore point is saved before the scheduler is armed**, so a rollback returns a configuration
-  containing neither the scheduler nor the change. Self-cleaning, and a revert loop is impossible.
-
-</details>
+For the full behaviour — what the API returns when contact is lost, how binary and script
+modes differ, and how to choose a timeout — see
+[Change Guard and Config Health](docs/change-guard.md).
 
 ### Monitoring and operations
 
@@ -306,7 +287,7 @@ Two consequences worth knowing before relying on it:
 - **Spectral and AP scans** — scheduled or on demand, per radio
 - **Rogue &amp; neighbour AP detection** — stored scan results cross-referenced against your own SSIDs and radio MACs; a foreign BSSID broadcasting your SSID is flagged as an evil twin
 - **Device fingerprinting** — every client classified into a category (server, computer, phone, TV, camera, printer, console, IoT…) from OUI and hostname, overridable per client and persistent across polls
-- **CAPsMAN** — role detection (standalone / CAP / controller / controller-with-local-radios), provisioned interfaces labelled with their controller, and a controller panel grouping every AP with its radios, live channel, provisioned SSID and client counts. CAPs are matched to managed devices by radio MAC — hardware identity, so it cannot confuse two devices on two segments. Read-only for now; see [CAPsMAN scope](#capsman-scope)
+- **CAPsMAN** — role detection (standalone / CAP / controller / controller-with-local-radios), provisioned interfaces labelled with their controller, and a controller panel grouping every AP with its radios, live channel, provisioned SSID and client counts. CAPs are matched to managed devices by radio MAC — hardware identity, so it cannot confuse two devices on two segments. Read-only for now; see [CAPsMAN scope](docs/capsman.md#current-limits)
 - **Guest WiFi** — a guided wizard that builds a full captive portal in one pass: guest SSID on every radio, VLAN segregation, IP pool, DHCP, hotspot profile, bandwidth-limited user profile and optional NAT. Plus batch vouchers with printable 3-up sheets, a live guests-online table, and an inline walled garden
 
 ### Firewall and network services
@@ -367,120 +348,30 @@ Each network service supports multi-device management with conflict detection:
 
 - **Roles** — Admin, Operator (read/write), Viewer (read-only)
 - **Two-factor authentication** — per-user TOTP via QR code, required at login once enabled
-- **Single sign-on (OIDC)** — any standards-compliant provider (Entra ID, Okta, Google Workspace, Keycloak, Authentik…), with group-to-role mapping, auto-provisioning, and local login retained as break-glass. Configured entirely in the UI — see [Single sign-on setup](#single-sign-on-oidc)
+- **Single sign-on (OIDC)** — any standards-compliant provider (Entra ID, Okta, Google Workspace, Keycloak, Authentik…), with group-to-role mapping, auto-provisioning, and local login retained as break-glass. Configured entirely in the UI — see [the SSO guide](docs/sso-oidc.md)
 - **Scoped API tokens** — `mtm_…` tokens with read or write scope and optional expiry, shown once and stored only as a SHA-256 hash. No token can perform admin actions or manage other tokens
 - **Outbound webhooks** — subscribe to any of twelve events, delivered as HMAC-SHA256-signed JSON POSTs through the same pipeline that respects alert rules, cooldowns and maintenance windows
 - **Scheduled email reports** — daily, weekly or monthly HTML fleet summaries to any recipient list
 - **Credential presets** — shared device credentials, optionally restricted to admins only
-- **Encryption at rest** — device passwords encrypted with AES-256-GCM under a [self-healing key](#secret-management-self-healing)
+- **Encryption at rest** — device passwords encrypted with AES-256-GCM under a [self-healing key](docs/configuration.md#secret-management-self-healing)
 - **TLS** — self-signed certificate generated on first run, replaceable via the Settings UI; nginx terminates TLS and redirects HTTP
 
 ---
 
-## Reference
+## Documentation
 
-### Environment variables
+Deeper reference material lives in [`docs/`](docs/README.md), versioned alongside the code
+so it moves when behaviour does.
 
-Set in `.env`. Both secrets auto-generate on first boot if you leave them unset.
-
-| Variable | Default | Description |
-|---|---|---|
-| `JWT_SECRET` | *auto-generated &amp; persisted* | Signs session tokens. Set it to pin your own value. |
-| `ENCRYPTION_KEY` | *auto-generated &amp; persisted* | Encrypts device passwords at rest. Set it to pin your own value. |
-| `CORS_ORIGIN` | *localhost defaults* | Comma-separated browser origins allowed to call the API. **Required in production.** |
-| `DB_PASSWORD` | `mikrotik_secure_pw` | PostgreSQL password |
-| `INFLUXDB_TOKEN` | `mytoken123456789` | InfluxDB admin token |
-| `INFLUXDB_ORG` | `mikrotik-manager` | InfluxDB organization |
-| `INFLUXDB_BUCKET` | `metrics` | InfluxDB bucket for time-series data |
-| `INFLUXDB_ADMIN_PASSWORD` | `admin_password_123` | InfluxDB admin UI password |
-| `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS) |
-| `HTTPS_PORT` | `443` | Host port for HTTPS |
-
-> Never commit `.env`. It is already in `.gitignore`.
-
-### Change Guard and Config Health settings
-
-These live in the Settings UI rather than `.env`, so they apply without a restart.
-
-| Setting | Default | Description |
-|---|---|---|
-| `change_guard_enabled` | `true` | Master switch. When off, guarded changes still apply — with no safety net and no lockout refusal. |
-| `change_guard_mode` | `binary` | `binary` = `/system backup` restore; recovers deletions exactly, **reboots the device**. `script` = `/export` + `/import`; no reboot, but additive, so it cannot undo a deletion. |
-| `change_guard_timeout_sec` | `120` | How long the device waits before rescuing itself. Must exceed the manager's verification window (~40s) with margin for a slow device. |
-| `config_health_enabled` | `true` | Runs the standing configuration audit. |
-| `config_health_interval_min` | `60` | Audit cadence per device — one read-only snapshot over the API. |
-
-Overriding a predicted lockout is deliberate by design: the API requires `confirm_lockout: true` and the
-UI requires typing the device name. The change then runs under Change Guard regardless, so an override
-is a decision to *rely on* auto-revert — not to bypass protection.
-
-### CAPsMAN scope
-
-Provisioning, configuration edits and interface enable/disable are **deliberately not exposed**. A
-CAPsMAN configuration applies to every access point bound to it simultaneously, which is the fleet-wide
-version of the failure Change Guard exists to prevent. Those operations are held back until they carry
-the same prediction-and-revert protection that per-device changes do.
-
-Legacy `/caps-man` (the pre-RouterOS 7 controller) is a separate API tree and is not covered yet.
-
-### Secret management (self-healing)
-
-`JWT_SECRET` and `ENCRYPTION_KEY` are managed automatically:
-
-- **Set to a strong value in the environment** — that value is used, and you stay in control.
-- **Unset or left at an old default** — the backend generates a strong secret once, persists it to the
-  `app_data` volume (`SECRETS_DIR`, default `/app/data`), and reuses it every boot. Secrets live outside
-  the database, so a database dump alone cannot reveal the key protecting the credentials inside it.
-
-Upgrades are non-breaking. Existing ciphertext is decrypted via a **legacy-key fallback** (including
-previous defaults) and transparently re-encrypted under the current key by a background sweep. Rotating
-the JWT secret off a public default invalidates sessions signed with it — users simply log in again.
-
-**Key rotation:** set a new `ENCRYPTION_KEY` (or delete the persisted secret to force regeneration) and
-restart. Old rows keep decrypting via the fallback and are re-encrypted forward automatically. **If the
-persisted secret and every prior key are lost**, ciphertext under that key cannot be recovered — re-enter
-device credentials or restore a backup.
-
-### Single sign-on (OIDC)
-
-Authorization Code flow with PKCE. The server validates the ID token (JWKS signature plus `iss`, `aud`,
-`exp`, `nonce`) and then issues the platform's normal session, so SSO users get the same experience as
-local ones. **No environment variables or redeploy** — everything is configured in the UI, with the
-client secret encrypted at rest.
-
-**1. Register the app with your provider.** Create an OIDC web application and note its **Issuer URL**
-(the base serving `/.well-known/openid-configuration`), **Client ID** and **Client Secret** — public
-clients with no secret work too, via PKCE. Use this redirect URI:
-
-```
-https://<your-host>/api/auth/oidc/callback
-```
-
-**2. Configure it under Settings → SSO / OIDC.**
-
-| Field | Purpose |
+| Document | Covers |
 |---|---|
-| **Issuer URL** | Your provider's base URL; **Test discovery** verifies reachability. |
-| **Client ID / Secret** | From step 1. The secret is write-only; leave blank to keep the existing one. |
-| **Scopes** | Default `openid profile email`. Add a groups scope if your IdP needs one. |
-| **Username / Email / Groups claim** | Defaults `preferred_username`, `email`, `groups`. |
-| **Group → role mapping** | Map IdP groups to admin / operator / viewer. Highest-privilege match wins. |
-| **Default role** | For users matching no mapping (default **viewer**). |
-| **Auto-provision** | Create a local user on first sign-in. |
-| **Link by verified email** | Attach an SSO identity to an existing account when `email_verified` matches. |
-| **Allowed email domains** | Optional allowlist. |
-| **Button label** | Text on the login button, e.g. "Sign in with Okta". |
-
-**Behaviour and safety:**
-
-- **Provisioning** — first sign-in creates a user, or links to an existing local account when the
-  verified email matches. SSO users have no local password.
-- **Roles** are always resolved server-side from your mapping, and existing users are never silently
-  demoted when a login carries no matching group.
-- **Break-glass** — local login stays available, so the seeded admin can always get in even if the IdP
-  is misconfigured or unreachable.
-- **Behind a proxy** — the redirect URI derives from the request host; set **Public base URL** to pin it
-  when your external URL differs from what the backend sees.
+| [Configuration](docs/configuration.md) | Environment variables, secret management, key rotation, TLS |
+| [Change Guard and Config Health](docs/change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
+| [Alerting](docs/alerting.md) | Rules, channels, ntfy priority mapping, webhooks, maintenance windows |
+| [Single sign-on (OIDC)](docs/sso-oidc.md) | Identity provider setup, group-to-role mapping, break-glass behaviour |
+| [CAPsMAN](docs/capsman.md) | How centrally provisioned APs are modelled, and current limits |
+| [API and automation](docs/api.md) | Scoped tokens, preflighting a change, driving the platform from scripts |
+| [Architecture](docs/architecture.md) | Data stores, polling model, and where the interesting logic lives |
 
 ### Tech stack
 
@@ -489,45 +380,11 @@ https://<your-host>/api/auth/oidc/callback
 | **Frontend** | React 18, TypeScript, Vite, Tailwind CSS |
 | **State / data** | TanStack Query v5, React Router v6, Zustand |
 | **Charts / topology / maps** | Recharts, @xyflow/react, Leaflet |
-| **Terminal** | xterm.js |
 | **Backend** | Node.js, Express, TypeScript |
-| **Primary DB** | PostgreSQL 15 |
-| **Time-series DB** | InfluxDB 2.7 |
-| **Cache / queue** | Redis 7, BullMQ |
+| **Data stores** | PostgreSQL 15, InfluxDB 2.7, Redis 7 + BullMQ |
 | **Real-time** | Socket.IO |
 | **Device comms** | RouterOS API (8728 / 8729), SSH2 |
-| **Proxy** | nginx — TLS termination and static serving |
-| **Container** | Docker Compose |
-
-### Project structure
-
-```
-mikrotik-manager/
-├── frontend/               # React + TypeScript (Vite)
-│   └── src/
-│       ├── pages/          # One component per route
-│       ├── components/     # Shared UI
-│       ├── services/       # API client (Axios)
-│       ├── hooks/          # Custom React hooks
-│       └── types/          # TypeScript definitions
-│
-├── backend/                # Node.js + Express + TypeScript
-│   └── src/
-│       ├── routes/         # REST API handlers
-│       ├── services/       # Polling, alerts, backups, orchestration
-│       │   ├── mikrotik/   # RouterOS API client and device collector
-│       │   ├── changeGuard/# Auto-revert, lockout prediction, Config Health
-│       │   └── topology/   # Neighbour graph construction
-│       ├── db/             # Schema and migrations
-│       ├── config/         # Database, InfluxDB, Redis connections
-│       ├── middleware/     # Auth, audit logging, error handling
-│       └── utils/          # Crypto, OUI lookup, VLAN parsing
-│
-├── nginx/                  # Reverse proxy config and Dockerfile
-├── docker-compose.yml      # Build from source
-├── docker-compose.ghcr.yml # Pre-built images
-└── .env.example
-```
+| **Proxy / container** | nginx, Docker Compose |
 
 ---
 
