@@ -400,6 +400,17 @@ export interface RogueApReport {
 
 // ─── RF Health ──────────────────────────────────────────────────────────────
 
+/** How one radio's spectrum relates to every other radio at the same location. */
+export type RfOverlapKind = 'clear' | 'co-channel' | 'partial';
+
+export interface RfClash {
+  kind: 'co-channel' | 'partial';
+  overlap_mhz: number;
+  device_name: string | null;
+  interface_name: string | null;
+  channel: number | null;
+}
+
 export interface RfChannelRow {
   device_id: number;
   device_name: string;
@@ -409,6 +420,36 @@ export interface RfChannelRow {
   frequency: number;
   channel_width?: string;
   registered_clients: number;
+  /** Spectrum actually occupied, computed and tested server-side. */
+  low_mhz: number;
+  high_mhz: number;
+  width_mhz: number;
+  channel: number | null;
+  overlap: RfOverlapKind;
+  clashes: RfClash[];
+  controller_device_id: number | null;
+  controller_name: string | null;
+}
+
+export interface RfLocation {
+  key: string;
+  name: string;
+  controller_device_id: number | null;
+  radios: number;
+  summary: { radios: number; clear: number; coChannel: number; partial: number };
+}
+
+export interface RfBandRange {
+  band: '2.4' | '5' | '6';
+  label: string;
+  startMhz: number;
+  endMhz: number;
+}
+
+export interface RfChannelUsage {
+  radios: RfChannelRow[];
+  locations: RfLocation[];
+  bands: RfBandRange[];
 }
 
 export interface RfSignalRow {

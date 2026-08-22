@@ -5,89 +5,162 @@ import clsx from 'clsx';
 import { wirelessApi } from '../../services/api';
 import type {
   RfChannelRow, RfSignalRow, RfTxQualityRow, RfConnectivity,
+  RfOverlapKind, RfBandRange,
 } from '../../types';
 import {
-  BAND_CHANNELS, BAND_LABEL, RfBand, channelForFreq, bandForFreq, widthMhz,
+  BAND_LABEL, RfBand,
   RSSI_ZONES, rssiColor, RETRY_BUCKETS, retryBucketIndex, retryColor,
 } from '../../utils/wifiChannels';
 
 const ALL_BANDS: RfBand[] = ['2.4', '5', '6'];
 
 // ─── Channel Map ──────────────────────────────────────────────────────────────
+//
+// Drawn as real spectrum rather than a row of channel cells. Channel centres in
+// 2.4 GHz are 5 MHz apart while a channel is 20 MHz wide, so a cell-per-channel
+// model shows overlapping channels as free — bad advice for anyone planning a
+// deployment. Occupancy and interference are computed and tested server-side
+// (backend/src/utils/rfSpectrum.ts); this only positions the result.
 
-interface CellInfo { count: number; labels: string[] }
+const OVERLAP_STYLE: Record<RfOverlapKind, { fill: string; label: string }> = {
+  clear:         { fill: 'var(--ok, #22c55e)',   label: 'Clear' },
+  'co-channel':  { fill: 'var(--warn, #f59e0b)', label: 'Shares a channel' },
+  partial:       { fill: 'var(--bad, #ef4444)',  label: 'Overlapping carriers' },
+};
 
-function ChannelBandRow({ band, radios }: { band: RfBand; radios: RfChannelRow[] }) {
-  const channels = BAND_CHANNELS[band];
-  const cells: CellInfo[] = channels.map(() => ({ count: 0, labels: [] }));
+function SpectrumBandRow({ band, radios }: { band: RfBandRange; radios: RfChannelRow[] }) {
+  const span = band.endMhz - band.startMhz;
+  const pct = (mhz: number) => ((mhz - band.startMhz) / span) * 100;
 
-  for (const r of radios) {
-    const ch = channelForFreq(r.frequency);
-    if (ch == null) continue;
-    const idx = channels.indexOf(ch);
-    if (idx < 0) continue;
-    const span = Math.max(1, Math.round(widthMhz(r.channel_width) / 20));
-    const start = Math.max(0, idx - Math.floor((span - 1) / 2));
-    const end = Math.min(channels.length - 1, start + span - 1);
-    for (let i = start; i <= end; i++) cells[i].count++;
-    cells[idx].labels.push(
-      `${r.device_name}${r.ssid ? ` · ${r.ssid}` : ''} — ch ${ch}, ${widthMhz(r.channel_width)} MHz, ${r.registered_clients} clients`
-    );
+  // Stack radios so overlapping blocks stay individually visible.
+  const lanes: RfChannelRow[][] = [];
+  for (const r of [...radios].sort((a, b) => a.low_mhz - b.low_mhz)) {
+    const lane = lanes.find((l) => l[l.length - 1].high_mhz <= r.low_mhz);
+    if (lane) lane.push(r); else lanes.push([r]);
   }
 
-  const cellColor = (c: CellInfo) =>
-    c.count === 0 ? 'bg-gray-200 dark:bg-slate-700'
-      : c.count === 1 ? 'bg-green-500'
-        : 'bg-amber-500'; // co-channel overlap
+  // Ticks every 20 MHz in 2.4 GHz, every 100 elsewhere — enough to orient without clutter.
+  const step = band.band === '2.4' ? 20 : 100;
+  const ticks: number[] = [];
+  for (let f = Math.ceil(band.startMhz / step) * step; f < band.endMhz; f += step) ticks.push(f);
 
   return (
     <div>
-      <div className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">{BAND_LABEL[band]}</div>
-      <div className="flex gap-px">
-        {cells.map((c, i) => (
-          <div key={channels[i]}
-            title={c.labels.length ? c.labels.join('\n') : `Channel ${channels[i]} — unused`}
-            className={clsx('h-2.5 flex-1 rounded-sm transition-colors', cellColor(c))} />
-        ))}
+      <div className="flex items-baseline justify-between mb-1">
+        <div className="text-xs font-medium text-gray-500 dark:text-slate-400">{band.label}</div>
+        <div className="text-[10px] text-gray-400">
+          {radios.length === 0 ? 'no radios' : `${radios.length} radio${radios.length !== 1 ? 's' : ''}`}
+        </div>
       </div>
-      <div className="flex mt-1">
-        {channels.map(ch => (
-          <div key={ch} className="flex-1 text-center text-[9px] leading-none text-gray-400 dark:text-slate-500">{ch}</div>
+
+      <div className="relative rounded" style={{ background: 'var(--surface-3, #e5e7eb)', minHeight: lanes.length ? lanes.length * 16 + 4 : 12 }}>
+        {lanes.map((lane, li) => lane.map((r) => (
+          <div
+            key={`${r.device_id}:${r.name}`}
+            title={[
+              `${r.device_name} · ${r.name}${r.ssid ? ` (${r.ssid})` : ''}`,
+              `ch ${r.channel ?? '?'} — ${r.low_mhz}–${r.high_mhz} MHz, ${r.width_mhz} MHz wide`,
+              `${r.registered_clients ?? 0} clients`,
+              OVERLAP_STYLE[r.overlap].label,
+              ...r.clashes.map((c) => `  ${c.kind === 'partial' ? 'overlaps' : 'shares with'} ${c.device_name} ch ${c.channel} (${c.overlap_mhz} MHz)`),
+            ].join('\n')}
+            className="absolute rounded-sm border border-black/10 dark:border-white/10"
+            style={{
+              left: `${pct(r.low_mhz)}%`,
+              width: `${Math.max(0.6, ((r.high_mhz - r.low_mhz) / span) * 100)}%`,
+              top: li * 16 + 2,
+              height: 12,
+              background: OVERLAP_STYLE[r.overlap].fill,
+              opacity: 0.85,
+            }}
+          />
+        )))}
+      </div>
+
+      <div className="relative h-3 mt-0.5">
+        {ticks.map((f) => (
+          <span key={f} className="absolute text-[9px] leading-none text-gray-400 dark:text-slate-500"
+                style={{ left: `${pct(f)}%`, transform: 'translateX(-50%)' }}>
+            {band.band === '2.4' ? (channelOf(f) ?? f) : f}
+          </span>
         ))}
       </div>
     </div>
   );
 }
 
+/** 2.4 GHz tick labels read better as channel numbers than as megahertz. */
+function channelOf(freq: number): number | null {
+  const n = Math.round((freq - 2407) / 5);
+  return n >= 1 && n <= 14 ? n : null;
+}
+
 export function ChannelMap({ deviceId }: { deviceId?: number }) {
-  const { data: radios = [] } = useQuery({
+  const { data } = useQuery({
     queryKey: ['rf-channels', deviceId],
     queryFn: () => wirelessApi.getChannelUsage(deviceId).then(r => r.data),
     refetchInterval: 60_000,
   });
 
-  const byBand = (b: RfBand) => radios.filter(r => bandForFreq(r.frequency) === b);
-  // 2.4 + 5 always; 6 only when present (avoids an always-empty 59-cell row)
-  const bands = ALL_BANDS.filter(b => b !== '6' || byBand('6').length > 0);
+  const locations = data?.locations ?? [];
+  const [location, setLocation] = useState<string>('all');
+
+  const radios = (data?.radios ?? []).filter(
+    r => location === 'all' || (r.controller_device_id != null ? `c:${r.controller_device_id}` : 'standalone') === location
+  );
+  const bands = (data?.bands ?? []).filter(b => b.band !== '6' || radios.some(r => r.low_mhz >= 5925));
+
+  const partial = radios.filter(r => r.overlap === 'partial').length;
+  const coChannel = radios.filter(r => r.overlap === 'co-channel').length;
 
   return (
-    <div className="card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Radio className="w-4 h-4 text-blue-500" />
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Channel Usage</h2>
-        <span className="ml-auto flex items-center gap-3 text-[11px] text-gray-400 dark:text-slate-500">
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500" />in use</span>
-          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" />overlap</span>
-        </span>
+    <div className="card p-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <div className="flex items-center gap-2">
+          <Radio className="w-4 h-4 text-blue-500" />
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Channel Usage</h2>
+        </div>
+        {/* Channel planning is per physical location — two APs on channel 6 in
+            different buildings are not a conflict (issue #97). */}
+        {locations.length > 1 && (
+          <select value={location} onChange={(e) => setLocation(e.target.value)}
+                  className="input text-xs py-1 max-w-[220px]">
+            <option value="all">All locations</option>
+            {locations.map(l => (
+              <option key={l.key} value={l.key}>{l.name} ({l.radios})</option>
+            ))}
+          </select>
+        )}
       </div>
+
       {radios.length === 0 ? (
-        <div className="py-6 text-center text-sm text-gray-400 dark:text-slate-500">
-          No active radios reporting a channel yet.
-        </div>
+        <div className="py-6 text-center text-xs text-gray-400">No active radios reporting a channel.</div>
       ) : (
-        <div className="space-y-4">
-          {bands.map(b => <ChannelBandRow key={b} band={b} radios={byBand(b)} />)}
-        </div>
+        <>
+          <div className="space-y-3">
+            {bands.map(b => (
+              <SpectrumBandRow key={b.band} band={b}
+                radios={radios.filter(r => r.low_mhz < b.endMhz && r.high_mhz > b.startMhz)} />
+            ))}
+          </div>
+
+          <div className="mt-3 flex items-center gap-4 flex-wrap text-[11px] text-gray-500 dark:text-slate-400">
+            {(['clear', 'co-channel', 'partial'] as RfOverlapKind[]).map(k => (
+              <span key={k} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: OVERLAP_STYLE[k].fill }} />
+                {OVERLAP_STYLE[k].label}
+              </span>
+            ))}
+          </div>
+
+          <p className="mt-2 text-[11px] text-gray-500 dark:text-slate-400">
+            {partial > 0
+              ? `${partial} radio${partial !== 1 ? 's' : ''} overlap the edge of a neighbour's channel — the carriers collide rather than taking turns, which costs more than sharing a channel outright.`
+              : coChannel > 0
+                ? `${coChannel} radio${coChannel !== 1 ? 's' : ''} share a channel exactly. They hear each other and take turns, so this is airtime cost rather than interference.`
+                : 'No overlapping carriers. Radios either sit clear of each other or share a channel cleanly.'}
+          </p>
+        </>
       )}
     </div>
   );

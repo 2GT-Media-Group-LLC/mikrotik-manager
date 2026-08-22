@@ -1034,7 +1034,7 @@ export const wirelessApi = {
 
   // RF Health (fleet-wide, or scoped to one AP via deviceId)
   getChannelUsage: (deviceId?: number) =>
-    api.get<import('../types').RfChannelRow[]>('/wireless/rf/channels', { params: { deviceId } }),
+    api.get<import('../types').RfChannelUsage>('/wireless/rf/channels', { params: { deviceId } }),
   getClientSignals: (deviceId?: number) =>
     api.get<import('../types').RfSignalRow[]>('/wireless/rf/signals', { params: { deviceId } }),
   getTxQuality: (deviceId?: number, range = '6h') =>

@@ -3,6 +3,7 @@ import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { lookupVendor } from '../utils/oui';
+import { analyzeSpectrum, summarize, BAND_RANGES } from '../utils/rfSpectrum';
 
 const router = Router();
 router.use(requireAuth);
@@ -859,14 +860,35 @@ function deviceScope(req: Request): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
-// GET /api/wireless/rf/channels — active physical radios with band/frequency/width
+/**
+ * GET /api/wireless/rf/channels — radios with their actual spectrum occupancy.
+ *
+ * Returns the interference analysis rather than raw channel numbers. Overlap is a
+ * property of megahertz, not of channel indices, and getting it wrong gives
+ * actively bad planning advice — so the model is computed and tested server-side
+ * (see utils/rfSpectrum.ts) instead of being re-derived in the browser.
+ *
+ * Radios also carry the CAPsMAN controller that provisions them, because channel
+ * planning is per physical location: two APs on channel 6 in different buildings
+ * are not a conflict (issue #97).
+ */
 router.get('/rf/channels', async (req: Request, res: Response) => {
   const deviceId = deviceScope(req);
-  const rows = await query(`
+  const rows = await query<{
+    device_id: number; device_name: string; name: string; ssid: string | null;
+    band: string | null; frequency: number; channel_width: string | null;
+    registered_clients: number | null;
+    controller_device_id: number | null; controller_name: string | null;
+  }>(`
     SELECT wi.device_id, d.name AS device_name, wi.name, wi.ssid,
-           wi.band, wi.frequency, wi.channel_width, wi.registered_clients
+           wi.band, wi.frequency, wi.channel_width, wi.registered_clients,
+           cr.controller_device_id,
+           cd.name AS controller_name
     FROM wireless_interfaces wi
     JOIN devices d ON d.id = wi.device_id
+    LEFT JOIN capsman_radios cr ON cr.matched_device_id = wi.device_id
+                               AND cr.radio_mac = wi.radio_mac
+    LEFT JOIN devices cd ON cd.id = cr.controller_device_id
     WHERE (d.device_type = 'wireless_ap' OR d.wifi_role IN ('cap','controller','controller_cap'))
       AND wi.disabled = FALSE
       AND wi.frequency IS NOT NULL AND wi.frequency > 0
@@ -874,7 +896,48 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
       ${deviceId ? 'AND wi.device_id = $1' : ''}
     ORDER BY wi.frequency ASC, d.name ASC
   `, deviceId ? [deviceId] : []);
-  res.json(rows);
+
+  // Interference is only meaningful between radios that can hear each other, so
+  // the analysis runs per location: each controller separately, and everything
+  // unmanaged as one group.
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const key = r.controller_device_id != null ? `c:${r.controller_device_id}` : 'standalone';
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+
+  const analyzed: Record<string, unknown>[] = [];
+  for (const group of groups.values()) {
+    const verdicts = analyzeSpectrum(group);
+    group.forEach((r, i) => {
+      const v = verdicts[i];
+      analyzed.push({
+        ...r,
+        low_mhz: v.spectrum.lowMhz,
+        high_mhz: v.spectrum.highMhz,
+        width_mhz: v.spectrum.widthMhz,
+        channel: v.spectrum.channel,
+        overlap: v.kind,
+        clashes: v.clashes.map((c) => ({
+          kind: c.kind,
+          overlap_mhz: c.overlapMhz,
+          device_name: group[c.with]?.device_name ?? null,
+          interface_name: group[c.with]?.name ?? null,
+          channel: analyzeSpectrum([group[c.with]])[0].spectrum.channel,
+        })),
+      });
+    });
+  }
+
+  const locations = [...groups.entries()].map(([key, group]) => ({
+    key,
+    name: group[0]?.controller_name ?? 'Standalone access points',
+    controller_device_id: group[0]?.controller_device_id ?? null,
+    radios: group.length,
+    summary: summarize(analyzeSpectrum(group)),
+  }));
+
+  res.json({ radios: analyzed, locations, bands: BAND_RANGES });
 });
 
 // GET /api/wireless/rf/signals — active wireless clients' RSSI (for density view)
