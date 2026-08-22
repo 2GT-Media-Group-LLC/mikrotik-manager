@@ -113,6 +113,49 @@ router.get('/routers/overview', async (_req: Request, res: Response) => {
   res.json(routers);
 });
 
+// ─── Security check suppressions (issue #101) ────────────────────────────────
+
+/**
+ * A posture check the operator has judged inapplicable — cleartext API on a fleet
+ * reachable only over WireGuard, or a missing input firewall on a switch that sits
+ * behind one. Suppressed checks stay visible and marked; they simply stop counting
+ * against the score, so the posture remains auditable.
+ *
+ * `device_id` omitted suppresses fleet-wide; supplying one silences that device only.
+ */
+router.get('/security/suppressions', async (_req: Request, res: Response) => {
+  const rows = await query(`
+    SELECT s.id, s.check_id, s.device_id, s.reason, s.created_by, s.created_at,
+           d.name AS device_name
+    FROM security_check_suppressions s
+    LEFT JOIN devices d ON d.id = s.device_id
+    ORDER BY s.check_id, d.name NULLS FIRST`);
+  res.json(rows);
+});
+
+router.post('/security/suppressions', requireWrite, async (req: Request, res: Response) => {
+  const { check_id, device_id, reason } = req.body as
+    { check_id?: string; device_id?: number | null; reason?: string };
+  if (!check_id) return res.status(400).json({ error: 'check_id is required' });
+
+  const rows = await query(
+    `INSERT INTO security_check_suppressions (check_id, device_id, reason, created_by)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT DO NOTHING
+     RETURNING *`,
+    [check_id, device_id ?? null, reason ?? null,
+     (req as unknown as { user?: { username?: string } }).user?.username ?? null]
+  );
+  // ON CONFLICT DO NOTHING returns no row when it already existed, which is not an
+  // error — the caller asked for a state that now holds either way.
+  res.status(201).json(rows[0] ?? { check_id, device_id: device_id ?? null, already: true });
+});
+
+router.delete('/security/suppressions/:id', requireWrite, async (req: Request, res: Response) => {
+  await query(`DELETE FROM security_check_suppressions WHERE id = $1`, [req.params.id]);
+  res.status(204).end();
+});
+
 // GET /api/devices/discovered — unresolved MikroTik neighbors from topology_links
 router.get('/discovered', async (_req: Request, res: Response) => {
   const rows = await query<{
@@ -1335,13 +1378,37 @@ router.get('/:id/security-posture', async (req, res) => {
       });
     }
 
+    // Suppressions (issue #101). A finding the operator has judged inapplicable is
+    // marked rather than hidden: it stays visible, greyed, and stops counting
+    // against the score. Hiding it outright would make the posture unauditable.
+    const supp = await query<{ check_id: string; device_id: number | null; reason: string | null }>(
+      `SELECT check_id, device_id, reason FROM security_check_suppressions
+       WHERE device_id IS NULL OR device_id = $1`,
+      [device.id]
+    ).catch(() => []);
+    const suppressedBy = new Map<string, { scope: 'device' | 'fleet'; reason: string | null }>();
+    for (const row of supp) {
+      const scope = row.device_id == null ? 'fleet' : 'device';
+      // A device-specific row wins over a fleet-wide one, so the UI can offer the
+      // narrower undo.
+      if (scope === 'device' || !suppressedBy.has(row.check_id)) {
+        suppressedBy.set(row.check_id, { scope, reason: row.reason });
+      }
+    }
+
+    const marked = checks.map((c2) => {
+      const hit = suppressedBy.get(c2.id);
+      return hit ? { ...c2, suppressed: true, suppressed_scope: hit.scope, suppressed_reason: hit.reason } : c2;
+    });
+
     // Graduated score: lighter weights + a floor of 5 so it never reads a hard
     // 0 (which falsely implies "maximally insecure"). It's a relative hardening
     // indicator, not an absolute grade.
     const WEIGHT: Record<Sev, number> = { high: 15, medium: 7, low: 3 };
-    const penalty = checks.reduce((n, c2) => n + WEIGHT[c2.severity], 0);
-    const score = checks.length === 0 ? 100 : Math.max(5, 100 - penalty);
-    return { score, checks };
+    const counted = marked.filter((c2) => !('suppressed' in c2));
+    const penalty = counted.reduce((n, c2) => n + WEIGHT[c2.severity], 0);
+    const score = counted.length === 0 ? 100 : Math.max(5, 100 - penalty);
+    return { score, checks: marked };
   });
 });
 

@@ -1659,8 +1659,12 @@ export class DeviceCollector {
       // Recorded per device so the UI can explain a blank SSID as delegation to a
       // controller rather than leaving it looking like an unconfigured radio.
       const role = await this.detectWifiRole();
-      await query(`UPDATE devices SET wifi_role = $2 WHERE id = $1`, [this.device.id, role])
-        .catch(() => { /* role is advisory; never fail collection over it */ });
+      // The package is recorded alongside the role because TX-retry data only
+      // exists on the legacy 'wireless' driver, and a panel that can never have
+      // data on this fleet should not occupy space (issue #96).
+      await query(`UPDATE devices SET wifi_role = $2, wifi_package = $3 WHERE id = $1`,
+                  [this.device.id, role, pkg])
+        .catch(() => { /* advisory; never fail collection over it */ });
 
       // null = the fetch itself failed. Distinguished from an empty list (device
       // genuinely has no wireless interfaces) so a transient API error can never

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell } from 'lucide-react';
 import { devicesApi } from '../../services/api';
 import type { SecurityCheck } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
@@ -50,7 +50,27 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['security-posture', deviceId] });
     qc.invalidateQueries({ queryKey: ['services', deviceId] });
+    qc.invalidateQueries({ queryKey: ['security-suppressions'] });
   };
+  // Suppression (issue #101): a heuristic the operator has judged inapplicable is
+  // marked and excluded from the score rather than hidden, so posture stays auditable.
+  const suppress = useMutation({
+    mutationFn: ({ checkId, scope }: { checkId: string; scope: 'device' | 'fleet' }) =>
+      devicesApi.suppressSecurityCheck(checkId, scope === 'device' ? deviceId : null),
+    onSuccess: invalidate,
+  });
+  const { data: suppressions = [] } = useQuery({
+    queryKey: ['security-suppressions'],
+    queryFn: () => devicesApi.listSecuritySuppressions().then(r => r.data),
+  });
+  const unsuppress = useMutation({
+    mutationFn: (id: number) => devicesApi.unsuppressSecurityCheck(id),
+    onSuccess: invalidate,
+  });
+  const suppressionFor = (checkId: string) =>
+    suppressions.find(s => s.check_id === checkId && s.device_id === deviceId)
+    ?? suppressions.find(s => s.check_id === checkId && s.device_id === null);
+
   const toggleSvc = useMutation({
     mutationFn: ({ id, disabled, confirm = false }: { id: string; disabled: boolean; confirm?: boolean }) =>
       devicesApi.setServiceDisabled(deviceId, id, disabled, confirm),
@@ -111,19 +131,44 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
               {checks.map(c => {
                 const s = SEV_STYLE[c.severity] ?? SEV_STYLE.low;
                 return (
-                  <div key={c.id} className={clsx('border rounded-lg p-3 flex items-start gap-3', s.ring)}>
-                    <AlertTriangle className={clsx('w-4 h-4 flex-shrink-0 mt-0.5', s.text)} />
+                  <div key={c.id} className={clsx('border rounded-lg p-3 flex items-start gap-3',
+                                                  c.suppressed ? 'border-gray-200 dark:border-slate-700 opacity-60' : s.ring)}>
+                    <AlertTriangle className={clsx('w-4 h-4 flex-shrink-0 mt-0.5', c.suppressed ? 'text-gray-400' : s.text)} />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-gray-900 dark:text-white">{c.title}</span>
-                        <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded', s.text)}>{s.label}</span>
+                        <span className={clsx('text-[10px] font-bold uppercase px-1.5 py-0.5 rounded',
+                                              c.suppressed ? 'text-gray-400' : s.text)}>{s.label}</span>
+                        {c.suppressed && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400">
+                            muted {c.suppressed_scope === 'fleet' ? 'fleet-wide' : 'on this device'} · not counted
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-gray-600 dark:text-slate-400 mt-0.5">{c.detail}</p>
                     </div>
-                    {canWrite && c.serviceId && (
-                      <button onClick={() => toggleSvc.mutate({ id: c.serviceId!, disabled: true })} disabled={toggleSvc.isPending}
-                        className="btn-secondary text-xs py-1 flex items-center gap-1.5 flex-shrink-0"><Lock className="w-3 h-3" /> Disable</button>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {canWrite && c.serviceId && !c.suppressed && (
+                        <button onClick={() => toggleSvc.mutate({ id: c.serviceId!, disabled: true })} disabled={toggleSvc.isPending}
+                          className="btn-secondary text-xs py-1 flex items-center gap-1.5"><Lock className="w-3 h-3" /> Disable</button>
+                      )}
+                      {canWrite && (c.suppressed ? (
+                        <button
+                          onClick={() => { const hit = suppressionFor(c.id); if (hit) unsuppress.mutate(hit.id); }}
+                          disabled={unsuppress.isPending}
+                          title="Count this check again"
+                          className="btn-secondary text-xs py-1 flex items-center gap-1.5"><Bell className="w-3 h-3" /> Unmute</button>
+                      ) : (
+                        <>
+                          <button onClick={() => suppress.mutate({ checkId: c.id, scope: 'device' })} disabled={suppress.isPending}
+                            title="Stop counting this check on this device"
+                            className="btn-secondary text-xs py-1 flex items-center gap-1.5"><BellOff className="w-3 h-3" /> Mute</button>
+                          <button onClick={() => suppress.mutate({ checkId: c.id, scope: 'fleet' })} disabled={suppress.isPending}
+                            title="Stop counting this check on every device"
+                            className="btn-secondary text-xs py-1">Fleet</button>
+                        </>
+                      ))}
+                    </div>
                   </div>
                 );
               })}

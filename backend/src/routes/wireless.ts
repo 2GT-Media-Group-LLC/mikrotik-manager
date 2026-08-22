@@ -958,6 +958,31 @@ router.get('/rf/signals', async (req: Request, res: Response) => {
   res.json(rows);
 });
 
+/**
+ * GET /api/wireless/rf/capabilities — what the fleet's wireless hardware can report.
+ *
+ * TX-retry figures are derived from per-client CCQ, which only the legacy `wireless`
+ * driver exposes. On an all-RouterOS-7 fleet that panel can never have data, so the
+ * UI needs to know rather than rendering an empty box forever (issue #96).
+ */
+router.get('/rf/capabilities', async (_req: Request, res: Response) => {
+  const rows = await query<{ wifi_package: string | null; n: string }>(`
+    SELECT wifi_package, COUNT(*) AS n
+    FROM devices
+    WHERE wifi_package IS NOT NULL AND wifi_package <> 'none'
+    GROUP BY wifi_package`);
+
+  const counts = Object.fromEntries(rows.map((r) => [r.wifi_package ?? 'unknown', Number(r.n)]));
+  const legacy = counts['wireless'] ?? 0;
+  res.json({
+    packages: counts,
+    legacyRadios: legacy,
+    // Unknown means nothing has been polled yet; show the panel rather than
+    // hiding something that may well populate a minute later.
+    txRetriesAvailable: legacy > 0 || rows.length === 0,
+  });
+});
+
 // GET /api/wireless/rf/tx-quality?range=6h — latest per-radio TX retry % (from CCQ)
 router.get('/rf/tx-quality', async (req: Request, res: Response) => {
   const deviceId = deviceScope(req);

@@ -609,7 +609,19 @@ function OperationsView({
   });
   const thingsToHandle: OpsAttentionItem[] = insights?.attention ?? [];
   const capacity: OpsCapacityRow[] = insights?.capacity ?? [];
-  const activity: OpsActivityItem[] = insights?.activity ?? [];
+  const activityAll: OpsActivityItem[] = insights?.activity ?? [];
+  // The app's own write requests are audit-log noise from an operations point of
+  // view (issue #103). Remembered per browser, since it is a viewing preference.
+  const [showRequests, setShowRequests] = useState<boolean>(() => {
+    try { return localStorage.getItem('dash.showRequests') === '1'; } catch { return false; }
+  });
+  const toggleRequests = () => setShowRequests((v) => {
+    const next = !v;
+    try { localStorage.setItem('dash.showRequests', next ? '1' : '0'); } catch { /* private mode */ }
+    return next;
+  });
+  const activity = showRequests ? activityAll : activityAll.filter(a => a.kind !== 'audit');
+  const hiddenRequests = activityAll.length - activity.length;
 
   // Platform update availability (checked against GitHub, cached server-side)
   const { data: versionInfo } = useQuery({
@@ -732,6 +744,35 @@ function OperationsView({
         </div>
       </div>
 
+      {/* Quick actions — in the header strip, matching the other sections (issue #104) */}
+      <div className="flex flex-wrap items-center gap-2">
+        {actions.map(({ key, label, icon: Icon, color, run }) => {
+          const isBusy = busy === key;
+          return (
+            <button
+              key={key}
+              onClick={run}
+              disabled={!!busy}
+              className="text-[12px] rounded-[6px] px-3 py-[7px] flex items-center gap-2 transition-colors disabled:opacity-50"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+              onMouseEnter={(e) => { if (!busy) e.currentTarget.style.background = 'var(--surface-3)'; }}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
+            >
+              {isBusy
+                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ color }} />
+                : <Icon className="w-3.5 h-3.5" style={{ color }} />}
+              {label}
+            </button>
+          );
+        })}
+        {actionMsg && (
+          <span className="text-[11.5px] ml-1"
+                style={{ color: actionMsg.ok ? 'var(--good)' : 'var(--bad)' }}>
+            {actionMsg.text}
+          </span>
+        )}
+      </div>
+
       {/* Platform update available */}
       {versionInfo?.update_available && versionInfo.latest && (
         <div className="card flex items-center gap-3 px-5 py-[13px]" style={{ borderLeft: '3px solid var(--info)' }}>
@@ -758,7 +799,7 @@ function OperationsView({
         </div>
       )}
 
-      {/* Things to handle + Quick actions */}
+      {/* Things to handle — full width now that quick actions live in the header */}
       <div className="grid gap-4" style={{ gridTemplateColumns: '1.3fr 1fr' }}>
         {/* Things to handle */}
         <div className="card" style={{ overflow: 'hidden' }}>
@@ -808,46 +849,6 @@ function OperationsView({
           )}
         </div>
 
-        {/* Quick actions */}
-        <div className="card" style={{ padding: '18px 20px' }}>
-          <div className="text-[13px] font-semibold mb-3" style={{ color: 'var(--ink)' }}>Quick actions</div>
-          <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            {actions.map(({ key, label, sub, icon: Icon, color, run }) => {
-              const isBusy = busy === key;
-              return (
-                <button
-                  key={key}
-                  onClick={run}
-                  disabled={!!busy}
-                  className="text-left rounded-[6px] px-[14px] py-[12px] transition-colors disabled:opacity-60"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--line)' }}
-                  onMouseEnter={(e) => { if (!busy) e.currentTarget.style.background = 'var(--surface-3)'; }}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
-                >
-                  <div className="flex items-center gap-2 mb-[3px]">
-                    {isBusy
-                      ? <RefreshCw className="w-3.5 h-3.5 flex-shrink-0 animate-spin" style={{ color }} />
-                      : <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />}
-                    <span className="text-[12.5px] font-semibold" style={{ color }}>{label}</span>
-                  </div>
-                  <div className="text-[11px]" style={{ color: 'var(--ink-3)' }}>{isBusy ? 'Working…' : sub}</div>
-                </button>
-              );
-            })}
-          </div>
-          {actionMsg && (
-            <div
-              className="mt-3 flex items-center gap-2 text-[12px] rounded-[6px] px-3 py-2"
-              style={{
-                background: actionMsg.ok ? 'var(--good-bg, rgba(34,197,94,0.1))' : 'var(--bad-bg, rgba(239,68,68,0.1))',
-                color: actionMsg.ok ? 'var(--good)' : 'var(--bad)',
-              }}
-            >
-              {actionMsg.ok ? <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />}
-              {actionMsg.text}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Capacity + Security rollup */}
@@ -930,6 +931,16 @@ function OperationsView({
         <div className="flex items-center gap-2 px-5 py-[14px]" style={{ borderBottom: '1px solid var(--line)' }}>
           <Clock className="w-4 h-4" style={{ color: 'var(--accent)' }} />
           <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Recent activity</span>
+          <button
+            onClick={toggleRequests}
+            className="ml-auto text-[11px]"
+            style={{ color: 'var(--ink-3)' }}
+            title={showRequests ? 'Hide requests made through this app' : 'Include requests made through this app'}
+          >
+            {showRequests
+              ? 'Hide app requests'
+              : `Show app requests${hiddenRequests > 0 ? ` (${hiddenRequests})` : ''}`}
+          </button>
         </div>
         {activity.length === 0 ? (
           <div className="py-8 text-center text-[13px]" style={{ color: 'var(--ink-3)' }}>No recent activity.</div>

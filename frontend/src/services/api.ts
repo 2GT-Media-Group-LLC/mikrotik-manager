@@ -174,6 +174,20 @@ export interface SecurityCheck {
   title: string;
   detail: string;
   serviceId?: string;
+  /** Operator judged this inapplicable — still shown, but excluded from the score. */
+  suppressed?: boolean;
+  suppressed_scope?: 'device' | 'fleet';
+  suppressed_reason?: string | null;
+}
+
+export interface SecuritySuppression {
+  id: number;
+  check_id: string;
+  device_id: number | null;
+  device_name: string | null;
+  reason: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 /**
@@ -340,6 +354,12 @@ export const devicesApi = {
   setServiceDisabled: (id: number, serviceId: string, disabled: boolean, confirmLockout = false) =>
     api.put<Record<string, string>[]>(`/devices/${id}/services/${encodeURIComponent(serviceId)}`,
       { disabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
+  listSecuritySuppressions: () =>
+    api.get<SecuritySuppression[]>('/devices/security/suppressions'),
+  suppressSecurityCheck: (check_id: string, device_id: number | null, reason?: string) =>
+    api.post('/devices/security/suppressions', { check_id, device_id, reason }),
+  unsuppressSecurityCheck: (id: number) =>
+    api.delete(`/devices/security/suppressions/${id}`),
   getSecurityPosture: (id: number) =>
     api.get<{ score: number; checks: SecurityCheck[] }>(`/devices/${id}/security-posture`),
   // Config Health — cached findings load instantly; the scan re-reads the device.
@@ -1035,6 +1055,9 @@ export const wirelessApi = {
   // RF Health (fleet-wide, or scoped to one AP via deviceId)
   getChannelUsage: (deviceId?: number) =>
     api.get<import('../types').RfChannelUsage>('/wireless/rf/channels', { params: { deviceId } }),
+  getRfCapabilities: () =>
+    api.get<{ packages: Record<string, number>; legacyRadios: number; txRetriesAvailable: boolean }>(
+      '/wireless/rf/capabilities'),
   getClientSignals: (deviceId?: number) =>
     api.get<import('../types').RfSignalRow[]>('/wireless/rf/signals', { params: { deviceId } }),
   getTxQuality: (deviceId?: number, range = '6h') =>

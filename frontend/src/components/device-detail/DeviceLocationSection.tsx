@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   MapPin, Building2, Hash, FileText, Pencil, Check, X, RefreshCw, AlertCircle,
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { devicesApi } from '../../services/api';
+import { devicesApi, settingsApi } from '../../services/api';
 import type { Device } from '../../types';
 import { useCanWrite } from '../../hooks/useCanWrite';
 
@@ -78,6 +78,15 @@ function MapEmbed({ lat, lng, address }: { lat: number | string; lng: number | s
 export default function DeviceLocationSection({ device }: Props) {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
+  // Geocoding and tiles are third-party requests that also disclose where your
+  // devices are. Operators on isolated networks can turn the whole thing off
+  // (issue #106); coordinates already stored are still shown as plain text.
+  const { data: settings } = useQuery({
+    queryKey: ['app-settings'],
+    queryFn: () => settingsApi.get().then(r => r.data),
+    staleTime: 300_000,
+  });
+  const mapsEnabled = settings?.['maps_enabled'] !== false;
   const [editing, setEditing] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -99,7 +108,7 @@ export default function DeviceLocationSection({ device }: Props) {
 
       // Re-geocode if address changed
       const addressChanged = f.location_address !== (device.location_address ?? '');
-      if (f.location_address && addressChanged) {
+      if (mapsEnabled && f.location_address && addressChanged) {
         setGeocoding(true);
         const coords = await geocodeAddress(f.location_address);
         setGeocoding(false);
@@ -263,13 +272,25 @@ export default function DeviceLocationSection({ device }: Props) {
         )}
       </div>
 
-      {/* Map card — only when we have coordinates and not editing */}
-      {hasMap && !editing && (
+      {/* Map card — only when we have coordinates, are not editing, and outbound
+          map requests are permitted. */}
+      {hasMap && !editing && mapsEnabled && (
         <MapEmbed
           lat={device.location_lat!}
           lng={device.location_lng!}
           address={device.location_address!}
         />
+      )}
+      {hasMap && !editing && !mapsEnabled && (
+        <div className="card p-4 flex items-start gap-2">
+          <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-400" />
+          <div className="text-xs text-gray-500 dark:text-slate-400">
+            Map display is off, so no request is made to a third-party tile or geocoding
+            service. Stored position:{' '}
+            <span className="mono">{Number(device.location_lat).toFixed(5)}, {Number(device.location_lng).toFixed(5)}</span>.
+            Re-enable under Settings.
+          </div>
+        </div>
       )}
     </div>
   );

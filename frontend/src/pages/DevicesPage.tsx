@@ -95,9 +95,24 @@ function CpuValue({ value }: { value: number | undefined }) {
   );
 }
 
+/**
+ * A single-colour sparkline says nothing about magnitude — an idle device and a
+ * saturated one draw the same shape (issue #111). The line takes the colour of the
+ * band its peak falls into, and is plotted against a fixed 0–100 scale so height
+ * means load rather than "relative to this device's own worst moment".
+ */
+function loadColor(pct: number): string {
+  if (pct >= 85) return 'var(--bad)';
+  if (pct >= 60) return 'var(--warn)';
+  if (pct >= 30) return '#84cc16';
+  return 'var(--accent)';
+}
+
 function LoadSparkline({ data }: { data: number[] }) {
   if (data.length < 2) return <span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>—</span>;
-  const max = Math.max(...data) || 1;
+  const peak = Math.max(...data);
+  // Fixed scale: a flat line low in the box is an idle device, and looks like one.
+  const max = 100;
   const w = 72, h = 20;
   const pts = data.map((v, i) => [
     (i / (data.length - 1)) * w,
@@ -106,7 +121,7 @@ function LoadSparkline({ data }: { data: number[] }) {
   const d = 'M' + pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' L');
   return (
     <svg width={w} height={h} style={{ display: 'block' }}>
-      <path d={d} fill="none" stroke="var(--ink-3)" strokeWidth="1.2" />
+      <path d={d} fill="none" stroke={loadColor(peak)} strokeWidth="1.3" />
     </svg>
   );
 }

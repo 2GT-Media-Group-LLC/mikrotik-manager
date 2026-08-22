@@ -390,13 +390,28 @@ export function ConnectivitySuccess({ deviceId }: { deviceId?: number }) {
 // ─── Combined section ─────────────────────────────────────────────────────────
 
 export default function RfHealth({ deviceId }: { deviceId?: number }) {
+  // TX retries come from CCQ, which only the legacy `wireless` driver reports. On
+  // an all-RouterOS-7 fleet the panel can never fill, so it is dropped and the
+  // density chart takes the full width rather than sitting beside an empty box
+  // (issue #96).
+  const { data: caps } = useQuery({
+    queryKey: ['rf-capabilities'],
+    queryFn: () => wirelessApi.getRfCapabilities().then(r => r.data),
+    staleTime: 300_000,
+  });
+  const showRetries = caps?.txRetriesAvailable ?? true;
+
   return (
     <div className="space-y-6">
       <ChannelMap deviceId={deviceId} />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      {showRetries ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <RssiDensity deviceId={deviceId} />
+          <TxRetries deviceId={deviceId} />
+        </div>
+      ) : (
         <RssiDensity deviceId={deviceId} />
-        <TxRetries deviceId={deviceId} />
-      </div>
+      )}
       <ConnectivitySuccess deviceId={deviceId} />
     </div>
   );

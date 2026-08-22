@@ -575,6 +575,34 @@ UPDATE capsman_radios SET current_channel = NULL WHERE length(current_channel) >
 -- controller does know it, on its own mirror of the CAP interface (#94).
 ALTER TABLE capsman_radios ADD COLUMN IF NOT EXISTS ssid VARCHAR(128);
 
+-- Security check suppressions (github issue #101).
+--
+-- A heuristic you disagree with and cannot dismiss discredits the whole posture
+-- score. Cleartext API is the example: on a fleet reachable only across WireGuard,
+-- TLS adds nothing to the threat model, and the warning is permanent noise.
+-- device_id NULL means fleet-wide; a row for a specific device silences it there
+-- only. Suppressed checks are still reported, marked and excluded from the score,
+-- so nothing becomes invisible.
+CREATE TABLE IF NOT EXISTS security_check_suppressions (
+  id          SERIAL PRIMARY KEY,
+  check_id    VARCHAR(64) NOT NULL,
+  device_id   INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+  reason      TEXT,
+  created_by  VARCHAR(50),
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+-- Partial indexes because a UNIQUE constraint containing NULL does not dedupe.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seccheck_supp_global
+  ON security_check_suppressions (check_id) WHERE device_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seccheck_supp_device
+  ON security_check_suppressions (check_id, device_id) WHERE device_id IS NOT NULL;
+
+-- Which wireless stack a device runs: the RouterOS 7 'wifi' packages or the legacy
+-- 'wireless' one. Needed to answer a fleet-wide question — if nothing runs the
+-- legacy driver, the TX-retries panel can never have data and should not be shown
+-- (github issue #96).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_package VARCHAR(16);
+
 -- ntfy.sh notification channel (github issue #93). The channel type is a CHECK
 -- constraint rather than a lookup table, so widening it means replacing it.
 ALTER TABLE alert_channels DROP CONSTRAINT IF EXISTS alert_channels_type_check;
@@ -690,6 +718,9 @@ const DEFAULT_SETTINGS = [
   { key: 'change_guard_timeout_sec', value: 120 },
   { key: 'config_health_enabled', value: true },
   { key: 'config_health_interval_min', value: 60 },
+  // Geocoding and map tiles are third-party requests that also disclose device
+  // locations. Off-switch for isolated networks (issue #106).
+  { key: 'maps_enabled', value: true },
 ];
 
 export async function runMigrations(): Promise<void> {
