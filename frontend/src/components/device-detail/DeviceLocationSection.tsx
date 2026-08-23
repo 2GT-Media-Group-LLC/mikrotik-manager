@@ -281,17 +281,6 @@ export default function DeviceLocationSection({ device }: Props) {
           address={device.location_address!}
         />
       )}
-      {hasMap && !editing && !mapsEnabled && (
-        <div className="card p-4 flex items-start gap-2">
-          <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-400" />
-          <div className="text-xs text-gray-500 dark:text-slate-400">
-            Map display is off, so no request is made to a third-party tile or geocoding
-            service. Stored position:{' '}
-            <span className="mono">{Number(device.location_lat).toFixed(5)}, {Number(device.location_lng).toFixed(5)}</span>.
-            Re-enable under Settings.
-          </div>
-        </div>
-      )}
     </div>
   );
 }

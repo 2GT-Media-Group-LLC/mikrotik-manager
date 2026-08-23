@@ -1,6 +1,6 @@
 import {
   spectrumFor, classifyPair, overlapMhz, analyzeSpectrum, summarize, freeSpans,
-  widthMhz, channelForFreq, bandForFreq,
+  widthMhz, channelForFreq, bandForFreq, parseChannelSpec,
 } from '../rfSpectrum';
 
 const ch = (n: number) => 2407 + n * 5;          // 2.4 GHz channel → centre MHz
@@ -188,5 +188,25 @@ describe('freeSpans', () => {
 
   it('returns the whole band when nothing is deployed', () => {
     expect(freeSpans([], '2.4')).toEqual([{ startMhz: 2400, endMhz: 2500 }]);
+  });
+});
+
+describe('parseChannelSpec — a CAPsMAN AP has no frequency of its own (#97)', () => {
+  it('reads frequency and derives width from the control positions', () => {
+    // Real strings from a CAPsMAN controller.
+    expect(parseChannelSpec('2412/ax/Ce')).toEqual({ frequency: 2412, widthMhz: 40 });
+    expect(parseChannelSpec('5680/ax/eCee/D')).toEqual({ frequency: 5680, widthMhz: 80 });
+    expect(parseChannelSpec('5500/ax/Ceeeeeee/D')).toEqual({ frequency: 5500, widthMhz: 160 });
+  });
+
+  it('defaults to 20 MHz when no control positions are given', () => {
+    expect(parseChannelSpec('2437/ax')).toEqual({ frequency: 2437, widthMhz: 20 });
+    expect(parseChannelSpec('2437')).toEqual({ frequency: 2437, widthMhz: 20 });
+  });
+
+  it('returns null for anything unparseable', () => {
+    expect(parseChannelSpec(null)).toBeNull();
+    expect(parseChannelSpec('')).toBeNull();
+    expect(parseChannelSpec('auto')).toBeNull();
   });
 });

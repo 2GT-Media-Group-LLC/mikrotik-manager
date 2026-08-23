@@ -3,7 +3,7 @@ import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { lookupVendor } from '../utils/oui';
-import { analyzeSpectrum, summarize, BAND_RANGES } from '../utils/rfSpectrum';
+import { analyzeSpectrum, summarize, BAND_RANGES, parseChannelSpec } from '../utils/rfSpectrum';
 
 const router = Router();
 router.use(requireAuth);
@@ -874,16 +874,24 @@ function deviceScope(req: Request): number | null {
  */
 router.get('/rf/channels', async (req: Request, res: Response) => {
   const deviceId = deviceScope(req);
+
+  // Two sources, because a CAPsMAN-managed AP stores no frequency of its own — the
+  // controller owns the channel. Reading only wireless_interfaces silently dropped
+  // every managed radio, which left them out of the analysis entirely and pushed
+  // whatever remained into "standalone" (issue #97).
   const rows = await query<{
     device_id: number; device_name: string; name: string; ssid: string | null;
-    band: string | null; frequency: number; channel_width: string | null;
+    frequency: number | null; channel_width: string | null;
     registered_clients: number | null;
     controller_device_id: number | null; controller_name: string | null;
+    capsman_channel: string | null; capsman_peers: number | null;
   }>(`
     SELECT wi.device_id, d.name AS device_name, wi.name, wi.ssid,
-           wi.band, wi.frequency, wi.channel_width, wi.registered_clients,
+           wi.frequency, wi.channel_width, wi.registered_clients,
            cr.controller_device_id,
-           cd.name AS controller_name
+           cd.name           AS controller_name,
+           cr.current_channel AS capsman_channel,
+           cr.registered_peers AS capsman_peers
     FROM wireless_interfaces wi
     JOIN devices d ON d.id = wi.device_id
     LEFT JOIN capsman_radios cr ON cr.matched_device_id = wi.device_id
@@ -891,17 +899,33 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
     LEFT JOIN devices cd ON cd.id = cr.controller_device_id
     WHERE (d.device_type = 'wireless_ap' OR d.wifi_role IN ('cap','controller','controller_cap'))
       AND wi.disabled = FALSE
-      AND wi.frequency IS NOT NULL AND wi.frequency > 0
       AND (wi.config_json->>'master-interface') IS NULL
+      AND (
+        (wi.frequency IS NOT NULL AND wi.frequency > 0)
+        OR cr.current_channel IS NOT NULL
+      )
       ${deviceId ? 'AND wi.device_id = $1' : ''}
-    ORDER BY wi.frequency ASC, d.name ASC
+    ORDER BY d.name ASC, wi.name ASC
   `, deviceId ? [deviceId] : []);
+
+  // Resolve each radio's operating channel, preferring what the controller reports.
+  const resolved = rows.map((r) => {
+    const fromController = parseChannelSpec(r.capsman_channel);
+    const frequency = fromController?.frequency ?? r.frequency ?? 0;
+    const channel_width = fromController ? `${fromController.widthMhz}mhz` : r.channel_width;
+    return {
+      ...r,
+      frequency,
+      channel_width,
+      registered_clients: r.capsman_peers ?? r.registered_clients ?? 0,
+    };
+  }).filter((r) => r.frequency > 0);
 
   // Interference is only meaningful between radios that can hear each other, so
   // the analysis runs per location: each controller separately, and everything
   // unmanaged as one group.
-  const groups = new Map<string, typeof rows>();
-  for (const r of rows) {
+  const groups = new Map<string, typeof resolved>();
+  for (const r of resolved) {
     const key = r.controller_device_id != null ? `c:${r.controller_device_id}` : 'standalone';
     groups.set(key, [...(groups.get(key) ?? []), r]);
   }

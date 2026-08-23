@@ -750,6 +750,35 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Maps & geocoding (issue #106) */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Maps &amp; Geocoding</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
+              Device location maps use OpenStreetMap for tiles and Nominatim to turn an address
+              into coordinates. Both are outbound requests to a third party, and the address you
+              enter is sent to them. Turn this off on isolated networks, or wherever device
+              locations should not leave your infrastructure — everything else keeps working, and
+              addresses are still recorded as text.
+            </p>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Enable maps and address lookup</div>
+              <button
+                onClick={() => isAdmin && updateSettingsMutation.mutate({ maps_enabled: settings['maps_enabled'] === false })}
+                disabled={!isAdmin}
+                className={clsx(
+                  'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
+                  isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
+                  settings['maps_enabled'] !== false ? 'bg-blue-600' : 'bg-gray-300 dark:bg-slate-600'
+                )}
+              >
+                <span className={clsx(
+                  'inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200',
+                  settings['maps_enabled'] !== false ? 'translate-x-5' : 'translate-x-0'
+                )} />
+              </button>
+            </div>
+          </div>
+
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Data Retention</h3>
             <div className="space-y-3">

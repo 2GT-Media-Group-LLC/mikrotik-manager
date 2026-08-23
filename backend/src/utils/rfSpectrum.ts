@@ -203,3 +203,25 @@ export function freeSpans(
   if (range.endMhz - cursor >= minWidth) spans.push({ startMhz: cursor, endMhz: range.endMhz });
   return spans;
 }
+
+/**
+ * Parse a RouterOS channel specification into frequency and width.
+ *
+ * Format is `<freq>/<phy>[/<control-positions>]`, e.g. `2412/ax/Ce` or
+ * `5680/ax/eCee/D`. The control-position letters count the 20 MHz subchannels the
+ * radio is bonding, so `Ce` is 40 MHz and `Ceee` is 80 MHz — a precise operating
+ * width rather than the capability list a width field reports.
+ *
+ * Needed because a CAPsMAN-managed AP stores no frequency of its own: the
+ * controller owns the channel, and reports it only in this form (issue #97).
+ */
+export function parseChannelSpec(spec: string | null | undefined): { frequency: number; widthMhz: number } | null {
+  if (!spec) return null;
+  const segs = spec.split('/');
+  const frequency = parseInt(segs[0], 10);
+  if (!frequency || isNaN(frequency)) return null;
+
+  const letters = (segs[2] || '').replace(/[^a-zA-Z]/g, '').length;
+  const widthMhz = letters >= 8 ? 160 : letters >= 4 ? 80 : letters >= 2 ? 40 : 20;
+  return { frequency, widthMhz };
+}
