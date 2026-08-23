@@ -187,7 +187,8 @@ describe('freeSpans', () => {
   });
 
   it('returns the whole band when nothing is deployed', () => {
-    expect(freeSpans([], '2.4')).toEqual([{ startMhz: 2400, endMhz: 2500 }]);
+    // The band starts below 2400 so a 40 MHz channel 1 (2392–2432) fits inside it.
+    expect(freeSpans([], '2.4')).toEqual([{ startMhz: 2390, endMhz: 2500 }]);
   });
 });
 

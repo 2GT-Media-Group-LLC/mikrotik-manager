@@ -31,9 +31,17 @@ export interface BandRange {
   endMhz: number;
 }
 
-/** Spectrum drawn for each band. Wide enough to contain every legal channel. */
+/**
+ * Spectrum drawn for each band. Wide enough to contain every legal channel —
+ * including the ones that spill past the round numbers.
+ *
+ * 2.4 GHz starts at 2390 rather than 2400 because a 40 MHz channel centred on
+ * channel 1 occupies 2392–2432. Starting the axis at 2400 puts that carrier at a
+ * negative offset, which is not merely a cosmetic problem: it renders outside the
+ * chart and misstates how far the radio actually reaches below the band.
+ */
 export const BAND_RANGES: BandRange[] = [
-  { band: '2.4', label: '2.4 GHz', startMhz: 2400, endMhz: 2500 },
+  { band: '2.4', label: '2.4 GHz', startMhz: 2390, endMhz: 2500 },
   { band: '5',   label: '5 GHz',   startMhz: 5150, endMhz: 5895 },
   { band: '6',   label: '6 GHz',   startMhz: 5925, endMhz: 7125 },
 ];

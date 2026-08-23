@@ -12,6 +12,7 @@ import {
   BAND_LABEL, RfBand,
   RSSI_ZONES, rssiColor, RETRY_BUCKETS, retryBucketIndex, retryColor,
 } from '../../utils/wifiChannels';
+import { barGeometry } from '../../utils/spectrumGeometry';
 
 const ALL_BANDS: RfBand[] = ['2.4', '5', '6'];
 
@@ -60,7 +61,11 @@ function SpectrumBandRow({ band, radios }: { band: RfBandRange; radios: RfChanne
       </div>
 
       <div className="relative rounded" style={{ background: 'var(--surface-3, #e5e7eb)', minHeight: lanes.length ? lanes.length * 16 + 4 : 12 }}>
-        {lanes.map((lane, li) => lane.map((r) => (
+        {lanes.map((lane, li) => lane.map((r) => {
+          const { leftPct, widthPct } = barGeometry(
+            r.low_mhz, r.high_mhz, band.startMhz, band.endMhz,
+          );
+          return (
           <div
             key={`${r.device_id}:${r.name}`}
             title={[
@@ -72,15 +77,16 @@ function SpectrumBandRow({ band, radios }: { band: RfBandRange; radios: RfChanne
             ].join('\n')}
             className="absolute rounded-sm border border-black/10 dark:border-white/10"
             style={{
-              left: `${pct(r.low_mhz)}%`,
-              width: `${Math.max(0.6, ((r.high_mhz - r.low_mhz) / span) * 100)}%`,
+              left: `${leftPct}%`,
+              width: `${widthPct}%`,
               top: li * 16 + 2,
               height: 12,
               background: OVERLAP_STYLE[r.overlap].fill,
               opacity: 0.85,
             }}
           />
-        )))}
+          );
+        }))}
       </div>
 
       <div className="relative h-3 mt-0.5">
