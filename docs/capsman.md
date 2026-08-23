@@ -82,3 +82,21 @@ prediction-and-revert protection that per-device changes do.
 
 Legacy `/caps-man` — the pre-RouterOS 7 controller — is a separate API tree and is not
 covered. The RouterOS 7 `wifi` stack is supported.
+
+## Roaming history
+
+A client's association history is reconstructed from access point logs at
+`GET /api/clients/:mac/roaming?range=24h`, and shown on the client detail page.
+
+Roaming happens between polls, so a poll-based view can never see it — the log is
+the only record that a client moved, when, and at what signal. Sessions are rebuilt
+from RouterOS's own lines, including every band or AP change and the disconnect
+reason.
+
+Sessions with six or more roams per hour are flagged. A client bouncing between
+radios usually indicates roaming thresholds rather than a faulty client: overlapping
+cells at similar signal give it no reason to prefer one.
+
+Nothing new is collected — this reads the events already gathered, so it works
+retroactively over whatever log history exists. It does require association logging
+to be enabled on the access points.

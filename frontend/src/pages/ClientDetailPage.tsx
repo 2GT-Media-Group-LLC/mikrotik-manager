@@ -11,6 +11,7 @@ import {
   BarChart, Bar, Cell, ReferenceLine,
 } from 'recharts';
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
+import RoamingTimeline from '../components/clients/RoamingTimeline';
 import { clientsApi, trafficApi, devicesApi } from '../services/api';
 import { CATEGORY_META, SELECTABLE_CATEGORIES } from '../utils/clientCategories';
 import type { ClientDetail } from '../services/api';
@@ -1040,6 +1041,7 @@ export default function ClientDetailPage() {
             <>
               <TrafficCard mac={mac!} />
               <SignalCard mac={mac!} />
+              <RoamingTimeline mac={client.mac_address} />
             </>
           )}
         </div>

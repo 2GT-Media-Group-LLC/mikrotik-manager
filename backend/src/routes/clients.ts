@@ -5,6 +5,7 @@ import { requireAuth, requireAdmin, requireWrite } from '../middleware/auth';
 import { PollerService } from '../services/PollerService';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/clientFingerprint';
+import { parseRoamLine, buildSessions, flappingSessions } from '../utils/roaming';
 
 // Effective category: the user's override wins; otherwise the fingerprint.
 function withCategory<T extends Record<string, unknown>>(row: T): T & { device_category: string; auto_category: string } {
@@ -22,6 +23,57 @@ router.use(requireAuth);
 
 let pollerService: PollerService | null = null;
 export function setPollerService(p: PollerService): void { pollerService = p; }
+
+/**
+ * GET /api/clients/:mac/roaming — reconstruct this client's wireless sessions.
+ *
+ * Built from log lines already collected into `events`, so it needs no new
+ * collection and works retroactively over whatever history exists. Roaming happens
+ * between polls, so the log is the only place it is visible at all (issue #105).
+ */
+router.get('/:mac/roaming', async (req: Request, res: Response) => {
+  const mac = String(req.params.mac).toUpperCase();
+  if (!/^[0-9A-F:]{17}$/.test(mac)) return res.status(400).json({ error: 'Invalid MAC address' });
+
+  const range = String(req.query.range || '24h');
+  const hours = range === '7d' ? 168 : range === '30d' ? 720 : range === '1h' ? 1 : 24;
+
+  // Time-bounded first so the scan stays small — most of an events table is login
+  // noise. Both message shapes are matched: wireless lines start with the MAC,
+  // DHCP lines carry it mid-string.
+  const rows = await query<{ event_time: string; message: string; device_name: string | null }>(
+    `SELECT e.event_time, e.message, d.name AS device_name
+     FROM events e
+     LEFT JOIN devices d ON d.id = e.device_id
+     WHERE e.event_time > NOW() - ($2 || ' hours')::interval
+       AND (e.message ILIKE $1 || '@%' OR e.message ILIKE '%for ' || $1 || '%')
+     ORDER BY e.event_time ASC
+     LIMIT 5000`,
+    [mac, String(hours)]
+  );
+
+  const events = rows
+    .map((r) => parseRoamLine(r.message, new Date(r.event_time).toISOString(), r.device_name))
+    .filter((e): e is NonNullable<typeof e> => e !== null && e.mac === mac);
+
+  const sessions = buildSessions(events);
+  const flapping = flappingSessions(sessions);
+
+  res.json({
+    mac,
+    range,
+    sessions: [...sessions].reverse(),          // newest first for display
+    totalRoams: sessions.reduce((n, s) => n + s.hops.length, 0),
+    flappingSessions: flapping.length,
+    /** Radios this client has been seen on, most-used first. */
+    radios: Object.entries(
+      sessions.flatMap((s) => s.path).reduce<Record<string, number>>((acc, i) => {
+        acc[i] = (acc[i] ?? 0) + 1;
+        return acc;
+      }, {})
+    ).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+  });
+});
 
 // GET /api/clients
 router.get('/', async (req: Request, res: Response) => {

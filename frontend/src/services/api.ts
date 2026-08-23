@@ -433,6 +433,51 @@ export interface PresencePoint { time: string; online: number; }
 export interface TrafficPoint2 { time: string; tx_bytes: number; rx_bytes: number; }
 export interface SignalPoint { time: string; signal_strength: number; }
 
+export interface RoamEvent {
+  kind: 'connected' | 'roamed' | 'disconnected' | 'dhcp-assigned' | 'dhcp-released';
+  at: string;
+  mac: string;
+  interfaceName: string | null;
+  ssid: string | null;
+  signal: number | null;
+  toInterface: string | null;
+  toSsid: string | null;
+  reason: string | null;
+  ip: string | null;
+  hostname: string | null;
+  deviceName: string | null;
+}
+
+export interface RoamHop {
+  at: string; from: string | null; to: string;
+  signalBefore: number | null; signalAfter: number | null;
+}
+
+export interface RoamSession {
+  startedAt: string;
+  endedAt: string | null;
+  durationSec: number | null;
+  ssid: string | null;
+  ip: string | null;
+  hostname: string | null;
+  path: string[];
+  hops: RoamHop[];
+  disconnectReason: string | null;
+  signalMin: number | null;
+  signalMax: number | null;
+  roamsPerHour: number | null;
+  events: RoamEvent[];
+}
+
+export interface RoamingHistory {
+  mac: string;
+  range: string;
+  sessions: RoamSession[];
+  totalRoams: number;
+  flappingSessions: number;
+  radios: { name: string; count: number }[];
+}
+
 export const clientsApi = {
   list: (params?: {
     deviceId?: number;
@@ -450,6 +495,8 @@ export const clientsApi = {
   }) =>
     api.get<{ clients: Client[]; total: number }>('/clients', { params }),
   get: (mac: string) => api.get<ClientDetail>(`/clients/${mac}`),
+  getRoaming: (mac: string, range = '24h') =>
+    api.get<RoamingHistory>(`/clients/${mac}/roaming`, { params: { range } }),
   getPresence: (mac: string, range = '24h') =>
     api.get<PresencePoint[]>(`/clients/${mac}/presence`, { params: { range } }),
   getTraffic: (mac: string, range = '24h') =>
