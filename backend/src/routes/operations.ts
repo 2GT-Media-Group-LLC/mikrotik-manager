@@ -15,6 +15,20 @@ const bucket = process.env.INFLUXDB_BUCKET || 'mikrotik';
 type Sev = 'error' | 'warn' | 'info';
 interface AttentionItem {
   sev: Sev; category: string; title: string; body: string; action: string; path: string;
+  /** Stable identity for an item that is otherwise recomputed each request (#102). */
+  fingerprint?: string;
+}
+
+/**
+ * Identify an insight by what it is about rather than by its wording.
+ *
+ * Insights are derived from live state, so they have no id to dismiss. Keying on
+ * category plus the target path survives a reworded title — dismissing "sw1 is
+ * unreachable" should stay dismissed if the copy changes, but must NOT swallow a
+ * different device's outage.
+ */
+function fingerprintOf(item: AttentionItem): string {
+  return `${item.category}|${item.path}|${item.title}`.slice(0, 160);
 }
 
 // Latest value per device for a set of device_resources fields.
@@ -314,14 +328,62 @@ router.get('/insights', async (_req: Request, res: Response) => {
   const anomalies = await detectAnomalies();
   for (const a of anomalies) attention.push(a);
 
+  // Dismissals (#102). Expired rows are cleared on read, so a dismissal lapses
+  // without needing a scheduled job, and an item still true when it lapses simply
+  // reappears — which is the intended behaviour of "remind me later".
+  await query(`DELETE FROM insight_dismissals WHERE expires_at < NOW()`).catch(() => []);
+  const dismissed = new Set(
+    (await query<{ fingerprint: string }>(`SELECT fingerprint FROM insight_dismissals`)
+      .catch(() => [])).map((r) => r.fingerprint)
+  );
+
+  for (const item of attention) item.fingerprint = fingerprintOf(item);
+  const visible = attention.filter((i) => !dismissed.has(i.fingerprint!));
+
   // Severity ordering: error → warn → info
   const sevRank: Record<Sev, number> = { error: 0, warn: 1, info: 2 };
-  attention.sort((a, b) => sevRank[a.sev] - sevRank[b.sev]);
+  visible.sort((a, b) => sevRank[a.sev] - sevRank[b.sev]);
 
   // Activity feed — recent config changes, user actions, and notable events
   const activity = await buildActivity();
 
-  res.json({ attention, capacity, activity });
+  res.json({ attention: visible, dismissedCount: attention.length - visible.length, capacity, activity });
+});
+
+/**
+ * POST /api/operations/insights/dismiss — hide one item for a while.
+ *
+ * Time-boxed on purpose. "Handled" and "not now" look the same to the code, and an
+ * item that is genuinely resolved stops being generated anyway — so a dismissal that
+ * never lapsed would only ever hide things that are still true.
+ */
+router.post('/insights/dismiss', requireWrite, async (req: Request, res: Response) => {
+  const { fingerprint, category, title, hours } = req.body as
+    { fingerprint?: string; category?: string; title?: string; hours?: number };
+  if (!fingerprint) return res.status(400).json({ error: 'fingerprint is required' });
+
+  const h = Math.min(720, Math.max(1, Number(hours) || 24));
+  await query(
+    `INSERT INTO insight_dismissals (fingerprint, category, title, dismissed_by, expires_at)
+     VALUES ($1, $2, $3, $4, NOW() + ($5 || ' hours')::interval)
+     ON CONFLICT (fingerprint) DO UPDATE SET
+       expires_at = EXCLUDED.expires_at, dismissed_at = NOW(), dismissed_by = EXCLUDED.dismissed_by`,
+    [fingerprint.slice(0, 160), category ?? null, title ?? null,
+     (req as unknown as { user?: { username?: string } }).user?.username ?? null, String(h)]
+  );
+  res.status(201).json({ fingerprint, hours: h });
+});
+
+/** GET /api/operations/insights/dismissed — what is currently hidden, and until when. */
+router.get('/insights/dismissed', async (_req: Request, res: Response) => {
+  await query(`DELETE FROM insight_dismissals WHERE expires_at < NOW()`).catch(() => []);
+  res.json(await query(`SELECT * FROM insight_dismissals ORDER BY expires_at ASC`));
+});
+
+/** DELETE — bring an item back before its dismissal lapses. */
+router.delete('/insights/dismiss/:fingerprint', requireWrite, async (req: Request, res: Response) => {
+  await query(`DELETE FROM insight_dismissals WHERE fingerprint = $1`, [req.params.fingerprint]);
+  res.status(204).end();
 });
 
 // ─── Baseline anomaly detection ────────────────────────────────────────────────

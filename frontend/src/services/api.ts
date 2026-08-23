@@ -597,7 +597,7 @@ export interface FirmwareDeviceRow {
 }
 export interface FirmwareRollout {
   id: number; name: string; status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-  halt_on_failure: boolean; pre_backup: boolean;
+  halt_on_failure: boolean; pre_backup: boolean; routerboot_after: boolean;
   scheduled_at: string | null; started_at: string | null; finished_at: string | null; created_at: string;
   device_count?: number; success_count?: number; failed_count?: number;
 }
@@ -616,7 +616,7 @@ export const firmwareApi = {
     api.post<{ results: { name: string; ok: boolean; installed?: string; latest?: string; available?: boolean; error?: string }[] }>(
       '/firmware/check-all', undefined, { timeout: 180_000 }),
   createRollout: (data: {
-    name: string; halt_on_failure: boolean; pre_backup: boolean;
+    name: string; halt_on_failure: boolean; pre_backup: boolean; routerboot_after?: boolean;
     scheduled_at?: string | null; start?: boolean;
     devices: { device_id: number; wave: number }[];
   }) => api.post<{ id: number }>('/firmware/rollouts', data),
@@ -637,6 +637,8 @@ export interface OpsAttentionItem {
   body: string;
   action: string;
   path: string;
+  /** Stable identity used to dismiss an item that is otherwise recomputed. */
+  fingerprint?: string;
 }
 export interface OpsCapacityRow { id: number; name: string; cpu: number; mem_pct: number }
 export interface OpsActivityItem {
@@ -648,6 +650,8 @@ export interface OpsActivityItem {
 }
 export interface OpsInsights {
   attention: OpsAttentionItem[];
+  /** How many items are currently hidden by a dismissal. */
+  dismissedCount?: number;
   capacity: OpsCapacityRow[];
   activity: OpsActivityItem[];
 }
@@ -655,6 +659,13 @@ export interface OpsActionResult { total: number; results: { name: string; ok: b
 
 export const operationsApi = {
   insights: () => api.get<OpsInsights>('/operations/insights'),
+  dismissInsight: (fingerprint: string, hours: number, category?: string, title?: string) =>
+    api.post('/operations/insights/dismiss', { fingerprint, hours, category, title }),
+  listDismissed: () =>
+    api.get<{ fingerprint: string; category: string | null; title: string | null; expires_at: string }[]>(
+      '/operations/insights/dismissed'),
+  undismissInsight: (fingerprint: string) =>
+    api.delete(`/operations/insights/dismiss/${encodeURIComponent(fingerprint)}`),
   backupAll: () => api.post<OpsActionResult>('/operations/backup-all', undefined, { timeout: 180_000 }),
   syncAll: () => api.post<OpsActionResult>('/operations/sync-all', undefined, { timeout: 180_000 }),
 };

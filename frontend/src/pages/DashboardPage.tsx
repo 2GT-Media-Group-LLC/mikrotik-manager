@@ -16,7 +16,7 @@ import type { OpsAttentionItem, OpsCapacityRow, OpsActivityItem } from '../servi
 import TerminalModal from '../components/TerminalModal';
 import { useSocket } from '../hooks/useSocket';
 import { useCanWrite } from '../hooks/useCanWrite';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
 import clsx from 'clsx';
@@ -608,6 +608,11 @@ function OperationsView({
     refetchInterval: 60_000,
   });
   const thingsToHandle: OpsAttentionItem[] = insights?.attention ?? [];
+  const dismissInsight = useMutation({
+    mutationFn: (v: { fingerprint: string; hours: number; category?: string; title?: string }) =>
+      operationsApi.dismissInsight(v.fingerprint, v.hours, v.category, v.title),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ops-insights'] }),
+  });
   const capacity: OpsCapacityRow[] = insights?.capacity ?? [];
   const activityAll: OpsActivityItem[] = insights?.activity ?? [];
   // The app's own write requests are audit-log noise from an operations point of
@@ -840,11 +845,34 @@ function OperationsView({
               >
                 {item.action} →
               </button>
+              {/* "Not now" rather than "never": an item that is genuinely resolved
+                  stops being generated, so a dismissal is time-boxed (#102). */}
+              {item.fingerprint && (
+                <button
+                  onClick={() => dismissInsight.mutate({
+                    fingerprint: item.fingerprint!, hours: 24,
+                    category: item.category, title: item.title,
+                  })}
+                  disabled={dismissInsight.isPending}
+                  title="Hide this for 24 hours. It returns if it is still true."
+                  className="text-[11.5px] rounded-[5px] px-2 py-[6px] flex-shrink-0 transition-colors"
+                  style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-3)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  Snooze
+                </button>
+              )}
             </div>
           )) : (
             <div className="flex items-center justify-center gap-2 py-8" style={{ color: 'var(--ink-3)' }}>
               <StatusDot color="var(--good)" glow size={8} />
               <span className="text-[13px]">Nothing needs attention</span>
+            </div>
+          )}
+          {(insights?.dismissedCount ?? 0) > 0 && (
+            <div className="px-5 py-2 text-[11.5px]" style={{ color: 'var(--ink-3)', borderTop: '1px solid var(--line-soft)' }}>
+              {insights!.dismissedCount} snoozed — they return automatically if still true.
             </div>
           )}
         </div>

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUpCircle, RefreshCw, CheckCircle, XCircle, AlertTriangle, Clock,
-  HardDrive, ShieldAlert, Rocket, Ban, ChevronRight,
+  HardDrive, ShieldAlert, Rocket, Ban, ChevronRight, Cpu,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { firmwareApi } from '../services/api';
@@ -73,6 +73,7 @@ function RolloutPanel({ rolloutId, canWrite }: { rolloutId: number; canWrite: bo
         <span className="ml-auto flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500">
           {rollout.pre_backup && <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />pre-backup</span>}
           {rollout.halt_on_failure && <span className="flex items-center gap-1"><ShieldAlert className="w-3 h-3" />halt on failure</span>}
+          {rollout.routerboot_after && <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />+ RouterBOOT</span>}
           {canWrite && active && (
             <button onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
@@ -124,6 +125,8 @@ export default function FirmwarePage() {
   const [rolloutName, setRolloutName] = useState('');
   const [preBackup, setPreBackup] = useState(true);
   const [haltOnFailure, setHaltOnFailure] = useState(true);
+  // Off by default: it is a second flash and a second reboot per device (#113).
+  const [routerbootAfter, setRouterbootAfter] = useState(false);
   const [scheduleAt, setScheduleAt] = useState('');
   const [viewRolloutId, setViewRolloutId] = useState<number | null>(null);
   const [checkResult, setCheckResult] = useState<string | null>(null);
@@ -170,6 +173,7 @@ export default function FirmwarePage() {
       name: rolloutName.trim() || `RouterOS upgrade ${new Date().toISOString().slice(0, 10)}`,
       halt_on_failure: haltOnFailure,
       pre_backup: preBackup,
+      routerboot_after: routerbootAfter,
       scheduled_at: scheduleAt ? new Date(scheduleAt).toISOString() : null,
       start: !scheduleAt,
       devices: [...selected.entries()].map(([device_id, wave]) => ({ device_id, wave })),
@@ -344,6 +348,13 @@ export default function FirmwarePage() {
               <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300 cursor-pointer">
                 <input type="checkbox" className="w-4 h-4 rounded" checked={haltOnFailure} onChange={e => setHaltOnFailure(e.target.checked)} />
                 Halt on failure
+              </label>
+              <label
+                className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300 cursor-pointer"
+                title="After each RouterOS upgrade verifies, apply any pending RouterBOOT upgrade. This is a second flash and a second reboot per device."
+              >
+                <input type="checkbox" className="w-4 h-4 rounded" checked={routerbootAfter} onChange={e => setRouterbootAfter(e.target.checked)} />
+                Then RouterBOOT
               </label>
               <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300">
                 <Clock className="w-4 h-4 text-gray-400" />

@@ -603,6 +603,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_seccheck_supp_device
 -- (github issue #96).
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_package VARCHAR(16);
 
+-- RouterBOOT as a follow-on step in a staged rollout (github issue #113).
+-- MikroTik's own guidance is to upgrade the bootloader after RouterOS, which until
+-- now meant visiting every device by hand — the exact task staged rollouts exist to
+-- remove.
+ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS routerboot_after BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Temporarily dismissed "Things to handle" items (github issue #102).
+--
+-- Insights are recomputed from live state on every request and have no natural id,
+-- so a dismissal is keyed on a fingerprint of what the item is about. Dismissals
+-- expire: the point is "not now", not "never" — an item that is genuinely handled
+-- stops being produced, and one that is not should come back and ask again.
+CREATE TABLE IF NOT EXISTS insight_dismissals (
+  fingerprint  VARCHAR(160) PRIMARY KEY,
+  category     VARCHAR(40),
+  title        TEXT,
+  dismissed_by VARCHAR(50),
+  dismissed_at TIMESTAMPTZ DEFAULT NOW(),
+  expires_at   TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_insight_dismissals_expiry ON insight_dismissals(expires_at);
+
 -- ntfy.sh notification channel (github issue #93). The channel type is a CHECK
 -- constraint rather than a lookup table, so widening it means replacing it.
 ALTER TABLE alert_channels DROP CONSTRAINT IF EXISTS alert_channels_type_check;

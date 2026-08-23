@@ -21,6 +21,8 @@ const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 interface RolloutRow {
   id: number; name: string; status: string;
   halt_on_failure: boolean; pre_backup: boolean;
+  /** Follow the RouterOS upgrade with the pending RouterBOOT upgrade (issue #113). */
+  routerboot_after: boolean;
 }
 interface RolloutDeviceRow {
   id: number; rollout_id: number; device_id: number; wave: number; status: string;
@@ -199,12 +201,82 @@ export class FirmwareOrchestrator {
     if (newVersion && fromVersion && newVersion === fromVersion) {
       return fail(`Device rebooted but still reports ${newVersion} — the update did not apply`);
     }
+    // 5. RouterBOOT, if asked for (issue #113).
+    //
+    // Deliberately after the RouterOS upgrade and its verification: the bootloader
+    // ships inside the RouterOS package, so upgrading it first would apply the old
+    // one. This is a second flash and a second reboot, so it only runs once the OS
+    // half is confirmed good.
+    if (rollout.routerboot_after) {
+      const rbResult = await this.upgradeRouterboot(device, item);
+      if (!rbResult.ok) {
+        // The RouterOS upgrade did land. Say so, rather than reporting the device as
+        // simply failed and sending someone to re-run an upgrade it already has.
+        return fail(`RouterOS upgraded to ${newVersion || 'unknown'} successfully, but the RouterBOOT upgrade failed: ${rbResult.error}`);
+      }
+    }
+
     await this.setItem(item.id, { status: 'success', to_version: newVersion || null });
     await query(`UPDATE firmware_rollout_devices SET finished_at=NOW() WHERE id=$1`, [item.id]);
     await query(`UPDATE devices SET ros_version=COALESCE(NULLIF($2,''), ros_version), firmware_update_available=FALSE, status='online', last_seen=NOW() WHERE id=$1`,
       [device.id, newVersion]);
     console.log(`[Firmware] ${device.name}: upgraded to ${newVersion || 'unknown'}`);
     return true;
+  }
+
+  /**
+   * Apply a pending RouterBOOT upgrade and ride out the reboot it causes.
+   *
+   * A device with nothing pending is a success, not a failure — most of a fleet will
+   * already be current, and treating "nothing to do" as an error would halt rollouts
+   * for no reason.
+   */
+  private async upgradeRouterboot(
+    device: DeviceRow,
+    item: RolloutDeviceRow
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    let before: string;
+    try {
+      const probe = new DeviceCollector(device);
+      await probe.connect();
+      const status = await probe.checkRouterboardUpgrade();
+      before = status.currentFirmware;
+      if (!status.upgradeAvailable) {
+        probe.disconnect();
+        console.log(`[Firmware] ${device.name}: RouterBOOT already current (${before || 'unknown'})`);
+        return { ok: true };
+      }
+      await this.setItem(item.id, { status: 'routerboot' });
+      await probe.installRouterboardUpgrade();   // upgrades, then reboots
+      probe.disconnect();
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+
+    // Second reboot of this upgrade. Same budget as the first.
+    const deadline = Date.now() + REBOOT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (this.cancelRequested) return { ok: false, error: 'cancelled while rebooting' };
+      const probe = new DeviceCollector(device);
+      try {
+        await probe.connect();
+        const after = await probe.checkRouterboardUpgrade();
+        probe.disconnect();
+        if (after.currentFirmware && before && after.currentFirmware === before) {
+          return { ok: false, error: `device rebooted but RouterBOOT still reports ${after.currentFirmware}` };
+        }
+        await query(
+          `UPDATE devices SET routerboard_upgrade_available = FALSE, firmware_version = COALESCE(NULLIF($2,''), firmware_version) WHERE id = $1`,
+          [device.id, after.currentFirmware]
+        );
+        console.log(`[Firmware] ${device.name}: RouterBOOT ${before || '?'} → ${after.currentFirmware || '?'}`);
+        return { ok: true };
+      } catch {
+        probe.disconnect();
+        await sleep(REBOOT_POLL_MS);
+      }
+    }
+    return { ok: false, error: `device did not come back within ${Math.round(REBOOT_TIMEOUT_MS / 60000)} minutes after the RouterBOOT upgrade` };
   }
 }
 
