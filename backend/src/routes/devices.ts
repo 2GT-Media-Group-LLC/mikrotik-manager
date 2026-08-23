@@ -19,6 +19,7 @@ import { runConfigHealth } from '../services/changeGuard/configHealth';
 import { isMultiVlanSpec } from '../utils/vlan';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
+import { parseBandList, uplinkAnchor, totalBandwidthMhz, type LteBandInfo } from '../utils/lte';
 
 // Resolve a credential preset id into decrypted credentials. Returns null if
 // no id was provided; throws a readable error if the id is invalid.
@@ -345,7 +346,7 @@ router.get('/:id', async (req: Request, res: Response) => {
             notes, location_address,
             location_lat::float8 AS location_lat,
             location_lng::float8 AS location_lng,
-            rack_name, rack_slot, wifi_role, created_at, updated_at
+            rack_name, rack_slot, wifi_role, has_lte, created_at, updated_at
      FROM devices WHERE id = $1`,
     [req.params.id]
   );
@@ -386,7 +387,7 @@ router.patch('/:id/location', requireWrite, async (req: Request, res: Response) 
             notes, location_address,
             location_lat::float8 AS location_lat,
             location_lng::float8 AS location_lng,
-            rack_name, rack_slot, wifi_role, created_at, updated_at
+            rack_name, rack_slot, wifi_role, has_lte, created_at, updated_at
      FROM devices WHERE id = $1`,
     [req.params.id]
   );
@@ -2199,6 +2200,149 @@ router.get('/:id/wireless', async (req: Request, res: Response) => {
     [req.params.id]
   );
   return res.json(rows);
+});
+
+// ─── LTE / cellular (discussion #85) ─────────────────────────────────────────
+
+// GET /api/devices/:id/lte — current state of every LTE interface
+router.get('/:id/lte', async (req: Request, res: Response) => {
+  try {
+    const interfaces = await query<Record<string, unknown>>(
+      `SELECT interface_name, status, data_class, modem_model, modem_revision, operator,
+              cell_id, enb_id, sector_id, phy_cell_id, session_uptime_s,
+              primary_band, ca_bands, rssi, rsrp, rsrq, sinr, cqi, rank_indicator, mcs,
+              dl_modulation, quality, allowed_bands, network_mode, apn_profiles,
+              allow_roaming, updated_at
+         FROM lte_interfaces WHERE device_id = $1 ORDER BY interface_name`,
+      [req.params.id],
+    );
+
+    // Bands seen serving this device. This is what a band lock gets checked
+    // against, since a scan interrupts service and finds nothing at a site with
+    // a single base station.
+    const observed = await query<{ interface_name: string; band: number; observations: number; last_seen: string }>(
+      `SELECT interface_name, band, observations, last_seen
+         FROM lte_observed_bands WHERE device_id = $1 ORDER BY band`,
+      [req.params.id],
+    );
+
+    res.json({
+      interfaces: interfaces.map(i => {
+        const carriers = {
+          primaryBand: (i.primary_band as LteBandInfo | null) ?? null,
+          caBands: (i.ca_bands as LteBandInfo[] | null) ?? [],
+        };
+        return {
+          ...i,
+          // Reconstruct the interpreted view so the client never re-derives it.
+          allowed_bands: parseBandList(i.allowed_bands as string | null),
+          total_bandwidth_mhz: totalBandwidthMhz(carriers),
+          // Uplink rides the primary carrier alone, so an anchor narrower than
+          // what is being aggregated caps upload however wide the downlink is.
+          uplink_anchor: uplinkAnchor(carriers),
+          observed_bands: observed
+            .filter(o => o.interface_name === i.interface_name)
+            .map(o => ({ band: o.band, observations: o.observations, last_seen: o.last_seen })),
+        };
+      }),
+    });
+  } catch (error) {
+    console.error('Error fetching LTE state:', error);
+    res.status(500).json({ error: 'Failed to fetch LTE state' });
+  }
+});
+
+// GET /api/devices/:id/lte/history — handovers, re-registrations and band changes
+router.get('/:id/lte/history', async (req: Request, res: Response) => {
+  const { range = '24h', limit = '200' } = req.query as { range?: string; limit?: string };
+  const windows: Record<string, string> = {
+    '1h': '1 hour', '24h': '24 hours', '7d': '7 days', '30d': '30 days',
+  };
+  const window = windows[range] || '24 hours';
+  const cap = Math.min(Math.max(parseInt(limit, 10) || 200, 1), 1000);
+
+  try {
+    const events = await query(
+      `SELECT interface_name, at, kind, detail, cell_id, enb_id, bands, rsrp, sinr
+         FROM lte_cell_history
+        WHERE device_id = $1 AND at > NOW() - $2::interval
+        ORDER BY at DESC LIMIT $3`,
+      [req.params.id, window, cap],
+    );
+    res.json({ events });
+  } catch (error) {
+    console.error('Error fetching LTE history:', error);
+    res.status(500).json({ error: 'Failed to fetch LTE history' });
+  }
+});
+
+// GET /api/devices/:id/lte/metrics — InfluxDB lte_signal time series
+router.get('/:id/lte/metrics', async (req: Request, res: Response) => {
+  const { iface, range = '6h' } = req.query as { iface?: string; range?: string };
+
+  const ranges: Record<string, string> = {
+    '1h': '1h', '6h': '6h', '24h': '24h', '7d': '7d', '30d': '30d',
+  };
+  const fluxRange = ranges[range] || '6h';
+  // Keep roughly 200 points regardless of window, so a month is as readable as an hour.
+  const windows: Record<string, string> = {
+    '1h': '30s', '6h': '2m', '24h': '10m', '7d': '1h', '30d': '4h',
+  };
+
+  const { getQueryApi } = await import('../config/influxdb');
+  const queryApi = getQueryApi();
+  const bucket = process.env.INFLUXDB_BUCKET || 'mikrotik';
+
+  const ifaceFilter = iface
+    ? `|> filter(fn: (r) => r["interface"] == "${iface.replace(/["\\]/g, '')}")`
+    : '';
+
+  const flux = `
+    from(bucket: "${bucket}")
+      |> range(start: -${fluxRange})
+      |> filter(fn: (r) => r["_measurement"] == "lte_signal")
+      |> filter(fn: (r) => r["device_id"] == "${String(req.params.id).replace(/[^0-9]/g, '')}")
+      ${ifaceFilter}
+      |> filter(fn: (r) => r["_field"] == "rsrp" or r["_field"] == "rsrq"
+                        or r["_field"] == "sinr" or r["_field"] == "rssi"
+                        or r["_field"] == "cqi"  or r["_field"] == "carriers")
+      |> aggregateWindow(every: ${windows[fluxRange] || '2m'}, fn: mean, createEmpty: false)
+      // Drop the tag columns before pivoting. Serving band is a tag, so leaving
+      // it in splits the result into one table per band — which streams back as
+      // a run of B1 rows followed by a run of B3 rows, and draws a chart that
+      // jumps backwards in time at the seam.
+      |> keep(columns: ["_time", "_field", "_value", "interface"])
+      |> group(columns: ["interface"])
+      |> pivot(rowKey:["_time","interface"], columnKey: ["_field"], valueColumn: "_value")
+      |> sort(columns: ["_time"])
+  `;
+
+  try {
+    const num = (v: unknown) => (v == null ? undefined : Math.round(Number(v) * 10) / 10);
+    const rows: Record<string, unknown>[] = [];
+    await new Promise<void>((resolve, reject) => {
+      queryApi.queryRows(flux, {
+        next(row, tableMeta) {
+          const obj = tableMeta.toObject(row) as Record<string, unknown>;
+          rows.push({
+            time: String(obj['_time'] || ''),
+            interface: String(obj['interface'] || ''),
+            rsrp: num(obj['rsrp']), rsrq: num(obj['rsrq']),
+            sinr: num(obj['sinr']), rssi: num(obj['rssi']),
+            cqi: num(obj['cqi']), carriers: num(obj['carriers']),
+          });
+        },
+        error: reject,
+        complete: resolve,
+      });
+    });
+    // One table per interface still streams sequentially, so order globally.
+    rows.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+    res.json({ metrics: rows });
+  } catch (error) {
+    console.error('Error fetching LTE metrics:', error);
+    res.status(500).json({ error: 'Failed to fetch LTE metrics' });
+  }
 });
 
 // GET /api/devices/:id/wireless/metrics — InfluxDB wireless_stats time series

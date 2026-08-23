@@ -703,6 +703,95 @@ CREATE TABLE IF NOT EXISTS wireless_security_profiles (
   updated_at            TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(device_id, name)
 );
+
+-- LTE / cellular support (discussion #85).
+--
+-- has_lte is set during interface collection rather than inferred from
+-- device_type: a cellular modem turns up on routers, CPE and travel gear alike,
+-- and probing every device on every fast poll to find out costs more than
+-- remembering the answer.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS has_lte BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Latest state of each LTE interface. One row per interface, overwritten on each
+-- poll; the time series lives in InfluxDB and the movement history below.
+--
+-- Almost every column is nullable on purpose. What an LTE interface reports
+-- depends on the modem chipset rather than on RouterOS — the Quectel EG18-EA
+-- this was built against reports no registration-status, no pin-status and no
+-- tracking area, while others do — so absence is a normal state, not an error.
+CREATE TABLE IF NOT EXISTS lte_interfaces (
+  id                 SERIAL PRIMARY KEY,
+  device_id          INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  interface_name     VARCHAR(64) NOT NULL,
+  status             VARCHAR(32),
+  data_class         VARCHAR(32),
+  modem_model        VARCHAR(64),
+  modem_revision     VARCHAR(64),
+  operator           VARCHAR(64),
+  cell_id            VARCHAR(32),
+  enb_id             VARCHAR(32),
+  sector_id          VARCHAR(32),
+  phy_cell_id        VARCHAR(32),
+  session_uptime_s   BIGINT,
+  primary_band       JSONB,
+  ca_bands           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  rssi               REAL,
+  rsrp               REAL,
+  rsrq               REAL,
+  sinr               REAL,
+  cqi                INTEGER,
+  rank_indicator     INTEGER,
+  mcs                INTEGER,
+  dl_modulation      VARCHAR(32),
+  quality            VARCHAR(16),
+  -- Configured allow-list from /interface/lte, e.g. "1,3,7". Empty means auto.
+  allowed_bands      VARCHAR(128),
+  network_mode       VARCHAR(64),
+  apn_profiles       VARCHAR(128),
+  allow_roaming      BOOLEAN,
+  config_json        JSONB,
+  updated_at         TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(device_id, interface_name)
+);
+
+-- Tower and band movement, reconstructed by comparing consecutive polls.
+--
+-- Scanning costs service to run and finds nothing at a site served by a single
+-- base station, and the modem may log nothing at all, so polling is the only
+-- vantage point that always exists. session-uptime
+-- running backwards means the modem re-registered; a changed cell id means it
+-- handed over. Neither can be recovered after the fact, so it is recorded live.
+CREATE TABLE IF NOT EXISTS lte_cell_history (
+  id             SERIAL PRIMARY KEY,
+  device_id      INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  interface_name VARCHAR(64) NOT NULL,
+  at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  kind           VARCHAR(24) NOT NULL,
+  detail         TEXT,
+  cell_id        VARCHAR(32),
+  enb_id         VARCHAR(32),
+  bands          VARCHAR(64),
+  rsrp           REAL,
+  sinr           REAL
+);
+CREATE INDEX IF NOT EXISTS idx_lte_cell_history_device
+  ON lte_cell_history(device_id, at DESC);
+
+-- Bands actually observed serving a device, which is what makes it possible to
+-- warn before a band lock. Scanning cannot answer "is this band available here?"
+-- dependably: it interrupts service, and comes back empty at exactly the remote
+-- sites that most need the warning. A band the modem has already used at this
+-- location demonstrably works there, and locking to one never once seen is how a
+-- device on a mast is lost.
+CREATE TABLE IF NOT EXISTS lte_observed_bands (
+  device_id      INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  interface_name VARCHAR(64) NOT NULL,
+  band           INTEGER NOT NULL,
+  first_seen     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  observations   INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (device_id, interface_name, band)
+);
 `;
 
 const DEFAULT_SETTINGS = [

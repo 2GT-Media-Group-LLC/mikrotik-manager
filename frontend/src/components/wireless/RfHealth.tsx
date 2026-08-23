@@ -45,6 +45,11 @@ function SpectrumBandRow({ band, radios }: { band: RfBandRange; radios: RfChanne
   const ticks: number[] = [];
   for (let f = Math.ceil(band.startMhz / step) * step; f < band.endMhz; f += step) ticks.push(f);
 
+  // The 2.4 GHz axis is labelled by channel, so a tick outside the channel plan
+  // (2400 and 2480 both fall there) would print a bare frequency and break the
+  // sequence — reading "2400, 3, 7, 11, 2480" rather than as channels.
+  const labelledTicks = band.band === '2.4' ? ticks.filter((f) => channelOf(f) != null) : ticks;
+
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1">
@@ -79,12 +84,18 @@ function SpectrumBandRow({ band, radios }: { band: RfBandRange; radios: RfChanne
       </div>
 
       <div className="relative h-3 mt-0.5">
-        {ticks.map((f) => (
-          <span key={f} className="absolute text-[9px] leading-none text-gray-400 dark:text-slate-500"
-                style={{ left: `${pct(f)}%`, transform: 'translateX(-50%)' }}>
-            {band.band === '2.4' ? (channelOf(f) ?? f) : f}
-          </span>
-        ))}
+        {labelledTicks.map((f) => {
+          const at = pct(f);
+          // A centred label on a tick at either extreme hangs half its width past
+          // the card. Anchor the outermost labels inward instead of centring them.
+          const anchor = at <= 3 ? 'translateX(0)' : at >= 97 ? 'translateX(-100%)' : 'translateX(-50%)';
+          return (
+            <span key={f} className="absolute text-[9px] leading-none text-gray-400 dark:text-slate-500"
+                  style={{ left: `${at}%`, transform: anchor }}>
+              {band.band === '2.4' ? (channelOf(f) ?? f) : f}
+            </span>
+          );
+        })}
       </div>
     </div>
   );

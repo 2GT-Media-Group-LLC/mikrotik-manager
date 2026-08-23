@@ -3,6 +3,14 @@ import * as tls from 'tls';
 import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 
+/**
+ * Key under which repeated attributes from one sentence are preserved as JSON.
+ * Present only when a reply actually repeated a key, so ordinary rows are
+ * byte-for-byte unchanged.
+ */
+export const REPEATED_ATTRIBUTES_KEY = '.repeated';
+
+
 export interface RouterOSSentence {
   type: string;
   words: Record<string, string>;
@@ -363,16 +371,32 @@ export class RouterOSClient extends EventEmitter {
         const type = words[0];
         const parsed: Record<string, string> = {};
         let tag: string | undefined;
+        // A sentence may carry the same attribute more than once — an LTE modem
+        // reports one `ca-band` per aggregated carrier — and a flat object can
+        // only hold the last. Repeats are preserved alongside it so that
+        // multi-valued replies are not silently reduced to their final value.
+        let repeated: Record<string, string[]> | undefined;
 
         for (let i = 1; i < words.length; i++) {
           const w = words[i];
           if (w.startsWith('=')) {
             const eq = w.indexOf('=', 1);
-            if (eq > 0) parsed[w.slice(1, eq)] = w.slice(eq + 1);
+            if (eq > 0) {
+              const key = w.slice(1, eq);
+              const value = w.slice(eq + 1);
+              if (key in parsed) {
+                repeated ??= {};
+                repeated[key] ??= [parsed[key]];
+                repeated[key].push(value);
+              }
+              parsed[key] = value;
+            }
           } else if (w.startsWith('.tag=')) {
             tag = w.slice(5);
           }
         }
+
+        if (repeated) parsed[REPEATED_ATTRIBUTES_KEY] = JSON.stringify(repeated);
 
         return { type, words: parsed, tag };
       }

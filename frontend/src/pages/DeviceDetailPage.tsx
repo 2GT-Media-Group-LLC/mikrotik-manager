@@ -17,12 +17,13 @@ import ConfigHistoryTab from '../components/device-detail/ConfigHistoryTab';
 import HardwareTab from '../components/device-detail/HardwareTab';
 import ToolsTab from '../components/device-detail/ToolsTab';
 import RadiosTab from '../components/device-detail/RadiosTab';
+import LteTab from '../components/device-detail/LteTab';
 import ConnectionsTab from '../components/device-detail/ConnectionsTab';
 import QueuesTab from '../components/device-detail/QueuesTab';
 import SecurityTab from '../components/device-detail/SecurityTab';
 import clsx from 'clsx';
 
-type TabKey = 'overview' | 'ports' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios';
+type TabKey = 'overview' | 'ports' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
 
 function formatUptime(raw: string): string {
   if (!raw) return '—';
@@ -50,7 +51,7 @@ export default function DeviceDetailPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [searchParams] = useSearchParams();
-  const VALID_TABS: TabKey[] = ['overview', 'ports', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios'];
+  const VALID_TABS: TabKey[] = ['overview', 'ports', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios', 'lte'];
   const requestedTab = searchParams.get('tab') as TabKey | null;
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
@@ -125,6 +126,10 @@ export default function DeviceDetailPage() {
     { key: 'config-history', label: 'Config History' },
     { key: 'hardware', label: 'Hardware' },
     ...(isWirelessAP ? [{ key: 'radios' as TabKey, label: 'Radios' }] : []),
+    // Cellular is a property of the hardware, not the device type: a modem turns
+    // up on routers, CPE and travel gear alike, so the flag is set from the
+    // interface list rather than inferred (discussion #85).
+    ...(device.has_lte ? [{ key: 'lte' as TabKey, label: 'LTE' }] : []),
     { key: 'tools', label: 'Tools' },
   ];
 
@@ -396,6 +401,7 @@ export default function DeviceDetailPage() {
       {activeTab === 'config-history' && <ConfigHistoryTab deviceId={deviceId} />}
       {activeTab === 'hardware' && <HardwareTab deviceId={deviceId} />}
       {activeTab === 'radios' && <RadiosTab deviceId={deviceId} deviceStatus={device.status} />}
+      {activeTab === 'lte' && <LteTab deviceId={deviceId} />}
       {activeTab === 'tools' && <ToolsTab deviceId={deviceId} />}
 
       {showTerminal && (

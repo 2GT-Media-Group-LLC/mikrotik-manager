@@ -212,6 +212,95 @@ export interface ConfigHealthResponse {
   checked_at: string | null;
 }
 
+
+// ─── LTE / cellular ───────────────────────────────────────────────────────────
+
+/** One aggregated carrier as the modem reported it. */
+export interface LteBandInfo {
+  band: number;
+  bandwidthMhz: number | null;
+  earfcn: number | null;
+  phyCellId: number | null;
+  raw: string;
+}
+
+export interface LteInterface {
+  interface_name: string;
+  status: string | null;
+  data_class: string | null;
+  modem_model: string | null;
+  modem_revision: string | null;
+  operator: string | null;
+  cell_id: string | null;
+  enb_id: string | null;
+  sector_id: string | null;
+  phy_cell_id: string | null;
+  session_uptime_s: string | number | null;
+  primary_band: LteBandInfo | null;
+  ca_bands: LteBandInfo[];
+  rssi: number | null;
+  rsrp: number | null;
+  rsrq: number | null;
+  sinr: number | null;
+  cqi: number | null;
+  rank_indicator: number | null;
+  mcs: number | null;
+  dl_modulation: string | null;
+  quality: 'excellent' | 'good' | 'fair' | 'poor' | 'unknown' | null;
+  /** Configured allow-list; empty means the modem picks freely. */
+  allowed_bands: number[];
+  /** Primary plus every aggregated carrier. */
+  total_bandwidth_mhz: number;
+  /**
+   * Set when the uplink is anchored to a narrower carrier than the downlink is
+   * aggregating — the reason operators lock bands, and invisible in RouterOS.
+   */
+  uplink_anchor: {
+    primaryMhz: number; primaryBand: number;
+    widestMhz: number; widestBand: number;
+  } | null;
+  network_mode: string | null;
+  apn_profiles: string | null;
+  allow_roaming: boolean | null;
+  updated_at: string;
+  /** Bands actually seen serving this device — the evidence behind a band lock. */
+  observed_bands: { band: number; observations: number; last_seen: string }[];
+}
+
+export interface LteHistoryEvent {
+  interface_name: string;
+  at: string;
+  kind: 'session-reset' | 'handover' | 'band-change';
+  detail: string | null;
+  cell_id: string | null;
+  enb_id: string | null;
+  bands: string | null;
+  rsrp: number | null;
+  sinr: number | null;
+}
+
+export interface LteMetricPoint {
+  time: string;
+  interface: string;
+  rsrp?: number;
+  rsrq?: number;
+  sinr?: number;
+  rssi?: number;
+  cqi?: number;
+  carriers?: number;
+}
+
+export const lteApi = {
+  state: (deviceId: number) =>
+    api.get<{ interfaces: LteInterface[] }>(`/devices/${deviceId}/lte`),
+  history: (deviceId: number, range = '24h') =>
+    api.get<{ events: LteHistoryEvent[] }>(`/devices/${deviceId}/lte/history`, { params: { range } }),
+  metrics: (deviceId: number, range = '6h', iface?: string) =>
+    api.get<{ metrics: LteMetricPoint[] }>(`/devices/${deviceId}/lte/metrics`, {
+      params: { range, ...(iface ? { iface } : {}) },
+    }),
+};
+
 export const devicesApi = {
   list: () => api.get<Device[]>('/devices'),
   discovered: () => api.get<DiscoveredDevice[]>('/devices/discovered'),

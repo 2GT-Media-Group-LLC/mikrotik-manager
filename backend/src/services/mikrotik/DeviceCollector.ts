@@ -13,6 +13,9 @@ import {
   clientsPerRadio, buildMacIndex, matchRadiosToDevices,
   type WifiRole,
 } from './capsman';
+import {
+  parseLteMonitor, overallQuality, detectChanges, type LteStatus,
+} from '../../utils/lte';
 import { BackupService } from '../BackupService';
 import { alertService } from '../AlertService';
 
@@ -115,6 +118,9 @@ export class DeviceCollector {
     if (this.device.device_type === 'switch') {
       await this.collectPoePower();
     }
+    if ((this.device as unknown as { has_lte?: boolean }).has_lte) {
+      await this.collectLte();
+    }
     await this.updateDeviceStatus('online');
   }
 
@@ -142,6 +148,7 @@ export class DeviceCollector {
     await this.collectVlans();
     await this.collectSystemInfo();
     await this.collectStp();
+    await this.collectLte();
     if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
@@ -167,6 +174,7 @@ export class DeviceCollector {
     await this.updateClients();
     await this.collectEvents();
     await this.collectNeighbors();
+    await this.collectLte();
     // Wireless data belongs in a full resync too — without this, a manual sync
     // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
     // the UI could only catch up on the 5-minute slow poll.
@@ -2829,6 +2837,204 @@ export class DeviceCollector {
       await writeApi.flush().catch((e) => console.error('InfluxDB PoE flush error:', e));
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect PoE power:`, err);
+    }
+  }
+
+  // ─── LTE / cellular → Postgres + InfluxDB ─────────────────────────────────
+
+  /**
+   * Collect cellular state from every LTE interface on the device.
+   *
+   * Called on the fast poll (for the signal series) and on the slow poll, where
+   * it also refreshes `devices.has_lte`. The device is only contacted when the
+   * interface table already shows an LTE interface, so the overwhelming majority
+   * of a wired fleet costs one local query and no API call at all.
+   *
+   * Field handling is deliberately forgiving. What a modem reports depends on
+   * its chipset rather than on RouterOS, so a missing value is an ordinary state
+   * and never a reason to abandon the rest of the row.
+   */
+  async collectLte(): Promise<void> {
+    try {
+      const lteInterfaces = await query<{ name: string }>(
+        `SELECT name FROM interfaces WHERE device_id = $1 AND type = 'lte'`,
+        [this.device.id],
+      );
+
+      if (lteInterfaces.length === 0) {
+        // Clear the flag if a modem was removed, so the fast poll stops looking.
+        if ((this.device as unknown as { has_lte?: boolean }).has_lte) {
+          await query(`UPDATE devices SET has_lte = FALSE WHERE id = $1`, [this.device.id]);
+          (this.device as unknown as { has_lte?: boolean }).has_lte = false;
+        }
+        return;
+      }
+
+      if (!(this.device as unknown as { has_lte?: boolean }).has_lte) {
+        await query(`UPDATE devices SET has_lte = TRUE WHERE id = $1`, [this.device.id]);
+        (this.device as unknown as { has_lte?: boolean }).has_lte = true;
+      }
+
+      const configs = await this.client
+        .execute('/interface/lte/print', { detail: '' })
+        .catch(() => [] as Record<string, string>[]);
+      const configByName = new Map(configs.filter(c => c['name']).map(c => [c['name'], c]));
+
+      const writeApi = getWriteApi();
+
+      for (const { name } of lteInterfaces) {
+        // `monitor` addresses the interface by name and must be told not to stream.
+        const rows = await this.client
+          .execute('/interface/lte/monitor', { numbers: name, once: '' })
+          .catch(() => [] as Record<string, string>[]);
+        if (rows.length === 0) continue;
+
+        const status = parseLteMonitor(rows[0]);
+        const config = configByName.get(name) || {};
+        const quality = overallQuality(status);
+
+        const previous = await this.previousLteStatus(name);
+        await this.recordLteChanges(name, previous, status);
+
+        await query(
+          `INSERT INTO lte_interfaces (
+             device_id, interface_name, status, data_class, modem_model, modem_revision,
+             operator, cell_id, enb_id, sector_id, phy_cell_id, session_uptime_s,
+             primary_band, ca_bands, rssi, rsrp, rsrq, sinr, cqi, rank_indicator, mcs,
+             dl_modulation, quality, allowed_bands, network_mode, apn_profiles,
+             allow_roaming, config_json, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+                     $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,NOW())
+           ON CONFLICT (device_id, interface_name) DO UPDATE SET
+             status = EXCLUDED.status, data_class = EXCLUDED.data_class,
+             modem_model = EXCLUDED.modem_model, modem_revision = EXCLUDED.modem_revision,
+             operator = EXCLUDED.operator, cell_id = EXCLUDED.cell_id,
+             enb_id = EXCLUDED.enb_id, sector_id = EXCLUDED.sector_id,
+             phy_cell_id = EXCLUDED.phy_cell_id, session_uptime_s = EXCLUDED.session_uptime_s,
+             primary_band = EXCLUDED.primary_band, ca_bands = EXCLUDED.ca_bands,
+             rssi = EXCLUDED.rssi, rsrp = EXCLUDED.rsrp, rsrq = EXCLUDED.rsrq,
+             sinr = EXCLUDED.sinr, cqi = EXCLUDED.cqi,
+             rank_indicator = EXCLUDED.rank_indicator, mcs = EXCLUDED.mcs,
+             dl_modulation = EXCLUDED.dl_modulation, quality = EXCLUDED.quality,
+             allowed_bands = EXCLUDED.allowed_bands, network_mode = EXCLUDED.network_mode,
+             apn_profiles = EXCLUDED.apn_profiles, allow_roaming = EXCLUDED.allow_roaming,
+             config_json = EXCLUDED.config_json, updated_at = NOW()`,
+          [
+            this.device.id, name, status.status, status.dataClass, status.modemModel,
+            status.modemRevision, status.operator, status.cellId, status.enbId,
+            status.sectorId, status.phyCellId, status.sessionUptimeSeconds,
+            status.primaryBand ? JSON.stringify(status.primaryBand) : null,
+            JSON.stringify(status.caBands),
+            status.rssi, status.rsrp, status.rsrq, status.sinr, status.cqi,
+            status.ri, status.mcs, status.dlModulation, quality,
+            config['band'] || null, config['network-mode'] || null,
+            config['apn-profiles'] || null,
+            config['allow-roaming'] ? config['allow-roaming'] === 'yes' : null,
+            JSON.stringify({ ...rows[0], ...config }),
+          ],
+        );
+
+        await this.recordObservedBands(name, status);
+
+        // Signal series. Fields are written only when the modem reported them —
+        // a zero here would read as a signal no transmitter produces.
+        const point = new Point('lte_signal')
+          .tag('device_id', String(this.device.id))
+          .tag('device_name', this.device.name)
+          .tag('interface', name)
+          .tag('operator', status.operator || 'unknown')
+          .tag('band', status.primaryBand ? `B${status.primaryBand.band}` : 'unknown')
+          .timestamp(new Date());
+
+        let hasField = false;
+        const addField = (key: string, value: number | null, integer = false) => {
+          if (value == null) return;
+          if (integer) point.intField(key, Math.round(value));
+          else point.floatField(key, value);
+          hasField = true;
+        };
+        addField('rsrp', status.rsrp);
+        addField('rsrq', status.rsrq);
+        addField('sinr', status.sinr);
+        addField('rssi', status.rssi);
+        addField('cqi', status.cqi, true);
+        addField('rank', status.ri, true);
+        addField('mcs', status.mcs, true);
+        // Aggregated carriers, primary included — the shape of the link over time.
+        point.intField('carriers', status.caBands.length + (status.primaryBand ? 1 : 0));
+
+        if (hasField) writeApi.writePoint(point);
+      }
+    } catch (error) {
+      console.error(`LTE collection failed for ${this.device.name}:`, error);
+    }
+  }
+
+  /** Last stored state for an interface, for comparing consecutive polls. */
+  private async previousLteStatus(name: string): Promise<LteStatus | null> {
+    const row = await queryOne<{
+      cell_id: string | null; session_uptime_s: string | null;
+      primary_band: { band: number } | null; ca_bands: { band: number }[] | null;
+    }>(
+      `SELECT cell_id, session_uptime_s, primary_band, ca_bands
+         FROM lte_interfaces WHERE device_id = $1 AND interface_name = $2`,
+      [this.device.id, name],
+    );
+    if (!row) return null;
+
+    // Only the fields detectChanges compares need to be faithful here.
+    return {
+      status: null, dataClass: null, modemModel: null, modemRevision: null,
+      operator: null, cellId: row.cell_id, enbId: null, sectorId: null, phyCellId: null,
+      sessionUptimeSeconds: row.session_uptime_s == null ? null : Number(row.session_uptime_s),
+      primaryBand: row.primary_band
+        ? { band: row.primary_band.band, bandwidthMhz: null, earfcn: null, phyCellId: null, raw: '' }
+        : null,
+      caBands: (row.ca_bands || []).map(b => ({
+        band: b.band, bandwidthMhz: null, earfcn: null, phyCellId: null, raw: '',
+      })),
+      rssi: null, rsrp: null, rsrq: null, sinr: null,
+      cqi: null, ri: null, mcs: null, dlModulation: null,
+    };
+  }
+
+  /** Persist handovers, re-registrations and band changes seen between polls. */
+  private async recordLteChanges(
+    name: string, previous: LteStatus | null, next: LteStatus,
+  ): Promise<void> {
+    const bands = [next.primaryBand, ...next.caBands]
+      .filter(Boolean).map(b => b!.band).sort((a, b) => a - b).join(',');
+
+    for (const change of detectChanges(previous, next)) {
+      await query(
+        `INSERT INTO lte_cell_history
+           (device_id, interface_name, kind, detail, cell_id, enb_id, bands, rsrp, sinr)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [this.device.id, name, change.kind, change.detail,
+         next.cellId, next.enbId, bands || null, next.rsrp, next.sinr],
+      );
+    }
+  }
+
+  /**
+   * Remember which bands have actually served this device.
+   *
+   * This is the evidence a band lock is checked against later. Scanning is not a
+   * dependable alternative — it interrupts service and finds nothing at a site
+   * served by one base station — but a band already used here demonstrably works.
+   */
+  private async recordObservedBands(name: string, status: LteStatus): Promise<void> {
+    const bands = [...new Set(
+      [status.primaryBand, ...status.caBands].filter(Boolean).map(b => b!.band),
+    )];
+    for (const band of bands) {
+      await query(
+        `INSERT INTO lte_observed_bands (device_id, interface_name, band)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (device_id, interface_name, band) DO UPDATE SET
+           last_seen = NOW(), observations = lte_observed_bands.observations + 1`,
+        [this.device.id, name, band],
+      );
     }
   }
 
