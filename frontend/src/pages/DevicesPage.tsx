@@ -14,7 +14,7 @@ import AddDeviceModal from '../components/devices/AddDeviceModal';
 import EditDeviceModal from '../components/devices/EditDeviceModal';
 import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
 
-type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen';
+type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen' | 'rack_name' | 'location_address';
 type DiscoveredSortKey = 'identity' | 'address' | 'mac_address' | 'seen_by' | 'discovered_at';
 type SortDir = 'asc' | 'desc';
 
@@ -139,6 +139,10 @@ export default function DevicesPage() {
   const [hideDuplicates, setHideDuplicates] = useState(true);
   const [showTryAllModal, setShowTryAllModal] = useState(false);
   const [deviceSort, setDeviceSort] = useState<{ key: DeviceSortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
+  // Physical-placement filters (#107). Both are free-form strings on the device, so
+  // the options come from what is actually recorded rather than a fixed list.
+  const [rackFilter, setRackFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
   const [discoveredSort, setDiscoveredSort] = useState<{ key: DiscoveredSortKey; dir: SortDir }>({
     key: 'discovered_at',
     dir: 'desc',
@@ -189,6 +193,15 @@ export default function DevicesPage() {
   });
 
   // Fetch 1h CPU history for all devices (for LOAD sparkline column)
+  // Placement options come from what is actually recorded, so the dropdowns never
+  // offer a rack or site that would match nothing (#107).
+  const rackOptions = useMemo(
+    () => [...new Set(devices.map(d => d.rack_name).filter(Boolean) as string[])].sort(),
+    [devices]);
+  const locationOptions = useMemo(
+    () => [...new Set(devices.map(d => d.location_address).filter(Boolean) as string[])].sort(),
+    [devices]);
+
   const cpuHistoryResults = useQueries({
     queries: devices.map(d => ({
       queryKey: ['device-resources-history', d.id],
@@ -209,12 +222,16 @@ export default function DevicesPage() {
 
   const filtered = useMemo(() => {
     const base = devices.filter(d => {
-      if (search &&
-        !d.name.toLowerCase().includes(search.toLowerCase()) &&
-        !d.ip_address.includes(search) &&
-        !d.model?.toLowerCase().includes(search.toLowerCase()) &&
-        !d.serial_number?.toLowerCase().includes(search.toLowerCase())
-      ) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        const haystack = [
+          d.name, d.ip_address, d.model, d.serial_number,
+          d.location_address, d.rack_name, d.rack_slot,
+        ];
+        if (!haystack.some(v => v && String(v).toLowerCase().includes(q))) return false;
+      }
+      if (rackFilter && d.rack_name !== rackFilter) return false;
+      if (locationFilter && d.location_address !== locationFilter) return false;
       if (statusFilter === 'online' && d.status !== 'online') return false;
       if (statusFilter === 'offline' && d.status !== 'offline') return false;
       if (statusFilter === 'updates' && !d.firmware_update_available && !d.routerboard_upgrade_available) return false;
@@ -231,6 +248,8 @@ export default function DevicesPage() {
           case 'ip_address': return x.ip_address || '';
           case 'model': return x.model || '';
           case 'serial_number': return x.serial_number || '';
+          case 'rack_name': return x.rack_name || '';
+          case 'location_address': return x.location_address || '';
           case 'ros_version': return x.ros_version || '';
           case 'status': return x.status || '';
           case 'last_seen': return x.last_seen ? new Date(x.last_seen).getTime() : 0;
@@ -245,7 +264,7 @@ export default function DevicesPage() {
       return deviceSort.dir === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [devices, search, statusFilter, typeFilter, tagFilter, deviceSort]);
+  }, [devices, search, statusFilter, typeFilter, tagFilter, rackFilter, locationFilter, deviceSort]);
 
   const discoveredList = discovered as DiscoveredDevice[];
   const duplicateCount = useMemo(
@@ -345,6 +364,29 @@ export default function DevicesPage() {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
+        {/* Placement filters — only offered when placement is actually recorded (#107) */}
+        {rackOptions.length > 0 && (
+          <select
+            value={rackFilter}
+            onChange={e => setRackFilter(e.target.value)}
+            className="mono text-[11.5px] px-[8px] py-[4px] rounded-[5px] bg-transparent outline-none"
+            style={{ color: rackFilter ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
+          >
+            <option value="">All racks</option>
+            {rackOptions.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        )}
+        {locationOptions.length > 0 && (
+          <select
+            value={locationFilter}
+            onChange={e => setLocationFilter(e.target.value)}
+            className="text-[11.5px] px-[8px] py-[4px] rounded-[5px] bg-transparent outline-none max-w-[180px]"
+            style={{ color: locationFilter ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
+          >
+            <option value="">All locations</option>
+            {locationOptions.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+        )}
         {(['all', 'online', 'offline', 'updates'] as const).map(f => (
           <button
             key={f}
@@ -424,6 +466,7 @@ export default function DevicesPage() {
                     { key: null,         label: 'TYPE',       w: 72  },
                     { key: 'model',      label: 'MODEL',      w: null },
                     { key: 'serial_number', label: 'SERIAL',  w: 130  },
+                    { key: 'rack_name',  label: 'RACK',       w: 100  },
                     { key: 'ip_address', label: 'IP ADDRESS', w: null },
                     { key: 'ros_version',label: 'ROS',        w: 110 },
                     { key: null,         label: 'CPU',        w: 110 },
@@ -494,6 +537,18 @@ export default function DevicesPage() {
                           title={device.serial_number || undefined}
                         >
                           {device.serial_number || '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-[12px]">
+                        <span
+                          className="text-[11.5px] block truncate"
+                          style={{ color: 'var(--ink-3)', maxWidth: 100 }}
+                          title={[device.rack_name, device.rack_slot && `slot ${device.rack_slot}`, device.location_address]
+                            .filter(Boolean).join(' · ') || undefined}
+                        >
+                          {device.rack_name
+                            ? `${device.rack_name}${device.rack_slot ? `/${device.rack_slot}` : ''}`
+                            : '—'}
                         </span>
                       </td>
                       <td className="px-4 py-[12px]">

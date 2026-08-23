@@ -25,7 +25,10 @@ export function setPollerService(p: PollerService): void { pollerService = p; }
 
 // GET /api/clients
 router.get('/', async (req: Request, res: Response) => {
-  const { deviceId, active, search, client_type, limit = '100', offset = '0', sort, dir } = req.query;
+  const {
+    deviceId, active, search, client_type, limit = '100', offset = '0', sort, dir,
+    vlan_id, signal_min, signal_max,
+  } = req.query;
 
   // Whitelist sortable columns → safe SQL expressions on the outer (deduped)
   // result. Sorting must run server-side across the whole dataset, not just the
@@ -68,6 +71,26 @@ router.get('/', async (req: Request, res: Response) => {
     filterParams.push(`%${search}%`);
     idx++;
   }
+  if (vlan_id) {
+    filters.push(`c.vlan_id = $${idx++}`);
+    filterParams.push(vlan_id);
+  }
+  // Signal range, so the AP-density chart can hand off the band the user clicked
+  // (issues #99, #100). Bounds are inclusive of min and exclusive of max, matching
+  // how the density buckets are drawn.
+  if (signal_min) {
+    filters.push(`c.signal_strength >= $${idx++}`);
+    filterParams.push(Number(signal_min));
+  }
+  if (signal_max) {
+    filters.push(`c.signal_strength < $${idx++}`);
+    filterParams.push(Number(signal_max));
+  }
+  // Category is deliberately absent. The effective category is the user's override
+  // where set, otherwise a fingerprint computed in JS from vendor and hostname
+  // (utils/clientFingerprint) — there is no column to filter on, and filtering after
+  // pagination would produce wrong counts. Persisting the fingerprint would fix it,
+  // at the cost of going stale whenever the rules change.
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 

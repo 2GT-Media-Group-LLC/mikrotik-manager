@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight, RefreshCw,
 } from 'lucide-react';
 import { CATEGORY_META } from '../utils/clientCategories';
+import { RSSI_ZONES } from '../utils/wifiChannels';
 import { clientsApi } from '../services/api';
 import type { Client } from '../types';
 import { useCanWrite } from '../hooks/useCanWrite';
@@ -203,6 +204,30 @@ export default function ClientsPage() {
     setPage(0);
   };
   const isWireless = typeFilter === 'wireless';
+
+  // VLAN and signal-range filters live in the URL alongside type, so the AP
+  // Deployment Density chart can hand off the band the user clicked (#99) and any
+  // filtered view stays shareable (#100).
+  const urlNum = (k: string): number | undefined => {
+    const v = searchParams.get(k);
+    if (v == null || v === '') return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const vlanFilter = urlNum('vlan');
+  const signalMin = urlNum('smin');
+  const signalMax = urlNum('smax');
+  const setUrlFilter = (patch: Record<string, string | null>) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(patch)) {
+        if (v == null || v === '') next.delete(k); else next.set(k, v);
+      }
+      return next;
+    }, { replace: true });
+    setPage(0);
+  };
+  const activeFilterCount = [vlanFilter, signalMin ?? signalMax].filter(v => v !== undefined).length;
   const [page, setPage] = useState(0);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [sortCol, setSortCol] = useState<string>('last_seen');
@@ -233,16 +258,33 @@ export default function ClientsPage() {
   };
 
   const { data, isLoading } = useQuery({
-    queryKey: ['clients', { search, showAll, typeFilter, page, pageSize, sortCol, sortDir }],
+    queryKey: ['clients', { search, showAll, typeFilter, vlanFilter, signalMin, signalMax, page, pageSize, sortCol, sortDir }],
     queryFn: () =>
       clientsApi
-        .list({ search: search || undefined, active: showAll ? undefined : true, client_type: typeFilter ?? undefined, limit: pageSize, offset: page * pageSize, sort: sortCol, dir: sortDir })
+        .list({
+          search: search || undefined,
+          active: showAll ? undefined : true,
+          client_type: typeFilter ?? undefined,
+          vlan_id: vlanFilter,
+          signal_min: signalMin,
+          signal_max: signalMax,
+          limit: pageSize, offset: page * pageSize, sort: sortCol, dir: sortDir,
+        })
         .then((r) => r.data),
     refetchInterval: refreshInterval ?? false,
     // Keep the current rows on screen while a sort/page/search refetch is in
     // flight so the table doesn't blank out and jump.
     placeholderData: keepPreviousData,
   });
+
+  // Offer only VLANs the fleet actually uses, so the list never presents a
+  // choice that would return nothing.
+  const vlanOptions = useMemo(() => {
+    const seen = new Set<number>();
+    for (const c of (data?.clients ?? [])) if (c.vlan_id != null) seen.add(c.vlan_id);
+    if (vlanFilter != null) seen.add(vlanFilter);   // keep the active choice selectable
+    return [...seen].sort((a, b) => a - b);
+  }, [data, vlanFilter]);
 
   const [purgeResult, setPurgeResult] = useState('');
   const purgeMutation = useMutation({
@@ -316,6 +358,48 @@ export default function ClientsPage() {
             </button>
           ))}
         </div>
+        {/* VLAN filter — populated from what the fleet actually uses, so the
+            operator picks a real VLAN rather than guessing an id (#100). */}
+        {vlanOptions.length > 0 && (
+          <select
+            className="input w-auto"
+            value={vlanFilter ?? ''}
+            onChange={(e) => setUrlFilter({ vlan: e.target.value || null })}
+          >
+            <option value="">All VLANs</option>
+            {vlanOptions.map(v => <option key={v} value={v}>VLAN {v}</option>)}
+          </select>
+        )}
+
+        {/* Signal band — the same buckets the AP density chart clusters by, which
+            is what lets that chart link straight here (#99). */}
+        {isWireless && (
+          <select
+            className="input w-auto"
+            value={signalMin != null || signalMax != null ? `${signalMin ?? ''}:${signalMax ?? ''}` : ''}
+            onChange={(e) => {
+              const [lo, hi] = e.target.value.split(':');
+              setUrlFilter({ smin: lo || null, smax: hi || null });
+            }}
+          >
+            <option value="">Any signal</option>
+            {RSSI_ZONES.map(z => (
+              <option key={z.label} value={`${z.min}:${z.max}`}>
+                {z.label} ({z.min} to {z.max} dBm)
+              </option>
+            ))}
+          </select>
+        )}
+
+        {activeFilterCount > 0 && (
+          <button
+            onClick={() => setUrlFilter({ vlan: null, smin: null, smax: null })}
+            className="px-3 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700"
+          >
+            Clear {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}
+          </button>
+        )}
+
         <button
           onClick={() => { setShowAll((s) => !s); setPage(0); }}
           className={clsx(

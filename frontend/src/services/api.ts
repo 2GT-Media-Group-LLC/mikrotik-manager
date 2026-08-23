@@ -439,6 +439,10 @@ export const clientsApi = {
     active?: boolean;
     search?: string;
     client_type?: string;
+    vlan_id?: number;
+    /** Inclusive lower / exclusive upper dBm bound, matching the density buckets. */
+    signal_min?: number;
+    signal_max?: number;
     limit?: number;
     offset?: number;
     sort?: string;
@@ -490,6 +494,7 @@ export const systemApi = {
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 export const eventsApi = {
+  topics: () => api.get<{ topic: string; count: number }[]>('/events/topics'),
   list: (params?: {
     deviceId?: number;
     severity?: string;

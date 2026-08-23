@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Radio, Signal, Activity, ShieldCheck, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { wirelessApi } from '../../services/api';
@@ -173,6 +174,7 @@ const RSSI_MAX = -30;
 const RSSI_TICKS = [-90, -80, -70, -60, -50, -40, -30];
 
 export function RssiDensity({ deviceId }: { deviceId?: number }) {
+  const navigate = useNavigate();
   const { data: signals = [] } = useQuery({
     queryKey: ['rf-signals', deviceId],
     queryFn: () => wirelessApi.getClientSignals(deviceId).then(r => r.data),
@@ -231,13 +233,23 @@ export function RssiDensity({ deviceId }: { deviceId?: number }) {
             {/* client bubbles */}
             {Array.from(bins.entries()).map(([bin, rows]) => {
               const size = Math.min(34, 12 + (rows.length - 1) * 4);
+              // Clicking a bubble opens the Clients page filtered to wireless clients
+              // in the signal zone that bubble sits in (#99). The zone rather than the
+              // 2 dB bin, because the bin is a drawing detail and the zone is the thing
+              // an operator is actually asking about.
+              const zone = RSSI_ZONES.find(z => bin >= z.min && bin < z.max) ?? RSSI_ZONES[0];
               return (
-                <div key={bin}
-                  title={rows.map(r => `${r.custom_name || r.hostname || r.mac_address} (${r.signal_strength} dBm, ${r.device_name})`).join('\n')}
-                  className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center text-[10px] font-semibold text-white shadow ring-2 ring-white dark:ring-slate-800"
+                <button key={bin}
+                  onClick={() => navigate(`/clients?type=wireless&smin=${zone.min}&smax=${zone.max}`)}
+                  title={[
+                    ...rows.map(r => `${r.custom_name || r.hostname || r.mac_address} (${r.signal_strength} dBm, ${r.device_name})`),
+                    '',
+                    `Click to list ${zone.label.toLowerCase()}-signal clients`,
+                  ].join('\n')}
+                  className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center text-[10px] font-semibold text-white shadow ring-2 ring-white dark:ring-slate-800 hover:ring-blue-400 transition-shadow cursor-pointer"
                   style={{ left: `${pos(bin)}%`, width: size, height: size, backgroundColor: rssiColor(bin) }}>
                   {rows.length > 1 ? rows.length : ''}
-                </div>
+                </button>
               );
             })}
           </div>

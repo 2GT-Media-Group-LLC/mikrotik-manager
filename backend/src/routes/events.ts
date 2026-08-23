@@ -6,6 +6,30 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/events
+/**
+ * GET /api/events/topics — the distinct RouterOS topic tokens in use, with counts.
+ *
+ * RouterOS reports a topic as a comma-separated list such as `system,info,account`,
+ * so the useful unit of filtering is the individual token rather than the whole
+ * string. Splitting server-side keeps the badge list honest across the entire table
+ * instead of only the page currently loaded (issue #108).
+ */
+router.get('/topics', async (_req: Request, res: Response) => {
+  const rows = await query<{ token: string; n: string }>(`
+    SELECT token, COUNT(*) AS n
+    FROM (
+      SELECT unnest(string_to_array(topic, ',')) AS token
+      FROM events
+      WHERE topic IS NOT NULL AND topic <> ''
+        AND event_time > NOW() - INTERVAL '30 days'
+    ) t
+    WHERE btrim(token) <> ''
+    GROUP BY token
+    ORDER BY COUNT(*) DESC, token ASC
+    LIMIT 40`);
+  res.json(rows.map((r) => ({ topic: r.token.trim(), count: Number(r.n) })));
+});
+
 router.get('/', async (req: Request, res: Response) => {
   const {
     deviceId,
@@ -39,8 +63,10 @@ router.get('/', async (req: Request, res: Response) => {
     params.push(...Array.from(expanded));
   }
   if (topic) {
-    filters.push(`e.topic ILIKE $${idx++}`);
-    params.push(`%${topic}%`);
+    // Match a whole token rather than a substring: the badges present topics as
+    // discrete tags, so `error` must not also match a hypothetical `no-error`.
+    filters.push(`$${idx++} = ANY(string_to_array(e.topic, ','))`);
+    params.push(topic);
   }
   if (since) {
     filters.push(`e.event_time >= $${idx++}`);

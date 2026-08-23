@@ -30,6 +30,14 @@ export default function EventsPage() {
   const [topic, setTopic] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [page, setPage] = useState(0);
+  // RouterOS reports topics as a comma-separated list, so the server splits them
+  // into individual tokens and counts them across the whole table — the operator
+  // picks from what actually exists rather than guessing a spelling (#108).
+  const { data: topicList = [] } = useQuery({
+    queryKey: ['event-topics'],
+    queryFn: () => eventsApi.topics().then(r => r.data),
+    staleTime: 300_000,
+  });
   const PAGE_SIZE = 100;
 
   const toggleSeverity = (s: string) => {
@@ -122,13 +130,18 @@ export default function EventsPage() {
           />
         </div>
 
-        <input
-          type="text"
-          className="input w-full sm:w-36"
-          placeholder="Filter topic…"
-          value={topic}
-          onChange={(e) => { setTopic(e.target.value); setPage(0); }}
-        />
+        {topicList.length > 0 && (
+          <select
+            className="input w-full sm:w-44"
+            value={topic}
+            onChange={(e) => { setTopic(e.target.value); setPage(0); }}
+          >
+            <option value="">All topics</option>
+            {topicList.map(t => (
+              <option key={t.topic} value={t.topic}>{t.topic} ({t.count})</option>
+            ))}
+          </select>
+        )}
 
         <div className="flex items-center gap-3 px-3 py-1.5 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
           {([
