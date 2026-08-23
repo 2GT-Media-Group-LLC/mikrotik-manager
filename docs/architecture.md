@@ -109,6 +109,43 @@ Statements are written to be safe to re-run — `CREATE TABLE IF NOT EXISTS`,
 `ADD COLUMN IF NOT EXISTS`, and guarded constraint swaps — so upgrading is just starting
 the new image.
 
+## Developing against hardware you do not have
+
+Two bugs shipped in v0.23.5 and v0.23.6 because CAPsMAN code was written and
+"verified" against a fleet containing no CAPsMAN. Neither was catchable by unit
+tests: both lived in SQL — a join that could never match, and a `WHERE` clause that
+filtered out every managed radio before the analysis ran.
+
+`scripts/seed-capsman-fixture.sql` reproduces the shape of a real deployment so
+those paths can be exercised locally against the actual endpoints:
+
+```bash
+docker compose exec -T postgres psql -U mikrotik -d mikrotik_manager \
+  -q -f - < scripts/seed-capsman-fixture.sql
+
+# ... work, hit /api/wireless/rf/channels, /api/wireless/capsman ...
+
+docker compose exec -T postgres psql -U mikrotik -d mikrotik_manager \
+  -q -f - < scripts/seed-capsman-fixture-clean.sql
+```
+
+The fixture is deliberately awkward in the ways real deployments are:
+
+- the controller is a **router** with no radios of its own, so anything keyed on
+  `device_type = 'wireless_ap'` misses it
+- CAP interfaces carry **NULL frequency, SSID and band**, because the controller owns
+  the configuration — code that requires a frequency silently drops them
+- the controller **mirrors every CAP interface locally**, so a CAP's radio MAC
+  legitimately appears on two devices
+- channels appear only in RouterOS's `<freq>/<phy>/<control-positions>` form, never
+  as a plain number
+- the radios are arranged to produce one partial overlap and one co-channel pair, so
+  interference classification has something real to get wrong
+
+Everything it creates is prefixed `fixture-`. Add to it rather than working from
+assumptions whenever a report arrives with device output attached — that output is
+the most valuable thing in the issue.
+
 ## Before you push
 
 `scripts/ci-preflight.sh` runs the same gates as CI — lint, type-check, build, tests and
