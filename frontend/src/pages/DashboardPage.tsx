@@ -804,10 +804,10 @@ function OperationsView({
         </div>
       )}
 
-      {/* Things to handle — full width now that quick actions live in the header */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1.3fr 1fr' }}>
-        {/* Things to handle */}
-        <div className="card" style={{ overflow: 'hidden' }}>
+      {/* Things to handle — genuinely full width. It previously sat as the only
+          child of a two-column grid left behind when quick actions moved to the
+          header (#104), so it rendered at 57% with an empty column beside it. */}
+      <div className="card" style={{ overflow: 'hidden' }}>
           <div
             className="flex items-center gap-[10px] px-5 py-[14px]"
             style={{ borderBottom: '1px solid var(--line)' }}
@@ -822,6 +822,10 @@ function OperationsView({
               {thingsToHandle.length} item{thingsToHandle.length !== 1 ? 's' : ''}
             </span>
           </div>
+          {/* A fleet with a real backlog can generate dozens of these. Capping the
+              list and scrolling keeps the card a fixed part of the page instead of
+              something that grows without bound and displaces everything below. */}
+          <div style={{ maxHeight: 'min(52vh, 460px)', overflowY: 'auto' }}>
           {thingsToHandle.length > 0 ? thingsToHandle.map((item, i) => (
             <div
               key={i}
@@ -836,33 +840,39 @@ function OperationsView({
                 <div className="text-[13.5px] font-medium mb-[3px]" style={{ color: 'var(--ink)' }}>{item.title}</div>
                 <div className="text-[12.5px] leading-relaxed" style={{ color: 'var(--ink-2)' }}>{item.body}</div>
               </div>
-              <button
-                onClick={() => navigate(item.path)}
-                className="text-[11.5px] rounded-[5px] px-3 py-[6px] flex-shrink-0 transition-colors"
-                style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-3)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                {item.action} →
-              </button>
-              {/* "Not now" rather than "never": an item that is genuinely resolved
-                  stops being generated, so a dismissal is time-boxed (#102). */}
-              {item.fingerprint && (
+              {/* Both buttons share the grid's third column. Placed as siblings
+                  they made four children in a three-column grid, which wrapped
+                  Snooze onto an implicit second row inside the 3px severity
+                  column — where it rendered as an unreadable sliver. */}
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => dismissInsight.mutate({
-                    fingerprint: item.fingerprint!, hours: 24,
-                    category: item.category, title: item.title,
-                  })}
-                  disabled={dismissInsight.isPending}
-                  title="Hide this for 24 hours. It returns if it is still true."
-                  className="text-[11.5px] rounded-[5px] px-2 py-[6px] flex-shrink-0 transition-colors"
-                  style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
+                  onClick={() => navigate(item.path)}
+                  className="text-[11.5px] rounded-[5px] px-3 py-[6px] whitespace-nowrap transition-colors"
+                  style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-3)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  Snooze
+                  {item.action} →
                 </button>
-              )}
+                {/* "Not now" rather than "never": an item that is genuinely resolved
+                    stops being generated, so a dismissal is time-boxed (#102). */}
+                {item.fingerprint && (
+                  <button
+                    onClick={() => dismissInsight.mutate({
+                      fingerprint: item.fingerprint!, hours: 24,
+                      category: item.category, title: item.title,
+                    })}
+                    disabled={dismissInsight.isPending}
+                    title="Hide this for 24 hours. It returns if it is still true."
+                    className="text-[11.5px] rounded-[5px] px-2 py-[6px] whitespace-nowrap transition-colors disabled:opacity-50"
+                    style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-3)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    Snooze
+                  </button>
+                )}
+              </div>
             </div>
           )) : (
             <div className="flex items-center justify-center gap-2 py-8" style={{ color: 'var(--ink-3)' }}>
@@ -870,13 +880,12 @@ function OperationsView({
               <span className="text-[13px]">Nothing needs attention</span>
             </div>
           )}
-          {(insights?.dismissedCount ?? 0) > 0 && (
-            <div className="px-5 py-2 text-[11.5px]" style={{ color: 'var(--ink-3)', borderTop: '1px solid var(--line-soft)' }}>
-              {insights!.dismissedCount} snoozed — they return automatically if still true.
-            </div>
-          )}
-        </div>
-
+          </div>
+        {(insights?.dismissedCount ?? 0) > 0 && (
+          <div className="px-5 py-2 text-[11.5px]" style={{ color: 'var(--ink-3)', borderTop: '1px solid var(--line-soft)' }}>
+            {insights!.dismissedCount} snoozed — they return automatically if still true.
+          </div>
+        )}
       </div>
 
       {/* Capacity + Security rollup */}
