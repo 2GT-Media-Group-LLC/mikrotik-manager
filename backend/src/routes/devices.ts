@@ -1571,24 +1571,61 @@ router.post('/:id/check-update', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/devices/:id/install-update
+/**
+ * POST /api/devices/:id/install-update — install a pending RouterOS update.
+ *
+ * The check on the line below is load-bearing, not a courtesy. RouterOS installs
+ * the version discovered by `check-for-updates` **in the same API session**;
+ * issued on its own, `/system/package/update/install` replies `!done` and does
+ * nothing at all. This route used to do exactly that, so the button reported
+ * "Update installation initiated. Device will reboot." while the device sat
+ * untouched — verified against a switch that ignored this endpoint and then
+ * upgraded two minutes later through the rollout path, which does check first.
+ *
+ * The flag is likewise not cleared here. An upgrade takes minutes and a reboot,
+ * neither of which an HTTP request can wait for, so claiming the device is
+ * current the moment the command is sent puts a false "up to date" on every
+ * screen until the poller contradicts it. The poller owns that transition; this
+ * route reports only what it actually knows.
+ */
 router.post('/:id/install-update', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
+  const deviceRow = await queryOne<any>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
 
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
+
+    const status = await collector.checkForUpdates();
+    const installed = (status['installed-version'] || '').trim();
+    const latest = (status['latest-version'] || '').trim();
+
+    if (!latest || latest === installed) {
+      // Nothing to do is a real answer, not a failure — and it is the one state
+      // in which the device genuinely is current, so the flag can be trusted.
+      await query(
+        `UPDATE devices SET firmware_update_available = FALSE,
+                latest_ros_version = NULLIF($2,''), updated_at = NOW() WHERE id = $1`,
+        [deviceRow.id, latest]
+      );
+      return res.json({
+        started: false,
+        installed_version: installed || null,
+        message: `Already running ${installed || 'the latest version'} — nothing to install.`,
+      });
+    }
+
     await collector.installUpdate();
-    // Clear the update flag — device is rebooting with new firmware
     await query(
-      `UPDATE devices SET firmware_update_available = FALSE, updated_at = NOW() WHERE id = $1`,
-      [deviceRow.id]
+      `UPDATE devices SET latest_ros_version = NULLIF($2,''), updated_at = NOW() WHERE id = $1`,
+      [deviceRow.id, latest]
     );
-    return res.json({ message: 'Update installation initiated. Device will reboot.' });
+    return res.json({
+      started: true,
+      installed_version: installed || null,
+      target_version: latest,
+      message: `Installing ${latest}. The device will reboot; the new version appears once it is back and polled.`,
+    });
   } finally {
     collector.disconnect();
   }
@@ -1616,23 +1653,49 @@ router.post('/:id/check-routerboard', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/devices/:id/install-routerboard
+/**
+ * POST /api/devices/:id/install-routerboard — apply a pending RouterBOOT upgrade.
+ *
+ * Same shape as install-update above, and it had the same two faults: no check
+ * that anything was pending, and the flag cleared before the reboot it depends
+ * on had happened. `/system/routerboard/upgrade` on a current bootloader is a
+ * no-op, so the reboot that followed accomplished nothing while the UI reported
+ * an upgrade — and rebooting a device to achieve nothing is worse here than in
+ * the RouterOS case, because it costs an outage.
+ */
 router.post('/:id/install-routerboard', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
+  const deviceRow = await queryOne<any>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
 
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
+
+    const info = await collector.checkRouterboardUpgrade();
+    if (!info.upgradeAvailable) {
+      await query(
+        `UPDATE devices SET routerboard_upgrade_available = FALSE,
+                upgrade_firmware_version = NULLIF($2,''), updated_at = NOW() WHERE id = $1`,
+        [deviceRow.id, info.upgradeFirmware]
+      );
+      return res.json({
+        started: false,
+        current_firmware: info.currentFirmware || null,
+        message: `RouterBOOT is already at ${info.currentFirmware || 'the current version'} — nothing to upgrade.`,
+      });
+    }
+
     await collector.installRouterboardUpgrade();
     await query(
-      `UPDATE devices SET routerboard_upgrade_available = FALSE, updated_at = NOW() WHERE id = $1`,
-      [deviceRow.id]
+      `UPDATE devices SET upgrade_firmware_version = NULLIF($2,''), updated_at = NOW() WHERE id = $1`,
+      [deviceRow.id, info.upgradeFirmware]
     );
-    return res.json({ message: 'RouterBOOT upgrade initiated. Device will reboot.' });
+    return res.json({
+      started: true,
+      current_firmware: info.currentFirmware || null,
+      target_firmware: info.upgradeFirmware,
+      message: `Upgrading RouterBOOT to ${info.upgradeFirmware}. The device will reboot.`,
+    });
   } finally {
     collector.disconnect();
   }

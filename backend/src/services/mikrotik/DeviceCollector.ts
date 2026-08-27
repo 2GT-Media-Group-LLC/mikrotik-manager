@@ -211,6 +211,16 @@ export class DeviceCollector {
           serial_number = COALESCE($3, serial_number),
           firmware_version = COALESCE($4, firmware_version),
           ros_version = COALESCE($5, ros_version),
+          -- An update that has landed is no longer pending. The dedicated
+          -- firmware check only runs once a day, so without this a device stays
+          -- flagged "update available" for up to 24 hours after it has already
+          -- been upgraded — including when someone upgrades it outside the
+          -- platform entirely. The version read here is the authority.
+          firmware_update_available = CASE
+            WHEN NULLIF($5,'') IS NOT NULL AND latest_ros_version IS NOT NULL
+                 AND NULLIF($5,'') = latest_ros_version THEN FALSE
+            ELSE firmware_update_available
+          END,
           updated_at = NOW()
         WHERE id = $6`,
         [identityName, model, serial, firmware, rosVersion, this.device.id]

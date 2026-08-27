@@ -181,9 +181,21 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
 
   const installUpdateMutation = useMutation({
     mutationFn: () => devicesApi.installUpdate(deviceId),
-    onSuccess: () => {
-      setUpdateInfo(null);
-      setInstallSuccess('Update installation initiated. The device will reboot shortly.');
+    // The server now distinguishes "installing" from "there was nothing to
+    // install", because this button used to report the first while doing the
+    // second. Report back whichever actually happened.
+    onSuccess: (res) => {
+      setInstallSuccess(res.data.message);
+      if (res.data.started) {
+        setUpdateInfo(null);
+      } else {
+        setUpdateInfo({
+          'installed-version': res.data.installed_version || '',
+          'latest-version': res.data.installed_version || '',
+          'status': 'System is up to date',
+          'channel': '',
+        });
+      }
       invalidateFirmwareState();
     },
     onError: (err: unknown) => {
@@ -232,9 +244,9 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
 
   const installRouterboardMutation = useMutation({
     mutationFn: () => devicesApi.installRouterboard(deviceId),
-    onSuccess: () => {
-      setRbInfo(null);
-      setRbInstallSuccess('RouterBOOT upgrade initiated. The device will reboot shortly.');
+    onSuccess: (res) => {
+      setRbInstallSuccess(res.data.message);
+      if (res.data.started) setRbInfo(null);
       invalidateFirmwareState();
     },
     onError: (err: unknown) => {

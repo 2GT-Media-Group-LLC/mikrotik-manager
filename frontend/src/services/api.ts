@@ -363,10 +363,19 @@ export const devicesApi = {
     api.post<Record<string, string>>(`/devices/${id}/check-update`),
   checkRouterboard: (id: number) =>
     api.post<{ currentFirmware: string; upgradeFirmware: string; upgradeAvailable: boolean }>(`/devices/${id}/check-routerboard`),
-  installRouterboard: (id: number) => api.post(`/devices/${id}/install-routerboard`),
+  installRouterboard: (id: number) =>
+    api.post<{
+      started: boolean; current_firmware: string | null;
+      target_firmware?: string; message: string;
+    }>(`/devices/${id}/install-routerboard`),
   getHardware: (id: number) =>
     api.get<{ health: Record<string, string>[]; disks: Record<string, string>[] }>(`/devices/${id}/hardware`),
-  installUpdate: (id: number) => api.post(`/devices/${id}/install-update`),
+  /** `started: false` means the device was already current — not a failure. */
+  installUpdate: (id: number) =>
+    api.post<{
+      started: boolean; installed_version: string | null;
+      target_version?: string; message: string;
+    }>(`/devices/${id}/install-update`),
   getClock: (id: number) => api.get<{ date: string; time: string; timezone: string }>(`/devices/${id}/clock`),
   setClock: (id: number, data: { date?: string; time?: string; timezone?: string }) =>
     api.put(`/devices/${id}/clock`, data),
