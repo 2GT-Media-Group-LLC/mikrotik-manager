@@ -85,7 +85,16 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    # A memory ceiling so a runaway producer can never take the host down. The
+    # eviction policy is deliberately volatile-lru rather than allkeys-*: BullMQ
+    # job data carries no TTL and must never be evicted (that would silently
+    # destroy queued work), while the poller's caches and in-flight claims all
+    # set one and are safe to drop. If pressure ever exhausts the volatile keys
+    # Redis refuses writes instead of evicting queue state — loud, and survivable.
+    command: >
+      redis-server --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy volatile-lru
     volumes:
       - redis_data:/data
     restart: unless-stopped

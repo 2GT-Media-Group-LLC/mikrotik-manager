@@ -159,12 +159,19 @@ export class PollerService {
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
       });
+    // Periodic polls are not retried in-job: the schedule is the retry. A device
+    // that just failed to answer is unlikely to answer a second later, and each
+    // extra attempt occupies a worker for up to the job timeout. On a fleet with
+    // several devices down that doubles the capacity they waste, which is exactly
+    // the capacity the rest of the fleet is short of (#114). Historically this
+    // also doubled the recorded failure count: 231k failed jobs on a four-device
+    // fleet turned out to be ~1,000 hours of genuine downtime, counted twice.
     } else if (type === 'fast') {
-      await this.fastQueue.add('device-fast-poll', jobData, { attempts: 2 });
+      await this.fastQueue.add('device-fast-poll', jobData, { attempts: 1 });
     } else if (type === 'slow') {
-      await this.slowQueue.add('device-slow-poll', jobData, { attempts: 2 });
+      await this.slowQueue.add('device-slow-poll', jobData, { attempts: 1 });
     } else if (type === 'logs') {
-      await this.logsQueue.add('device-logs-poll', jobData, { attempts: 2 });
+      await this.logsQueue.add('device-logs-poll', jobData, { attempts: 1 });
     } else if (type === 'macscan') {
       await this.fastQueue.add('device-macscan', jobData, { attempts: 1 });
     } else if (type === 'spectral') {
