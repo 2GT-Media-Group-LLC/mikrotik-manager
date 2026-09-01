@@ -3,10 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound, ClipboardList, FileText, Zap, LogIn,
+  Activity,
 } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi, maintenanceApi, configTemplatesApi } from '../services/api';
 import type { MaintenanceWindow, ConfigTemplate } from '../services/api';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
+import PollerHealthCard from '../components/system/PollerHealthCard';
 import { useAuthStore } from '../store/authStore';
 import { useThemeStore } from '../store/themeStore';
 import type { User, UserRole } from '../types';
@@ -49,7 +51,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore();
   const isAdmin = user?.role === 'admin';
   const canWrite = user?.role !== 'viewer';
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller'>('general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -477,6 +479,7 @@ export default function SettingsPage() {
         ...(isAdmin ? [{ key: 'sso' as const, label: 'SSO / OIDC', icon: LogIn }] : []),
         { key: 'certificate' as const, label: 'Certificate', icon: Lock },
         ...(isAdmin ? [{ key: 'audit' as const, label: 'Audit Log', icon: ClipboardList }] : []),
+        ...(isAdmin ? [{ key: 'poller' as const, label: 'Polling', icon: Activity }] : []),
       ],
     },
     {
@@ -925,6 +928,12 @@ export default function SettingsPage() {
       )}
 
       {/* ── Users ── */}
+      {activeTab === 'poller' && (
+        <div className="card p-5">
+          <PollerHealthCard />
+        </div>
+      )}
+
       {activeTab === 'users' && (
         <div className="space-y-4">
           {/* Role legend */}

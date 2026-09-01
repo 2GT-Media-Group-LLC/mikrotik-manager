@@ -301,6 +301,45 @@ export const lteApi = {
     }),
 };
 
+
+// ─── Poller health (#114) ─────────────────────────────────────────────────────
+
+export interface PollerQueue {
+  name: string; waiting?: number; active?: number; delayed?: number;
+  failed?: number; completed?: number; paused?: number; error?: string;
+}
+
+export interface PollerHealth {
+  status: 'ok' | 'draining' | 'saturated';
+  queues: PollerQueue[];
+  workers: { concurrency: number; job_timeout_ms: number; poll_interval_ms: number };
+  capacity: {
+    devices: number;
+    avg_fast_poll_ms: number | null;
+    p90_fast_poll_ms: number | null;
+    arrival_per_sec: number;
+    service_per_sec: number | null;
+    /** Below 1.0 the backlog grows every cycle. */
+    headroom: number | null;
+    backlog: number;
+    /** null when the backlog is not shrinking at the current rate. */
+    drain_eta_sec: number | null;
+  };
+  retention: { max_age_sec: number; max_count: number; stale_pending_ms: Record<string, number> };
+  stale_devices: {
+    id: number; name: string; status: string; kind: string;
+    last_attempt_at: string | null; last_success_at: string | null;
+    last_duration_ms: number | null; last_error: string | null;
+    attempts: number; failures: number; seconds_since_success: number | null;
+  }[];
+}
+
+export const pollerApi = {
+  health: () => api.get<PollerHealth>('/system/poller'),
+  drain: () => api.post<{ drained: Record<string, number>; total: number; message: string }>(
+    '/system/poller/drain'),
+};
+
 export const devicesApi = {
   list: () => api.get<Device[]>('/devices'),
   discovered: () => api.get<DiscoveredDevice[]>('/devices/discovered'),

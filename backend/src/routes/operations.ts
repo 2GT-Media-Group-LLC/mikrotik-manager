@@ -152,6 +152,31 @@ router.get('/insights', async (_req: Request, res: Response) => {
       });
     }
   }
+  // The poller's own health belongs here. A fleet outrunning its workers looks
+  // exactly like a fleet of broken devices — stale data everywhere and no
+  // explanation — and the operator who most needs to know is the one least
+  // likely to go reading an API endpoint (#114).
+  try {
+    const { pollerService } = await import('../services/pollerRef');
+    const health = pollerService ? await pollerService.getPollerHealth() : null;
+    if (health && health.status !== 'ok') {
+      const cap = health.capacity as Record<string, number | null>;
+      const backlog = cap.backlog ?? 0;
+      const saturated = health.status === 'saturated';
+      attention.push({
+        sev: saturated ? 'error' : 'warn',
+        category: 'poller',
+        title: saturated
+          ? 'Polling cannot keep up with this fleet'
+          : `Polling is behind — ${backlog.toLocaleString()} jobs queued`,
+        body: saturated
+          ? `Each cycle enqueues ${cap.arrival_per_sec}/s but the workers clear only ${cap.service_per_sec}/s, so devices will go stale. Raise POLLER_CONCURRENCY or lengthen the interval.`
+          : `Clearing at the current rate takes ${cap.drain_eta_sec == null ? 'longer than it is accumulating' : `about ${Math.round((cap.drain_eta_sec || 0) / 60)} min`}. Devices poll late until it clears.`,
+        action: 'Open poller health', path: '/settings?tab=poller',
+      });
+    }
+  } catch { /* health is advisory — never let it break the dashboard */ }
+
   for (const d of devices) {
     if (d.firmware_update_available) {
       attention.push({

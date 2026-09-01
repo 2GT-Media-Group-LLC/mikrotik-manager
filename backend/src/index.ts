@@ -18,6 +18,7 @@ import { redis } from './config/redis';
 import { runMigrations } from './db/migrate';
 import { errorHandler } from './middleware/errorHandler';
 import { PollerService } from './services/PollerService';
+import { setSharedPollerService } from './services/pollerRef';
 import {
   setBulkAddPollerService,
   startBulkAddWorker,
@@ -374,6 +375,7 @@ async function start(): Promise<void> {
   pollerService.setSocketServer(io);
   setDevicesPoller(pollerService);
   setSystemPoller(pollerService);
+  setSharedPollerService(pollerService);
   setBulkAddPollerService(pollerService);
   setTopologyPoller(pollerService);
   setClientsPoller(pollerService);
@@ -384,6 +386,12 @@ async function start(): Promise<void> {
   // hold up startup, and nothing depends on it having finished.
   void pollerService.cleanupJobHistory().catch((e) =>
     console.error('[Poller] Job history cleanup failed:', e));
+
+  // Pending work accumulated before dedup existed is dropped too, not just
+  // finished-job history. An upgrade that leaves hundreds of thousands of stale
+  // polls queued has not actually fixed anything the operator can see (#114).
+  void pollerService.dropStalePending().catch((e) =>
+    console.error('[Poller] Stale-pending sweep failed:', e));
   await startBulkAddWorker();
 
   // NetFlow/IPFIX collector (binds its UDP socket only when netflow_enabled)

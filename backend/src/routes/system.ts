@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireWrite } from '../middleware/auth';
 import { query } from '../config/database';
 import type { PollerService } from '../services/PollerService';
 
@@ -85,6 +85,26 @@ router.get('/poller', async (_req: Request, res: Response) => {
   } catch (error) {
     console.error('Error building poller health:', error);
     res.status(500).json({ error: 'Failed to read poller health' });
+  }
+});
+
+/**
+ * POST /api/system/poller/drain — clear every queued poll now.
+ *
+ * The automatic sweep only discards jobs past their cadence, which still leaves
+ * a large backlog draining for hours. Nothing is lost: the scheduler re-enqueues
+ * whatever is still due on its next tick, so the cost is at most one interval of
+ * freshness.
+ */
+router.post('/poller/drain', requireWrite, async (_req: Request, res: Response) => {
+  try {
+    if (!pollerService) return res.status(503).json({ error: 'Poller not started' });
+    const drained = await pollerService.drainQueues();
+    const total = Object.values(drained).reduce((a, b) => a + b, 0);
+    res.json({ drained, total, message: `Cleared ${total} queued job(s). Polling resumes on the next cycle.` });
+  } catch (error) {
+    console.error('Error draining poller queues:', error);
+    res.status(500).json({ error: 'Failed to drain queues' });
   }
 });
 

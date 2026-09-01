@@ -85,16 +85,21 @@ services:
 
   redis:
     image: redis:7-alpine
-    # A memory ceiling so a runaway producer can never take the host down. The
-    # eviction policy is deliberately volatile-lru rather than allkeys-*: BullMQ
-    # job data carries no TTL and must never be evicted (that would silently
-    # destroy queued work), while the poller's caches and in-flight claims all
-    # set one and are safe to drop. If pressure ever exhausts the volatile keys
-    # Redis refuses writes instead of evicting queue state — loud, and survivable.
+    # A memory ceiling so a runaway producer can never take the host down, with
+    # eviction disabled.
+    #
+    # volatile-lru looks tempting — it would evict only keys with an expiry, and
+    # BullMQ's job hashes have none. But its *control* keys do: job locks and
+    # per-queue stalled-check markers both carry TTLs, and losing one causes
+    # duplicate processing or a stalled-job storm. BullMQ warns about this on
+    # connect, and it is right. noeviction means Redis refuses writes when full
+    # rather than quietly corrupting queue state: the host stays up, and the
+    # failure is loud. Retention limits and the stale-pending sweep are what keep
+    # us away from the ceiling in the first place.
     command: >
       redis-server --appendonly yes
       --maxmemory ${REDIS_MAXMEMORY:-512mb}
-      --maxmemory-policy volatile-lru
+      --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     restart: unless-stopped

@@ -15,7 +15,23 @@ import type { GuardDevice } from './changeGuard/ChangeGuard';
 const JOB_RETENTION_SEC = Number(process.env.POLLER_JOB_RETENTION_SEC || 3600);
 const JOB_RETENTION_COUNT = Number(process.env.POLLER_JOB_RETENTION_COUNT || 5000);
 const CLEANUP_BATCH = 5000;
-const CLEANUP_MAX_PASSES = 200;
+const CLEANUP_MAX_PASSES = 400;
+
+/**
+ * How long a *pending* poll may wait before it is worthless.
+ *
+ * A periodic job that has waited longer than its own cadence has already been
+ * superseded: running it produces a reading the next cycle would have taken
+ * anyway, while occupying a worker the fleet needs. Retention limits do not
+ * touch pending work, so a backlog accumulated before those limits existed sat
+ * untouched — one reporter upgraded and still had 752,318 jobs queued, roughly
+ * nine days of draining (#114).
+ */
+const STALE_WAIT_MS: Record<string, number> = {
+  'poll-fast': 120_000,
+  'poll-logs': 240_000,
+  'poll-slow': 900_000,
+};
 
 /**
  * Worker concurrency, per queue.
@@ -147,12 +163,30 @@ export class PollerService {
   async scheduleDeviceSync(deviceId: number, type: PollJob['type'] = 'full'): Promise<void> {
     const jobData: PollJob = { deviceId, type };
 
-    // A poll already queued or running for this device makes another pointless.
-    // The TTL is generous relative to the job timeout so a crashed worker frees
-    // the device on the following cycle rather than stranding it.
-    if (type !== 'full' && !(await this.claimPoll(type, deviceId, Math.ceil(JOB_TIMEOUT_MS / 1000) * 3))) {
-      return;
-    }
+    /**
+     * Deduplication is delegated to BullMQ rather than guarded by a lock.
+     *
+     * The previous attempt used a Redis key with a TTL, which fails in exactly
+     * the situation it exists for: with a large backlog a job waits hours, the
+     * TTL lapses long before it runs, and the scheduler enqueues another every
+     * cycle. A deterministic job id cannot lapse — while a job for this device
+     * and kind exists in any state, adding it again is a no-op.
+     *
+     * That requires finished jobs to be removed immediately, or the id would
+     * stay taken and the device would never be polled again. Losing that history
+     * costs nothing now: device_poll_stats records every attempt, its duration
+     * and its error, which is more useful than the job payload ever was.
+     */
+    const periodic = {
+      // Hyphens, not colons: BullMQ reserves ':' for its own key structure and
+      // rejects a custom id containing one. Getting this wrong throws on every
+      // enqueue, which stops the scheduler dead — caught only by exercising the
+      // id directly rather than trusting the format.
+      jobId: `poll-${type}-${deviceId}`,
+      removeOnComplete: true,
+      removeOnFail: true,
+      attempts: 1,
+    };
 
     if (type === 'full') {
       await this.fastQueue.add('device-full-sync', jobData, {
@@ -167,21 +201,21 @@ export class PollerService {
     // also doubled the recorded failure count: 231k failed jobs on a four-device
     // fleet turned out to be ~1,000 hours of genuine downtime, counted twice.
     } else if (type === 'fast') {
-      await this.fastQueue.add('device-fast-poll', jobData, { attempts: 1 });
+      await this.fastQueue.add('device-fast-poll', jobData, periodic);
     } else if (type === 'slow') {
-      await this.slowQueue.add('device-slow-poll', jobData, { attempts: 1 });
+      await this.slowQueue.add('device-slow-poll', jobData, periodic);
     } else if (type === 'logs') {
-      await this.logsQueue.add('device-logs-poll', jobData, { attempts: 1 });
+      await this.logsQueue.add('device-logs-poll', jobData, periodic);
     } else if (type === 'macscan') {
-      await this.fastQueue.add('device-macscan', jobData, { attempts: 1 });
+      await this.fastQueue.add('device-macscan', jobData, periodic);
     } else if (type === 'spectral') {
-      await this.slowQueue.add('device-spectral', jobData, { attempts: 1 });
+      await this.slowQueue.add('device-spectral', jobData, periodic);
     } else if (type === 'apscan') {
-      await this.slowQueue.add('device-apscan', jobData, { attempts: 1 });
+      await this.slowQueue.add('device-apscan', jobData, periodic);
     } else if (type === 'configsnap') {
-      await this.slowQueue.add('device-configsnap', jobData, { attempts: 1 });
+      await this.slowQueue.add('device-configsnap', jobData, periodic);
     } else if (type === 'confighealth') {
-      await this.slowQueue.add('device-confighealth', jobData, { attempts: 1 });
+      await this.slowQueue.add('device-confighealth', jobData, periodic);
     }
   }
 
@@ -314,6 +348,17 @@ export class PollerService {
         await this.setTimestamp(staleLinksKey, now);
         query(`DELETE FROM topology_links WHERE discovered_at < NOW() - INTERVAL '20 minutes'`)
           .catch((e) => console.error('[Poller] Stale topology-link cleanup error:', e));
+      }
+
+      // Stale pending sweep — every 5 minutes. Cheap when there is nothing to do,
+      // and it means a backlog from any cause self-heals rather than requiring
+      // an operator to notice it.
+      const staleKey = 'task:stale_pending';
+      const lastStale = await this.getTimestamp(staleKey);
+      if (now - lastStale > 300_000) {
+        await this.setTimestamp(staleKey, now);
+        this.dropStalePending().catch((e) =>
+          console.error('[Poller] Stale-pending sweep error:', e));
       }
 
       // Firmware update check — runs once per day
@@ -577,19 +622,55 @@ export class PollerService {
   }
 
   /**
-   * Claim a device for one kind of poll, refusing if one is already outstanding.
+   * Discard pending polls that have waited longer than their own cadence.
    *
-   * The scheduler runs on a fixed 30-second timer and used to enqueue
-   * unconditionally, so whenever the workers could not keep up the queue grew by
-   * the difference on every tick — forever. Devices at the back of it simply
-   * stopped being polled, which is what "last seen isn't refreshing at all"
-   * actually was (#114).
+   * Retention limits govern finished jobs only, so an installation that built a
+   * backlog before those limits existed keeps every queued job — and each one,
+   * when it finally runs, produces a reading that the next cycle would have
+   * taken anyway. Executing them is worse than dropping them: they occupy the
+   * workers the live fleet is waiting on.
    *
-   * A claim is a Redis SET NX with a TTL, so a worker that dies mid-poll cannot
-   * wedge a device permanently: the claim lapses and the next cycle re-enqueues.
-   * If Redis is unreachable we enqueue anyway — degrading to the old behaviour
-   * beats not polling at all.
+   * Dropping queued work is safe precisely because it is periodic. The schedule
+   * re-enqueues within one cycle, so the cost of discarding a stale poll is at
+   * most one interval of freshness, against hours of backlog otherwise.
    */
+  async dropStalePending(): Promise<number> {
+    let total = 0;
+    for (const { name, queue } of this.queues) {
+      const maxAge = STALE_WAIT_MS[name] ?? 300_000;
+      try {
+        for (let pass = 0; pass < CLEANUP_MAX_PASSES; pass++) {
+          const ids = await queue.clean(maxAge, CLEANUP_BATCH, 'wait');
+          total += ids.length;
+          if (ids.length < CLEANUP_BATCH) break;
+        }
+      } catch (e) {
+        console.error(`[Poller] Stale-pending sweep failed for ${name}:`, (e as Error).message);
+      }
+    }
+    if (total > 0) console.log(`[Poller] Dropped ${total} stale pending job(s)`);
+    return total;
+  }
+
+  /**
+   * Remove every queued poll immediately, on request.
+   *
+   * The automatic sweep only drops jobs past their cadence, which still leaves an
+   * operator staring at a backlog that takes hours to clear. This is the "clear
+   * it now" they actually want; nothing is lost because the next scheduler tick
+   * re-enqueues whatever is still due.
+   */
+  async drainQueues(): Promise<Record<string, number>> {
+    const drained: Record<string, number> = {};
+    for (const { name, queue } of this.queues) {
+      const before = await queue.getJobCounts('waiting', 'delayed');
+      await queue.drain(true);
+      drained[name] = (before.waiting || 0) + (before.delayed || 0);
+    }
+    console.log('[Poller] Queues drained on request:', drained);
+    return drained;
+  }
+
   /**
    * Record what happened on a poll, per device and kind.
    *
@@ -654,7 +735,29 @@ export class PollerService {
     const arrivalPerSec = deviceCount / (POLL_INTERVAL_MS / 1000);
     const servicePerSec = avgSec > 0 ? POLL_CONCURRENCY / avgSec : null;
 
+    const headroom = servicePerSec == null || arrivalPerSec === 0
+      ? null
+      : Math.round((servicePerSec / arrivalPerSec) * 100) / 100;
+
+    // Backlog is reported alongside headroom because headroom alone lies.
+    // It describes flow — whether the workers can keep up from here — and says
+    // nothing about work already queued. An earlier version of this endpoint
+    // reported a comfortable 1.59 to an operator with 752,318 jobs waiting and
+    // nine stale devices, which is worse than no number at all (#114).
+    const backlog = queues.reduce((n, q) => n + (Number(q.waiting) || 0), 0);
+    const netDrainPerSec = servicePerSec == null ? null : servicePerSec - arrivalPerSec;
+    const drainEtaSec = backlog === 0 ? 0
+      : netDrainPerSec == null || netDrainPerSec <= 0 ? null
+      : Math.round(backlog / netDrainPerSec);
+
+    // A single verdict, so nobody has to interpret three numbers correctly.
+    const status =
+      headroom != null && headroom < 1 ? 'saturated'
+      : backlog > deviceCount * 3      ? 'draining'
+      : 'ok';
+
     return {
+      status,
       queues,
       workers: {
         concurrency: POLL_CONCURRENCY,
@@ -668,29 +771,17 @@ export class PollerService {
         arrival_per_sec: Math.round(arrivalPerSec * 100) / 100,
         service_per_sec: servicePerSec == null ? null : Math.round(servicePerSec * 100) / 100,
         // Below 1.0 the backlog grows every cycle and devices go stale.
-        headroom: servicePerSec == null || arrivalPerSec === 0
-          ? null
-          : Math.round((servicePerSec / arrivalPerSec) * 100) / 100,
+        headroom,
+        backlog,
+        // null means the backlog is not shrinking at the current rate.
+        drain_eta_sec: drainEtaSec,
       },
-      retention: { max_age_sec: JOB_RETENTION_SEC, max_count: JOB_RETENTION_COUNT },
+      retention: {
+        max_age_sec: JOB_RETENTION_SEC,
+        max_count: JOB_RETENTION_COUNT,
+        stale_pending_ms: STALE_WAIT_MS,
+      },
     };
-  }
-
-  private async claimPoll(kind: string, deviceId: number, ttlSec: number): Promise<boolean> {
-    try {
-      const { redis } = await import('../config/redis');
-      const res = await redis.set(`poll:inflight:${kind}:${deviceId}`, '1', 'EX', ttlSec, 'NX');
-      return res === 'OK';
-    } catch {
-      return true;
-    }
-  }
-
-  private async releasePoll(kind: string, deviceId: number): Promise<void> {
-    try {
-      const { redis } = await import('../config/redis');
-      await redis.del(`poll:inflight:${kind}:${deviceId}`);
-    } catch { /* claim will lapse on its own TTL */ }
   }
 
   private async setTimestamp(key: string, ts: number, ttlSec = 600): Promise<void> {
@@ -721,8 +812,6 @@ export class PollerService {
         } catch (err) {
           await this.recordPollOutcome(job.data.deviceId, kind, Date.now() - started, (err as Error).message);
           throw err;
-        } finally {
-          await this.releasePoll(job.data.type, job.data.deviceId);
         }
       };
 
