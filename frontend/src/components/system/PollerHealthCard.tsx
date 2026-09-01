@@ -50,12 +50,19 @@ function Stat({ label, value, hint, alarm }: {
   );
 }
 
+/** Fallback capacity, so a partial or unexpected payload cannot blank the page. */
+const EMPTY_CAPACITY: PollerHealth['capacity'] = {
+  devices: 0, avg_fast_poll_ms: null, p90_fast_poll_ms: null,
+  arrival_per_sec: 0, service_per_sec: null, headroom: null,
+  backlog: 0, drain_eta_sec: 0,
+};
+
 export default function PollerHealthCard() {
   const queryClient = useQueryClient();
   const [drainResult, setDrainResult] = useState('');
   const [confirmDrain, setConfirmDrain] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['poller-health'],
     queryFn: () => pollerApi.health().then(r => r.data),
     refetchInterval: 15_000,
@@ -70,14 +77,49 @@ export default function PollerHealthCard() {
     },
   });
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return <div className="text-sm text-gray-500 dark:text-slate-400">Loading poller health…</div>;
   }
 
+  /**
+   * Failure has to be visible here of all places.
+   *
+   * This panel previously rendered "Loading…" forever on an error and threw
+   * outright on an unexpected payload, blanking the whole page — the worst
+   * possible behaviour for the one screen you open when monitoring looks broken.
+   * Whatever comes back, say something useful about it.
+   */
+  if (isError || !data || typeof data !== 'object') {
+    const msg = (error as { response?: { data?: { error?: string } }; message?: string } | null);
+    return (
+      <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm dark:border-red-700/60 dark:bg-red-900/20">
+        <div className="flex items-center gap-2 font-medium text-red-800 dark:text-red-300">
+          <AlertTriangle className="h-4 w-4" /> Could not read poller health
+        </div>
+        <p className="mt-1 text-red-700 dark:text-red-300">
+          {msg?.response?.data?.error || msg?.message || 'The server returned an unexpected response.'}
+        </p>
+        <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+          Polling itself may still be running — this panel only reports on it. Check the backend logs
+          if this persists.
+        </p>
+        <button onClick={() => queryClient.invalidateQueries({ queryKey: ['poller-health'] })}
+                className="btn-secondary mt-3 flex items-center gap-2 text-xs">
+          <RefreshCw className="h-3.5 w-3.5" /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  // Every field below is defaulted. A backend a version behind, or one that
+  // answered partially, degrades the panel rather than destroying the page.
   const s = STATUS[data.status] ?? STATUS.ok;
   const Icon = s.icon;
-  const cap = data.capacity;
-  const backlog = cap.backlog;
+  const cap = data.capacity ?? EMPTY_CAPACITY;
+  const backlog = cap.backlog ?? 0;
+  const queues = Array.isArray(data.queues) ? data.queues : [];
+  const staleDevices = Array.isArray(data.stale_devices) ? data.stale_devices : [];
+  const workers = data.workers ?? { concurrency: 0, job_timeout_ms: 0, poll_interval_ms: 0 };
 
   return (
     <div className="space-y-4">
@@ -103,7 +145,7 @@ export default function PollerHealthCard() {
       {/* Capacity. headroom and backlog are shown together deliberately: headroom
           alone once reported "healthy" to an operator with 752k jobs queued. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <Stat label="Devices" value={String(cap.devices)} />
+        <Stat label="Devices" value={String(cap.devices ?? 0)} />
         <Stat
           label="Headroom"
           value={cap.headroom == null ? '—' : `${cap.headroom}×`}
@@ -120,8 +162,8 @@ export default function PollerHealthCard() {
         <Stat label="Slowest (p90)" value={cap.p90_fast_poll_ms == null ? '—' : `${cap.p90_fast_poll_ms} ms`} />
         <Stat
           label="Workers"
-          value={String(data.workers.concurrency)}
-          hint={`${data.workers.poll_interval_ms / 1000}s interval`}
+          value={String(workers.concurrency)}
+          hint={`${(workers.poll_interval_ms || 0) / 1000}s interval`}
         />
       </div>
 
@@ -148,7 +190,7 @@ export default function PollerHealthCard() {
             </tr>
           </thead>
           <tbody>
-            {data.queues.map(q => (
+            {queues.map(q => (
               <tr key={q.name} className="border-b border-gray-100 dark:border-slate-800 last:border-0">
                 <td className="py-2 pr-4 font-mono text-xs text-gray-900 dark:text-white">{q.name}</td>
                 <td className={`py-2 pr-4 text-right tabular-nums ${
@@ -195,15 +237,15 @@ export default function PollerHealthCard() {
       {/* Which devices are actually being missed */}
       <div>
         <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
-          Devices not polled recently {data.stale_devices.length > 0 && `(${data.stale_devices.length})`}
+          Devices not polled recently {staleDevices.length > 0 && `(${staleDevices.length})`}
         </h4>
-        {data.stale_devices.length === 0 ? (
+        {staleDevices.length === 0 ? (
           <p className="text-xs text-gray-500 dark:text-slate-400">
             Every device has been polled successfully in the last few minutes.
           </p>
         ) : (
           <ul className="space-y-1.5">
-            {data.stale_devices.map(d => (
+            {staleDevices.map(d => (
               <li key={`${d.id}-${d.kind}`} className="text-xs flex flex-wrap gap-x-2 gap-y-0.5">
                 <span className="font-medium text-gray-900 dark:text-white">{d.name}</span>
                 <span className="text-gray-500 dark:text-slate-400">

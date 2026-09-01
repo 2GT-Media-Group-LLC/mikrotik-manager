@@ -721,14 +721,29 @@ export class PollerService {
       }
     }
 
-    const [{ count: deviceCount } = { count: 0 }] = await query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM devices WHERE status != 'disabled'`
-    );
-    const [timing] = await query<{ avg_ms: number | null; p90_ms: number | null }>(
-      `SELECT AVG(last_duration_ms)::int AS avg_ms,
-              (PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY last_duration_ms))::int AS p90_ms
-         FROM device_poll_stats WHERE kind = 'fast' AND last_duration_ms IS NOT NULL`
-    );
+    // Each read is independently guarded. This endpoint is what an operator opens
+    // when monitoring already looks broken, so it must degrade to partial numbers
+    // rather than fail whole — a 500 here reads as "the tool is dead too".
+    let deviceCount = 0;
+    try {
+      const [row] = await query<{ count: number }>(
+        `SELECT COUNT(*)::int AS count FROM devices WHERE status != 'disabled'`
+      );
+      deviceCount = row?.count ?? 0;
+    } catch (e) {
+      console.error('[Poller] Health: device count failed:', (e as Error).message);
+    }
+
+    let timing: { avg_ms: number | null; p90_ms: number | null } | undefined;
+    try {
+      [timing] = await query<{ avg_ms: number | null; p90_ms: number | null }>(
+        `SELECT AVG(last_duration_ms)::int AS avg_ms,
+                (PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY last_duration_ms))::int AS p90_ms
+           FROM device_poll_stats WHERE kind = 'fast' AND last_duration_ms IS NOT NULL`
+      );
+    } catch (e) {
+      console.error('[Poller] Health: timing query failed:', (e as Error).message);
+    }
 
     // Can the workers keep up? Arrival is one fast poll per device per cycle.
     const avgSec = (timing?.avg_ms || 0) / 1000;

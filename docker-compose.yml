@@ -37,6 +37,13 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost,http://localhost,https://127.0.0.1,http://127.0.0.1}
       PORT: 3001
       NETFLOW_BIND_PORT: 2055
+      # Poller tuning. These were documented in .env.example but never passed
+      # through, so setting them had no effect on the container at all.
+      POLLER_CONCURRENCY: ${POLLER_CONCURRENCY:-12}
+      POLLER_JOB_TIMEOUT_MS: ${POLLER_JOB_TIMEOUT_MS:-45000}
+      POLLER_INTERVAL_MS: ${POLLER_INTERVAL_MS:-30000}
+      POLLER_JOB_RETENTION_SEC: ${POLLER_JOB_RETENTION_SEC:-3600}
+      POLLER_JOB_RETENTION_COUNT: ${POLLER_JOB_RETENTION_COUNT:-5000}
     ports:
       # NetFlow/IPFIX collector — UDP goes straight to the backend (nginx not involved).
       # Host port must match the netflow_collector_port app setting (default 2055).

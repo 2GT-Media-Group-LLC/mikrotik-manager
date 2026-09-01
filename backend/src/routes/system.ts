@@ -68,7 +68,10 @@ router.get('/poller', async (_req: Request, res: Response) => {
 
     // Devices the poller has not managed to reach lately, worst first. This is
     // the list that answers "which ones is it actually missing?".
-    const stale = await query(
+    // Stale-device listing is a nicety; never let it take the whole payload down.
+    let stale: unknown[] = [];
+    try {
+      stale = await query(
       `SELECT d.id, d.name, d.status, s.kind,
               s.last_attempt_at, s.last_success_at, s.last_duration_ms, s.last_error,
               s.attempts, s.failures,
@@ -79,7 +82,10 @@ router.get('/poller', async (_req: Request, res: Response) => {
           AND (s.last_success_at IS NULL OR s.last_success_at < NOW() - INTERVAL '3 minutes')
         ORDER BY s.last_success_at ASC NULLS FIRST
         LIMIT 50`
-    );
+      );
+    } catch (e) {
+      console.error('Poller health: stale-device query failed:', (e as Error).message);
+    }
 
     res.json({ ...health, stale_devices: stale });
   } catch (error) {
