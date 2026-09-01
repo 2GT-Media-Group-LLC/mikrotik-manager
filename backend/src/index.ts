@@ -61,7 +61,7 @@ import wirelessRoutes from './routes/wireless';
 import networkServicesRoutes from './routes/networkServices';
 import trafficAnalyticsRoutes from './routes/trafficAnalytics';
 import credentialPresetsRoutes from './routes/credentialPresets';
-import systemRoutes from './routes/system';
+import systemRoutes, { setPollerService as setSystemPoller } from './routes/system';
 import { auditMiddleware } from './middleware/auditMiddleware';
 
 // ─── Secret hygiene ───────────────────────────────────────────────────────────
@@ -373,10 +373,17 @@ async function start(): Promise<void> {
   const pollerService = new PollerService();
   pollerService.setSocketServer(io);
   setDevicesPoller(pollerService);
+  setSystemPoller(pollerService);
   setBulkAddPollerService(pollerService);
   setTopologyPoller(pollerService);
   setClientsPoller(pollerService);
   await pollerService.start();
+
+  // Trim job history left over from before retention limits existed. Runs in the
+  // background: an installation with millions of retained jobs would otherwise
+  // hold up startup, and nothing depends on it having finished.
+  void pollerService.cleanupJobHistory().catch((e) =>
+    console.error('[Poller] Job history cleanup failed:', e));
   await startBulkAddWorker();
 
   // NetFlow/IPFIX collector (binds its UDP socket only when netflow_enabled)

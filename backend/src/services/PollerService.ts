@@ -9,6 +9,48 @@ import { alertService } from './AlertService';
 import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 
+// ─── Tuning ───────────────────────────────────────────────────────────────────
+
+/** How long finished jobs are kept, and how many, per queue. */
+const JOB_RETENTION_SEC = Number(process.env.POLLER_JOB_RETENTION_SEC || 3600);
+const JOB_RETENTION_COUNT = Number(process.env.POLLER_JOB_RETENTION_COUNT || 5000);
+const CLEANUP_BATCH = 5000;
+const CLEANUP_MAX_PASSES = 200;
+
+/**
+ * Worker concurrency, per queue.
+ *
+ * Was hardcoded at 3. Measured against a live fleet a fast poll takes ~1s at the
+ * median but 13s at p90, so three workers sustain roughly 0.9 jobs/sec — while
+ * sixty devices on a 30-second cadence arrive at 2.0/sec. Any fleet past about
+ * twenty-five devices outruns the workers permanently, and the backlog is what
+ * makes devices appear to stop reporting (#114).
+ */
+const POLL_CONCURRENCY = Math.max(1, Number(process.env.POLLER_CONCURRENCY || 12));
+
+/** Scheduler tick — one fast poll per device per interval. */
+const POLL_INTERVAL_MS = Math.max(10_000, Number(process.env.POLLER_INTERVAL_MS || 30_000));
+
+/**
+ * Hard ceiling on a single poll.
+ *
+ * Without one, an unreachable device holds a worker for as long as its sockets
+ * take to give up, and a handful of them starve every other device in the fleet.
+ */
+const JOB_TIMEOUT_MS = Math.max(5_000, Number(process.env.POLLER_JOB_TIMEOUT_MS || 45_000));
+
+/** Fails the job rather than letting it occupy a worker indefinitely. */
+function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    work.finally(() => clearTimeout(timer)),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms`)), ms);
+    }),
+  ]);
+}
+
+
 interface PollJob {
   deviceId: number;
   type: 'fast' | 'slow' | 'logs' | 'full' | 'macscan' | 'spectral' | 'apscan' | 'configsnap' | 'confighealth';
@@ -29,9 +71,55 @@ export class PollerService {
     const conn2 = createRedisConnection();
     const conn3 = createRedisConnection();
 
-    this.fastQueue = new Queue('poll-fast', { connection: conn1 });
-    this.slowQueue = new Queue('poll-slow', { connection: conn2 });
-    this.logsQueue = new Queue('poll-logs', { connection: conn3 });
+    // Retention is not optional. BullMQ keeps every finished job unless told
+    // otherwise, and a poller enqueues forever — a four-device fleet had
+    // accumulated 1.4M completed and 231k failed jobs, 2.5M Redis keys and
+    // 1.16 GB, against a Redis with no maxmemory. Left alone it grows until the
+    // host dies, and multi-million-element sorted sets slow every queue
+    // operation long before that, which starves the very polling this serves.
+    const defaultJobOptions = {
+      removeOnComplete: { age: JOB_RETENTION_SEC, count: JOB_RETENTION_COUNT },
+      removeOnFail:     { age: JOB_RETENTION_SEC, count: JOB_RETENTION_COUNT },
+    };
+
+    this.fastQueue = new Queue('poll-fast', { connection: conn1, defaultJobOptions });
+    this.slowQueue = new Queue('poll-slow', { connection: conn2, defaultJobOptions });
+    this.logsQueue = new Queue('poll-logs', { connection: conn3, defaultJobOptions });
+  }
+
+  /** Queues in one place, so health reporting and cleanup cannot drift apart. */
+  private get queues(): { name: string; queue: Queue }[] {
+    return [
+      { name: 'poll-fast', queue: this.fastQueue },
+      { name: 'poll-slow', queue: this.slowQueue },
+      { name: 'poll-logs', queue: this.logsQueue },
+    ];
+  }
+
+  /**
+   * Trim finished jobs left over from before retention existed.
+   *
+   * `defaultJobOptions` only governs jobs added from now on, so an installation
+   * that has been running for weeks keeps its entire backlog until something
+   * removes it. Bounded per pass and run in the background: cleaning millions of
+   * keys in one call would block Redis for everything else.
+   */
+  async cleanupJobHistory(): Promise<void> {
+    for (const { name, queue } of this.queues) {
+      for (const state of ['completed', 'failed'] as const) {
+        let removed = 0;
+        try {
+          for (let pass = 0; pass < CLEANUP_MAX_PASSES; pass++) {
+            const ids = await queue.clean(JOB_RETENTION_SEC * 1000, CLEANUP_BATCH, state);
+            removed += ids.length;
+            if (ids.length < CLEANUP_BATCH) break;
+          }
+        } catch (e) {
+          console.error(`[Poller] History cleanup failed for ${name}/${state}:`, (e as Error).message);
+        }
+        if (removed > 0) console.log(`[Poller] Trimmed ${removed} ${state} jobs from ${name}`);
+      }
+    }
   }
 
   setSocketServer(io: SocketServer): void {
@@ -58,6 +146,14 @@ export class PollerService {
 
   async scheduleDeviceSync(deviceId: number, type: PollJob['type'] = 'full'): Promise<void> {
     const jobData: PollJob = { deviceId, type };
+
+    // A poll already queued or running for this device makes another pointless.
+    // The TTL is generous relative to the job timeout so a crashed worker frees
+    // the device on the following cycle rather than stranding it.
+    if (type !== 'full' && !(await this.claimPoll(type, deviceId, Math.ceil(JOB_TIMEOUT_MS / 1000) * 3))) {
+      return;
+    }
+
     if (type === 'full') {
       await this.fastQueue.add('device-full-sync', jobData, {
         attempts: 3,
@@ -83,10 +179,9 @@ export class PollerService {
   }
 
   private startScheduler(): void {
-    // Schedule polls every 30 seconds
     this.schedulerInterval = setInterval(async () => {
       await this.schedulePollCycle();
-    }, 30_000);
+    }, POLL_INTERVAL_MS);
 
     // Also run immediately
     setTimeout(() => this.schedulePollCycle(), 5000);
@@ -474,6 +569,123 @@ export class PollerService {
     }
   }
 
+  /**
+   * Claim a device for one kind of poll, refusing if one is already outstanding.
+   *
+   * The scheduler runs on a fixed 30-second timer and used to enqueue
+   * unconditionally, so whenever the workers could not keep up the queue grew by
+   * the difference on every tick — forever. Devices at the back of it simply
+   * stopped being polled, which is what "last seen isn't refreshing at all"
+   * actually was (#114).
+   *
+   * A claim is a Redis SET NX with a TTL, so a worker that dies mid-poll cannot
+   * wedge a device permanently: the claim lapses and the next cycle re-enqueues.
+   * If Redis is unreachable we enqueue anyway — degrading to the old behaviour
+   * beats not polling at all.
+   */
+  /**
+   * Record what happened on a poll, per device and kind.
+   *
+   * The gap this closes is the one the reporter named: there was no way to tell
+   * whether a device was missed, unreachable, or simply slow. Attempt and
+   * success are stored separately so their difference is the answer, and the
+   * duration makes it possible to choose a polling interval from evidence
+   * instead of guesswork (#114).
+   */
+  private async recordPollOutcome(
+    deviceId: number, kind: string, durationMs: number, error: string | null,
+  ): Promise<void> {
+    try {
+      await query(
+        `INSERT INTO device_poll_stats (device_id, kind, last_attempt_at, last_success_at,
+                                        last_duration_ms, last_error, attempts, failures)
+         VALUES ($1, $2, NOW(), CASE WHEN $4::text IS NULL THEN NOW() END, $3, $4, 1,
+                 CASE WHEN $4::text IS NULL THEN 0 ELSE 1 END)
+         ON CONFLICT (device_id, kind) DO UPDATE SET
+           last_attempt_at  = NOW(),
+           last_success_at  = CASE WHEN $4::text IS NULL THEN NOW()
+                                   ELSE device_poll_stats.last_success_at END,
+           last_duration_ms = $3,
+           last_error       = $4,
+           attempts         = device_poll_stats.attempts + 1,
+           failures         = device_poll_stats.failures + CASE WHEN $4::text IS NULL THEN 0 ELSE 1 END`,
+        [deviceId, kind, durationMs, error]
+      );
+    } catch { /* never let bookkeeping break a poll */ }
+  }
+
+  /**
+   * Queue depth, worker settings and per-device freshness in one place.
+   *
+   * Exposed because a fleet outrunning its workers is invisible from the outside
+   * — the symptom is stale data, which looks like a device problem rather than a
+   * capacity problem. The headroom figure states plainly whether the configured
+   * cadence is achievable at the current fleet size.
+   */
+  async getPollerHealth(): Promise<Record<string, unknown>> {
+    const queues: Record<string, unknown>[] = [];
+    for (const { name, queue } of this.queues) {
+      try {
+        const c = await queue.getJobCounts('waiting', 'active', 'delayed', 'failed', 'completed');
+        queues.push({ name, ...c });
+      } catch (e) {
+        queues.push({ name, error: (e as Error).message });
+      }
+    }
+
+    const [{ count: deviceCount } = { count: 0 }] = await query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM devices WHERE status != 'disabled'`
+    );
+    const [timing] = await query<{ avg_ms: number | null; p90_ms: number | null }>(
+      `SELECT AVG(last_duration_ms)::int AS avg_ms,
+              (PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY last_duration_ms))::int AS p90_ms
+         FROM device_poll_stats WHERE kind = 'fast' AND last_duration_ms IS NOT NULL`
+    );
+
+    // Can the workers keep up? Arrival is one fast poll per device per cycle.
+    const avgSec = (timing?.avg_ms || 0) / 1000;
+    const arrivalPerSec = deviceCount / (POLL_INTERVAL_MS / 1000);
+    const servicePerSec = avgSec > 0 ? POLL_CONCURRENCY / avgSec : null;
+
+    return {
+      queues,
+      workers: {
+        concurrency: POLL_CONCURRENCY,
+        job_timeout_ms: JOB_TIMEOUT_MS,
+        poll_interval_ms: POLL_INTERVAL_MS,
+      },
+      capacity: {
+        devices: deviceCount,
+        avg_fast_poll_ms: timing?.avg_ms ?? null,
+        p90_fast_poll_ms: timing?.p90_ms ?? null,
+        arrival_per_sec: Math.round(arrivalPerSec * 100) / 100,
+        service_per_sec: servicePerSec == null ? null : Math.round(servicePerSec * 100) / 100,
+        // Below 1.0 the backlog grows every cycle and devices go stale.
+        headroom: servicePerSec == null || arrivalPerSec === 0
+          ? null
+          : Math.round((servicePerSec / arrivalPerSec) * 100) / 100,
+      },
+      retention: { max_age_sec: JOB_RETENTION_SEC, max_count: JOB_RETENTION_COUNT },
+    };
+  }
+
+  private async claimPoll(kind: string, deviceId: number, ttlSec: number): Promise<boolean> {
+    try {
+      const { redis } = await import('../config/redis');
+      const res = await redis.set(`poll:inflight:${kind}:${deviceId}`, '1', 'EX', ttlSec, 'NX');
+      return res === 'OK';
+    } catch {
+      return true;
+    }
+  }
+
+  private async releasePoll(kind: string, deviceId: number): Promise<void> {
+    try {
+      const { redis } = await import('../config/redis');
+      await redis.del(`poll:inflight:${kind}:${deviceId}`);
+    } catch { /* claim will lapse on its own TTL */ }
+  }
+
   private async setTimestamp(key: string, ts: number, ttlSec = 600): Promise<void> {
     try {
       const { redis } = await import('../config/redis');
@@ -484,30 +696,40 @@ export class PollerService {
   private startWorkers(): void {
     const workerOptions = {
       connection: createRedisConnection(),
-      concurrency: 3,
+      concurrency: POLL_CONCURRENCY,
     };
 
-    this.fastWorker = new Worker(
-      'poll-fast',
+    /**
+     * Every job runs under a timeout, records how long it took, and releases its
+     * claim — whatever the outcome. Recording the attempt separately from the
+     * success is what makes "we never polled it" distinguishable from "we polled
+     * it and it did not answer", which was previously impossible to tell apart.
+     */
+    const run = (kind: string, fn: (data: PollJob) => Promise<void>) =>
       async (job: Job<PollJob>) => {
-        await this.processPollJob(job.data);
-      },
-      workerOptions
-    );
+        const started = Date.now();
+        try {
+          await withTimeout(fn(job.data), JOB_TIMEOUT_MS, `${kind} poll`);
+          await this.recordPollOutcome(job.data.deviceId, kind, Date.now() - started, null);
+        } catch (err) {
+          await this.recordPollOutcome(job.data.deviceId, kind, Date.now() - started, (err as Error).message);
+          throw err;
+        } finally {
+          await this.releasePoll(job.data.type, job.data.deviceId);
+        }
+      };
+
+    this.fastWorker = new Worker('poll-fast', run('fast', (d) => this.processPollJob(d)), workerOptions);
 
     this.slowWorker = new Worker(
       'poll-slow',
-      async (job: Job<PollJob>) => {
-        await this.processSlowJob(job.data);
-      },
+      run('slow', (d) => this.processSlowJob(d)),
       { ...workerOptions, connection: createRedisConnection() }
     );
 
     this.logsWorker = new Worker(
       'poll-logs',
-      async (job: Job<PollJob>) => {
-        await this.processLogsJob(job.data);
-      },
+      run('logs', (d) => this.processLogsJob(d)),
       { ...workerOptions, connection: createRedisConnection() }
     );
 

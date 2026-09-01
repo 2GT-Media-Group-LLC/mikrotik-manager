@@ -4,9 +4,16 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { requireAuth } from '../middleware/auth';
 import { query } from '../config/database';
+import type { PollerService } from '../services/PollerService';
 
 const router = Router();
 router.use(requireAuth);
+
+// Injected from index.ts, matching how the devices routes receive it.
+let pollerService: PollerService | null = null;
+export function setPollerService(p: PollerService): void {
+  pollerService = p;
+}
 
 // The container runs `node dist/index.js` (not via npm), so npm_package_version
 // is unset there — read the bundled package.json instead, falling back to it.
@@ -46,6 +53,41 @@ function isNewer(latest: number[], current: number[]): boolean {
 
 // GET /api/system/version-check
 // Returns { current, latest, update_available } — cached 24 h in app_settings.
+/**
+ * GET /api/system/poller — is the poller keeping up?
+ *
+ * A fleet that outruns its workers looks, from the outside, exactly like a fleet
+ * of misbehaving devices: data goes stale and nothing says why. `headroom` below
+ * 1.0 means the backlog grows every cycle and some devices will stop reporting
+ * altogether (#114).
+ */
+router.get('/poller', async (_req: Request, res: Response) => {
+  try {
+    if (!pollerService) return res.status(503).json({ error: 'Poller not started' });
+    const health = await pollerService.getPollerHealth();
+
+    // Devices the poller has not managed to reach lately, worst first. This is
+    // the list that answers "which ones is it actually missing?".
+    const stale = await query(
+      `SELECT d.id, d.name, d.status, s.kind,
+              s.last_attempt_at, s.last_success_at, s.last_duration_ms, s.last_error,
+              s.attempts, s.failures,
+              EXTRACT(EPOCH FROM (NOW() - s.last_success_at))::int AS seconds_since_success
+         FROM devices d
+         JOIN device_poll_stats s ON s.device_id = d.id AND s.kind = 'fast'
+        WHERE d.status != 'disabled'
+          AND (s.last_success_at IS NULL OR s.last_success_at < NOW() - INTERVAL '3 minutes')
+        ORDER BY s.last_success_at ASC NULLS FIRST
+        LIMIT 50`
+    );
+
+    res.json({ ...health, stale_devices: stale });
+  } catch (error) {
+    console.error('Error building poller health:', error);
+    res.status(500).json({ error: 'Failed to read poller health' });
+  }
+});
+
 router.get('/version-check', async (_req: Request, res: Response) => {
   try {
     // Check cache

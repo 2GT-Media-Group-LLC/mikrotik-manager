@@ -792,6 +792,26 @@ CREATE TABLE IF NOT EXISTS lte_observed_bands (
   observations   INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (device_id, interface_name, band)
 );
+
+-- Per-device polling telemetry (#114).
+--
+-- last_attempt_at and last_success_at are deliberately separate columns rather
+-- than one "last polled" field. Their difference is the only thing that
+-- distinguishes a device the poller never reached from one it reached and got no
+-- answer from — a distinction the product could not previously make, which left
+-- operators unable to tell a monitoring failure from a device failure.
+CREATE TABLE IF NOT EXISTS device_poll_stats (
+  device_id        INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  kind             VARCHAR(16) NOT NULL,
+  last_attempt_at  TIMESTAMPTZ,
+  last_success_at  TIMESTAMPTZ,
+  last_duration_ms INTEGER,
+  last_error       TEXT,
+  attempts         BIGINT NOT NULL DEFAULT 0,
+  failures         BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (device_id, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_poll_stats_attempt ON device_poll_stats(last_attempt_at DESC);
 `;
 
 const DEFAULT_SETTINGS = [
