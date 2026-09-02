@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Router, Users, Bell, GitBranch, HardDrive,
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
   Server, Globe, Clock, Shield, FileText, Activity, BarChart3, Ticket, ArrowUpCircle, Radio,
-  LayoutGrid,
+  LayoutGrid, TerminalSquare,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { APP_VERSION } from '../../version';
@@ -38,6 +38,7 @@ const networkServicesSubItems = [
 
 const operationsItems = [
   { to: '/firmware',  icon: ArrowUpCircle,   label: 'Firmware' },
+  { to: '/commands',  icon: TerminalSquare,  label: 'Bulk Commands' },
   { to: '/backups',   icon: HardDrive,       label: 'Backups' },
 ];
 

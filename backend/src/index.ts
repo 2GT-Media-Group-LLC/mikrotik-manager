@@ -62,6 +62,7 @@ import wirelessRoutes from './routes/wireless';
 import networkServicesRoutes from './routes/networkServices';
 import trafficAnalyticsRoutes from './routes/trafficAnalytics';
 import credentialPresetsRoutes from './routes/credentialPresets';
+import commandRoutes from './routes/commands';
 import systemRoutes, { setPollerService as setSystemPoller } from './routes/system';
 import { auditMiddleware } from './middleware/auditMiddleware';
 
@@ -327,6 +328,7 @@ app.use('/api/maintenance-windows', maintenanceWindowsRoutes);
 app.use('/api/config-templates', configTemplatesRoutes);
 app.use('/api/config-history', configHistoryRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/commands', commandRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);

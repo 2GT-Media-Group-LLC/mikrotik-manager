@@ -878,6 +878,47 @@ CREATE INDEX IF NOT EXISTS idx_data_cap_sends ON lte_data_cap_sends(device_id, a
 -- The password is retained alongside. Key auth falling back to a password is a
 -- degraded state worth knowing about; key auth failing with no fallback is an
 -- outage.
+-- Bulk command execution (#118).
+--
+-- Waves are not a nicety. Running one command across sixty devices in parallel
+-- means a mistake reaches all sixty before the first failure is visible, and the
+-- whole reason to do this here rather than in a shell loop is that this one can
+-- stop. wave_size and halt_on_failure are what make that possible.
+CREATE TABLE IF NOT EXISTS command_runs (
+  id               SERIAL PRIMARY KEY,
+  name             VARCHAR(120) NOT NULL,
+  command          TEXT NOT NULL,
+  wave_size        INTEGER NOT NULL DEFAULT 1,
+  halt_on_failure  BOOLEAN NOT NULL DEFAULT TRUE,
+  -- Change Guard restores a device that stops answering after the command.
+  -- Defaults on; an operator may turn it off deliberately, per run.
+  use_change_guard BOOLEAN NOT NULL DEFAULT TRUE,
+  -- pending | running | completed | failed | halted | cancelled
+  status           VARCHAR(16) NOT NULL DEFAULT 'pending',
+  created_by       VARCHAR(50),
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  started_at       TIMESTAMPTZ,
+  finished_at      TIMESTAMPTZ
+);
+
+-- Output is kept per device because "it failed" without the device's own words
+-- is not actionable, and because some commands exist purely for their output.
+CREATE TABLE IF NOT EXISTS command_run_devices (
+  id           SERIAL PRIMARY KEY,
+  run_id       INTEGER NOT NULL REFERENCES command_runs(id) ON DELETE CASCADE,
+  device_id    INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  wave         INTEGER NOT NULL DEFAULT 1,
+  -- pending | running | success | failed | skipped | reverted
+  status       VARCHAR(16) NOT NULL DEFAULT 'pending',
+  output       TEXT,
+  error        TEXT,
+  guarded      BOOLEAN NOT NULL DEFAULT FALSE,
+  auto_reverted BOOLEAN NOT NULL DEFAULT FALSE,
+  started_at   TIMESTAMPTZ,
+  finished_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_command_run_devices ON command_run_devices(run_id, wave);
+
 CREATE TABLE IF NOT EXISTS device_ssh_keys (
   device_id        INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
   key_type         VARCHAR(24) NOT NULL DEFAULT 'ed25519',

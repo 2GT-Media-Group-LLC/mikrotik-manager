@@ -10,6 +10,7 @@ import EventsPage from './pages/EventsPage';
 import TopologyPage from './pages/TopologyPage';
 import BackupsPage from './pages/BackupsPage';
 import FirmwarePage from './pages/FirmwarePage';
+import CommandsPage from './pages/CommandsPage';
 import SettingsPage from './pages/SettingsPage';
 import OidcCallbackPage from './pages/OidcCallbackPage';
 import WirelessPage from './pages/WirelessPage';
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="topology" element={<TopologyPage />} />
           <Route path="backups" element={<BackupsPage />} />
           <Route path="firmware" element={<FirmwarePage />} />
+          <Route path="commands" element={<CommandsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           {/* Legacy routes — consolidated in the v0.16.4 UI reorganization */}
           <Route path="switches" element={<Navigate to="/devices?type=SW" replace />} />

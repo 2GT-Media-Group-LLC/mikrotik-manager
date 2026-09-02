@@ -387,6 +387,38 @@ export const sshKeyApi = {
     '/devices/ssh-keys/deploy-all', { confirm: true }, { timeout: 600_000 }),
 };
 
+
+// ─── Bulk commands (#118) ─────────────────────────────────────────────────────
+
+export interface CommandRunSummary {
+  id: number; name: string; command: string; status: string;
+  wave_size: number; halt_on_failure: boolean; use_change_guard: boolean;
+  total: number; succeeded: number; failed: number; created_at: string;
+}
+
+export interface CommandRunDevice {
+  id: number; device_id: number; device_name: string; ip_address: string;
+  wave: number; status: string; output: string | null; error: string | null;
+  guarded: boolean; auto_reverted: boolean;
+}
+
+export interface CommandRunDetail extends CommandRunSummary {
+  devices: CommandRunDevice[];
+}
+
+export const commandsApi = {
+  preview: (command: string, device_ids: number[], wave_size: number) =>
+    api.post<{
+      command: string; risky: boolean; reasons: string[]; wave_size: number; waves: number;
+      devices: { id: number; name: string; wave: number; status: string }[];
+      unreachable: { id: number; name: string }[];
+    }>('/commands/preview', { command, device_ids, wave_size }),
+  createRun: (body: Record<string, unknown>) => api.post<{ id: number }>('/commands/runs', body),
+  listRuns: () => api.get<CommandRunSummary[]>('/commands/runs'),
+  getRun: (id: number) => api.get<CommandRunDetail>(`/commands/runs/${id}`),
+  cancelRun: (id: number) => api.post<{ message: string }>(`/commands/runs/${id}/cancel`),
+};
+
 export const devicesApi = {
   list: () => api.get<Device[]>('/devices'),
   discovered: () => api.get<DiscoveredDevice[]>('/devices/discovered'),
