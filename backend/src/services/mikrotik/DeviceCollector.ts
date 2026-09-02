@@ -2865,13 +2865,36 @@ export class DeviceCollector {
     });
   }
 
-  /** Current byte counters for one interface, for data-cap accounting. */
+  /**
+   * Current byte counters for one interface, for data-cap accounting.
+   *
+   * The filter is a RouterOS *query word* and has to be passed as one. Smuggled
+   * in as a parameter it becomes `=?name=lte1`, which the device rejects with
+   * "unknown parameter ?name" — and because that error was being swallowed, the
+   * data-cap counter silently read nothing on every poll while the rest of the
+   * feature looked healthy. Errors here are logged rather than discarded for
+   * exactly that reason.
+   */
   async getInterfaceCounters(name: string): Promise<{ rxBytes: number; txBytes: number } | null> {
-    const rows = await this.client
-      .execute('/interface/print', { stats: '', '?name': name })
-      .catch(() => [] as Record<string, string>[]);
-    const row = rows.find((r) => r['name'] === name) || rows[0];
-    if (!row) return null;
+    let rows: Record<string, string>[] | null = await this.client
+      .execute('/interface/print', { stats: '' }, [`?name=${name}`])
+      .catch((err) => {
+        console.error(`[${this.device.name}] counter read for ${name} failed:`, (err as Error).message);
+        return null;
+      });
+
+    // Some versions answer a filtered print with nothing at all; falling back to
+    // the full list costs one call and removes a whole class of silent zero.
+    if (rows && rows.length === 0) {
+      rows = await this.client.execute('/interface/print', { stats: '' }).catch(() => null);
+    }
+    if (!rows) return null;
+
+    const row = rows.find((r) => r['name'] === name);
+    if (!row) {
+      console.warn(`[${this.device.name}] interface ${name} not present in counter read`);
+      return null;
+    }
     return {
       rxBytes: parseInt(row['rx-byte'] || '0', 10),
       txBytes: parseInt(row['tx-byte'] || '0', 10),
@@ -3034,7 +3057,12 @@ export class DeviceCollector {
       if (!rule) return;
 
       const counters = await this.getInterfaceCounters(interfaceName);
-      if (!counters) return;
+      if (!counters) {
+        // A rule that exists but never counts is the failure the user actually
+        // sees, so it must not be silent.
+        console.warn(`[DataCap] ${this.device.name}/${interfaceName}: no counters available; usage not updated`);
+        return;
+      }
 
       const now = new Date();
       const key = periodKey(now, rule.reset_hour, rule.reset_minute, rule.timezone);
