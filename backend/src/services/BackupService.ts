@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Client as SSHClient } from 'ssh2';
-import { query } from '../config/database';
+import { query, queryOne } from '../config/database';
 import { decrypt } from '../utils/crypto';
 
 const BACKUPS_DIR = process.env.BACKUPS_DIR || '/app/backups';
@@ -25,14 +25,41 @@ export class BackupService {
     }
   }
 
-  /** Run `/export compact` over SSH and return the raw .rsc text (no file written). */
+  /**
+   * Run `/export compact` over SSH and return the raw .rsc text.
+   *
+   * Prefers a *verified* key over the stored password. Only verified, because a
+   * key that has merely been generated or pushed is not evidence the device will
+   * accept it — and a backup that fails on an unproven credential is worse than
+   * one that succeeds on a working password (#110). If the key fails at connect
+   * time we fall back rather than giving up, so introducing keys can never make
+   * backups less reliable than they were without them.
+   */
   async exportConfig(device: BackupDevice): Promise<string> {
     const sshUser = device.ssh_username || device.api_username;
+    const port = device.ssh_port || 22;
+
+    const key = await queryOne<{ private_key_encrypted: string; ssh_username: string | null }>(
+      `SELECT private_key_encrypted, ssh_username FROM device_ssh_keys
+        WHERE device_id = $1 AND status = 'verified'`,
+      [device.id]
+    ).catch(() => null);
+
+    if (key) {
+      try {
+        return await this.sshExport(
+          device.ip_address, port, key.ssh_username || sshUser,
+          { privateKey: decrypt(key.private_key_encrypted) }
+        );
+      } catch (e) {
+        console.warn(`[Backup] ${device.name}: key auth failed, falling back to password: ${(e as Error).message}`);
+      }
+    }
+
     const sshPass = device.ssh_password_encrypted
       ? decrypt(device.ssh_password_encrypted)
       : decrypt(device.api_password_encrypted);
-
-    return this.sshExport(device.ip_address, device.ssh_port || 22, sshUser, sshPass);
+    return this.sshExport(device.ip_address, port, sshUser, { password: sshPass });
   }
 
   /** Persist already-fetched .rsc text as a backup file + DB row. Returns the backup id. */
@@ -113,7 +140,7 @@ export class BackupService {
     host: string,
     port: number,
     username: string,
-    password: string
+    auth: { password: string } | { privateKey: string }
   ): Promise<string> {
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
@@ -152,7 +179,7 @@ export class BackupService {
         reject(err);
       });
 
-      conn.connect({ host, port, username, password, readyTimeout: 10_000 });
+      conn.connect({ host, port, username, ...auth, readyTimeout: 10_000 });
     });
   }
 

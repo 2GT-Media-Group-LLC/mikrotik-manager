@@ -1571,6 +1571,121 @@ router.post('/:id/check-update', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Per-device SSH keys (#110) ──────────────────────────────────────────────
+
+const SSH_TARGET_COLS =
+  `id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
+   api_port, api_username, api_password_encrypted`;
+
+/**
+ * GET /api/devices/:id/ssh-key — key status.
+ *
+ * The private half is never returned. Not here, not anywhere: it exists so that
+ * nobody has to hold a credential, and handing it back through the API would
+ * defeat the point while widening the surface at the same time.
+ */
+router.get('/:id/ssh-key', async (req: Request, res: Response) => {
+  try {
+    const row = await queryOne<Record<string, unknown>>(
+      `SELECT device_id, key_type, public_key, fingerprint, ssh_username, status,
+              last_error, last_verified_at, deployed_at, created_at
+         FROM device_ssh_keys WHERE device_id = $1`,
+      [req.params.id]
+    );
+    res.json({ key: row ?? null });
+  } catch (error) {
+    console.error('Error fetching SSH key:', error);
+    res.status(500).json({ error: 'Failed to fetch SSH key' });
+  }
+});
+
+// POST /api/devices/:id/ssh-key — generate, deploy and verify (rotates if one exists)
+router.post('/:id/ssh-key', requireWrite, async (req: Request, res: Response) => {
+  const target = await queryOne<any>(`SELECT ${SSH_TARGET_COLS} FROM devices WHERE id = $1`, [req.params.id]);
+  if (!target) return res.status(404).json({ error: 'Device not found' });
+
+  try {
+    const { sshKeyService } = await import('../services/SshKeyService');
+    const rotate = (req.body as { rotate?: boolean })?.rotate === true;
+    const key = await sshKeyService.deploy(target, { rotate });
+    res.json({
+      // Not "password access is unchanged" — that was wrong, and testing on
+      // hardware proved it. RouterOS refuses password SSH for a user once a key
+      // is bound to them, so this is a real trade the operator must know about.
+      message: rotate
+        ? 'New key deployed and verified; the previous one has been removed.'
+        : 'Key deployed and verified. Note that RouterOS now requires this key for SSH — '
+          + 'password SSH is disabled for this user until the key is revoked. '
+          + 'The API and WinBox are unaffected.',
+      key: { fingerprint: key.fingerprint, status: key.status, public_key: key.public_key },
+    });
+  } catch (error) {
+    // Deployment failures leave password auth untouched by design, and the
+    // message says so — otherwise the natural fear is that access was lost.
+    console.error('SSH key deployment failed:', (error as Error).message);
+    res.status(502).json({ error: (error as Error).message });
+  }
+});
+
+// POST /api/devices/:id/ssh-key/verify — re-prove an existing key
+router.post('/:id/ssh-key/verify', requireWrite, async (req: Request, res: Response) => {
+  const target = await queryOne<any>(`SELECT ${SSH_TARGET_COLS} FROM devices WHERE id = $1`, [req.params.id]);
+  if (!target) return res.status(404).json({ error: 'Device not found' });
+
+  const { sshKeyService } = await import('../services/SshKeyService');
+  const result = await sshKeyService.verify(target);
+  res.status(result.ok ? 200 : 502).json(
+    result.ok
+      ? { message: 'Key authenticated successfully.' }
+      : { error: `Key did not authenticate: ${result.error}` }
+  );
+});
+
+// DELETE /api/devices/:id/ssh-key — stop using the key, and remove it if reachable
+router.delete('/:id/ssh-key', requireWrite, async (req: Request, res: Response) => {
+  const target = await queryOne<any>(`SELECT ${SSH_TARGET_COLS} FROM devices WHERE id = $1`, [req.params.id]);
+  if (!target) return res.status(404).json({ error: 'Device not found' });
+
+  const { sshKeyService } = await import('../services/SshKeyService');
+  const result = await sshKeyService.revoke(target);
+  res.json({
+    message: result.removedFromDevice
+      ? 'Key revoked and removed from the device.'
+      : `Key forgotten here, but it could not be removed from the device (${result.error}). Remove it manually via /user/ssh-keys.`,
+    removed_from_device: result.removedFromDevice,
+  });
+});
+
+/**
+ * POST /api/devices/ssh-keys/deploy-all — retroactively key every device missing one.
+ *
+ * Sequential rather than parallel: each deployment opens two SSH sessions and
+ * ends by proving the key, and running sixty of those at once would be a
+ * thundering herd against the fleet for no wall-clock gain worth having.
+ */
+router.post('/ssh-keys/deploy-all', requireWrite, async (_req: Request, res: Response) => {
+  const targets = await query<any>(
+    `SELECT ${SSH_TARGET_COLS} FROM devices d
+      WHERE d.status != 'disabled' AND d.ssh_username IS NOT NULL
+        AND d.ssh_password_encrypted IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM device_ssh_keys k WHERE k.device_id = d.id AND k.status = 'verified')
+      ORDER BY d.name`
+  );
+
+  const { sshKeyService } = await import('../services/SshKeyService');
+  const results: { device_id: number; name: string; ok: boolean; error?: string }[] = [];
+  for (const t of targets) {
+    try {
+      await sshKeyService.deploy(t);
+      results.push({ device_id: t.id, name: t.name, ok: true });
+    } catch (e) {
+      results.push({ device_id: t.id, name: t.name, ok: false, error: (e as Error).message });
+    }
+  }
+  res.json({ considered: targets.length, succeeded: results.filter((r) => r.ok).length, results });
+});
+
 /**
  * POST /api/devices/:id/install-update — install a pending RouterOS update.
  *

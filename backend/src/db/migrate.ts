@@ -862,6 +862,37 @@ CREATE TABLE IF NOT EXISTS lte_data_cap_sends (
   error          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_data_cap_sends ON lte_data_cap_sends(device_id, at DESC);
+
+-- Per-device SSH keypairs (#110).
+--
+-- One key per device, never a fleet key: a shared key makes any single
+-- compromise fleet-wide and makes rotating one device impossible without
+-- touching all of them.
+--
+-- status is deliberately not a boolean. A key that has been generated, a key
+-- that has been pushed to the device, and a key that has been *proved* to
+-- authenticate on a fresh connection are three different states, and only the
+-- last is safe to rely on. Collapsing them is how a device ends up unreachable
+-- because something looked applied.
+--
+-- The password is retained alongside. Key auth falling back to a password is a
+-- degraded state worth knowing about; key auth failing with no fallback is an
+-- outage.
+CREATE TABLE IF NOT EXISTS device_ssh_keys (
+  device_id        INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  key_type         VARCHAR(24) NOT NULL DEFAULT 'ed25519',
+  public_key       TEXT NOT NULL,
+  private_key_encrypted TEXT NOT NULL,
+  fingerprint      VARCHAR(80),
+  ssh_username     VARCHAR(50),
+  -- pending | deployed | verified | failed
+  status           VARCHAR(16) NOT NULL DEFAULT 'pending',
+  last_error       TEXT,
+  last_verified_at TIMESTAMPTZ,
+  deployed_at      TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ DEFAULT NOW()
+);
 `;
 
 const DEFAULT_SETTINGS = [

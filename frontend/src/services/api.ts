@@ -366,6 +366,26 @@ export const dataCapApi = {
     api.post<{ message: string }>(`/devices/${deviceId}/lte/data-cap/${encodeURIComponent(iface)}/send`),
 };
 
+
+export interface DeviceSshKey {
+  device_id: number; key_type: string; public_key: string;
+  fingerprint: string | null; ssh_username: string | null;
+  status: 'pending' | 'deployed' | 'verified' | 'failed';
+  last_error: string | null; last_verified_at: string | null;
+  deployed_at: string | null; created_at: string;
+}
+
+export const sshKeyApi = {
+  get: (deviceId: number) => api.get<{ key: DeviceSshKey | null }>(`/devices/${deviceId}/ssh-key`),
+  deploy: (deviceId: number, rotate = false) =>
+    api.post<{ message: string }>(`/devices/${deviceId}/ssh-key`, { rotate }),
+  verify: (deviceId: number) => api.post<{ message: string }>(`/devices/${deviceId}/ssh-key/verify`),
+  revoke: (deviceId: number) => api.delete<{ message: string }>(`/devices/${deviceId}/ssh-key`),
+  deployAll: () => api.post<{ considered: number; succeeded: number;
+    results: { device_id: number; name: string; ok: boolean; error?: string }[] }>(
+    '/devices/ssh-keys/deploy-all', undefined, { timeout: 600_000 }),
+};
+
 export const devicesApi = {
   list: () => api.get<Device[]>('/devices'),
   discovered: () => api.get<DiscoveredDevice[]>('/devices/discovered'),

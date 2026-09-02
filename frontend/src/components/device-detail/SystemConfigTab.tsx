@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import SshKeyCard from './SshKeyCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   RefreshCw, Plus, Trash2, CheckCircle, AlertCircle, Download, Server, Cpu, FileText,
@@ -575,6 +576,13 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
             </p>
           </div>
         )}
+
+        <div className="card p-5">
+
+          <SshKeyCard deviceId={deviceId} />
+
+        </div>
+
 
         {/* ── RouterOS ── */}
         <div className="space-y-3">
