@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
@@ -51,6 +51,20 @@ export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore();
   const isAdmin = user?.role === 'admin';
   const canWrite = user?.role !== 'viewer';
+  // Timezone for scheduled work. The browser's zone is offered as a shortcut
+  // because it is almost always what the operator means.
+  const timezoneOptions = useMemo<string[]>(() => {
+    const supported = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf;
+    try {
+      return supported ? supported('timeZone') : ['UTC'];
+    } catch {
+      return ['UTC'];
+    }
+  }, []);
+  const browserTimezone = useMemo(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; }
+  }, []);
+
   const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller'>('general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
@@ -823,6 +837,15 @@ export default function SettingsPage() {
               const enabled = !!settings['backup_schedule_enabled'];
               const sched = parseBackupCron(settings['backup_schedule_cron'] as string);
               const controlsDisabled = !isAdmin || !enabled;
+              const appTimezone = (settings['app_timezone'] as string) || 'UTC';
+              // Showing the clock in the chosen zone makes a wrong setting
+              // obvious immediately, rather than at 2am three days later.
+              let currentTimeInAppTz = '';
+              try {
+                currentTimeInAppTz = new Intl.DateTimeFormat(undefined, {
+                  timeZone: appTimezone, hour: '2-digit', minute: '2-digit', hour12: false,
+                }).format(new Date());
+              } catch { currentTimeInAppTz = 'unknown zone'; }
               const apply = (next: typeof sched) =>
                 updateSettingsMutation.mutate({ backup_schedule_cron: scheduleToCron(next) });
               return (
@@ -910,9 +933,37 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  {/* Timezone belongs beside the schedule, because it is the
+                      schedule's unit. Scheduled work used to be evaluated against
+                      the container clock — UTC in the shipped image — so "02:00"
+                      meant 02:00 UTC wherever you were (#117). */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-xs text-gray-500 dark:text-slate-400">Timezone</label>
+                    <select
+                      value={appTimezone}
+                      disabled={!isAdmin}
+                      onChange={(e) => updateSettingsMutation.mutate({ app_timezone: e.target.value })}
+                      className="input text-xs py-1 max-w-[260px]"
+                    >
+                      {timezoneOptions.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                    </select>
+                    {browserTimezone && browserTimezone !== appTimezone && (
+                      <button
+                        type="button"
+                        disabled={!isAdmin}
+                        onClick={() => updateSettingsMutation.mutate({ app_timezone: browserTimezone })}
+                        className="text-xs underline text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                      >
+                        Use {browserTimezone}
+                      </button>
+                    )}
+                  </div>
+
                   <p className={clsx('text-xs', enabled ? 'text-gray-500 dark:text-slate-400' : 'text-gray-400 dark:text-slate-600')}>
                     {enabled
-                      ? <>Runs <span className="font-medium text-gray-700 dark:text-slate-300">{describeBackupSchedule(sched).toLowerCase()}</span>, server time.</>
+                      ? <>Runs <span className="font-medium text-gray-700 dark:text-slate-300">{describeBackupSchedule(sched).toLowerCase()}</span>{' '}
+                          in <span className="font-medium text-gray-700 dark:text-slate-300">{appTimezone}</span>
+                          {' '}(currently {currentTimeInAppTz}).</>
                       : 'Enable to choose a backup schedule.'}
                   </p>
                   {sched.frequency === 'monthly' && (

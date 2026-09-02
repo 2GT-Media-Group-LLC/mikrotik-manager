@@ -821,6 +821,10 @@ const DEFAULT_SETTINGS = [
   { key: 'retention_events_days', value: 30 },
   { key: 'backup_schedule_enabled', value: false },
   { key: 'backup_schedule_cron', value: '0 2 * * *' },
+  // Scheduled work was evaluated against the container clock, which is UTC in
+  // the shipped image. A "02:00" backup therefore fired at 02:00 UTC regardless
+  // of where the operator was — seven hours out on the US west coast (#117).
+  { key: 'app_timezone', value: 'UTC' },
   { key: 'mac_scan_enabled', value: true },
   { key: 'mac_scan_interval', value: 300 },
   { key: 'reverse_dns_enabled', value: false },

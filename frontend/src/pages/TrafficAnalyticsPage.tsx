@@ -54,6 +54,13 @@ function clientLabel(c: { mac: string; custom_name: string | null; hostname: str
 
 export default function TrafficAnalyticsPage() {
   const [range, setRange] = useState<Range>('24h');
+  // Top Talkers was a fixed list of ten with no way to look anything up, which
+  // is unusable on a network of any size — you could see the loudest ten and
+  // nothing else. Filtering happens client-side because the rows are already
+  // here; asking the server again per keystroke would be slower and no more
+  // accurate.
+  const [clientQuery, setClientQuery] = useState('');
+  const [topLimit, setTopLimit] = useState(10);
   const navigate = useNavigate();
 
   const { data: series = [], isLoading: seriesLoading } = useQuery({
@@ -63,8 +70,8 @@ export default function TrafficAnalyticsPage() {
   });
 
   const { data: topClients = [], isLoading: clientsLoading } = useQuery({
-    queryKey: ['traffic-top-clients', range],
-    queryFn: () => trafficApi.topClients(range, 10).then(r => r.data),
+    queryKey: ['traffic-top-clients', range, topLimit],
+    queryFn: () => trafficApi.topClients(range, topLimit).then(r => r.data),
     refetchInterval: 60_000,
   });
 
@@ -87,6 +94,17 @@ export default function TrafficAnalyticsPage() {
   const totalDownload = series.reduce((s, p) => s + p.download, 0);
   const totalAppBytes = apps.reduce((s, a) => s + a.bytes, 0);
   const maxClientBytes = topClients[0]?.total_bytes || 1;
+
+  // Match on anything the row actually shows — name, IP, MAC or vendor — so a
+  // search for "192.168.1." or "apple" both behave the way people expect.
+  const visibleClients = (() => {
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return topClients;
+    return topClients.filter((c) =>
+      [clientLabel(c), c.ip_address, c.mac, c.vendor]
+        .some((v) => v && String(v).toLowerCase().includes(q))
+    );
+  })();
 
   // Collector data-health: how much of the received traffic we could attribute
   const exporters = [...(status?.exporters || [])].sort((a, b) => b.flows - a.flows);
@@ -223,15 +241,42 @@ export default function TrafficAnalyticsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             {/* Top talkers */}
             <div className="card overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-blue-500" />
-                <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Top Talkers</h2>
+              <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <BarChart3 className="w-4 h-4 text-blue-500" />
+                  <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Top Talkers</h2>
+                  <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">
+                    {clientQuery.trim()
+                      ? `${visibleClients.length} of ${topClients.length}`
+                      : `top ${topClients.length}`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={clientQuery}
+                    onChange={(e) => setClientQuery(e.target.value)}
+                    placeholder="Filter by IP, name, MAC or vendor…"
+                    className="input text-xs py-1 flex-1 min-w-0"
+                  />
+                  <select
+                    value={topLimit}
+                    onChange={(e) => setTopLimit(Number(e.target.value))}
+                    className="input text-xs py-1 w-auto"
+                    title="How many clients to rank"
+                  >
+                    {[10, 25, 50].map((n) => <option key={n} value={n}>Top {n}</option>)}
+                  </select>
+                </div>
               </div>
               {topClients.length === 0
                 ? <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">No client traffic recorded.</div>
+                : visibleClients.length === 0
+                ? <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">
+                    No client in the top {topClients.length} matches “{clientQuery.trim()}”.
+                  </div>
                 : (
                   <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                    {topClients.map(c => {
+                    {visibleClients.map(c => {
                       const isReal = c.mac !== 'unknown' && c.mac !== 'other';
                       return (
                         <div key={c.mac}

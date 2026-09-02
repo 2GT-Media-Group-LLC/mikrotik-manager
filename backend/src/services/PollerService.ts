@@ -8,6 +8,7 @@ import { Point } from '@influxdata/influxdb-client';
 import { alertService } from './AlertService';
 import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
+import { cronMatches } from '../utils/cron';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -240,6 +241,8 @@ export class PollerService {
       const apScanIntervalHours   = (appSettings['ap_scan_interval_hours'] as number) || 24;
       const backupScheduleEnabled = appSettings['backup_schedule_enabled'] === true;
       const backupScheduleCron    = (appSettings['backup_schedule_cron'] as string) || '0 2 * * *';
+      // Schedules are the operator's local time, not the container's (#117).
+      const appTimezone           = (appSettings['app_timezone'] as string) || 'UTC';
       const configSnapEnabled      = appSettings['config_snapshot_enabled'] !== false;
       const configSnapIntervalMin  = (appSettings['config_snapshot_interval_min'] as number) || 60;
       const configHealthEnabled     = appSettings['config_health_enabled'] !== false;
@@ -395,7 +398,7 @@ export class PollerService {
 
       // Scheduled backups — fire when the cron expression matches the current minute/hour.
       // Redis key with 1-hour TTL prevents double-firing within the same cron window.
-      if (backupScheduleEnabled && this.cronMatchesNow(backupScheduleCron)) {
+      if (backupScheduleEnabled && cronMatches(backupScheduleCron, new Date(), appTimezone)) {
         const backupKey = 'task:scheduled_backup';
         const lastBackup = await this.getTimestamp(backupKey);
         if (now - lastBackup > 3_600_000) {
@@ -419,7 +422,7 @@ export class PollerService {
                        'spectral_scan_interval_hours', 'ap_scan_enabled',
                        'ap_scan_interval_hours', 'backup_schedule_enabled',
                        'backup_schedule_cron', 'config_snapshot_enabled',
-                       'config_snapshot_interval_min')`
+                       'config_snapshot_interval_min', 'app_timezone')`
       );
       const map: Record<string, unknown> = {};
       for (const row of rows) map[row.key] = row.value;
@@ -429,49 +432,6 @@ export class PollerService {
     }
   }
 
-  // Returns true if the 5-part cron expression matches the current time.
-  // Evaluates all five fields — minute, hour, day-of-month, month, day-of-week —
-  // so weekly (e.g. `0 3 * * 0`) and monthly (`0 3 1 * *`) schedules fire only on
-  // the right day, not every day. Supports: *, exact numbers, comma lists,
-  // ranges (a-b), and step values (*/n). Day-of-month and day-of-week follow the
-  // standard cron rule: when both are restricted the job runs if either matches;
-  // when only one is restricted, only that one must match.
-  private cronMatchesNow(cron: string): boolean {
-    const parts = cron.trim().split(/\s+/);
-    if (parts.length < 5) return false;
-    const [minuteField, hourField, domField, monthField, dowField] = parts;
-    const now = new Date();
-    const matchField = (field: string, val: number): boolean => {
-      if (field === '*') return true;
-      return field.split(',').some((f) => {
-        if (f.includes('/')) {
-          const [base, step] = f.split('/');
-          const start = base === '*' ? 0 : Number(base);
-          return val >= start && (val - start) % Number(step) === 0;
-        }
-        if (f.includes('-')) {
-          const [lo, hi] = f.split('-').map(Number);
-          return val >= lo && val <= hi;
-        }
-        return Number(f) === val;
-      });
-    };
-
-    if (!matchField(minuteField, now.getMinutes())) return false;
-    if (!matchField(hourField, now.getHours())) return false;
-    if (!matchField(monthField, now.getMonth() + 1)) return false; // cron months are 1-12
-
-    // Day-of-month (1-31) and day-of-week (0-6, Sun=0). getDay() returns 0 for Sunday.
-    const domRestricted = domField !== '*';
-    const dowRestricted = dowField !== '*';
-    const domMatch = matchField(domField, now.getDate());
-    const dowMatch = matchField(dowField, now.getDay());
-    let dayMatch: boolean;
-    if (!domRestricted && !dowRestricted) dayMatch = true;
-    else if (domRestricted && dowRestricted) dayMatch = domMatch || dowMatch;
-    else dayMatch = domRestricted ? domMatch : dowMatch;
-    return dayMatch;
-  }
 
   private async runScheduledBackups(): Promise<void> {
     const { BackupService } = await import('./BackupService');
