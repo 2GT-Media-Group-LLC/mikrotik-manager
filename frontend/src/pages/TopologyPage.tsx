@@ -26,6 +26,7 @@ import { topologyApi } from '../services/api';
 import type { TopologyDevice, TopologyLink, ExternalTopologyNode } from '../types';
 import clsx from 'clsx';
 import { useThemeStore } from '../store/themeStore';
+import { layoutTree } from '../utils/topologyLayout';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -335,40 +336,19 @@ function buildGraph(
       });
     }
 
-    const slotWidth = new Map<string, number>();
-    function computeWidth(id: string): number {
-      const kids = children.get(id) || [];
-      if (!kids.length) { slotWidth.set(id, 1); return 1; }
-      let total = 0;
-      for (const k of kids) total += computeWidth(k);
-      slotWidth.set(id, Math.max(1, total));
-      return slotWidth.get(id)!;
+    // Layout runs in slots and rows; pixels are this file's business. Wide groups
+    // of sibling leaves become blocks rather than one enormous row — see
+    // utils/topologyLayout for why breadth must stop meaning width (#115).
+    const laid = layoutTree(rootId, children, depth);
+    for (const [id, p] of laid.positions) {
+      positions.set(id, {
+        x: componentOffsetX + (p.x + 0.5) * NODE_SLOT - NODE_W / 2,
+        y: p.y * (NODE_H + V_GAP),
+      });
     }
-    computeWidth(rootId);
 
-    function assign(id: string, leftSlot: number): void {
-      const kids = children.get(id) || [];
-      if (!kids.length) {
-        positions.set(id, {
-          x: componentOffsetX + (leftSlot + 0.5) * NODE_SLOT - NODE_W / 2,
-          y: (depth.get(id) || 0) * (NODE_H + V_GAP),
-        });
-        return;
-      }
-      let cursor = leftSlot;
-      for (const k of kids) { assign(k, cursor); cursor += slotWidth.get(k)!; }
-      const fk = positions.get(kids[0])!, lk = positions.get(kids[kids.length - 1])!;
-      positions.set(id, { x: (fk.x + lk.x) / 2, y: (depth.get(id) || 0) * (NODE_H + V_GAP) });
-    }
-    assign(rootId, 0);
-
-    let compMaxDepth = 0;
-    for (const id of comp) {
-      const d = depth.get(id);
-      if (d !== undefined) compMaxDepth = Math.max(compMaxDepth, d);
-    }
-    globalMaxDepth = Math.max(globalMaxDepth, compMaxDepth);
-    componentOffsetX += (slotWidth.get(rootId) || 1) * NODE_SLOT + COMPONENT_GAP;
+    globalMaxDepth = Math.max(globalMaxDepth, laid.maxRow);
+    componentOffsetX += laid.widthSlots * NODE_SLOT + COMPONENT_GAP;
   }
 
   // ── Orphan row at the bottom ─────────────────────────────────────────────────
