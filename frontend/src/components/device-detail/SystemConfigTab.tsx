@@ -579,7 +579,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
 
         <div className="card p-5">
 
-          <SshKeyCard deviceId={deviceId} />
+          <SshKeyCard deviceId={deviceId} sshUsername={device.ssh_username} />
 
         </div>
 

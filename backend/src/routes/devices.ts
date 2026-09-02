@@ -1663,7 +1663,19 @@ router.delete('/:id/ssh-key', requireWrite, async (req: Request, res: Response) 
  * ends by proving the key, and running sixty of those at once would be a
  * thundering herd against the fleet for no wall-clock gain worth having.
  */
-router.post('/ssh-keys/deploy-all', requireWrite, async (_req: Request, res: Response) => {
+router.post('/ssh-keys/deploy-all', requireWrite, async (req: Request, res: Response) => {
+  // This is the most consequential call in the feature: it disables password SSH
+  // across an entire fleet in one request. The per-device path asks for an
+  // acknowledgement in the UI, and an endpoint that can do it sixty times over
+  // should not be easier to trigger than the one that does it once.
+  if ((req.body as { confirm?: boolean })?.confirm !== true) {
+    return res.status(400).json({
+      error: 'Refusing to deploy fleet-wide without confirmation. This disables password ' +
+             'SSH for the configured user on every device it touches; the API and WinBox ' +
+             'are unaffected. Repeat with {"confirm": true} once that is understood.',
+    });
+  }
+
   const targets = await query<any>(
     `SELECT ${SSH_TARGET_COLS} FROM devices d
       WHERE d.status != 'disabled' AND d.ssh_username IS NOT NULL

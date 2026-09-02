@@ -381,9 +381,10 @@ export const sshKeyApi = {
     api.post<{ message: string }>(`/devices/${deviceId}/ssh-key`, { rotate }),
   verify: (deviceId: number) => api.post<{ message: string }>(`/devices/${deviceId}/ssh-key/verify`),
   revoke: (deviceId: number) => api.delete<{ message: string }>(`/devices/${deviceId}/ssh-key`),
+  /** Requires explicit confirmation: this disables password SSH fleet-wide. */
   deployAll: () => api.post<{ considered: number; succeeded: number;
     results: { device_id: number; name: string; ok: boolean; error?: string }[] }>(
-    '/devices/ssh-keys/deploy-all', undefined, { timeout: 600_000 }),
+    '/devices/ssh-keys/deploy-all', { confirm: true }, { timeout: 600_000 }),
 };
 
 export const devicesApi = {
