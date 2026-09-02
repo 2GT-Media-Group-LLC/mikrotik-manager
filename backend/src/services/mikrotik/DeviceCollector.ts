@@ -16,6 +16,7 @@ import {
 import {
   parseLteMonitor, overallQuality, detectChanges, type LteStatus,
 } from '../../utils/lte';
+import { bytesSince, periodKey, shouldSend } from '../../utils/dataCap';
 import { BackupService } from '../BackupService';
 import { alertService } from '../AlertService';
 
@@ -2850,6 +2851,33 @@ export class DeviceCollector {
     }
   }
 
+  /**
+   * Send an SMS through the modem.
+   *
+   * Used for carrier data-cap resets, where texting a short code lifts a daily
+   * throttle. The message is deliberately allowed to be empty — that is exactly
+   * what several carriers expect, and an API that refused it would be useless
+   * for the case it exists to serve.
+   */
+  async sendSms(port: string, phoneNumber: string, message = ''): Promise<void> {
+    await this.client.execute('/tool/sms/send', {
+      port, 'phone-number': phoneNumber, message,
+    });
+  }
+
+  /** Current byte counters for one interface, for data-cap accounting. */
+  async getInterfaceCounters(name: string): Promise<{ rxBytes: number; txBytes: number } | null> {
+    const rows = await this.client
+      .execute('/interface/print', { stats: '', '?name': name })
+      .catch(() => [] as Record<string, string>[]);
+    const row = rows.find((r) => r['name'] === name) || rows[0];
+    if (!row) return null;
+    return {
+      rxBytes: parseInt(row['rx-byte'] || '0', 10),
+      txBytes: parseInt(row['tx-byte'] || '0', 10),
+    };
+  }
+
   // ─── LTE / cellular → Postgres + InfluxDB ─────────────────────────────────
 
   /**
@@ -2945,6 +2973,7 @@ export class DeviceCollector {
         );
 
         await this.recordObservedBands(name, status);
+        await this.trackDataCap(name);
 
         // Signal series. Fields are written only when the modem reported them —
         // a zero here would read as a signal no transmitter produces.
@@ -2978,6 +3007,93 @@ export class DeviceCollector {
     } catch (error) {
       console.error(`LTE collection failed for ${this.device.name}:`, error);
     }
+  }
+
+  /**
+   * Accumulate cellular usage and fire the carrier's reset SMS when due.
+   *
+   * Runs on every LTE poll rather than on a timer of its own, because the byte
+   * delta is only meaningful between consecutive samples — a separate schedule
+   * would either double-count or miss traffic depending on how the two drifted.
+   *
+   * Failures here are logged and swallowed. A data-cap rule is a convenience;
+   * it must never be able to break the collection it rides on.
+   */
+  private async trackDataCap(interfaceName: string): Promise<void> {
+    try {
+      const rule = await queryOne<{
+        id: number; enabled: boolean; phone_number: string; message: string;
+        threshold_bytes: string; margin_pct: number; reset_hour: number; reset_minute: number;
+        timezone: string; cooldown_minutes: number; period_key: string | null;
+        period_bytes: string; last_rx: string | null; last_tx: string | null;
+        last_sent_at: string | null;
+      }>(
+        `SELECT * FROM lte_data_cap_rules WHERE device_id = $1 AND interface_name = $2`,
+        [this.device.id, interfaceName]
+      );
+      if (!rule) return;
+
+      const counters = await this.getInterfaceCounters(interfaceName);
+      if (!counters) return;
+
+      const now = new Date();
+      const key = periodKey(now, rule.reset_hour, rule.reset_minute, rule.timezone);
+
+      // A new period starts fresh, but the counter baseline carries over —
+      // otherwise the first sample after midnight would be discarded and the
+      // traffic between it and the previous poll would vanish.
+      const rolled = rule.period_key !== key;
+      const prev = rule.last_rx == null || rule.last_tx == null
+        ? null
+        : { rxBytes: Number(rule.last_rx), txBytes: Number(rule.last_tx) };
+
+      const delta = bytesSince(prev, counters);
+      const periodBytes = (rolled ? 0 : Number(rule.period_bytes)) + delta;
+
+      const decision = shouldSend({
+        periodBytes,
+        thresholdBytes: Number(rule.threshold_bytes),
+        marginPct: rule.margin_pct,
+        lastSentAt: rolled ? null : (rule.last_sent_at ? new Date(rule.last_sent_at) : null),
+        cooldownMinutes: rule.cooldown_minutes,
+        enabled: rule.enabled,
+      }, now);
+
+      let sentAt: Date | null = rolled ? null : (rule.last_sent_at ? new Date(rule.last_sent_at) : null);
+      if (decision.send) {
+        try {
+          await this.sendSms(interfaceName, rule.phone_number, rule.message);
+          sentAt = now;
+          await this.logDataCapSend(interfaceName, 'threshold', rule.phone_number, periodBytes, true, null);
+          console.log(`[DataCap] ${this.device.name}/${interfaceName}: reset SMS sent to ${rule.phone_number}`);
+        } catch (e) {
+          await this.logDataCapSend(interfaceName, 'threshold', rule.phone_number, periodBytes, false, (e as Error).message);
+          console.error(`[DataCap] ${this.device.name}/${interfaceName}: SMS failed:`, (e as Error).message);
+        }
+      }
+
+      await query(
+        `UPDATE lte_data_cap_rules
+            SET period_key = $2, period_bytes = $3, last_rx = $4, last_tx = $5,
+                last_sent_at = $6, updated_at = NOW()
+          WHERE id = $1`,
+        [rule.id, key, periodBytes, counters.rxBytes, counters.txBytes, sentAt]
+      );
+    } catch (e) {
+      console.error(`[DataCap] ${this.device.name}: tracking failed:`, (e as Error).message);
+    }
+  }
+
+  private async logDataCapSend(
+    interfaceName: string, trigger: string, phone: string,
+    periodBytes: number, ok: boolean, error: string | null,
+  ): Promise<void> {
+    await query(
+      `INSERT INTO lte_data_cap_sends
+         (device_id, interface_name, trigger, phone_number, period_bytes, ok, error)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [this.device.id, interfaceName, trigger, phone, periodBytes, ok, error]
+    ).catch(() => {});
   }
 
   /** Last stored state for an interface, for comparing consecutive polls. */

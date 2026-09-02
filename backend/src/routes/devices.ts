@@ -2315,6 +2315,135 @@ router.get('/:id/lte', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Cellular data-cap SMS (discussion #85) ──────────────────────────────────
+
+// GET /api/devices/:id/lte/data-cap — rules and recent sends
+router.get('/:id/lte/data-cap', async (req: Request, res: Response) => {
+  try {
+    const rules = await query(
+      `SELECT id, interface_name, enabled, phone_number, message, threshold_bytes,
+              margin_pct, reset_hour, reset_minute, timezone, cooldown_minutes,
+              period_key, period_bytes, last_sent_at, updated_at
+         FROM lte_data_cap_rules WHERE device_id = $1 ORDER BY interface_name`,
+      [req.params.id]
+    );
+    const sends = await query(
+      `SELECT interface_name, at, trigger, phone_number, period_bytes, ok, error
+         FROM lte_data_cap_sends WHERE device_id = $1 ORDER BY at DESC LIMIT 20`,
+      [req.params.id]
+    );
+    res.json({ rules, sends });
+  } catch (error) {
+    console.error('Error fetching data-cap rules:', error);
+    res.status(500).json({ error: 'Failed to fetch data-cap rules' });
+  }
+});
+
+// PUT /api/devices/:id/lte/data-cap/:iface — create or update a rule
+router.put('/:id/lte/data-cap/:iface', requireWrite, async (req: Request, res: Response) => {
+  const b = req.body as Record<string, unknown>;
+  const phone = String(b.phone_number ?? '').trim();
+  if (!phone) return res.status(400).json({ error: 'phone_number is required' });
+
+  const threshold = Number(b.threshold_bytes);
+  if (!Number.isFinite(threshold) || threshold <= 0) {
+    return res.status(400).json({ error: 'threshold_bytes must be a positive number' });
+  }
+  // An unknown zone would silently park the counter in the wrong day, so reject
+  // it here rather than discovering it at midnight.
+  const tz = String(b.timezone ?? 'UTC');
+  try { new Intl.DateTimeFormat('en-CA', { timeZone: tz }); }
+  catch { return res.status(400).json({ error: `Unknown timezone "${tz}"` }); }
+
+  const clamp = (v: unknown, lo: number, hi: number, dflt: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.floor(n))) : dflt;
+  };
+
+  try {
+    await query(
+      `INSERT INTO lte_data_cap_rules
+         (device_id, interface_name, enabled, phone_number, message, threshold_bytes,
+          margin_pct, reset_hour, reset_minute, timezone, cooldown_minutes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (device_id, interface_name) DO UPDATE SET
+         enabled = EXCLUDED.enabled, phone_number = EXCLUDED.phone_number,
+         message = EXCLUDED.message, threshold_bytes = EXCLUDED.threshold_bytes,
+         margin_pct = EXCLUDED.margin_pct, reset_hour = EXCLUDED.reset_hour,
+         reset_minute = EXCLUDED.reset_minute, timezone = EXCLUDED.timezone,
+         cooldown_minutes = EXCLUDED.cooldown_minutes, updated_at = NOW()`,
+      [req.params.id, req.params.iface, b.enabled === true, phone,
+       String(b.message ?? ''), Math.floor(threshold),
+       clamp(b.margin_pct, 0, 50, 5), clamp(b.reset_hour, 0, 23, 0),
+       clamp(b.reset_minute, 0, 59, 0), tz, clamp(b.cooldown_minutes, 1, 1440, 60)]
+    );
+    res.json({ message: 'Data-cap rule saved' });
+  } catch (error) {
+    console.error('Error saving data-cap rule:', error);
+    res.status(500).json({ error: 'Failed to save rule' });
+  }
+});
+
+/**
+ * POST /api/devices/:id/lte/data-cap/:iface/send — send the SMS now.
+ *
+ * Deliberately independent of the rule being enabled, or of any threshold. This
+ * is the half of the feature that is trustworthy: the automatic trigger depends
+ * on a usage figure we reconstruct and therefore undercount, whereas pressing
+ * the button does exactly one thing for a reason the operator already knows.
+ */
+router.post('/:id/lte/data-cap/:iface/send', requireWrite, async (req: Request, res: Response) => {
+  const deviceRow = await queryOne<any>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+
+  const rule = await queryOne<{ phone_number: string; message: string; period_bytes: string }>(
+    `SELECT phone_number, message, period_bytes FROM lte_data_cap_rules
+      WHERE device_id = $1 AND interface_name = $2`,
+    [req.params.id, req.params.iface]
+  );
+  const phone = String((req.body as { phone_number?: string })?.phone_number || rule?.phone_number || '').trim();
+  if (!phone) return res.status(400).json({ error: 'No phone number configured for this interface' });
+
+  // Construction is inside the try on purpose: DeviceCollector decrypts the
+  // stored credential in its constructor, so a corrupted or missing one throws
+  // before a single line of the body runs. Left outside, that surfaced as a raw
+  // 500 with an internal message and no record of the attempt.
+  let collector: DeviceCollector | null = null;
+  try {
+    collector = new DeviceCollector(deviceRow);
+    await collector.connect();
+    await collector.sendSms(req.params.iface, phone, rule?.message ?? '');
+    await query(
+      `INSERT INTO lte_data_cap_sends (device_id, interface_name, trigger, phone_number, period_bytes, ok)
+       VALUES ($1,$2,'manual',$3,$4,TRUE)`,
+      [deviceRow.id, req.params.iface, phone, rule ? Number(rule.period_bytes) : null]
+    ).catch(() => {});
+    await query(
+      `UPDATE lte_data_cap_rules SET last_sent_at = NOW()
+        WHERE device_id = $1 AND interface_name = $2`,
+      [deviceRow.id, req.params.iface]
+    ).catch(() => {});
+    res.json({ message: `SMS sent to ${phone}.` });
+  } catch (error) {
+    const raw = (error as Error).message;
+    // Credential problems are ours, not the modem's, and saying "could not send
+    // SMS: invalid encrypted text format" would send someone hunting the wrong
+    // fault entirely.
+    const msg = /encrypt|decrypt/i.test(raw)
+      ? 'stored credentials for this device could not be read'
+      : raw;
+    await query(
+      `INSERT INTO lte_data_cap_sends (device_id, interface_name, trigger, phone_number, ok, error)
+       VALUES ($1,$2,'manual',$3,FALSE,$4)`,
+      [deviceRow.id, req.params.iface, phone, msg]
+    ).catch(() => {});
+    console.error('Error sending data-cap SMS:', raw);
+    res.status(502).json({ error: `Could not send SMS: ${msg}` });
+  } finally {
+    collector?.disconnect();
+  }
+});
+
 // GET /api/devices/:id/lte/history — handovers, re-registrations and band changes
 router.get('/:id/lte/history', async (req: Request, res: Response) => {
   const { range = '24h', limit = '200' } = req.query as { range?: string; limit?: string };

@@ -812,6 +812,56 @@ CREATE TABLE IF NOT EXISTS device_poll_stats (
   PRIMARY KEY (device_id, kind)
 );
 CREATE INDEX IF NOT EXISTS idx_poll_stats_attempt ON device_poll_stats(last_attempt_at DESC);
+
+-- Cellular data-cap SMS (discussion #85).
+--
+-- Several EU carriers throttle "unlimited" plans past a daily allowance and lift
+-- the throttle when the subscriber texts a short code. period_bytes is our own
+-- reconstruction of usage, accumulated from poll to poll, because the interface
+-- byte counters do not survive a reboot; last_rx/last_tx hold the previous
+-- sample so a counter that goes backwards is read as a reboot rather than as
+-- negative usage.
+--
+-- period_key is a local date string rather than a timestamp. Comparing keys is
+-- how a reset is detected without converting local wall-clock back to UTC, which
+-- is where daylight saving usually goes wrong.
+CREATE TABLE IF NOT EXISTS lte_data_cap_rules (
+  id               SERIAL PRIMARY KEY,
+  device_id        INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  interface_name   VARCHAR(64) NOT NULL,
+  enabled          BOOLEAN NOT NULL DEFAULT FALSE,
+  phone_number     VARCHAR(32) NOT NULL,
+  message          TEXT NOT NULL DEFAULT '',
+  threshold_bytes  BIGINT NOT NULL,
+  -- We fire below the configured allowance on purpose; our count undercounts.
+  margin_pct       INTEGER NOT NULL DEFAULT 5,
+  reset_hour       INTEGER NOT NULL DEFAULT 0,
+  reset_minute     INTEGER NOT NULL DEFAULT 0,
+  timezone         VARCHAR(64) NOT NULL DEFAULT 'UTC',
+  cooldown_minutes INTEGER NOT NULL DEFAULT 60,
+  period_key       VARCHAR(10),
+  period_bytes     BIGINT NOT NULL DEFAULT 0,
+  last_rx          BIGINT,
+  last_tx          BIGINT,
+  last_sent_at     TIMESTAMPTZ,
+  updated_at       TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(device_id, interface_name)
+);
+
+-- Every send, with the counter reading at the time, so a misfire is explainable
+-- rather than mysterious.
+CREATE TABLE IF NOT EXISTS lte_data_cap_sends (
+  id             SERIAL PRIMARY KEY,
+  device_id      INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  interface_name VARCHAR(64) NOT NULL,
+  at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  trigger        VARCHAR(16) NOT NULL,
+  phone_number   VARCHAR(32),
+  period_bytes   BIGINT,
+  ok             BOOLEAN NOT NULL,
+  error          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_data_cap_sends ON lte_data_cap_sends(device_id, at DESC);
 `;
 
 const DEFAULT_SETTINGS = [

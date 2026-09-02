@@ -340,6 +340,32 @@ export const pollerApi = {
     '/system/poller/drain'),
 };
 
+
+export interface LteDataCapRule {
+  id: number; interface_name: string; enabled: boolean;
+  phone_number: string; message: string;
+  threshold_bytes: string; margin_pct: number;
+  reset_hour: number; reset_minute: number; timezone: string;
+  cooldown_minutes: number;
+  period_key: string | null; period_bytes: string;
+  last_sent_at: string | null; updated_at: string;
+}
+
+export interface LteDataCapSend {
+  interface_name: string; at: string; trigger: 'manual' | 'threshold';
+  phone_number: string | null; period_bytes: string | null;
+  ok: boolean; error: string | null;
+}
+
+export const dataCapApi = {
+  get: (deviceId: number) =>
+    api.get<{ rules: LteDataCapRule[]; sends: LteDataCapSend[] }>(`/devices/${deviceId}/lte/data-cap`),
+  save: (deviceId: number, iface: string, body: Record<string, unknown>) =>
+    api.put<{ message: string }>(`/devices/${deviceId}/lte/data-cap/${encodeURIComponent(iface)}`, body),
+  sendNow: (deviceId: number, iface: string) =>
+    api.post<{ message: string }>(`/devices/${deviceId}/lte/data-cap/${encodeURIComponent(iface)}/send`),
+};
+
 export const devicesApi = {
   list: () => api.get<Device[]>('/devices'),
   discovered: () => api.get<DiscoveredDevice[]>('/devices/discovered'),

@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { Signal, RadioTower, ArrowLeftRight, RotateCcw, Radio, ArrowUpFromLine } from 'lucide-react';
 import { lteApi, type LteInterface, type LteHistoryEvent } from '../../services/api';
+import DataCapCard from './DataCapCard';
 
 interface Props {
   deviceId: number;
@@ -325,6 +326,11 @@ export default function LteTab({ deviceId }: Props) {
           </div>
         );
       })}
+
+      {/* Carrier data-cap SMS, per interface (discussion #85) */}
+      {interfaces.map(iface => (
+        <DataCapCard key={`cap-${iface.interface_name}`} deviceId={deviceId} interfaceName={iface.interface_name} />
+      ))}
 
       {/* Signal over time */}
       <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
