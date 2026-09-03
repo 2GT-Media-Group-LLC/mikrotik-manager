@@ -1,0 +1,64 @@
+# Cut a GitHub Release whenever the shipped version changes.
+#
+# The dashboard links users to the releases page, and that page held a single
+# entry from five months earlier while the product shipped daily — which tells a
+# visitor the project is abandoned. Commit messages here already read as release
+# notes, so the note is the commit body rather than a generated list of subjects.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/package.json'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Read version, and stop if it did not change
+        id: v
+        run: |
+          VERSION=$(node -p "require('./frontend/package.json').version")
+          PREV=$(git show HEAD~1:frontend/package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" || echo "")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$VERSION" = "$PREV" ]; then
+            echo "unchanged=true" >> "$GITHUB_OUTPUT"
+            echo "Version unchanged ($VERSION) — nothing to release."
+          fi
+
+      - name: Compose notes from the commit that shipped it
+        if: steps.v.outputs.unchanged != 'true'
+        id: notes
+        run: |
+          {
+            echo 'body<<RELEASE_EOF'
+            git log -1 --pretty=%B
+            echo ''
+            echo '---'
+            echo "Container image: \`ghcr.io/2gt-media-group-llc/mikrotik-manager:${{ steps.v.outputs.version }}\`"
+            echo ''
+            echo 'Documentation: https://2gt-media-group-llc.github.io/mikrotik-manager/'
+            echo 'RELEASE_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        if: steps.v.outputs.unchanged != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.v.outputs.version }}"
+          # Betas are marked pre-release so nobody is pointed at one by accident.
+          PRERELEASE=""
+          case "$TAG" in *beta*|*alpha*|*rc*) PRERELEASE="--prerelease" ;; esac
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "${{ steps.notes.outputs.body }}" \
+            $PRERELEASE
