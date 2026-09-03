@@ -36,29 +36,32 @@ jobs:
 
       - name: Compose notes from the commit that shipped it
         if: steps.v.outputs.unchanged != 'true'
-        id: notes
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
         run: |
+          # Written to a file rather than passed through a step output. Commit
+          # messages here routinely contain backticks, and interpolating one into
+          # a shell command lets the shell evaluate it — which is both why the
+          # first attempt failed and a way to run arbitrary code in CI from a
+          # commit message.
           {
-            echo 'body<<RELEASE_EOF'
             git log -1 --pretty=%B
-            echo ''
-            echo '---'
-            echo "Container image: \`ghcr.io/2gt-media-group-llc/mikrotik-manager:${{ steps.v.outputs.version }}\`"
-            echo ''
-            echo 'Documentation: https://2gt-media-group-llc.github.io/mikrotik-manager/'
-            echo 'RELEASE_EOF'
-          } >> "$GITHUB_OUTPUT"
+            printf '\n---\n'
+            printf 'Container image: `ghcr.io/2gt-media-group-llc/mikrotik-manager:%s`\n\n' "$VERSION"
+            printf 'Documentation: https://2gt-media-group-llc.github.io/mikrotik-manager/\n'
+          } > /tmp/release-notes.md
 
       - name: Publish
         if: steps.v.outputs.unchanged != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
         run: |
-          TAG="v${{ steps.v.outputs.version }}"
+          TAG="v$VERSION"
           # Betas are marked pre-release so nobody is pointed at one by accident.
           PRERELEASE=""
           case "$TAG" in *beta*|*alpha*|*rc*) PRERELEASE="--prerelease" ;; esac
           gh release create "$TAG" \
             --title "$TAG" \
-            --notes "${{ steps.notes.outputs.body }}" \
+            --notes-file /tmp/release-notes.md \
             $PRERELEASE
