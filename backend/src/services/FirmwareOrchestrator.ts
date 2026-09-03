@@ -13,6 +13,11 @@ import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
 import { BackupService } from './BackupService';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000; // large images on slow links
+const DOWNLOAD_POLL_MS = 10_000;
+
+/** Reads better than a bare version in a sentence that may have none. */
+const latestLabel = (v: string) => (v ? `Version ${v}` : 'The update');
 const REBOOT_POLL_MS = 15_000;       // probe cadence while waiting
 const REBOOT_TIMEOUT_MS = 12 * 60_000; // give slow flash writes room
 
@@ -150,8 +155,17 @@ export class FirmwareOrchestrator {
       }
     }
 
-    // 2. Kick off the install (device downloads, installs, and reboots itself)
+    // 2. Download the image, and confirm it is actually on the device.
+    //
+    // Deliberately not `/system/package/update/install`, which bundles download
+    // and reboot into one call whose progress cannot be observed. A CCR2216 was
+    // seen to accept it, neither download nor reboot, and report nothing — which
+    // surfaced as "rebooted but still reports 7.24.1" because the check below
+    // could not tell a device that never restarted from one that restarted
+    // unchanged. Downloading first makes success verifiable *before* anything
+    // reboots, and means a device is never restarted for an image it lacks.
     await this.setItem(item.id, { status: 'upgrading' });
+    let uptimeBefore: number | null;
     const collector = new DeviceCollector(device);
     try {
       await collector.connect();
@@ -164,34 +178,84 @@ export class FirmwareOrchestrator {
         collector.disconnect();
         return true;
       }
-      await collector.installUpdate();
+
+      uptimeBefore = await collector.getUptimeSeconds();
+
+      // Free space is the usual reason a download never completes, and "did not
+      // finish in ten minutes" sends someone hunting the network when the device
+      // simply has nowhere to put the image.
+      const res = await collector.getSystemResource().catch(() => ({} as Record<string, string>));
+      const freeMb = Math.round((parseInt(res['free-hdd-space'] || '0', 10) / 1048576) * 10) / 10;
+      const spaceNote = freeMb > 0 ? ` The device reports ${freeMb} MB free.` : '';
+
+      await collector.downloadUpdate();
+
+      // Wait for the device to say the image has landed. Large images on slow
+      // links take minutes, and the old fixed 25-second guess is what made this
+      // look like a failure while the device was still working.
+      const dlDeadline = Date.now() + DOWNLOAD_TIMEOUT_MS;
+      let downloaded = false;
+      while (Date.now() < dlDeadline) {
+        if (this.cancelRequested) break;
+        const s = await collector.getUpdateStatus();
+        if (/downloaded/i.test(s)) { downloaded = true; break; }
+        if (/error|fail/i.test(s)) {
+          collector.disconnect();
+          return fail(`Device could not download ${latest}: ${s}.${spaceNote}`);
+        }
+        await sleep(DOWNLOAD_POLL_MS);
+      }
+      if (!downloaded) {
+        collector.disconnect();
+        return fail(
+          `Device did not finish downloading ${latest} within ` +
+          `${Math.round(DOWNLOAD_TIMEOUT_MS / 60000)} minutes. Nothing was rebooted.${spaceNote}` +
+          (freeMb > 0 && freeMb < 20 ? ' That is unlikely to be enough for a RouterOS image.' : '')
+        );
+      }
+
+      await this.setItem(item.id, { to_version: latest });
+      await collector.reboot();
     } catch (e) {
       collector.disconnect();
-      return fail(`Update install failed: ${(e as Error).message}`);
+      return fail(`Update failed before reboot: ${(e as Error).message}`);
     }
     collector.disconnect();
 
-    // 3. Ride out the reboot
+    // 3. Ride out the reboot, and prove one happened.
     await this.setItem(item.id, { status: 'rebooting' });
     await sleep(REBOOT_GRACE_MS);
     const deadline = Date.now() + REBOOT_TIMEOUT_MS;
     let backOnline = false;
+    let rebootProven = false;
     let newVersion = '';
     while (Date.now() < deadline) {
       if (this.cancelRequested) break;
       const probe = new DeviceCollector(device);
       try {
         await probe.connect();
-        await this.setItem(item.id, { status: 'verifying' });
         const resource = await probe.getSystemResource();
         newVersion = (resource['version'] || '').split(' ')[0];
+        const uptimeNow = await probe.getUptimeSeconds();
         probe.disconnect();
-        backOnline = true;
-        break;
+
+        // An uptime that did not fall means we are talking to the same running
+        // system, not a restarted one — so keep waiting rather than reading the
+        // old version and calling it a failed upgrade.
+        rebootProven = uptimeBefore == null || uptimeNow == null || uptimeNow < uptimeBefore;
+        if (rebootProven) { await this.setItem(item.id, { status: 'verifying' }); backOnline = true; break; }
+        await sleep(REBOOT_POLL_MS);
       } catch {
         probe.disconnect();
         await sleep(REBOOT_POLL_MS);
       }
+    }
+
+    if (backOnline && !rebootProven) {
+      return fail(
+        `${latestLabel(newVersion)} was downloaded, but the device never restarted. ` +
+        `It is still running and reachable — reboot it to complete the upgrade.`
+      );
     }
     if (!backOnline) {
       return fail(`Device did not come back online within ${Math.round(REBOOT_TIMEOUT_MS / 60000)} minutes after the upgrade — check it manually (a pre-upgrade backup ${rollout.pre_backup ? 'exists' : 'was NOT taken'})`);

@@ -3681,6 +3681,38 @@ export class DeviceCollector {
     return (result[0] as Record<string, string>) || {};
   }
 
+  /**
+   * Download the pending update without rebooting.
+   *
+   * Preferred over `install` because it is *verifiable*: afterwards the device
+   * reports "Downloaded, please reboot", so the caller can confirm the image is
+   * actually on the device before restarting anything. `install` bundles the
+   * download and the reboot into one fire-and-forget call whose success cannot
+   * be observed — and on at least one CCR it neither downloaded nor rebooted
+   * while reporting nothing at all (#firmware).
+   */
+  async downloadUpdate(): Promise<void> {
+    await this.client.execute('/system/package/update/download');
+  }
+
+  /** The `status` line from /system/package/update, e.g. "Downloaded, please reboot…". */
+  async getUpdateStatus(): Promise<string> {
+    const rows = await this.client.execute('/system/package/update/print').catch(() => []);
+    return (rows[0]?.['status'] || '').trim();
+  }
+
+  /** Seconds since the device last booted, for proving a reboot happened. */
+  async getUptimeSeconds(): Promise<number | null> {
+    const res = await this.getSystemResource().catch(() => ({} as Record<string, string>));
+    const raw = res['uptime'];
+    if (!raw) return null;
+    const units: Record<string, number> = { w: 604800, d: 86400, h: 3600, m: 60, s: 1 };
+    let total = 0;
+    let matched = false;
+    for (const [, n, u] of raw.matchAll(/(\d+)([wdhms])/g)) { total += parseInt(n, 10) * units[u]; matched = true; }
+    return matched ? total : null;
+  }
+
   async installUpdate(): Promise<void> {
     await this.client.execute('/system/package/update/install');
   }
@@ -3699,8 +3731,22 @@ export class DeviceCollector {
     await this.client.execute('/system/reboot');
   }
 
+  /**
+   * Reboot the device.
+   *
+   * A reboot that works necessarily kills the session that asked for it, so the
+   * transport error that follows is the *expected* outcome, not a failure. Left
+   * unhandled it surfaced as "Update failed before reboot: Connection closed" on
+   * a device that had in fact rebooted and upgraded correctly.
+   */
   async reboot(): Promise<void> {
-    await this.client.execute('/system/reboot');
+    try {
+      await this.client.execute('/system/reboot');
+    } catch (e) {
+      const msg = (e as Error).message || '';
+      if (/closed|reset|EPIPE|not connected|timed? ?out|socket/i.test(msg)) return;
+      throw e;
+    }
   }
 
   // ─── Ethernet monitor / SFP DDM ───────────────────────────────────────────
