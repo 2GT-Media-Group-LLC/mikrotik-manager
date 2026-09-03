@@ -149,6 +149,56 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
   res.json({ ...run, devices });
 });
 
+/**
+ * GET /api/commands/runs/:id/export — the run as a downloadable record.
+ *
+ * Asked for on #118 for archiving and audit. CSV rather than JSON because the
+ * audience is a spreadsheet or a ticket attachment, and output is quoted so a
+ * multi-line device response survives the round trip intact.
+ */
+router.get('/runs/:id/export', async (req: Request, res: Response) => {
+  const run = await queryOne<{ id: number; name: string; command: string; status: string; created_at: string }>(
+    `SELECT id, name, command, status, created_at FROM command_runs WHERE id = $1`, [req.params.id]
+  );
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+
+  const rows = await query<{
+    device_name: string; ip_address: string; wave: number; status: string;
+    output: string | null; error: string | null; guarded: boolean;
+    started_at: string | null; finished_at: string | null;
+  }>(
+    `SELECT d.name AS device_name, d.ip_address, rd.wave, rd.status, rd.output, rd.error,
+            rd.guarded, rd.started_at, rd.finished_at
+       FROM command_run_devices rd JOIN devices d ON d.id = rd.device_id
+      WHERE rd.run_id = $1 ORDER BY rd.wave, d.name`,
+    [req.params.id]
+  );
+
+  // Timestamps arrive from the driver as Date objects, whose default string form
+  // ("Thu Sep 03 2026 15:45:29 GMT+0000 (Coordinated Universal Time)") no
+  // spreadsheet will parse. ISO is both sortable and machine-readable.
+  const esc = (v: unknown) => {
+    const t = v == null ? '' : v instanceof Date ? v.toISOString() : String(v);
+    // Always quote: output routinely contains commas, quotes and newlines, and
+    // a record that cannot be reopened is not an archive.
+    return `"${t.replace(/"/g, '""')}"`;
+  };
+
+  const lines = [
+    ['run_id', 'run_name', 'command', 'run_status', 'device', 'ip_address', 'wave',
+     'status', 'guarded', 'started_at', 'finished_at', 'output', 'error'].join(','),
+    ...rows.map((r) => [
+      run.id, run.name, run.command, run.status, r.device_name.trim(), r.ip_address, r.wave,
+      r.status, r.guarded, r.started_at ?? '', r.finished_at ?? '', r.output ?? '', r.error ?? '',
+    ].map(esc).join(',')),
+  ];
+
+  const stamp = new Date(run.created_at).toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="command-run-${run.id}-${stamp}.csv"`);
+  res.send(lines.join('\n'));
+});
+
 // POST /api/commands/runs/:id/start
 router.post('/runs/:id/start', requireWrite, async (req: Request, res: Response) => {
   try {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban } from 'lucide-react';
+import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban, Download } from 'lucide-react';
 import { commandsApi, devicesApi, type CommandRunDetail } from '../services/api';
 
 /**
@@ -12,6 +12,24 @@ import { commandsApi, devicesApi, type CommandRunDetail } from '../services/api'
  * the guards default on — with a single deliberate switch to turn them off,
  * because a tool that refuses to cut is not a sharp tool (#118).
  */
+
+/**
+ * Pull the CSV through the authenticated client and hand it to the browser.
+ *
+ * A plain download link cannot carry the Bearer header, so it would 401.
+ */
+async function downloadCsv(runId: number): Promise<void> {
+  const res = await commandsApi.exportCsv(runId);
+  const url = URL.createObjectURL(res.data as Blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `command-run-${runId}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function CommandsPage() {
   const queryClient = useQueryClient();
   const [command, setCommand] = useState('');
@@ -219,12 +237,19 @@ export default function CommandsPage() {
 
                 {openRun === r.id && detail && (
                   <div className="px-5 pb-3 space-y-1">
-                    {detail.status === 'running' && (
-                      <button className="btn-secondary text-xs flex items-center gap-1.5 mb-2"
-                              onClick={() => commandsApi.cancelRun(r.id)}>
-                        <Ban className="w-3.5 h-3.5" /> Stop before next wave
+                    <div className="flex items-center gap-2 mb-2">
+                      {detail.status === 'running' && (
+                        <button className="btn-secondary text-xs flex items-center gap-1.5"
+                                onClick={() => commandsApi.cancelRun(r.id)}>
+                          <Ban className="w-3.5 h-3.5" /> Stop before next wave
+                        </button>
+                      )}
+                      {/* Requested on #118 for archiving and audit. */}
+                      <button className="btn-secondary text-xs flex items-center gap-1.5"
+                              onClick={() => downloadCsv(r.id)}>
+                        <Download className="w-3.5 h-3.5" /> Export CSV
                       </button>
-                    )}
+                    </div>
                     {detail.devices.map(d => (
                       <div key={d.id} className="text-xs border-b border-gray-100 dark:border-slate-800 last:border-0 py-1.5">
                         <button className="flex items-center gap-2 w-full text-left"

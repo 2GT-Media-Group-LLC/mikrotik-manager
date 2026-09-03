@@ -17,6 +17,7 @@ import {
   parseLteMonitor, overallQuality, detectChanges, type LteStatus,
 } from '../../utils/lte';
 import { bytesSince, periodKey, shouldSend } from '../../utils/dataCap';
+import { parseDeviceLogTime } from '../../utils/deviceTime';
 import { BackupService } from '../BackupService';
 import { alertService } from '../AlertService';
 
@@ -195,6 +196,8 @@ export class DeviceCollector {
       const identity = await this.client.execute('/system/identity/print');
       const resource = await this.client.execute('/system/resource/print');
       const routerboard = await this.client.execute('/system/routerboard/print').catch(() => [] as Record<string, string>[]);
+      // Needed to place log timestamps correctly — they are device-local (#117).
+      const clock = await this.client.execute('/system/clock/print').catch(() => [] as Record<string, string>[]);
 
       const info = resource[0] || {};
       const rb = routerboard[0] || {};
@@ -212,6 +215,8 @@ export class DeviceCollector {
           serial_number = COALESCE($3, serial_number),
           firmware_version = COALESCE($4, firmware_version),
           ros_version = COALESCE($5, ros_version),
+          time_zone_name = COALESCE($7, time_zone_name),
+          gmt_offset = COALESCE($8, gmt_offset),
           -- An update that has landed is no longer pending. The dedicated
           -- firmware check only runs once a day, so without this a device stays
           -- flagged "update available" for up to 24 hours after it has already
@@ -224,7 +229,8 @@ export class DeviceCollector {
           END,
           updated_at = NOW()
         WHERE id = $6`,
-        [identityName, model, serial, firmware, rosVersion, this.device.id]
+        [identityName, model, serial, firmware, rosVersion, this.device.id,
+         clock[0]?.['time-zone-name'] || null, clock[0]?.['gmt-offset'] || null]
       );
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect system info:`, err);
@@ -843,41 +849,19 @@ export class DeviceCollector {
     }
   }
 
+  /**
+   * A log timestamp as a real instant, using the device's own clock.
+   *
+   * Falls back to the collection time only when the device timezone is unknown
+   * or the format is unrecognised — approximate, but never confidently wrong by
+   * a whole timezone, which is what the previous version was (#117).
+   */
   private parseLogTime(timeStr: string): Date {
-    // RouterOS log time formats:
-    //   "jan/01 00:00:05"       — month/day only (no year) → default to current year
-    //   "jan/01/2024 00:00:05"  — full date with year
-    //   "00:00:05"              — time only (today, e.g. device uptime < 1 day)
-    if (!timeStr) return new Date();
-    try {
-      if (timeStr.includes('/')) {
-        const spaceIdx = timeStr.lastIndexOf(' ');
-        if (spaceIdx === -1) return new Date();
-        const datePart = timeStr.substring(0, spaceIdx);
-        const timePart = timeStr.substring(spaceIdx + 1);
-        const parts = datePart.split('/');
-        const monthStr = parts[0];
-        const day = parts[1];
-        if (!monthStr || !day) return new Date();
-        const year = parts[2] !== undefined ? parts[2] : String(new Date().getFullYear());
-        const months: Record<string, string> = {
-          jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
-        };
-        const month = months[monthStr.toLowerCase()] || '01';
-        const d = new Date(`${year}-${month}-${day.padStart(2, '0')}T${timePart}Z`);
-        if (isNaN(d.getTime())) return new Date();
-        return d;
-      } else {
-        // Time only (today)
-        const today = new Date().toISOString().split('T')[0];
-        const d = new Date(`${today}T${timeStr}Z`);
-        if (isNaN(d.getTime())) return new Date();
-        return d;
-      }
-    } catch {
-      return new Date();
-    }
+    const d = this.device as unknown as { time_zone_name?: string | null; gmt_offset?: string | null };
+    const parsed = parseDeviceLogTime(timeStr, {
+      timeZoneName: d.time_zone_name, gmtOffset: d.gmt_offset,
+    });
+    return parsed ?? new Date();
   }
 
   private mapLogSeverity(topics: string): string {
@@ -3088,10 +3072,17 @@ export class DeviceCollector {
       }, now);
 
       let sentAt: Date | null = rolled ? null : (rule.last_sent_at ? new Date(rule.last_sent_at) : null);
+      // Sending the reset SMS zeroes the carrier's counter — that is what the
+      // message is for, and it is the alternative to waiting for midnight. Our
+      // counter has to follow, or two things go wrong: the bar keeps climbing
+      // past an allowance that no longer applies, and usage stays above the
+      // threshold so the rule re-fires on every cooldown for the rest of the day.
+      let periodBytesAfter = periodBytes;
       if (decision.send) {
         try {
           await this.sendSms(interfaceName, rule.phone_number, rule.message);
           sentAt = now;
+          periodBytesAfter = 0;
           await this.logDataCapSend(interfaceName, 'threshold', rule.phone_number, periodBytes, true, null);
           console.log(`[DataCap] ${this.device.name}/${interfaceName}: reset SMS sent to ${rule.phone_number}`);
         } catch (e) {
@@ -3105,7 +3096,7 @@ export class DeviceCollector {
             SET period_key = $2, period_bytes = $3, last_rx = $4, last_tx = $5,
                 last_sent_at = $6, updated_at = NOW()
           WHERE id = $1`,
-        [rule.id, key, periodBytes, counters.rxBytes, counters.txBytes, sentAt]
+        [rule.id, key, periodBytesAfter, counters.rxBytes, counters.txBytes, sentAt]
       );
     } catch (e) {
       console.error(`[DataCap] ${this.device.name}: tracking failed:`, (e as Error).message);

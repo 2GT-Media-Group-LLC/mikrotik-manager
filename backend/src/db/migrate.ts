@@ -712,6 +712,14 @@ CREATE TABLE IF NOT EXISTS wireless_security_profiles (
 -- remembering the answer.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS has_lte BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- The device's own clock settings (#117).
+--
+-- RouterOS writes log timestamps in the device's local time and never says so.
+-- Without knowing the zone, an event can only be stored at the moment it was
+-- collected — which looks right on a live poll and is badly wrong for a backlog.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS time_zone_name VARCHAR(64);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS gmt_offset VARCHAR(16);
+
 -- Latest state of each LTE interface. One row per interface, overwritten on each
 -- poll; the time series lives in InfluxDB and the movement history below.
 --

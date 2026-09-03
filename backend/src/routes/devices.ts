@@ -2545,8 +2545,10 @@ router.post('/:id/lte/data-cap/:iface/send', requireWrite, async (req: Request, 
        VALUES ($1,$2,'manual',$3,$4,TRUE)`,
       [deviceRow.id, req.params.iface, phone, rule ? Number(rule.period_bytes) : null]
     ).catch(() => {});
+    // The counter restarts with the carrier's, for the same reason the automatic
+    // path resets it: the message is what zeroes their allowance.
     await query(
-      `UPDATE lte_data_cap_rules SET last_sent_at = NOW()
+      `UPDATE lte_data_cap_rules SET last_sent_at = NOW(), period_bytes = 0
         WHERE device_id = $1 AND interface_name = $2`,
       [deviceRow.id, req.params.iface]
     ).catch(() => {});

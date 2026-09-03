@@ -417,6 +417,12 @@ export const commandsApi = {
   listRuns: () => api.get<CommandRunSummary[]>('/commands/runs'),
   getRun: (id: number) => api.get<CommandRunDetail>(`/commands/runs/${id}`),
   cancelRun: (id: number) => api.post<{ message: string }>(`/commands/runs/${id}/cancel`),
+  /**
+   * Fetched through the authenticated client, not a bare link. Auth is a Bearer
+   * header, which an <a download> cannot send — the link would simply 401.
+   */
+  exportCsv: (id: number) =>
+    api.get(`/commands/runs/${id}/export`, { responseType: 'blob' }),
 };
 
 export const devicesApi = {

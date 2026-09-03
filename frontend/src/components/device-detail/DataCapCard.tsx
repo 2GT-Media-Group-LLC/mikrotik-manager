@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, Send, RefreshCw, AlertTriangle } from 'lucide-react';
-import { dataCapApi, type LteDataCapRule } from '../../services/api';
+import { dataCapApi } from '../../services/api';
 
 /**
  * Daily data-cap SMS for carriers that throttle "unlimited" plans.
@@ -123,7 +123,8 @@ export default function DataCapCard({ deviceId, interfaceName }: { deviceId: num
           </div>
           <p className="mt-1 text-[11px] text-gray-400 dark:text-slate-500">
             Counted from polling, so it reads low — traffic during a reboot or before this device was
-            added is invisible to us. Sends at {fmtGB(firesAt)} GB ({form.margin_pct}% early) for that reason.
+            added is invisible to us. Sends at {fmtGB(firesAt)} GB ({form.margin_pct}% early) for that reason,
+            and restarts at zero once sent, because that is what the message does to the carrier&rsquo;s counter.
           </p>
         </div>
       )}
