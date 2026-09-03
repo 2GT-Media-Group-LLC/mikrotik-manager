@@ -8,7 +8,7 @@ very path you are managing the device over. MikroTik's own documented advice for
 VLAN filtering is to have a serial console ready.
 
 Three layers address that. This page covers how they behave and how to configure them;
-the [README](../README.md#what-makes-it-different) has the short version.
+the [README](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/blob/main/README.md#what-makes-it-different) has the short version.
 
 ## Change Guard — device-side auto-revert
 

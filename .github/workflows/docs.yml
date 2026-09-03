@@ -1,0 +1,87 @@
+# Documentation site.
+#
+# Two jobs with different jobs to do. On a pull request the site is *built* and
+# nothing is published — a broken link or a page missing from the nav fails the
+# check rather than shipping. On main it is published under a version, because
+# readers are routinely running something other than the newest build and a
+# single "latest" would describe a release they do not have.
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - '.github/workflows/docs.yml'
+      - 'frontend/package.json'   # version stamp comes from here
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (check only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-docs.txt
+      # --strict turns warnings into errors, which is the point of running this
+      # on a pull request at all: a link to a page that no longer exists should
+      # fail here rather than 404 for a reader.
+      - run: mkdocs build --strict
+
+  deploy:
+    name: Publish versioned site
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0        # mike needs history to update gh-pages
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-docs.txt
+
+      - name: Derive version from the shipped package
+        id: v
+        run: |
+          # Documentation is versioned with the product, not separately, so the
+          # site and the image a reader is running carry the same number.
+          FULL=$(node -p "require('./frontend/package.json').version")
+          SERIES=$(echo "$FULL" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')
+          echo "full=$FULL"     >> "$GITHUB_OUTPUT"
+          echo "series=$SERIES" >> "$GITHUB_OUTPUT"
+
+      - name: Configure git for mike
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Aliased to "latest" so links stay stable while older series remain
+      # readable at their own URLs.
+      - name: Deploy
+        run: |
+          mike deploy --push --update-aliases \
+            "${{ steps.v.outputs.series }}" latest \
+            --title "${{ steps.v.outputs.series }} (${{ steps.v.outputs.full }})"
+          mike set-default --push latest

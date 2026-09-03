@@ -1,0 +1,74 @@
+# Documentation site. Source of truth is docs/*.md, which stays readable when
+# browsing the repository on GitHub — the site renders those files rather than
+# replacing them. Keeping docs beside the code is the only thing that reliably
+# prevents drift: the same pull request changes behaviour and description.
+site_name: MikroTik Manager
+site_description: Self-hosted management for MikroTik fleets
+repo_url: https://github.com/2GT-Media-Group-LLC/mikrotik-manager
+repo_name: 2GT-Media-Group-LLC/mikrotik-manager
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.top
+    - navigation.sections
+    - content.code.copy
+    - search.highlight
+
+plugins:
+  - search
+  # Versioned docs. The platform ships betas frequently and images are published
+  # to GHCR, so readers are routinely on something other than the newest build —
+  # a single "latest" would describe a release they are not running.
+  - mike:
+      canonical_version: latest
+
+extra:
+  version:
+    provider: mike
+    default: latest
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Home: README.md
+  - Getting started:
+      - Configuration: configuration.md
+  - Operating:
+      - Change Guard and Config Health: change-guard.md
+      - Polling and scaling: scaling.md
+      - Alerting: alerting.md
+      - SSH keys: ssh-keys.md
+      - Bulk commands: commands.md
+  - Devices:
+      - Cellular (LTE): cellular.md
+      - CAPsMAN: capsman.md
+  - Integration:
+      - API and automation: api.md
+      - Single sign-on (OIDC): sso-oidc.md
+  - Contributing:
+      - Architecture: architecture.md

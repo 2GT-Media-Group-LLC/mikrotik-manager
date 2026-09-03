@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.23.27_Beta-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.23.28_Beta-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -360,7 +360,7 @@ Each network service supports multi-device management with conflict detection:
 
 ## Documentation
 
-Deeper reference material lives in [`docs/`](docs/README.md), versioned alongside the code
+Deeper reference material lives at **[the documentation site](https://2gt-media-group-llc.github.io/mikrotik-manager/)**, published per release so it matches the version you are running. The same pages are in [`docs/`](docs/README.md) if you would rather read them here.
 so it moves when behaviour does.
 
 | Document | Covers |

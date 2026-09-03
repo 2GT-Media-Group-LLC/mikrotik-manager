@@ -1,0 +1,4 @@
+# Pinned so a docs build cannot break on an upstream release the way an
+# unpinned toolchain would.
+mkdocs-material==9.5.44
+mike==2.1.3
