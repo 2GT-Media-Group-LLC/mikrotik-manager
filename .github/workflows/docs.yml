@@ -42,6 +42,10 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          # The default cache glob only looks for requirements.txt or
+          # pyproject.toml, neither of which exists here — the docs toolchain is
+          # kept separate from the application's.
+          cache-dependency-path: requirements-docs.txt
       - run: pip install -r requirements-docs.txt
       # --strict turns warnings into errors, which is the point of running this
       # on a pull request at all: a link to a page that no longer exists should
@@ -60,6 +64,10 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          # The default cache glob only looks for requirements.txt or
+          # pyproject.toml, neither of which exists here — the docs toolchain is
+          # kept separate from the application's.
+          cache-dependency-path: requirements-docs.txt
       - run: pip install -r requirements-docs.txt
 
       - name: Derive version from the shipped package
