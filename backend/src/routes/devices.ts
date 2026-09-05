@@ -19,6 +19,7 @@ import { runConfigHealth } from '../services/changeGuard/configHealth';
 import { isMultiVlanSpec } from '../utils/vlan';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
+import { logSafe } from '../utils/logSafe';
 import { parseBandList, uplinkAnchor, totalBandwidthMhz, type LteBandInfo } from '../utils/lte';
 
 // Resolve a credential preset id into decrypted credentials. Returns null if
@@ -1017,7 +1018,7 @@ async function withGuardedChange<T>(
         return;
       }
     } catch (err) {
-      console.warn(`[preflight] analysis skipped for device ${id}: ${(err as Error).message}`);
+      console.warn(`[preflight] analysis skipped for device ${logSafe(id)}: ${logSafe((err as Error).message)}`);
     }
   }
 

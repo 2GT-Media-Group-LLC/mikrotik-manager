@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as dgram from 'dgram';
 import { query } from '../config/database';
+import { logSafe } from '../utils/logSafe';
 import { requireAuth, requireAdmin, requireWrite } from '../middleware/auth';
 import { PollerService } from '../services/PollerService';
 import { getQueryApi, bucket } from '../config/influxdb';
@@ -326,7 +327,7 @@ router.get('/:mac/traffic', async (req: Request, res: Response) => {
       if (time && field && value != null) raw.push({ time, field, value });
     });
   } catch (err) {
-    console.error(`[clients/traffic] Flux error for ${mac.replace(/[\r\n]/g, '_')}:`, err);
+    console.error(`[clients/traffic] Flux error for ${logSafe(mac)}:`, err);
   }
 
   // Separate tx and rx series, sort by time, then compute non-negative deltas
@@ -384,7 +385,7 @@ router.get('/:mac/signal', async (req: Request, res: Response) => {
       if (time && value != null) points.push({ time, signal_strength: Math.round(value) });
     });
   } catch (err) {
-    console.error(`[clients/signal] Flux error for ${mac.replace(/[\r\n]/g, '_')}:`, err);
+    console.error(`[clients/signal] Flux error for ${logSafe(mac)}:`, err);
   }
 
   return res.json(points);
