@@ -7,6 +7,21 @@ on:
     branches: [main]
 
 jobs:
+  # Cheap, and guards a file no maintainer runs. The published deployment file is
+  # generated from docker-compose.yml; when they were maintained separately the
+  # published one silently lost the NetFlow port, every poller tunable and the
+  # Redis memory ceiling, and it took an outside report to notice (#121).
+  compose:
+    name: Deployment files in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: Check docker-compose.ghcr.yml is current
+        run: node scripts/generate-ghcr-compose.mjs --check
+
   frontend:
     name: Frontend — Lint, Type-check & Build
     runs-on: ubuntu-latest

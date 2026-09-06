@@ -1,7 +1,15 @@
 version: '3.8'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GENERATED FILE — DO NOT EDIT.
+#
+# Produced from docker-compose.yml by scripts/generate-ghcr-compose.mjs.
+# Edit that file and run `npm run compose:generate`; CI fails if this one is
+# out of date.
+#
 # Pre-built image deployment — no source code or build toolchain required.
-# For development/build-from-source, use docker-compose.yml instead.
+# For development or building from source, use docker-compose.yml instead.
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
   nginx:
@@ -21,8 +29,8 @@ services:
   backend:
     image: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:latest
     environment:
-      TZ: ${TZ:-UTC}
       NODE_ENV: production
+      TZ: ${TZ:-UTC}
       DATABASE_URL: postgresql://mikrotik:${DB_PASSWORD:-mikrotik_secure_pw}@postgres:5432/mikrotik_manager
       REDIS_URL: redis://redis:6379
       INFLUXDB_URL: http://influxdb:8086
@@ -35,6 +43,18 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost,http://localhost,https://127.0.0.1,http://127.0.0.1}
       PORT: 3001
+      NETFLOW_BIND_PORT: 2055
+      # Poller tuning. These were documented in .env.example but never passed
+      # through, so setting them had no effect on the container at all.
+      POLLER_CONCURRENCY: ${POLLER_CONCURRENCY:-12}
+      POLLER_JOB_TIMEOUT_MS: ${POLLER_JOB_TIMEOUT_MS:-45000}
+      POLLER_INTERVAL_MS: ${POLLER_INTERVAL_MS:-30000}
+      POLLER_JOB_RETENTION_SEC: ${POLLER_JOB_RETENTION_SEC:-3600}
+      POLLER_JOB_RETENTION_COUNT: ${POLLER_JOB_RETENTION_COUNT:-5000}
+    ports:
+      # NetFlow/IPFIX collector — UDP goes straight to the backend (nginx not involved).
+      # Host port must match the netflow_collector_port app setting (default 2055).
+      - "${NETFLOW_PORT:-2055}:2055/udp"
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +81,7 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
+      TZ: ${TZ:-UTC}
       POSTGRES_DB: mikrotik_manager
       POSTGRES_USER: mikrotik
       POSTGRES_PASSWORD: ${DB_PASSWORD:-mikrotik_secure_pw}
@@ -78,7 +99,21 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    # A memory ceiling so a runaway producer can never take the host down, with
+    # eviction disabled.
+    #
+    # volatile-lru looks tempting — it would evict only keys with an expiry, and
+    # BullMQ's job hashes have none. But its *control* keys do: job locks and
+    # per-queue stalled-check markers both carry TTLs, and losing one causes
+    # duplicate processing or a stalled-job storm. BullMQ warns about this on
+    # connect, and it is right. noeviction means Redis refuses writes when full
+    # rather than quietly corrupting queue state: the host stays up, and the
+    # failure is loud. Retention limits and the stale-pending sweep are what keep
+    # us away from the ceiling in the first place.
+    command: >
+      redis-server --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-512mb}
+      --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     restart: unless-stopped

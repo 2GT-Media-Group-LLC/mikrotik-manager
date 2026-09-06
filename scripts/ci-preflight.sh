@@ -38,6 +38,11 @@ run() {
 : >/tmp/ci-preflight-failures
 echo "Running CI gates locally (mirrors .github/workflows/ci.yml)"
 
+# The published deployment file is generated. Checking it first because it costs
+# nothing and because drift here is invisible to every maintainer — it only ever
+# breaks the Quick Deploy path that no one on the team runs (#121).
+run "compose: ghcr in sync"  .  node scripts/generate-ghcr-compose.mjs --check
+
 run "backend: lint"        backend  npm run lint
 run "backend: type-check"  backend  npx tsc --noEmit
 run "backend: build"       backend  npm run build

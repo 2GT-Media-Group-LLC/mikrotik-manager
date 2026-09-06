@@ -98,7 +98,7 @@ mikrotik-manager/
 ├── nginx/                  # Reverse proxy config and Dockerfile
 ├── scripts/                # CI preflight and tooling
 ├── docker-compose.yml      # Build from source
-├── docker-compose.ghcr.yml # Pre-built images
+├── docker-compose.ghcr.yml # Pre-built images — GENERATED, do not edit by hand
 └── .env.example
 ```
 
