@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { Signal, RadioTower, ArrowLeftRight, RotateCcw, Radio, ArrowUpFromLine } from 'lucide-react';
-import { lteApi, type LteInterface, type LteHistoryEvent } from '../../services/api';
+import { Signal, RadioTower, ArrowLeftRight, RotateCcw, Radio, ArrowUpFromLine, Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { lteApi, type LteInterface, type LteHistoryEvent, type LteDwellTotal } from '../../services/api';
 import DataCapCard from './DataCapCard';
 
 interface Props {
@@ -111,6 +111,53 @@ function BandChips({ iface }: { iface: LteInterface }) {
   );
 }
 
+/** Human duration, matching how the backend phrases it. */
+function fmtDwell(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
+}
+
+/**
+ * Dwell totals as proportion bars.
+ *
+ * The event list this sits above answers "what happened"; a reader wants "where
+ * does this link actually live". Ordered by time spent, so the answer is the
+ * first row rather than something to be worked out (#120).
+ */
+function DwellList({ rows, emptyText }: { rows: LteDwellTotal[]; emptyText: string }) {
+  if (rows.length === 0) {
+    return <p className="text-xs text-gray-500 dark:text-slate-400">{emptyText}</p>;
+  }
+  const widest = Math.max(...rows.map(r => r.seconds), 1);
+  return (
+    <ul className="space-y-2">
+      {rows.map(r => (
+        <li key={r.key}>
+          <div className="flex items-baseline justify-between gap-2 text-xs">
+            <span className="font-medium text-gray-900 dark:text-white truncate">{r.label}</span>
+            <span className="tabular-nums text-gray-600 dark:text-slate-300 shrink-0">
+              {fmtDwell(r.seconds)} · {r.pct}%
+            </span>
+          </div>
+          <div className="mt-0.5 h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+            <div className="h-full rounded-full bg-blue-500"
+                 style={{ width: `${Math.max(2, (r.seconds / widest) * 100)}%` }} />
+          </div>
+          {/* Six brief visits and one long stay are different situations. */}
+          <div className="mt-0.5 text-[11px] text-gray-400 dark:text-slate-500">
+            {r.visits} {r.visits === 1 ? 'stretch' : 'stretches'}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const EVENT_ICON = {
   'handover': ArrowLeftRight,
   'session-reset': RotateCcw,
@@ -163,6 +210,10 @@ function HistoryList({ events }: { events: LteHistoryEvent[] }) {
 
 export default function LteTab({ deviceId }: Props) {
   const [range, setRange] = useState<string>('6h');
+  const [dwellRange, setDwellRange] = useState<string>('7d');
+  // The raw event list is kept, but folded away: it answers a different and
+  // narrower question than the totals above it (#120).
+  const [showEvents, setShowEvents] = useState(false);
 
   const { data: state, isLoading } = useQuery({
     queryKey: ['lte', deviceId],
@@ -174,6 +225,12 @@ export default function LteTab({ deviceId }: Props) {
     queryKey: ['lte-metrics', deviceId, range],
     queryFn: () => lteApi.metrics(deviceId, range).then(r => r.data),
     refetchInterval: 60_000,
+  });
+
+  const { data: dwell } = useQuery({
+    queryKey: ['lte-dwell', deviceId, dwellRange],
+    queryFn: () => lteApi.dwell(deviceId, dwellRange).then(r => r.data),
+    refetchInterval: 120_000,
   });
 
   const { data: history } = useQuery({
@@ -382,14 +439,70 @@ export default function LteTab({ deviceId }: Props) {
         )}
       </div>
 
-      {/* Movement */}
+      {/* Where the link actually spends its time */}
       <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
-        <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Tower and band changes</h3>
-        <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
-          Reconstructed by comparing consecutive polls — a session uptime that runs backwards
-          means the modem re-registered, and a changed cell means it handed over.
-        </p>
-        <HistoryList events={history?.events ?? []} />
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+          <div className="flex items-start gap-3">
+            <Clock className="w-5 h-5 mt-0.5 text-gray-400 dark:text-slate-500" />
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">Where this link spends its time</h3>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                Reconstructed from handovers and band changes. Aggregated carriers each count
+                for the whole stretch, so band shares describe usage rather than dividing the window.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-1">
+            {(['24h', '7d', '30d'] as const).map(r => (
+              <button key={r} onClick={() => setDwellRange(r)}
+                className={`px-2 py-1 text-xs rounded font-medium transition-colors ${
+                  dwellRange === r
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-600'
+                }`}>{r}</button>
+            ))}
+          </div>
+        </div>
+
+        {dwell && dwell.truncated && (
+          <p className="mb-3 text-[11px] text-amber-700 dark:text-amber-400">
+            Records only begin {new Date(dwell.earliest_record!).toLocaleDateString()}, so this
+            covers less than the full {dwellRange}.
+          </p>
+        )}
+
+        <div className="grid sm:grid-cols-2 gap-6">
+          <div>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">By band</h4>
+            <DwellList rows={dwell?.bands ?? []}
+              emptyText="No band changes recorded yet — the modem has stayed on one set of carriers." />
+          </div>
+          <div>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">By cell</h4>
+            <DwellList rows={dwell?.cells ?? []}
+              emptyText="No handovers recorded yet — the modem has stayed on one cell." />
+          </div>
+        </div>
+
+        {/* The event stream, folded away. It grows without bound, which is what
+            made it hard to read as the primary view. */}
+        <button
+          onClick={() => setShowEvents(v => !v)}
+          className="mt-4 flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white"
+        >
+          {showEvents ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          {showEvents ? 'Hide' : 'Show'} individual changes
+          {dwell ? ` (${dwell.changes} in ${dwellRange})` : ''}
+        </button>
+        {showEvents && (
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-slate-700">
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-2">
+              A session uptime that runs backwards means the modem re-registered; a changed cell
+              means it handed over.
+            </p>
+            <HistoryList events={history?.events ?? []} />
+          </div>
+        )}
       </div>
     </div>
   );

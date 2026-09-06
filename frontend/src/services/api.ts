@@ -290,9 +290,27 @@ export interface LteMetricPoint {
   carriers?: number;
 }
 
+
+export interface LteDwellTotal {
+  key: string; label: string; seconds: number; pct: number; visits: number; lastSeen: string;
+}
+
+export interface LteDwell {
+  range: string;
+  measured_seconds: number;
+  earliest_record: string | null;
+  /** True when our records start later than the requested window. */
+  truncated: boolean;
+  changes: number;
+  bands: LteDwellTotal[];
+  cells: LteDwellTotal[];
+}
+
 export const lteApi = {
   state: (deviceId: number) =>
     api.get<{ interfaces: LteInterface[] }>(`/devices/${deviceId}/lte`),
+  dwell: (deviceId: number, range = '7d') =>
+    api.get<LteDwell>(`/devices/${deviceId}/lte/dwell`, { params: { range } }),
   history: (deviceId: number, range = '24h') =>
     api.get<{ events: LteHistoryEvent[] }>(`/devices/${deviceId}/lte/history`, { params: { range } }),
   metrics: (deviceId: number, range = '6h', iface?: string) =>

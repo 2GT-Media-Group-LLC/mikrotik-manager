@@ -20,6 +20,14 @@ import { isMultiVlanSpec } from '../utils/vlan';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
 import { logSafe } from '../utils/logSafe';
+import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
+
+/** Postgres interval text to milliseconds, for the few windows we offer. */
+function intervalToMs(interval: string): number {
+  const [n, unit] = interval.split(' ');
+  const per: Record<string, number> = { hours: 3_600_000, days: 86_400_000 };
+  return (Number(n) || 0) * (per[unit] ?? 0);
+}
 import { parseBandList, uplinkAnchor, totalBandwidthMhz, type LteBandInfo } from '../utils/lte';
 
 // Resolve a credential preset id into decrypted credentials. Returns null if
@@ -2595,6 +2603,82 @@ router.get('/:id/lte/history', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching LTE history:', error);
     res.status(500).json({ error: 'Failed to fetch LTE history' });
+  }
+});
+
+/**
+ * GET /api/devices/:id/lte/dwell — time spent on each band and each cell.
+ *
+ * The history panel lists every handover and grows without bound; this answers
+ * the question that list cannot, which is what the pattern actually is (#120).
+ */
+router.get('/:id/lte/dwell', async (req: Request, res: Response) => {
+  const { range = '7d', iface } = req.query as { range?: string; iface?: string };
+  const windows: Record<string, string> = {
+    '24h': '24 hours', '7d': '7 days', '30d': '30 days',
+  };
+  const window = windows[range] || '7 days';
+
+  try {
+    const rows = await query<{
+      interface_name: string; at: string; cell_id: string | null;
+      enb_id: string | null; bands: string | null;
+    }>(
+      `SELECT interface_name, at, cell_id, enb_id, bands
+         FROM lte_cell_history
+        WHERE device_id = $1 AND at > NOW() - $2::interval
+          AND ($3::text IS NULL OR interface_name = $3)
+        ORDER BY at ASC`,
+      [req.params.id, window, iface ?? null]
+    );
+
+    // The state in force when the window opened. Without it, a link that changed
+    // once yesterday would report a few minutes of dwell across seven days,
+    // having silently dropped everything before the first change in range.
+    const prior = await queryOne<{
+      interface_name: string; at: string; cell_id: string | null;
+      enb_id: string | null; bands: string | null;
+    }>(
+      `SELECT interface_name, at, cell_id, enb_id, bands
+         FROM lte_cell_history
+        WHERE device_id = $1 AND at <= NOW() - $2::interval
+          AND ($3::text IS NULL OR interface_name = $3)
+        ORDER BY at DESC LIMIT 1`,
+      [req.params.id, window, iface ?? null]
+    );
+
+    const [bounds] = await query<{ earliest: string | null }>(
+      `SELECT MIN(at) AS earliest FROM lte_cell_history WHERE device_id = $1`,
+      [req.params.id]
+    );
+
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - intervalToMs(window));
+    const toEvent = (r: { at: string; cell_id: string | null; enb_id: string | null; bands: string | null }) =>
+      ({ at: new Date(r.at), cellId: r.cell_id, enbId: r.enb_id, bands: r.bands });
+
+    const segments = buildSegments(
+      rows.map(toEvent), now, windowStart, prior ? toEvent(prior) : null
+    );
+    const measuredSeconds = segments.reduce((n, s) => n + s.seconds, 0);
+
+    res.json({
+      range,
+      // Stated so the UI can be honest about a window longer than our records.
+      measured_seconds: measuredSeconds,
+      earliest_record: bounds?.earliest ?? null,
+      truncated: Boolean(bounds?.earliest && new Date(bounds.earliest) > windowStart),
+      changes: rows.length,
+      bands: summariseBands(segments, measuredSeconds),
+      cells: summarise(
+        segments,
+        (s) => s.cellId,
+        (key, s) => (s.enbId ? `Cell ${key} · eNB ${s.enbId}` : `Cell ${key}`)
+      ),
+    });
+  } catch (error) {
+    console.error('Error building LTE dwell stats:', error);
+    res.status(500).json({ error: 'Failed to build dwell statistics' });
   }
 });
 

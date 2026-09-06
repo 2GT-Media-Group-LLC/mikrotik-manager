@@ -77,6 +77,26 @@ cell id means it handed over.
 This is deliberately not log-based. The modem this was built for may log nothing at all,
 so polling is the vantage point that always exists.
 
+## Where the link spends its time
+
+Handovers and band changes are also aggregated into dwell totals — how long the
+modem has spent on each band and on each cell — over 24 hours, 7 days or 30 days.
+
+Two properties are worth understanding:
+
+**Aggregated carriers each count for the whole stretch.** A period spent on B1
+and B3 together credits both with the full duration, so band shares describe how
+much of the window each band was *in use* rather than dividing the window between
+them. The totals can therefore exceed 100%, which is the honest description of
+carrier aggregation.
+
+**The window is bounded by when collection began.** History is written on change,
+so the panel says plainly when records start later than the range you asked for.
+
+The individual change events remain available underneath, folded away. They
+answer a narrower question — what happened, and when — and grow without bound,
+which is why they are no longer the primary view.
+
 ## Data-cap reset SMS
 
 Several European carriers sell "unlimited" data that is throttled past a daily allowance,
