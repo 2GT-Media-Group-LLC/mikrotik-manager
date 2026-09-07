@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { PollerService } from '../services/PollerService';
 import {
   buildTopology,
@@ -31,11 +33,20 @@ interface BridgeRow {
 }
 
 // GET /api/topology
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
+  // Scope the graph to the active site. Links are filtered on their *from*
+  // device: a link out of the site still shows, and resolves to an external
+  // node, which is the honest picture of an uplink to somewhere else (#130).
+  const siteId = activeSite(req);
+  const devFilter = siteScopeDevices(siteId);
+  const fromFilter = siteScopeByDevice(siteId, 'tl.from_device_id');
+  const mlFilter = siteScopeByDevice(siteId, 'ml.from_device_id');
+  const ifFilter = siteScopeByDevice(siteId, 'device_id');
+  const brFilter = siteScopeByDevice(siteId, 'device_id');
   const [devices, allLinks, manualLinks, deviceMacs, bridges] = await Promise.all([
     query<TopoDevice>(
       `SELECT id, name, ip_address, model, device_type, status, ros_version, ip_addresses_jsonb
-       FROM devices ORDER BY name ASC`
+       FROM devices ${devFilter ? `WHERE ${devFilter}` : ''} ORDER BY name ASC`
     ),
     query<LinkRow>(
       `SELECT tl.*,
@@ -44,27 +55,31 @@ router.get('/', async (_req: Request, res: Response) => {
        FROM topology_links tl
        LEFT JOIN devices fd ON fd.id = tl.from_device_id
        LEFT JOIN devices td ON td.id = tl.to_device_id
+       ${fromFilter ? `WHERE ${fromFilter}` : ''}
        ORDER BY tl.discovered_at DESC`
     ),
     query<ManualLinkRow>(
       `SELECT ml.*, fd.name AS from_name, td.name AS to_name
        FROM manual_topology_links ml
        JOIN devices fd ON fd.id = ml.from_device_id
-       JOIN devices td ON td.id = ml.to_device_id`
+       JOIN devices td ON td.id = ml.to_device_id
+       ${mlFilter ? `WHERE ${mlFilter}` : ''}`
     ),
     // Every interface MAC in the fleet, so a neighbour seen only by MAC — an LLDP
     // sighting across a trunk port carries no address — still resolves to its device.
     query<{ device_id: number; mac_address: string }>(
       `SELECT device_id, mac_address FROM interfaces WHERE mac_address IS NOT NULL
+         ${ifFilter ? `AND ${ifFilter}` : ''}
        UNION
-       SELECT device_id, mac_address FROM wireless_interfaces WHERE mac_address IS NOT NULL`
+       SELECT device_id, mac_address FROM wireless_interfaces WHERE mac_address IS NOT NULL
+         ${ifFilter ? `AND ${ifFilter}` : ''}`
     ),
     // What each bridge reports about the spanning tree. Authoritative, and the
     // reason the root is no longer guessed from port roles (#131).
     query<BridgeRow>(
       `SELECT device_id, bridge_name, bridge_id, root_bridge, root_bridge_id,
               root_port, root_path_cost, protocol_mode
-         FROM device_bridges`
+         FROM device_bridges ${brFilter ? `WHERE ${brFilter}` : ''}`
     ),
   ]);
 

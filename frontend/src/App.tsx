@@ -3,6 +3,8 @@ import { useAuthStore } from './store/authStore';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import SitesPage from './pages/SitesPage';
+import SiteLanding from './components/SiteLanding';
 import DevicesPage from './pages/DevicesPage';
 import DeviceDetailPage from './pages/DeviceDetailPage';
 import ClientsPage from './pages/ClientsPage';
@@ -48,7 +50,7 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<SiteLanding />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="devices" element={<DevicesPage />} />
           <Route path="devices/:id" element={<DeviceDetailPage />} />
@@ -59,6 +61,7 @@ export default function App() {
           <Route path="backups" element={<BackupsPage />} />
           <Route path="firmware" element={<FirmwarePage />} />
           <Route path="commands" element={<CommandsPage />} />
+          <Route path="sites" element={<SitesPage />} />
           <Route path="settings" element={<SettingsPage />} />
           {/* Legacy routes — consolidated in the v0.16.4 UI reorganization */}
           <Route path="switches" element={<Navigate to="/devices?type=SW" replace />} />

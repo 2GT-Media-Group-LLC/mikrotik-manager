@@ -59,6 +59,7 @@ nav:
   - Getting started:
       - Configuration: configuration.md
   - Operating:
+      - Sites: sites.md
       - Change Guard and Config Health: change-guard.md
       - Polling and scaling: scaling.md
       - Alerting: alerting.md

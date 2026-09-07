@@ -20,6 +20,7 @@ import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
 import clsx from 'clsx';
+import { fleetStatus } from '../utils/fleetStatus';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -167,7 +168,8 @@ function HealthBar({
   wirelessCount: number;
   clientSparkline: number[];
 }) {
-  const allOnline = (summary?.devices.offline ?? 0) === 0 && (summary?.devices.total ?? 0) > 0;
+  const status = fleetStatus(summary?.devices);
+  const allOnline = status.kind === 'healthy';
   const reachFraction = summary?.devices.total
     ? (summary.devices.online / summary.devices.total)
     : 1;
@@ -182,13 +184,14 @@ function HealthBar({
             style={{ background: 'var(--accent-soft)' }}
           >
             <StatusDot
-              color={allOnline ? 'var(--accent)' : 'var(--warn)'}
+              color={status.tone === 'good' ? 'var(--accent)'
+                   : status.tone === 'warn' ? 'var(--warn)' : 'var(--ink-4)'}
               glow size={10}
             />
           </div>
           <div>
             <div className="text-[14px] font-semibold" style={{ color: 'var(--ink)' }}>
-              {allOnline ? 'All systems nominal' : `${summary?.devices.offline ?? 0} device(s) unreachable`}
+              {status.headline}
             </div>
             <div className="text-[12px]" style={{ color: 'var(--ink-3)' }}>
               {summary?.devices.online ?? 0} of {summary?.devices.total ?? 0} reachable
@@ -594,9 +597,10 @@ function OperationsView({
 }) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
-  const allOnline = (summary?.devices.offline ?? 0) === 0 && (summary?.devices.total ?? 0) > 0;
-  const statusText = allOnline ? "Everything's running." : `${summary?.devices.offline} device${summary?.devices.offline !== 1 ? 's' : ''} unreachable.`;
-  const statusColor = allOnline ? 'var(--accent)' : 'var(--warn)';
+  const status = fleetStatus(summary?.devices);
+  const statusText = status.sentence;
+  const statusColor = status.tone === 'good' ? 'var(--accent)'
+                    : status.tone === 'warn' ? 'var(--warn)' : 'var(--ink-4)';
 
   const deviceList = devices as Device[];
   const onlineDevices = deviceList.filter(d => d.status === 'online');

@@ -1,13 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeDevices } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 
 const router = Router();
 router.use(requireAuth);
 
 // GET /api/switches — all switch devices with port statistics
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req), 'd');
   const switches = await query(`
     SELECT d.id, d.name, d.ip_address, d.model, d.device_type, d.status, d.last_seen,
            d.ros_version, d.firmware_version, d.serial_number, d.rack_name, d.rack_slot,
@@ -19,7 +22,7 @@ router.get('/', async (_req: Request, res: Response) => {
     LEFT JOIN interfaces i ON i.device_id = d.id
       AND (i.type ILIKE 'ether%' OR i.type ILIKE 'sfp%'
            OR i.name ILIKE 'ether%' OR i.name ILIKE 'sfp%')
-    WHERE d.device_type = 'switch'
+    WHERE d.device_type = 'switch' ${siteFilter ? `AND ${siteFilter}` : ''}
     GROUP BY d.id
     ORDER BY d.name ASC
   `);
@@ -27,9 +30,11 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // GET /api/switches/lldp — LLDP enabled/disabled status per online switch
-router.get('/lldp', async (_req: Request, res: Response) => {
+router.get('/lldp', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
   const switches = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type = 'switch' AND status = 'online'`
+    `SELECT * FROM devices WHERE device_type = 'switch' AND status = 'online'
+       ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
 
   const results = await Promise.allSettled(
@@ -104,9 +109,11 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
 // GET /api/switches/snmp — SNMP config/status for all managed switches
 // Includes offline/unknown devices so the list never disappears during a poll cycle.
 // Unreachable devices fall through to the Promise.allSettled error path and render with an error note.
-router.get('/snmp', async (_req: Request, res: Response) => {
+router.get('/snmp', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
   const switches = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type = 'switch' ORDER BY name`
+    `SELECT * FROM devices WHERE device_type = 'switch'
+       ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
   );
 
   const results = await Promise.allSettled(

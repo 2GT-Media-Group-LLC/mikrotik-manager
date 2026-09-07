@@ -5,9 +5,11 @@ import {
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { devicesApi, settingsApi } from '../../services/api';
+import { devicesApi, settingsApi, sitesApi } from '../../services/api';
 import type { Device } from '../../types';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import { geocodeAddress, OSM_TILE_URL, OSM_ATTRIBUTION } from '../../utils/geocode';
+import { Network } from 'lucide-react';
 
 interface Props {
   device: Device;
@@ -20,22 +22,6 @@ interface LocationForm {
   notes: string;
 }
 
-async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`,
-      { headers: { Accept: 'application/json' } }
-    );
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    }
-  } catch {
-    // ignore geocoding failures
-  }
-  return null;
-}
-
 function MapEmbed({ lat, lng, address }: { lat: number | string; lng: number | string; address: string }) {
   const latN = Number(lat);
   const lngN = Number(lng);
@@ -44,9 +30,7 @@ function MapEmbed({ lat, lng, address }: { lat: number | string; lng: number | s
   useEffect(() => {
     if (!containerRef.current) return;
     const map = L.map(containerRef.current, { scrollWheelZoom: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
+    L.tileLayer(OSM_TILE_URL, { attribution: OSM_ATTRIBUTION }).addTo(map);
     L.circleMarker([latN, lngN], {
       radius: 9, color: '#fff', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.9,
     }).bindPopup(`<b>${address}</b>`).addTo(map);
@@ -87,6 +71,26 @@ export default function DeviceLocationSection({ device }: Props) {
     staleTime: 300_000,
   });
   const mapsEnabled = settings?.['maps_enabled'] !== false;
+
+  // Which site this device belongs to (issue #130). Shown only when more than
+  // one site exists — on a single-network install it is noise.
+  const { data: sites = [] } = useQuery({
+    queryKey: ['sites'],
+    queryFn: () => sitesApi.list().then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const showSitePicker = sites.length > 1;
+  const currentSite = sites.find((s) => s.id === device.site_id) ?? null;
+
+  const moveSite = useMutation({
+    mutationFn: (siteId: number) => sitesApi.assignDevices(siteId, [device.id]),
+    onSuccess: () => {
+      // The device may have just left the site being viewed, so every scoped
+      // figure on screen is now potentially wrong. Invalidate everything and
+      // let the active queries refetch.
+      queryClient.invalidateQueries();
+    },
+  });
   const [editing, setEditing] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -173,6 +177,28 @@ export default function DeviceLocationSection({ device }: Props) {
 
         {editing ? (
           <div className="space-y-4">
+            {showSitePicker && (
+              <div>
+                <label className="label flex items-center gap-1.5">
+                  <Network className="w-3.5 h-3.5 text-blue-500" /> Site
+                </label>
+                <select
+                  className="input"
+                  value={device.site_id ?? ''}
+                  disabled={moveSite.isPending}
+                  onChange={(e) => {
+                    const id = parseInt(e.target.value, 10);
+                    if (Number.isInteger(id)) moveSite.mutate(id);
+                  }}
+                >
+                  {device.site_id == null && <option value="">Unassigned</option>}
+                  {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Moving a device takes its clients, events and history with it. Applies immediately.
+                </p>
+              </div>
+            )}
             <div>
               <label className="label flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-blue-500" /> Physical Location
@@ -247,6 +273,11 @@ export default function DeviceLocationSection({ device }: Props) {
           </div>
         ) : (
           <div className="space-y-3 text-sm">
+            {showSitePicker && (
+              <InfoRow icon={<Network className="w-3.5 h-3.5 text-blue-500" />} label="Site"
+                value={currentSite?.name}
+                emptyText="Unassigned" />
+            )}
             <InfoRow icon={<MapPin className="w-3.5 h-3.5 text-blue-500" />} label="Location"
               value={device.location_address}
               emptyText="No location set" />

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the same gates GitHub Actions runs, locally, before pushing.
 #
-# Mirrors .github/workflows/ci.yml exactly (frontend lint/type-check/build,
+# Mirrors .github/workflows/ci.yml exactly (frontend lint/type-check/test/build,
 # backend lint/type-check/build, prod-dependency audits) and additionally runs
 # the backend Jest suite, which CI does not currently cover.
 #
@@ -49,6 +49,7 @@ run "backend: build"       backend  npm run build
 run "backend: tests"       backend  npx jest --silent
 run "frontend: lint"       frontend npm run lint
 run "frontend: type-check" frontend npx tsc --noEmit
+run "frontend: tests"      frontend npm test
 run "frontend: build"      frontend npm run build
 
 if [[ $SKIP_AUDIT -eq 0 ]]; then

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeByNullableDevice } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 
 const router = Router();
 router.use(requireAuth);
@@ -14,7 +16,8 @@ router.use(requireAuth);
  * string. Splitting server-side keeps the badge list honest across the entire table
  * instead of only the page currently loaded (issue #108).
  */
-router.get('/topics', async (_req: Request, res: Response) => {
+router.get('/topics', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeByNullableDevice(activeSite(req), 'device_id');
   const rows = await query<{ token: string; n: string }>(`
     SELECT token, COUNT(*) AS n
     FROM (
@@ -22,6 +25,7 @@ router.get('/topics', async (_req: Request, res: Response) => {
       FROM events
       WHERE topic IS NOT NULL AND topic <> ''
         AND event_time > NOW() - INTERVAL '30 days'
+        ${siteFilter ? `AND ${siteFilter}` : ''}
     ) t
     WHERE btrim(token) <> ''
     GROUP BY token
@@ -49,6 +53,12 @@ router.get('/', async (req: Request, res: Response) => {
     filters.push(`e.device_id = $${idx++}`);
     params.push(deviceId);
   }
+  // Events with no device belong to no site, so they are hidden while a site is
+  // selected rather than repeated into every one of them (issue #130).
+  const siteFilter = siteScopeByNullableDevice(activeSite(req), 'e.device_id');
+  if (siteFilter) filters.push(siteFilter);
+  // Same predicate for the unaliased critical-count query below.
+  const siteFilterBare = siteScopeByNullableDevice(activeSite(req), 'device_id');
   if (severity) {
     // Accept comma-separated list e.g. "error,warning"
     // 'error' also includes 'critical' rows
@@ -95,7 +105,9 @@ router.get('/', async (req: Request, res: Response) => {
       params
     ),
     query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM events WHERE severity IN ('error','critical') AND event_time > NOW() - INTERVAL '24 hours'`
+      `SELECT COUNT(*) as count FROM events
+       WHERE severity IN ('error','critical') AND event_time > NOW() - INTERVAL '24 hours'
+         ${siteFilterBare ? `AND ${siteFilterBare}` : ''}`
     ),
   ]);
 

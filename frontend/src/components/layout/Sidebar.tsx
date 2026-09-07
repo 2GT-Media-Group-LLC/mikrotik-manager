@@ -8,6 +8,7 @@ import {
   LayoutGrid, TerminalSquare,
 } from 'lucide-react';
 import clsx from 'clsx';
+import SiteSelector from './SiteSelector';
 import { APP_VERSION } from '../../version';
 import { devicesApi } from '../../services/api';
 
@@ -242,6 +243,9 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Site selector — under the brand block, deliberately separate from it */}
+      <SiteSelector isCollapsed={isCollapsed} onNavigate={handleNavClick} />
 
       {/* Navigation */}
       <nav className="flex-1 px-[14px] py-3 space-y-[1px] overflow-y-auto">

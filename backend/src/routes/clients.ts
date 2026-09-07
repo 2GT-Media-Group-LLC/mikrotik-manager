@@ -3,6 +3,8 @@ import * as dgram from 'dgram';
 import { query } from '../config/database';
 import { logSafe } from '../utils/logSafe';
 import { requireAuth, requireAdmin, requireWrite } from '../middleware/auth';
+import { siteScopeByDevice } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { PollerService } from '../services/PollerService';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/clientFingerprint';
@@ -132,6 +134,12 @@ router.get('/', async (req: Request, res: Response) => {
     filters.push(`c.device_id = $${idx++}`);
     filterParams.push(deviceId);
   }
+  // Site scoping belongs on the sighting side: a MAC seen by a device in
+  // another site is that site's client, not this one's. Expressed as a
+  // subquery on device_id rather than d.site_id because the count query below
+  // does not join devices (issue #130).
+  const siteFilter = siteScopeByDevice(activeSite(req), 'c.device_id');
+  if (siteFilter) filters.push(siteFilter);
   if (active === 'true') {
     filters.push(`c.active = TRUE`);
   }

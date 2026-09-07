@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { useAuthStore } from '../store/authStore';
+import { useSiteStore } from '../store/siteStore';
 import type {
   Device,
   Interface,
@@ -32,6 +33,12 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // Active site travels with every request (issue #130). Injecting it here
+  // rather than threading it through ~160 query keys means a new query is
+  // scoped correctly by default and cannot be forgotten. null is the all-sites
+  // view, which sends no header and so behaves exactly as before sites existed.
+  const siteId = useSiteStore.getState().currentSiteId;
+  if (siteId != null) config.headers['X-Site-Id'] = String(siteId);
   return config;
 });
 
@@ -1610,3 +1617,23 @@ export const configTemplatesApi = {
 };
 
 export default api;
+
+// ─── Sites (issue #130) ───────────────────────────────────────────────────────
+export interface SitePayload {
+  name?: string;
+  address?: string;
+  notes?: string;
+  location_lat?: number | null;
+  location_lng?: number | null;
+}
+
+export const sitesApi = {
+  list: () => api.get<import('../store/siteStore').Site[]>('/sites'),
+  create: (payload: SitePayload) =>
+    api.post<import('../store/siteStore').Site>('/sites', payload),
+  update: (id: number, payload: SitePayload) =>
+    api.put<import('../store/siteStore').Site>(`/sites/${id}`, payload),
+  remove: (id: number) => api.delete<{ ok: boolean }>(`/sites/${id}`),
+  assignDevices: (id: number, deviceIds: number[]) =>
+    api.post<{ ok: boolean; moved: number }>(`/sites/${id}/devices`, { deviceIds }),
+};

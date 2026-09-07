@@ -33,6 +33,8 @@ export type BulkAddResultRow = {
 interface BulkJobPayload {
   jobId: string;
   items: CreateDeviceInput[];
+  /** Site the batch was queued from, so queued adds land where the operator was looking. */
+  siteId?: number | null;
 }
 
 async function readMeta(jobId: string): Promise<Record<string, unknown>> {
@@ -68,7 +70,7 @@ async function appendResults(jobId: string, rows: BulkAddResultRow[]): Promise<v
 }
 
 async function processJob(job: Job<BulkJobPayload>): Promise<void> {
-  const { jobId, items } = job.data;
+  const { jobId, items, siteId } = job.data;
   await writeMeta(jobId, { status: 'active', processed: 0 });
   const poller = pollerService;
 
@@ -96,7 +98,8 @@ async function processJob(job: Job<BulkJobPayload>): Promise<void> {
         ...item,
         device_type: item.device_type || 'router',
       },
-      poller
+      poller,
+      { siteId: siteId ?? null }
     );
 
     let failMsg = 'Failed';
@@ -128,11 +131,15 @@ async function processJob(job: Job<BulkJobPayload>): Promise<void> {
   });
 }
 
-export async function enqueueBulkAddJob(jobId: string, items: CreateDeviceInput[]): Promise<void> {
+export async function enqueueBulkAddJob(
+  jobId: string,
+  items: CreateDeviceInput[],
+  siteId: number | null = null
+): Promise<void> {
   if (!queue) {
     queue = new Queue(QUEUE_NAME, { connection: createRedisConnection() });
   }
-  await queue.add('run', { jobId, items } satisfies BulkJobPayload, {
+  await queue.add('run', { jobId, items, siteId } satisfies BulkJobPayload, {
     attempts: 1,
     removeOnComplete: { age: 3600, count: 100 },
     removeOnFail: { age: 86400 },

@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
+import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, clientSeriesTag } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 
 const router = Router();
 router.use(requireAuth);
@@ -15,6 +17,26 @@ function rangeToFlux(range: string): string {
 router.get('/clients-over-time', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const queryApi = getQueryApi();
+  // Per-site deduplicated series when a site is selected, fleet-wide otherwise.
+  // Written by DeviceCollector alongside the global series (issue #130).
+  //
+  // A site holding the entire fleet is a special case worth taking: its total
+  // *is* the global total, by definition rather than by approximation. Using
+  // the global series there is not a shortcut -- it keeps the chart's full
+  // history, which the per-site series only accumulates from the upgrade
+  // onward. That covers every single-site install.
+  const siteId = activeSite(req);
+  let seriesTag = '_global';
+  if (siteId !== null) {
+    const counts = await query<{ in_site: number; total: number }>(
+      `SELECT COUNT(*) FILTER (WHERE site_id = $1)::int AS in_site,
+              COUNT(*)::int AS total
+         FROM devices`,
+      [siteId]
+    );
+    const { in_site = 0, total = 0 } = counts[0] ?? {};
+    seriesTag = clientSeriesTag(siteId, in_site, total);
+  }
 
   // Use the global deduplicated metric (_global tag) written by DeviceCollector.
   // This avoids double-counting clients seen by multiple devices simultaneously.
@@ -23,7 +45,7 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_counts")
       |> filter(fn: (r) => r._field == "total_clients")
-      |> filter(fn: (r) => r.device_id == "_global")
+      |> filter(fn: (r) => r.device_id == "${seriesTag}")
       |> aggregateWindow(every: 5m, fn: last, createEmpty: false)
       |> yield(name: "clients_over_time")
   `;
@@ -39,29 +61,48 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
     // InfluxDB might not have data yet
   }
 
-  // If no global metric exists yet (first run or old data), fall back to max across devices.
-  // max() is better than sum() since the device with the most clients is the gateway that
-  // sees everyone — summing would double-count clients visible from multiple devices.
+  // If no deduplicated series exists yet (first run, or a site whose history
+  // predates the per-site series), fall back to max across real devices. max()
+  // is better than sum() since the device with the most clients is the gateway
+  // that sees everyone — summing would double-count clients visible from
+  // multiple devices.
   if (rawPoints.length === 0) {
-    const fallbackQuery = `
-      from(bucket: "${bucket}")
-        |> range(start: -${range})
-        |> filter(fn: (r) => r._measurement == "client_counts")
-        |> filter(fn: (r) => r._field == "total_clients")
-        |> filter(fn: (r) => r.device_id != "_global")
-        |> aggregateWindow(every: 5m, fn: max, createEmpty: false)
-        |> group()
-        |> aggregateWindow(every: 5m, fn: max, createEmpty: false)
-        |> yield(name: "clients_over_time_fallback")
-    `;
-    try {
-      await queryApi.collectRows(fallbackQuery, (row, tableMeta) => {
-        const time = tableMeta.get(row, '_time') as string;
-        const value = tableMeta.get(row, '_value') as number;
-        rawPoints.push({ time, value: Math.round(value) });
-      });
-    } catch {
-      // No data yet
+    // The synthetic series are tagged _global and _site_<id>; the leading
+    // underscore is what distinguishes them from real device ids. Matching on
+    // it matters: without it the fleet-wide fallback would fold the per-site
+    // totals back in and count everyone twice.
+    let deviceFilter: string | null = `|> filter(fn: (r) => not (r.device_id =~ /^_/))`;
+    if (siteId !== null) {
+      const ids = await query<{ id: number }>(
+        `SELECT id FROM devices WHERE site_id = $1`, [siteId]
+      );
+      // An empty site has no series to fall back to, and must show an empty
+      // chart rather than the fleet's (issue #130).
+      deviceFilter = ids.length
+        ? `|> filter(fn: (r) => ${ids.map((d) => `r.device_id == "${d.id}"`).join(' or ')})`
+        : null;
+    }
+    if (deviceFilter) {
+      const fallbackQuery = `
+        from(bucket: "${bucket}")
+          |> range(start: -${range})
+          |> filter(fn: (r) => r._measurement == "client_counts")
+          |> filter(fn: (r) => r._field == "total_clients")
+          ${deviceFilter}
+          |> aggregateWindow(every: 5m, fn: max, createEmpty: false)
+          |> group()
+          |> aggregateWindow(every: 5m, fn: max, createEmpty: false)
+          |> yield(name: "clients_over_time_fallback")
+      `;
+      try {
+        await queryApi.collectRows(fallbackQuery, (row, tableMeta) => {
+          const time = tableMeta.get(row, '_time') as string;
+          const value = tableMeta.get(row, '_value') as number;
+          rawPoints.push({ time, value: Math.round(value) });
+        });
+      } catch {
+        // No data yet
+      }
     }
   }
 
@@ -72,6 +113,7 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
 // GET /api/metrics/top-clients?limit=10&range=24h
 router.get('/top-clients', async (req: Request, res: Response) => {
   const limit = Math.min(parseInt(String(req.query.limit || '10'), 10), 50);
+  const topFilter = siteScopeByDevice(activeSite(req), 'c.device_id');
 
   // Use postgres data (most recent client data)
   const clients = await query(
@@ -80,6 +122,7 @@ router.get('/top-clients', async (req: Request, res: Response) => {
             c.tx_bytes, c.rx_bytes, c.client_type, d.name as device_name
      FROM clients c JOIN devices d ON d.id = c.device_id
      WHERE c.active = TRUE AND (c.tx_bytes + c.rx_bytes) > 0
+       ${topFilter ? `AND ${topFilter}` : ''}
      ORDER BY total_bytes DESC LIMIT $1`,
     [limit]
   );
@@ -308,30 +351,36 @@ router.get('/device/:deviceId/availability', async (req: Request, res: Response)
 });
 
 // GET /api/metrics/summary - dashboard summary stats
-router.get('/summary', async (_req: Request, res: Response) => {
+router.get('/summary', async (req: Request, res: Response) => {
+  const siteId = activeSite(req);
+  const devFilter = siteScopeDevices(siteId);
+  const cliFilter = siteScopeByDevice(siteId, 'device_id');
+  const evtFilter = siteScopeByNullableDevice(siteId, 'device_id');
   const [deviceStats, clientStats, alertStats, availStats] = await Promise.all([
     query<{ total: string; online: string; offline: string }>(
       `SELECT
         COUNT(*) as total,
         COUNT(*) FILTER (WHERE status='online') as online,
         COUNT(*) FILTER (WHERE status='offline') as offline
-       FROM devices`
+       FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`
     ),
     query<{ total: string; active: string }>(
       `SELECT COUNT(DISTINCT mac_address) as total,
               COUNT(DISTINCT mac_address) FILTER (WHERE active=TRUE) as active
-       FROM clients`
+       FROM clients ${cliFilter ? `WHERE ${cliFilter}` : ''}`
     ),
     query<{ critical: string; warning: string }>(
       `SELECT
         COUNT(*) FILTER (WHERE severity='error') as critical,
         COUNT(*) FILTER (WHERE severity='warning') as warning
-       FROM events WHERE event_time > NOW() - INTERVAL '24 hours'`
+       FROM events WHERE event_time > NOW() - INTERVAL '24 hours'
+         ${evtFilter ? `AND ${evtFilter}` : ''}`
     ),
     query<{ total_outage_sec: string }>(
       `SELECT COALESCE(SUM(COALESCE(duration_seconds, 0)), 0)::text AS total_outage_sec
        FROM device_availability
-       WHERE went_offline_at > NOW() - INTERVAL '30 days'`
+       WHERE went_offline_at > NOW() - INTERVAL '30 days'
+         ${cliFilter ? `AND ${cliFilter}` : ''}`
     ),
   ]);
 

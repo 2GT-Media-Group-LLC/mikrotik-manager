@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.23.35_Beta-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.24.0_Beta-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -122,6 +122,7 @@ links the relevant MikroTik documentation.
 | **CAPsMAN aware** | Centrally provisioned APs are recognised, grouped under their controller, and protected from local writes the controller would discard |
 | **Rogue AP detection** | A foreign BSSID broadcasting one of your SSIDs is flagged as an evil twin |
 | **Anomaly insights** | Client counts and CPU compared against each device's own same-hour 14-day baseline, not a fixed threshold |
+| **Multi-site** | Group devices into sites and view each one's clients, events and topology separately, with an all-sites map. One install, many customer networks |
 | **Enterprise auth** | OIDC/SSO, TOTP two-factor, role-based access, and scoped API tokens |
 
 ---
@@ -343,6 +344,7 @@ Each network service supports multi-device management with conflict detection:
 - **Configuration templates** — reusable sets (DNS, NTP, syslog) pushed to many devices with per-device result reporting
 - **Bulk device add** — "Try All" on discovered devices runs as a server-side job that survives a closed browser tab, with live progress and cancel
 - **Device organisation** — colour-coded tags, rack location, physical address with map support, and per-device notes
+- **Sites** — group devices into sites and see each one's devices, clients, events, topology and dashboards on their own. A selector under the logo switches between them, and an all-sites view pins every site on a world map. Single-network installs are collected into one "Default Site" and never meet the concept. Polling stays fleet-wide — sites are a view over the data, not a change to how it is gathered. See [the sites guide](docs/sites.md)
 
 ### Access control and platform
 
@@ -367,6 +369,7 @@ so it moves when behaviour does.
 |---|---|
 | [Configuration](docs/configuration.md) | Environment variables, secret management, key rotation, TLS |
 | [Change Guard and Config Health](docs/change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
+| [Sites](docs/sites.md) | Grouping devices into sites, switching between them, and what each site scopes |
 | [Alerting](docs/alerting.md) | Rules, channels, ntfy priority mapping, webhooks, maintenance windows |
 | [Single sign-on (OIDC)](docs/sso-oidc.md) | Identity provider setup, group-to-role mapping, break-glass behaviour |
 | [CAPsMAN](docs/capsman.md) | How centrally provisioned APs are modelled, and current limits |

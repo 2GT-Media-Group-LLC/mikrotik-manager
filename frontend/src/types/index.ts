@@ -64,6 +64,7 @@ export interface Device {
   status: DeviceStatus;
   last_seen?: string;
   notes?: string;
+  site_id?: number | null;
   location_address?: string;
   location_lat?: number;
   location_lng?: number;

@@ -1,15 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeDevices } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 
 const router = Router();
 router.use(requireAuth);
 
 // GET /api/routers/lldp — LLDP enabled/disabled status per online router
-router.get('/lldp', async (_req: Request, res: Response) => {
+router.get('/lldp', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
   const routers = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type = 'router' AND status = 'online'`
+    `SELECT * FROM devices WHERE device_type = 'router' AND status = 'online'
+       ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
 
   const results = await Promise.allSettled(
@@ -82,9 +86,11 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
 });
 
 // GET /api/routers/snmp — SNMP config/status per online router
-router.get('/snmp', async (_req: Request, res: Response) => {
+router.get('/snmp', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
   const routers = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type = 'router' AND status = 'online'`
+    `SELECT * FROM devices WHERE device_type = 'router' AND status = 'online'
+       ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
 
   const results = await Promise.allSettled(

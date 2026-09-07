@@ -5,10 +5,17 @@ import { safeConnectionError } from '../utils/safeClientError';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import type { PollerService } from './PollerService';
 import type { CredentialPresetRow } from '../routes/credentialPresets';
+import { DEVICE_BASE_COLUMNS } from './deviceColumns';
 
 export type CreateDeviceContext = {
   /** JWT role of the caller ('admin' | 'operator' | 'viewer'). Preset use may be restricted for operators. */
   requestingUserRole?: string;
+  /**
+   * Site the device should join (issue #130). A device with no site is invisible
+   * the moment any site is selected, so this must never be left unset: when the
+   * caller has no active site we fall back to the default site in SQL.
+   */
+  siteId?: number | null;
 };
 
 async function loadCredentialPreset(
@@ -191,9 +198,7 @@ export async function createDeviceFromBody(
       }
 
       const updatedExisting = await queryOne(
-        `SELECT id, name, ip_address, api_port, api_username, model, serial_number,
-                firmware_version, ros_version, device_type, status, last_seen, notes, created_at
-         FROM devices WHERE id = $1`,
+        `SELECT ${DEVICE_BASE_COLUMNS}, created_at FROM devices WHERE id = $1`,
         [existingBySerial.id]
       );
       if (!updatedExisting) {
@@ -219,10 +224,14 @@ export async function createDeviceFromBody(
 
   const rows = await query<{ id: number }>(
     `INSERT INTO devices (name, ip_address, api_port, api_username, api_password_encrypted,
-                          ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'unknown') RETURNING id`,
+                          ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status,
+                          site_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'unknown',
+             COALESCE($11::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)))
+     RETURNING id`,
     [name, ip_address, api_port, api_username, encryptedPass,
-     ssh_port, ssh_username || null, encryptedSshPass, device_type, notes || null]
+     ssh_port, ssh_username || null, encryptedSshPass, device_type, notes || null,
+     ctx?.siteId ?? null]
   );
 
   const newId = rows[0].id;
@@ -232,9 +241,7 @@ export async function createDeviceFromBody(
   }
 
   const device = await queryOne(
-    `SELECT id, name, ip_address, api_port, api_username, model, serial_number,
-            firmware_version, ros_version, device_type, status, last_seen, notes, created_at
-     FROM devices WHERE id = $1`,
+    `SELECT ${DEVICE_BASE_COLUMNS}, created_at FROM devices WHERE id = $1`,
     [newId]
   );
 

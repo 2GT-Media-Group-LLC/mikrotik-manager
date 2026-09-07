@@ -20,7 +20,10 @@ import { isMultiVlanSpec } from '../utils/vlan';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
 import { logSafe } from '../utils/logSafe';
+import { DEVICE_BASE_COLUMNS } from '../services/deviceColumns';
 import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
+import { siteScopeDevices, andSite } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 
 /** Postgres interval text to milliseconds, for the few windows we offer. */
 function intervalToMs(interval: string): number {
@@ -74,15 +77,15 @@ export function setPollerService(p: PollerService): void {
 }
 
 // GET /api/devices
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
+  const where = andSite('', siteScopeDevices(activeSite(req)));
   const devices = await query(
-    `SELECT id, name, ip_address, api_port, api_username, model, serial_number,
-            firmware_version, ros_version, latest_ros_version, firmware_update_available,
+    `SELECT ${DEVICE_BASE_COLUMNS},
+            latest_ros_version, firmware_update_available,
             routerboard_upgrade_available, upgrade_firmware_version,
-            device_type, status, last_seen, notes,
             location_address, location_lat::float8 AS location_lat, location_lng::float8 AS location_lng,
             rack_name, rack_slot, created_at
-     FROM devices ORDER BY name ASC`
+     FROM devices ${where} ORDER BY name ASC`
   );
 
   // Attach tags to each device
@@ -104,7 +107,8 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // ─── Routers overview (router-type devices with route counts) ─────────────────
-router.get('/routers/overview', async (_req: Request, res: Response) => {
+router.get('/routers/overview', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req), 'd');
   const routers = await query(`
     SELECT d.id, d.name, d.ip_address, d.model, d.device_type, d.status, d.last_seen,
            d.ros_version, d.firmware_version, d.serial_number, d.rack_name, d.rack_slot,
@@ -116,7 +120,7 @@ router.get('/routers/overview', async (_req: Request, res: Response) => {
     LEFT JOIN interfaces i ON i.device_id = d.id
       AND (i.type ILIKE 'ether%' OR i.type ILIKE 'sfp%'
            OR i.name ILIKE 'ether%' OR i.name ILIKE 'sfp%')
-    WHERE d.device_type = 'router'
+    WHERE d.device_type = 'router' ${siteFilter ? `AND ${siteFilter}` : ''}
     GROUP BY d.id
     ORDER BY d.name ASC
   `);
@@ -280,6 +284,8 @@ router.get('/discovered', async (_req: Request, res: Response) => {
 router.post('/', requireWrite, async (req: Request, res: Response) => {
   const result = await createDeviceFromBody(req.body, pollerService, {
     requestingUserRole: req.user?.role,
+    // A device added while viewing a site joins that site (issue #130).
+    siteId: activeSite(req),
   });
   return res.status(result.status).json(result.body);
 });
@@ -310,7 +316,7 @@ router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) 
     BULK_ADD_META_TTL_SEC
   );
   await redis.set(`device-bulk-add:${jobId}:results`, '[]', 'EX', BULK_ADD_META_TTL_SEC);
-  await enqueueBulkAddJob(jobId, items as CreateDeviceInput[]);
+  await enqueueBulkAddJob(jobId, items as CreateDeviceInput[], activeSite(req));
   return res.status(202).json({ job_id: jobId, total: items.length });
 });
 
@@ -348,11 +354,10 @@ router.get('/bulk-add/jobs/:jobId', requireWrite, async (req: Request, res: Resp
 // GET /api/devices/:id
 router.get('/:id', async (req: Request, res: Response) => {
   const device = await queryOne(
-    `SELECT id, name, ip_address, api_port, api_username, ssh_port, ssh_username, model,
-            serial_number, firmware_version, ros_version, latest_ros_version,
+    `SELECT ${DEVICE_BASE_COLUMNS},
+            ssh_port, ssh_username, latest_ros_version,
             firmware_update_available, routerboard_upgrade_available, upgrade_firmware_version,
-            device_type, status, last_seen,
-            notes, location_address,
+            location_address,
             location_lat::float8 AS location_lat,
             location_lng::float8 AS location_lng,
             rack_name, rack_slot, wifi_role, has_lte, created_at, updated_at
@@ -391,9 +396,8 @@ router.patch('/:id/location', requireWrite, async (req: Request, res: Response) 
   );
 
   const updated = await queryOne(
-    `SELECT id, name, ip_address, api_port, api_username, ssh_port, ssh_username, model,
-            serial_number, firmware_version, ros_version, device_type, status, last_seen, wifi_role,
-            notes, location_address,
+    `SELECT ${DEVICE_BASE_COLUMNS},
+            ssh_port, ssh_username, location_address,
             location_lat::float8 AS location_lat,
             location_lng::float8 AS location_lng,
             rack_name, rack_slot, wifi_role, has_lte, created_at, updated_at
@@ -486,9 +490,7 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
   );
 
   const updated = await queryOne(
-    `SELECT id, name, ip_address, api_port, api_username, model, serial_number,
-            firmware_version, ros_version, device_type, status, last_seen, notes
-     FROM devices WHERE id = $1`,
+    `SELECT ${DEVICE_BASE_COLUMNS} FROM devices WHERE id = $1`,
     [req.params.id]
   );
   return res.json(updated);

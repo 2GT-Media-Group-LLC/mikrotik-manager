@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { lookupVendor } from '../utils/oui';
 import { analyzeSpectrum, summarize, BAND_RANGES, parseChannelSpec } from '../utils/rfSpectrum';
@@ -106,7 +108,8 @@ router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
 // ─── Section overview ─────────────────────────────────────────────────────────
 
 // GET /api/wireless — all wireless_ap devices with aggregated stats
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req), 'd');
   const aps = await query(`
     SELECT d.id, d.name, d.ip_address, d.model, d.device_type, d.status, d.last_seen,
            d.ros_version, d.firmware_version, d.serial_number, d.rack_name, d.rack_slot,
@@ -124,6 +127,7 @@ router.get('/', async (_req: Request, res: Response) => {
     FROM devices d
     LEFT JOIN wireless_interfaces wi ON wi.device_id = d.id
     WHERE (d.device_type = 'wireless_ap' OR d.wifi_role IN ('cap','controller','controller_cap'))
+      ${siteFilter ? `AND ${siteFilter}` : ''}
     GROUP BY d.id
     ORDER BY d.name ASC
   `);
@@ -139,7 +143,8 @@ router.get('/', async (_req: Request, res: Response) => {
  * Read-only. Reads the cache rather than the devices, so the page loads instantly
  * and works while a CAP is offline — the controller still knows what it provisioned.
  */
-router.get('/capsman', async (_req: Request, res: Response) => {
+router.get('/capsman', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
   const controllers = await query<{
     id: number; name: string; ip_address: string; model: string | null;
     status: string; wifi_role: string | null;
@@ -147,6 +152,7 @@ router.get('/capsman', async (_req: Request, res: Response) => {
     SELECT id, name, ip_address, model, status, wifi_role
     FROM devices
     WHERE wifi_role IN ('controller', 'controller_cap')
+      ${siteFilter ? `AND ${siteFilter}` : ''}
     ORDER BY name ASC
   `);
 
@@ -874,6 +880,7 @@ function deviceScope(req: Request): number | null {
  */
 router.get('/rf/channels', async (req: Request, res: Response) => {
   const deviceId = deviceScope(req);
+  const siteFilter = siteScopeByDevice(activeSite(req), 'wi.device_id');
 
   // Two sources, because a CAPsMAN-managed AP stores no frequency of its own — the
   // controller owns the channel. Reading only wireless_interfaces silently dropped
@@ -905,6 +912,7 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
         OR cr.current_channel IS NOT NULL
       )
       ${deviceId ? 'AND wi.device_id = $1' : ''}
+      ${siteFilter ? `AND ${siteFilter}` : ''}
     ORDER BY d.name ASC, wi.name ASC
   `, deviceId ? [deviceId] : []);
 
@@ -967,6 +975,7 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
 // GET /api/wireless/rf/signals — active wireless clients' RSSI (for density view)
 router.get('/rf/signals', async (req: Request, res: Response) => {
   const deviceId = deviceScope(req);
+  const siteFilter = siteScopeByDevice(activeSite(req), 'c.device_id');
   const rows = await query(`
     SELECT c.mac_address, c.signal_strength, c.device_id, d.name AS device_name,
            c.custom_name, c.hostname
@@ -977,6 +986,7 @@ router.get('/rf/signals', async (req: Request, res: Response) => {
       AND c.signal_strength IS NOT NULL
       AND c.signal_strength < 0
       ${deviceId ? 'AND c.device_id = $1' : ''}
+      ${siteFilter ? `AND ${siteFilter}` : ''}
     ORDER BY c.signal_strength DESC
   `, deviceId ? [deviceId] : []);
   res.json(rows);
@@ -989,11 +999,13 @@ router.get('/rf/signals', async (req: Request, res: Response) => {
  * driver exposes. On an all-RouterOS-7 fleet that panel can never have data, so the
  * UI needs to know rather than rendering an empty box forever (issue #96).
  */
-router.get('/rf/capabilities', async (_req: Request, res: Response) => {
+router.get('/rf/capabilities', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
   const rows = await query<{ wifi_package: string | null; n: string }>(`
     SELECT wifi_package, COUNT(*) AS n
     FROM devices
     WHERE wifi_package IS NOT NULL AND wifi_package <> 'none'
+      ${siteFilter ? `AND ${siteFilter}` : ''}
     GROUP BY wifi_package`);
 
   const counts = Object.fromEntries(rows.map((r) => [r.wifi_package ?? 'unknown', Number(r.n)]));
@@ -1065,6 +1077,7 @@ const RE_DHCP_FAIL  = /no.*address|declined|nak|offer.*fail|pool.*exhaust/i;
 // GET /api/wireless/rf/connectivity?range=24h — Association/Auth/DHCP success funnel
 router.get('/rf/connectivity', async (req: Request, res: Response) => {
   const deviceId = deviceScope(req);
+  const siteFilter = siteScopeByDevice(activeSite(req), 'device_id');
   const intervals: Record<string, string> = { '1h': '1 hour', '6h': '6 hours', '24h': '24 hours', '7d': '7 days' };
   const interval = intervals[String(req.query.range || '24h')] || '24 hours';
 
@@ -1072,6 +1085,7 @@ router.get('/rf/connectivity', async (req: Request, res: Response) => {
     SELECT topic, message FROM events
     WHERE event_time > NOW() - INTERVAL '${interval}'
       ${deviceId ? 'AND device_id = $1' : ''}
+      ${siteFilter ? `AND ${siteFilter}` : ''}
       AND (topic ILIKE '%wireless%' OR topic ILIKE '%wifi%' OR topic ILIKE '%dhcp%')
   `, deviceId ? [deviceId] : []);
 
@@ -1109,13 +1123,19 @@ router.get('/rf/connectivity', async (req: Request, res: Response) => {
 // ─── Rogue / neighbor AP detection ────────────────────────────────────────────
 
 // GET /api/wireless/rf/rogue — classify latest AP scans against our own SSIDs/BSSIDs
-router.get('/rf/rogue', async (_req: Request, res: Response) => {
+router.get('/rf/rogue', async (req: Request, res: Response) => {
   const { classifyScans } = await import('../utils/rogueAp');
+
+  // Only the scans are site-scoped. The "these are ours" SSID and BSSID sets stay
+  // fleet-wide on purpose: an AP of yours in another site is still yours, and
+  // scoping those sets would report your own hardware as a rogue (issue #130).
+  const scanFilter = siteScopeByDevice(activeSite(req), 'a.device_id');
 
   const [scans, radios, ifaceMacs] = await Promise.all([
     query<{ device_id: number; device_name: string; scanned_at: string; data: unknown }>(`
       SELECT DISTINCT ON (a.device_id) a.device_id, d.name AS device_name, a.scanned_at, a.data
       FROM ap_scan_data a JOIN devices d ON d.id = a.device_id
+      ${scanFilter ? `WHERE ${scanFilter}` : ''}
       ORDER BY a.device_id, a.scanned_at DESC`),
     query<{ ssid: string | null; mac_address: string | null }>(
       `SELECT ssid, mac_address FROM wireless_interfaces`),

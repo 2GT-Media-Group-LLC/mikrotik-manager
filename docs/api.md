@@ -43,6 +43,25 @@ or 2FA changes.
 | `GET /api/devices/:id/config-health` | Latest standing-audit findings |
 | `GET /api/topology` | Graph of devices, links, external nodes, and distrusted identifiers |
 | `GET /api/operations/insights` | The dashboard's "things to handle" feed |
+| `GET /api/sites` | Sites with device counts (see [Sites](sites.md)) |
+
+### Scoping a request to one site
+
+Collection endpoints accept an `X-Site-Id` header (or `?site_id=`) that limits the
+response to devices in that site:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -H "X-Site-Id: 2" \
+     https://mtm.example.com/api/devices
+```
+
+**Omitting it means unscoped**, returning the whole fleet exactly as before sites
+existed — existing scripts and tokens need no change. Per-device endpoints
+(`/api/devices/:id/...`) are already scoped by the device itself and ignore the header.
+
+One thing to know if you create devices via the API: a device joins the site the
+request was scoped to, falling back to the default site. A device belonging to no site
+is invisible whenever a site is selected, so this is set rather than left null.
 
 `preflight` is the useful one for automation: it returns the same verdict the UI shows,
 so a pipeline can refuse its own change before touching the device. See

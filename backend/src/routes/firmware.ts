@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { firmwareOrchestrator } from '../services/FirmwareOrchestrator';
 
@@ -8,13 +10,22 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/firmware/overview — fleet versions + latest rollout
-router.get('/overview', async (_req: Request, res: Response) => {
+router.get('/overview', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
   const [devices, latestRollout] = await Promise.all([
     query(`SELECT id, name, device_type, status, model, ros_version, latest_ros_version,
                   firmware_update_available, firmware_version, upgrade_firmware_version,
                   routerboard_upgrade_available
-           FROM devices ORDER BY name ASC`),
-    queryOne<{ id: number }>(`SELECT id FROM firmware_rollouts ORDER BY created_at DESC LIMIT 1`),
+           FROM devices ${siteFilter ? `WHERE ${siteFilter}` : ''} ORDER BY name ASC`),
+    // The banner links to this rollout, so it must be one this site took part in.
+    queryOne<{ id: number }>(`
+      SELECT r.id FROM firmware_rollouts r
+      ${siteScopeByDevice(activeSite(req), 'frd.device_id')
+        ? `WHERE EXISTS (SELECT 1 FROM firmware_rollout_devices frd
+                          WHERE frd.rollout_id = r.id
+                            AND ${siteScopeByDevice(activeSite(req), 'frd.device_id')})`
+        : ''}
+      ORDER BY r.created_at DESC LIMIT 1`),
   ]);
   res.json({
     devices,
@@ -24,8 +35,11 @@ router.get('/overview', async (_req: Request, res: Response) => {
 });
 
 // POST /api/firmware/check-all — refresh update availability on all online devices
-router.post('/check-all', requireWrite, async (_req: Request, res: Response) => {
-  const devices = await query<DeviceRow>(`SELECT * FROM devices WHERE status='online'`);
+router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
+  const devices = await query<DeviceRow>(
+    `SELECT * FROM devices WHERE status='online' ${siteFilter ? `AND ${siteFilter}` : ''}`
+  );
   const settled = await Promise.allSettled(devices.map(async (d) => {
     const c = new DeviceCollector(d);
     try {
@@ -81,7 +95,9 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
 });
 
 // GET /api/firmware/rollouts — recent rollouts with progress counts
-router.get('/rollouts', async (_req: Request, res: Response) => {
+router.get('/rollouts', async (req: Request, res: Response) => {
+  // A rollout is shown when it touched at least one device in the active site.
+  const memberFilter = siteScopeByDevice(activeSite(req), 'frd.device_id');
   const rows = await query(`
     SELECT r.*,
            COUNT(d.id)::int AS device_count,
@@ -89,6 +105,8 @@ router.get('/rollouts', async (_req: Request, res: Response) => {
            COUNT(d.id) FILTER (WHERE d.status = 'failed')::int  AS failed_count
     FROM firmware_rollouts r
     LEFT JOIN firmware_rollout_devices d ON d.rollout_id = r.id
+    ${memberFilter ? `WHERE EXISTS (SELECT 1 FROM firmware_rollout_devices frd
+                                    WHERE frd.rollout_id = r.id AND ${memberFilter})` : ''}
     GROUP BY r.id ORDER BY r.created_at DESC LIMIT 20`);
   res.json(rows);
 });

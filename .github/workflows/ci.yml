@@ -23,7 +23,7 @@ jobs:
         run: node scripts/generate-ghcr-compose.mjs --check
 
   frontend:
-    name: Frontend — Lint, Type-check & Build
+    name: Frontend — Lint, Type-check, Test & Build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,6 +47,9 @@ jobs:
 
       - name: Type-check
         run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
 
       - name: Build
         run: npm run build

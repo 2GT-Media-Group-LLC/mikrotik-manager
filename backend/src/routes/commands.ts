@@ -8,6 +8,8 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeByDevice } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { query, queryOne } from '../config/database';
 import { commandRunner } from '../services/CommandRunner';
 
@@ -122,7 +124,9 @@ router.post('/runs', requireWrite, async (req: Request, res: Response) => {
 });
 
 // GET /api/commands/runs — recent runs with progress
-router.get('/runs', async (_req: Request, res: Response) => {
+router.get('/runs', async (req: Request, res: Response) => {
+  // A run is shown when it touched at least one device in the active site.
+  const memberFilter = siteScopeByDevice(activeSite(req), 'crd.device_id');
   const runs = await query(
     `SELECT r.*,
             COUNT(d.*)::int AS total,
@@ -130,6 +134,8 @@ router.get('/runs', async (_req: Request, res: Response) => {
             COUNT(*) FILTER (WHERE d.status IN ('failed','reverted'))::int AS failed
        FROM command_runs r
        LEFT JOIN command_run_devices d ON d.run_id = r.id
+      ${memberFilter ? `WHERE EXISTS (SELECT 1 FROM command_run_devices crd
+                                      WHERE crd.run_id = r.id AND ${memberFilter})` : ''}
       GROUP BY r.id ORDER BY r.id DESC LIMIT 25`
   );
   res.json(runs);

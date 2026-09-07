@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeDevices } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 
@@ -37,8 +39,12 @@ function deviceIdParam(req: Request, res: Response): number | null {
 
 // ─── Overview (all online devices, all services) ──────────────────────────────
 
-router.get('/overview', async (_req: Request, res: Response) => {
-  const devices = await query<DeviceRow>(`SELECT * FROM devices WHERE status = 'online' ORDER BY name`);
+router.get('/overview', async (req: Request, res: Response) => {
+  const siteFilter = siteScopeDevices(activeSite(req));
+  const devices = await query<DeviceRow>(
+    `SELECT * FROM devices WHERE status = 'online'
+       ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
+  );
 
   const results = await Promise.allSettled(
     devices.map(async (device: DeviceRow) => {
@@ -520,11 +526,15 @@ function targetMatchesCollector(
 }
 
 // GET /api/network-services/netflow/fleet — traffic-flow state for all online devices
-router.get('/netflow/fleet', async (_req: Request, res: Response) => {
+router.get('/netflow/fleet', async (req: Request, res: Response) => {
   const settings = await getNetflowAppSettings();
   const stats = netflowCollector.getStats();
   const statsByDevice = new Map(stats.exporters.map((e) => [e.deviceId, e]));
-  const devices = await query<DeviceRow>(`SELECT * FROM devices WHERE status = 'online' ORDER BY name`);
+  const siteFilter = siteScopeDevices(activeSite(req));
+  const devices = await query<DeviceRow>(
+    `SELECT * FROM devices WHERE status = 'online'
+       ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
+  );
 
   const results = await Promise.allSettled(
     devices.map(async (device: DeviceRow) => {

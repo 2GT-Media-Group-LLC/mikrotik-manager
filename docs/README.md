@@ -6,6 +6,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | Document | Covers |
 |---|---|
 | [Configuration](configuration.md) | Environment variables, secret management and key rotation |
+| [Sites](sites.md) | Grouping devices into sites, switching between them, and what each site scopes |
 | [Change Guard and Config Health](change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
 | [Alerting](alerting.md) | Alert rules, delivery channels, webhooks, scheduled reports, maintenance windows |
 | [Single sign-on (OIDC)](sso-oidc.md) | Identity provider setup, group-to-role mapping, break-glass behaviour |

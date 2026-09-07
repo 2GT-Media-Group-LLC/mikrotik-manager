@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { getQueryApi } from '../config/influxdb';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { BackupService, BackupDevice } from '../services/BackupService';
 
@@ -99,7 +101,13 @@ async function latestRetries(): Promise<{ device_id: string; device_name: string
 
 // GET /api/operations/insights — aggregated operational intelligence (no live
 // device connections; all from Postgres + InfluxDB so it's fast).
-router.get('/insights', async (_req: Request, res: Response) => {
+router.get('/insights', async (req: Request, res: Response) => {
+  const siteId = activeSite(req);
+  const devFilter  = siteScopeDevices(siteId);
+  const devFilterD = siteScopeDevices(siteId, 'd');
+  const cliFilter  = siteScopeByDevice(siteId, 'device_id');
+  const availFilter = siteScopeByDevice(siteId, 'a.device_id');
+  const evtFilter  = siteScopeByNullableDevice(siteId, 'device_id');
   const [
     devices, missingBackup, recentOutages, weakWifi, coChannel, eventCounts,
   ] = await Promise.all([
@@ -112,30 +120,35 @@ router.get('/insights', async (_req: Request, res: Response) => {
     }>(`SELECT id, name, status, last_seen, device_type, ros_version,
                firmware_update_available, latest_ros_version,
                routerboard_upgrade_available, firmware_version, upgrade_firmware_version
-        FROM devices`),
+        FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`),
     query<{ id: number; name: string; last_backup: string | null }>(`
       SELECT d.id, d.name, MAX(b.created_at) AS last_backup
       FROM devices d LEFT JOIN backups b ON b.device_id = d.id
+      ${devFilterD ? `WHERE ${devFilterD}` : ''}
       GROUP BY d.id
       HAVING MAX(b.created_at) IS NULL OR MAX(b.created_at) < NOW() - INTERVAL '7 days'`),
     query<{ device_id: number; name: string; outages: string }>(`
       SELECT a.device_id, d.name, COUNT(*) AS outages
       FROM device_availability a JOIN devices d ON d.id = a.device_id
       WHERE a.went_offline_at > NOW() - INTERVAL '7 days'
+        ${availFilter ? `AND ${availFilter}` : ''}
       GROUP BY a.device_id, d.name`),
     query<{ count: string }>(`
       SELECT COUNT(*) AS count FROM clients
       WHERE active = TRUE AND client_type = 'wireless'
-        AND signal_strength IS NOT NULL AND signal_strength < -75`),
+        AND signal_strength IS NOT NULL AND signal_strength < -75
+        ${cliFilter ? `AND ${cliFilter}` : ''}`),
     query<{ frequency: number; radios: string }>(`
       SELECT frequency, COUNT(*) AS radios FROM wireless_interfaces
       WHERE disabled = FALSE AND frequency IS NOT NULL AND frequency > 0
         AND (config_json->>'master-interface') IS NULL
+        ${cliFilter ? `AND ${cliFilter}` : ''}
       GROUP BY frequency HAVING COUNT(*) > 1`),
     query<{ errors: string; warnings: string }>(`
       SELECT COUNT(*) FILTER (WHERE severity = 'error')   AS errors,
              COUNT(*) FILTER (WHERE severity = 'warning') AS warnings
-      FROM events WHERE event_time > NOW() - INTERVAL '24 hours'`),
+      FROM events WHERE event_time > NOW() - INTERVAL '24 hours'
+        ${evtFilter ? `AND ${evtFilter}` : ''}`),
   ]);
 
   const [resources, retries] = await Promise.all([latestResources(), latestRetries()]);
@@ -266,7 +279,10 @@ router.get('/insights', async (_req: Request, res: Response) => {
   }
 
   // WiFi — high TX retries
-  const badRetries = retries.filter(r => r.pct >= 15);
+  // retries comes from Influx across the whole fleet; keep only radios on
+  // devices in this site.
+  const scopedIds = new Set(devices.map((d) => String(d.id)));
+  const badRetries = retries.filter(r => r.pct >= 15 && scopedIds.has(r.device_id));
   for (const r of badRetries) {
     attention.push({
       sev: 'warn', category: 'wifi',
@@ -294,6 +310,7 @@ router.get('/insights', async (_req: Request, res: Response) => {
       query<{ device_id: number; device_name: string; scanned_at: string; data: unknown }>(`
         SELECT DISTINCT ON (a.device_id) a.device_id, d.name AS device_name, a.scanned_at, a.data
         FROM ap_scan_data a JOIN devices d ON d.id = a.device_id
+        ${siteScopeByDevice(siteId, 'a.device_id') ? `WHERE ${siteScopeByDevice(siteId, 'a.device_id')}` : ''}
         ORDER BY a.device_id, a.scanned_at DESC`),
       query<{ ssid: string | null; mac_address: string | null }>(`SELECT ssid, mac_address FROM wireless_interfaces`),
       query<{ mac_address: string }>(`SELECT mac_address FROM interfaces WHERE mac_address IS NOT NULL`),
@@ -329,6 +346,7 @@ router.get('/insights', async (_req: Request, res: Response) => {
       FROM device_config_findings f
       JOIN devices d ON d.id = f.device_id
       WHERE f.severity IN ('critical', 'warning')
+        ${siteScopeByDevice(siteId, 'f.device_id') ? `AND ${siteScopeByDevice(siteId, 'f.device_id')}` : ''}
       ORDER BY f.device_id, CASE f.severity WHEN 'critical' THEN 0 ELSE 1 END, f.rule`);
 
     const seen = new Set<string>();
@@ -350,7 +368,7 @@ router.get('/insights', async (_req: Request, res: Response) => {
   } catch { /* findings table unavailable */ }
 
   // Baseline anomalies (client counts, CPU, error bursts)
-  const anomalies = await detectAnomalies();
+  const anomalies = await detectAnomalies(siteId);
   for (const a of anomalies) attention.push(a);
 
   // Dismissals (#102). Expired rows are cleared on read, so a dismissal lapses
@@ -370,7 +388,7 @@ router.get('/insights', async (_req: Request, res: Response) => {
   visible.sort((a, b) => sevRank[a.sev] - sevRank[b.sev]);
 
   // Activity feed — recent config changes, user actions, and notable events
-  const activity = await buildActivity();
+  const activity = await buildActivity(siteId);
 
   res.json({ attention: visible, dismissedCount: attention.length - visible.length, capacity, activity });
 });
@@ -436,11 +454,16 @@ async function influxGroupValues(flux: string): Promise<Map<string, number>> {
   return out;
 }
 
-async function detectAnomalies(): Promise<AttentionItem[]> {
+async function detectAnomalies(siteId: number | null): Promise<AttentionItem[]> {
   const items: AttentionItem[] = [];
   const hour = new Date().getUTCHours();
   const nameById = new Map<string, { id: number; name: string }>();
-  const devices = await query<{ id: number; name: string }>(`SELECT id, name FROM devices`);
+  const devFilter = siteScopeDevices(siteId);
+  // Influx series are matched back to this map by device id, so scoping the map
+  // scopes the metric anomalies too -- an unknown id is skipped.
+  const devices = await query<{ id: number; name: string }>(
+    `SELECT id, name FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`
+  );
   for (const d of devices) nameById.set(String(d.id), d);
 
   const metric = async (measurement: string, field: string) => {
@@ -504,6 +527,7 @@ async function detectAnomalies(): Promise<AttentionItem[]> {
     WITH cur AS (
       SELECT device_id, COUNT(*) AS n FROM events
       WHERE severity = 'error' AND event_time > NOW() - INTERVAL '1 hour'
+        ${siteScopeByNullableDevice(siteId, 'device_id') ? `AND ${siteScopeByNullableDevice(siteId, 'device_id')}` : ''}
       GROUP BY device_id
     ), hist AS (
       SELECT device_id, COUNT(*) / 168.0 AS avg_hourly FROM events
@@ -527,13 +551,22 @@ async function detectAnomalies(): Promise<AttentionItem[]> {
 }
 
 // Recent activity merged from config snapshots, audit log, and events.
-async function buildActivity() {
+//
+// When a site is selected the audit log is left out entirely. Audit rows record
+// who did what to the install -- they carry no device and so belong to no site,
+// and repeating "admin changed a setting" into every site would misattribute it.
+// Device-scoped history (config changes, events) is filtered normally.
+async function buildActivity(siteId: number | null) {
+  const cfgFilter = siteScopeByDevice(siteId, 'dc.device_id');
+  const evtFilter = siteScopeByNullableDevice(siteId, 'e.device_id');
   const [configs, audits, events] = await Promise.all([
     query<{ at: string; name: string; summary: string | null }>(`
       SELECT dc.collected_at AS at, d.name, dc.change_summary AS summary
       FROM device_configs dc JOIN devices d ON d.id = dc.device_id
       WHERE dc.change_summary IS NOT NULL AND dc.change_summary != ''
+        ${cfgFilter ? `AND ${cfgFilter}` : ''}
       ORDER BY dc.collected_at DESC LIMIT 8`),
+    siteId !== null ? Promise.resolve([]) :
     query<{ at: string; username: string | null; method: string; summary: string | null }>(`
       SELECT created_at AS at, username, method, summary
       FROM audit_log
@@ -544,6 +577,7 @@ async function buildActivity() {
       SELECT e.event_time AS at, e.severity, e.message, d.name
       FROM events e LEFT JOIN devices d ON d.id = e.device_id
       WHERE e.severity IN ('error', 'warning')
+        ${evtFilter ? `AND ${evtFilter}` : ''}
       ORDER BY e.event_time DESC LIMIT 8`),
   ]);
 
@@ -557,8 +591,14 @@ async function buildActivity() {
 }
 
 // POST /api/operations/backup-all — back up every online device (parallel, best-effort)
-router.post('/backup-all', requireWrite, async (_req: Request, res: Response) => {
-  const devices = await query<DeviceRow>(`SELECT * FROM devices WHERE status = 'online'`);
+router.post('/backup-all', requireWrite, async (req: Request, res: Response) => {
+  // Scoped to the active site. A bulk action that silently spans customers is
+  // exactly the blast radius the bulk-command guards exist to contain (#130).
+  const siteFilter = siteScopeDevices(activeSite(req));
+  const devices = await query<DeviceRow>(
+    `SELECT * FROM devices WHERE status = 'online'
+       ${siteFilter ? `AND ${siteFilter}` : ''}`
+  );
   const settled = await Promise.allSettled(devices.map(d => {
     const dev: BackupDevice = {
       id: d.id, name: d.name, ip_address: d.ip_address,
@@ -579,8 +619,14 @@ router.post('/backup-all', requireWrite, async (_req: Request, res: Response) =>
 });
 
 // POST /api/operations/sync-all — pull latest config/state from every online device
-router.post('/sync-all', requireWrite, async (_req: Request, res: Response) => {
-  const devices = await query<DeviceRow>(`SELECT * FROM devices WHERE status = 'online'`);
+router.post('/sync-all', requireWrite, async (req: Request, res: Response) => {
+  // Scoped to the active site. A bulk action that silently spans customers is
+  // exactly the blast radius the bulk-command guards exist to contain (#130).
+  const siteFilter = siteScopeDevices(activeSite(req));
+  const devices = await query<DeviceRow>(
+    `SELECT * FROM devices WHERE status = 'online'
+       ${siteFilter ? `AND ${siteFilter}` : ''}`
+  );
   const settled = await Promise.allSettled(devices.map(async (d) => {
     const c = new DeviceCollector(d);
     try { await c.connect(); await c.collectAll(); }

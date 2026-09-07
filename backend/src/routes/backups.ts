@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { siteScopeByDevice } from '../utils/siteScope';
+import { activeSite } from '../middleware/site';
 import { BackupService } from '../services/BackupService';
 
 const router = Router();
@@ -23,6 +25,8 @@ router.get('/', async (req: Request, res: Response) => {
     sql += ` AND b.device_id = $1`;
     params.push(deviceId);
   }
+  const siteFilter = siteScopeByDevice(activeSite(req), 'b.device_id');
+  if (siteFilter) sql += ` AND ${siteFilter}`;
   sql += ' ORDER BY b.created_at DESC';
 
   const backups = await query(sql, params);

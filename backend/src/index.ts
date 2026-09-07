@@ -64,6 +64,8 @@ import trafficAnalyticsRoutes from './routes/trafficAnalytics';
 import credentialPresetsRoutes from './routes/credentialPresets';
 import commandRoutes from './routes/commands';
 import systemRoutes, { setPollerService as setSystemPoller } from './routes/system';
+import sitesRoutes from './routes/sites';
+import { siteContext } from './middleware/site';
 import { auditMiddleware } from './middleware/auditMiddleware';
 
 // ─── Secret hygiene ───────────────────────────────────────────────────────────
@@ -293,6 +295,8 @@ app.use(auditMiddleware);
 // Global backstop rate limit on mutating API requests (per user, falling back to
 // per IP before auth runs). Endpoints with stricter needs add their own limiter.
 app.use('/api', rateLimitRedis({ windowSec: 60, max: 120, keyPrefix: 'api-global' }));
+// Resolve the active site once, before any route reads it (issue #130).
+app.use('/api', siteContext);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -329,6 +333,7 @@ app.use('/api/config-templates', configTemplatesRoutes);
 app.use('/api/config-history', configHistoryRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/commands', commandRoutes);
+app.use('/api/sites', sitesRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);

@@ -967,6 +967,27 @@ CREATE TABLE IF NOT EXISTS device_ssh_keys (
   created_at       TIMESTAMPTZ DEFAULT NOW(),
   updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Multi-site (issue #130). A site is a named collection of devices whose data
+-- is viewed separately. Because ~25 tables hang off devices(id), a single
+-- site_id on devices scopes clients, events, topology, backups and the rest
+-- transitively -- no other table needs a site column.
+CREATE TABLE IF NOT EXISTS sites (
+  id            SERIAL PRIMARY KEY,
+  name          VARCHAR(120) NOT NULL UNIQUE,
+  address       TEXT,
+  location_lat  NUMERIC(10,7),
+  location_lng  NUMERIC(10,7),
+  notes         TEXT,
+  is_default    BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Deliberately NOT "ON DELETE CASCADE": removing a site must never remove the
+-- devices in it. The delete endpoint refuses while devices remain.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);
+CREATE INDEX IF NOT EXISTS idx_devices_site ON devices(site_id);
 `;
 
 const DEFAULT_SETTINGS = [
@@ -1027,6 +1048,25 @@ export async function runMigrations(): Promise<void> {
         [setting.key, JSON.stringify(setting.value)]
       );
     }
+
+    // Multi-site backfill. Existing single-network installs must come out of
+    // this indistinguishable from how they went in: one site, every device in
+    // it, nothing moved. Idempotent -- reruns are a no-op.
+    const siteCount = await client.query('SELECT COUNT(*) FROM sites');
+    if (parseInt(siteCount.rows[0].count, 10) === 0) {
+      await client.query(
+        `INSERT INTO sites (name, is_default) VALUES ($1, TRUE)`,
+        ['Default Site']
+      );
+      console.log('Default Site created');
+    }
+    // Adopt any device without a site (covers both the initial backfill and
+    // devices added by an older build mid-upgrade).
+    const adopted = await client.query(
+      `UPDATE devices SET site_id = (SELECT id FROM sites WHERE is_default = TRUE ORDER BY id LIMIT 1)
+       WHERE site_id IS NULL`
+    );
+    if (adopted.rowCount) console.log(`Assigned ${adopted.rowCount} device(s) to the default site`);
 
     // Create default admin user if no users exist
     const userCount = await client.query('SELECT COUNT(*) FROM users');
