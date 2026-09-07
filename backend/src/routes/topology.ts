@@ -18,9 +18,21 @@ export function setPollerService(p: PollerService): void {
 }
 
 
+interface BridgeRow {
+  device_id: number;
+  bridge_name: string;
+  /** This bridge's own id, "priority.MAC" — how a root is matched to a device. */
+  bridge_id: string | null;
+  root_bridge: boolean | null;
+  root_bridge_id: string | null;
+  root_port: string | null;
+  root_path_cost: number | null;
+  protocol_mode: string | null;
+}
+
 // GET /api/topology
 router.get('/', async (_req: Request, res: Response) => {
-  const [devices, allLinks, manualLinks, deviceMacs] = await Promise.all([
+  const [devices, allLinks, manualLinks, deviceMacs, bridges] = await Promise.all([
     query<TopoDevice>(
       `SELECT id, name, ip_address, model, device_type, status, ros_version, ip_addresses_jsonb
        FROM devices ORDER BY name ASC`
@@ -47,12 +59,20 @@ router.get('/', async (_req: Request, res: Response) => {
        UNION
        SELECT device_id, mac_address FROM wireless_interfaces WHERE mac_address IS NOT NULL`
     ),
+    // What each bridge reports about the spanning tree. Authoritative, and the
+    // reason the root is no longer guessed from port roles (#131).
+    query<BridgeRow>(
+      `SELECT device_id, bridge_name, bridge_id, root_bridge, root_bridge_id,
+              root_port, root_path_cost, protocol_mode
+         FROM device_bridges`
+    ),
   ]);
 
   const graph = buildTopology(devices, allLinks, manualLinks, deviceMacs);
 
   res.json({
     devices,
+    bridges,
     links: graph.links,
     externalNodes: graph.externalNodes,
     segConns: graph.segConns,

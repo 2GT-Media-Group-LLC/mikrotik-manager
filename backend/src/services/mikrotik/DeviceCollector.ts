@@ -176,6 +176,10 @@ export class DeviceCollector {
     await this.updateClients();
     await this.collectEvents();
     await this.collectNeighbors();
+    // Topology and spanning tree belong in a full resync: someone pressing Sync
+    // after rewiring expects the map to catch up, and previously STP only
+    // refreshed on the five-minute slow poll (#131).
+    await this.collectStp();
     await this.collectLte();
     // Wireless data belongs in a full resync too — without this, a manual sync
     // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
@@ -1054,15 +1058,72 @@ export class DeviceCollector {
 
   async collectStp(): Promise<void> {
     try {
+      // Ask each bridge what it thinks the spanning tree looks like.
+      //
+      // This used to be inferred from port roles and got it wrong every time:
+      // the comparison was against 'root' while RouterOS reports 'root-port', so
+      // nothing matched and the topology crowned whichever device sorted first.
+      // The device already knows — `/interface/bridge/monitor` reports whether it
+      // is the root and names the root it sees (#131).
+      const bridges = await this.client
+        .execute('/interface/bridge/print', { detail: '' })
+        .catch(() => [] as Record<string, string>[]);
+
+      const seen: string[] = [];
+      for (const bridge of bridges) {
+        const name = bridge['name'];
+        if (!name) continue;
+        const mon = await this.client
+          .execute('/interface/bridge/monitor', { numbers: name, once: '' })
+          .catch(() => [] as Record<string, string>[]);
+        const m = mon[0];
+        if (!m) continue;
+        seen.push(name);
+
+        const cost = parseInt(m['root-path-cost'] || '', 10);
+        await query(
+          `INSERT INTO device_bridges
+             (device_id, bridge_name, bridge_id, root_bridge, root_bridge_id,
+              root_port, root_path_cost, protocol_mode, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+           ON CONFLICT (device_id, bridge_name) DO UPDATE SET
+             bridge_id = EXCLUDED.bridge_id, root_bridge = EXCLUDED.root_bridge,
+             root_bridge_id = EXCLUDED.root_bridge_id, root_port = EXCLUDED.root_port,
+             root_path_cost = EXCLUDED.root_path_cost,
+             protocol_mode = EXCLUDED.protocol_mode, updated_at = NOW()`,
+          [
+            this.device.id, name, m['bridge-id'] || null,
+            m['root-bridge'] === 'true',
+            m['root-bridge-id'] || null,
+            m['root-port'] || null,
+            Number.isFinite(cost) ? cost : null,
+            bridge['protocol-mode'] || null,
+          ]
+        );
+      }
+
+      // A bridge that has been deleted should stop being reported as root.
+      if (seen.length > 0) {
+        await query(
+          `DELETE FROM device_bridges WHERE device_id = $1 AND NOT (bridge_name = ANY($2::text[]))`,
+          [this.device.id, seen]
+        );
+      } else {
+        await query(`DELETE FROM device_bridges WHERE device_id = $1`, [this.device.id]);
+      }
+
       const bridgePorts = await this.client
         .execute('/interface/bridge/port/print', { detail: '' })
         .catch(() => []);
 
       for (const port of bridgePorts) {
         const iface = (port['interface'] as string) || '';
-        const role = (port['role'] as string) || '';
         const bridgeName = (port['bridge'] as string) || '';
-        // Derive state from role — alternate/backup are blocking, root/designated are forwarding
+        // RouterOS suffixes every role with "-port" — "root-port",
+        // "alternate-port". Comparing against the bare word matched nothing, so
+        // blocked links were drawn as forwarding. Normalised on write so both
+        // ends of the system agree on one vocabulary.
+        const role = ((port['role'] as string) || '').replace(/-port$/, '');
         const state = (role === 'alternate' || role === 'backup') ? 'blocking' : 'forwarding';
 
         if (!iface) continue;

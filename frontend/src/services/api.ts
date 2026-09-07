@@ -1014,6 +1014,8 @@ export const topologyApi = {
       devices: Device[];
       links: import('../types').TopologyLink[];
       externalNodes: import('../types').ExternalTopologyNode[];
+      /** What each bridge reports about the spanning tree (#131). */
+      bridges: import('../utils/stpRoot').BridgeInfo[];
       segConns: { src: string; dst: string; port: string }[];
       manualLinkIds: { id: number; from_device_id: number; to_device_id: number }[];
     }>('/topology'),

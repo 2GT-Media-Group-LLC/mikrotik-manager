@@ -886,6 +886,31 @@ CREATE INDEX IF NOT EXISTS idx_data_cap_sends ON lte_data_cap_sends(device_id, a
 -- The password is retained alongside. Key auth falling back to a password is a
 -- degraded state worth knowing about; key auth failing with no fallback is an
 -- outage.
+-- What each bridge says about the spanning tree (#131).
+--
+-- The root bridge used to be *inferred* from port roles, which never worked: the
+-- code compared against 'root' while RouterOS reports 'root-port', so no device
+-- ever matched and the topology simply crowned whichever device sorted first.
+--
+-- RouterOS answers the question directly, so we ask instead of deducing.
+-- root_bridge is the device's own verdict; root_bridge_id names the actual root
+-- as priority.MAC, which is how a root outside the managed fleet stays
+-- identifiable rather than being misattributed to something we do manage.
+CREATE TABLE IF NOT EXISTS device_bridges (
+  device_id       INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  bridge_name     VARCHAR(64) NOT NULL,
+  -- This bridge's own identifier, e.g. "0x8000.F4:1E:57:51:74:1E".
+  bridge_id       VARCHAR(64),
+  root_bridge     BOOLEAN,
+  root_bridge_id  VARCHAR(64),
+  root_port       VARCHAR(64),
+  root_path_cost  INTEGER,
+  protocol_mode   VARCHAR(16),
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (device_id, bridge_name)
+);
+CREATE INDEX IF NOT EXISTS idx_device_bridges_rootid ON device_bridges(root_bridge_id);
+
 -- Bulk command execution (#118).
 --
 -- Waves are not a nicety. Running one command across sixty devices in parallel

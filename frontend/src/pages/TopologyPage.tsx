@@ -27,6 +27,7 @@ import type { TopologyDevice, TopologyLink, ExternalTopologyNode } from '../type
 import clsx from 'clsx';
 import { useThemeStore } from '../store/themeStore';
 import { layoutTree } from '../utils/topologyLayout';
+import { resolveStpRoot, type BridgeInfo, type RootVerdict } from '../utils/stpRoot';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -209,6 +210,7 @@ function buildGraph(
   devices: TopologyDevice[],
   externalNodes: ExternalTopologyNode[],
   links: TopologyLink[],
+  bridges: BridgeInfo[],
   segConns: { src: string; dst: string; port: string }[],
   manualLinkIds: { id: number; from_device_id: number; to_device_id: number }[],
   connectMode: boolean,
@@ -259,14 +261,26 @@ function buildGraph(
   }
 
   // ── STP root detection ───────────────────────────────────────────────────────
-  const hasStp = links.some((l) => l.stp_role);
-  const haveRootPort = new Set(links.filter((l) => l.stp_role === 'root').map((l) => String(l.from_device_id)));
-  const stpRootId = hasStp ? devices.map((d) => String(d.id)).find((id) => !haveRootPort.has(id)) ?? '' : '';
+  //
+  // Resolved from what each bridge reports, not inferred from port roles. The
+  // old inference compared against a role of 'root' while RouterOS reports
+  // 'root-port', so it never matched anything and the first device in the list
+  // was crowned every time (#131).
+  const hasStp = bridges.length > 0;
+  const rootVerdicts = new Map<string, RootVerdict>();
+  const stpRootIds = new Set<string>();
 
   function pickRoot(componentIds: string[]): string {
-    if (hasStp) {
-      const r = componentIds.find((id) => deviceIds.has(id) && !haveRootPort.has(id));
-      if (r) return r;
+    const managed = componentIds.filter((id) => deviceIds.has(id));
+    if (hasStp && managed.length > 0) {
+      const verdict = resolveStpRoot(managed, bridges);
+      for (const id of componentIds) rootVerdicts.set(id, verdict);
+      if (verdict.deviceId && managed.includes(verdict.deviceId)) {
+        stpRootIds.add(verdict.deviceId);
+        return verdict.deviceId;
+      }
+      // An external or unknown root leaves the drawing to connectivity, but the
+      // crown is withheld rather than handed to an arbitrary device.
     }
     const inComp = new Set(componentIds);
     let best = componentIds[0], bestScore = -1;
@@ -374,7 +388,7 @@ function buildGraph(
       id: String(d.id),
       type: 'deviceNode',
       position: positions.get(String(d.id)) ?? { x: 0, y: 0 },
-      data: { ...d, isRootBridge: hasStp && String(d.id) === stpRootId, connectMode, orphan: orphanIds.has(String(d.id)) } as unknown as Record<string, unknown>,
+      data: { ...d, isRootBridge: stpRootIds.has(String(d.id)), connectMode, orphan: orphanIds.has(String(d.id)) } as unknown as Record<string, unknown>,
     })),
     ...allExtNodes.map((e) => ({
       id: e.id,
@@ -517,6 +531,7 @@ export default function TopologyPage() {
       (data.devices as TopologyDevice[]) || [],
       (data.externalNodes as ExternalTopologyNode[]) || [],
       (data.links as TopologyLink[]) || [],
+      (data.bridges as BridgeInfo[]) || [],
       (data.segConns as { src: string; dst: string; port: string }[]) || [],
       (data.manualLinkIds as { id: number; from_device_id: number; to_device_id: number }[]) || [],
       connectMode,
