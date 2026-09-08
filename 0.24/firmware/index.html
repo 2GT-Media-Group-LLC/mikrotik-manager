@@ -595,6 +595,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#if-the-manager-restarts-mid-rollout" class="md-nav__link">
+    <span class="md-ellipsis">
+      If the manager restarts mid-rollout
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-it-fails" class="md-nav__link">
     <span class="md-ellipsis">
       When it fails
@@ -949,6 +958,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#if-the-manager-restarts-mid-rollout" class="md-nav__link">
+    <span class="md-ellipsis">
+      If the manager restarts mid-rollout
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#when-it-fails" class="md-nav__link">
     <span class="md-ellipsis">
       When it fails
@@ -1070,6 +1088,22 @@ to create another for them, before anything is written.</p>
 <p><strong>Cancelling never interrupts an in-flight flash.</strong> It stops before the <em>next</em> device,
 because interrupting a device mid-write is how you brick it. The UI says so when you
 press the button — the currently upgrading device will finish first.</p>
+<h2 id="if-the-manager-restarts-mid-rollout">If the manager restarts mid-rollout<a class="headerlink" href="#if-the-manager-restarts-mid-rollout" title="Permanent link">&para;</a></h2>
+<p>The active rollout is tracked in memory, so a manager restart — a crash, an OOM kill,
+or pulling a new image — ends it. Nothing resumes automatically: a device may have been
+mid-reboot, and continuing an upgrade from an unknown state is how hardware gets
+bricked.</p>
+<p>On startup any rollout still marked running is closed out and reported honestly:</p>
+<ul>
+<li>devices it never reached are <strong>skipped</strong> — "not reached"</li>
+<li>a device that was mid-upgrade is <strong>failed</strong>, saying its real state is unknown and to
+  check it before re-running</li>
+<li>devices that already finished keep their result</li>
+</ul>
+<p>This matters beyond tidiness. An unfinished rollout blocks its devices from joining a
+new one, which is right while it is genuinely running and wrong for one that can never
+finish — without this, an interrupted rollout left its devices permanently unable to be
+upgraded.</p>
 <h2 id="when-it-fails">When it fails<a class="headerlink" href="#when-it-fails" title="Permanent link">&para;</a></h2>
 <p>Failure messages name the mechanism rather than the symptom. "Device did not finish
 downloading within ten minutes. Nothing was rebooted. The device reports 91.6 MB free"
