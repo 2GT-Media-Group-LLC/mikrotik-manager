@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.24.2_Beta-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.24.3_Beta-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -339,7 +339,7 @@ Each network service supports multi-device management with conflict detection:
 
 ### Fleet operations
 
-- **Firmware orchestration** — fleet version overview, live update checks, and MikroTik's official release notes in-app. Staged rollouts run in **waves** (wave 1 = canary) through a verified pipeline per device: pre-upgrade backup → install → ride out the reboot → confirm it returned healthy on the new version → next. **Halt on failure** stops the rollout if any device fails, and a device that comes back on the *old* version counts as a failure. Rollouts can be scheduled, and cancelling never interrupts an in-flight flash
+- **Firmware orchestration** — fleet version overview, live update checks, and MikroTik's official release notes in-app. Staged rollouts run in **waves** (wave 1 = canary) through a verified pipeline per device: pre-upgrade backup → download and confirm the image landed → reboot → prove it restarted and came back healthy on the new version → next. **Halt on failure** stops the rollout if any device fails, and a device that comes back on the *old* version counts as a failure. Devices in a wave upgrade one at a time by default; raise **at once** to run them concurrently when a fleet of five-minute reboots would otherwise take all evening — waves stay sequential either way, so the canary still gates the rest. Rollouts can be scheduled, and cancelling never interrupts an in-flight flash
 - **Backups** — on demand or on a daily/weekly/monthly schedule for all online devices. Filter by device, type and date range; read one in place instead of downloading it; and compare any two as a diff — they are `/export` text, not opaque blobs. Config snapshots and their restorable `.rsc` are one artifact: delete either and both go, so they never drift apart, and a bulk delete says how many snapshots it will take with it
 - **Configuration templates** — reusable sets (DNS, NTP, syslog) pushed to many devices with per-device result reporting
 - **Bulk device add** — "Try All" on discovered devices runs as a server-side job that survives a closed browser tab, with live progress and cancel

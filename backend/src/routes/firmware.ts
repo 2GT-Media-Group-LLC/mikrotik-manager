@@ -5,6 +5,8 @@ import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { firmwareOrchestrator } from '../services/FirmwareOrchestrator';
+import { clampConcurrency, MAX_WAVE_CONCURRENCY } from '../utils/concurrency';
+import { findUpstreamWithinSelection } from '../utils/rolloutTopology';
 
 const router = Router();
 router.use(requireAuth);
@@ -64,9 +66,13 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
 
 // POST /api/firmware/rollouts — create a rollout (optionally scheduled)
 router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
-  const { name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, devices, start } = req.body as {
+  const {
+    name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, devices, start,
+    wave_concurrency,
+  } = req.body as {
     name?: string; halt_on_failure?: boolean; pre_backup?: boolean; routerboot_after?: boolean; scheduled_at?: string | null;
     devices?: { device_id: number; wave: number }[]; start?: boolean;
+    wave_concurrency?: number;
   };
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
   if (!Array.isArray(devices) || devices.length === 0) return res.status(400).json({ error: 'devices array is required' });
@@ -113,9 +119,10 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   }
 
   const rollout = await queryOne<{ id: number }>(
-    `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-    [name.trim().slice(0, 100), halt_on_failure !== false, pre_backup !== false, routerboot_after === true, scheduled_at || null]);
+    `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, wave_concurrency)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [name.trim().slice(0, 100), halt_on_failure !== false, pre_backup !== false, routerboot_after === true,
+     scheduled_at || null, clampConcurrency(wave_concurrency ?? 1)]);
   for (const d of devices) {
     await query(
       `INSERT INTO firmware_rollout_devices (rollout_id, device_id, wave) VALUES ($1,$2,$3)`,
@@ -132,6 +139,42 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
     }
   }
   res.status(201).json({ id: rollout!.id });
+});
+
+/**
+ * GET /api/firmware/rollouts/upstream-check?ids=1,2,3
+ *
+ * Which of the selected devices sit upstream of the others (#135).
+ *
+ * Running a wave concurrently means several devices reboot together, and a
+ * switch that carries the uplink to the rest takes them with it -- the manager
+ * then cannot reach the devices it is mid-upgrade on. Change Guard does not
+ * cover this: it protects configuration, not the path back to the device.
+ *
+ * Advisory only. It warns, it does not refuse: the operator may know the
+ * topology better than the discovered links do.
+ */
+router.get('/rollouts/upstream-check', async (req: Request, res: Response) => {
+  const ids = String(req.query.ids || '')
+    .split(',').map((v) => parseInt(v, 10)).filter(Number.isInteger);
+  if (ids.length < 2) return res.json({ upstream: [] });
+
+  const links = await query<{
+    from_device_id: number; to_device_id: number | null;
+    from_interface: string | null; stp_role: string | null;
+  }>(
+    `SELECT from_device_id, to_device_id, from_interface, stp_role
+       FROM topology_links WHERE to_device_id IS NOT NULL`
+  );
+  const names = await query<{ id: number; name: string }>(
+    `SELECT id, name FROM devices WHERE id = ANY($1::int[])`, [ids]
+  );
+  const nameById = new Map(names.map((n) => [n.id, n.name]));
+
+  const upstream = findUpstreamWithinSelection(ids, links).map((id) => ({
+    id, name: nameById.get(id) ?? `Device ${id}`,
+  }));
+  return res.json({ upstream, maxConcurrency: MAX_WAVE_CONCURRENCY });
 });
 
 // GET /api/firmware/rollouts — recent rollouts with progress counts

@@ -892,6 +892,8 @@ export interface FirmwareDeviceRow {
 export interface FirmwareRollout {
   id: number; name: string; status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   halt_on_failure: boolean; pre_backup: boolean; routerboot_after: boolean;
+  /** Devices per wave allowed to upgrade at once; 1 is sequential (#135). */
+  wave_concurrency?: number;
   scheduled_at: string | null; started_at: string | null; finished_at: string | null; created_at: string;
   device_count?: number; success_count?: number; failed_count?: number;
 }
@@ -912,8 +914,15 @@ export const firmwareApi = {
   createRollout: (data: {
     name: string; halt_on_failure: boolean; pre_backup: boolean; routerboot_after?: boolean;
     scheduled_at?: string | null; start?: boolean;
+    /** Devices per wave allowed to upgrade at once; 1 is sequential (#135). */
+    wave_concurrency?: number;
     devices: { device_id: number; wave: number }[];
   }) => api.post<{ id: number }>('/firmware/rollouts', data),
+  /** Advisory: selected devices that other selected devices depend on. */
+  upstreamCheck: (ids: number[]) =>
+    api.get<{ upstream: { id: number; name: string }[]; maxConcurrency: number }>(
+      '/firmware/rollouts/upstream-check', { params: { ids: ids.join(',') } }
+    ),
   listRollouts: () => api.get<FirmwareRollout[]>('/firmware/rollouts'),
   getRollout: (id: number) =>
     api.get<FirmwareRollout & { devices: FirmwareRolloutDevice[] }>(`/firmware/rollouts/${id}`),

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUpCircle, RefreshCw, CheckCircle, XCircle, AlertTriangle, Clock,
-  HardDrive, ShieldAlert, Rocket, Ban, ChevronRight, Cpu,
+  HardDrive, ShieldAlert, Rocket, Ban, ChevronRight, Cpu, Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { firmwareApi } from '../services/api';
@@ -87,6 +87,11 @@ function RolloutPanel({ rolloutId, canWrite }: { rolloutId: number; canWrite: bo
           {rollout.pre_backup && <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />pre-backup</span>}
           {rollout.halt_on_failure && <span className="flex items-center gap-1"><ShieldAlert className="w-3 h-3" />halt on failure</span>}
           {rollout.routerboot_after && <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />+ RouterBOOT</span>}
+          {(rollout.wave_concurrency ?? 1) > 1 && (
+            <span className="flex items-center gap-1" title="Devices in a wave upgrading at once">
+              <Zap className="w-3 h-3" />{rollout.wave_concurrency} at once
+            </span>
+          )}
           {canWrite && active && (
             <button onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending || !!cancelNote}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50">
@@ -148,6 +153,9 @@ export default function FirmwarePage() {
   const [haltOnFailure, setHaltOnFailure] = useState(true);
   // Off by default: it is a second flash and a second reboot per device (#113).
   const [routerbootAfter, setRouterbootAfter] = useState(false);
+  // 1 = sequential, the long-standing behaviour. Raising it trades canary
+  // strictness for wall-clock time, which is the operator's call (#135).
+  const [waveConcurrency, setWaveConcurrency] = useState(1);
   const [scheduleAt, setScheduleAt] = useState('');
   const [viewRolloutId, setViewRolloutId] = useState<number | null>(null);
   const [checkResult, setCheckResult] = useState<string | null>(null);
@@ -195,6 +203,7 @@ export default function FirmwarePage() {
       halt_on_failure: haltOnFailure,
       pre_backup: preBackup,
       routerboot_after: routerbootAfter,
+      wave_concurrency: waveConcurrency,
       scheduled_at: scheduleAt ? new Date(scheduleAt).toISOString() : null,
       start: !scheduleAt,
       devices: [...selected.entries()].map(([device_id, wave]) => ({ device_id, wave })),
@@ -217,6 +226,17 @@ export default function FirmwarePage() {
   const setWave = (id: number, wave: number) => setSelected(prev => new Map(prev).set(id, wave));
 
   const selectedCount = selected.size;
+  // Advisory only: which selected devices other selected devices reach the
+  // network through. Discovered topology is incomplete, so this warns rather
+  // than blocks (#135).
+  const selectedIds = useMemo(() => [...selected.keys()].sort((a, b) => a - b), [selected]);
+  const { data: upstreamCheck } = useQuery({
+    queryKey: ['fw-upstream', selectedIds],
+    queryFn: () => firmwareApi.upstreamCheck(selectedIds).then(r => r.data),
+    enabled: waveConcurrency > 1 && selectedIds.length > 1,
+  });
+  const upstreamWarning = upstreamCheck?.upstream ?? [];
+
   const waveSummary = useMemo(() => {
     const byWave = new Map<number, number>();
     for (const w of selected.values()) byWave.set(w, (byWave.get(w) ?? 0) + 1);
@@ -377,11 +397,51 @@ export default function FirmwarePage() {
                 <input type="checkbox" className="w-4 h-4 rounded" checked={routerbootAfter} onChange={e => setRouterbootAfter(e.target.checked)} />
                 Then RouterBOOT
               </label>
+              <label
+                className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300"
+                title="How many devices in the same wave may upgrade at once. 1 upgrades them one at a time."
+              >
+                <Zap className="w-4 h-4 text-gray-400" />
+                At once
+                <select
+                  className="input py-1 text-xs w-auto"
+                  value={waveConcurrency}
+                  onChange={e => setWaveConcurrency(parseInt(e.target.value, 10))}
+                >
+                  {[1, 2, 3, 5, 8, 10].map(n => (
+                    <option key={n} value={n}>{n === 1 ? '1 — one at a time' : n}</option>
+                  ))}
+                </select>
+              </label>
               <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300">
                 <Clock className="w-4 h-4 text-gray-400" />
                 <input type="datetime-local" className="input py-1 text-xs w-auto" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} />
               </label>
             </div>
+
+            {waveConcurrency > 1 && (
+              <div className="flex items-start gap-2 text-xs rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 px-3 py-2 text-amber-800 dark:text-amber-300">
+                <ShieldAlert className="w-3.5 h-3.5 mt-px flex-shrink-0" />
+                <div className="space-y-1">
+                  <p>
+                    Up to {waveConcurrency} devices in a wave will reboot at the same time, and a
+                    failure stops the rollout at the <em>end</em> of the wave — so up to{' '}
+                    {waveConcurrency} devices can take a bad build before it halts.
+                  </p>
+                  {upstreamWarning.length > 0 && (
+                    <p>
+                      <span className="font-semibold">
+                        {upstreamWarning.map(u => u.name).join(', ')}
+                      </span>{' '}
+                      {upstreamWarning.length === 1 ? 'carries' : 'carry'} traffic for other selected
+                      devices. Rebooting {upstreamWarning.length === 1 ? 'it' : 'them'} alongside those
+                      devices can cut the path to them mid-upgrade. Consider putting{' '}
+                      {upstreamWarning.length === 1 ? 'it' : 'them'} in a later wave.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <button className="btn-primary flex items-center gap-2" disabled={createRollout.isPending}
                 onClick={() => createRollout.mutate()}>

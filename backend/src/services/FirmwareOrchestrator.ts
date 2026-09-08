@@ -1,6 +1,7 @@
 // Staged firmware rollout orchestrator.
 //
-// Executes a rollout wave-by-wave (wave 1 = canary), each device sequentially:
+// Executes a rollout wave-by-wave (wave 1 = canary). Devices within a wave run
+// sequentially by default, or up to wave_concurrency at once (#135):
 //   pre-upgrade backup → install RouterOS update → wait through the reboot →
 //   verify it came back healthy on the new version → next device.
 // A failure marks the device failed and (with halt_on_failure) stops the whole
@@ -11,6 +12,7 @@
 import { query, queryOne } from '../config/database';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
 import { BackupService } from './BackupService';
+import { mapWithConcurrency, clampConcurrency } from '../utils/concurrency';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000; // large images on slow links
@@ -28,6 +30,8 @@ interface RolloutRow {
   halt_on_failure: boolean; pre_backup: boolean;
   /** Follow the RouterOS upgrade with the pending RouterBOOT upgrade (issue #113). */
   routerboot_after: boolean;
+  /** How many devices in a wave may upgrade at once; 1 is sequential (#135). */
+  wave_concurrency: number;
 }
 interface RolloutDeviceRow {
   id: number; rollout_id: number; device_id: number; wave: number; status: string;
@@ -87,17 +91,45 @@ export class FirmwareOrchestrator {
       `SELECT * FROM firmware_rollout_devices WHERE rollout_id=$1 ORDER BY wave ASC, id ASC`,
       [rollout.id]);
 
+    const concurrency = clampConcurrency(rollout.wave_concurrency);
+    const waves = [...new Set(items.map((i) => i.wave))].sort((a, b) => a - b);
     let halted = false;
-    for (const item of items) {
-      if (this.cancelRequested || halted) {
-        await query(`UPDATE firmware_rollout_devices SET status='skipped',
-          error=$2 WHERE id=$1 AND status='pending'`,
-          [item.id, this.cancelRequested ? 'Rollout cancelled' : 'Halted: earlier device failed']);
-        continue;
+
+    // Waves stay strictly sequential -- that is the decision point, and it is
+    // what makes wave 1 a canary. Concurrency applies only *within* a wave.
+    //
+    // At the default of 1 this is the previous behaviour with one difference
+    // worth stating: halting is evaluated at the end of a wave rather than the
+    // instant a device fails. With a wave of one those are the same moment. With
+    // a larger wave it is the trade the operator asked for (#135) -- more devices
+    // carry a bad build before anything stops, in exchange for not waiting out
+    // ten five-minute reboots in series.
+    for (const wave of waves) {
+      if (this.cancelRequested || halted) break;
+      const inWave = items.filter((i) => i.wave === wave);
+
+      if (concurrency > 1 && inWave.length > 1) {
+        console.log(`[Firmware] rollout #${rollout.id}: wave ${wave} — ` +
+                    `${inWave.length} device(s), up to ${concurrency} at once`);
       }
-      const ok = await this.upgradeDevice(rollout, item);
-      if (!ok && rollout.halt_on_failure) halted = true;
+
+      const results = await mapWithConcurrency(inWave, concurrency, (item) =>
+        this.cancelRequested
+          ? Promise.resolve(false)
+          : this.upgradeDevice(rollout, item)
+      );
+
+      if (rollout.halt_on_failure && results.some((ok) => !ok)) {
+        halted = true;
+        console.warn(`[Firmware] rollout #${rollout.id}: halting after failures in wave ${wave}`);
+      }
     }
+
+    // Anything never reached is skipped rather than failed -- it did not run.
+    await query(
+      `UPDATE firmware_rollout_devices SET status='skipped', error=$2, finished_at=NOW()
+        WHERE rollout_id=$1 AND status='pending'`,
+      [rollout.id, this.cancelRequested ? 'Rollout cancelled' : 'Halted: earlier device failed']);
 
     const finalStatus = this.cancelRequested ? 'cancelled' : halted ? 'failed' : 'completed';
     await query(`UPDATE firmware_rollouts SET status=$2, finished_at=NOW() WHERE id=$1`, [rollout.id, finalStatus]);
