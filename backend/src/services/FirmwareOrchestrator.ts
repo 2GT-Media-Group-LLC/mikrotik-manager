@@ -13,6 +13,7 @@ import { query, queryOne } from '../config/database';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
 import { BackupService } from './BackupService';
 import { mapWithConcurrency, clampConcurrency } from '../utils/concurrency';
+import { interruptedOutcome, INTERRUPTED_RUN_ERROR } from '../utils/interrupted';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000; // large images on slow links
@@ -44,6 +45,50 @@ export class FirmwareOrchestrator {
   private backupService = new BackupService();
 
   get running(): number | null { return this.activeRolloutId; }
+
+  /**
+   * Close out rollouts that a manager restart interrupted (#140).
+   *
+   * A rollout marked `running` at startup cannot be running: the orchestrator
+   * that would be driving it has only just been constructed. Left alone the row
+   * stays `running` for ever, its unreached devices stay `pending`, nothing is
+   * logged — and, because an unfinished rollout blocks its devices from joining
+   * a new one, those devices can never be upgraded again.
+   *
+   * Deliberately does not resume. A device may have been mid-reboot when the
+   * process died; continuing a firmware upgrade from an unknown state is how
+   * hardware gets bricked.
+   */
+  async reconcileInterrupted(): Promise<void> {
+    const stale = await query<{ id: number; name: string }>(
+      `SELECT id, name FROM firmware_rollouts WHERE status = 'running'`
+    );
+    if (stale.length === 0) return;
+
+    for (const r of stale) {
+      const devices = await query<{ id: number; status: string }>(
+        `SELECT id, status FROM firmware_rollout_devices WHERE rollout_id = $1`, [r.id]
+      );
+      for (const d of devices) {
+        const outcome = interruptedOutcome(d.status);
+        if (!outcome) continue;
+        await query(
+          `UPDATE firmware_rollout_devices
+              SET status = $2, error = $3, finished_at = NOW()
+            WHERE id = $1`,
+          [d.id, outcome.status, outcome.error]
+        );
+      }
+      await query(
+        `UPDATE firmware_rollouts SET status = 'failed', finished_at = NOW() WHERE id = $1`,
+        [r.id]
+      );
+      console.warn(
+        `[Firmware] rollout #${r.id} ("${r.name}") was still marked running at startup — ` +
+        `closing it out as interrupted. ${INTERRUPTED_RUN_ERROR}`
+      );
+    }
+  }
 
   startScheduler(): void {
     if (this.schedulerTimer) return;

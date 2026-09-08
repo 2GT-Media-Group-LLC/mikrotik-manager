@@ -16,6 +16,7 @@
 import { query, queryOne } from '../config/database';
 import { runSshCommand, looksLikeFailure, type SshExecDevice } from './sshExec';
 import { withSafeApply, type GuardDevice } from './changeGuard/ChangeGuard';
+import { interruptedOutcome } from '../utils/interrupted';
 
 interface RunRow {
   id: number;
@@ -41,6 +42,47 @@ export class CommandRunner {
 
   get isRunning(): boolean {
     return this.activeRunId !== null;
+  }
+
+  /**
+   * Close out runs that a manager restart interrupted (#140).
+   *
+   * Same gap as the firmware orchestrator: the active run is tracked in memory,
+   * so a process restart leaves the row `running` for ever with no log of what
+   * became of it. A command run is less dangerous than a firmware upgrade, but
+   * an honest "interrupted" beats a row that claims to still be working.
+   *
+   * Does not resume: the command may have half-applied, and re-running it is the
+   * operator's decision to make.
+   */
+  async reconcileInterrupted(): Promise<void> {
+    const stale = await query<{ id: number; name: string }>(
+      `SELECT id, name FROM command_runs WHERE status = 'running'`
+    );
+    if (stale.length === 0) return;
+
+    for (const r of stale) {
+      const devices = await query<{ id: number; status: string }>(
+        `SELECT id, status FROM command_run_devices WHERE run_id = $1`, [r.id]
+      );
+      for (const d of devices) {
+        const outcome = interruptedOutcome(d.status);
+        if (!outcome) continue;
+        await query(
+          `UPDATE command_run_devices
+              SET status = $2, error = $3, finished_at = NOW()
+            WHERE id = $1`,
+          [d.id, outcome.status, outcome.error]
+        );
+      }
+      await query(
+        `UPDATE command_runs SET status = 'failed', finished_at = NOW() WHERE id = $1`, [r.id]
+      );
+      console.warn(
+        `[Command] run #${r.id} ("${r.name}") was still marked running at startup — ` +
+        `closing it out as interrupted.`
+      );
+    }
   }
 
   async start(runId: number): Promise<void> {

@@ -231,7 +231,7 @@ export class AlertService {
       secure,
       auth: user && pass ? { user, pass } : undefined,
       tls: { rejectUnauthorized: false },
-    } as nodemailer.TransportOptions);
+    });
 
     const label   = EVENT_LABELS[eventType] ?? eventType;
     const subject = `[Mikrotik Manager] ${label}`;

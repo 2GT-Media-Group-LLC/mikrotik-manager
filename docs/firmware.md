@@ -94,6 +94,25 @@ to create another for them, before anything is written.
 because interrupting a device mid-write is how you brick it. The UI says so when you
 press the button — the currently upgrading device will finish first.
 
+## If the manager restarts mid-rollout
+
+The active rollout is tracked in memory, so a manager restart — a crash, an OOM kill,
+or pulling a new image — ends it. Nothing resumes automatically: a device may have been
+mid-reboot, and continuing an upgrade from an unknown state is how hardware gets
+bricked.
+
+On startup any rollout still marked running is closed out and reported honestly:
+
+- devices it never reached are **skipped** — "not reached"
+- a device that was mid-upgrade is **failed**, saying its real state is unknown and to
+  check it before re-running
+- devices that already finished keep their result
+
+This matters beyond tidiness. An unfinished rollout blocks its devices from joining a
+new one, which is right while it is genuinely running and wrong for one that can never
+finish — without this, an interrupted rollout left its devices permanently unable to be
+upgraded.
+
 ## When it fails
 
 Failure messages name the mechanism rather than the symptom. "Device did not finish

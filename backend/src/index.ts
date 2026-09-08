@@ -47,6 +47,7 @@ import firmwareRoutes from './routes/firmware';
 import automationRoutes from './routes/automation';
 import { reportService } from './services/ReportService';
 import { firmwareOrchestrator } from './services/FirmwareOrchestrator';
+import { commandRunner } from './services/CommandRunner';
 import operationsRoutes from './routes/operations';
 import metricsRoutes from './routes/metrics';
 import topologyRoutes, { setPollerService as setTopologyPoller } from './routes/topology';
@@ -410,6 +411,14 @@ async function start(): Promise<void> {
   await netflowCollector.start();
 
   // Firmware rollout scheduler (starts rollouts whose scheduled_at has arrived)
+  // Close out any rollout or command run left mid-flight by a previous process
+  // (#140). Must happen before the scheduler starts, so a stale 'running' row
+  // cannot block a due rollout from starting.
+  await firmwareOrchestrator.reconcileInterrupted().catch((e: unknown) =>
+    console.error('[Firmware] could not reconcile interrupted rollouts:', e));
+  await commandRunner.reconcileInterrupted().catch((e: unknown) =>
+    console.error('[Command] could not reconcile interrupted runs:', e));
+
   firmwareOrchestrator.startScheduler();
 
   // Scheduled report mailer (hourly check)
