@@ -13,6 +13,7 @@
 import { Client as SSHClient } from 'ssh2';
 import { queryOne } from '../config/database';
 import { decrypt } from '../utils/crypto';
+import { preferredAuth, type KeyStatus } from '../utils/sshKeys';
 
 export interface SshExecDevice {
   id: number;
@@ -39,19 +40,33 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  *
  * A key is used only when it has been *proved* — a key that was generated or
  * pushed but never authenticated is not evidence the device will accept it.
+ *
+ * Exported because every SSH consumer must agree on this. The interactive
+ * terminal used to resolve credentials itself, looked only at the stored
+ * password, and so broke the moment a key was deployed and the password
+ * retired — the exact workflow the key feature exists to enable (#133).
  */
-async function resolveAuth(device: SshExecDevice): Promise<{
+export async function resolveAuth(device: SshExecDevice): Promise<{
   username: string;
   auth: { password: string } | { privateKey: string };
   kind: 'key' | 'password';
 }> {
-  const key = await queryOne<{ private_key_encrypted: string; ssh_username: string | null }>(
-    `SELECT private_key_encrypted, ssh_username FROM device_ssh_keys
-      WHERE device_id = $1 AND status = 'verified'`,
+  const key = await queryOne<{
+    private_key_encrypted: string; ssh_username: string | null; status: KeyStatus;
+  }>(
+    `SELECT private_key_encrypted, ssh_username, status FROM device_ssh_keys
+      WHERE device_id = $1`,
     [device.id]
   );
 
-  if (key) {
+  const encryptedPassword = device.ssh_password_encrypted || device.api_password_encrypted;
+  const choice = preferredAuth(
+    key?.status ?? null,
+    !!key?.private_key_encrypted,
+    !!encryptedPassword
+  );
+
+  if (choice === 'key' && key) {
     const username = key.ssh_username || device.ssh_username || device.api_username;
     if (!username) throw new Error('No SSH username available for key authentication');
     return { username, auth: { privateKey: decrypt(key.private_key_encrypted) }, kind: 'key' };
@@ -59,9 +74,8 @@ async function resolveAuth(device: SshExecDevice): Promise<{
 
   const username = device.ssh_username || device.api_username;
   if (!username) throw new Error('No SSH username configured');
-  const encrypted = device.ssh_password_encrypted || device.api_password_encrypted;
-  if (!encrypted) throw new Error('No SSH credential configured');
-  return { username, auth: { password: decrypt(encrypted) }, kind: 'password' };
+  if (choice === 'none' || !encryptedPassword) throw new Error('No SSH credential configured');
+  return { username, auth: { password: decrypt(encryptedPassword) }, kind: 'password' };
 }
 
 /**

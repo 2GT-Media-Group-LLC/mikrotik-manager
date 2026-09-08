@@ -96,13 +96,19 @@ export type KeyStatus = 'pending' | 'deployed' | 'verified' | 'failed';
  *
  * The real recovery path is the binary API, which is unaffected by any of this
  * and can always remove the key.
+ *
+ * Only a *verified* key counts. One that was generated or pushed but never
+ * authenticated is not evidence the device will accept it, and 'deployed' is a
+ * transient state on the way to being proved. This function previously admitted
+ * it, which disagreed with the resolver that actually ran -- the disagreement
+ * went unnoticed because nothing outside these tests ever called this (#133).
  */
 export function preferredAuth(
   status: KeyStatus | null,
   hasPrivateKey: boolean,
   hasPassword: boolean,
 ): 'key' | 'password' | 'none' {
-  if (hasPrivateKey && (status === 'verified' || status === 'deployed')) return 'key';
+  if (hasPrivateKey && status === 'verified') return 'key';
   if (hasPassword) return 'password';
   return 'none';
 }

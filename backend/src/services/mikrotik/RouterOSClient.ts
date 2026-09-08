@@ -40,6 +40,8 @@ export class RouterOSClient extends EventEmitter {
     timeout: ReturnType<typeof setTimeout>;
   } | null = null;
   private sentenceQueue: RouterOSSentence[] = [];
+  /** Set when a reply stream can no longer be trusted; distinct from `connected`. */
+  private poisoned = false;
 
   private tagCounter = 0;
 
@@ -62,6 +64,10 @@ export class RouterOSClient extends EventEmitter {
 
   async connect(): Promise<void> {
     if (this.connected) return;
+    // A fresh connection starts trusted, so a client that was abandoned earlier
+    // can be reconnected and used again.
+    this.poisoned = false;
+    this.sentenceQueue = [];
 
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -124,10 +130,18 @@ export class RouterOSClient extends EventEmitter {
   }
 
   // Enqueue a command so concurrent calls don't interleave
+  /**
+   * @param opts.timeoutMs  How long to wait for each reply sentence. The 30s
+   *   default suits ordinary reads, but some RouterOS commands legitimately run
+   *   far longer -- `/system/package/update/download` takes a minute or more on
+   *   an ordinary link -- and timing those out corrupted the connection (#136).
+   *   Callers issuing a long-running command must say so.
+   */
   async execute(
     command: string,
     params: Record<string, string> = {},
-    queries: string[] = []
+    queries: string[] = [],
+    opts: { timeoutMs?: number } = {}
   ): Promise<Record<string, string>[]> {
     let result!: Record<string, string>[];
     let error!: Error;
@@ -135,7 +149,7 @@ export class RouterOSClient extends EventEmitter {
     await new Promise<void>((resolve) => {
       this.operationChain = this.operationChain.then(async () => {
         try {
-          result = await this._executeRaw(command, params, queries);
+          result = await this._executeRaw(command, params, queries, opts.timeoutMs);
         } catch (err) {
           error = err as Error;
         }
@@ -150,7 +164,8 @@ export class RouterOSClient extends EventEmitter {
   private async _executeRaw(
     command: string,
     params: Record<string, string>,
-    queries: string[]
+    queries: string[],
+    timeoutMs?: number
   ): Promise<Record<string, string>[]> {
     if (!this.socket || !this.connected) {
       throw new RouterOSError('Not connected');
@@ -168,7 +183,7 @@ export class RouterOSClient extends EventEmitter {
 
     const results: Record<string, string>[] = [];
     while (true) {
-      const sentence = await this.readNextSentence();
+      const sentence = await this.readNextSentence(timeoutMs);
       if (sentence.type === '!done') break;
       if (sentence.type === '!re') {
         results.push(sentence.words);
@@ -341,6 +356,17 @@ export class RouterOSClient extends EventEmitter {
       const sentence = this.tryParseSentence();
       if (!sentence) break;
 
+      // Once a connection is abandoned, anything still arriving belongs to the
+      // command that gave up. Queueing it would hand it to the next caller as
+      // that caller's own reply, which is the desynchronisation poison() exists
+      // to prevent -- destroying the socket usually stops this, but data already
+      // buffered can still surface.
+      //
+      // This must test `poisoned`, not `connected`: `connected` is only set once
+      // login has *finished*, so testing it here discarded the login exchange
+      // itself and every connection timed out.
+      if (this.poisoned) continue;
+
       if (this.pendingRead) {
         clearTimeout(this.pendingRead.timeout);
         const { resolve } = this.pendingRead;
@@ -425,6 +451,19 @@ export class RouterOSClient extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRead = null;
+        // A timed-out read leaves a reply in flight. Previously the socket was
+        // left open, so when that reply finally arrived processBuffer() found no
+        // pending read and queued it -- and the *next* command took it as its
+        // own answer. Every later command on that connection then returned the
+        // previous one's data.
+        //
+        // That is how a slow `/system/package/update/download` turned into
+        // "did not finish downloading within 10 minutes" (#136): the status
+        // polls afterwards were reading shifted replies and could never see
+        // "Downloaded". A desynchronised connection can also make an unrelated
+        // command look like it succeeded, so the only safe response is to stop
+        // using it.
+        this.poison('Read timeout waiting for API response');
         reject(new RouterOSError('Read timeout waiting for API response'));
       }, timeoutMs);
 
@@ -434,6 +473,22 @@ export class RouterOSClient extends EventEmitter {
         timeout: timer,
       };
     });
+  }
+
+  /**
+   * Abandon a connection whose reply stream can no longer be trusted.
+   *
+   * Anything already queued belongs to a command that gave up, so it is
+   * discarded rather than handed to the next caller.
+   */
+  private poison(reason: string): void {
+    this.poisoned = true;
+    this.connected = false;
+    this.sentenceQueue = [];
+    this.buffer = Buffer.alloc(0);
+    try { this.socket?.destroy(); } catch { /* already gone */ }
+    this.socket = null;
+    this.emit('poisoned', reason);
   }
 
   // Execute a streaming/generator command (one that never sends !done on its own,

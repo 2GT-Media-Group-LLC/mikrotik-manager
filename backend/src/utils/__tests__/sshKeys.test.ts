@@ -67,7 +67,8 @@ describe('preferredAuth', () => {
     // bound to them, confirmed on hardware by removing the key and watching
     // password login start working again.
     expect(preferredAuth('verified', true, true)).toBe('key');
-    expect(preferredAuth('deployed', true, true)).toBe('key');
+    // Pushed but never proved: not yet evidence the device will accept it.
+    expect(preferredAuth('deployed', true, true)).toBe('password');
   });
 
   it('uses the password only when no key is installed', () => {

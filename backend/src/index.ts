@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import { Client as SshClient } from 'ssh2';
+import { resolveAuth, type SshExecDevice } from './services/sshExec';
 import type { ClientChannel } from 'ssh2';
 import dotenv from 'dotenv';
 
@@ -30,7 +31,6 @@ import { rateLimitRedis } from './middleware/rateLimitRedis';
 import { initSecrets } from './utils/secrets';
 import { reencryptStaleCredentials } from './db/reencryptCredentials';
 import { reconcileStaleGuards } from './services/changeGuard/ChangeGuard';
-import { decrypt } from './utils/crypto';
 import { corsMiddlewareOptions, socketIoCorsOptions } from './utils/corsOrigins';
 
 import authRoutes from './routes/auth';
@@ -189,23 +189,28 @@ terminalNs.on('connection', (socket) => {
         socket.emit('error', 'Too many terminal sessions started. Please wait a moment and try again.');
         return;
       }
-      const device = await queryOne<{
-        ip_address: string;
-        ssh_port: number | null;
-        ssh_username: string | null;
-        ssh_password_encrypted: string | null;
-      }>(
-        `SELECT ip_address, ssh_port, ssh_username, ssh_password_encrypted FROM devices WHERE id = $1`,
+      const device = await queryOne<SshExecDevice>(
+        `SELECT id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
+                api_username, api_password_encrypted
+           FROM devices WHERE id = $1`,
         [deviceId]
       );
 
       if (!device) { socket.emit('error', 'Device not found'); return; }
-      if (!device.ssh_username || !device.ssh_password_encrypted) {
-        socket.emit('error', 'No SSH credentials configured for this device. Add an SSH username and password in device settings.');
+
+      // Resolve credentials the same way every other SSH consumer does, so a
+      // deployed key works here too. Doing this locally, and looking only at
+      // the stored password, is what broke the console once a key replaced the
+      // password (#133).
+      let auth: Awaited<ReturnType<typeof resolveAuth>>;
+      try {
+        auth = await resolveAuth(device);
+      } catch (e) {
+        socket.emit('error',
+          `${(e as Error).message}. Add an SSH username and password in device settings, ` +
+          `or deploy an SSH key for this device.`);
         return;
       }
-
-      const password = decrypt(device.ssh_password_encrypted);
       sshClient = new SshClient();
 
       sshClient.on('ready', () => {
@@ -214,7 +219,7 @@ terminalNs.on('connection', (socket) => {
           (err, stream) => {
             if (err) { socket.emit('error', err.message); return; }
             shellStream = stream;
-            auditTerminal(user, clientIp, `opened SSH shell on device ${deviceId} (${device.ip_address})`, deviceId);
+            auditTerminal(user, clientIp, `opened SSH shell on device ${deviceId} (${device.ip_address}) using ${auth.kind} auth`, deviceId);
             socket.emit('ready');
 
             stream.on('data', (data: Buffer) => {
@@ -238,8 +243,8 @@ terminalNs.on('connection', (socket) => {
       sshClient.connect({
         host: device.ip_address,
         port: device.ssh_port ?? 22,
-        username: device.ssh_username,
-        password,
+        username: auth.username,
+        ...auth.auth,
         readyTimeout: 10_000,
         algorithms: {
           kex: [

@@ -19,6 +19,18 @@ import {
 import { bytesSince, periodKey, shouldSend } from '../../utils/dataCap';
 import { parseDeviceLogTime } from '../../utils/deviceTime';
 import { BackupService } from '../BackupService';
+
+/** RouterOS update commands reach out to MikroTik's servers and are slow by nature. */
+const UPDATE_CHECK_TIMEOUT_MS = 90_000;
+const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
+/**
+ * `/log/print` returns the device's entire ring buffer -- a thousand sentences
+ * is normal -- and measured against real hardware it routinely outruns the 30s
+ * default. Timing it out cost the device's whole log *and*, before the client
+ * learned to abandon a timed-out connection, desynchronised the session (#137).
+ */
+const LOG_READ_TIMEOUT_MS = 120_000;
+import { selectNewLogLines, highestStoredId, type RawLogLine } from '../../utils/logDedup';
 import { alertService } from '../AlertService';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
@@ -800,22 +812,21 @@ export class DeviceCollector {
 
   async collectEvents(): Promise<void> {
     try {
-      const logs = await this.client.execute('/log/print');
+      const logs = await this.client.execute(
+        '/log/print', {}, [], { timeoutMs: LOG_READ_TIMEOUT_MS }
+      );
       if (!logs.length) return;
 
-      // RouterOS log .id values are hex strings like "*1A2F". Parse to int for comparison.
-      const parseRosId = (id: string): number => {
-        const hex = (id || '').replace(/^\*/, '');
-        return hex ? parseInt(hex, 16) : 0;
-      };
-
-      // Find the highest RouterOS log ID we've already stored for this device.
-      const lastRow = await queryOne<{ log_id: string }>(
+      // The highest id we hold, taken across recent rows rather than from the
+      // single most recently inserted one. Those are usually the same, but when
+      // they differ the watermark slips backwards and the entire buffer looks
+      // new on every poll (#137).
+      const storedIds = await query<{ log_id: string }>(
         `SELECT log_id FROM events WHERE device_id = $1 AND log_id IS NOT NULL AND log_id != ''
-         ORDER BY id DESC LIMIT 1`,
+         ORDER BY id DESC LIMIT 2000`,
         [this.device.id]
       );
-      const lastIdNum = parseRosId(lastRow?.log_id || '');
+      const lastIdNum = highestStoredId(storedIds.map((r) => r.log_id));
 
       // Always get the latest stored event time — needed for timestamp fallback.
       const latestStored = await queryOne<{ event_time: Date }>(
@@ -824,45 +835,55 @@ export class DeviceCollector {
       );
       const latestTime = latestStored?.event_time ? new Date(latestStored.event_time) : new Date(0);
 
-      // Detect log buffer overflow or device reboot: if all current IDs are below
-      // our stored lastIdNum, RouterOS has cleared/reset its log buffer.
-      // In that case, fall back to timestamp-based deduplication to avoid missing events.
-      const currentIds = logs.map(l => parseRosId(l['.id'] || '')).filter(id => id > 0);
-      const maxCurrentId = currentIds.length > 0 ? Math.max(...currentIds) : 0;
-      const logReset = lastRow && maxCurrentId > 0 && maxCurrentId < lastIdNum;
+
+      // Collect the candidates first, then insert them in batches.
+      //
+      // This used to issue one INSERT per line and count every attempt as new,
+      // so a poll that re-read the whole ring buffer and inserted nothing still
+      // reported "Collected 1000 new log entries" — a thousand round trips a
+      // minute per device, described as work that had not happened (#137).
+      // Counting what the database actually accepted makes the log line true
+      // and the duplicate case cheap.
+      const fresh = selectNewLogLines(logs as RawLogLine[], {
+        lastStoredId: lastIdNum,
+        latestStoredTime: latestTime,
+        parseTime: (raw) => this.parseLogTime(raw),
+      });
+
+      const pending: unknown[][] = [];
+      for (const log of fresh) {
+        const logId = (log['.id'] || '') as string;
+        const time = this.parseLogTime(log['time'] || '');
+        const severity = this.mapLogSeverity((log['topics'] as string) || '');
+        pending.push([
+          this.device.id,
+          time.toISOString(),
+          severity,
+          (log['topics'] as string) || null,
+          (log['message'] as string) || '',
+          JSON.stringify(log),
+          logId || null,
+        ]);
+      }
 
       let newCount = 0;
-      for (const log of logs) {
-        const logId = (log['.id'] || '') as string;
-        const logIdNum = parseRosId(logId);
-
-        if (logId && !logReset) {
-          // Primary: skip entries already stored by RouterOS ID
-          if (logIdNum <= lastIdNum) continue;
-        } else {
-          // Fallback: no .id field, or log buffer has been reset — use timestamp deduplication
-          const time = this.parseLogTime(log['time'] || '');
-          if (time <= latestTime) continue;
-        }
-
-        const time = this.parseLogTime(log['time'] || '');
-        const severity = this.mapLogSeverity(log['topics'] || '');
-
-        await query(
+      const COLS = 7;
+      const BATCH = 200;
+      for (let i = 0; i < pending.length; i += BATCH) {
+        const chunk = pending.slice(i, i + BATCH);
+        const values = chunk
+          .map((_, r) => `(${Array.from({ length: COLS }, (_, c) => `$${r * COLS + c + 1}`).join(',')})`)
+          .join(',');
+        // RETURNING reports only the rows actually written; ON CONFLICT rows are
+        // silently dropped, which is exactly the count we want.
+        const inserted = await query<{ id: number }>(
           `INSERT INTO events (device_id, event_time, severity, topic, message, raw_json, log_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
-           ON CONFLICT (device_id, log_id) DO NOTHING`,
-          [
-            this.device.id,
-            time.toISOString(),
-            severity,
-            log['topics'] || null,
-            log['message'] || '',
-            JSON.stringify(log),
-            logId || null,
-          ]
+           VALUES ${values}
+           ON CONFLICT (device_id, log_id) DO NOTHING
+           RETURNING id`,
+          chunk.flat()
         );
-        newCount++;
+        newCount += inserted.length;
       }
 
       if (newCount > 0) {
@@ -3757,12 +3778,16 @@ export class DeviceCollector {
   // ─── Firmware updates ─────────────────────────────────────────────────────
 
   async checkForUpdates(): Promise<Record<string, string>> {
-    await this.client.execute('/system/package/update/check-for-updates').catch(() => {});
-    // Give the device a moment to complete the check
+    // Reaches out to MikroTik's servers, so it can outlast the ordinary read
+    // timeout on a slow or filtered link. The failure was previously swallowed
+    // (.catch(() => {})), which hid a timed-out check and left the caller
+    // reading whatever /print happened to return (#136).
+    await this.client.execute(
+      '/system/package/update/check-for-updates', {}, [], { timeoutMs: UPDATE_CHECK_TIMEOUT_MS }
+    );
+    // Give the device a moment to settle the result before reading it back.
     await new Promise<void>((resolve) => setTimeout(resolve, 3000));
-    const result = await this.client
-      .execute('/system/package/update/print')
-      .catch(() => [] as Record<string, string>[]);
+    const result = await this.client.execute('/system/package/update/print');
     return (result[0] as Record<string, string>) || {};
   }
 
@@ -3776,8 +3801,11 @@ export class DeviceCollector {
    * be observed — and on at least one CCR it neither downloaded nor rebooted
    * while reporting nothing at all (#firmware).
    */
-  async downloadUpdate(): Promise<void> {
-    await this.client.execute('/system/package/update/download');
+  async downloadUpdate(timeoutMs = UPDATE_DOWNLOAD_TIMEOUT_MS): Promise<void> {
+    // Blocks until the image has landed -- a minute or more is normal, and the
+    // 30-second default read timeout was cutting it off and corrupting the
+    // connection (#136).
+    await this.client.execute('/system/package/update/download', {}, [], { timeoutMs });
   }
 
   /** The `status` line from /system/package/update, e.g. "Downloaded, please reboot…". */

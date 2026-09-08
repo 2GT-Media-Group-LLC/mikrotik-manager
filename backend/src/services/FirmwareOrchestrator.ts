@@ -188,16 +188,37 @@ export class FirmwareOrchestrator {
       const freeMb = Math.round((parseInt(res['free-hdd-space'] || '0', 10) / 1048576) * 10) / 10;
       const spaceNote = freeMb > 0 ? ` The device reports ${freeMb} MB free.` : '';
 
-      await collector.downloadUpdate();
-
-      // Wait for the device to say the image has landed. Large images on slow
-      // links take minutes, and the old fixed 25-second guess is what made this
-      // look like a failure while the device was still working.
-      const dlDeadline = Date.now() + DOWNLOAD_TIMEOUT_MS;
+      // The download command blocks until the image has landed, which on an
+      // ordinary link is a minute or more. If that outruns its budget the
+      // connection can no longer be trusted, so it is replaced rather than
+      // reused -- but a timed-out download is *not* evidence of failure. The
+      // device is asked on a fresh connection what actually happened, because
+      // declaring failure here is what made a working download look broken
+      // when several devices ran in one wave (#136).
       let downloaded = false;
+      try {
+        await collector.downloadUpdate(DOWNLOAD_TIMEOUT_MS);
+      } catch (e) {
+        console.warn(`[Firmware] ${device.name}: download command did not return cleanly ` +
+                     `(${(e as Error).message}); re-checking on a new connection`);
+        collector.disconnect();
+        try {
+          await collector.connect();
+        } catch (re) {
+          return fail(
+            `Lost contact with the device while downloading ${latest}: ${(re as Error).message}. ` +
+            `Nothing was rebooted.${spaceNote}`
+          );
+        }
+      }
+
+      // Confirm the image is on the device. Normally this is true immediately,
+      // because the download command only returns once it is; the wait covers
+      // RouterOS versions that return early and report progress instead.
+      const dlDeadline = Date.now() + DOWNLOAD_TIMEOUT_MS;
       while (Date.now() < dlDeadline) {
         if (this.cancelRequested) break;
-        const s = await collector.getUpdateStatus();
+        const s = await collector.getUpdateStatus().catch(() => '');
         if (/downloaded/i.test(s)) { downloaded = true; break; }
         if (/error|fail/i.test(s)) {
           collector.disconnect();

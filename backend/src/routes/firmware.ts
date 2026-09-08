@@ -77,6 +77,41 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   }
   if (scheduled_at && isNaN(Date.parse(scheduled_at))) return res.status(400).json({ error: 'scheduled_at must be a valid timestamp' });
 
+  // Refuse before creating anything (#139). The rollout used to be written
+  // first and started second, so a rejected start left the rows behind: the
+  // user saw "already running", pressed again, and each press quietly banked
+  // another rollout for the same devices. Nothing is persisted unless the
+  // request can actually be honoured.
+  const busy = await query<{ device_id: number; name: string; rollout_id: number }>(
+    `SELECT frd.device_id, d.name, frd.rollout_id
+       FROM firmware_rollout_devices frd
+       JOIN firmware_rollouts r ON r.id = frd.rollout_id
+       JOIN devices d ON d.id = frd.device_id
+      WHERE frd.device_id = ANY($1::int[])
+        AND r.status IN ('pending','running')
+        AND frd.status NOT IN ('success','failed','skipped')`,
+    [devices.map((d) => d.device_id)]
+  );
+  if (busy.length > 0) {
+    const names = [...new Set(busy.map((b) => b.name))];
+    return res.status(409).json({
+      error:
+        `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} already part of ` +
+        `rollout #${busy[0].rollout_id}, which has not finished. ` +
+        `Wait for it to complete or cancel it first.`,
+      conflicting_rollout_id: busy[0].rollout_id,
+      device_ids: [...new Set(busy.map((b) => b.device_id))],
+    });
+  }
+  // An immediate start needs the orchestrator free; a scheduled one does not.
+  if (start && !scheduled_at && firmwareOrchestrator.running) {
+    return res.status(409).json({
+      error: `Rollout #${firmwareOrchestrator.running} is still running. ` +
+             `Wait for it to finish, or schedule this one for later.`,
+      conflicting_rollout_id: firmwareOrchestrator.running,
+    });
+  }
+
   const rollout = await queryOne<{ id: number }>(
     `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at)
      VALUES ($1,$2,$3,$4,$5) RETURNING id`,
@@ -89,7 +124,12 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
 
   if (start && !scheduled_at) {
     try { await firmwareOrchestrator.start(rollout!.id); }
-    catch (e) { return res.status(409).json({ error: (e as Error).message, id: rollout!.id }); }
+    catch (e) {
+      // Lost a race for the orchestrator. Remove the rollout we just created
+      // rather than leaving an unstartable shell behind.
+      await query(`DELETE FROM firmware_rollouts WHERE id = $1`, [rollout!.id]).catch(() => {});
+      return res.status(409).json({ error: (e as Error).message });
+    }
   }
   res.status(201).json({ id: rollout!.id });
 });
