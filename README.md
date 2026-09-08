@@ -370,6 +370,8 @@ so it moves when behaviour does.
 | [Configuration](docs/configuration.md) | Environment variables, secret management, key rotation, TLS |
 | [Change Guard and Config Health](docs/change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
 | [Sites](docs/sites.md) | Grouping devices into sites, switching between them, and what each site scopes |
+| [Firmware rollouts](docs/firmware.md) | Waves, the upgrade pipeline, and what upgrading several at once costs |
+| [Backups](docs/backups.md) | Finding, reading, comparing and deleting configuration backups |
 | [Alerting](docs/alerting.md) | Rules, channels, ntfy priority mapping, webhooks, maintenance windows |
 | [Single sign-on (OIDC)](docs/sso-oidc.md) | Identity provider setup, group-to-role mapping, break-glass behaviour |
 | [CAPsMAN](docs/capsman.md) | How centrally provisioned APs are modelled, and current limits |

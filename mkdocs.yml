@@ -65,6 +65,8 @@ nav:
       - Alerting: alerting.md
       - SSH keys: ssh-keys.md
       - Bulk commands: commands.md
+      - Firmware rollouts: firmware.md
+      - Backups: backups.md
   - Devices:
       - Cellular (LTE): cellular.md
       - CAPsMAN: capsman.md
