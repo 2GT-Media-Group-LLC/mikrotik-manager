@@ -9,8 +9,7 @@ name: Release
 on:
   push:
     branches: [main]
-    paths:
-      - 'frontend/package.json'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -21,17 +20,26 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 2
+          # Full history and tags: the check below asks whether this version has
+          # already been released, which needs both.
+          fetch-depth: 0
 
-      - name: Read version, and stop if it did not change
+      - name: Read version, and stop if it is already released
         id: v
         run: |
           VERSION=$(node -p "require('./frontend/package.json').version")
-          PREV=$(git show HEAD~1:frontend/package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" || echo "")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$VERSION" = "$PREV" ]; then
+          # Asking "does a tag for this version exist?" rather than "did the
+          # version change since the previous commit?".
+          #
+          # The old comparison was against HEAD~1, which silently skipped the
+          # release whenever a version bump was pushed together with any
+          # follow-up commit — the bump was no longer the tip, so nothing looked
+          # changed. v0.24.3 was lost exactly that way. This form does not care
+          # how commits are batched, and is safe to re-run.
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
             echo "unchanged=true" >> "$GITHUB_OUTPUT"
-            echo "Version unchanged ($VERSION) — nothing to release."
+            echo "v$VERSION is already tagged — nothing to release."
           fi
 
       - name: Compose notes from the commit that shipped it
@@ -44,8 +52,11 @@ jobs:
           # a shell command lets the shell evaluate it — which is both why the
           # first attempt failed and a way to run arbitrary code in CI from a
           # commit message.
+          # The commit that last touched the version, not necessarily the tip:
+          # a version bump is often followed by docs or CI commits.
+          SHIP=$(git log -1 --format=%H -- frontend/package.json)
           {
-            git log -1 --pretty=%B
+            git log -1 --pretty=%B "$SHIP"
             printf '\n---\n'
             printf 'Container image: `ghcr.io/2gt-media-group-llc/mikrotik-manager:%s`\n\n' "$VERSION"
             printf 'Documentation: https://2gt-media-group-llc.github.io/mikrotik-manager/\n'
