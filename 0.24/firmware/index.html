@@ -1019,10 +1019,11 @@ waiting.</p>
 simultaneously. Waves remain sequential either way, so the canary still gates
 everything after it.</p>
 <p>There are two costs, and both are worth understanding before you raise it.</p>
-<p><strong>Halting becomes less precise.</strong> With one device at a time, a failure stops the
-rollout immediately. Running several at once, the wave finishes first — so a wave of
-five can put a bad build on five devices before anything stops. At the default of 1
-these are the same moment.</p>
+<p><strong>Halting becomes less precise.</strong> A failure stops any further device from <em>starting</em>,
+immediately — but devices already running finish, because interrupting one mid-write is
+how you brick it. So with <strong>At once</strong> set to five, up to five devices can carry a bad
+build before anything stops. At the default of 1 nothing else has started, so a failure
+stops the rollout exactly as it always has.</p>
 <p><strong>Devices reboot together.</strong> That is fine for independent routers. It is not fine for
 a switch that the others are reached <em>through</em>: rebooting it alongside them cuts the
 path to devices that are mid-upgrade. Change Guard does not cover this — it protects
