@@ -1,5 +1,6 @@
 import {
-  parseRosId, highestStoredId, isLogReset, selectNewLogLines, type RawLogLine,
+  parseRosId, highestStoredId, isLogReset, selectNewLogLines,
+  surrogateLogId, isSurrogateLogId, type RawLogLine,
 } from '../logDedup';
 
 // Fixed clock so timestamp comparisons are deterministic.
@@ -89,5 +90,51 @@ describe('selectNewLogLines', () => {
   it('treats a line exactly on the boundary as already stored', () => {
     const logs = [{ time: '2026-09-08T00:00:00Z', message: 'boundary' }];
     expect(selectNewLogLines(logs, { lastStoredId: 0, latestStoredTime, parseTime })).toHaveLength(0);
+  });
+});
+
+describe('surrogateLogId', () => {
+  const line = ['sep/08 02:38:10', 'system,info', 'router rebooted'] as const;
+
+  it('is stable for the same line', () => {
+    expect(surrogateLogId(...line)).toBe(surrogateLogId(...line));
+  });
+
+  it('differs when any field differs', () => {
+    const base = surrogateLogId(...line);
+    expect(surrogateLogId('sep/08 02:38:11', line[1], line[2])).not.toBe(base);
+    expect(surrogateLogId(line[0], 'system,error', line[2])).not.toBe(base);
+    expect(surrogateLogId(line[0], line[1], 'something else')).not.toBe(base);
+  });
+
+  // Field boundaries are separated, so shifting text between fields cannot
+  // produce the same key.
+  it('does not confuse field boundaries', () => {
+    expect(surrogateLogId('a', 'b', 'c')).not.toBe(surrogateLogId('ab', '', 'c'));
+  });
+
+  // The column is VARCHAR(20); an over-long key would throw on insert.
+  it('fits the log_id column', () => {
+    const id = surrogateLogId('x'.repeat(500), 'y'.repeat(500), 'z'.repeat(5000));
+    expect(id.length).toBeLessThanOrEqual(20);
+  });
+
+  it('cannot be mistaken for a RouterOS id', () => {
+    const id = surrogateLogId(...line);
+    expect(id.startsWith('#')).toBe(true);
+    expect(isSurrogateLogId(id)).toBe(true);
+    expect(isSurrogateLogId('*CC75')).toBe(false);
+    expect(isSurrogateLogId(null)).toBe(false);
+  });
+
+  /**
+   * The watermark is a max over RouterOS's own hex ids. A synthesised id must
+   * not be parsed as one, or it would poison the high-water mark and make every
+   * real line look already-seen.
+   */
+  it('is ignored by the id watermark', () => {
+    const id = surrogateLogId(...line);
+    expect(parseRosId(id)).toBe(0);
+    expect(highestStoredId([id, '*10'])).toBe(0x10);
   });
 });

@@ -7,6 +7,8 @@
  * the entire buffer once a minute.
  */
 
+import { createHash } from 'crypto';
+
 export interface RawLogLine {
   '.id'?: string;
   time?: string;
@@ -80,4 +82,36 @@ export function selectNewLogLines(
     out.push(log);
   }
   return out;
+}
+
+/**
+ * A stable identifier for a log line that RouterOS gave no `.id`.
+ *
+ * The events table has a unique index on (device_id, log_id) and relies on it
+ * to reject lines already stored. PostgreSQL treats NULLs as *distinct* in a
+ * unique index, so a NULL log_id conflicts with nothing: a device whose log
+ * entries carry no `.id` had no protection at all and re-inserted the same
+ * lines on every poll, without bound.
+ *
+ * Deriving the key from the line's own content restores that protection. The
+ * `#` prefix keeps it out of the space of real RouterOS ids, which are `*`
+ * followed by hex, so the two can never collide or be mistaken for each other.
+ *
+ * The trade, stated plainly: two genuinely separate lines with the same
+ * timestamp, topic and text collapse into one. RouterOS timestamps are
+ * second-resolution, so that is possible. Losing a repeat of an identical
+ * message is a far smaller loss than growing the table by the whole buffer
+ * every minute for ever.
+ */
+export function surrogateLogId(time: string, topics: string, message: string): string {
+  const hash = createHash('sha256')
+    .update(`${time}\u0000${topics}\u0000${message}`)
+    .digest('hex')
+    .slice(0, 16);
+  return `#${hash}`;           // 17 chars, inside the column's VARCHAR(20)
+}
+
+/** True for the ids this module synthesised, as opposed to RouterOS's own. */
+export function isSurrogateLogId(id: string | null | undefined): boolean {
+  return typeof id === 'string' && id.startsWith('#');
 }

@@ -30,7 +30,7 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
  * learned to abandon a timed-out connection, desynchronised the session (#137).
  */
 const LOG_READ_TIMEOUT_MS = 120_000;
-import { selectNewLogLines, highestStoredId, type RawLogLine } from '../../utils/logDedup';
+import { selectNewLogLines, highestStoredId, surrogateLogId, type RawLogLine } from '../../utils/logDedup';
 import { alertService } from '../AlertService';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
@@ -852,17 +852,23 @@ export class DeviceCollector {
 
       const pending: unknown[][] = [];
       for (const log of fresh) {
-        const logId = (log['.id'] || '') as string;
+        const rawId = (log['.id'] || '') as string;
+        const topics = (log['topics'] as string) || '';
+        const message = (log['message'] as string) || '';
         const time = this.parseLogTime(log['time'] || '');
-        const severity = this.mapLogSeverity((log['topics'] as string) || '');
+        const severity = this.mapLogSeverity(topics);
+        // Never store a null log_id: the unique index that stops re-insertion
+        // does not constrain nulls, so a device whose lines carry no `.id`
+        // would accumulate the same entries for ever (#137).
+        const logId = rawId || surrogateLogId(log['time'] || '', topics, message);
         pending.push([
           this.device.id,
           time.toISOString(),
           severity,
-          (log['topics'] as string) || null,
-          (log['message'] as string) || '',
+          topics || null,
+          message,
           JSON.stringify(log),
-          logId || null,
+          logId,
         ]);
       }
 
