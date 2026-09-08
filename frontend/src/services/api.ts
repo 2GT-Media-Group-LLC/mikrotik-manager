@@ -965,15 +965,60 @@ export const operationsApi = {
   syncAll: () => api.post<OpsActionResult>('/operations/sync-all', undefined, { timeout: 180_000 }),
 };
 
+export interface BackupFilters {
+  deviceId?: number | string;
+  type?: string;
+  from?: string;
+  to?: string;
+  search?: string;
+}
+
+export interface BackupContent {
+  id: number;
+  filename: string;
+  device_name: string;
+  device_id: number;
+  backup_type: string | null;
+  notes: string | null;
+  size_bytes: number | null;
+  created_at: string;
+  content: string;
+}
+
+export interface BackupDiffSide {
+  id: number;
+  filename: string;
+  device_name: string;
+  created_at: string;
+  text: string;
+}
+
 export const backupsApi = {
-  list: (deviceId?: number) =>
-    api.get<Backup[]>('/backups', { params: deviceId ? { deviceId } : {} }),
+  list: (filters: BackupFilters = {}) => {
+    // Drop empty values so an unset filter doesn't become `?type=`.
+    const params = Object.fromEntries(
+      Object.entries(filters).filter(([, v]) => v !== undefined && v !== '')
+    );
+    return api.get<Backup[]>('/backups', { params });
+  },
+  types: () => api.get<{ type: string; count: number }[]>('/backups/types'),
   create: (deviceId: number, notes?: string) =>
     api.post<Backup>('/backups', { deviceId, notes }),
   download: (id: number) =>
     api.get(`/backups/${id}/download`, { responseType: 'blob' }),
+  content: (id: number) => api.get<BackupContent>(`/backups/${id}/content`),
+  diff: (fromId: number, toId: number) =>
+    api.get<{ from: BackupDiffSide; to: BackupDiffSide }>(`/backups/${fromId}/diff/${toId}`),
   restore: (id: number) => api.post(`/backups/${id}/restore`),
   delete: (id: number) => api.delete(`/backups/${id}`),
+  bulkDeletePreview: (ids: number[]) =>
+    api.get<{ backups: number; snapshots: number; devices: { name: string; count: number }[] }>(
+      '/backups/bulk-delete/preview', { params: { ids: ids.join(',') } }
+    ),
+  bulkDelete: (ids: number[]) =>
+    api.post<{ deleted: number; requested: number; failures: { id: number; error: string }[] }>(
+      '/backups/bulk-delete', { ids }
+    ),
 };
 
 // ─── Config History ────────────────────────────────────────────────────────────
