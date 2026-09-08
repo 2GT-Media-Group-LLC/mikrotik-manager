@@ -25,7 +25,7 @@
     "helmet": "^8.3.0",
     "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.2",
-    "morgan": "^1.10.0",
+    "morgan": "^1.12.0",
     "nodemailer": "^10.0.1",
     "openid-client": "^5.7.1",
     "otpauth": "^9.5.1",
