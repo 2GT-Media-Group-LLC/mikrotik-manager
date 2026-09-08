@@ -98,12 +98,16 @@ export class FirmwareOrchestrator {
     // Waves stay strictly sequential -- that is the decision point, and it is
     // what makes wave 1 a canary. Concurrency applies only *within* a wave.
     //
-    // At the default of 1 this is the previous behaviour with one difference
-    // worth stating: halting is evaluated at the end of a wave rather than the
-    // instant a device fails. With a wave of one those are the same moment. With
-    // a larger wave it is the trade the operator asked for (#135) -- more devices
-    // carry a bad build before anything stops, in exchange for not waiting out
-    // ten five-minute reboots in series.
+    // Halt-on-failure stops *starting* further devices the moment a failure is
+    // known, rather than at the end of the wave. Devices already in flight are
+    // allowed to finish, because interrupting a device mid-write is how you
+    // brick it.
+    //
+    // At the default concurrency of 1 that is exactly the previous behaviour:
+    // a failure stops the next device immediately. Only devices genuinely
+    // running side by side can carry a bad build, which is the unavoidable part
+    // of the trade in #135 -- not a wider blast radius imposed on rollouts that
+    // never asked for concurrency.
     for (const wave of waves) {
       if (this.cancelRequested || halted) break;
       const inWave = items.filter((i) => i.wave === wave);
@@ -113,11 +117,15 @@ export class FirmwareOrchestrator {
                     `${inWave.length} device(s), up to ${concurrency} at once`);
       }
 
-      const results = await mapWithConcurrency(inWave, concurrency, (item) =>
-        this.cancelRequested
-          ? Promise.resolve(false)
-          : this.upgradeDevice(rollout, item)
-      );
+      let failedInWave = false;
+      const results = await mapWithConcurrency(inWave, concurrency, async (item) => {
+        if (this.cancelRequested) return false;
+        // Do not begin another device once this wave has already failed.
+        if (rollout.halt_on_failure && failedInWave) return false;
+        const ok = await this.upgradeDevice(rollout, item);
+        if (!ok) failedInWave = true;
+        return ok;
+      });
 
       if (rollout.halt_on_failure && results.some((ok) => !ok)) {
         halted = true;

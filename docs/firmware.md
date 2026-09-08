@@ -55,10 +55,11 @@ everything after it.
 
 There are two costs, and both are worth understanding before you raise it.
 
-**Halting becomes less precise.** With one device at a time, a failure stops the
-rollout immediately. Running several at once, the wave finishes first — so a wave of
-five can put a bad build on five devices before anything stops. At the default of 1
-these are the same moment.
+**Halting becomes less precise.** A failure stops any further device from *starting*,
+immediately — but devices already running finish, because interrupting one mid-write is
+how you brick it. So with **At once** set to five, up to five devices can carry a bad
+build before anything stops. At the default of 1 nothing else has started, so a failure
+stops the rollout exactly as it always has.
 
 **Devices reboot together.** That is fine for independent routers. It is not fine for
 a switch that the others are reached *through*: rebooting it alongside them cuts the
