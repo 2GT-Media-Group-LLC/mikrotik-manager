@@ -214,17 +214,34 @@ async function readBackupText(id: string | number): Promise<
     [id]
   );
   if (!meta) return { error: 'Backup not found', status: 404 };
-  if (!fs.existsSync(meta.file_path)) {
+
+  // Open once, then stat and read *that handle*.
+  //
+  // Checking existence, then size, then reading re-resolves the path three
+  // times, and the file can change or vanish between them: a delete landing
+  // mid-sequence turned a clean 404 into an unhandled throw
+  // (CodeQL js/file-system-race). One handle means the size that was checked
+  // and the bytes that were read are the same file.
+  let handle: fs.promises.FileHandle;
+  try {
+    handle = await fs.promises.open(meta.file_path, 'r');
+  } catch {
     return { error: 'Backup file not found on disk', status: 404 };
   }
-  const stat = fs.statSync(meta.file_path);
-  if (stat.size > MAX_PREVIEW_BYTES) {
-    return {
-      error: `This backup is ${Math.round(stat.size / 1024)} KB, too large to preview. Download it instead.`,
-      status: 413,
-    };
+  try {
+    const stat = await handle.stat();
+    if (stat.size > MAX_PREVIEW_BYTES) {
+      return {
+        error: `This backup is ${Math.round(stat.size / 1024)} KB, too large to preview. Download it instead.`,
+        status: 413,
+      };
+    }
+    return { meta, text: await handle.readFile('utf8') };
+  } catch (e) {
+    return { error: `Could not read the backup file: ${(e as Error).message}`, status: 500 };
+  } finally {
+    await handle.close().catch(() => {});
   }
-  return { meta, text: fs.readFileSync(meta.file_path, 'utf8') };
 }
 
 interface BackupMeta {

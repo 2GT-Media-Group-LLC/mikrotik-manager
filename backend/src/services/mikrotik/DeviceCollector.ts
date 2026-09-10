@@ -3183,7 +3183,8 @@ export class DeviceCollector {
         enabled: rule.enabled,
       }, now);
 
-      let sentAt: Date | null = rolled ? null : (rule.last_sent_at ? new Date(rule.last_sent_at) : null);
+      const previousSentAt: Date | null = rule.last_sent_at ? new Date(rule.last_sent_at) : null;
+      let sentAt: Date | null = rolled ? null : previousSentAt;
       // Sending the reset SMS zeroes the carrier's counter — that is what the
       // message is for, and it is the alternative to waiting for midnight. Our
       // counter has to follow, or two things go wrong: the bar keeps climbing
@@ -3191,15 +3192,55 @@ export class DeviceCollector {
       // threshold so the rule re-fires on every cooldown for the rest of the day.
       let periodBytesAfter = periodBytes;
       if (decision.send) {
-        try {
-          await this.sendSms(interfaceName, rule.phone_number, rule.message);
-          sentAt = now;
-          periodBytesAfter = 0;
-          await this.logDataCapSend(interfaceName, 'threshold', rule.phone_number, periodBytes, true, null);
-          console.log(`[DataCap] ${this.device.name}/${interfaceName}: reset SMS sent to ${rule.phone_number}`);
-        } catch (e) {
-          await this.logDataCapSend(interfaceName, 'threshold', rule.phone_number, periodBytes, false, (e as Error).message);
-          console.error(`[DataCap] ${this.device.name}/${interfaceName}: SMS failed:`, (e as Error).message);
+        // Claim the send before making it.
+        //
+        // shouldSend() reads last_sent_at, then two network round trips happen —
+        // fetching counters and sending — before it is written back. Data-cap
+        // tracking runs from the fast poll, the slow poll and a manual sync, and
+        // fast and slow are separate queues that overlap: two of them could both
+        // read the same stale last_sent_at, both clear the cooldown, and both
+        // send. That is the duplicate pair a user reported.
+        //
+        // This UPDATE is the decision. Whoever's row comes back won it; anyone
+        // else finds the cooldown already satisfied and stands down. The
+        // period_key test mirrors the `rolled` rule above: a new period is not
+        // bound by the previous period's cooldown.
+        const claimed = await query<{ id: number }>(
+          `UPDATE lte_data_cap_rules
+              SET last_sent_at = $2, period_key = $3
+            WHERE id = $1
+              AND (
+                period_key IS DISTINCT FROM $3
+                OR last_sent_at IS NULL
+                OR last_sent_at <= $2::timestamptz - (cooldown_minutes * INTERVAL '1 minute')
+              )
+            RETURNING id`,
+          [rule.id, now, key]
+        );
+
+        if (claimed.length === 0) {
+          console.log(
+            `[DataCap] ${this.device.name}/${interfaceName}: another poll already sent the reset SMS; standing down`
+          );
+        } else {
+          try {
+            await this.sendSms(interfaceName, rule.phone_number, rule.message);
+            sentAt = now;
+            periodBytesAfter = 0;
+            await this.logDataCapSend(interfaceName, 'threshold', rule.phone_number, periodBytes, true, null);
+            console.log(`[DataCap] ${this.device.name}/${interfaceName}: reset SMS sent to ${rule.phone_number}`);
+          } catch (e) {
+            // Give the claim back. Holding it would suppress a real retry for a
+            // full cooldown after a send that never happened — and being
+            // throttled costs the user more than a duplicate message does.
+            sentAt = rolled ? null : previousSentAt;
+            await query(
+              `UPDATE lte_data_cap_rules SET last_sent_at = $2 WHERE id = $1`,
+              [rule.id, sentAt]
+            ).catch(() => {});
+            await this.logDataCapSend(interfaceName, 'threshold', rule.phone_number, periodBytes, false, (e as Error).message);
+            console.error(`[DataCap] ${this.device.name}/${interfaceName}: SMS failed:`, (e as Error).message);
+          }
         }
       }
 

@@ -335,7 +335,10 @@ router.get('/:mac/traffic', async (req: Request, res: Response) => {
       if (time && field && value != null) raw.push({ time, field, value });
     });
   } catch (err) {
-    console.error(`[clients/traffic] Flux error for ${logSafe(mac)}:`, err);
+    // Literal format string, value as an argument: with a template here, a mac
+    // containing "%s" would turn the message into a format string and consume
+    // `err` as its substitution (CodeQL js/tainted-format-string).
+    console.error('[clients/traffic] Flux error for %s:', logSafe(mac), err);
   }
 
   // Separate tx and rx series, sort by time, then compute non-negative deltas
@@ -393,7 +396,10 @@ router.get('/:mac/signal', async (req: Request, res: Response) => {
       if (time && value != null) points.push({ time, signal_strength: Math.round(value) });
     });
   } catch (err) {
-    console.error(`[clients/signal] Flux error for ${logSafe(mac)}:`, err);
+    // Literal format string, value as an argument: with a template here, a mac
+    // containing "%s" would turn the message into a format string and consume
+    // `err` as its substitution (CodeQL js/tainted-format-string).
+    console.error('[clients/signal] Flux error for %s:', logSafe(mac), err);
   }
 
   return res.json(points);
