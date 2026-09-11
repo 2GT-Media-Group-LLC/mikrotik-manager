@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
+import { resolveStpUpstreams } from '../utils/stpUpstream';
 import { activeSite } from '../middleware/site';
 import { PollerService } from '../services/PollerService';
 import {
@@ -85,9 +86,16 @@ router.get('/', async (req: Request, res: Response) => {
 
   const graph = buildTopology(devices, allLinks, manualLinks, deviceMacs);
 
+  // Spanning tree gives a directed, loop-free view that neighbour discovery
+  // cannot: which neighbour on an ambiguous port is actually upstream, how deep
+  // each device sits, and which trees are separate. Resolved server-side so the
+  // rollout warning and the diagram agree on one answer (#131 follow-on).
+  const upstreams = resolveStpUpstreams(bridges, allLinks);
+
   res.json({
     devices,
     bridges,
+    upstreams,
     links: graph.links,
     externalNodes: graph.externalNodes,
     segConns: graph.segConns,

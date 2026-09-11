@@ -357,3 +357,64 @@ describe('auditConfig', () => {
     expect(found[found.length - 1].severity).toBe('warning');
   });
 });
+
+describe('spanning tree', () => {
+  // RouterOS accepts protocol-mode=none silently, and on correct cabling nothing
+  // happens — which is exactly why it needs saying.
+  it('flags STP turned off on a bridge that could loop', () => {
+    const snap = healthy({
+      bridges: [{ name: 'bridge', 'vlan-filtering': 'true', pvid: '1', 'protocol-mode': 'none' }],
+    });
+    const f = auditConfig(snap, device).find((x) => x.rule === 'stp-disabled')!;
+    expect(f).toBeDefined();
+    expect(f.severity).toBe('warning');
+    expect(f.objects).toContain('bridge');
+    expect(f.remediation).toContain('protocol-mode=rstp');
+  });
+
+  // A bridge with one port cannot form a loop, so warning about it is noise.
+  it('ignores a single-port bridge', () => {
+    const snap = healthy({
+      bridges: [{ name: 'bridge', 'protocol-mode': 'none' }],
+      bridgePorts: [{ interface: 'ether1', bridge: 'bridge', pvid: '1', disabled: 'false' }],
+    });
+    expect(rules(snap)).not.toContain('stp-disabled');
+  });
+
+  // Disabled ports cannot carry a loop either.
+  it('does not count disabled ports toward the loop risk', () => {
+    const snap = healthy({
+      bridges: [{ name: 'bridge', 'protocol-mode': 'none' }],
+      bridgePorts: [
+        { interface: 'ether1', bridge: 'bridge', pvid: '1', disabled: 'false' },
+        { interface: 'ether2', bridge: 'bridge', pvid: '1', disabled: 'true' },
+      ],
+    });
+    expect(rules(snap)).not.toContain('stp-disabled');
+  });
+
+  it('flags classic STP where RSTP would converge in a fraction of the time', () => {
+    const snap = healthy({
+      bridges: [{ name: 'bridge', 'vlan-filtering': 'true', pvid: '1', 'protocol-mode': 'stp' }],
+    });
+    const f = auditConfig(snap, device).find((x) => x.rule === 'stp-legacy-mode')!;
+    expect(f).toBeDefined();
+    expect(f.severity).toBe('info');
+  });
+
+  it('is quiet on rstp and mstp', () => {
+    for (const mode of ['rstp', 'mstp', 'RSTP']) {
+      const snap = healthy({
+        bridges: [{ name: 'bridge', 'vlan-filtering': 'true', pvid: '1', 'protocol-mode': mode }],
+      });
+      expect(rules(snap)).not.toContain('stp-disabled');
+      expect(rules(snap)).not.toContain('stp-legacy-mode');
+    }
+  });
+
+  // The base fixture reports no protocol-mode at all; absence must not be read
+  // as "none", or every device with a partial snapshot would be flagged.
+  it('does not treat a missing protocol-mode as disabled', () => {
+    expect(rules(healthy())).not.toContain('stp-disabled');
+  });
+});

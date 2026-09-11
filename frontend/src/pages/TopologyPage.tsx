@@ -29,6 +29,15 @@ import { useThemeStore } from '../store/themeStore';
 import { layoutTree } from '../utils/topologyLayout';
 import { resolveStpRoot, type BridgeInfo, type RootVerdict } from '../utils/stpRoot';
 
+/** Upstream verdict as returned by /api/topology; resolved server-side. */
+interface StpUpstream {
+  deviceId: number;
+  bridgeName: string;
+  upstreamDeviceId: number | null;
+  confidence: 'resolved' | 'is-root' | 'external-root' | 'ambiguous' | 'unknown';
+  rootBridgeId: string | null;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const statusColor: Record<string, string> = {
@@ -211,6 +220,7 @@ function buildGraph(
   externalNodes: ExternalTopologyNode[],
   links: TopologyLink[],
   bridges: BridgeInfo[],
+  upstreams: StpUpstream[],
   segConns: { src: string; dst: string; port: string }[],
   manualLinkIds: { id: number; from_device_id: number; to_device_id: number }[],
   connectMode: boolean,
@@ -267,6 +277,15 @@ function buildGraph(
   // 'root-port', so it never matched anything and the first device in the list
   // was crowned every time (#131).
   const hasStp = bridges.length > 0;
+
+  // Device -> its upstream, for the confident answers only. Resolved server-side
+  // so the diagram and the rollout warning cannot disagree about the hierarchy.
+  const stpParent = new Map<string, string>();
+  for (const u of upstreams) {
+    if (u.confidence === 'resolved' && u.upstreamDeviceId != null) {
+      stpParent.set(String(u.deviceId), String(u.upstreamDeviceId));
+    }
+  }
   const rootVerdicts = new Map<string, RootVerdict>();
   const stpRootIds = new Set<string>();
 
@@ -331,15 +350,42 @@ function buildGraph(
     const bfs = [rootId];
     depth.set(rootId, 0);
     children.set(rootId, []);
+
+    // Where spanning tree named a definite upstream, that is the parent.
+    //
+    // Breadth-first over discovered adjacency attaches a node to whichever
+    // neighbour it happened to reach first, and a trunk port routinely resolves
+    // to several neighbours at once — so the drawn hierarchy could differ from
+    // the one the switches are actually using. STP knows which neighbour is
+    // upstream; this defers to it and falls back to adjacency for the rest.
     while (bfs.length) {
       const curr = bfs.shift()!;
       for (const n of adj.get(curr) || []) {
         if (!compSet.has(n) || depth.has(n)) continue;
+        const realParent = stpParent.get(n);
+        // Someone else is its real parent — leave it for them to claim.
+        if (realParent && realParent !== curr && compSet.has(realParent)) continue;
         depth.set(n, depth.get(curr)! + 1);
         children.set(n, []);
         children.get(curr)!.push(n);
         bfs.push(n);
       }
+    }
+
+    // Anything whose STP parent was never reached (a cable STP does not agree
+    // with, or a parent outside this component) still has to be drawn.
+    let stragglers = comp.filter((id) => !depth.has(id));
+    while (stragglers.length) {
+      const before = stragglers.length;
+      for (const id of [...stragglers]) {
+        const attach = [...(adj.get(id) || [])].find((n) => depth.has(n));
+        if (attach === undefined) continue;
+        depth.set(id, depth.get(attach)! + 1);
+        children.set(id, []);
+        children.get(attach)!.push(id);
+        stragglers = stragglers.filter((x) => x !== id);
+      }
+      if (stragglers.length === before) break;   // unreachable; leave them out
     }
 
     for (const kids of children.values()) {
@@ -532,6 +578,7 @@ export default function TopologyPage() {
       (data.externalNodes as ExternalTopologyNode[]) || [],
       (data.links as TopologyLink[]) || [],
       (data.bridges as BridgeInfo[]) || [],
+      (data.upstreams as StpUpstream[]) || [],
       (data.segConns as { src: string; dst: string; port: string }[]) || [],
       (data.manualLinkIds as { id: number; from_device_id: number; to_device_id: number }[]) || [],
       connectMode,

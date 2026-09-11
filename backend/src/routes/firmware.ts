@@ -7,6 +7,7 @@ import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector
 import { firmwareOrchestrator } from '../services/FirmwareOrchestrator';
 import { clampConcurrency, MAX_WAVE_CONCURRENCY } from '../utils/concurrency';
 import { findUpstreamWithinSelection } from '../utils/rolloutTopology';
+import type { StpBridge } from '../utils/stpUpstream';
 
 const router = Router();
 router.use(requireAuth);
@@ -160,18 +161,23 @@ router.get('/rollouts/upstream-check', async (req: Request, res: Response) => {
   if (ids.length < 2) return res.json({ upstream: [] });
 
   const links = await query<{
-    from_device_id: number; to_device_id: number | null;
-    from_interface: string | null; stp_role: string | null;
+    from_device_id: number; to_device_id: number | null; from_interface: string | null;
   }>(
-    `SELECT from_device_id, to_device_id, from_interface, stp_role
+    `SELECT from_device_id, to_device_id, from_interface
        FROM topology_links WHERE to_device_id IS NOT NULL`
+  );
+  // Spanning tree is what turns an ambiguous port into a definite upstream.
+  const bridges = await query<StpBridge>(
+    `SELECT device_id, bridge_name, bridge_id, root_bridge, root_bridge_id,
+            root_port, root_path_cost
+       FROM device_bridges`
   );
   const names = await query<{ id: number; name: string }>(
     `SELECT id, name FROM devices WHERE id = ANY($1::int[])`, [ids]
   );
   const nameById = new Map(names.map((n) => [n.id, n.name]));
 
-  const upstream = findUpstreamWithinSelection(ids, links).map((id) => ({
+  const upstream = findUpstreamWithinSelection(ids, links, bridges).map((id) => ({
     id, name: nameById.get(id) ?? `Device ${id}`,
   }));
   return res.json({ upstream, maxConcurrency: MAX_WAVE_CONCURRENCY });

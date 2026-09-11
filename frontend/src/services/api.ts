@@ -1078,6 +1078,13 @@ export const topologyApi = {
       externalNodes: import('../types').ExternalTopologyNode[];
       /** What each bridge reports about the spanning tree (#131). */
       bridges: import('../utils/stpRoot').BridgeInfo[];
+      /** Each device's upstream as resolved from spanning tree, server-side. */
+      upstreams: {
+        deviceId: number; bridgeName: string;
+        upstreamDeviceId: number | null;
+        confidence: 'resolved' | 'is-root' | 'external-root' | 'ambiguous' | 'unknown';
+        rootBridgeId: string | null;
+      }[];
       segConns: { src: string; dst: string; port: string }[];
       manualLinkIds: { id: number; from_device_id: number; to_device_id: number }[];
     }>('/topology'),

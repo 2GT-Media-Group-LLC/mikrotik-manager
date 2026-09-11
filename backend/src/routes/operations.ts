@@ -367,6 +367,48 @@ router.get('/insights', async (req: Request, res: Response) => {
     }
   } catch { /* findings table unavailable */ }
 
+  // Spanning tree — what the fleet view can see and a single device cannot.
+  //
+  // A managed switch following a root nobody has added means part of the layer-2
+  // topology is decided by equipment outside this tool. That is not necessarily
+  // wrong, but it is worth knowing: a topology change there reconverges our
+  // network, and we cannot see why.
+  try {
+    const stpBridges = await query<{
+      device_id: number; name: string; bridge_name: string; bridge_id: string | null;
+      root_bridge: boolean | null; root_bridge_id: string | null;
+      root_port: string | null; root_path_cost: number | null;
+    }>(`
+      SELECT b.device_id, d.name, b.bridge_name, b.bridge_id, b.root_bridge,
+             b.root_bridge_id, b.root_port, b.root_path_cost
+        FROM device_bridges b JOIN devices d ON d.id = b.device_id
+       ${siteScopeByDevice(siteId, 'b.device_id') ? `WHERE ${siteScopeByDevice(siteId, 'b.device_id')}` : ''}`);
+
+    const owned = new Set(
+      stpBridges.map((b) => (b.bridge_id || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const external = new Map<string, string[]>();
+    for (const b of stpBridges) {
+      const rootId = (b.root_bridge_id || '').trim().toLowerCase();
+      if (!rootId || b.root_bridge === true || owned.has(rootId)) continue;
+      if (!external.has(b.root_bridge_id!)) external.set(b.root_bridge_id!, []);
+      external.get(b.root_bridge_id!)!.push(b.name);
+    }
+    for (const [rootId, names] of external) {
+      const devices = [...new Set(names)].sort();
+      attention.push({
+        sev: 'info', category: 'topology',
+        title: `Spanning-tree root ${rootId} is not a managed device`,
+        body:
+          `${devices.join(', ')} ${devices.length === 1 ? 'follows' : 'follow'} a root bridge ` +
+          `that no device here owns. Layer-2 decisions for that segment — which links forward ` +
+          `and which are blocked — are being made by equipment this tool cannot see. Adding it ` +
+          `would complete the topology.`,
+        action: 'Open Topology', path: '/topology',
+      });
+    }
+  } catch { /* device_bridges unavailable */ }
+
   // Baseline anomalies (client counts, CPU, error bursts)
   const anomalies = await detectAnomalies(siteId);
   for (const a of anomalies) attention.push(a);

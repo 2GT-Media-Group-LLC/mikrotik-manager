@@ -513,6 +513,84 @@ function ruleDuplicateAddress(snap: DeviceSnapshot): ConfigFinding[] {
 const SEVERITY_RANK: Record<FindingSeverity, number> = { critical: 0, warning: 1, info: 2 };
 
 /** Run every rule against a snapshot. Pure — no device or database access. */
+
+const STP_DOC = 'https://help.mikrotik.com/docs/spaces/ROS/pages/328068/Bridging+and+Switching#BridgingandSwitching-SpanningTreeProtocol';
+
+/**
+ * Spanning tree turned off on a bridge with more than one active port.
+ *
+ * RouterOS accepts `protocol-mode=none` without comment, and on a correctly
+ * cabled network nothing happens — which is precisely why it is dangerous. STP
+ * is not what makes the network work; it is what stops a second cable between
+ * two switches from becoming a broadcast storm that saturates every link and
+ * takes the segment down. With it off there is nothing to detect that loop and
+ * nothing to break it.
+ *
+ * Single-port bridges are ignored: they cannot loop.
+ */
+function ruleStpDisabled(snap: DeviceSnapshot): ConfigFinding[] {
+  const out: ConfigFinding[] = [];
+  for (const b of snap.bridges) {
+    const name = b['name'];
+    if (!name) continue;
+    const mode = (b['protocol-mode'] || '').toLowerCase();
+    if (mode !== 'none') continue;
+
+    const ports = snap.bridgePorts
+      .filter((p) => p['bridge'] === name && !isTrue(p['disabled']))
+      .map((p) => p['interface'])
+      .filter(Boolean);
+    if (ports.length < 2) continue;
+
+    out.push({
+      rule: 'stp-disabled',
+      fingerprint: `stp-disabled:${name}`,
+      severity: 'warning',
+      title: `Spanning tree is off on bridge ${name} (${ports.length} active ports)`,
+      detail:
+        `protocol-mode is "none", so this bridge runs no spanning tree. Nothing is wrong `
+        + `while the cabling is correct — but a second path between two switches, whether `
+        + `patched deliberately or by accident, becomes a forwarding loop. A loop at layer 2 `
+        + `has no TTL to stop it: broadcasts multiply until the segment is unusable, and it `
+        + `usually takes the management path with it.`,
+      remediation:
+        `Set a spanning tree protocol on the bridge: /interface/bridge set ${name} `
+        + `protocol-mode=rstp. Leave it off only where the bridge physically cannot loop.`,
+      docUrl: STP_DOC,
+      objects: [name, ...ports],
+    });
+  }
+  return out;
+}
+
+/**
+ * Classic STP where RSTP would do.
+ *
+ * Both prevent loops; they differ in how long the network is down while they
+ * work it out. Classic STP walks listening and learning on a timer — 30 to 50
+ * seconds before a port forwards. RSTP negotiates with its neighbour and is
+ * usually sub-second. The difference is only visible when a link fails, which is
+ * exactly when it is least welcome.
+ */
+function ruleStpLegacyMode(snap: DeviceSnapshot): ConfigFinding[] {
+  return snap.bridges
+    .filter((b) => b['name'] && (b['protocol-mode'] || '').toLowerCase() === 'stp')
+    .map((b) => ({
+      rule: 'stp-legacy-mode',
+      fingerprint: `stp-legacy-mode:${b['name']}`,
+      severity: 'info' as FindingSeverity,
+      title: `Bridge ${b['name']} runs classic STP rather than RSTP`,
+      detail:
+        `Recovery from a failed link takes 30-50 seconds under classic STP, against `
+        + `well under a second with RSTP. Everything through this bridge is offline for that `
+        + `whole interval. RSTP falls back to classic automatically when it meets a neighbour `
+        + `that only speaks it, so changing this is safe even in a mixed network.`,
+      remediation: `/interface/bridge set ${b['name']} protocol-mode=rstp`,
+      docUrl: STP_DOC,
+      objects: [b['name']],
+    }));
+}
+
 export function auditConfig(snap: DeviceSnapshot, device: GuardDevice): ConfigFinding[] {
   const findings = [
     ...ruleIpOnBridgePort(snap),
@@ -527,6 +605,8 @@ export function auditConfig(snap: DeviceSnapshot, device: GuardDevice): ConfigFi
     ...ruleMultipleHwBridges(snap),
     ...ruleMtuExceedsL2Mtu(snap),
     ...ruleDuplicateAddress(snap),
+    ...ruleStpDisabled(snap),
+    ...ruleStpLegacyMode(snap),
   ];
   return findings.sort(
     (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.rule.localeCompare(b.rule)
