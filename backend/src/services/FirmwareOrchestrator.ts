@@ -14,6 +14,7 @@ import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
 import { BackupService } from './BackupService';
 import { mapWithConcurrency, clampConcurrency } from '../utils/concurrency';
 import { interruptedOutcome, INTERRUPTED_RUN_ERROR } from '../utils/interrupted';
+import { describeUpdateStatus, type UpdateStatus } from '../utils/updateStatus';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000; // large images on slow links
@@ -273,19 +274,30 @@ export class FirmwareOrchestrator {
       const freeMb = Math.round((parseInt(res['free-hdd-space'] || '0', 10) / 1048576) * 10) / 10;
       const spaceNote = freeMb > 0 ? ` The device reports ${freeMb} MB free.` : '';
 
-      // The download command blocks until the image has landed, which on an
-      // ordinary link is a minute or more. If that outruns its budget the
-      // connection can no longer be trusted, so it is replaced rather than
-      // reused -- but a timed-out download is *not* evidence of failure. The
-      // device is asked on a fresh connection what actually happened, because
-      // declaring failure here is what made a working download look broken
-      // when several devices ran in one wave (#136).
-      let downloaded = false;
+      // Take the answer from the command itself.
+      //
+      // /system/package/update/download streams a row per progress update and
+      // ends with the outcome, so the device tells us directly whether the image
+      // landed. The previous version discarded all of it and inferred completion
+      // by polling for /downloaded/i -- which matches "Downloaded 86% (11.6MiB)".
+      // A poll landing mid-download therefore looked like success, and the
+      // device was rebooted on a partial image; it came back on the old version
+      // and was reported as "rebooted but still reports X", which was true and
+      // was our doing (#141).
+      const step = (msg: string) => console.log(`[Firmware] ${device.name}: ${msg}`);
+      step(`downloading ${latest} (installed ${installed || 'unknown'}, ${freeMb || '?'} MB free)`);
+
+      let outcome: UpdateStatus | null = null;
+      let reachedPercent: number | null = null;
       try {
-        await collector.downloadUpdate(DOWNLOAD_TIMEOUT_MS);
+        const result = await collector.downloadUpdate(DOWNLOAD_TIMEOUT_MS);
+        outcome = result.status;
+        reachedPercent = result.peakPercent;
+        step(`download command finished after ${result.rows} progress update(s): ${describeUpdateStatus(outcome)}`);
       } catch (e) {
-        console.warn(`[Firmware] ${device.name}: download command did not return cleanly ` +
-                     `(${(e as Error).message}); re-checking on a new connection`);
+        // A timed-out or dropped command is not evidence of failure -- the image
+        // may well have landed. Ask again on a fresh connection.
+        step(`download command did not return cleanly (${(e as Error).message}); re-checking on a new connection`);
         collector.disconnect();
         try {
           await collector.connect();
@@ -297,29 +309,83 @@ export class FirmwareOrchestrator {
         }
       }
 
-      // Confirm the image is on the device. Normally this is true immediately,
-      // because the download command only returns once it is; the wait covers
-      // RouterOS versions that return early and report progress instead.
+      if (outcome?.state === 'error') {
+        collector.disconnect();
+        const got = reachedPercent != null ? ` It reached ${reachedPercent}%.` : '';
+        return fail(`Device could not download ${latest}: ${outcome.message}.${got}${spaceNote}`);
+      }
+
+      // "New version is available" *after* the download command has run and
+      // ended its stream means the download stopped without landing the image.
+      // That is a conclusive answer, so polling ten minutes for it to change is
+      // just a slower way of reporting the same failure -- and slow, vague
+      // failure is the whole complaint.
+      if (outcome?.state === 'available' || outcome?.state === 'up-to-date') {
+        collector.disconnect();
+        const got = reachedPercent != null
+          ? ` It stopped at ${reachedPercent}%.`
+          : ' It never reported any progress.';
+        return fail(
+          `Device did not download ${latest} — it still reports "${outcome.message}" after the ` +
+          `download finished.${got} Nothing was rebooted.${spaceNote}` +
+          (freeMb > 0 && freeMb < 20 ? ' That is very unlikely to be enough for a RouterOS image.' : '')
+        );
+      }
+
+      // Poll only when the command did not already say it finished, and report
+      // the percentage each time so a stalled download is visibly stalled rather
+      // than merely slow.
+      let downloaded = outcome?.state === 'downloaded';
+      let lastSeen = '';
+      let unreadable = 0;
       const dlDeadline = Date.now() + DOWNLOAD_TIMEOUT_MS;
-      while (Date.now() < dlDeadline) {
+      while (!downloaded && Date.now() < dlDeadline) {
         if (this.cancelRequested) break;
-        const s = await collector.getUpdateStatus().catch(() => '');
-        if (/downloaded/i.test(s)) { downloaded = true; break; }
-        if (/error|fail/i.test(s)) {
+        let s: UpdateStatus;
+        try {
+          s = await collector.getUpdateStatusParsed();
+          unreadable = 0;
+        } catch (e) {
+          // Not knowing is not the same as "still downloading". A connection
+          // that has stopped answering used to be swallowed into an empty
+          // string and waited out for the full ten minutes.
+          unreadable++;
+          step(`status unreadable (${(e as Error).message})`);
+          if (unreadable >= 3) {
+            collector.disconnect();
+            return fail(
+              `Lost contact with the device while downloading ${latest}. Nothing was rebooted.${spaceNote}`
+            );
+          }
+          await sleep(DOWNLOAD_POLL_MS);
+          continue;
+        }
+
+        const described = describeUpdateStatus(s);
+        if (described !== lastSeen) { step(described); lastSeen = described; }
+        if (s.percent != null) reachedPercent = s.percent;
+
+        if (s.state === 'downloaded') { downloaded = true; break; }
+        if (s.state === 'error') {
           collector.disconnect();
-          return fail(`Device could not download ${latest}: ${s}.${spaceNote}`);
+          return fail(`Device could not download ${latest}: ${s.message}.${spaceNote}`);
         }
         await sleep(DOWNLOAD_POLL_MS);
       }
+
       if (!downloaded) {
         collector.disconnect();
+        const got = reachedPercent != null
+          ? ` It reached ${reachedPercent}% before stopping.`
+          : ' It never reported any progress.';
         return fail(
           `Device did not finish downloading ${latest} within ` +
-          `${Math.round(DOWNLOAD_TIMEOUT_MS / 60000)} minutes. Nothing was rebooted.${spaceNote}` +
+          `${Math.round(DOWNLOAD_TIMEOUT_MS / 60000)} minutes.${got} Nothing was rebooted.${spaceNote}` +
           (freeMb > 0 && freeMb < 20 ? ' That is unlikely to be enough for a RouterOS image.' : '')
         );
       }
 
+      step(`image confirmed on device; rebooting into ${latest}`);
       await this.setItem(item.id, { to_version: latest });
       await collector.reboot();
     } catch (e) {
@@ -334,6 +400,8 @@ export class FirmwareOrchestrator {
     const deadline = Date.now() + REBOOT_TIMEOUT_MS;
     let backOnline = false;
     let rebootProven = false;
+    /** False when a missing uptime reading made the restart an assumption. */
+    let uptimeComparable = false;
     let newVersion = '';
     while (Date.now() < deadline) {
       if (this.cancelRequested) break;
@@ -348,7 +416,13 @@ export class FirmwareOrchestrator {
         // An uptime that did not fall means we are talking to the same running
         // system, not a restarted one — so keep waiting rather than reading the
         // old version and calling it a failed upgrade.
-        rebootProven = uptimeBefore == null || uptimeNow == null || uptimeNow < uptimeBefore;
+        //
+        // Where either reading is missing the restart is *assumed*, not proven,
+        // and that distinction has to survive: the failure message below used to
+        // state "Device rebooted but still reports X" on the strength of an
+        // assumption, asserting the very thing this check exists to establish.
+        uptimeComparable = uptimeBefore != null && uptimeNow != null;
+        rebootProven = !uptimeComparable || uptimeNow! < uptimeBefore!;
         if (rebootProven) { await this.setItem(item.id, { status: 'verifying' }); backOnline = true; break; }
         await sleep(REBOOT_POLL_MS);
       } catch {
@@ -369,7 +443,13 @@ export class FirmwareOrchestrator {
 
     // 4. Verify the version actually moved
     if (newVersion && fromVersion && newVersion === fromVersion) {
-      return fail(`Device rebooted but still reports ${newVersion} — the update did not apply`);
+      return fail(
+        uptimeComparable
+          ? `Device rebooted but still reports ${newVersion} — the update did not apply. ` +
+            `The image was confirmed on the device beforehand, so check its free space and logs.`
+          : `Device still reports ${newVersion} after the upgrade, and its uptime could not be ` +
+            `read, so whether it restarted at all is unknown. Nothing here proves a reboot happened.`
+      );
     }
     // 5. RouterBOOT, if asked for (issue #113).
     //

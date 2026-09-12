@@ -31,6 +31,18 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
  */
 const LOG_READ_TIMEOUT_MS = 120_000;
 import { selectNewLogLines, highestStoredId, surrogateLogId, type RawLogLine } from '../../utils/logDedup';
+import {
+  parseUpdateStatus, latestFromStream, peakPercent, type UpdateStatus,
+} from '../../utils/updateStatus';
+
+/** What `/system/package/update/download` reported while it ran. */
+export interface DownloadResult {
+  status: UpdateStatus;
+  /** Furthest percentage seen, so a partial download can say how far it got. */
+  peakPercent: number | null;
+  /** Number of progress rows streamed; zero means the device said nothing. */
+  rows: number;
+}
 import { alertService } from '../AlertService';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
@@ -3848,11 +3860,29 @@ export class DeviceCollector {
    * be observed — and on at least one CCR it neither downloaded nor rebooted
    * while reporting nothing at all (#firmware).
    */
-  async downloadUpdate(timeoutMs = UPDATE_DOWNLOAD_TIMEOUT_MS): Promise<void> {
+  /**
+   * Download the pending image, returning what the device said while doing it.
+   *
+   * The command streams one row per progress update -- around seventy for a full
+   * image, ending with the outcome. Discarding them, as this used to, threw away
+   * both the authoritative result and the percentage the UI had no other way to
+   * show; the caller then had to infer completion by polling, which is where the
+   * substring bug lived (#141).
+   */
+  async downloadUpdate(timeoutMs = UPDATE_DOWNLOAD_TIMEOUT_MS): Promise<DownloadResult> {
     // Blocks until the image has landed -- a minute or more is normal, and the
     // 30-second default read timeout was cutting it off and corrupting the
     // connection (#136).
-    await this.client.execute('/system/package/update/download', {}, [], { timeoutMs });
+    const rows = await this.client.execute(
+      '/system/package/update/download', {}, [], { timeoutMs }
+    );
+    return { status: latestFromStream(rows), peakPercent: peakPercent(rows), rows: rows.length };
+  }
+
+  /** The device's current update status, parsed. */
+  async getUpdateStatusParsed(): Promise<UpdateStatus> {
+    const rows = await this.client.execute('/system/package/update/print');
+    return parseUpdateStatus(rows[0]?.['status']);
   }
 
   /** The `status` line from /system/package/update, e.g. "Downloaded, please reboot…". */
