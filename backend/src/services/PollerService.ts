@@ -9,6 +9,7 @@ import { alertService } from './AlertService';
 import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 import { cronMatches } from '../utils/cron';
+import { updateAvailable } from '../utils/rosVersion';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -1192,8 +1193,9 @@ export class PollerService {
         const statusText = (updateInfo['status'] ?? '').toLowerCase();
 
         const hasUpdate = Boolean(
-          statusText.includes('available') ||
-          (latestVersion && installedVersion && latestVersion !== installedVersion)
+          updateAvailable({
+            installed: installedVersion, latest: latestVersion, status: statusText,
+          })
         );
 
         // Read current flag before updating so we can detect first-discovery

@@ -147,11 +147,17 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
   // Pre-populate from stored DB state so the section is useful without a manual check
   useEffect(() => {
     if (device.ros_version || device.latest_ros_version || device.firmware_update_available) {
+      // Pre-populated from the database, not from the device. The status is
+      // derived from the stored flag and the channel is simply not stored at
+      // all, so presenting this identically to a fresh check invites exactly the
+      // confusion it caused: a synthesised "New version is available" beside a
+      // blank channel, with no way to tell it was last week's answer (#144).
       setUpdateInfo({
         'installed-version': device.ros_version || '',
         'latest-version': device.latest_ros_version || '',
         'status': device.firmware_update_available ? 'New version is available' : 'System is up to date',
         'channel': '',
+        'from-stored-state': 'yes',
       });
     }
   }, [device.id]);
@@ -614,12 +620,18 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
 
           {updateInfo ? (
             <div className="space-y-3">
+              {updateInfo['from-stored-state'] && (
+                <p className="text-xs text-gray-400 dark:text-slate-500">
+                  From the last stored check — press Check for Updates to ask the device now.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
                 {[
                   ['Status', updateInfo['status'] || '—'],
                   ['Installed Version', installedVersion || '—'],
                   ['Latest Version', latestVersion || '—'],
-                  ['Channel', updateInfo['channel'] || '—'],
+                  ['Channel', updateInfo['channel']
+                    || (updateInfo['from-stored-state'] ? 'not checked yet' : '—')],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between border-b border-gray-100 dark:border-slate-700 pb-2">
                     <span className="text-gray-500 dark:text-slate-400">{k}</span>

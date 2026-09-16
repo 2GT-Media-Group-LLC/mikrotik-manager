@@ -6,6 +6,7 @@ import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { firmwareOrchestrator } from '../services/FirmwareOrchestrator';
 import { clampConcurrency, MAX_WAVE_CONCURRENCY } from '../utils/concurrency';
+import { updateAvailable } from '../utils/rosVersion';
 import { findUpstreamWithinSelection } from '../utils/rolloutTopology';
 import type { StpBridge } from '../utils/stpUpstream';
 
@@ -50,7 +51,8 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
       const s = await c.checkForUpdates();
       const installed = (s['installed-version'] || '').trim();
       const latest = (s['latest-version'] || '').trim();
-      const available = !!latest && latest !== installed;
+      // A version comparison, not a string one (#144).
+      const available = updateAvailable({ installed, latest, status: s['status'] });
       await query(
         `UPDATE devices SET ros_version=COALESCE(NULLIF($2,''), ros_version),
                 latest_ros_version=NULLIF($3,''), firmware_update_available=$4 WHERE id=$1`,

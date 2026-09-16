@@ -20,6 +20,7 @@ import { isMultiVlanSpec } from '../utils/vlan';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
 import { logSafe } from '../utils/logSafe';
+import { updateAvailable } from '../utils/rosVersion';
 import { DEVICE_BASE_COLUMNS } from '../services/deviceColumns';
 import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
 import { siteScopeDevices, andSite } from '../utils/siteScope';
@@ -1567,9 +1568,11 @@ router.post('/:id/check-update', async (req: Request, res: Response) => {
     const latestVersion = (updateInfo['latest-version'] ?? '').trim();
     const installedVersion = (updateInfo['installed-version'] ?? '').trim();
     const statusText = (updateInfo['status'] ?? '').toLowerCase();
-    const hasUpdate =
-      statusText.includes('available') ||
-      Boolean(latestVersion && installedVersion && latestVersion !== installedVersion);
+    // Compared as versions, not as strings: "different" is not "newer", and
+    // reading it that way offered an older release as an update (#144).
+    const hasUpdate = updateAvailable({
+      installed: installedVersion, latest: latestVersion, status: statusText,
+    });
 
     await query(
       `UPDATE devices SET firmware_update_available = $1, latest_ros_version = $2, updated_at = NOW() WHERE id = $3`,
