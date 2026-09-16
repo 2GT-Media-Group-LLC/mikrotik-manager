@@ -19,6 +19,12 @@ import { describeUpdateStatus, type UpdateStatus } from '../utils/updateStatus';
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000; // large images on slow links
 const DOWNLOAD_POLL_MS = 10_000;
+/**
+ * How long to keep asking after the download command claims there is merely an
+ * update "available". Long enough for a build that returns early to get started,
+ * short enough that a genuine refusal is still reported promptly.
+ */
+const AVAILABLE_GRACE_POLLS = 3;
 
 /** Reads better than a bare version in a sentence that may have none. */
 const latestLabel = (v: string) => (v ? `Version ${v}` : 'The update');
@@ -315,21 +321,52 @@ export class FirmwareOrchestrator {
         return fail(`Device could not download ${latest}: ${outcome.message}.${got}${spaceNote}`);
       }
 
-      // "New version is available" *after* the download command has run and
-      // ended its stream means the download stopped without landing the image.
-      // That is a conclusive answer, so polling ten minutes for it to change is
-      // just a slower way of reporting the same failure -- and slow, vague
-      // failure is the whole complaint.
+      // "New version is available" after the command returned usually means the
+      // download stopped without landing the image -- but only usually.
+      //
+      // The command blocks and streams progress on the RouterOS versions tested
+      // here, so a final "available" is conclusive. It is not safe to assume
+      // every build behaves that way: one that dispatches the download and
+      // returns straight away would report "available" for a download that is
+      // merely starting, and treating that as failure turns a working upgrade
+      // into an instant, confident error.
+      //
+      // So the claim is checked rather than trusted. A short grace period asks
+      // whether progress appears; if it does, this was an early return and the
+      // normal wait takes over. Only a status that stays put is a failure.
       if (outcome?.state === 'available' || outcome?.state === 'up-to-date') {
-        collector.disconnect();
-        const got = reachedPercent != null
-          ? ` It stopped at ${reachedPercent}%.`
-          : ' It never reported any progress.';
-        return fail(
-          `Device did not download ${latest} — it still reports "${outcome.message}" after the ` +
-          `download finished.${got} Nothing was rebooted.${spaceNote}` +
-          (freeMb > 0 && freeMb < 20 ? ' That is very unlikely to be enough for a RouterOS image.' : '')
-        );
+        step(`download command returned "${outcome.message}" — checking whether it started anyway`);
+        let started = false;
+        for (let i = 0; i < AVAILABLE_GRACE_POLLS; i++) {
+          await sleep(DOWNLOAD_POLL_MS);
+          if (this.cancelRequested) break;
+          const s = await collector.getUpdateStatusParsed().catch(() => null);
+          if (!s) continue;
+          if (s.state === 'downloading' || s.state === 'downloaded') {
+            step(`it did: ${describeUpdateStatus(s)}`);
+            if (s.percent != null) reachedPercent = s.percent;
+            outcome = s;
+            started = true;
+            break;
+          }
+          if (s.state === 'error') {
+            collector.disconnect();
+            return fail(`Device could not download ${latest}: ${s.message}.${spaceNote}`);
+          }
+        }
+
+        if (!started) {
+          collector.disconnect();
+          const got = reachedPercent != null
+            ? ` It stopped at ${reachedPercent}%.`
+            : ' It never reported any progress.';
+          return fail(
+            `Device did not download ${latest} — it still reports "${outcome.message}" ` +
+            `${Math.round((AVAILABLE_GRACE_POLLS * DOWNLOAD_POLL_MS) / 1000)}s after the download ` +
+            `command finished.${got} Nothing was rebooted.${spaceNote}` +
+            (freeMb > 0 && freeMb < 20 ? ' That is very unlikely to be enough for a RouterOS image.' : '')
+          );
+        }
       }
 
       // Poll only when the command did not already say it finished, and report
