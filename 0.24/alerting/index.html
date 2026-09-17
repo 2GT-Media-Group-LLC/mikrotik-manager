@@ -505,6 +505,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#certificate-expiry" class="md-nav__link">
+    <span class="md-ellipsis">
+      Certificate expiry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#delivery-channels" class="md-nav__link">
     <span class="md-ellipsis">
       Delivery channels
@@ -937,6 +946,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#certificate-expiry" class="md-nav__link">
+    <span class="md-ellipsis">
+      Certificate expiry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#delivery-channels" class="md-nav__link">
     <span class="md-ellipsis">
       Delivery channels
@@ -1049,6 +1067,51 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 </tbody>
 </table>
 <p>Alerts are suppressed for devices inside an active <a href="#maintenance-windows">maintenance window</a>.</p>
+<h2 id="certificate-expiry">Certificate expiry<a class="headerlink" href="#certificate-expiry" title="Permanent link">&para;</a></h2>
+<p>Certificates on each device are read on the slow poll and checked hourly. The
+<code>cert_expiry</code> rule decides the rest: its <strong>threshold</strong> is the warning window in days
+(14 by default) and its <strong>cooldown</strong> how often you are told about the same certificate
+(daily by default).</p>
+<p>It is <strong>off by default</strong> — turn it on in Settings → Alerts.</p>
+<p>Every certificate is tracked separately, so a device with an expiring CA and an expiring
+client certificate raises two alerts rather than one. A certificate authority is named as
+such, because its expiry invalidates everything it signed rather than one connection.</p>
+<p>Three states raise an alert:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>expired</td>
+<td>Already past its date; anything relying on it is failing now</td>
+</tr>
+<tr>
+<td>expiring</td>
+<td>Inside the warning window</td>
+</tr>
+<tr>
+<td>not yet valid</td>
+<td>Validity starts in the future — usually a wrong device clock</td>
+</tr>
+</tbody>
+</table>
+<p>Every collected certificate is listed on the <strong>device page</strong> under System &amp; Config, and
+across the fleet on the <strong>Security</strong> page — with its expiry date, days remaining, key type,
+and whether it is a certificate authority. Expiring and expired ones also appear on the
+<strong>Operations</strong> dashboard.</p>
+<p>The state shown on those pages is decided by the server using the same function and the same
+threshold that produce the alert, so a page cannot disagree with an email sent about the same
+certificate.</p>
+<div class="admonition note">
+<p class="admonition-title">Alert history records deliveries, not events</p>
+<p><code>alert_history</code> is written when a channel accepts an alert. With no channels
+configured, an alert can fire, be logged to the server log, and leave no row. The
+server log line begins <code>[Certs]</code>.</p>
+</div>
 <h2 id="delivery-channels">Delivery channels<a class="headerlink" href="#delivery-channels" title="Permanent link">&para;</a></h2>
 <p>Email, Slack, Discord, Telegram and <strong>ntfy</strong>. Channels are configured under
 <strong>Settings → Alerts → Channels</strong>; secrets are masked on read and preserved when you save
