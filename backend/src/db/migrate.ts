@@ -1012,6 +1012,10 @@ CREATE TABLE IF NOT EXISTS device_certificates (
   PRIMARY KEY (device_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_device_certs_expiry ON device_certificates(invalid_after);
+-- Revocation is not derivable from dates: a revoked certificate keeps a valid
+-- invalid-after and would otherwise read as healthy (#143).
+ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);
 CREATE INDEX IF NOT EXISTS idx_devices_site ON devices(site_id);

@@ -1701,7 +1701,7 @@ export const sitesApi = {
 };
 
 // ─── Certificates (#143) ──────────────────────────────────────────────────────
-export type CertState = 'expired' | 'expiring' | 'not-yet-valid' | 'valid' | 'unknown';
+export type CertState = 'revoked' | 'expired' | 'expiring' | 'not-yet-valid' | 'valid' | 'unknown';
 
 export interface DeviceCertificate {
   device_id: number;
@@ -1717,6 +1717,10 @@ export interface DeviceCertificate {
   is_authority: boolean;
   has_private_key: boolean;
   trusted: boolean;
+  /** Withdrawn by its issuer. Not derivable from the dates. */
+  revoked: boolean;
+  /** When it was withdrawn, where RouterOS reported it. */
+  revoked_at: string | null;
   updated_at: string;
   /** Decided server-side, so this page and the alert cannot disagree. */
   state: CertState;
@@ -1729,6 +1733,8 @@ export interface CertificatesResponse {
   warnDays: number;
   alertingEnabled: boolean;
   counts: Partial<Record<CertState, number>>;
+  /** How many would alert. Server-derived, so it matches what gets sent. */
+  attentionCount: number;
 }
 
 export const certificatesApi = {

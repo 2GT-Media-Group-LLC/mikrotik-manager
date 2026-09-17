@@ -56,9 +56,10 @@ export default function SecurityPage() {
     queryFn: () => certificatesApi.list().then((r) => r.data),
     staleTime: 60_000,
   });
-  const badCount = (certData?.certificates ?? []).filter(
-    (c) => c.state === 'expired' || c.state === 'expiring' || c.state === 'not-yet-valid'
-  ).length;
+  // From the server, which decides it with the same function that decides
+  // whether an alert is sent. Recomputing the list of "bad" states here meant
+  // adding a state elsewhere silently changed this number's meaning.
+  const badCount = certData?.attentionCount ?? 0;
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices'],
@@ -212,6 +213,7 @@ export default function SecurityPage() {
               : <CertificateList
                   certificates={certData?.certificates ?? []}
                   showDevice
+                  storageKey="fleet"
                   emptyText="No certificates collected yet — they are read on each slow poll."
                 />}
           </div>

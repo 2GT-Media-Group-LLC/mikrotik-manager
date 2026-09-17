@@ -128,3 +128,58 @@ describe('day counting rounds towards zero in both directions', () => {
     expect(certExpiryState(justUnderFive, NOW, 14).daysLeft).toBe(4);
   });
 });
+
+/**
+ * Revocation (#143).
+ *
+ * Reported by a user who had certificates with valid dates that he had revoked,
+ * and which this showed as "Valid". Dates cannot detect that, so the flag has to
+ * win over them.
+ */
+describe('revoked certificates', () => {
+  const now = new Date('2026-09-17T12:00:00Z');
+
+  it('overrides a date that would otherwise read as valid', () => {
+    const v = certExpiryState('2027-09-17T12:00:00Z', now, 14, null, { revoked: true });
+    expect(v.state).toBe('revoked');
+  });
+
+  it('overrides the warning window too', () => {
+    const v = certExpiryState('2026-09-20T12:00:00Z', now, 14, null, { revoked: true });
+    expect(v.state).toBe('revoked');
+  });
+
+  it('still reports days, so the list can show the original date', () => {
+    const v = certExpiryState('2026-09-27T12:00:00Z', now, 14, null, { revoked: true });
+    expect(v.daysLeft).toBe(10);
+  });
+
+  it('survives having no expiry date at all', () => {
+    const v = certExpiryState(null, now, 14, null, { revoked: true });
+    expect(v).toEqual({ state: 'revoked', daysLeft: null });
+  });
+
+  it('does not alert: the operator revoked it deliberately', () => {
+    const v = certExpiryState('2027-09-17T12:00:00Z', now, 14, null, { revoked: true });
+    expect(needsAttention(v)).toBe(false);
+  });
+
+  it('says so in words', () => {
+    const v = certExpiryState('2027-09-17T12:00:00Z', now, 14, null, { revoked: true });
+    expect(describeCert({ name: 'vpn-client', is_authority: false }, v))
+      .toBe('Certificate vpn-client has been revoked');
+  });
+
+  it('a missing flag is not revoked — RouterOS omits the field entirely', () => {
+    expect(certExpiryState('2027-09-17T12:00:00Z', now, 14, null, {}).state).toBe('valid');
+    expect(certExpiryState('2027-09-17T12:00:00Z', now, 14, null, { revoked: null }).state).toBe('valid');
+    expect(certExpiryState('2027-09-17T12:00:00Z', now, 14).state).toBe('valid');
+  });
+
+  it('leaves the truncation fix intact on the shared day helper', () => {
+    // 3 days and 1 hour past: "3 days ago", not 4. Regressed once already.
+    const v = certExpiryState('2026-09-14T11:00:00Z', now, 14);
+    expect(v.state).toBe('expired');
+    expect(v.daysLeft).toBe(-3);
+  });
+});

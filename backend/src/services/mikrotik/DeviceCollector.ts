@@ -44,6 +44,7 @@ export interface DownloadResult {
   rows: number;
 }
 import { alertService } from '../AlertService';
+import { readRevocation } from '../../utils/certRecord';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
 const TOPOLOGY_LINK_LIMITS = {
@@ -1227,17 +1228,20 @@ export class DeviceCollector {
         seen.push(name);
 
         const size = parseInt(r['key-size'] || '', 10);
+        const rev = readRevocation(r);
         await query(
           `INSERT INTO device_certificates
              (device_id, name, common_name, serial_number, fingerprint, key_type, key_size,
-              invalid_before, invalid_after, is_authority, has_private_key, trusted, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+              invalid_before, invalid_after, is_authority, has_private_key, trusted,
+              revoked, revoked_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
            ON CONFLICT (device_id, name) DO UPDATE SET
              common_name = EXCLUDED.common_name, serial_number = EXCLUDED.serial_number,
              fingerprint = EXCLUDED.fingerprint, key_type = EXCLUDED.key_type,
              key_size = EXCLUDED.key_size, invalid_before = EXCLUDED.invalid_before,
              invalid_after = EXCLUDED.invalid_after, is_authority = EXCLUDED.is_authority,
              has_private_key = EXCLUDED.has_private_key, trusted = EXCLUDED.trusted,
+             revoked = EXCLUDED.revoked, revoked_at = EXCLUDED.revoked_at,
              updated_at = NOW()`,
           [
             this.device.id, name.slice(0, 128),
@@ -1251,6 +1255,12 @@ export class DeviceCollector {
             r['authority'] === 'true',
             r['private-key'] === 'true',
             r['trusted'] === 'true',
+            // Not `r['revoked'] === 'true'`. RouterOS sends the attribute twice
+            // — once as a timestamp, once as a boolean — and omits it entirely
+            // when the certificate is fine. See utils/certRecord.ts, which was
+            // written against captures of both cases from a real switch.
+            rev.revoked,
+            rev.revokedAtRaw ? this.parseCertTime(rev.revokedAtRaw) : null,
           ]
         );
       }

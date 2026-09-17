@@ -1075,9 +1075,10 @@ export class PollerService {
       device_id: number; device_name: string; name: string;
       common_name: string | null; is_authority: boolean;
       invalid_after: string | null; invalid_before: string | null;
+      revoked: boolean;
     }>(
       `SELECT c.device_id, d.name AS device_name, c.name, c.common_name,
-              c.is_authority, c.invalid_after, c.invalid_before
+              c.is_authority, c.invalid_after, c.invalid_before, c.revoked
          FROM device_certificates c
          JOIN devices d ON d.id = c.device_id
         WHERE c.invalid_after IS NOT NULL`
@@ -1086,7 +1087,11 @@ export class PollerService {
     const now = new Date();
     let flagged = 0;
     for (const r of rows) {
-      const verdict = certExpiryState(r.invalid_after, now, warnDays, r.invalid_before);
+      // Revoked certificates resolve to their own state, which needsAttention()
+      // excludes on purpose — see certExpiry.ts.
+      const verdict = certExpiryState(r.invalid_after, now, warnDays, r.invalid_before, {
+        revoked: r.revoked,
+      });
       if (!needsAttention(verdict)) continue;
       flagged++;
 

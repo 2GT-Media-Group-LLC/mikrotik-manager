@@ -14,6 +14,13 @@
  */
 
 export type CertState =
+  /**
+   * Withdrawn by its issuing CA. Dates say nothing about this: a revoked
+   * certificate keeps a perfectly valid invalid-after and read as "Valid" here
+   * until a user pointed out we were showing green for certificates he had
+   * deliberately killed (#143).
+   */
+  | 'revoked'
   /** Past its invalid-after date. */
   | 'expired'
   /** Inside the warning window. */
@@ -43,15 +50,20 @@ export function certExpiryState(
   now: Date,
   warnDays: number,
   invalidBefore?: Date | string | null,
+  opts?: { revoked?: boolean | null },
 ): CertVerdict {
   const after = toDate(invalidAfter);
+
+  // Checked before the dates, because revocation overrides them entirely. A
+  // certificate revoked today may not expire for another year; the year is
+  // irrelevant, it stopped being usable the moment it was withdrawn.
+  if (opts?.revoked) {
+    return { state: 'revoked', daysLeft: after ? daysBetween(after, now) : null };
+  }
+
   if (!after) return { state: 'unknown', daysLeft: null };
 
-  // Truncated towards zero, not floored. Math.floor rounds a negative *away*
-  // from zero, so a certificate three days and one hour past its date reported
-  // "expired 4 days ago" — observed in real output. Truncation reads the same
-  // in both directions: 4.9 days left is "4 days", 3.1 days gone is "3 days".
-  const daysLeft = Math.trunc((after.getTime() - now.getTime()) / DAY_MS);
+  const daysLeft = daysBetween(after, now);
 
   if (after.getTime() <= now.getTime()) return { state: 'expired', daysLeft };
 
@@ -67,13 +79,33 @@ export function certExpiryState(
   return { state: daysLeft <= window ? 'expiring' : 'valid', daysLeft };
 }
 
+/**
+ * Whole days from `now` to `after`; negative once past.
+ *
+ * Truncated towards zero, not floored. Math.floor rounds a negative *away* from
+ * zero, so a certificate three days and one hour past its date reported
+ * "expired 4 days ago" — observed in real output. Truncation reads the same in
+ * both directions: 4.9 days left is "4 days", 3.1 days gone is "3 days".
+ */
+function daysBetween(after: Date, now: Date): number {
+  return Math.trunc((after.getTime() - now.getTime()) / DAY_MS);
+}
+
 function toDate(v: Date | string | null | undefined): Date | null {
   if (!v) return null;
   const d = v instanceof Date ? v : new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Whether a verdict is worth telling someone about. */
+/**
+ * Whether a verdict is worth *alerting* someone about.
+ *
+ * Revocation is deliberately excluded. Someone revoked that certificate on
+ * purpose, and several of them cannot be deleted while a CA still references
+ * them — so alerting would mean a daily email about a decision the operator
+ * already made and cannot undo. It is shown in the list, where it corrects the
+ * false "Valid", but it does not page anyone.
+ */
 export function needsAttention(v: CertVerdict): boolean {
   return v.state === 'expired' || v.state === 'expiring' || v.state === 'not-yet-valid';
 }
@@ -83,6 +115,7 @@ export interface CertLike {
   common_name?: string | null;
   is_authority?: boolean | null;
   invalid_after?: Date | string | null;
+  revoked?: boolean | null;
 }
 
 /**
@@ -100,6 +133,8 @@ export function describeCert(cert: CertLike, v: CertVerdict): string {
     : cert.name;
 
   switch (v.state) {
+    case 'revoked':
+      return `${kind} ${named} has been revoked`;
     case 'expired':
       return `${kind} ${named} expired ${plural(Math.abs(v.daysLeft ?? 0))} ago`;
     case 'expiring':

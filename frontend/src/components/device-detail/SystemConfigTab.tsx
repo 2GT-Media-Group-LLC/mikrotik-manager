@@ -588,7 +588,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
         </p>
         {certLoading
           ? <p className="text-sm text-gray-400">Loading…</p>
-          : <CertificateList certificates={certData?.certificates ?? []} />}
+          : <CertificateList certificates={certData?.certificates ?? []} storageKey="device" />}
       </div>
 
       {/* ── Software & Firmware Updates ── */}
