@@ -990,6 +990,29 @@ CREATE TABLE IF NOT EXISTS sites (
 
 -- Deliberately NOT "ON DELETE CASCADE": removing a site must never remove the
 -- devices in it. The delete endpoint refuses while devices remain.
+-- Certificates held on each device (#143).
+--
+-- An expired certificate does not announce itself: the tunnel simply stops
+-- working. The cert_expiry alert has existed, fully wired, since before there
+-- was anything to read -- this is the data it was always waiting for.
+CREATE TABLE IF NOT EXISTS device_certificates (
+  device_id        INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  name             VARCHAR(128) NOT NULL,
+  common_name      VARCHAR(255),
+  serial_number    VARCHAR(64),
+  fingerprint      VARCHAR(160),
+  key_type         VARCHAR(16),
+  key_size         INTEGER,
+  invalid_before   TIMESTAMPTZ,
+  invalid_after    TIMESTAMPTZ,
+  is_authority     BOOLEAN NOT NULL DEFAULT FALSE,
+  has_private_key  BOOLEAN NOT NULL DEFAULT FALSE,
+  trusted          BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at       TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (device_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_device_certs_expiry ON device_certificates(invalid_after);
+
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);
 CREATE INDEX IF NOT EXISTS idx_devices_site ON devices(site_id);
 `;

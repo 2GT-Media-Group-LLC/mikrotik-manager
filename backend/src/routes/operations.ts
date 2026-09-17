@@ -4,6 +4,8 @@ import { getQueryApi } from '../config/influxdb';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
+import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
+import { alertService } from '../services/AlertService';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { BackupService, BackupDevice } from '../services/BackupService';
 
@@ -366,6 +368,43 @@ router.get('/insights', async (req: Request, res: Response) => {
       });
     }
   } catch { /* findings table unavailable */ }
+
+  // Certificates at or past expiry (#143).
+  //
+  // Email alerting covers the moment it crosses the threshold; this covers
+  // everyone who does not have alerts configured, and the case where the mail
+  // was read and forgotten. An expired certificate does not heal on its own.
+  try {
+    const certFilter = siteScopeByDevice(siteId, 'c.device_id');
+    const certs = await query<{
+      device_id: number; device_name: string; name: string; common_name: string | null;
+      is_authority: boolean; invalid_after: string; invalid_before: string | null;
+    }>(`
+      SELECT c.device_id, d.name AS device_name, c.name, c.common_name, c.is_authority,
+             c.invalid_after, c.invalid_before
+        FROM device_certificates c JOIN devices d ON d.id = c.device_id
+       WHERE c.invalid_after IS NOT NULL
+         ${certFilter ? `AND ${certFilter}` : ''}`);
+
+    const rule = await alertService.getRule('cert_expiry').catch(() => null);
+    const warnDays = rule?.threshold ?? 14;
+    const now = new Date();
+
+    for (const c of certs) {
+      const verdict = certExpiryState(c.invalid_after, now, warnDays, c.invalid_before);
+      if (!needsAttention(verdict)) continue;
+      attention.push({
+        sev: verdict.state === 'expired' ? 'error' : 'warn',
+        category: 'security',
+        title: `${c.device_name}: ${describeCert(c, verdict)}`,
+        body: verdict.state === 'expired'
+          ? 'Anything relying on it is already failing, and will keep failing until it is replaced.'
+          : `Expires ${new Date(c.invalid_after).toISOString().slice(0, 10)}. `
+            + 'Renewing before it lapses avoids the outage rather than explaining it.',
+        action: 'View device', path: `/devices/${c.device_id}`,
+      });
+    }
+  } catch { /* device_certificates unavailable */ }
 
   // Spanning tree — what the fleet view can see and a single device cannot.
   //

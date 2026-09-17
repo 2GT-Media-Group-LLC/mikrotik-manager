@@ -175,6 +175,7 @@ export class DeviceCollector {
     await this.collectSystemInfo();
     await this.collectStp();
     await this.collectLte();
+    await this.collectCertificates();
     if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
@@ -1201,6 +1202,81 @@ export class DeviceCollector {
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect STP:`, err);
     }
+  }
+
+  /**
+   * Certificates held on the device (#143).
+   *
+   * Read on the slow poll: certificates change rarely, and the thing that
+   * matters about them — the expiry date — moves on its own.
+   *
+   * `invalid-after` is a wall-clock time in the device's own zone, like every
+   * other RouterOS timestamp, so it goes through the same parser as log lines
+   * rather than being read as UTC.
+   */
+  async collectCertificates(): Promise<void> {
+    try {
+      const rows = await this.client
+        .execute('/certificate/print', { detail: '' })
+        .catch(() => [] as Record<string, string>[]);
+
+      const seen: string[] = [];
+      for (const r of rows) {
+        const name = (r['name'] || '').trim();
+        if (!name) continue;
+        seen.push(name);
+
+        const size = parseInt(r['key-size'] || '', 10);
+        await query(
+          `INSERT INTO device_certificates
+             (device_id, name, common_name, serial_number, fingerprint, key_type, key_size,
+              invalid_before, invalid_after, is_authority, has_private_key, trusted, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+           ON CONFLICT (device_id, name) DO UPDATE SET
+             common_name = EXCLUDED.common_name, serial_number = EXCLUDED.serial_number,
+             fingerprint = EXCLUDED.fingerprint, key_type = EXCLUDED.key_type,
+             key_size = EXCLUDED.key_size, invalid_before = EXCLUDED.invalid_before,
+             invalid_after = EXCLUDED.invalid_after, is_authority = EXCLUDED.is_authority,
+             has_private_key = EXCLUDED.has_private_key, trusted = EXCLUDED.trusted,
+             updated_at = NOW()`,
+          [
+            this.device.id, name.slice(0, 128),
+            (r['common-name'] || '').slice(0, 255) || null,
+            (r['serial-number'] || '').slice(0, 64) || null,
+            (r['fingerprint'] || '').slice(0, 160) || null,
+            (r['key-type'] || '').slice(0, 16) || null,
+            Number.isFinite(size) ? size : null,
+            this.parseCertTime(r['invalid-before']),
+            this.parseCertTime(r['invalid-after']),
+            r['authority'] === 'true',
+            r['private-key'] === 'true',
+            r['trusted'] === 'true',
+          ]
+        );
+      }
+
+      // A certificate removed from the device must stop being alerted on.
+      if (seen.length > 0) {
+        await query(
+          `DELETE FROM device_certificates WHERE device_id = $1 AND NOT (name = ANY($2::text[]))`,
+          [this.device.id, seen]
+        );
+      } else {
+        await query(`DELETE FROM device_certificates WHERE device_id = $1`, [this.device.id]);
+      }
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to collect certificates:`, err);
+    }
+  }
+
+  /** RouterOS certificate dates are wall-clock in the device's zone, as logs are. */
+  private parseCertTime(raw: string | undefined): string | null {
+    if (!raw || !raw.trim()) return null;
+    const d = this.device as unknown as { time_zone_name?: string | null; gmt_offset?: string | null };
+    const parsed = parseDeviceLogTime(raw.trim(), {
+      timeZoneName: d.time_zone_name, gmtOffset: d.gmt_offset,
+    });
+    return parsed ? parsed.toISOString() : null;
   }
 
   // ─── LLDP Management ──────────────────────────────────────────────────────

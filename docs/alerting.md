@@ -19,6 +19,35 @@ cooldown that prevents a flapping device from flooding your channels.
 
 Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
 
+## Certificate expiry
+
+Certificates on each device are read on the slow poll and checked hourly. The
+`cert_expiry` rule decides the rest: its **threshold** is the warning window in days
+(14 by default) and its **cooldown** how often you are told about the same certificate
+(daily by default).
+
+It is **off by default** — turn it on in Settings → Alerts.
+
+Every certificate is tracked separately, so a device with an expiring CA and an expiring
+client certificate raises two alerts rather than one. A certificate authority is named as
+such, because its expiry invalidates everything it signed rather than one connection.
+
+Three states raise an alert:
+
+| State | Meaning |
+|---|---|
+| expired | Already past its date; anything relying on it is failing now |
+| expiring | Inside the warning window |
+| not yet valid | Validity starts in the future — usually a wrong device clock |
+
+Expiring and expired certificates also appear on the Operations dashboard, so they are
+visible without alert channels configured.
+
+!!! note "Alert history records deliveries, not events"
+    `alert_history` is written when a channel accepts an alert. With no channels
+    configured, an alert can fire, be logged to the server log, and leave no row. The
+    server log line begins `[Certs]`.
+
 ## Delivery channels
 
 Email, Slack, Discord, Telegram and **ntfy**. Channels are configured under

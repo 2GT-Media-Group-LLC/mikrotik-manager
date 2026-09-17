@@ -10,6 +10,7 @@ import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 import { cronMatches } from '../utils/cron';
 import { updateAvailable } from '../utils/rosVersion';
+import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -352,6 +353,23 @@ export class PollerService {
         await this.setTimestamp(staleLinksKey, now);
         query(`DELETE FROM topology_links WHERE discovered_at < NOW() - INTERVAL '20 minutes'`)
           .catch((e) => console.error('[Poller] Stale topology-link cleanup error:', e));
+      }
+
+      // Certificate expiry — hourly (#143).
+      //
+      // The cert_expiry alert has been declared, styled, routed to webhooks and
+      // given a default rule of "14 days, once a day" since long before
+      // anything read a certificate. Nothing ever dispatched it, so an operator
+      // could enable the rule and wait indefinitely. This is the producer.
+      //
+      // Hourly is frequent enough for a threshold measured in days, and the
+      // rule's own cooldown decides how often anyone is actually told.
+      const certKey = 'task:cert_expiry';
+      const lastCert = await this.getTimestamp(certKey);
+      if (now - lastCert > 3_600_000) {
+        await this.setTimestamp(certKey, now);
+        this.checkCertificateExpiry()
+          .catch((e) => console.error('[Poller] Certificate expiry check failed:', e));
       }
 
       // Stale pending sweep — every 5 minutes. Cheap when there is nothing to do,
@@ -1036,6 +1054,66 @@ export class PollerService {
       }
     } catch (err) {
       console.error(`[Poller] Config health audit failed for ${device.name}:`, (err as Error).message);
+    }
+  }
+
+
+  /**
+   * Warn about certificates at or past their expiry (#143).
+   *
+   * The window comes from the alert rule's threshold, so the operator's setting
+   * decides it. Each certificate gets its own cooldown key: a device with an
+   * expiring CA and an expiring client certificate has two problems, and
+   * collapsing them into one alert hides the second.
+   */
+  private async checkCertificateExpiry(): Promise<void> {
+    const rule = await alertService.getRule('cert_expiry');
+    if (!rule?.enabled) return;
+
+    const warnDays = rule.threshold ?? 14;
+    const rows = await query<{
+      device_id: number; device_name: string; name: string;
+      common_name: string | null; is_authority: boolean;
+      invalid_after: string | null; invalid_before: string | null;
+    }>(
+      `SELECT c.device_id, d.name AS device_name, c.name, c.common_name,
+              c.is_authority, c.invalid_after, c.invalid_before
+         FROM device_certificates c
+         JOIN devices d ON d.id = c.device_id
+        WHERE c.invalid_after IS NOT NULL`
+    );
+
+    const now = new Date();
+    let flagged = 0;
+    for (const r of rows) {
+      const verdict = certExpiryState(r.invalid_after, now, warnDays, r.invalid_before);
+      if (!needsAttention(verdict)) continue;
+      flagged++;
+
+      const what = describeCert(
+        { name: r.name, common_name: r.common_name, is_authority: r.is_authority },
+        verdict
+      );
+      await alertService.dispatch('cert_expiry', `${r.device_name}: ${what}`, {
+        deviceId: r.device_id,
+        deviceName: r.device_name,
+        // Per certificate, not per device — two expiring certificates are two
+        // things to fix.
+        cooldownKey: `cert_expiry:${r.device_id}:${r.name}`,
+        details: r.invalid_after
+          ? `Expires ${new Date(r.invalid_after).toISOString().slice(0, 10)}`
+          : undefined,
+      }).catch(() => {});
+
+      // Logged as well as dispatched. AlertService records history only when a
+      // channel actually delivers, so on an install with no channels configured
+      // there is otherwise no trace that anything was found — which is the same
+      // silence this feature exists to break.
+      console.log(`[Certs] ${r.device_name}: ${what}`);
+    }
+
+    if (flagged > 0) {
+      console.log(`[Certs] ${flagged} certificate(s) need attention (warning at ${warnDays} days)`);
     }
   }
 
