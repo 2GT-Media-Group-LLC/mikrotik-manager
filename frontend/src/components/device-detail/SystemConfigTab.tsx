@@ -3,13 +3,15 @@ import SshKeyCard from './SshKeyCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   RefreshCw, Plus, Trash2, CheckCircle, AlertCircle, Download, Server, Cpu, FileText,
+  ShieldCheck,
 } from 'lucide-react';
-import { devicesApi } from '../../services/api';
+import { devicesApi, certificatesApi } from '../../services/api';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { Device, IpAddress, Interface } from '../../types';
 import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangelogModal from '../ChangelogModal';
+import CertificateList from '../CertificateList';
 
 interface Props {
   deviceId: number;
@@ -174,6 +176,12 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
     queryClient.invalidateQueries({ queryKey: ['ops-insights'] });
     queryClient.invalidateQueries({ queryKey: ['security-fleet'] });
   };
+
+  const { data: certData, isLoading: certLoading } = useQuery({
+    queryKey: ['device-certificates', deviceId],
+    queryFn: () => certificatesApi.list(deviceId).then((r) => r.data),
+    staleTime: 60_000,
+  });
 
   const checkUpdateMutation = useMutation({
     mutationFn: () => devicesApi.checkUpdate(deviceId),
@@ -564,6 +572,23 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
             </div>
           )}
         </div>}
+      </div>
+
+      {/* ── Certificates ── */}
+      <div className="card p-5">
+        <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-1">
+          <ShieldCheck className="w-4 h-4 text-blue-500" />
+          Certificates
+        </h3>
+        <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
+          Collected on each slow poll.{' '}
+          {certData && (certData.alertingEnabled
+            ? `Alerting ${certData.warnDays} days before expiry.`
+            : 'Expiry alerting is off — enable "Certificate expiring soon" in Settings → Alerts.')}
+        </p>
+        {certLoading
+          ? <p className="text-sm text-gray-400">Loading…</p>
+          : <CertificateList certificates={certData?.certificates ?? []} />}
       </div>
 
       {/* ── Software & Firmware Updates ── */}

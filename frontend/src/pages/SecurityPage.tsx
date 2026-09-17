@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Shield, ShieldCheck, ShieldAlert, RefreshCw, ChevronDown, ChevronRight,
-  Gauge, Server, AlertTriangle, ListChecks,
+  Gauge, Server, AlertTriangle, ListChecks, KeyRound,
 } from 'lucide-react';
-import { devicesApi } from '../services/api';
+import { devicesApi, certificatesApi } from '../services/api';
 import type { SecurityCheck } from '../services/api';
 import type { Device } from '../types';
 import clsx from 'clsx';
+import CertificateList from '../components/CertificateList';
 
 interface DevicePosture {
   id: number; name: string; ip_address: string; device_type?: string;
@@ -49,6 +50,15 @@ function Kpi({ icon: Icon, label, value, accent, valueClass }: {
 export default function SecurityPage() {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState<number | null>(null);
+
+  const { data: certData, isLoading: certLoading } = useQuery({
+    queryKey: ['fleet-certificates'],
+    queryFn: () => certificatesApi.list().then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const badCount = (certData?.certificates ?? []).filter(
+    (c) => c.state === 'expired' || c.state === 'expiring' || c.state === 'not-yet-valid'
+  ).length;
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices'],
@@ -173,6 +183,38 @@ export default function SecurityPage() {
               })}
             </div>
           )}
+        </div>
+
+        {/* Certificates across the fleet (#143) */}
+        <div className="card overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 flex-wrap">
+            <KeyRound className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Certificates</h2>
+            {certData && (
+              <span className="text-xs text-gray-400 dark:text-slate-500">
+                {certData.certificates.length} across the fleet
+                {certData.alertingEnabled
+                  ? ` · alerting ${certData.warnDays} days ahead`
+                  : ' · expiry alerting is off'}
+              </span>
+            )}
+            {/* Counted, not just listed: "two expiring" is the number worth seeing
+                without reading every row. */}
+            {certData && (badCount > 0) && (
+              <span className="ml-auto text-xs font-medium text-amber-600 dark:text-amber-400">
+                {badCount} need attention
+              </span>
+            )}
+          </div>
+          <div className="p-2">
+            {certLoading
+              ? <p className="p-6 text-center text-sm text-gray-400">Loading…</p>
+              : <CertificateList
+                  certificates={certData?.certificates ?? []}
+                  showDevice
+                  emptyText="No certificates collected yet — they are read on each slow poll."
+                />}
+          </div>
         </div>
 
         {/* Common findings across the fleet */}

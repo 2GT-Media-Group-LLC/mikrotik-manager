@@ -1699,3 +1699,41 @@ export const sitesApi = {
   assignDevices: (id: number, deviceIds: number[]) =>
     api.post<{ ok: boolean; moved: number }>(`/sites/${id}/devices`, { deviceIds }),
 };
+
+// ─── Certificates (#143) ──────────────────────────────────────────────────────
+export type CertState = 'expired' | 'expiring' | 'not-yet-valid' | 'valid' | 'unknown';
+
+export interface DeviceCertificate {
+  device_id: number;
+  device_name: string;
+  name: string;
+  common_name: string | null;
+  serial_number: string | null;
+  fingerprint: string | null;
+  key_type: string | null;
+  key_size: number | null;
+  invalid_before: string | null;
+  invalid_after: string | null;
+  is_authority: boolean;
+  has_private_key: boolean;
+  trusted: boolean;
+  updated_at: string;
+  /** Decided server-side, so this page and the alert cannot disagree. */
+  state: CertState;
+  days_left: number | null;
+  summary: string;
+}
+
+export interface CertificatesResponse {
+  certificates: DeviceCertificate[];
+  warnDays: number;
+  alertingEnabled: boolean;
+  counts: Partial<Record<CertState, number>>;
+}
+
+export const certificatesApi = {
+  list: (deviceId?: number) =>
+    api.get<CertificatesResponse>('/certificates', {
+      params: deviceId ? { deviceId } : {},
+    }),
+};

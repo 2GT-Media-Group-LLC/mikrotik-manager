@@ -66,6 +66,7 @@ import credentialPresetsRoutes from './routes/credentialPresets';
 import commandRoutes from './routes/commands';
 import systemRoutes, { setPollerService as setSystemPoller } from './routes/system';
 import sitesRoutes from './routes/sites';
+import certificatesRoutes from './routes/certificates';
 import { siteContext } from './middleware/site';
 import { auditMiddleware } from './middleware/auditMiddleware';
 
@@ -340,6 +341,7 @@ app.use('/api/config-history', configHistoryRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/commands', commandRoutes);
 app.use('/api/sites', sitesRoutes);
+app.use('/api/certificates', certificatesRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);

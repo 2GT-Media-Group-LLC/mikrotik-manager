@@ -40,8 +40,14 @@ Three states raise an alert:
 | expiring | Inside the warning window |
 | not yet valid | Validity starts in the future — usually a wrong device clock |
 
-Expiring and expired certificates also appear on the Operations dashboard, so they are
-visible without alert channels configured.
+Every collected certificate is listed on the **device page** under System & Config, and
+across the fleet on the **Security** page — with its expiry date, days remaining, key type,
+and whether it is a certificate authority. Expiring and expired ones also appear on the
+**Operations** dashboard.
+
+The state shown on those pages is decided by the server using the same function and the same
+threshold that produce the alert, so a page cannot disagree with an email sent about the same
+certificate.
 
 !!! note "Alert history records deliveries, not events"
     `alert_history` is written when a channel accepts an alert. With no channels
