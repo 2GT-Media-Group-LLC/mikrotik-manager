@@ -3,14 +3,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, RefreshCw, Router, Wifi, Trash2, ChevronRight, Search,
-  Radar, ArrowUpCircle, Cpu, Pencil, ArrowUpDown, ArrowUp, ArrowDown,
+  Radar, ArrowUpCircle, Cpu, Pencil, ArrowUpDown, ArrowUp, ArrowDown, ShieldQuestion,
 } from 'lucide-react';
-import { devicesApi, topologyApi, metricsApi, tagsApi } from '../services/api';
+import { devicesApi, topologyApi, metricsApi, tagsApi, adoptionApi} from '../services/api';
 import type { Device } from '../types';
-import type { DiscoveredDevice } from '../services/api';
+import type { DiscoveredDevice, AdoptionCandidate} from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import clsx from 'clsx';
 import AddDeviceModal from '../components/devices/AddDeviceModal';
+import AdoptDeviceModal from '../components/devices/AdoptDeviceModal';
 import EditDeviceModal from '../components/devices/EditDeviceModal';
 import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
 
@@ -131,6 +132,7 @@ export default function DevicesPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [adoptTarget, setAdoptTarget] = useState<AdoptionCandidate | null>(null);
   const [addPrefill, setAddPrefill] = useState<{ name?: string; ip_address?: string } | undefined>();
   const [editDevice, setEditDevice] = useState<Device | null>(null);
   const [search, setSearch] = useState('');
@@ -173,6 +175,21 @@ export default function DevicesPage() {
     queryFn: () => devicesApi.discovered().then((r) => r.data),
     refetchInterval: 60_000,
   });
+
+  // Factory-default devices that discovery can see but "Add to Manager" cannot
+  // reach. Keyed by MAC so the discovered list can offer the right action.
+  const { data: adoptionData } = useQuery({
+    queryKey: ['adoption-candidates'],
+    queryFn: () => adoptionApi.candidates().then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+  const adoptableByMac = useMemo(() => {
+    const m = new Map<string, AdoptionCandidate>();
+    for (const c of adoptionData?.candidates ?? []) {
+      if (!c.reachableDirectly) m.set(c.mac.toUpperCase(), c);
+    }
+    return m;
+  }, [adoptionData]);
 
   const { data: allTags = [] } = useQuery({
     queryKey: ['tags'],
@@ -767,16 +784,30 @@ export default function DevicesPage() {
                     </td>
                     <td className="px-4 py-[11px]">
                       {canWrite && d.duplicate_of_device_id == null && (
-                        <button
-                          onClick={() => {
-                            setAddPrefill({ name: d.identity || '', ip_address: d.address });
-                            setShowAddModal(true);
-                          }}
-                          className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
-                        >
-                          <Plus className="w-3 h-3" />
-                          Add to Manager
-                        </button>
+                        adoptableByMac.has((d.mac_address || '').toUpperCase()) ? (
+                          // Unreachable on its factory address, so the normal add
+                          // would just fail to connect. Adoption borrows a
+                          // neighbour to give it an address here first.
+                          <button
+                            onClick={() => setAdoptTarget(adoptableByMac.get((d.mac_address || '').toUpperCase())!)}
+                            className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
+                            title="Factory-default device — needs an address before it can be managed"
+                          >
+                            <ShieldQuestion className="w-3 h-3" />
+                            Adopt
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setAddPrefill({ name: d.identity || '', ip_address: d.address });
+                              setShowAddModal(true);
+                            }}
+                            className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Add to Manager
+                          </button>
+                        )
                       )}
                     </td>
                   </tr>
@@ -787,6 +818,19 @@ export default function DevicesPage() {
           </div>
           )}
         </div>
+      )}
+
+      {adoptTarget && (
+        <AdoptDeviceModal
+          candidate={adoptTarget}
+          onClose={() => setAdoptTarget(null)}
+          onSuccess={() => {
+            setAdoptTarget(null);
+            queryClient.invalidateQueries({ queryKey: ['devices'] });
+            queryClient.invalidateQueries({ queryKey: ['devices-discovered'] });
+            queryClient.invalidateQueries({ queryKey: ['adoption-candidates'] });
+          }}
+        />
       )}
 
       {showAddModal && (

@@ -67,6 +67,7 @@ import commandRoutes from './routes/commands';
 import systemRoutes, { setPollerService as setSystemPoller } from './routes/system';
 import sitesRoutes from './routes/sites';
 import certificatesRoutes from './routes/certificates';
+import adoptionRoutes, { setPollerService as setAdoptionPoller } from './routes/adoption';
 import { siteContext } from './middleware/site';
 import { auditMiddleware } from './middleware/auditMiddleware';
 
@@ -314,6 +315,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth/oidc', oidcRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/devices', devicesRoutes);
+app.use('/api/adoption', adoptionRoutes);
 app.use('/api/clients', clientsRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/backups', backupsRoutes);
@@ -388,6 +390,7 @@ async function start(): Promise<void> {
   // Start poller
   const pollerService = new PollerService();
   pollerService.setSocketServer(io);
+  setAdoptionPoller(pollerService);
   setDevicesPoller(pollerService);
   setSystemPoller(pollerService);
   setSharedPollerService(pollerService);

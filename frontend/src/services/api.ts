@@ -1743,3 +1743,54 @@ export const certificatesApi = {
       params: deviceId ? { deviceId } : {},
     }),
 };
+
+// ── Adoption of factory-default devices ───────────────────────────────────
+
+export interface AdoptionJumpHost {
+  id: number;
+  name: string;
+  ip_address: string;
+}
+
+export interface AdoptionCandidate {
+  mac: string;
+  address: string;
+  identity: string | null;
+  /** Managed devices on the same broadcast domain; one must be borrowed. */
+  seenBy: AdoptionJumpHost[];
+  /** Sitting on RouterOS's 192.168.88.1 factory address. */
+  factoryDefault: boolean;
+  /** When true the normal "add device" flow works and adoption is unnecessary. */
+  reachableDirectly: boolean;
+}
+
+export interface AdoptionStep {
+  step: string;
+  ok: boolean;
+  detail?: string;
+}
+
+export interface AdoptionResult {
+  ok: boolean;
+  steps: AdoptionStep[];
+  deviceId?: number;
+  error?: string;
+}
+
+export interface AdoptRequest {
+  mac: string;
+  jumpHostId: number;
+  targetAddress: string;
+  gateway: string;
+  password: string;
+  username?: string;
+  identity?: string;
+  name?: string;
+  removeFactoryAddress?: boolean;
+}
+
+export const adoptionApi = {
+  candidates: () => api.get<{ candidates: AdoptionCandidate[] }>('/adoption/candidates'),
+  adopt: (body: AdoptRequest) => api.post<AdoptionResult>('/adoption/adopt', body),
+  cleanup: () => api.post<{ removed: number }>('/adoption/cleanup'),
+};
