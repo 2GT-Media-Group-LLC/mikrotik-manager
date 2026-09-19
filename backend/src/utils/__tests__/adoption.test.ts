@@ -283,3 +283,160 @@ describe('assessFactoryState', () => {
     expect(assessFactoryState({}).isFactory).toBe(false);
   });
 });
+
+/**
+ * Addressing the device.
+ *
+ * The first version asked only for an IPv4 address and inferred a /24, a
+ * gateway at .1, and the untagged bridge. These cover the cases that inference
+ * got wrong.
+ */
+import {
+  validatePlan, buildPlanOps, planInterface, leasedAddress, judgeConflict, arpRowResolved,
+  type AddressPlan,
+} from '../adoption';
+
+describe('validatePlan', () => {
+  it('accepts a well-formed static plan', () => {
+    expect(validatePlan({
+      mode: 'static', address: '192.168.0.60', prefix: 24, gateway: '192.168.0.1',
+    })).toEqual({ ok: true });
+  });
+
+  it('accepts a gateway that is not .1, because plenty are not', () => {
+    expect(validatePlan({
+      mode: 'static', address: '10.20.30.40', prefix: 24, gateway: '10.20.30.254',
+    }).ok).toBe(true);
+  });
+
+  it('rejects a gateway outside the address prefix', () => {
+    // Exactly what assuming ".1" produces on a /26.
+    const v = validatePlan({
+      mode: 'static', address: '192.168.0.70', prefix: 26, gateway: '192.168.0.1',
+    });
+    expect(v.ok).toBe(false);
+    expect(v.reason).toMatch(/not reachable from/);
+  });
+
+  it('honours non-/24 prefixes', () => {
+    expect(validatePlan({
+      mode: 'static', address: '10.0.4.10', prefix: 22, gateway: '10.0.4.1',
+    }).ok).toBe(true);
+  });
+
+  it('requires a gateway rather than inventing one', () => {
+    expect(validatePlan({
+      mode: 'static', address: '192.168.0.60', prefix: 24, gateway: '',
+    }).ok).toBe(false);
+  });
+
+  it('validates the VLAN range', () => {
+    expect(validatePlan({ mode: 'dhcp', vlanId: 100 }).ok).toBe(true);
+    expect(validatePlan({ mode: 'dhcp', vlanId: 0 }).ok).toBe(false);
+    expect(validatePlan({ mode: 'dhcp', vlanId: 4095 }).ok).toBe(false);
+  });
+
+  it('needs nothing at all for plain DHCP', () => {
+    expect(validatePlan({ mode: 'dhcp' })).toEqual({ ok: true });
+  });
+});
+
+describe('planInterface', () => {
+  it('uses the bridge when there is no VLAN', () => {
+    expect(planInterface({ mode: 'dhcp' })).toBe('bridge');
+  });
+
+  it('uses a sub-interface for a tagged management VLAN', () => {
+    expect(planInterface({ mode: 'dhcp', vlanId: 100 })).toBe('bridge-vlan100');
+  });
+});
+
+describe('buildPlanOps', () => {
+  it('creates the VLAN interface before addressing it', () => {
+    const ops = buildPlanOps({ plan: { mode: 'dhcp', vlanId: 100 } });
+    expect(ops[0].path).toBe('interface/vlan');
+    expect(ops[0].body).toMatchObject({ 'vlan-id': '100', interface: 'bridge' });
+    expect(ops[1].body?.interface).toBe('bridge-vlan100');
+  });
+
+  it('asks for a lease rather than an address in DHCP mode', () => {
+    const ops = buildPlanOps({ plan: { mode: 'dhcp' } });
+    expect(ops.map((o) => o.path)).toEqual(['ip/dhcp-client']);
+    expect(ops[0].body).toMatchObject({ 'add-default-route': 'yes' });
+  });
+
+  it('writes the real prefix, not an assumed /24', () => {
+    const ops = buildPlanOps({
+      plan: { mode: 'static', address: '10.0.4.10', prefix: 22, gateway: '10.0.4.1' },
+    });
+    expect(ops[0].body?.address).toBe('10.0.4.10/22');
+  });
+
+  it('still never deletes anything', () => {
+    const plans: AddressPlan[] = [
+      { mode: 'dhcp' },
+      { mode: 'dhcp', vlanId: 7 },
+      { mode: 'static', address: '192.168.0.60', prefix: 24, gateway: '192.168.0.1' },
+    ];
+    for (const plan of plans) {
+      expect(buildPlanOps({ plan }).some((o) => o.method === 'delete')).toBe(false);
+    }
+  });
+});
+
+describe('leasedAddress', () => {
+  it('reads the address DHCP handed out', () => {
+    expect(leasedAddress([{ address: '192.168.0.77/24', status: 'bound' }])).toBe('192.168.0.77');
+  });
+
+  it('ignores a client that has not bound yet', () => {
+    expect(leasedAddress([{ address: '', status: 'searching...' }])).toBeNull();
+  });
+});
+
+describe('judgeConflict', () => {
+  it('accepts an address nothing answers for', () => {
+    expect(judgeConflict({ arpResolved: false, pingReplies: 0 }).free).toBe(true);
+  });
+
+  it('rejects one with a resolved ARP entry', () => {
+    expect(judgeConflict({ arpResolved: true, pingReplies: 0 }).free).toBe(false);
+  });
+
+  it('rejects one that only answers ping — the 192.168.0.64 case', () => {
+    // Observed on the real network: replied to ping, absent from ARP. ARP alone
+    // would have assigned a duplicate address to a switch.
+    const v = judgeConflict({ arpResolved: false, pingReplies: 2 });
+    expect(v.free).toBe(false);
+    expect(v.reason).toMatch(/not in ARP/);
+  });
+});
+
+/**
+ * Real rows captured from 2GT-NW-MIKROTIK10G-TEST while probing for a free
+ * address. The failed entries exist *because* this feature pinged those
+ * addresses and nothing answered.
+ */
+describe('arpRowResolved', () => {
+  it('counts a live host', () => {
+    expect(arpRowResolved({
+      'mac-address': 'D8:9E:F3:90:41:F1', status: 'stale', complete: 'true',
+    })).toBe(true);
+  });
+
+  it('counts a reachable host', () => {
+    expect(arpRowResolved({
+      'mac-address': 'B4:FB:E4:0B:0B:8A', status: 'reachable', complete: 'true',
+    })).toBe(true);
+  });
+
+  it('does not count a failed lookup, which means the address is free', () => {
+    // The self-inflicted bug: our own ping created this entry, and reading it
+    // as occupancy meant a free address could never be used twice.
+    expect(arpRowResolved({ status: 'failed', complete: 'false' })).toBe(false);
+  });
+
+  it('does not count an entry with no MAC at all', () => {
+    expect(arpRowResolved({ status: 'incomplete' })).toBe(false);
+  });
+});

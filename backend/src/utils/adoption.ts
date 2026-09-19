@@ -387,3 +387,205 @@ export function assessFactoryState(state: {
   // rewrites its addressing.
   return { isFactory: warnings.length === 0 && signals.length > 0, signals, warnings };
 }
+
+// ── Deciding the device's permanent addressing ─────────────────────────────
+
+/**
+ * How the new device should get its management address.
+ *
+ * The first version of this asked for one thing — an IPv4 address — and
+ * inferred everything else: a /24 prefix, a gateway at `.1`, and the address
+ * landing on the untagged `bridge`. Every one of those is a guess about
+ * somebody else's network, and two of them are guesses that strand a device if
+ * wrong.
+ *
+ * A management interface very often does not belong on the native VLAN, the
+ * gateway is frequently not `.1`, and plenty of operators would rather hand the
+ * device a reservation from DHCP than hand-pick an address at all. So the shape
+ * of the addressing is now asked for rather than assumed.
+ */
+export type AddressPlan =
+  | {
+      mode: 'dhcp';
+      /** Management VLAN. Omitted means the untagged bridge. */
+      vlanId?: number;
+    }
+  | {
+      mode: 'static';
+      address: string;
+      /** Real prefix length. Not everything is a /24. */
+      prefix: number;
+      /** Required: there is no safe way to infer this. */
+      gateway: string;
+      vlanId?: number;
+    };
+
+/** Interface the address lands on: a VLAN sub-interface, or the bridge itself. */
+export function planInterface(plan: AddressPlan, bridge = 'bridge'): string {
+  return plan.vlanId ? `${bridge}-vlan${plan.vlanId}` : bridge;
+}
+
+export function validatePlan(plan: AddressPlan): AddressVerdict {
+  if (plan.vlanId !== undefined) {
+    if (!Number.isInteger(plan.vlanId) || plan.vlanId < 1 || plan.vlanId > 4094) {
+      return { ok: false, reason: `VLAN ${plan.vlanId} is not in the valid range 1–4094` };
+    }
+  }
+  if (plan.mode === 'static') {
+    if (!isIpv4(plan.address)) return { ok: false, reason: `${plan.address} is not a valid IPv4 address` };
+    if (!isIpv4(plan.gateway)) return { ok: false, reason: 'a gateway is required for a static address' };
+    if (!Number.isInteger(plan.prefix) || plan.prefix < 8 || plan.prefix > 30) {
+      return { ok: false, reason: `prefix /${plan.prefix} is out of range` };
+    }
+    if (!sameSubnet(plan.address, plan.gateway, plan.prefix)) {
+      // Catches the old `.1` assumption when it happens to be wrong.
+      return {
+        ok: false,
+        reason: `gateway ${plan.gateway} is not reachable from ${plan.address}/${plan.prefix}`,
+      };
+    }
+    const host = Number(stripPrefix(plan.address).split('.')[3]);
+    if (host === 0) return { ok: false, reason: 'that is a network address' };
+    if (plan.prefix === 24 && host === 255) return { ok: false, reason: 'that is a broadcast address' };
+  }
+  return { ok: true };
+}
+
+/**
+ * The REST calls that give a factory device its permanent addressing.
+ *
+ * Still additive: nothing here removes the factory address, so a plan that
+ * turns out to be wrong — a VLAN the uplink does not actually carry, say —
+ * leaves the device exactly as reachable as it was. The factory address is
+ * dropped later, and only once the new path has been proven to work.
+ */
+export function buildPlanOps(opts: {
+  plan: AddressPlan;
+  bridge?: string;
+  identity?: string;
+}): RestOp[] {
+  const bridge = opts.bridge || 'bridge';
+  const iface = planInterface(opts.plan, bridge);
+  const ops: RestOp[] = [];
+
+  if (opts.plan.vlanId) {
+    // Management on a tagged VLAN needs a sub-interface to hang the address on.
+    // This only works if the uplink already carries that VLAN tagged; if it does
+    // not, verification fails and the factory address is still there.
+    ops.push({
+      method: 'put',
+      path: 'interface/vlan',
+      body: {
+        name: iface,
+        'vlan-id': String(opts.plan.vlanId),
+        interface: bridge,
+        comment: ADOPTED_COMMENT,
+      },
+      describe: `create VLAN ${opts.plan.vlanId} interface on ${bridge}`,
+    });
+  }
+
+  if (opts.plan.mode === 'dhcp') {
+    ops.push({
+      method: 'put',
+      path: 'ip/dhcp-client',
+      body: {
+        interface: iface,
+        disabled: 'false',
+        'add-default-route': 'yes',
+        'use-peer-dns': 'yes',
+        comment: ADOPTED_COMMENT,
+      },
+      describe: `request a DHCP lease on ${iface}`,
+    });
+  } else {
+    ops.push({
+      method: 'put',
+      path: 'ip/address',
+      body: {
+        address: `${stripPrefix(opts.plan.address)}/${opts.plan.prefix}`,
+        interface: iface,
+        comment: ADOPTED_COMMENT,
+      },
+      describe: `add ${stripPrefix(opts.plan.address)}/${opts.plan.prefix} on ${iface}`,
+    });
+    ops.push({
+      method: 'put',
+      path: 'ip/route',
+      body: { 'dst-address': '0.0.0.0/0', gateway: opts.plan.gateway, comment: ADOPTED_COMMENT },
+      describe: `add default route via ${opts.plan.gateway}`,
+    });
+  }
+
+  if (opts.identity?.trim()) {
+    ops.push({
+      method: 'post',
+      path: 'system/identity/set',
+      body: { name: opts.identity.trim() },
+      describe: `set identity to ${opts.identity.trim()}`,
+    });
+  }
+  return ops;
+}
+
+/**
+ * Pull the leased address out of `/ip/dhcp-client`.
+ *
+ * With DHCP the manager does not know where the device landed until it asks,
+ * so the address has to be read back before the device can be registered.
+ */
+export function leasedAddress(rows: { address?: string; status?: string; interface?: string }[]): string | null {
+  for (const r of rows) {
+    if (r.status && r.status !== 'bound') continue;
+    const bare = stripPrefix(r.address || '');
+    if (isIpv4(bare)) return bare;
+  }
+  return null;
+}
+
+export interface ConflictCheck {
+  /** Nothing answered, so the address appears usable. */
+  free: boolean;
+  reason?: string;
+}
+
+/**
+ * Decide whether an address is free from what the jump host can see.
+ *
+ * Both inputs are needed, because neither settles it alone. Probing the
+ * reference network, 192.168.0.64 answered ping while absent from ARP — a host
+ * that had not spoken recently enough to be cached. Trusting ARP alone would
+ * have handed a switch a duplicate address.
+ *
+ * But presence in the ARP table is *not* the question. RouterOS records failed
+ * resolutions too:
+ *
+ *     address=192.168.0.64  mac-address=D8:9E:...  status=stale   complete=true
+ *     address=192.168.0.61                         status=failed  complete=false
+ *
+ * The second entry exists precisely because nothing answered — it is evidence
+ * the address is free, and reading it as occupancy is self-defeating: the ping
+ * this function performs *creates* that entry, so a second check of a free
+ * address would refuse it. Observed exactly that way, having probed an address
+ * and then been unable to use it.
+ *
+ * So only a completed entry, one that actually resolved to a MAC, counts.
+ */
+export function judgeConflict(opts: {
+  /** An ARP entry that resolved to a MAC. Failed lookups do not count. */
+  arpResolved: boolean;
+  pingReplies: number;
+}): ConflictCheck {
+  if (opts.arpResolved) return { free: false, reason: 'another host is answering ARP for this address' };
+  if (opts.pingReplies > 0) {
+    return { free: false, reason: 'something replied to ping at this address, though it is not in ARP' };
+  }
+  return { free: true };
+}
+
+/** Did this ARP row actually resolve, or is it a record of failure? */
+export function arpRowResolved(row: { 'mac-address'?: string; complete?: string; status?: string }): boolean {
+  if ((row.complete || '').toLowerCase() === 'false') return false;
+  if ((row.status || '').toLowerCase() === 'failed') return false;
+  return !!(row['mac-address'] || '').trim();
+}

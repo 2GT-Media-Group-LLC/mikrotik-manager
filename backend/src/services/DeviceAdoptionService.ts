@@ -6,8 +6,10 @@ import type { PollerService } from './PollerService';
 import {
   collectCandidates, pickTempAddress, validateTargetAddress, buildAdoptionOps,
   fetchAuthHeader, needsJumpHost, stripPrefix, TEMP_COMMENT,
-  recommendMode, assessFactoryState,
+  recommendMode, assessFactoryState, validatePlan, buildPlanOps, planInterface,
+  leasedAddress, judgeConflict, arpRowResolved,
   type AdoptionCandidate, type NeighborRow, type RestOp, type ModeRecommendation,
+  type AddressPlan,
 } from '../utils/adoption';
 
 /**
@@ -25,9 +27,11 @@ export interface AdoptionRequest {
   mac: string;
   /** Managed device to borrow. Must be one that can see the target. */
   jumpHostId: number;
-  /** Permanent address for the device, on the manager's subnet. */
-  targetAddress: string;
-  gateway: string;
+  /**
+   * How the device should be addressed: DHCP or static, optionally on a
+   * management VLAN. Asked for rather than inferred — see AddressPlan.
+   */
+  plan: AddressPlan;
   /** The unique password printed on the unit. */
   password: string;
   username?: string;
@@ -106,6 +110,24 @@ export class DeviceAdoptionService {
       });
   }
 
+  /** Free/in-use verdict for one address, seen from a managed device. */
+  async checkAddress(jumpHostId: number, address: string): Promise<{ free: boolean; reason?: string }> {
+    const jump = await queryOne<DeviceRow>(
+      `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted
+         FROM devices WHERE id = $1`, [jumpHostId]
+    );
+    if (!jump) return { free: false, reason: 'jump host not found' };
+    let client: RouterOSClient | null = null;
+    try {
+      client = await this.connect(jump);
+      return await this.checkAddressFree(client, address);
+    } catch (e) {
+      return { free: false, reason: e instanceof Error ? e.message : String(e) };
+    } finally {
+      client?.disconnect();
+    }
+  }
+
   /** Remove temporary addresses a previous run failed to clean up. */
   async cleanupOrphans(): Promise<number> {
     const devices = await query<DeviceRow>(
@@ -157,15 +179,23 @@ export class DeviceAdoptionService {
     );
     if (!jump) return { ok: false, steps, error: 'Jump host not found' };
 
-    // The permanent address is checked against the jump host's own address,
-    // because that is demonstrably a subnet the manager can already reach.
-    const verdict = validateTargetAddress(
-      req.targetAddress, jump.ip_address, 24, [jump.ip_address]
-    );
-    if (!verdict.ok) return { ok: false, steps, error: verdict.reason };
+    const planVerdict = validatePlan(req.plan);
+    if (!planVerdict.ok) return { ok: false, steps, error: planVerdict.reason };
+
+    // A static address on the manager's own subnet is additionally checked for
+    // reachability, since that is the case where a typo strands the device.
+    // Addresses on a management VLAN are deliberately not second-guessed: the
+    // manager has no visibility into that segment.
+    if (req.plan.mode === 'static' && !req.plan.vlanId) {
+      const reach = validateTargetAddress(
+        req.plan.address, jump.ip_address, req.plan.prefix, [jump.ip_address]
+      );
+      if (!reach.ok) return { ok: false, steps, error: reach.reason };
+    }
 
     let client: RouterOSClient | null = null;
     let tempId: string | null = null;
+    let learnedIp: string | null = null;
 
     try {
       client = await this.connect(jump);
@@ -234,15 +264,44 @@ export class DeviceAdoptionService {
         assessment.signals.join(', ') || undefined
       );
 
-      for (const op of buildAdoptionOps({
-        targetAddress: `${stripPrefix(req.targetAddress)}/24`,
-        gateway: req.gateway,
-        identity: req.identity,
-      })) {
+      // Conflict check, from the jump host's own view of the segment. This is
+      // the check whose absence would have let the flow assign an address that
+      // was already answering — both halves are needed, see judgeConflict.
+      if (req.plan.mode === 'static') {
+        const conflict = await this.checkAddressFree(client, req.plan.address);
+        if (!conflict.free) {
+          note(`checked ${req.plan.address} is free`, false, conflict.reason);
+          return {
+            ok: false, steps,
+            error: `${req.plan.address} is not free: ${conflict.reason}. Nothing was changed.`,
+          };
+        }
+        note(`checked ${req.plan.address} is free`, true, 'no ARP entry, no ping reply');
+      }
+
+      for (const op of buildPlanOps({ plan: req.plan, identity: req.identity })) {
         const r = await rest(op);
         note(op.describe, r.ok, r.error);
         if (!r.ok) return { ok: false, steps, error: `Failed to ${op.describe}: ${r.error}` };
         await sleep(2000);
+      }
+
+      if (req.plan.mode === 'dhcp') {
+        // With DHCP the manager does not know where the device landed, so the
+        // lease has to be read back before it can be registered. Binding is not
+        // instant; a few polls beat one optimistic read.
+        for (let attempt = 0; attempt < 6 && !learnedIp; attempt++) {
+          await sleep(3000);
+          learnedIp = leasedAddress(await this.readMany(rest, 'ip/dhcp-client'));
+        }
+        if (!learnedIp) {
+          return {
+            ok: false, steps,
+            error: `DHCP client added on ${planInterface(req.plan)} but no lease arrived. ` +
+                   'Check that a DHCP server serves that segment.',
+          };
+        }
+        note('received DHCP lease', true, learnedIp);
       }
     } catch (err) {
       return { ok: false, steps, error: err instanceof Error ? err.message : String(err) };
@@ -261,7 +320,7 @@ export class DeviceAdoptionService {
     }
 
     // From here the manager talks to the device directly; the jump host is done.
-    const ip = stripPrefix(req.targetAddress);
+    const ip = req.plan.mode === 'static' ? stripPrefix(req.plan.address) : (learnedIp as string);
     const reachable = await this.verifyDirect(ip, req.username || 'admin', req.password);
     note(`manager reached ${ip} over the API`, reachable);
     if (!reachable) {
@@ -291,6 +350,33 @@ export class DeviceAdoptionService {
     note('registered in the manager', true);
 
     return { ok: true, steps, deviceId: Number(created.body.id) };
+  }
+
+  /**
+   * Is this address free, as far as the jump host can tell?
+   *
+   * ARP and ping, because neither settles it alone: on the reference network
+   * 192.168.0.64 replied to ping while absent from the ARP cache. A failure to
+   * check is reported as "not free" rather than "free" — an unusable address is
+   * an inconvenience, a duplicated one is an outage.
+   */
+  private async checkAddressFree(
+    client: RouterOSClient, address: string
+  ): Promise<{ free: boolean; reason?: string }> {
+    try {
+      const arp = await client.execute('/ip/arp/print', { detail: '' });
+      const arpResolved = arp.some(
+        (a) => stripPrefix(a.address || '') === stripPrefix(address) && arpRowResolved(a)
+      );
+      const ping = await client.execute('/ping', { address: stripPrefix(address), count: '3' }, [], { timeoutMs: 20000 });
+      const replies = Number((ping[ping.length - 1] || {}).received || 0);
+      return judgeConflict({ arpResolved, pingReplies: replies });
+    } catch (e) {
+      return {
+        free: false,
+        reason: `could not verify the address is free (${e instanceof Error ? e.message : String(e)})`,
+      };
+    }
   }
 
   /** Read a single-object REST menu (`system/identity`), or null if unreadable. */

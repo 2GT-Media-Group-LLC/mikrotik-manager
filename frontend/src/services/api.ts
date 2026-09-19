@@ -1787,11 +1787,15 @@ export interface AdoptionResult {
   error?: string;
 }
 
+export type AddressPlan =
+  | { mode: 'dhcp'; vlanId?: number }
+  | { mode: 'static'; address: string; prefix: number; gateway: string; vlanId?: number };
+
 export interface AdoptRequest {
   mac: string;
   jumpHostId: number;
-  targetAddress: string;
-  gateway: string;
+  /** How to address the device. Asked for, never inferred. */
+  plan: AddressPlan;
   password: string;
   username?: string;
   identity?: string;
@@ -1803,6 +1807,8 @@ export interface AdoptRequest {
 
 export const adoptionApi = {
   candidates: () => api.get<{ candidates: AdoptionCandidate[] }>('/adoption/candidates'),
+  checkAddress: (jumpHostId: number, address: string) =>
+    api.post<{ free: boolean; reason?: string }>('/adoption/check-address', { jumpHostId, address }),
   adopt: (body: AdoptRequest) => api.post<AdoptionResult>('/adoption/adopt', body),
   cleanup: () => api.post<{ removed: number }>('/adoption/cleanup'),
 };

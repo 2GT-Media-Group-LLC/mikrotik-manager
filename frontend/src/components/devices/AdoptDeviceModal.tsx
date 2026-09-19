@@ -1,8 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { X, ShieldQuestion, Check, AlertTriangle, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
-import { adoptionApi, type AdoptionCandidate, type AdoptionResult } from '../../services/api';
+import {
+  adoptionApi,
+  type AdoptionCandidate, type AdoptionResult, type AddressPlan,
+} from '../../services/api';
 
 /**
  * Adopting a factory-default MikroTik.
@@ -26,7 +29,13 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
   const [jumpHostId, setJumpHostId] = useState(candidate.seenBy[0]?.id ?? 0);
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [addrMode, setAddrMode] = useState<'dhcp' | 'static'>('static');
   const [targetAddress, setTargetAddress] = useState('');
+  const [prefix, setPrefix] = useState('24');
+  const [gatewayInput, setGatewayInput] = useState('');
+  const [vlanId, setVlanId] = useState('');
+  const [addrCheck, setAddrCheck] = useState<{ free: boolean; reason?: string } | null>(null);
+  const [checking, setChecking] = useState(false);
   const [removeFactoryAddress, setRemoveFactoryAddress] = useState(true);
   const [force, setForce] = useState(false);
   const [result, setResult] = useState<AdoptionResult | null>(null);
@@ -38,13 +47,47 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
 
   const jumpHost = candidate.seenBy.find((h) => h.id === jumpHostId);
 
-  // The device has to land on the jump host's subnet, so the gateway is derived
-  // from it rather than asked for. Getting this wrong strands the device.
+  // The jump host's subnet is offered as a *starting point* only. It is not
+  // assumed: plenty of networks are not /24 and plenty of gateways are not .1,
+  // and a management interface often belongs on its own VLAN. Everything here
+  // is editable.
   const subnet = useMemo(
     () => (jumpHost?.ip_address || '').split('.').slice(0, 3).join('.'),
     [jumpHost]
   );
-  const gateway = subnet ? `${subnet}.1` : '';
+
+  const plan: AddressPlan = addrMode === 'dhcp'
+    ? { mode: 'dhcp', ...(vlanId ? { vlanId: Number(vlanId) } : {}) }
+    : {
+        mode: 'static',
+        address: targetAddress,
+        prefix: Number(prefix) || 24,
+        gateway: gatewayInput,
+        ...(vlanId ? { vlanId: Number(vlanId) } : {}),
+      };
+
+  // Checked against the network before anything is written, so a clash surfaces
+  // in the form rather than as a refusal part-way through adoption.
+  useEffect(() => {
+    let cancelled = false;
+    const applicable =
+      addrMode === 'static' && /^\d{1,3}(\.\d{1,3}){3}$/.test(targetAddress) && !!jumpHostId;
+
+    // Every state update happens inside the timer. Doing any of it in the
+    // effect body synchronously triggers a cascading render, and the debounce
+    // is wanted regardless so the check does not fire on each keystroke.
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      if (!applicable) { setAddrCheck(null); return; }
+      setChecking(true);
+      adoptionApi.checkAddress(jumpHostId, targetAddress)
+        .then((r) => { if (!cancelled) setAddrCheck(r.data); })
+        .catch(() => { if (!cancelled) setAddrCheck(null); })
+        .finally(() => { if (!cancelled) setChecking(false); });
+    }, applicable ? 600 : 0);
+
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [targetAddress, jumpHostId, addrMode]);
 
   const adopt = useMutation({
     mutationFn: () =>
@@ -52,8 +95,7 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
         .adopt({
           mac: candidate.mac,
           jumpHostId,
-          targetAddress,
-          gateway,
+          plan,
           password,
           identity: name.trim() || undefined,
           name: name.trim() || undefined,
@@ -73,9 +115,12 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
     },
   });
 
-  const addressValid = /^\d{1,3}(\.\d{1,3}){3}$/.test(targetAddress)
-    && targetAddress.startsWith(`${subnet}.`);
-  const ready = !!jumpHostId && password.length > 0 && addressValid && !adopt.isPending
+  const staticReady = /^\d{1,3}(\.\d{1,3}){3}$/.test(targetAddress)
+    && /^\d{1,3}(\.\d{1,3}){3}$/.test(gatewayInput)
+    && addrCheck?.free !== false
+    && !checking;
+  const ready = !!jumpHostId && password.length > 0 && !adopt.isPending
+    && (addrMode === 'dhcp' || staticReady)
     && (!looksEstablished || force);
 
   return (
@@ -159,24 +204,90 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="border border-gray-200 dark:border-slate-700 rounded p-3 space-y-3">
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-medium text-gray-700 dark:text-slate-300">Management address</span>
+              {(['static', 'dhcp'] as const).map((m) => (
+                <label key={m} className="flex items-center gap-1.5 text-[12px] cursor-pointer">
+                  <input
+                    type="radio" name="addrMode" checked={addrMode === m}
+                    onChange={() => setAddrMode(m)}
+                  />
+                  {m === 'static' ? 'Static' : 'DHCP'}
+                </label>
+              ))}
+            </div>
+
+            {addrMode === 'static' ? (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-[11px] text-gray-500 mb-1">Address</label>
+                  <input
+                    className="input w-full mono" value={targetAddress}
+                    onChange={(e) => setTargetAddress(e.target.value)}
+                    placeholder={subnet ? `${subnet}.60` : '10.0.0.10'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">Prefix</label>
+                  <input
+                    className="input w-full mono" value={prefix}
+                    onChange={(e) => setPrefix(e.target.value.replace(/\D/g, ''))}
+                    placeholder="24"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-[11px] text-gray-500 mb-1">Gateway</label>
+                  <input
+                    className="input w-full mono" value={gatewayInput}
+                    onChange={(e) => setGatewayInput(e.target.value)}
+                    placeholder={subnet ? `${subnet}.1` : '10.0.0.1'}
+                  />
+                  <p className="text-[10.5px] text-gray-400 mt-1">
+                    Not assumed — it is often not .1, and the device cannot reply off-subnet without it.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11.5px] text-gray-500 dark:text-slate-400">
+                A DHCP client is added and the lease read back to learn where the device landed.
+                Consider a reservation, so infrastructure keeps a stable address.
+              </p>
+            )}
+
             <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">
-                New address
-              </label>
+              <label className="block text-[11px] text-gray-500 mb-1">Management VLAN (optional)</label>
               <input
-                className="input w-full mono" value={targetAddress}
-                onChange={(e) => setTargetAddress(e.target.value)}
-                placeholder={subnet ? `${subnet}.60` : '—'}
+                className="input w-full mono" value={vlanId}
+                onChange={(e) => setVlanId(e.target.value.replace(/\D/g, ''))}
+                placeholder="leave blank for the untagged bridge"
               />
-              {targetAddress && !addressValid && (
-                <p className="text-[11px] text-amber-600 mt-1">Must be a free address on {subnet}.0/24</p>
+              {vlanId && (
+                <p className="text-[10.5px] text-amber-600 mt-1">
+                  A <span className="mono">bridge-vlan{vlanId}</span> interface will be created and addressed.
+                  The uplink must already carry VLAN {vlanId} tagged — if it does not, adoption stops at
+                  verification and the factory address is left in place.
+                </p>
               )}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Name</label>
-              <input className="input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder="optional" />
-            </div>
+
+            {addrMode === 'static' && (checking || addrCheck) && (
+              <div className={clsx(
+                'text-[11.5px] flex items-center gap-1.5',
+                checking ? 'text-gray-400' : addrCheck?.free ? 'text-green-600' : 'text-red-600'
+              )}>
+                {checking
+                  ? <><Loader2 className="w-3 h-3 animate-spin" /> checking {targetAddress}…</>
+                  : addrCheck?.free
+                    ? <><Check className="w-3 h-3" /> {targetAddress} is free (no ARP entry, no ping reply)</>
+                    : <><AlertTriangle className="w-3 h-3" /> {addrCheck?.reason}</>}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Name</label>
+            <input className="input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder="optional" />
           </div>
 
           <label className="flex items-start gap-2 text-[12px] text-gray-600 dark:text-slate-300 cursor-pointer">
