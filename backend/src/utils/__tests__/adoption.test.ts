@@ -176,3 +176,110 @@ describe('sameSubnet', () => {
     expect(sameSubnet('192.168.88.1', '192.168.0.51', 16)).toBe(true);
   });
 });
+
+/**
+ * Telling the two scenarios apart.
+ *
+ * Scenario 1 is the manager arriving in an environment full of working
+ * switches; scenario 2 is one new device arriving in a working environment.
+ * Only the second should ever be written to.
+ */
+import { recommendMode, assessFactoryState, FACTORY_IDENTITY } from '../adoption';
+
+describe('recommendMode', () => {
+  it('adopts a device showing both factory markers', () => {
+    // The real CRS310, exactly as it arrived.
+    const r = recommendMode({ address: '192.168.88.1', identity: 'MikroTik' });
+    expect(r.mode).toBe('adopt');
+    expect(r.confidence).toBe('high');
+  });
+
+  it('adds an established device, even when unreachable from here', () => {
+    // The dangerous case: a configured switch in a VLAN we do not route to.
+    // Unreachable is not the same as unconfigured, and adopting it would
+    // rewrite the addressing of a working device.
+    const r = recommendMode({
+      address: '10.20.30.40', identity: 'core-sw-02', reachableDirectly: false,
+    });
+    expect(r.mode).toBe('add');
+    expect(r.confidence).toBe('high');
+    expect(r.reasons.join(' ')).toMatch(/already configured/);
+    expect(r.reasons.join(' ')).toMatch(/needs a route or a credential/);
+  });
+
+  it('adds an established device that is reachable', () => {
+    expect(recommendMode({
+      address: '192.168.0.39', identity: '2GT-NW-BigSwitch', reachableDirectly: true,
+    }).mode).toBe('add');
+  });
+
+  it('is unsure when only one factory marker is present', () => {
+    // Factory address but renamed: possibly half-configured by someone.
+    const renamed = recommendMode({ address: '192.168.88.1', identity: 'sw-spare' });
+    expect(renamed.mode).toBe('adopt');
+    expect(renamed.confidence).toBe('low');
+
+    // Default identity but moved off the factory address.
+    const moved = recommendMode({ address: '10.0.0.9', identity: 'MikroTik' });
+    expect(moved.confidence).toBe('low');
+  });
+
+  it('explains itself, so the operator can overrule it', () => {
+    expect(recommendMode({ address: '192.168.88.1', identity: 'MikroTik' }).reasons)
+      .toEqual(expect.arrayContaining([
+        expect.stringContaining('192.168.88.1'),
+        expect.stringContaining('MikroTik'),
+      ]));
+  });
+});
+
+describe('assessFactoryState', () => {
+  /** The reference CRS310 as delivered. */
+  const FRESH = {
+    identity: FACTORY_IDENTITY,
+    addresses: [{ address: '192.168.88.1/24', comment: 'defconf' }],
+    users: [{ name: 'admin' }],
+  };
+
+  it('accepts a genuinely factory-default device', () => {
+    const a = assessFactoryState(FRESH);
+    expect(a.isFactory).toBe(true);
+    expect(a.warnings).toEqual([]);
+  });
+
+  it('refuses a device that has been renamed', () => {
+    const a = assessFactoryState({ ...FRESH, identity: 'core-sw-01' });
+    expect(a.isFactory).toBe(false);
+    expect(a.warnings.join(' ')).toMatch(/core-sw-01/);
+  });
+
+  it('refuses a device carrying addresses of its own', () => {
+    const a = assessFactoryState({
+      ...FRESH,
+      addresses: [
+        { address: '192.168.88.1/24', comment: 'defconf' },
+        { address: '10.20.30.40/24', comment: 'uplink' },
+      ],
+    });
+    expect(a.isFactory).toBe(false);
+    expect(a.warnings.join(' ')).toMatch(/10\.20\.30\.40/);
+  });
+
+  it('refuses a device with extra user accounts', () => {
+    const a = assessFactoryState({ ...FRESH, users: [{ name: 'admin' }, { name: 'netops' }] });
+    expect(a.isFactory).toBe(false);
+    expect(a.warnings.join(' ')).toMatch(/2 user accounts/);
+  });
+
+  it('is strict: one warning is enough to decline', () => {
+    // Refusing a new device costs one override. Adopting a live one rewrites
+    // its addressing, so the asymmetry is deliberate.
+    const a = assessFactoryState({ ...FRESH, identity: 'named-but-otherwise-fresh' });
+    expect(a.signals.length).toBeGreaterThan(0);
+    expect(a.isFactory).toBe(false);
+  });
+
+  it('declines when it can see nothing at all rather than assuming', () => {
+    expect(assessFactoryState({}).isFactory).toBe(false);
+  });
+});

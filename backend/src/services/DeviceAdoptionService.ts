@@ -6,7 +6,8 @@ import type { PollerService } from './PollerService';
 import {
   collectCandidates, pickTempAddress, validateTargetAddress, buildAdoptionOps,
   fetchAuthHeader, needsJumpHost, stripPrefix, TEMP_COMMENT,
-  type AdoptionCandidate, type NeighborRow, type RestOp,
+  recommendMode, assessFactoryState,
+  type AdoptionCandidate, type NeighborRow, type RestOp, type ModeRecommendation,
 } from '../utils/adoption';
 
 /**
@@ -35,6 +36,13 @@ export interface AdoptionRequest {
   name?: string;
   /** Remove the factory 192.168.88.1 once the new address is proven. */
   removeFactoryAddress?: boolean;
+  /**
+   * Proceed even though the device does not look factory-default.
+   *
+   * Requires a deliberate choice, because the check exists to stop this flow
+   * rewriting the addressing of a switch that is already in service.
+   */
+  force?: boolean;
   siteId?: number | null;
 }
 
@@ -59,7 +67,9 @@ export class DeviceAdoptionService {
    *
    * Neighbour rows already carry everything needed; nothing extra is polled.
    */
-  async listCandidates(): Promise<(AdoptionCandidate & { reachableDirectly: boolean })[]> {
+  async listCandidates(): Promise<
+    (AdoptionCandidate & { reachableDirectly: boolean; recommendation: ModeRecommendation })[]
+  > {
     const rows = await query<NeighborRow>(
       `SELECT t.neighbor_mac, t.neighbor_address, t.neighbor_identity,
               t.neighbor_platform, t.from_device_id, t.from_interface, t.discovered_at
@@ -81,7 +91,19 @@ export class DeviceAdoptionService {
 
     return collectCandidates(rows)
       .filter((c) => !knownMacs.has(c.mac))
-      .map((c) => ({ ...c, reachableDirectly: !needsJumpHost(c.address, managedIps) }));
+      .map((c) => {
+        const reachableDirectly = !needsJumpHost(c.address, managedIps);
+        return {
+          ...c,
+          reachableDirectly,
+          // Decided from what the device looks like, not from whether we can
+          // reach it. An established switch we have no route to is still an
+          // established switch.
+          recommendation: recommendMode({
+            address: c.address, identity: c.identity, reachableDirectly,
+          }),
+        };
+      });
   }
 
   /** Remove temporary addresses a previous run failed to clean up. */
@@ -181,6 +203,37 @@ export class DeviceAdoptionService {
       }
       note('authenticated to target', true);
 
+      // Last harmless moment. Neighbour discovery exposes only an address and
+      // an identity, which is enough to *suggest* a flow but not enough to bet
+      // someone's production switch on. Now that we are authenticated we can
+      // look properly, and decline if this turns out to be a device already in
+      // service rather than one out of its box.
+      const assessment = assessFactoryState({
+        identity: await this.readOne(rest, 'system/identity').then((d) => d?.name),
+        addresses: await this.readMany(rest, 'ip/address'),
+        users: await this.readMany(rest, 'user'),
+      });
+
+      if (!assessment.isFactory && !req.force) {
+        note('confirmed factory-default', false, assessment.warnings.join('; '));
+        return {
+          ok: false,
+          steps,
+          error:
+            'This device does not look factory-default, so it was not modified: ' +
+            assessment.warnings.join('; ') +
+            '. If it really is new, re-run with force. Otherwise add it normally with its credentials — ' +
+            'adoption would overwrite configuration it is already using.',
+        };
+      }
+      note(
+        req.force && !assessment.isFactory
+          ? 'factory check overridden by request'
+          : 'confirmed factory-default',
+        true,
+        assessment.signals.join(', ') || undefined
+      );
+
       for (const op of buildAdoptionOps({
         targetAddress: `${stripPrefix(req.targetAddress)}/24`,
         gateway: req.gateway,
@@ -238,6 +291,29 @@ export class DeviceAdoptionService {
     note('registered in the manager', true);
 
     return { ok: true, steps, deviceId: Number(created.body.id) };
+  }
+
+  /** Read a single-object REST menu (`system/identity`), or null if unreadable. */
+  private async readOne(
+    rest: (op: RestOp) => Promise<{ ok: boolean; data?: string }>,
+    path: string
+  ): Promise<Record<string, string> | null> {
+    const r = await rest({ method: 'get', path, describe: `read ${path}` });
+    if (!r.ok || !r.data) return null;
+    try { return JSON.parse(r.data) as Record<string, string>; } catch { return null; }
+  }
+
+  /** Read a list REST menu (`ip/address`). An unreadable menu yields []. */
+  private async readMany(
+    rest: (op: RestOp) => Promise<{ ok: boolean; data?: string }>,
+    path: string
+  ): Promise<Record<string, string>[]> {
+    const r = await rest({ method: 'get', path, describe: `read ${path}` });
+    if (!r.ok || !r.data) return [];
+    try {
+      const parsed = JSON.parse(r.data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
   }
 
   /** One REST call to the target, tunnelled through the jump host's `/tool/fetch`. */

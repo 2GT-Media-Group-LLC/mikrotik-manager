@@ -254,3 +254,136 @@ export function sameSubnet(a: string, b: string, prefix = 24): boolean {
 export function ipToInt(ip: string): number {
   return stripPrefix(ip).split('.').reduce((acc, o) => (acc << 8) + Number(o), 0) >>> 0;
 }
+
+// ── Telling a new device from an established one ───────────────────────────
+
+/**
+ * Two quite different situations produce a discovered MikroTik, and treating
+ * them the same is how this feature could do real damage.
+ *
+ * **An established device.** The manager has just been pointed at a network
+ * full of switches that are already configured and working. They need
+ * credentials and nothing else; the old "add to manager" flow is exactly right.
+ * Writing an address or an identity to one of these would be modifying
+ * production configuration nobody asked us to touch.
+ *
+ * **A factory device.** Straight out of the box, on 192.168.88.1, unreachable.
+ * This is the one that needs adopting.
+ *
+ * Reachability alone cannot tell them apart, which was the flaw in the first
+ * version: an established switch on a subnet we do not route to is unreachable
+ * *and* fully configured, and would have been offered for adoption. So the test
+ * is what the device looks like, not whether we can get to it.
+ */
+
+export type AdoptionMode =
+  /** Configure it first, then register. Factory-default devices only. */
+  | 'adopt'
+  /** Register with credentials, changing nothing. Everything else. */
+  | 'add';
+
+export interface ModeRecommendation {
+  mode: AdoptionMode;
+  /** How sure we are, which decides whether the UI argues or just defaults. */
+  confidence: 'high' | 'low';
+  reasons: string[];
+}
+
+/** RouterOS's out-of-the-box system identity. */
+export const FACTORY_IDENTITY = 'MikroTik';
+
+/**
+ * Which flow to offer, decided from neighbour data alone.
+ *
+ * Only two signals are visible before connecting, and both are strong: the
+ * factory address and the factory identity. A device showing both is new. A
+ * device showing neither is somebody's working switch, however unreachable it
+ * happens to be from here.
+ */
+export function recommendMode(candidate: {
+  address: string;
+  identity: string | null;
+  reachableDirectly?: boolean;
+}): ModeRecommendation {
+  const onFactoryAddress = candidate.address === FACTORY_ADDRESS;
+  const hasFactoryIdentity = (candidate.identity || '').trim() === FACTORY_IDENTITY;
+  const reasons: string[] = [];
+
+  if (onFactoryAddress) reasons.push(`still on the factory address ${FACTORY_ADDRESS}`);
+  if (hasFactoryIdentity) reasons.push(`identity is still "${FACTORY_IDENTITY}"`);
+
+  if (onFactoryAddress && hasFactoryIdentity) {
+    return { mode: 'adopt', confidence: 'high', reasons };
+  }
+
+  // One signal without the other. Could be a factory device someone has half
+  // configured, or a real device that happens to be unnamed. Offer adoption but
+  // say it is a guess, so the choice lands with the operator.
+  if (onFactoryAddress || hasFactoryIdentity) {
+    reasons.push('but not both of the usual factory markers — worth confirming');
+    return { mode: 'adopt', confidence: 'low', reasons };
+  }
+
+  reasons.push('has its own address and identity, so it is already configured');
+  if (candidate.reachableDirectly === false) {
+    // The case that matters: configured, but we have no route. Not an adoption
+    // problem, and adopting it would rewrite a working device.
+    reasons.push('not reachable from here — it needs a route or a credential, not adoption');
+  }
+  return { mode: 'add', confidence: 'high', reasons };
+}
+
+export interface FactoryAssessment {
+  isFactory: boolean;
+  signals: string[];
+  warnings: string[];
+}
+
+/**
+ * Confirm a device really is unconfigured, after authenticating and before
+ * writing anything.
+ *
+ * The pre-connection guess uses the two fields neighbour discovery exposes.
+ * Once connected there is far more to go on, and this is the last point at
+ * which we can decline harmlessly. It exists so that a wrong choice in the UI
+ * cannot quietly reconfigure production equipment.
+ *
+ * Fixtures for the thresholds come from the reference CRS310 as delivered: a
+ * single address carrying RouterOS's own `defconf` comment, one user, and the
+ * default identity.
+ */
+export function assessFactoryState(state: {
+  identity?: string | null;
+  addresses?: { address?: string; comment?: string }[];
+  users?: { name?: string }[];
+}): FactoryAssessment {
+  const signals: string[] = [];
+  const warnings: string[] = [];
+
+  const identity = (state.identity || '').trim();
+  if (identity === FACTORY_IDENTITY) signals.push('default identity');
+  else if (identity) warnings.push(`identity is "${identity}", not the factory default`);
+
+  const addresses = state.addresses ?? [];
+  const defconf = addresses.filter((a) => (a.comment || '').includes('defconf'));
+  if (defconf.length > 0) signals.push('address carries RouterOS defconf comment');
+
+  const nonFactory = addresses.filter(
+    (a) => stripPrefix(a.address || '') !== FACTORY_ADDRESS
+  );
+  if (nonFactory.length > 0) {
+    warnings.push(
+      `has ${nonFactory.length} address(es) beyond the factory one: ` +
+      nonFactory.map((a) => a.address).join(', ')
+    );
+  }
+
+  const users = state.users ?? [];
+  if (users.length === 1) signals.push('single default user');
+  else if (users.length > 1) warnings.push(`${users.length} user accounts are configured`);
+
+  // Any warning is disqualifying. This is deliberately strict: refusing to adopt
+  // a genuinely new device costs one override, while adopting a live one
+  // rewrites its addressing.
+  return { isFactory: warnings.length === 0 && signals.length > 0, signals, warnings };
+}

@@ -51,8 +51,8 @@ router.get('/candidates', async (_req: Request, res: Response) => {
  * adopted, and briefly the managed neighbour used to reach it.
  */
 router.post('/adopt', requireWrite, async (req: Request, res: Response) => {
-  const { mac, jumpHostId, targetAddress, gateway, password, username, identity, name, removeFactoryAddress } =
-    req.body as Record<string, unknown>;
+  const { mac, jumpHostId, targetAddress, gateway, password, username, identity, name,
+          removeFactoryAddress, force } = req.body as Record<string, unknown>;
 
   if (typeof mac !== 'string' || !mac.trim()) return res.status(400).json({ error: 'mac is required' });
   if (typeof jumpHostId !== 'number') return res.status(400).json({ error: 'jumpHostId is required' });
@@ -71,6 +71,9 @@ router.post('/adopt', requireWrite, async (req: Request, res: Response) => {
     identity: typeof identity === 'string' ? identity : undefined,
     name: typeof name === 'string' ? name : undefined,
     removeFactoryAddress: removeFactoryAddress !== false,
+    // Opt-in only. Defaulting this to true would defeat the guard that stops
+    // adoption rewriting a switch that is already in service.
+    force: force === true,
     siteId: activeSite(req),
   });
 

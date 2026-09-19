@@ -183,11 +183,13 @@ export default function DevicesPage() {
     queryFn: () => adoptionApi.candidates().then((r) => r.data),
     refetchInterval: 60_000,
   });
-  const adoptableByMac = useMemo(() => {
+  // Every unmanaged MikroTik, keyed by MAC. Which action to offer comes from
+  // the server's recommendation rather than from reachability: a configured
+  // switch we have no route to is still a configured switch, and adopting it
+  // would rewrite addressing it is already using.
+  const candidateByMac = useMemo(() => {
     const m = new Map<string, AdoptionCandidate>();
-    for (const c of adoptionData?.candidates ?? []) {
-      if (!c.reachableDirectly) m.set(c.mac.toUpperCase(), c);
-    }
+    for (const c of adoptionData?.candidates ?? []) m.set(c.mac.toUpperCase(), c);
     return m;
   }, [adoptionData]);
 
@@ -783,32 +785,66 @@ export default function DevicesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-[11px]">
-                      {canWrite && d.duplicate_of_device_id == null && (
-                        adoptableByMac.has((d.mac_address || '').toUpperCase()) ? (
-                          // Unreachable on its factory address, so the normal add
-                          // would just fail to connect. Adoption borrows a
-                          // neighbour to give it an address here first.
-                          <button
-                            onClick={() => setAdoptTarget(adoptableByMac.get((d.mac_address || '').toUpperCase())!)}
-                            className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
-                            title="Factory-default device — needs an address before it can be managed"
-                          >
-                            <ShieldQuestion className="w-3 h-3" />
-                            Adopt
-                          </button>
-                        ) : (
+                      {canWrite && d.duplicate_of_device_id == null && (() => {
+                        const cand = candidateByMac.get((d.mac_address || '').toUpperCase());
+                        const rec = cand?.recommendation;
+                        const addBtn = (
                           <button
                             onClick={() => {
                               setAddPrefill({ name: d.identity || '', ip_address: d.address });
                               setShowAddModal(true);
                             }}
                             className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
+                            title={rec?.reasons.join(' · ')}
                           >
                             <Plus className="w-3 h-3" />
                             Add to Manager
                           </button>
-                        )
-                      )}
+                        );
+
+                        if (!cand || rec?.mode !== 'adopt') {
+                          return (
+                            <div className="flex items-center gap-2">
+                              {addBtn}
+                              {cand && (
+                                // Still reachable, because detection is a guess
+                                // and the operator may know better.
+                                <button
+                                  onClick={() => setAdoptTarget(cand)}
+                                  className="text-[11px] underline"
+                                  style={{ color: 'var(--ink-4)' }}
+                                  title="Treat this as a brand-new device and configure it first"
+                                >
+                                  Adopt instead
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        // Looks factory-default: the normal add cannot reach it.
+                        return (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setAdoptTarget(cand)}
+                              className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
+                              title={rec.reasons.join(' · ')}
+                            >
+                              <ShieldQuestion className="w-3 h-3" />
+                              Adopt
+                            </button>
+                            {rec.confidence === 'low' && (
+                              <span
+                                className="mono text-[9.5px] uppercase tracking-wide px-[6px] py-[2px] rounded"
+                                style={{ background: 'var(--warn-bg)', color: 'var(--warn)' }}
+                                title={rec.reasons.join(' · ')}
+                              >
+                                unsure
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}

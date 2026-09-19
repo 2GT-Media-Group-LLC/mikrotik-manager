@@ -1752,10 +1752,20 @@ export interface AdoptionJumpHost {
   ip_address: string;
 }
 
+export type AdoptionMode = 'adopt' | 'add';
+
+export interface ModeRecommendation {
+  mode: AdoptionMode;
+  confidence: 'high' | 'low';
+  reasons: string[];
+}
+
 export interface AdoptionCandidate {
   mac: string;
   address: string;
   identity: string | null;
+  /** Whether this looks like a new device or one already in service. */
+  recommendation: ModeRecommendation;
   /** Managed devices on the same broadcast domain; one must be borrowed. */
   seenBy: AdoptionJumpHost[];
   /** Sitting on RouterOS's 192.168.88.1 factory address. */
@@ -1787,6 +1797,8 @@ export interface AdoptRequest {
   identity?: string;
   name?: string;
   removeFactoryAddress?: boolean;
+  /** Adopt despite the device not looking factory-default. */
+  force?: boolean;
 }
 
 export const adoptionApi = {

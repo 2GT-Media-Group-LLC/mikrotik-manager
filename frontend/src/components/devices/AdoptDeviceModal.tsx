@@ -28,7 +28,13 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
   const [name, setName] = useState('');
   const [targetAddress, setTargetAddress] = useState('');
   const [removeFactoryAddress, setRemoveFactoryAddress] = useState(true);
+  const [force, setForce] = useState(false);
   const [result, setResult] = useState<AdoptionResult | null>(null);
+
+  const rec = candidate.recommendation;
+  // The server checks this again properly once authenticated; this is only so
+  // the operator is not surprised by a refusal they could have seen coming.
+  const looksEstablished = rec?.mode === 'add';
 
   const jumpHost = candidate.seenBy.find((h) => h.id === jumpHostId);
 
@@ -52,6 +58,7 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
           identity: name.trim() || undefined,
           name: name.trim() || undefined,
           removeFactoryAddress,
+          force: force || undefined,
         })
         .then((r) => r.data),
     onSuccess: (data) => {
@@ -68,7 +75,8 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
 
   const addressValid = /^\d{1,3}(\.\d{1,3}){3}$/.test(targetAddress)
     && targetAddress.startsWith(`${subnet}.`);
-  const ready = !!jumpHostId && password.length > 0 && addressValid && !adopt.isPending;
+  const ready = !!jumpHostId && password.length > 0 && addressValid && !adopt.isPending
+    && (!looksEstablished || force);
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -87,11 +95,41 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
         </div>
 
         <div className="p-5 space-y-4">
-          <p className="text-[13px] text-gray-600 dark:text-slate-300 leading-relaxed">
-            This device is on the factory address <span className="mono">{candidate.address}</span> with no route
-            to your network, so it cannot be added directly. A managed neighbour will be borrowed briefly to give
-            it an address here, then returned to exactly how it was.
-          </p>
+          {looksEstablished ? (
+            // The scenario this guard exists for: a switch that is already in
+            // service, often simply on a subnet we do not route to. Adoption
+            // would rewrite addressing it is currently using.
+            <div className="rounded p-3 text-[12px] bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-px shrink-0" />
+                <div className="space-y-1.5">
+                  <p className="font-medium">This device looks like it is already configured.</p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {rec.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                  </ul>
+                  <p>
+                    Adoption is for devices straight out of the box. Running it here would add an address and
+                    change the identity of a device that is already in use. If you just need it in the manager,
+                    close this and use <span className="font-medium">Add to Manager</span> with its credentials.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="text-[13px] text-gray-600 dark:text-slate-300 leading-relaxed">
+                This device is on the factory address <span className="mono">{candidate.address}</span> with no
+                route to your network, so it cannot be added directly. A managed neighbour will be borrowed
+                briefly to give it an address here, then returned to exactly how it was.
+              </p>
+              {rec && (
+                <p className="text-[11px] text-gray-400">
+                  {rec.confidence === 'low' ? 'Best guess — ' : 'Detected as new — '}
+                  {rec.reasons.join('; ')}.
+                </p>
+              )}
+            </>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">
@@ -153,6 +191,18 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
               </span>
             </span>
           </label>
+
+          {looksEstablished && (
+            <label className="flex items-start gap-2 text-[12px] text-red-700 dark:text-red-300 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={force} onChange={(e) => setForce(e.target.checked)} />
+              <span>
+                I am sure this device is factory-default — configure it anyway
+                <span className="block text-[11px] opacity-80">
+                  The device is checked again after connecting, and adoption still stops if it disagrees.
+                </span>
+              </span>
+            </label>
+          )}
 
           <div className="flex items-start gap-2 text-[11px] rounded p-2.5 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300">
             <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
