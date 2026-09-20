@@ -8,6 +8,18 @@ failure.
 Commands run over **SSH**, because console syntax — `:put`, `:foreach`, `/interface print`
 — is not reachable through the binary API, which has its own command tree.
 
+## Choosing devices
+
+Pick them individually, or use **All** / **None**.
+
+Where devices carry tags, each tag in use appears as a chip beside those buttons and selects
+every device carrying it. Tags are assigned on the device page, under the device name.
+
+This is what tags are for. Sites group devices by where they are and device types group them
+by what they are, and both are single-valued; a tag is many-per-device and crosses both, which
+makes it the right way to express "the three switches I upgrade first" or "never touch these
+during business hours".
+
 ## Why waves exist
 
 A shell loop already runs a command on many hosts, costs nothing, and prints errors as

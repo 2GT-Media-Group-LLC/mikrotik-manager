@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.24.16_Beta-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.24.17_Beta-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -348,7 +348,7 @@ Each network service supports multi-device management with conflict detection:
 - **Configuration templates** — reusable sets (DNS, NTP, syslog) pushed to many devices with per-device result reporting
 - **Device adoption** — a factory-default MikroTik is visible the moment it is plugged in but unreachable: RouterOS ships on `192.168.88.1/24` with no DHCP client and no route, so adding it used to mean Winbox and a MAC address. **Adopt Device** borrows a managed neighbour on the same broadcast domain, reaches the new device through it, and gives it an address on your network — static or DHCP, optionally on a tagged management VLAN. The platform decides from the device's own address and identity whether it is new or already in service, and re-checks properly after connecting so a wrong choice cannot rewrite a switch that is already carrying traffic. A chosen address is verified free by both ARP *and* ping, operations are additive so a failure leaves the device as reachable as it was, and the borrowed neighbour is returned untouched on every path. See [the adoption guide](docs/adoption.md)
 - **Bulk device add** — "Try All" on discovered devices runs as a server-side job that survives a closed browser tab, with live progress and cancel
-- **Device organisation** — colour-coded tags, rack location, physical address with map support, and per-device notes
+- **Device organisation** — colour-coded tags assigned from the device page and usable as a selector for bulk commands, rack location, physical address with map support, and per-device notes. Tags are the one grouping that crosses sites and device types, which is what makes them worth having alongside both
 - **Sites** — group devices into sites and see each one's devices, clients, events, topology and dashboards on their own. A selector under the logo switches between them, and an all-sites view pins every site on a world map. Single-network installs are collected into one "Default Site" and never meet the concept. Polling stays fleet-wide — sites are a view over the data, not a change to how it is gathered. See [the sites guide](docs/sites.md)
 
 ### Access control and platform

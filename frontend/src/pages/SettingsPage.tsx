@@ -18,6 +18,7 @@ import {
 } from '../utils/backupSchedule';
 import clsx from 'clsx';
 import CredentialPresetsSettings from '../components/settings/CredentialPresetsSettings';
+import FirmwareTimeoutCard from '../components/settings/FirmwareTimeoutCard';
 import AutomationSettings from '../components/settings/AutomationSettings';
 import OidcSettings from '../components/settings/OidcSettings';
 
@@ -980,8 +981,15 @@ export default function SettingsPage() {
 
       {/* ── Users ── */}
       {activeTab === 'poller' && (
-        <div className="card p-5">
-          <PollerHealthCard />
+        <div className="space-y-4">
+          <div className="card p-5">
+            <PollerHealthCard />
+          </div>
+          <FirmwareTimeoutCard
+            settings={settings}
+            onSave={(data) => updateSettingsMutation.mutate(data)}
+            saving={updateSettingsMutation.isPending}
+          />
         </div>
       )}
 

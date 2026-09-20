@@ -7,6 +7,7 @@ import {
 import { devicesApi, metricsApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import SwitchPortDiagram from '../components/ports/SwitchPortDiagram';
+import DeviceTagPicker from '../components/devices/DeviceTagPicker';
 import TerminalModal from '../components/TerminalModal';
 import DeviceLocationSection from '../components/device-detail/DeviceLocationSection';
 import VlansTab from '../components/device-detail/VlansTab';
@@ -154,6 +155,7 @@ export default function DeviceDetailPage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">{device.name}</h1>
+              <DeviceTagPicker deviceId={deviceId} />
               <span
                 className={clsx(
                   'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0',

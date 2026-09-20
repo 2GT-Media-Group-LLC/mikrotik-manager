@@ -1631,6 +1631,9 @@ export const tagsApi = {
   delete: (id: number) => api.delete(`/tags/${id}`),
   assignDevices: (tagId: number, deviceIds: number[], action: 'add' | 'remove') =>
     api.post(`/tags/${tagId}/devices`, { deviceIds, action }),
+  /** Tags on one device. The single-device payload does not carry them. */
+  forDevice: (deviceId: number) =>
+    api.get<import('../types').Tag[]>(`/tags/device/${deviceId}`),
   deviceTags: (deviceId: number) => api.get<import('../types').Tag[]>(`/tags/device/${deviceId}`),
 };
 

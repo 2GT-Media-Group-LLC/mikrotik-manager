@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban, Download } from 'lucide-react';
-import { commandsApi, devicesApi, type CommandRunDetail } from '../services/api';
+import { commandsApi, devicesApi, type CommandRunDetail, tagsApi} from '../services/api';
 
 /**
  * Bulk command execution.
@@ -34,6 +34,11 @@ export default function CommandsPage() {
   const queryClient = useQueryClient();
   const [command, setCommand] = useState('');
   const [selected, setSelected] = useState<number[]>([]);
+
+  const { data: tags = [] } = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => tagsApi.list().then(r => r.data),
+  });
   const [waveSize, setWaveSize] = useState(1);
   const [haltOnFailure, setHaltOnFailure] = useState(true);
   const [useGuard, setUseGuard] = useState(true);
@@ -132,11 +137,26 @@ export default function CommandsPage() {
             <span className="text-sm font-medium text-gray-700 dark:text-slate-300">
               Devices {selected.length > 0 && `(${selected.length} selected)`}
             </span>
-            <div className="flex gap-2 text-xs">
+            <div className="flex gap-2 text-xs items-center flex-wrap">
               <button className="underline text-blue-600 dark:text-blue-400"
                       onClick={() => setSelected(devices.map(d => d.id))}>All</button>
               <button className="underline text-blue-600 dark:text-blue-400"
                       onClick={() => setSelected([])}>None</button>
+              {/* Selecting by tag is what makes a tag worth having: it is the one
+                  grouping that crosses sites and device types, and until now
+                  nothing consumed it (#149). */}
+              {tags.filter(t => devices.some(d => d.tags?.some(dt => dt.id === t.id))).map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setSelected(devices.filter(d => d.tags?.some(dt => dt.id === t.id)).map(d => d.id))}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+                  style={{ background: `${t.color}22`, color: t.color }}
+                  title={`Select every device tagged ${t.name}`}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ background: t.color }} />
+                  {t.name}
+                </button>
+              ))}
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-slate-700 p-2">
