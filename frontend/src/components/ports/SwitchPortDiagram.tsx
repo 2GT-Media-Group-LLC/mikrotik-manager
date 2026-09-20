@@ -6,6 +6,7 @@ import { devicesApi, metricsApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVerdictOf, type GuardResult, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
+import { classifyPort, portBasis, portLabel, portSortKey } from '../../utils/portClass';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -93,7 +94,7 @@ function PortTile({
         background: ledBg,
         boxShadow: state === 'up' && !selected ? '0 0 6px var(--accent)' : 'none',
       }} />
-      <span>{portLabel(port.name)}</span>
+      <span>{portLabel(portBasis(port))}</span>
       {watts && watts > 0 ? (
         <span style={{
           position: 'absolute', bottom: 2, left: 0, right: 0, textAlign: 'center',
@@ -107,21 +108,6 @@ function PortTile({
   );
 }
 
-function portLabel(name: string): string {
-  if (name.startsWith('sfp-sfpplus')) return `P${name.replace('sfp-sfpplus', '')}`;
-  if (name.startsWith('sfp')) return `S${name.replace('sfp', '')}`;
-  if (name.startsWith('combo')) return `C${name.replace('combo', '')}`;
-  if (name.startsWith('ether')) return name.replace('ether', '');
-  if (name.startsWith('bridge')) return name.replace('bridge', '') || 'BR';
-  const bondMatch = name.match(/^bond(\d*)$/i);
-  if (bondMatch) return `B${bondMatch[1]}`;
-  const lagMatch = name.match(/^lag(\d*)$/i);
-  if (lagMatch) return `L${lagMatch[1]}`;
-  if (/^qsfp/i.test(name) && !name.match(/-\d+-\d+$/)) {
-    return `Q${name.match(/-(\d+)$/)?.[1] ?? ''}`;
-  }
-  return name.slice(0, 4);
-}
 
 interface QsfpCage {
   key: string;
@@ -140,11 +126,11 @@ interface QsfpCage {
 function groupQsfpCages(ports: SwitchPort[]): { cages: QsfpCage[]; individual: SwitchPort[] } {
   const lanesByKey = new Map<string, SwitchPort[]>();
   for (const port of ports) {
-    const m = port.name.match(/^(qsfp[^-]*(?:-[^-\d][^-]*)*-\d+)-(\d+)$/i);
-    if (m) {
-      const key = m[1];
-      if (!lanesByKey.has(key)) lanesByKey.set(key, []);
-      lanesByKey.get(key)!.push(port);
+    // Keyed on the factory name, so a renamed lane stays in its cage (#146).
+    const id = classifyPort(port);
+    if (id.kind === 'qsfp-lane' && id.cageKey) {
+      if (!lanesByKey.has(id.cageKey)) lanesByKey.set(id.cageKey, []);
+      lanesByKey.get(id.cageKey)!.push(port);
     }
   }
 
@@ -153,8 +139,8 @@ function groupQsfpCages(ports: SwitchPort[]): { cages: QsfpCage[]; individual: S
   const cages: QsfpCage[] = [];
 
   for (const key of cageKeys) {
-    const lanes = lanesByKey.get(key)!.sort((a, b) =>
-      parseInt(a.name.split('-').pop() ?? '0') - parseInt(b.name.split('-').pop() ?? '0')
+    const lanes = lanesByKey.get(key)!.sort(
+      (a, b) => (classifyPort(a).lane ?? 0) - (classifyPort(b).lane ?? 0)
     );
     lanes.forEach(p => laneNames.add(p.name));
     const cageNum = key.match(/-(\d+)$/)?.[1] ?? '?';
@@ -164,16 +150,17 @@ function groupQsfpCages(ports: SwitchPort[]): { cages: QsfpCage[]; individual: S
   const remaining = ports.filter(p => !laneNames.has(p.name));
 
   // Single-mode QSFP ports (no lane suffix) → synthetic cage
-  for (const port of remaining.filter(p => /^qsfp/i.test(p.name))) {
-    const cageNum = port.name.match(/-(\d+)$/)?.[1] ?? '?';
-    cages.push({ key: port.name, label: `Q${cageNum}`, lanes: [], singlePort: port });
+  for (const port of remaining.filter(p => classifyPort(p).kind === 'qsfp')) {
+    const basis = portBasis(port);
+    const cageNum = basis.match(/-(\d+)$/)?.[1] ?? '?';
+    cages.push({ key: basis, label: `Q${cageNum}`, lanes: [], singlePort: port });
   }
 
   cages.sort((a, b) =>
     parseInt(a.key.match(/-(\d+)$/)?.[1] ?? '0') - parseInt(b.key.match(/-(\d+)$/)?.[1] ?? '0')
   );
 
-  return { cages, individual: remaining.filter(p => !/^qsfp/i.test(p.name)) };
+  return { cages, individual: remaining.filter(p => classifyPort(p).kind !== 'qsfp') };
 }
 
 const TRAFFIC_RANGES = ['1h', '3h', '6h', '12h', '24h'] as const;
@@ -791,7 +778,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   const isBridge = (p: SwitchPort) => p.type === 'bridge';
 
   const typeOrder = (p: SwitchPort) =>
-    p.name.startsWith('ether') ? 0 : isBridge(p) ? 2 : 1;
+    classifyPort(p).kind === 'copper' ? 0 : isBridge(p) ? 2 : 1;
 
   const sortedPorts = [...ports].sort((a, b) => {
     const aNum = parseInt(a.name.replace(/\D/g, '') || '0', 10);
@@ -814,8 +801,11 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     slaves.forEach((s: string) => bondMemberMap.set(s, b.name));
   });
 
-  const etherPorts = physicalPorts.filter((p) => p.name.startsWith('ether'));
-  const sfpPorts   = physicalPorts.filter((p) => !p.name.startsWith('ether'));
+  // By what the port *is*, not what it has been renamed to. The old rule was
+  // `startsWith('ether')` with everything else counted as SFP, so a port renamed
+  // to "starlink1" moved into the SFP group (#146).
+  const etherPorts = physicalPorts.filter((p) => classifyPort(p).kind === 'copper');
+  const sfpPorts   = physicalPorts.filter((p) => classifyPort(p).kind !== 'copper');
   const { cages: qsfpCages, individual: individualSfpPorts } = groupQsfpCages(sfpPorts);
 
   const togglePort = (name: string, e: React.MouseEvent) => {
@@ -920,60 +910,19 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
 
   const isPending = updateInterfaceMutation.isPending || updateVlanMutation.isPending;
 
-  const PORT_W = 32;
-  const PORT_H = 36;
-  const GAP = 4;
-  const PAD = 12;
-  const ROW_GAP = 6;
-  // Use two staggered rows only for larger switches (>8 ports); single row otherwise
+  // Two staggered rows above 8 copper ports, matching a real faceplate.
+  //
+  // Everything else that used to live here -- chassis width, per-section
+  // offsets, lane geometry -- was a coordinate system for an absolute-
+  // positioned faceplate that no longer exists. Every one of those constants
+  // was consumed only by the next constant in the chain and never reached the
+  // render, which is flexbox with its own literal sizes. Removed rather than
+  // carried: it read like the thing that drives layout and is not, and it
+  // misled a reading of this component as recently as this week.
   const doubleRow = etherPorts.length > 8;
   const topRowPorts = doubleRow ? etherPorts.filter((_, i) => i % 2 === 0) : etherPorts;
   const bottomRowPorts = doubleRow ? etherPorts.filter((_, i) => i % 2 === 1) : [];
 
-  // Ether section width (including left pad, excluding right pad — right pad shared with SFP divider)
-  const etherCols = topRowPorts.length;
-  const etherSectionW = PAD + etherCols * (PORT_W + GAP);
-
-  // SFP section: individual (non-breakout) SFP ports
-  const sfpDivider = individualSfpPorts.length > 0 ? 20 : 0;
-  const sfpSectionW = individualSfpPorts.length > 0 ? individualSfpPorts.length * (PORT_W + GAP) + PAD : 0;
-
-  // QSFP cage section — each cage renders as a grouped block
-  const CAGE_LABEL_H = 11; // height of cage name label inside cage rect
-  const LANE_W = 20;
-  const LANE_GAP = 3;
-  const CAGE_PAD_X = 3;
-  const CAGE_LANE_H = PORT_H - CAGE_LABEL_H - 2; // lane rect height inside cage
-  const getCageW = (n: number) => n * (LANE_W + LANE_GAP) - LANE_GAP + 2 * CAGE_PAD_X;
-  const qsfpDivider = qsfpCages.length > 0 ? 20 : 0;
-  const qsfpSectionW = qsfpCages.length > 0
-    ? PAD + qsfpCages.reduce((acc, c) => acc + getCageW(c.singlePort ? 4 : c.lanes.length) + GAP, -GAP)
-    : 0;
-
-  // Bridge section: divider gap + ports + right pad
-  const bridgeDivider = bridgePorts.length > 0 ? 20 : 0;
-  const bridgeSectionW = bridgePorts.length > 0 ? bridgePorts.length * (PORT_W + GAP) + PAD : 0;
-
-  // Bond section: divider gap + bond virtual ports + right pad
-  const bondDivider = bondPorts.length > 0 ? 20 : 0;
-  const bondSectionW = bondPorts.length > 0 ? bondPorts.length * (PORT_W + GAP) + PAD : 0;
-
-  const chassisW = Math.max(
-    etherSectionW + sfpDivider + sfpSectionW + qsfpDivider + qsfpSectionW + bridgeDivider + bridgeSectionW + bondDivider + bondSectionW,
-    200,
-  );
-  const chassisH = (doubleRow ? PORT_H * 2 + ROW_GAP : PORT_H) + PAD * 2 + 20;
-
-  const sfpStartX = etherSectionW + sfpDivider;
-  const qsfpStartX = etherSectionW + sfpDivider + sfpSectionW + qsfpDivider;
-  const bridgeStartX = qsfpStartX + qsfpSectionW + bridgeDivider;
-  const bondStartX = bridgeStartX + bridgeSectionW + bondDivider;
-  const topRowY = 20;
-  const bottomRowY = 20 + PORT_H + ROW_GAP;
-  // SFP, QSFP and bridge: center within the ether port area height
-  const etherAreaH = doubleRow ? PORT_H * 2 + ROW_GAP : PORT_H;
-  const sfpY = topRowY + Math.round((etherAreaH - PORT_H) / 2);
-  const bridgeY = sfpY;
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-48 text-gray-400">Loading ports...</div>;

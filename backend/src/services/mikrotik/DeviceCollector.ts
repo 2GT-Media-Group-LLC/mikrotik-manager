@@ -396,11 +396,11 @@ export class DeviceCollector {
             : null;
 
           await query(
-            `INSERT INTO interfaces (device_id, name, type, mac_address, mtu, running, disabled, comment, speed, vlan_filtering, config_json, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+            `INSERT INTO interfaces (device_id, name, type, mac_address, mtu, running, disabled, comment, speed, vlan_filtering, config_json, default_name, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
              ON CONFLICT (device_id, name) DO UPDATE SET
                type=$3, mac_address=$4, mtu=$5, running=$6, disabled=$7, comment=$8, speed=$9,
-               vlan_filtering=$10, config_json=$11, updated_at=NOW()`,
+               vlan_filtering=$10, config_json=$11, default_name=$12, updated_at=NOW()`,
             [
               this.device.id,
               name,
@@ -413,6 +413,9 @@ export class DeviceCollector {
               enrichedIface['speed'] || null,
               vlanFiltering,
               JSON.stringify(enrichedIface),
+              // Present on /interface/print detail for physical ports; absent
+              // for bridges, bonds and VLANs, which never had a factory name.
+              enrichedIface['default-name'] || null,
             ]
           );
         } catch (insertErr) {

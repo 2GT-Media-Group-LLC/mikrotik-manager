@@ -1015,6 +1015,13 @@ CREATE INDEX IF NOT EXISTS idx_device_certs_expiry ON device_certificates(invali
 -- Revocation is not derivable from dates: a revoked certificate keeps a valid
 -- invalid-after and would otherwise read as healthy (#143).
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked BOOLEAN NOT NULL DEFAULT FALSE;
+-- RouterOS keeps the factory port name alongside the current one, and it is the
+-- only field that survives a rename. Port classification was keyed on the
+-- display name, so renaming ether5 to "starlink1" moved it into the SFP group
+-- (#146). Nullable: existing rows have no factory name until the next slow
+-- poll, and classification falls back to the display name, which is exactly
+-- the old behaviour.
+ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS default_name VARCHAR(64);
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);

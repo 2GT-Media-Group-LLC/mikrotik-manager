@@ -97,6 +97,11 @@ export interface Interface {
   comment?: string;
   speed?: string;
   full_duplex?: boolean;
+  /**
+   * RouterOS's factory name for the port, which survives renaming.
+   * Absent on bridges, bonds and VLANs, and on rows collected before v0.24.15.
+   */
+  default_name?: string | null;
   config_json?: Record<string, string>;
   updated_at?: string;
 }
