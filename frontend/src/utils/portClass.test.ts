@@ -103,3 +103,65 @@ describe('portSortKey', () => {
     expect(portSortKey(renamed)[1]).toBe(9);
   });
 });
+
+/**
+ * The sort that shipped broken (#146).
+ *
+ * portSortKey existed, was exported and was tested — and was never wired into
+ * the component, which kept sorting on the display name. The unit test below
+ * passed throughout. Its counterpart now lives in the component; this one
+ * guards the ordering rule itself.
+ */
+describe('sorting renamed ports', () => {
+  it('orders by chassis position, not by digits in the new name', () => {
+    // Reported as "1, 8, 2, 7, 3, 4, 5, 6".
+    const ports = [
+      { name: 'ether1',    default_name: 'ether1',  type: 'ether' },
+      { name: 'uplink-8',  default_name: 'ether2',  type: 'ether' },
+      { name: 'wan2',      default_name: 'ether3',  type: 'ether' },
+      { name: 'ap-7',      default_name: 'ether4',  type: 'ether' },
+    ];
+    const sorted = [...ports].sort((a, b) => {
+      const ka = portSortKey(a), kb = portSortKey(b);
+      return ka[0] - kb[0] || ka[1] - kb[1] || ka[2].localeCompare(kb[2]);
+    });
+    expect(sorted.map((p) => p.default_name)).toEqual(['ether1', 'ether2', 'ether3', 'ether4']);
+  });
+});
+
+/**
+ * SFP detection from /interface/ethernet/monitor.
+ *
+ * Values captured from a CRS510 and a CRS309. RouterOS omits
+ * sfp-module-present entirely on a copper port, reports false for an empty
+ * cage, and true with type/connector/vendor when a module is seated.
+ */
+describe('classification from monitor data', () => {
+  it('treats a port with a cage as SFP even when renamed to look like copper', () => {
+    expect(classifyPort({
+      name: 'ether-uplink', default_name: 'sfp28-1', type: 'ether', sfp_present: true,
+    }).kind).toBe('sfp');
+  });
+
+  it('treats an empty cage as SFP — the cage exists either way', () => {
+    expect(classifyPort({
+      name: 'sfp-sfpplus2', default_name: 'sfp-sfpplus2', type: 'ether', sfp_present: false,
+    }).kind).toBe('sfp');
+  });
+
+  it('leaves copper alone, where RouterOS omits the field', () => {
+    expect(classifyPort({ name: 'ether1', default_name: 'ether1', type: 'ether' }).kind)
+      .toBe('copper');
+    expect(classifyPort({
+      name: 'ether1', default_name: 'ether1', type: 'ether', sfp_present: null,
+    }).kind).toBe('copper');
+  });
+
+  it('does not let monitor break QSFP lane grouping, which it cannot describe', () => {
+    const lane = classifyPort({
+      name: 'spine', default_name: 'qsfp28-2-1', type: 'ether', sfp_present: true,
+    });
+    expect(lane.kind).toBe('qsfp-lane');
+    expect(lane.cageKey).toBe('qsfp28-2');
+  });
+});

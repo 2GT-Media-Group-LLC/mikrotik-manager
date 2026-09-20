@@ -5,10 +5,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import {
-  Users, AlertTriangle, Wifi, MapPin, ArrowUpCircle, Cpu, X,
+  AlertTriangle, Wifi, MapPin, ArrowUpCircle, Cpu, X,
   RefreshCw, Terminal, HardDrive, GitBranch, Activity,
-  Shield, Clock, FileText, Bell, ChevronRight, CheckCircle2,
-} from 'lucide-react';
+  Shield, Clock, FileText, Bell, ChevronRight, } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { metricsApi, eventsApi, devicesApi, clientsApi, trafficApi, operationsApi, topologyApi, systemApi } from '../services/api';
@@ -19,7 +18,6 @@ import { useCanWrite } from '../hooks/useCanWrite';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
-import clsx from 'clsx';
 import { fleetStatus } from '../utils/fleetStatus';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
@@ -107,7 +105,6 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
       const lng = Number(groupDevices[0].location_lng);
       const count = groupDevices.length;
       const hasOffline = groupDevices.some(d => d.status === 'offline');
-      const color = hasOffline ? 'var(--bad)' : 'var(--accent)';
       const colorHex = hasOffline ? '#f08a8a' : '#c1f17e';
 
       const deviceRows = groupDevices.map(d => {
@@ -161,15 +158,13 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
 // ─── Health Bar ───────────────────────────────────────────────────────────────
 
 function HealthBar({
-  summary, devices, wirelessCount, clientSparkline,
+  summary, wirelessCount, clientSparkline,
 }: {
   summary: { devices: { total: number; online: number; offline: number }; clients: { active: number; total: number }; alerts: { critical: number; warning: number }; availability?: { fleetUptimePct30d: number } } | undefined;
-  devices: Device[];
   wirelessCount: number;
   clientSparkline: number[];
 }) {
   const status = fleetStatus(summary?.devices);
-  const allOnline = status.kind === 'healthy';
   const reachFraction = summary?.devices.total
     ? (summary.devices.online / summary.devices.total)
     : 1;
@@ -312,7 +307,6 @@ function SummaryView(props: Record<string, any>) {
     <div className="space-y-4">
       <HealthBar
         summary={summary}
-        devices={devices}
         wirelessCount={wirelessCount}
         clientSparkline={clientSparkline}
       />

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Wifi, Plus, Pencil, Trash2, RefreshCw, ChevronDown, ChevronRight,
+  Plus, Pencil, Trash2, RefreshCw, ChevronDown, ChevronRight,
   Eye, EyeOff, CheckCircle, XCircle, Power, ScanLine, Radio,
 } from 'lucide-react';
 import { wirelessApi, settingsApi } from '../services/api';

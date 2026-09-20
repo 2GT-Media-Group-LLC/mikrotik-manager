@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, X, Check, AlertCircle, Activity, Cpu, Link2, Trash2, Plus, Network, Users, Wifi, ShieldCheck, AlertTriangle, LayoutGrid} from 'lucide-react';
+import { RefreshCw, X, Check, AlertCircle, Activity, Link2, Trash2, Network, Users, Wifi, ShieldCheck, AlertTriangle, LayoutGrid} from 'lucide-react';
 import { devicesApi, metricsApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVerdictOf, type GuardResult, type LockoutVerdict } from '../ChangeGuardDialog';
@@ -83,7 +83,7 @@ function PortTile({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onDoubleClick={onDoubleClick}
-      title={`${port.name}${port.comment ? ` — ${port.comment}` : ''}${port.speed ? ` · ${port.speed}` : ''}${watts && watts > 0 ? ` · ${watts.toFixed(1)}W PoE` : ''}`}
+      title={`${port.name}${port.comment ? ` — ${port.comment}` : ''}${port.link_rate || port.speed ? ` · ${port.link_rate || port.speed}` : ''}${watts && watts > 0 ? ` · ${watts.toFixed(1)}W PoE` : ''}`}
       style={{
         width: 46, height: 46, borderRadius: 4, position: 'relative', flexShrink: 0,
         background: bg, border: `1px solid ${border}`,
@@ -352,20 +352,6 @@ function PortPacketGraph({
   );
 }
 
-function PortTooltip({ port }: { port: SwitchPort }) {
-  return (
-    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 bg-gray-900 dark:bg-slate-700 text-white text-xs rounded-lg px-3 py-2 z-10 shadow-lg pointer-events-none">
-      <div className="font-semibold mb-1">{port.name}</div>
-      <div>Status: {port.disabled ? 'Disabled' : port.running ? 'Up' : 'Down'}</div>
-      {port.speed && <div>Speed: {port.speed}</div>}
-      {port.mtu && <div>MTU: {port.mtu}{port.config_json?.['l2mtu'] ? ` (L2: ${port.config_json['l2mtu']})` : ''}</div>}
-      {port.mac_address && <div>MAC: {port.mac_address}</div>}
-      {port.bridgeInfo?.pvid && <div>PVID: {port.bridgeInfo.pvid}</div>}
-      {port.comment && <div>Note: {port.comment}</div>}
-      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-slate-700" />
-    </div>
-  );
-}
 
 function PortInfoCard({ deviceId, portName }: { deviceId: number; portName: string }) {
   const { data: monitor, isLoading } = useQuery({
@@ -781,16 +767,21 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
 
   const isBridge = (p: SwitchPort) => p.type === 'bridge';
 
-  const typeOrder = (p: SwitchPort) =>
-    classifyPort(p).kind === 'copper' ? 0 : isBridge(p) ? 2 : 1;
-
+  // Ordered by what the port *is* and where it sits on the chassis, via the
+  // factory name. The numeric half of this previously read `p.name`, so a
+  // renamed port sorted by whatever digits its new name happened to contain --
+  // reported as "1, 8, 2, 7, 3, 4, 5, 6" (#146). portSortKey already existed and
+  // was already tested; it simply was never wired in here.
   const sortedPorts = [...ports].sort((a, b) => {
-    const aNum = parseInt(a.name.replace(/\D/g, '') || '0', 10);
-    const bNum = parseInt(b.name.replace(/\D/g, '') || '0', 10);
-    const aType = typeOrder(a);
-    const bType = typeOrder(b);
-    if (aType !== bType) return aType - bType;
-    return aNum - bNum;
+    const ka = portSortKey(a);
+    const kb = portSortKey(b);
+    // Bridges and bonds are not physical ports and belong after them.
+    const rank = (p: SwitchPort, k: number) => (isBridge(p) ? 3 : k);
+    const ra = rank(a, ka[0]);
+    const rb = rank(b, kb[0]);
+    if (ra !== rb) return ra - rb;
+    if (ka[1] !== kb[1]) return ka[1] - kb[1];
+    return ka[2].localeCompare(kb[2]);
   });
 
   const isBond = (p: SwitchPort) => p.type === 'bond';
@@ -1245,6 +1236,14 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                     <td className="px-4 py-[10px]">
                       <div className="flex items-center gap-[6px]">
                         <span className="mono text-[12px] font-medium" style={{ color: 'var(--ink)' }}>{port.name}</span>
+                        {/* Only shown when renamed. Printing it always would be
+                            noise on the overwhelming majority of ports. */}
+                        {port.default_name && port.default_name !== port.name && (
+                          <span className="mono text-[10px]" style={{ color: 'var(--ink-4)' }}
+                                title="Factory name — used for grouping, ordering and labelling">
+                            {port.default_name}
+                          </span>
+                        )}
                         {bondMemberMap.has(port.name) && (
                           <span className="mono text-[9.5px] px-[5px] py-[2px] rounded" style={{ background: 'var(--warn-bg)', color: 'var(--warn)' }}>
                             {bondMemberMap.get(port.name)}
@@ -1261,7 +1260,23 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                         {port.disabled ? 'Disabled' : port.running ? 'Up' : 'Down'}
                       </span>
                     </td>
-                    <td className="px-4 py-[10px]"><span className="mono text-[11.5px]" style={{ color: 'var(--ink-3)' }}>{port.speed || '—'}</span></td>
+                    {/* link_rate is the negotiated speed from monitor. The old
+                        `speed` field was read from /interface/print, which does
+                        not carry one, so this column was always empty (#146). */}
+                    <td className="px-4 py-[10px]">
+                      <span className="mono text-[11.5px]" style={{ color: 'var(--ink-3)' }}>
+                        {port.link_rate || port.speed || '—'}
+                      </span>
+                      {port.sfp_present && (port.sfp_type || port.sfp_vendor) && (
+                        <div className="mono text-[10px]" style={{ color: 'var(--ink-4)' }}
+                             title={[port.sfp_type, port.sfp_connector, port.sfp_vendor].filter(Boolean).join(' · ')}>
+                          {port.sfp_vendor || port.sfp_type}
+                        </div>
+                      )}
+                      {port.sfp_present === false && (
+                        <div className="mono text-[10px]" style={{ color: 'var(--ink-4)' }}>empty cage</div>
+                      )}
+                    </td>
                     <td className="px-4 py-[10px]"><span className="mono num-tab text-[11.5px]" style={{ color: 'var(--ink-3)' }}>{port.mtu || '—'}</span></td>
                     <td className="px-4 py-[10px]"><span className="mono num-tab text-[11.5px]" style={{ color: 'var(--ink-3)' }}>{port.bridgeInfo?.pvid ?? '—'}</span></td>
                     <td className="px-4 py-[10px]"><span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>{port.mac_address || '—'}</span></td>

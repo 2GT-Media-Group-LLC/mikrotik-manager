@@ -102,6 +102,16 @@ export interface Interface {
    * Absent on bridges, bonds and VLANs, and on rows collected before v0.24.15.
    */
   default_name?: string | null;
+  /** Negotiated rate from /interface/ethernet/monitor, e.g. "25Gbps". */
+  link_rate?: string | null;
+  /**
+   * Tri-state. Null means the port is not an SFP cage — RouterOS omits the
+   * field on copper. False is an empty cage, true a seated module.
+   */
+  sfp_present?: boolean | null;
+  sfp_type?: string | null;
+  sfp_connector?: string | null;
+  sfp_vendor?: string | null;
   config_json?: Record<string, string>;
   updated_at?: string;
 }

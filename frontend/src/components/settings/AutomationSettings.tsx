@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   KeyRound, Webhook as WebhookIcon, Mail, Plus, Trash2, Copy, Check, Send,
-  RefreshCw, AlertTriangle, Power, X,
+  AlertTriangle, Power, X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { automationApi } from '../../services/api';

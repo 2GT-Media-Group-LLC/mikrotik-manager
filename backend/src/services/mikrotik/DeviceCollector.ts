@@ -113,6 +113,18 @@ export interface DeviceRow {
   status: string;
 }
 
+/** Physical ethernet names, which is all `monitor` will accept. */
+function allEthernetNames(
+  ifaces: Record<string, string>[],
+  bridgeNames: Set<string>,
+  bondNames: Set<string>
+): string[] {
+  return ifaces
+    .filter((i) => (i['type'] || '') === 'ether')
+    .map((i) => i['name'])
+    .filter((n): n is string => !!n && !bridgeNames.has(n) && !bondNames.has(n));
+}
+
 export class DeviceCollector {
   private client: RouterOSClient;
 
@@ -351,6 +363,31 @@ export class DeviceCollector {
 
   // ─── Interfaces → Postgres ────────────────────────────────────────────────
 
+  /**
+   * `/interface/ethernet/monitor` for every ethernet port, in one call.
+   *
+   * Returns an empty map on any failure. This is enrichment: a device that will
+   * not answer should still have its interfaces stored, just without a rate.
+   */
+  private async collectEthernetMonitor(names: string[]): Promise<Map<string, Record<string, string>>> {
+    const out = new Map<string, Record<string, string>>();
+    if (names.length === 0) return out;
+    try {
+      const rows = await this.client.execute(
+        '/interface/ethernet/monitor',
+        { numbers: names.join(','), once: '' },
+        [],
+        { timeoutMs: 30000 }
+      );
+      for (const r of rows) {
+        if (r['name']) out.set(r['name'], r);
+      }
+    } catch {
+      // Older RouterOS, a device mid-reboot, or a board with no ethernet at all.
+    }
+    return out;
+  }
+
   async collectInterfaces(): Promise<void> {
     try {
       const [ifaces, bridges, bonds] = await Promise.all([
@@ -361,6 +398,15 @@ export class DeviceCollector {
 
       const bridgeNames = new Set(bridges.map((b) => b['name']).filter(Boolean));
       const bondNames   = new Set(bonds.map((b) => b['name']).filter(Boolean));
+
+      // Negotiated rate and SFP module facts. Neither /interface/print nor
+      // /interface/ethernet/print carries them — the `speed` column had been
+      // null for every interface since it was added, because the field it read
+      // does not exist (#146). `monitor` has them, and takes every interface in
+      // one call rather than one call per port: 17 ports in 386ms on a CRS510.
+      const monitorByName = await this.collectEthernetMonitor(
+        allEthernetNames(ifaces, bridgeNames, bondNames)
+      );
 
       // Map bridge name → full bridge data (includes vlan-filtering, etc.)
       const bridgeDataMap = new Map<string, Record<string, string>>();
@@ -375,6 +421,7 @@ export class DeviceCollector {
       for (const iface of allIfaces) {
         const name = iface['name'];
         if (!name) continue;
+        const mon = monitorByName.get(name);
         const rosType = iface['type'] || 'ether';
         const resolvedType = bridgeNames.has(name) ? 'bridge' : bondNames.has(name) ? 'bond' : rosType;
 
@@ -396,11 +443,14 @@ export class DeviceCollector {
             : null;
 
           await query(
-            `INSERT INTO interfaces (device_id, name, type, mac_address, mtu, running, disabled, comment, speed, vlan_filtering, config_json, default_name, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+            `INSERT INTO interfaces (device_id, name, type, mac_address, mtu, running, disabled, comment, speed, vlan_filtering, config_json, default_name,
+              link_rate, sfp_present, sfp_type, sfp_connector, sfp_vendor, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
              ON CONFLICT (device_id, name) DO UPDATE SET
                type=$3, mac_address=$4, mtu=$5, running=$6, disabled=$7, comment=$8, speed=$9,
-               vlan_filtering=$10, config_json=$11, default_name=$12, updated_at=NOW()`,
+               vlan_filtering=$10, config_json=$11, default_name=$12,
+               link_rate=$13, sfp_present=$14, sfp_type=$15, sfp_connector=$16, sfp_vendor=$17,
+               updated_at=NOW()`,
             [
               this.device.id,
               name,
@@ -416,6 +466,12 @@ export class DeviceCollector {
               // Present on /interface/print detail for physical ports; absent
               // for bridges, bonds and VLANs, which never had a factory name.
               enrichedIface['default-name'] || null,
+              mon?.['rate'] || null,
+              // Tri-state on purpose: absent means not an SFP cage at all.
+              mon && 'sfp-module-present' in mon ? mon['sfp-module-present'] === 'true' : null,
+              mon?.['sfp-type'] || null,
+              mon?.['sfp-connector-type'] || null,
+              mon?.['sfp-vendor-part-number'] || null,
             ]
           );
         } catch (insertErr) {

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.24.15_Beta-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.24.16_Beta-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -280,7 +280,8 @@ modes differ, and how to choose a timeout — see
 
 ### Switching, VLANs and wireless
 
-- **Switch faceplate** — a live front-panel view with copper staggered odd-above-even as the hardware is, SFP cages and QSFP breakout lanes grouped separately, and bridges and bonds alongside. Ports are classified by RouterOS's factory name rather than their display name, so renaming a port to something useful does not move it into the wrong group or cost it its label. Every group wraps to the width available — set ports-per-row, or leave it to fit the card
+- **Switch faceplate** — a live front-panel view with copper staggered odd-above-even as the hardware is, SFP cages and QSFP breakout lanes grouped separately, and bridges and bonds alongside. Ports are classified by whether they physically have an SFP cage and by RouterOS's factory name, not by their display name, so renaming a port to something useful does not move it into the wrong group or cost it its label or its position. Every group wraps to the width available — set ports-per-row, or leave it to fit the card
+- **Optics inventory** — negotiated link rate, module type, connector and vendor part number per port, read from the device rather than guessed from the port's name. An empty cage is distinguished from a copper port, which nothing derived from naming can do
 - **VLAN management** — create, edit and delete VLANs; per-port membership with tagged/untagged control
 - **Per-port connected clients** — selecting a port shows who is *physically* on it. Uplink and trunk ports are auto-detected (via an LLDP/MNDP neighbour, MACs spanning multiple VLANs, or a high MAC count) and show an explainer rather than every MAC reachable through them, with one-click disclosure of the full table
 - **Copy VLANs between switches** — a three-step wizard with click-to-cycle port assignment, conflict detection, and a review summary before anything is applied

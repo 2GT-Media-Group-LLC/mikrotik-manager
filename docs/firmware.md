@@ -5,6 +5,23 @@
 Upgrade RouterOS across a fleet in waves, with a verified pipeline per device and
 a stopping point before a bad build reaches everything.
 
+## Timeouts
+
+Two settings, both in minutes, changed without a restart:
+
+| Setting | Default | Covers |
+|---|---|---|
+| `firmware_download_timeout_min` | 10 | Waiting for the image to land on the device |
+| `firmware_reboot_timeout_min` | 12 | Waiting for the device to come back after the flash |
+
+Both are clamped to 1–120 minutes.
+
+Raise the reboot timeout for slow hardware. CRS switches have been reported taking a full
+twelve minutes to return, which is exactly the old fixed ceiling — so a slow board could fail
+at the boundary through no fault of the upgrade. Raise the download timeout if MikroTik's
+servers are stalling for you; a device that fails to download is not rebooted, so this is a
+delay rather than a risk.
+
 ## The pipeline
 
 Each device goes through the same sequence:

@@ -59,6 +59,12 @@ export interface PortLike {
   name: string;
   default_name?: string | null;
   type?: string;
+  /**
+   * From /interface/ethernet/monitor. Null means not an SFP cage at all, which
+   * is physical fact rather than a naming convention and therefore outranks the
+   * factory name when deciding copper from fibre.
+   */
+  sfp_present?: boolean | null;
 }
 
 /** Interface types RouterOS uses for things that are not physical ports. */
@@ -107,6 +113,14 @@ export function classifyPort(port: PortLike): PortIdentity {
   // it is called — and useless for telling physical ports apart.
   if (VIRTUAL_TYPES.has(type)) {
     return { kind: 'virtual', cageKey: null, lane: null, label: portLabel(port.name), basis };
+  }
+
+  // Where the device has told us whether the port is a cage, believe it over
+  // any naming convention: RouterOS reports sfp-module-present only on ports
+  // that physically have a cage. QSFP naming still decides lane grouping, since
+  // monitor says nothing about which cage a lane belongs to.
+  if (port.sfp_present !== undefined && port.sfp_present !== null && !/^qsfp/i.test(basis)) {
+    return { kind: 'sfp', cageKey: null, lane: null, label: portLabel(basis), basis };
   }
 
   // Breakout lane: qsfp28-1-3, qsfp-4-2. The cage index and the lane index are

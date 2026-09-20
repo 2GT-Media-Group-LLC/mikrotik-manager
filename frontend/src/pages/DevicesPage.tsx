@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Plus, RefreshCw, Router, Wifi, Trash2, ChevronRight, Search,
-  Radar, ArrowUpCircle, Cpu, Pencil, ArrowUpDown, ArrowUp, ArrowDown, ShieldQuestion,
+  Plus, RefreshCw, Router, Trash2, ChevronRight, Search,
+  Radar, Pencil, ArrowUpDown, ArrowUp, ArrowDown, ShieldQuestion,
 } from 'lucide-react';
 import { devicesApi, topologyApi, metricsApi, tagsApi, adoptionApi} from '../services/api';
 import type { Device } from '../types';

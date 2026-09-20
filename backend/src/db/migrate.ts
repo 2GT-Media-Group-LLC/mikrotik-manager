@@ -1022,6 +1022,20 @@ ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked BOOLEAN NOT NUL
 -- poll, and classification falls back to the display name, which is exactly
 -- the old behaviour.
 ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS default_name VARCHAR(64);
+-- Negotiated link rate and SFP module facts, from /interface/ethernet/monitor.
+-- The speed column above it was read from /interface/print, which has no such
+-- field on any RouterOS version tested -- so it had been null for every
+-- interface on every device since it was added (#146).
+--
+-- sfp_present is deliberately tri-state: NULL means the port is not an SFP cage
+-- at all (RouterOS omits the field entirely on copper), false means an empty
+-- cage, true means a module is seated. That distinction is what tells copper
+-- from fibre, which nothing we collected previously could do.
+ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS link_rate VARCHAR(24);
+ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_present BOOLEAN;
+ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_type VARCHAR(48);
+ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_connector VARCHAR(48);
+ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_vendor VARCHAR(64);
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);
@@ -1065,6 +1079,11 @@ const DEFAULT_SETTINGS = [
   { key: 'change_guard_enabled', value: true },
   { key: 'change_guard_mode', value: 'binary' },
   { key: 'change_guard_timeout_sec', value: 120 },
+  // Firmware timeouts. Hardcoded until a user pointed out that CRS switches can
+  // take a full 12 minutes to come back, which is exactly the old ceiling, and
+  // that MikroTik's download servers intermittently stall (#141).
+  { key: 'firmware_download_timeout_min', value: 10 },
+  { key: 'firmware_reboot_timeout_min', value: 12 },
   { key: 'config_health_enabled', value: true },
   { key: 'config_health_interval_min', value: 60 },
   // Geocoding and map tiles are third-party requests that also disclose device

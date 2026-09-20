@@ -17,6 +17,14 @@ import { interruptedOutcome, INTERRUPTED_RUN_ERROR } from '../utils/interrupted'
 import { describeUpdateStatus, type UpdateStatus } from '../utils/updateStatus';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
+/**
+ * Defaults only. Both are settings now — see readTimeouts().
+ *
+ * A user with CRS switches reported them taking a full twelve minutes to come
+ * back, which was precisely the old reboot ceiling, so a slow board failed at
+ * the boundary. Their download reports also showed MikroTik's servers stalling
+ * on one or two devices in a dozen.
+ */
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000; // large images on slow links
 const DOWNLOAD_POLL_MS = 10_000;
 /**
@@ -30,6 +38,30 @@ const AVAILABLE_GRACE_POLLS = 3;
 const latestLabel = (v: string) => (v ? `Version ${v}` : 'The update');
 const REBOOT_POLL_MS = 15_000;       // probe cadence while waiting
 const REBOOT_TIMEOUT_MS = 12 * 60_000; // give slow flash writes room
+
+/**
+ * Operator overrides, read per rollout so a change needs no restart.
+ *
+ * Clamped rather than trusted: a zero would fail every device instantly, and an
+ * unbounded value would hang a rollout forever on a device that is never coming
+ * back.
+ */
+async function readTimeouts(): Promise<{ downloadMs: number; rebootMs: number }> {
+  const rows = await query<{ key: string; value: unknown }>(
+    `SELECT key, value FROM app_settings
+      WHERE key IN ('firmware_download_timeout_min', 'firmware_reboot_timeout_min')`
+  ).catch(() => []);
+  const map: Record<string, unknown> = {};
+  for (const r of rows) map[r.key] = r.value;
+  const minutes = (v: unknown, fallback: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 1 && n <= 120 ? n : fallback;
+  };
+  return {
+    downloadMs: minutes(map['firmware_download_timeout_min'], DOWNLOAD_TIMEOUT_MS / 60_000) * 60_000,
+    rebootMs: minutes(map['firmware_reboot_timeout_min'], REBOOT_TIMEOUT_MS / 60_000) * 60_000,
+  };
+}
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
@@ -46,6 +78,12 @@ interface RolloutDeviceRow {
 }
 
 export class FirmwareOrchestrator {
+  /**
+   * Resolved once per rollout rather than per device, so a rollout cannot
+   * change its own rules halfway through.
+   */
+  private downloadMs = DOWNLOAD_TIMEOUT_MS;
+  private rebootMs = REBOOT_TIMEOUT_MS;
   private activeRolloutId: number | null = null;
   private cancelRequested = false;
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
@@ -139,6 +177,11 @@ export class FirmwareOrchestrator {
   }
 
   private async run(rollout: RolloutRow): Promise<void> {
+    ({ downloadMs: this.downloadMs, rebootMs: this.rebootMs } = await readTimeouts());
+    console.log(
+      `[Firmware] timeouts: download ${Math.round(this.downloadMs / 60000)}min, ` +
+      `reboot ${Math.round(this.rebootMs / 60000)}min`
+    );
     const items = await query<RolloutDeviceRow>(
       `SELECT * FROM firmware_rollout_devices WHERE rollout_id=$1 ORDER BY wave ASC, id ASC`,
       [rollout.id]);
@@ -296,7 +339,7 @@ export class FirmwareOrchestrator {
       let outcome: UpdateStatus | null = null;
       let reachedPercent: number | null = null;
       try {
-        const result = await collector.downloadUpdate(DOWNLOAD_TIMEOUT_MS);
+        const result = await collector.downloadUpdate(this.downloadMs);
         outcome = result.status;
         reachedPercent = result.peakPercent;
         step(`download command finished after ${result.rows} progress update(s): ${describeUpdateStatus(outcome)}`);
@@ -375,7 +418,7 @@ export class FirmwareOrchestrator {
       let downloaded = outcome?.state === 'downloaded';
       let lastSeen = '';
       let unreadable = 0;
-      const dlDeadline = Date.now() + DOWNLOAD_TIMEOUT_MS;
+      const dlDeadline = Date.now() + this.downloadMs;
       while (!downloaded && Date.now() < dlDeadline) {
         if (this.cancelRequested) break;
         let s: UpdateStatus;
@@ -417,7 +460,7 @@ export class FirmwareOrchestrator {
           : ' It never reported any progress.';
         return fail(
           `Device did not finish downloading ${latest} within ` +
-          `${Math.round(DOWNLOAD_TIMEOUT_MS / 60000)} minutes.${got} Nothing was rebooted.${spaceNote}` +
+          `${Math.round(this.downloadMs / 60000)} minutes.${got} Nothing was rebooted.${spaceNote}` +
           (freeMb > 0 && freeMb < 20 ? ' That is unlikely to be enough for a RouterOS image.' : '')
         );
       }
@@ -434,7 +477,7 @@ export class FirmwareOrchestrator {
     // 3. Ride out the reboot, and prove one happened.
     await this.setItem(item.id, { status: 'rebooting' });
     await sleep(REBOOT_GRACE_MS);
-    const deadline = Date.now() + REBOOT_TIMEOUT_MS;
+    const deadline = Date.now() + this.rebootMs;
     let backOnline = false;
     let rebootProven = false;
     /** False when a missing uptime reading made the restart an assumption. */
@@ -475,7 +518,7 @@ export class FirmwareOrchestrator {
       );
     }
     if (!backOnline) {
-      return fail(`Device did not come back online within ${Math.round(REBOOT_TIMEOUT_MS / 60000)} minutes after the upgrade — check it manually (a pre-upgrade backup ${rollout.pre_backup ? 'exists' : 'was NOT taken'})`);
+      return fail(`Device did not come back online within ${Math.round(this.rebootMs / 60000)} minutes after the upgrade — check it manually (a pre-upgrade backup ${rollout.pre_backup ? 'exists' : 'was NOT taken'})`);
     }
 
     // 4. Verify the version actually moved
@@ -541,7 +584,7 @@ export class FirmwareOrchestrator {
     }
 
     // Second reboot of this upgrade. Same budget as the first.
-    const deadline = Date.now() + REBOOT_TIMEOUT_MS;
+    const deadline = Date.now() + this.rebootMs;
     while (Date.now() < deadline) {
       if (this.cancelRequested) return { ok: false, error: 'cancelled while rebooting' };
       const probe = new DeviceCollector(device);
@@ -563,7 +606,7 @@ export class FirmwareOrchestrator {
         await sleep(REBOOT_POLL_MS);
       }
     }
-    return { ok: false, error: `device did not come back within ${Math.round(REBOOT_TIMEOUT_MS / 60000)} minutes after the RouterBOOT upgrade` };
+    return { ok: false, error: `device did not come back within ${Math.round(this.rebootMs / 60000)} minutes after the RouterBOOT upgrade` };
   }
 }
 

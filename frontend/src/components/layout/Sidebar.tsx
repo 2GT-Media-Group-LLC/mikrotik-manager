@@ -18,6 +18,12 @@ const monitorItems = [
   { to: '/traffic',   icon: Activity,        label: 'Traffic' },
   { to: '/events',    icon: Bell,            label: 'Events' },
   { to: '/security',  icon: Shield,          label: 'Security' },
+  // Reported as unreachable (#148): the only route to this page was the
+  // "All sites" entry in the selector under the logo, itself hidden unless more
+  // than one site exists — so a single-site install could not get here at all.
+  // Shown unconditionally now. One sidebar row does not impose the concept on
+  // anyone the way an unreachable page frustrates the people who want it.
+  { to: '/sites',     icon: Globe,           label: 'Sites' },
 ];
 
 const wirelessSubItems = [

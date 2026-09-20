@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, BarChart, Bar, Cell,
+  ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts';
 import { wirelessApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
@@ -918,7 +918,6 @@ interface Props {
 
 export default function RadiosTab({ deviceId, deviceStatus }: Props) {
   const canWrite = useCanWrite();
-  const qc = useQueryClient();
   const [editIface, setEditIface] = useState<WirelessInterface | null>(null);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
@@ -933,11 +932,6 @@ export default function RadiosTab({ deviceId, deviceStatus }: Props) {
     queryKey: ['device-wireless', deviceId],
     queryFn: () => wirelessApi.getCachedInterfaces(deviceId).then(r => r.data as WirelessInterface[]),
     refetchInterval: 30_000,
-  });
-
-  const refreshMutation = useMutation({
-    mutationFn: () => wirelessApi.getCachedInterfaces(deviceId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['device-wireless', deviceId] }),
   });
 
   const isOffline = deviceStatus !== 'online';

@@ -24,7 +24,11 @@ export default tseslint.config(
 
       // TypeScript rules
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // An error, not a warning. A function written, exported and unit-tested
+      // but never wired into the component it was written for shipped a broken
+      // port sort (#146) -- the warning was emitted and invisible among the
+      // others, and the gate only fails on errors.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
     settings: {
       react: { version: 'detect' },
