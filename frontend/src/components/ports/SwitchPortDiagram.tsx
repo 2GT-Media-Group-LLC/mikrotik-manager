@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, X, Check, AlertCircle, Activity, Cpu, Link2, Trash2, Plus, Network, Users, Wifi, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { RefreshCw, X, Check, AlertCircle, Activity, Cpu, Link2, Trash2, Plus, Network, Users, Wifi, ShieldCheck, AlertTriangle, LayoutGrid} from 'lucide-react';
 import { devicesApi, metricsApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVerdictOf, type GuardResult, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
 import { classifyPort, portBasis, portLabel, portSortKey } from '../../utils/portClass';
+import {
+  staggerBlocks, chunkRows, resolveColumns,
+  DENSITY_LABELS, type Density,
+} from '../../utils/faceplateLayout';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -910,18 +914,42 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
 
   const isPending = updateInterfaceMutation.isPending || updateVlanMutation.isPending;
 
-  // Two staggered rows above 8 copper ports, matching a real faceplate.
+  // Faceplate density. Every group wraps to the available width now; before,
+  // only ETH wrapped and only ever to two rows, so a device with many ports and
+  // bonds ran off the side behind a scrollbar (#146).
   //
-  // Everything else that used to live here -- chassis width, per-section
-  // offsets, lane geometry -- was a coordinate system for an absolute-
-  // positioned faceplate that no longer exists. Every one of those constants
-  // was consumed only by the next constant in the chain and never reached the
-  // render, which is flexbox with its own literal sizes. Removed rather than
-  // carried: it read like the thing that drives layout and is not, and it
-  // misled a reading of this component as recently as this week.
-  const doubleRow = etherPorts.length > 8;
-  const topRowPorts = doubleRow ? etherPorts.filter((_, i) => i % 2 === 0) : etherPorts;
-  const bottomRowPorts = doubleRow ? etherPorts.filter((_, i) => i % 2 === 1) : [];
+  // The geometry lives in utils/faceplateLayout.ts. What used to be here was a
+  // coordinate system for an absolute-positioned faceplate that no longer
+  // exists -- every constant fed only the next one and none reached the render.
+  const [density, setDensity] = useState<Density>(() => {
+    try { return (localStorage.getItem('faceplate.density') as Density) || 'auto'; }
+    catch { return 'auto'; }
+  });
+  const chooseDensity = (d: Density) => {
+    setDensity(d);
+    try { localStorage.setItem('faceplate.density', d); } catch { /* private mode */ }
+  };
+
+  // Measured rather than assumed, so "fit to width" actually fits.
+  const rackRef = useRef<HTMLDivElement | null>(null);
+  const [rackWidth, setRackWidth] = useState(1200);
+  useEffect(() => {
+    const el = rackRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry?.contentRect?.width;
+      if (w) setRackWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const columns = resolveColumns(density, rackWidth);
+  const etherBanks = staggerBlocks(etherPorts, columns);
+  const sfpRows = chunkRows(individualSfpPorts, columns);
+  const cageRows = chunkRows(qsfpCages, Math.max(1, Math.floor(columns / 4)));
+  const bridgeRows = chunkRows(bridgePorts, columns);
+  const bondRows = chunkRows(bondPorts, columns);
 
 
   if (isLoading) {
@@ -1004,47 +1032,64 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                 click to select · shift for multi · double-click to configure
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
               {([['up', 'var(--accent)', ports.filter(p => !p.disabled && p.running).length], ['down', 'var(--bad)', ports.filter(p => !p.disabled && !p.running).length], ['disabled', 'var(--ink-4)', ports.filter(p => p.disabled).length], ['selected', 'var(--accent)', selectedPorts.size]] as [string,string,number][]).map(([l, c, n]) => (
                 <span key={l} className="mono text-[11px]" style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-3)' }}>
                   <span style={{ width: 9, height: 9, borderRadius: 2, background: c, opacity: l === 'disabled' ? 0.4 : 1, flexShrink: 0 }} />
                   {l} <span className="num-tab" style={{ color: 'var(--ink-2)' }}>{n}</span>
                 </span>
               ))}
+              {/* Requested alongside wrapping: "maybe put them in multiple rows,
+                  or make it user customizable". Fit-to-width is the default and
+                  answers the complaint on its own; the fixed densities are for
+                  comparing devices at the same scale. Remembered across
+                  devices, since it is a preference and not a per-device fact. */}
+              <label className="mono text-[11px]" style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-3)' }}>
+                <LayoutGrid className="w-3 h-3" />
+                <select
+                  value={density}
+                  onChange={(e) => chooseDensity(e.target.value as Density)}
+                  className="mono text-[11px] bg-transparent outline-none cursor-pointer"
+                  style={{ color: 'var(--ink-2)' }}
+                  title="How many ports per row"
+                >
+                  {(Object.keys(DENSITY_LABELS) as Density[]).map((d) => (
+                    <option key={d} value={d}>{DENSITY_LABELS[d]}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
 
           {/* Rack unit */}
-          <div style={{
+          <div ref={rackRef} style={{
             background: 'linear-gradient(180deg, var(--faceplate-from), var(--faceplate-to))',
             border: '1px solid var(--faceplate-border)', borderRadius: 8, padding: '22px 26px',
-            display: 'flex', gap: 30, alignItems: 'center', overflowX: 'auto',
+            display: 'flex', gap: 30, alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 22,
             boxShadow: 'inset 0 0 0 2px var(--faceplate-inset), inset 0 1px 0 rgba(255,255,255,0.02)',
           }}>
-            {/* ETH group */}
+            {/* ETH group — staggered banks, odd above even, wrapping by density */}
             {etherPorts.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
                 <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em' }}>ETH</div>
-                {doubleRow ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {topRowPorts.map(port => (
-                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
-                      ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {etherBanks.map((bank, bi) => (
+                    <div key={bi} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {bank.top.map(port => (
+                          <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                        ))}
+                      </div>
+                      {bank.bottom.length > 0 && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {bank.bottom.map(port => (
+                            <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {bottomRowPorts.map(port => (
-                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {topRowPorts.map(port => (
-                      <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
-                    ))}
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1054,16 +1099,26 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                 <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em', marginBottom: 6 }}>
                   SFP · 1–{individualSfpPorts.length}
                 </div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: individualSfpPorts.length * 52 }}>
-                  {individualSfpPorts.map(port => (
-                    <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                {/* Explicit rows. The previous attempt set flexWrap with a
+                    maxWidth of 52px per port against a real 50px per port, so
+                    the wrap could never trigger — it missed by 2px each. */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {sfpRows.map((row, ri) => (
+                    <div key={ri} style={{ display: 'flex', gap: 4 }}>
+                      {row.map(port => (
+                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                      ))}
+                    </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* QSFP cages */}
-            {qsfpCages.map(cage => {
+            {/* QSFP cages — grouped into rows so a chassis full of cages folds
+                rather than running off the side. */}
+            {cageRows.map((cageRow, cri) => (
+            <div key={`cagerow-${cri}`} style={{ display: 'flex', gap: 30, alignItems: 'flex-start' }}>
+            {cageRow.map(cage => {
               const isSingleMode = !!cage.singlePort;
               const laneCount = isSingleMode ? 4 : cage.lanes.length;
               const runningLanes = cage.lanes.filter(p => p.running && !p.disabled).length;
@@ -1084,14 +1139,22 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                 </div>
               );
             })}
+            </div>
+            ))}
 
-            {/* Bridge group */}
+            {/* Bridge group. marginLeft:auto was removed here — it shoved the
+                group to the far edge of the row, which once the groups started
+                wrapping guaranteed a gap the width of the container. */}
             {bridgePorts.length > 0 && (
-              <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
                 <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em' }}>BRIDGE</div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {bridgePorts.map(port => (
-                    <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {bridgeRows.map((row, ri) => (
+                    <div key={ri} style={{ display: 'flex', gap: 4 }}>
+                      {row.map(port => (
+                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                      ))}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1101,9 +1164,13 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
             {bondPorts.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
                 <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em' }}>BOND</div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {bondPorts.map(port => (
-                    <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {bondRows.map((row, ri) => (
+                    <div key={ri} style={{ display: 'flex', gap: 4 }}>
+                      {row.map(port => (
+                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                      ))}
+                    </div>
                   ))}
                 </div>
               </div>
