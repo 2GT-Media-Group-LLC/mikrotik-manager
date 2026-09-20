@@ -786,63 +786,37 @@ export default function DevicesPage() {
                     </td>
                     <td className="px-4 py-[11px]">
                       {canWrite && d.duplicate_of_device_id == null && (() => {
+                        // One action. The system has already seen the address
+                        // and identity, so deciding new-versus-established is
+                        // its job, not something to make the operator diagnose
+                        // before they can click anything. The dialog says what
+                        // it found and lets them overrule it.
                         const cand = candidateByMac.get((d.mac_address || '').toUpperCase());
-                        const rec = cand?.recommendation;
-                        const addBtn = (
-                          <button
-                            onClick={() => {
-                              setAddPrefill({ name: d.identity || '', ip_address: d.address });
-                              setShowAddModal(true);
-                            }}
-                            className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
-                            title={rec?.reasons.join(' · ')}
-                          >
-                            <Plus className="w-3 h-3" />
-                            Add to Manager
-                          </button>
-                        );
-
-                        if (!cand || rec?.mode !== 'adopt') {
-                          return (
-                            <div className="flex items-center gap-2">
-                              {addBtn}
-                              {cand && (
-                                // Still reachable, because detection is a guess
-                                // and the operator may know better.
-                                <button
-                                  onClick={() => setAdoptTarget(cand)}
-                                  className="text-[11px] underline"
-                                  style={{ color: 'var(--ink-4)' }}
-                                  title="Treat this as a brand-new device and configure it first"
-                                >
-                                  Adopt instead
-                                </button>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        // Looks factory-default: the normal add cannot reach it.
                         return (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setAdoptTarget(cand)}
-                              className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
-                              title={rec.reasons.join(' · ')}
-                            >
-                              <ShieldQuestion className="w-3 h-3" />
-                              Adopt
-                            </button>
-                            {rec.confidence === 'low' && (
-                              <span
-                                className="mono text-[9.5px] uppercase tracking-wide px-[6px] py-[2px] rounded"
-                                style={{ background: 'var(--warn-bg)', color: 'var(--warn)' }}
-                                title={rec.reasons.join(' · ')}
-                              >
-                                unsure
-                              </span>
+                          <button
+                            onClick={() => setAdoptTarget(
+                              cand ?? {
+                                // Not a MikroTik neighbour we can profile, so
+                                // fall through to registering it as-is.
+                                mac: d.mac_address || '',
+                                address: d.address || '',
+                                identity: d.identity || null,
+                                seenBy: [],
+                                factoryDefault: false,
+                                reachableDirectly: true,
+                                recommendation: {
+                                  mode: 'add',
+                                  confidence: 'high',
+                                  reasons: ['not a MikroTik neighbour we can inspect before connecting'],
+                                },
+                              }
                             )}
-                          </div>
+                            className="btn-primary text-[12px] py-[5px] px-3 flex items-center gap-1"
+                            title={cand?.recommendation.reasons.join(' · ')}
+                          >
+                            <ShieldQuestion className="w-3 h-3" />
+                            Adopt Device
+                          </button>
                         );
                       })()}
                     </td>
@@ -859,6 +833,9 @@ export default function DevicesPage() {
       {adoptTarget && (
         <AdoptDeviceModal
           candidate={adoptTarget}
+          discovered={discovered?.find(
+            (x) => (x.mac_address || '').toUpperCase() === adoptTarget.mac.toUpperCase()
+          )}
           onClose={() => setAdoptTarget(null)}
           onSuccess={() => {
             setAdoptTarget(null);

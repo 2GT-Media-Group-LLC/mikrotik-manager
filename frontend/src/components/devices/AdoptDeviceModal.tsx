@@ -2,30 +2,46 @@ import { useState, useMemo, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { X, ShieldQuestion, Check, AlertTriangle, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
+import AddDeviceModal from './AddDeviceModal';
 import {
   adoptionApi,
   type AdoptionCandidate, type AdoptionResult, type AddressPlan,
 } from '../../services/api';
 
 /**
- * Adopting a factory-default MikroTik.
+ * The single way a discovered device gets adopted.
  *
- * A new device announces itself the moment it is plugged in, but sits on
- * 192.168.88.1 with no route off that subnet, so "Add to Manager" cannot reach
- * it. This borrows a managed neighbour to configure it instead.
+ * There used to be two buttons — "Adopt" and "Add to Manager" — which made the
+ * operator diagnose the device before they could act on it. That is the
+ * system's job: it has already seen the address and the identity, and it is
+ * better placed to tell a boxed-fresh switch from one that has been running
+ * for three years.
  *
- * The password field has no default on purpose. Modern units ship with a unique
- * password printed on the device rather than a blank one, so there is nothing to
- * pre-fill and nothing to guess.
+ * So there is one button, and this dialog opens saying what it found and what
+ * it intends to do about it. The choice is still reversible — detection is a
+ * heuristic and the operator can see the hardware — but it is presented as a
+ * decision already made rather than a question.
+ *
+ * Two modes:
+ *
+ *   new       borrow a managed neighbour to give a factory device an address,
+ *             then register it
+ *   existing  register a configured device with its credentials, changing
+ *             nothing on it
+ *
+ * The password field has no default on purpose. Modern units ship with a
+ * unique password printed on the device, so there is nothing to pre-fill.
  */
 
 interface Props {
   candidate: AdoptionCandidate;
+  /** Discovery's view, used to prefill the existing-device form. */
+  discovered?: { identity?: string | null; address?: string | null };
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Props) {
+export default function AdoptDeviceModal({ candidate, discovered, onClose, onSuccess }: Props) {
   const [jumpHostId, setJumpHostId] = useState(candidate.seenBy[0]?.id ?? 0);
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -41,9 +57,12 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
   const [result, setResult] = useState<AdoptionResult | null>(null);
 
   const rec = candidate.recommendation;
-  // The server checks this again properly once authenticated; this is only so
-  // the operator is not surprised by a refusal they could have seen coming.
-  const looksEstablished = rec?.mode === 'add';
+  // Detection picks the starting mode; the operator can override it below. The
+  // server checks again properly once authenticated, so an override cannot
+  // quietly reconfigure a device that is already in service.
+  const [mode, setMode] = useState<'new' | 'existing'>(rec?.mode === 'adopt' ? 'new' : 'existing');
+  const detectedNew = rec?.mode === 'adopt';
+  const overridden = (mode === 'new') !== detectedNew;
 
   const jumpHost = candidate.seenBy.find((h) => h.id === jumpHostId);
 
@@ -121,7 +140,7 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
     && !checking;
   const ready = !!jumpHostId && password.length > 0 && !adopt.isPending
     && (addrMode === 'dhcp' || staticReady)
-    && (!looksEstablished || force);
+    && (!overridden || force);
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -130,7 +149,7 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
           <div className="flex items-center gap-2">
             <ShieldQuestion className="w-5 h-5 text-blue-500" />
             <div>
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Adopt factory device</h2>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">Adopt Device</h2>
               <p className="text-xs text-gray-500 dark:text-slate-400 mono">
                 {candidate.mac} · currently {candidate.address}
               </p>
@@ -140,42 +159,82 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
         </div>
 
         <div className="p-5 space-y-4">
-          {looksEstablished ? (
-            // The scenario this guard exists for: a switch that is already in
-            // service, often simply on a subnet we do not route to. Adoption
-            // would rewrite addressing it is currently using.
-            <div className="rounded p-3 text-[12px] bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 mt-px shrink-0" />
-                <div className="space-y-1.5">
-                  <p className="font-medium">This device looks like it is already configured.</p>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    {rec.reasons.map((r, i) => <li key={i}>{r}</li>)}
-                  </ul>
-                  <p>
-                    Adoption is for devices straight out of the box. Running it here would add an address and
-                    change the identity of a device that is already in use. If you just need it in the manager,
-                    close this and use <span className="font-medium">Add to Manager</span> with its credentials.
-                  </p>
-                </div>
+          {/* What was detected, and what will happen because of it. Stated as a
+              decision already taken, with the means to overrule it. */}
+          <div className="rounded border border-gray-200 dark:border-slate-700 p-3 space-y-2">
+            <div className="flex items-start gap-2">
+              {detectedNew
+                ? <ShieldQuestion className="w-4 h-4 mt-px shrink-0 text-blue-500" />
+                : <Check className="w-4 h-4 mt-px shrink-0 text-green-500" />}
+              <div className="space-y-1">
+                <p className="text-[13px] font-medium text-gray-900 dark:text-white">
+                  {detectedNew
+                    ? 'Detected: a brand-new device'
+                    : 'Detected: a device that is already configured'}
+                  {rec?.confidence === 'low' && (
+                    <span className="ml-1.5 text-[11px] font-normal text-amber-600">(uncertain)</span>
+                  )}
+                </p>
+                <ul className="text-[11.5px] text-gray-500 dark:text-slate-400 list-disc pl-4 space-y-0.5">
+                  {rec?.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
               </div>
             </div>
-          ) : (
-            <>
-              <p className="text-[13px] text-gray-600 dark:text-slate-300 leading-relaxed">
-                This device is on the factory address <span className="mono">{candidate.address}</span> with no
-                route to your network, so it cannot be added directly. A managed neighbour will be borrowed
-                briefly to give it an address here, then returned to exactly how it was.
-              </p>
-              {rec && (
-                <p className="text-[11px] text-gray-400">
-                  {rec.confidence === 'low' ? 'Best guess — ' : 'Detected as new — '}
-                  {rec.reasons.join('; ')}.
-                </p>
-              )}
-            </>
-          )}
 
+            <p className="text-[12px] text-gray-600 dark:text-slate-300 pl-6">
+              {mode === 'new'
+                ? 'It will be given an address on your network using a managed neighbour, then registered.'
+                : 'It will be registered using its existing credentials. Nothing on the device is changed.'}
+            </p>
+
+            <div className="pl-6">
+              <button
+                type="button"
+                onClick={() => setMode(mode === 'new' ? 'existing' : 'new')}
+                className="text-[11.5px] underline"
+                style={{ color: 'var(--ink-4)' }}
+              >
+                {mode === 'new'
+                  ? 'Wrong — this device is already configured'
+                  : 'Wrong — this is a brand-new device'}
+              </button>
+            </div>
+
+            {overridden && (
+              <div className={clsx(
+                'ml-6 flex items-start gap-2 text-[11.5px] rounded p-2',
+                mode === 'new'
+                  ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                  : 'bg-gray-50 dark:bg-slate-800/50 text-gray-600 dark:text-slate-300'
+              )}>
+                <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
+                <span>
+                  {mode === 'new'
+                    ? 'Overriding detection. Adoption writes an address and identity, so it would modify a '
+                      + 'device that appears to be in service. It is checked again after connecting and will '
+                      + 'stop if the device disagrees.'
+                    : 'Overriding detection. This device looks factory-default, so registering it without '
+                      + 'configuring it first will probably fail to connect.'}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {mode === 'existing' ? (
+            // Reuses the standard add form wholesale — credential presets and
+            // duplicate-serial handling included — rather than a second copy.
+            <AddDeviceModal
+              embedded
+              submitLabel="Adopt Device"
+              prefill={{
+                name: discovered?.identity || candidate.identity || '',
+                ip_address: discovered?.address || candidate.address || '',
+              }}
+              onClose={onClose}
+              onSuccess={onSuccess}
+            />
+          ) : (
+          <>
           <div>
             <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">
               Borrow which managed device?
@@ -303,7 +362,7 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
             </span>
           </label>
 
-          {looksEstablished && (
+          {overridden && mode === 'new' && (
             <label className="flex items-start gap-2 text-[12px] text-red-700 dark:text-red-300 cursor-pointer">
               <input type="checkbox" className="mt-0.5" checked={force} onChange={(e) => setForce(e.target.checked)} />
               <span>
@@ -346,23 +405,28 @@ export default function AdoptDeviceModal({ candidate, onClose, onSuccess }: Prop
               )}
             </div>
           )}
-        </div>
-
-        <div className="flex justify-end gap-2 p-5 border-t border-gray-200 dark:border-slate-700">
-          <button onClick={onClose} className="btn-secondary text-[12px]">
-            {result?.ok ? 'Close' : 'Cancel'}
-          </button>
-          {!result?.ok && (
-            <button
-              onClick={() => { setResult(null); adopt.mutate(); }}
-              disabled={!ready}
-              className="btn-primary text-[12px] flex items-center gap-2 disabled:opacity-50"
-            >
-              {adopt.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              {adopt.isPending ? 'Adopting…' : 'Adopt device'}
-            </button>
+          </>
           )}
         </div>
+
+        {/* The embedded add form carries its own buttons. */}
+        {mode === 'new' && (
+          <div className="flex justify-end gap-2 p-5 border-t border-gray-200 dark:border-slate-700">
+            <button onClick={onClose} className="btn-secondary text-[12px]">
+              {result?.ok ? 'Close' : 'Cancel'}
+            </button>
+            {!result?.ok && (
+              <button
+                onClick={() => { setResult(null); adopt.mutate(); }}
+                disabled={!ready}
+                className="btn-primary text-[12px] flex items-center gap-2 disabled:opacity-50"
+              >
+                {adopt.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {adopt.isPending ? 'Adopting…' : 'Adopt Device'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

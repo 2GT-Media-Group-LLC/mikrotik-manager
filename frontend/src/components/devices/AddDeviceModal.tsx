@@ -13,9 +13,21 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
   prefill?: { name?: string; ip_address?: string };
+  /**
+   * Render only the form, without its own overlay and header.
+   *
+   * Used by the unified Adopt Device dialog, which supplies the surrounding
+   * chrome and the detection panel. Embedding beats duplicating the form:
+   * credential presets and duplicate-serial handling live here and would
+   * otherwise have to be reimplemented and kept in step.
+   */
+  embedded?: boolean;
+  submitLabel?: string;
 }
 
-export default function AddDeviceModal({ onClose, onSuccess, prefill }: Props) {
+export default function AddDeviceModal({
+  onClose, onSuccess, prefill, embedded = false, submitLabel,
+}: Props) {
   const [form, setForm] = useState({
     name: prefill?.name || '',
     ip_address: prefill?.ip_address || '',
@@ -142,19 +154,7 @@ export default function AddDeviceModal({ onClose, onSuccess, prefill }: Props) {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="card w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add Device</h2>
-          <button
-            onClick={onClose}
-            className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+  const formBody = (
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {/* Basic info */}
           <div className="grid grid-cols-2 gap-3">
@@ -341,24 +341,49 @@ export default function AddDeviceModal({ onClose, onSuccess, prefill }: Props) {
               ) : (
                 <CheckCircle className="w-4 h-4" />
               )}
-              Add Device
+              {submitLabel || 'Add Device'}
             </button>
           </div>
         </form>
+  );
+
+  const duplicatePrompt = duplicateSerial && (
+    <ConfirmDuplicateModal
+      duplicate={duplicateSerial}
+      pendingName={form.name}
+      pendingIp={form.ip_address}
+      onCancel={() => { setDuplicateSerial(null); }}
+      onCombine={handleCombineDuplicate}
+      onReplace={handleReplaceDuplicate}
+      loading={loading}
+    />
+  );
+
+  // Embedded: the Adopt Device dialog owns the chrome and the detection panel.
+  if (embedded) {
+    return (
+      <>
+        {formBody}
+        {duplicatePrompt}
+      </>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="card w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Add Device</h2>
+          <button
+            onClick={onClose}
+            className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {formBody}
       </div>
-      {duplicateSerial && (
-        <ConfirmDuplicateModal
-          duplicate={duplicateSerial}
-          pendingName={form.name}
-          pendingIp={form.ip_address}
-          onCancel={() => {
-            setDuplicateSerial(null);
-          }}
-          onCombine={handleCombineDuplicate}
-          onReplace={handleReplaceDuplicate}
-          loading={loading}
-        />
-      )}
+      {duplicatePrompt}
     </div>
   );
 }
