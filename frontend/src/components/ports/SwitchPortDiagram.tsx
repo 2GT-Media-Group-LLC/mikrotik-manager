@@ -9,7 +9,7 @@ import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from
 import { classifyPort, portBasis, portLabel, portSortKey } from '../../utils/portClass';
 import {
   staggerBlocks, chunkRows, resolveColumns,
-  DENSITY_LABELS, type Density,
+  DENSITY_OPTIONS, parseDensity, densityLabel, type Density,
 } from '../../utils/faceplateLayout';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -922,12 +922,12 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   // coordinate system for an absolute-positioned faceplate that no longer
   // exists -- every constant fed only the next one and none reached the render.
   const [density, setDensity] = useState<Density>(() => {
-    try { return (localStorage.getItem('faceplate.density') as Density) || 'auto'; }
+    try { return parseDensity(localStorage.getItem('faceplate.density')); }
     catch { return 'auto'; }
   });
   const chooseDensity = (d: Density) => {
     setDensity(d);
-    try { localStorage.setItem('faceplate.density', d); } catch { /* private mode */ }
+    try { localStorage.setItem('faceplate.density', String(d)); } catch { /* private mode */ }
   };
 
   // Measured rather than assumed, so "fit to width" actually fits.
@@ -1047,14 +1047,18 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
               <label className="mono text-[11px]" style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-3)' }}>
                 <LayoutGrid className="w-3 h-3" />
                 <select
-                  value={density}
-                  onChange={(e) => chooseDensity(e.target.value as Density)}
+                  value={String(density)}
+                  onChange={(e) => chooseDensity(parseDensity(e.target.value))}
                   className="mono text-[11px] bg-transparent outline-none cursor-pointer"
                   style={{ color: 'var(--ink-2)' }}
                   title="How many ports per row"
                 >
-                  {(Object.keys(DENSITY_LABELS) as Density[]).map((d) => (
-                    <option key={d} value={d}>{DENSITY_LABELS[d]}</option>
+                  {/* The effective count is shown so that "fit to width" is not
+                      mysterious, and so a group that already fits on one row
+                      reads as "nothing needed to change" rather than broken. */}
+                  <option value="auto">{densityLabel('auto', columns)}</option>
+                  {DENSITY_OPTIONS.map((d) => (
+                    <option key={d} value={d}>{densityLabel(d, d)}</option>
                   ))}
                 </select>
               </label>

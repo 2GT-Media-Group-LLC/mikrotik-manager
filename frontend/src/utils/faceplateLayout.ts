@@ -88,31 +88,44 @@ export function staggerBlocks<T>(items: T[], maxCols: number): StaggerBlock<T>[]
   return blocks;
 }
 
-/** The density choices offered, and what they mean in columns. */
-export type Density = 'auto' | 'compact' | 'medium' | 'wide';
+/**
+ * Ports per row: "auto" to fit the container, or an explicit column count.
+ *
+ * The first attempt offered Compact/Medium/Wide at 8/16/24 columns, which was
+ * sized for a hypothetical 48-port switch rather than for real hardware. Across
+ * the five boards on the reference fleet, all four settings produced an
+ * identical layout in nineteen of twenty combinations — the largest single
+ * group on any of them is twelve ports, and the *smallest* option was eight. A
+ * control that cannot move anything reads as broken, and was reported as such.
+ *
+ * The range now starts low enough to bite on an eight-port switch, and the
+ * numbers are explicit so it is obvious what a setting should do.
+ */
+export type Density = 'auto' | number;
 
-export const DENSITY_COLUMNS: Record<Exclude<Density, 'auto'>, number> = {
-  compact: 8,
-  medium: 16,
-  wide: 24,
-};
+export const DENSITY_OPTIONS: number[] = [4, 6, 8, 12, 16, 24];
 
-export const DENSITY_LABELS: Record<Density, string> = {
-  auto: 'Fit to width',
-  compact: 'Compact',
-  medium: 'Medium',
-  wide: 'Wide',
-};
+/** localStorage round-trip, tolerating anything previously stored. */
+export function parseDensity(raw: string | null): Density {
+  if (!raw || raw === 'auto') return 'auto';
+  const n = Number(raw);
+  return Number.isFinite(n) && DENSITY_OPTIONS.includes(n) ? n : 'auto';
+}
+
+export function densityLabel(d: Density, effective: number): string {
+  return d === 'auto' ? `Fit to width (${effective})` : `${d} per row`;
+}
 
 /**
  * Columns to use, from the operator's preference and the measured container.
  *
- * "Fit to width" is the default because it answers the complaint without
- * anyone having to choose: the faceplate stops being wider than the space it
- * is in. The explicit settings exist because he asked to be able to decide,
- * and because a fixed density is easier to compare across devices.
+ * "Fit to width" is the default because it answers the original complaint
+ * without anyone choosing anything. Where a group is smaller than the budget it
+ * stays on one row, which is correct and also why the effective column count is
+ * shown: otherwise "nothing happened" is indistinguishable from "nothing needed
+ * to happen".
  */
 export function resolveColumns(density: Density, measuredPx: number): number {
   if (density === 'auto') return columnsForWidth(measuredPx);
-  return DENSITY_COLUMNS[density];
+  return Math.max(1, Math.floor(density));
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   chunkRows, staggerBlocks, columnsForWidth, resolveColumns,
+  DENSITY_OPTIONS, parseDensity,
   TILE_PX, TILE_GAP_PX,
 } from './faceplateLayout';
 
@@ -94,9 +95,48 @@ describe('resolveColumns', () => {
     expect(resolveColumns('auto', 1200)).toBe(22);
   });
 
-  it('ignores the container for explicit densities', () => {
-    expect(resolveColumns('compact', 9000)).toBe(8);
-    expect(resolveColumns('wide', 100)).toBe(24);
+  it('ignores the container for an explicit column count', () => {
+    expect(resolveColumns(8, 9000)).toBe(8);
+    expect(resolveColumns(24, 100)).toBe(24);
+  });
+});
+
+describe('density range', () => {
+  it('starts low enough to act on the smallest real board', () => {
+    // The first attempt bottomed out at 8 columns, and the biggest group on the
+    // reference fleet is 12 ports — so nineteen of twenty setting/board
+    // combinations rendered identically and the control looked broken.
+    expect(Math.min(...DENSITY_OPTIONS)).toBeLessThanOrEqual(4);
+  });
+
+  it('visibly changes an 8-port switch', () => {
+    const eight = Array.from({ length: 8 }, (_, i) => i);
+    const wide = staggerBlocks(eight, resolveColumns(24, 1200));
+    const tight = staggerBlocks(eight, resolveColumns(4, 1200));
+    expect(wide).toHaveLength(1);
+    expect(wide[0].bottom).toHaveLength(0);
+    expect(tight[0].top.length).toBeLessThanOrEqual(4);
+    expect(tight[0].bottom.length).toBeGreaterThan(0);
+  });
+
+  it('visibly changes a 12-port SFP group at several settings', () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => i);
+    const counts = DENSITY_OPTIONS.map((c) => chunkRows(twelve, c).length);
+    // More than one distinct row count across the ladder.
+    expect(new Set(counts).size).toBeGreaterThan(2);
+  });
+});
+
+describe('parseDensity', () => {
+  it('round-trips auto and explicit values', () => {
+    expect(parseDensity('auto')).toBe('auto');
+    expect(parseDensity('8')).toBe(8);
+  });
+
+  it('falls back to auto for anything unrecognised, including the old labels', () => {
+    expect(parseDensity('compact')).toBe('auto');
+    expect(parseDensity('999')).toBe('auto');
+    expect(parseDensity(null)).toBe('auto');
   });
 });
 
@@ -160,9 +200,9 @@ describe('real board widths', () => {
     expect(widestRow(dense, resolveColumns('auto', 600))).toBeLessThanOrEqual(600);
   });
 
-  it('compact density is narrower than wide for the same board', () => {
+  it('a tighter setting is narrower than a looser one for the same board', () => {
     const dense = boards['CRS354-48G + bonds'];
-    expect(widestRow(dense, resolveColumns('compact', 1200)))
-      .toBeLessThan(widestRow(dense, resolveColumns('wide', 1200)));
+    expect(widestRow(dense, resolveColumns(8, 1200)))
+      .toBeLessThan(widestRow(dense, resolveColumns(24, 1200)));
   });
 });
