@@ -176,6 +176,8 @@ Findings appear on the device's Security tab and in the dashboard's *Things to h
 | Several bridges competing for hardware offload | One silently falls back to CPU forwarding |
 | MTU above L2MTU | Large frames dropped without error |
 | Duplicate address on two interfaces | Only one can answer; which is not stated by the config |
+| Spanning tree off on a bridge with several active ports | Nothing stops a loop; the second cable someone plugs in becomes a broadcast storm |
+| Bridge running classic STP rather than RSTP | Convergence takes tens of seconds where RSTP takes under one |
 
 ### Settings
 

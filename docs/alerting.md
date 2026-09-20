@@ -40,10 +40,30 @@ Three states raise an alert:
 | expiring | Inside the warning window |
 | not yet valid | Validity starts in the future — usually a wrong device clock |
 
+A fourth state is shown but deliberately **does not** alert:
+
+| State | Meaning |
+|---|---|
+| revoked | Withdrawn by its issuer, whatever its dates say |
+
+Revocation cannot be worked out from dates — a revoked certificate keeps a perfectly good
+expiry — so it is read from the device and shown with the date it was withdrawn in place of a
+countdown that would be true and useless. It does not alert because revoking is something you
+did on purpose, and some revoked certificates cannot be deleted at all while a CA still
+references them through a CRL. Alerting would mean a daily reminder of a decision you have
+already made and cannot undo.
+
 Every collected certificate is listed on the **device page** under System & Config, and
 across the fleet on the **Security** page — with its expiry date, days remaining, key type,
 and whether it is a certificate authority. Expiring and expired ones also appear on the
 **Operations** dashboard.
+
+Where a device has expired certificates, a **Hide expired** toggle appears above the list,
+remembered separately for the device page and the fleet view. It exists for certificates that
+cannot be removed — RouterOS refuses to delete one while a CA still references it — which
+would otherwise sit permanently red with nothing to be done about them. Expired certificates
+are shown by default and the hidden count stays visible, because they are the main thing this
+feature exists to surface.
 
 The state shown on those pages is decided by the server using the same function and the same
 threshold that produce the alert, so a page cannot disagree with an email sent about the same

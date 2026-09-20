@@ -280,6 +280,7 @@ modes differ, and how to choose a timeout — see
 
 ### Switching, VLANs and wireless
 
+- **Switch faceplate** — a live front-panel view with copper staggered odd-above-even as the hardware is, SFP cages and QSFP breakout lanes grouped separately, and bridges and bonds alongside. Ports are classified by RouterOS's factory name rather than their display name, so renaming a port to something useful does not move it into the wrong group or cost it its label. Every group wraps to the width available — set ports-per-row, or leave it to fit the card
 - **VLAN management** — create, edit and delete VLANs; per-port membership with tagged/untagged control
 - **Per-port connected clients** — selecting a port shows who is *physically* on it. Uplink and trunk ports are auto-detected (via an LLDP/MNDP neighbour, MACs spanning multiple VLANs, or a high MAC count) and show an explainer rather than every MAC reachable through them, with one-click disclosure of the full table
 - **Copy VLANs between switches** — a three-step wizard with click-to-cycle port assignment, conflict detection, and a review summary before anything is applied
@@ -320,10 +321,12 @@ Each network service supports multi-device management with conflict detection:
 ### Visibility and troubleshooting
 
 - **Network topology** — auto-discovered from LLDP, CDP and MNDP, with LLDP treated as ground truth and lower-priority protocols suppressed for the same neighbour. Bidirectional pairs merge into one edge with both port names. Neighbours are resolved to managed devices by MAC before IP, because a MAC is unique fleet-wide and an address is not
+- **Spanning-tree disambiguation** — LLDP often reports several neighbours on one port and cannot say which is upstream. Where the devices run STP they have already computed the answer, so the root port, STP domain and path cost are used to resolve the real upstream — and to decline where the root belongs to equipment outside the fleet, rather than naming the wrong switch. Config Health also flags bridges with spanning tree switched off and bridges still running classic STP instead of RSTP
 - **Manual links** — drag between any two devices to record a connection discovery cannot see; stored persistently and drawn as purple dashed edges
 - **Orphan detection** — devices with no known connections are grouped with a prompt to link them
 - **Traffic analytics** — a built-in NetFlow v9/IPFIX collector on UDP 2055, per-client attribution, application breakdown (HTTPS, QUIC, DNS, SSH, email, WireGuard…), top talkers over 1h → 30d, automatic deduplication when a flow crosses two managed routers, and NAT-tolerant ingest for routers exporting from behind NAT or a VPN subnet router
 - **Configuration history** — snapshots of each device's full `/export`, deduplicated by content hash so only real changes are stored, with side-by-side line diffs, a change summary, and **one-click rollback** through the proven restore path
+- **Certificate inventory** — every certificate on every device, with expiry, key type, whether it is an authority, and whether it has been revoked. Revocation is read from the device rather than inferred, because a revoked certificate keeps a perfectly valid expiry date and would otherwise read as healthy. Optional alerting before expiry; see [alerting](docs/alerting.md#certificate-expiry)
 - **Audit log** — every authenticated write recorded with user, timestamp, method, path, entity, IP and response status
 - **Global search** — devices, clients and events from the top bar
 - **Per-device tools**:
@@ -342,6 +345,7 @@ Each network service supports multi-device management with conflict detection:
 - **Firmware orchestration** — fleet version overview, live update checks, and MikroTik's official release notes in-app. Staged rollouts run in **waves** (wave 1 = canary) through a verified pipeline per device: pre-upgrade backup → download and confirm the image landed → reboot → prove it restarted and came back healthy on the new version → next. **Halt on failure** stops the rollout if any device fails, and a device that comes back on the *old* version counts as a failure. Devices in a wave upgrade one at a time by default; raise **at once** to run them concurrently when a fleet of five-minute reboots would otherwise take all evening — waves stay sequential either way, so the canary still gates the rest. Rollouts can be scheduled, and cancelling never interrupts an in-flight flash
 - **Backups** — on demand or on a daily/weekly/monthly schedule for all online devices. Filter by device, type and date range; read one in place instead of downloading it; and compare any two as a diff — they are `/export` text, not opaque blobs. Config snapshots and their restorable `.rsc` are one artifact: delete either and both go, so they never drift apart, and a bulk delete says how many snapshots it will take with it
 - **Configuration templates** — reusable sets (DNS, NTP, syslog) pushed to many devices with per-device result reporting
+- **Device adoption** — a factory-default MikroTik is visible the moment it is plugged in but unreachable: RouterOS ships on `192.168.88.1/24` with no DHCP client and no route, so adding it used to mean Winbox and a MAC address. **Adopt Device** borrows a managed neighbour on the same broadcast domain, reaches the new device through it, and gives it an address on your network — static or DHCP, optionally on a tagged management VLAN. The platform decides from the device's own address and identity whether it is new or already in service, and re-checks properly after connecting so a wrong choice cannot rewrite a switch that is already carrying traffic. A chosen address is verified free by both ARP *and* ping, operations are additive so a failure leaves the device as reachable as it was, and the borrowed neighbour is returned untouched on every path. See [the adoption guide](docs/adoption.md)
 - **Bulk device add** — "Try All" on discovered devices runs as a server-side job that survives a closed browser tab, with live progress and cancel
 - **Device organisation** — colour-coded tags, rack location, physical address with map support, and per-device notes
 - **Sites** — group devices into sites and see each one's devices, clients, events, topology and dashboards on their own. A selector under the logo switches between them, and an all-sites view pins every site on a world map. Single-network installs are collected into one "Default Site" and never meet the concept. Polling stays fleet-wide — sites are a view over the data, not a change to how it is gathered. See [the sites guide](docs/sites.md)
@@ -368,6 +372,7 @@ so it moves when behaviour does.
 | Document | Covers |
 |---|---|
 | [Configuration](docs/configuration.md) | Environment variables, secret management, key rotation, TLS |
+| [Adopting devices](docs/adoption.md) | Adding configured devices, and configuring factory-default ones so they can be managed |
 | [Change Guard and Config Health](docs/change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
 | [Sites](docs/sites.md) | Grouping devices into sites, switching between them, and what each site scopes |
 | [Firmware rollouts](docs/firmware.md) | Waves, the upgrade pipeline, and what upgrading several at once costs |
