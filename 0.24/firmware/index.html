@@ -580,6 +580,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#timeouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      Timeouts
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       The pipeline
@@ -943,6 +952,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#timeouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      Timeouts
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       The pipeline
@@ -1018,6 +1036,35 @@
 <p><a href="../">← Documentation index</a></p>
 <p>Upgrade RouterOS across a fleet in waves, with a verified pipeline per device and
 a stopping point before a bad build reaches everything.</p>
+<h2 id="timeouts">Timeouts<a class="headerlink" href="#timeouts" title="Permanent link">&para;</a></h2>
+<p>Two settings, both in minutes, changed without a restart:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>firmware_download_timeout_min</code></td>
+<td>10</td>
+<td>Waiting for the image to land on the device</td>
+</tr>
+<tr>
+<td><code>firmware_reboot_timeout_min</code></td>
+<td>12</td>
+<td>Waiting for the device to come back after the flash</td>
+</tr>
+</tbody>
+</table>
+<p>Both are clamped to 1–120 minutes.</p>
+<p>Raise the reboot timeout for slow hardware. CRS switches have been reported taking a full
+twelve minutes to return, which is exactly the old fixed ceiling — so a slow board could fail
+at the boundary through no fault of the upgrade. Raise the download timeout if MikroTik's
+servers are stalling for you; a device that fails to download is not rebooted, so this is a
+delay rather than a risk.</p>
 <h2 id="the-pipeline">The pipeline<a class="headerlink" href="#the-pipeline" title="Permanent link">&para;</a></h2>
 <p>Each device goes through the same sequence:</p>
 <ol>
