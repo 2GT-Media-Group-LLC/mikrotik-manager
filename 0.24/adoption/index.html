@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="../scaling/">
+        <link rel="prev" href="../configuration/">
       
       
-        <link rel="next" href="../ssh-keys/">
+        <link rel="next" href="../sites/">
       
       
       <link rel="icon" href="../assets/images/favicon.png">
@@ -22,7 +22,7 @@
     
     
       
-        <title>Alerting - MikroTik Manager</title>
+        <title>Adopting devices - MikroTik Manager</title>
       
     
     
@@ -74,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#alerting" class="md-skip">
+        <a href="#adopting-devices" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Alerting
+              Adopting devices
             
           </span>
         </div>
@@ -384,10 +384,30 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../adoption/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Adopting devices
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   <span class="md-ellipsis">
@@ -396,6 +416,98 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-detects-and-how" class="md-nav__link">
+    <span class="md-ellipsis">
+      What it detects, and how
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-need" class="md-nav__link">
+    <span class="md-ellipsis">
+      What you need
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#addressing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Addressing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      What it does
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-borrowed-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      The borrowed device
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Troubleshooting
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-does-not-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      What it does not do
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -468,30 +580,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  <span class="md-ellipsis">
-    Alerting
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../alerting/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -500,95 +592,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#alert-rules" class="md-nav__link">
-    <span class="md-ellipsis">
-      Alert rules
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#certificate-expiry" class="md-nav__link">
-    <span class="md-ellipsis">
-      Certificate expiry
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#delivery-channels" class="md-nav__link">
-    <span class="md-ellipsis">
-      Delivery channels
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Delivery channels">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#ntfy" class="md-nav__link">
-    <span class="md-ellipsis">
-      ntfy
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#outbound-webhooks" class="md-nav__link">
-    <span class="md-ellipsis">
-      Outbound webhooks
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#scheduled-email-reports" class="md-nav__link">
-    <span class="md-ellipsis">
-      Scheduled email reports
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#maintenance-windows" class="md-nav__link">
-    <span class="md-ellipsis">
-      Maintenance windows
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -958,69 +961,72 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#alert-rules" class="md-nav__link">
+  <a href="#what-it-detects-and-how" class="md-nav__link">
     <span class="md-ellipsis">
-      Alert rules
+      What it detects, and how
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#certificate-expiry" class="md-nav__link">
+  <a href="#what-you-need" class="md-nav__link">
     <span class="md-ellipsis">
-      Certificate expiry
+      What you need
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#delivery-channels" class="md-nav__link">
+  <a href="#addressing" class="md-nav__link">
     <span class="md-ellipsis">
-      Delivery channels
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Delivery channels">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#ntfy" class="md-nav__link">
-    <span class="md-ellipsis">
-      ntfy
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#outbound-webhooks" class="md-nav__link">
-    <span class="md-ellipsis">
-      Outbound webhooks
+      Addressing
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#scheduled-email-reports" class="md-nav__link">
+  <a href="#what-it-does" class="md-nav__link">
     <span class="md-ellipsis">
-      Scheduled email reports
+      What it does
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#maintenance-windows" class="md-nav__link">
+  <a href="#the-borrowed-device" class="md-nav__link">
     <span class="md-ellipsis">
-      Maintenance windows
+      The borrowed device
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Troubleshooting
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-does-not-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      What it does not do
     </span>
   </a>
   
@@ -1044,207 +1050,161 @@
   
 
 
-<h1 id="alerting">Alerting<a class="headerlink" href="#alerting" title="Permanent link">&para;</a></h1>
-<p><a href="../">← Documentation index</a></p>
-<h2 id="alert-rules">Alert rules<a class="headerlink" href="#alert-rules" title="Permanent link">&para;</a></h2>
-<p>Each rule can be enabled independently, with its own threshold where applicable and a
-cooldown that prevents a flapping device from flooding your channels.</p>
+<h1 id="adopting-devices">Adopting devices<a class="headerlink" href="#adopting-devices" title="Permanent link">&para;</a></h1>
+<p>Two quite different things are called "adding a device", and the platform decides which one
+you need rather than asking you to work it out.</p>
+<p><strong>A device that is already configured</strong> — the usual case, and the one that applies when you
+first point the manager at an existing network. It has an address, it is reachable, and it
+needs nothing except credentials. Nothing on the device is changed.</p>
+<p><strong>A device straight out of its box.</strong> RouterOS ships on <code>192.168.88.1/24</code> with no DHCP client
+and no default route, so a new switch is visible the moment it is plugged in — it announces
+itself over MNDP and every managed neighbour reports it — but nothing can reach it. Until now
+that meant Winbox and a MAC address. The platform can now configure it for you.</p>
+<p>Both start the same way: <strong>Devices → Discover</strong>, then <strong>Adopt Device</strong> on the row.</p>
+<h2 id="what-it-detects-and-how">What it detects, and how<a class="headerlink" href="#what-it-detects-and-how" title="Permanent link">&para;</a></h2>
+<p>Neighbour discovery exposes two things before anything connects: the address and the system
+identity. Both being factory defaults means a new device; neither means one already in
+service.</p>
 <table>
 <thead>
 <tr>
-<th>Event</th>
-<th>Notes</th>
+<th>Signals</th>
+<th>Verdict</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>device_offline</code> / <code>device_online</code></td>
-<td>Raised by the poller; recovery closes the outage record</td>
+<td>On <code>192.168.88.1</code> <strong>and</strong> identity is <code>MikroTik</code></td>
+<td>Brand-new device</td>
 </tr>
 <tr>
-<td><code>high_cpu</code> / <code>high_memory</code></td>
-<td>Configurable threshold</td>
+<td>Neither</td>
+<td>Already configured</td>
 </tr>
 <tr>
-<td><code>cert_expiry</code></td>
-<td>Certificate approaching expiry</td>
-</tr>
-<tr>
-<td><code>firmware_update_available</code></td>
-<td>A newer RouterOS release exists for the device</td>
-</tr>
-<tr>
-<td><code>log_error</code> / <code>log_warning</code></td>
-<td>Matched from the device's own log</td>
-</tr>
-<tr>
-<td><code>device_discovered</code></td>
-<td>An unmanaged neighbour appeared via LLDP/CDP/MNDP</td>
-</tr>
-<tr>
-<td><code>config_drift</code></td>
-<td>The device's configuration changed (off by default)</td>
+<td>One but not the other</td>
+<td>Brand-new, flagged as uncertain</td>
 </tr>
 </tbody>
 </table>
-<p>Alerts are suppressed for devices inside an active <a href="#maintenance-windows">maintenance window</a>.</p>
-<h2 id="certificate-expiry">Certificate expiry<a class="headerlink" href="#certificate-expiry" title="Permanent link">&para;</a></h2>
-<p>Certificates on each device are read on the slow poll and checked hourly. The
-<code>cert_expiry</code> rule decides the rest: its <strong>threshold</strong> is the warning window in days
-(14 by default) and its <strong>cooldown</strong> how often you are told about the same certificate
-(daily by default).</p>
-<p>It is <strong>off by default</strong> — turn it on in Settings → Alerts.</p>
-<p>Every certificate is tracked separately, so a device with an expiring CA and an expiring
-client certificate raises two alerts rather than one. A certificate authority is named as
-such, because its expiry invalidates everything it signed rather than one connection.</p>
-<p>Three states raise an alert:</p>
-<table>
-<thead>
-<tr>
-<th>State</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>expired</td>
-<td>Already past its date; anything relying on it is failing now</td>
-</tr>
-<tr>
-<td>expiring</td>
-<td>Inside the warning window</td>
-</tr>
-<tr>
-<td>not yet valid</td>
-<td>Validity starts in the future — usually a wrong device clock</td>
-</tr>
-</tbody>
-</table>
-<p>A fourth state is shown but deliberately <strong>does not</strong> alert:</p>
-<table>
-<thead>
-<tr>
-<th>State</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>revoked</td>
-<td>Withdrawn by its issuer, whatever its dates say</td>
-</tr>
-</tbody>
-</table>
-<p>Revocation cannot be worked out from dates — a revoked certificate keeps a perfectly good
-expiry — so it is read from the device and shown with the date it was withdrawn in place of a
-countdown that would be true and useless. It does not alert because revoking is something you
-did on purpose, and some revoked certificates cannot be deleted at all while a CA still
-references them through a CRL. Alerting would mean a daily reminder of a decision you have
-already made and cannot undo.</p>
-<p>Every collected certificate is listed on the <strong>device page</strong> under System &amp; Config, and
-across the fleet on the <strong>Security</strong> page — with its expiry date, days remaining, key type,
-and whether it is a certificate authority. Expiring and expired ones also appear on the
-<strong>Operations</strong> dashboard.</p>
-<p>Where a device has expired certificates, a <strong>Hide expired</strong> toggle appears above the list,
-remembered separately for the device page and the fleet view. It exists for certificates that
-cannot be removed — RouterOS refuses to delete one while a CA still references it — which
-would otherwise sit permanently red with nothing to be done about them. Expired certificates
-are shown by default and the hidden count stays visible, because they are the main thing this
-feature exists to surface.</p>
-<p>The state shown on those pages is decided by the server using the same function and the same
-threshold that produce the alert, so a page cannot disagree with an email sent about the same
-certificate.</p>
-<div class="admonition note">
-<p class="admonition-title">Alert history records deliveries, not events</p>
-<p><code>alert_history</code> is written when a channel accepts an alert. With no channels
-configured, an alert can fire, be logged to the server log, and leave no row. The
-server log line begins <code>[Certs]</code>.</p>
+<p>The dialog states what it found and what it will do about it, with a link to disagree.
+Reachability is deliberately <strong>not</strong> used to decide: a configured switch in a VLAN the manager
+cannot route to is unreachable <em>and</em> fully configured, and adopting it would rewrite addressing
+it is already using.</p>
+<div class="admonition warning">
+<p class="admonition-title">The check that matters runs later</p>
+<p>The verdict above is a guess from two fields. After authenticating and <strong>before writing
+anything</strong>, the device is inspected properly — identity, every address, every user account
+— and adoption stops if it does not look untouched. Overriding the dialog does not disable
+that; it is what protects a live switch from a wrong choice.</p>
 </div>
-<h2 id="delivery-channels">Delivery channels<a class="headerlink" href="#delivery-channels" title="Permanent link">&para;</a></h2>
-<p>Email, Slack, Discord, Telegram and <strong>ntfy</strong>. Channels are configured under
-<strong>Settings → Alerts → Channels</strong>; secrets are masked on read and preserved when you save
-a channel without retyping them.</p>
-<h3 id="ntfy">ntfy<a class="headerlink" href="#ntfy" title="Permanent link">&para;</a></h3>
-<p>Works with the public <code>ntfy.sh</code> or your own instance.</p>
+<h2 id="what-you-need">What you need<a class="headerlink" href="#what-you-need" title="Permanent link">&para;</a></h2>
+<p><strong>The password printed on the unit.</strong> Modern MikroTik hardware ships with a unique password on
+a sticker rather than a blank one, so there is nothing to pre-fill and nothing to guess. There
+is no default and the API refuses the request without it.</p>
+<p><strong>A managed device on the same broadcast domain.</strong> The manager has no path to a factory device,
+but a neighbour does. One is borrowed for about a minute. Any device that can see the new one
+is offered; pick whichever you would rather touch.</p>
+<h2 id="addressing">Addressing<a class="headerlink" href="#addressing" title="Permanent link">&para;</a></h2>
+<p>You choose how the device is addressed. None of it is inferred, because a wrong prefix or
+gateway strands the device on both networks at once.</p>
 <table>
 <thead>
 <tr>
-<th>Field</th>
+<th>Option</th>
 <th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Server URL</strong></td>
-<td>Blank for <code>https://ntfy.sh</code>, or your own instance</td>
+<td><strong>Static</strong></td>
+<td>Address, prefix and gateway. The prefix is not assumed to be /24, the gateway is not assumed to end in <code>.1</code>, and the gateway is checked to be reachable from the address</td>
 </tr>
 <tr>
-<td><strong>Topic</strong></td>
-<td>Required</td>
+<td><strong>DHCP</strong></td>
+<td>A client is added and the lease read back to learn where the device landed. Consider a reservation — infrastructure benefits from a stable address</td>
 </tr>
 <tr>
-<td><strong>Access token</strong></td>
-<td><code>tk_…</code>; preferred, since it can be scoped and revoked</td>
-</tr>
-<tr>
-<td><strong>Username / password</strong></td>
-<td>Basic-auth alternative</td>
-</tr>
-<tr>
-<td><strong>Manager URL</strong></td>
-<td>Optional — makes each notification tappable, opening the device it refers to</td>
+<td><strong>Management VLAN</strong></td>
+<td>Either option, on a tagged VLAN. A <code>bridge-vlanN</code> sub-interface is created to carry the address</td>
 </tr>
 </tbody>
 </table>
-<p>Authentication is optional, but an unprotected topic means anyone who guesses the name
-can publish to it, so use one of the two.</p>
-<p><strong>Priority mapping.</strong> Severity maps onto ntfy's 1–5 scale so the channel stays worth
-being woken by:</p>
+<p>A static address is checked against the network first, using both ARP and ping from the
+borrowed neighbour. Neither is sufficient alone: an address can answer ping while being absent
+from the ARP cache, and an ARP entry can be a record of a <em>failed</em> lookup rather than a live
+host. Adoption stops rather than handing a switch an address something else is using.</p>
+<div class="admonition note">
+<p class="admonition-title">If the VLAN is wrong</p>
+<p>Operations are additive, so the factory address stays until the new one is proven. A
+management VLAN the uplink does not actually carry means verification fails and the device
+is left exactly as reachable as it was — still adoptable, not stranded.</p>
+</div>
+<h2 id="what-it-does">What it does<a class="headerlink" href="#what-it-does" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Borrows the chosen neighbour and gives it a temporary address in the target's subnet</li>
+<li>Confirms the device answers, and authenticates with the password you supplied</li>
+<li>Confirms the device really is factory-default</li>
+<li>Checks the address you chose is free</li>
+<li>Adds the address, the default route, and the identity — adding only, never replacing</li>
+<li>Returns the neighbour to exactly how it was found</li>
+<li>Confirms the manager can now reach the device directly</li>
+<li>Removes the factory <code>192.168.88.1</code> address, if you left that ticked</li>
+<li>Registers the device and starts polling it</li>
+</ol>
+<p>Every step is reported as it happens, so a failure says which one and why.</p>
+<p>Removing the factory address is recommended and on by default: two un-adopted devices both
+answering on <code>192.168.88.1</code> would collide.</p>
+<h2 id="the-borrowed-device">The borrowed device<a class="headerlink" href="#the-borrowed-device" title="Permanent link">&para;</a></h2>
+<p>It gets one temporary IP address, and that is all. It is removed on every path out of the
+operation, including failures and refusals. Anything temporary is tagged, and
+<strong>Devices → Discover → Clean up</strong> sweeps for leftovers should the process ever be killed
+mid-flight.</p>
+<h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
+<p>The password is sent over plain HTTP. Factory units ship with HTTPS <strong>disabled</strong>, so there is
+no encrypted path to a device in that state. It travels only between the borrowed neighbour and
+the new device, on your local segment, for the duration of the adoption.</p>
+<p>Changing the password afterwards is worth doing regardless: the factory one is printed on the
+chassis and known to anyone with physical access.</p>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Events</th>
-<th>Priority</th>
+<th>Symptom</th>
+<th>Cause</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Device offline, log errors, CPU/memory pressure</td>
-<td><strong>4</strong> — breaks through do-not-disturb</td>
+<td>"Could not authenticate"</td>
+<td>Wrong password. It is on the sticker, not blank</td>
 </tr>
 <tr>
-<td>Certificate expiry, config drift, firmware available</td>
-<td>3 — default</td>
+<td>"does not look factory-default"</td>
+<td>The device is in service. Add it normally with its credentials</td>
 </tr>
 <tr>
-<td>Device recovery, new device discovered</td>
-<td>2 — low</td>
+<td>"is not free"</td>
+<td>Something already answers at that address</td>
+</tr>
+<tr>
+<td>"no lease arrived"</td>
+<td>DHCP chosen with no server on that segment</td>
+</tr>
+<tr>
+<td>"not answering the API from the manager"</td>
+<td>Configured, but unreachable — usually a wrong gateway or a VLAN the uplink does not carry. The factory address is still in place</td>
+</tr>
+<tr>
+<td>Device not listed</td>
+<td>Only MikroTik neighbours can be adopted. Run <strong>Discover</strong> and confirm a managed device can see it</td>
 </tr>
 </tbody>
 </table>
-<p>Each notification carries its event type as a <strong>tag</strong>, so a client can be filtered to
-wake only for the events you care about rather than needing a channel per event.</p>
-<h2 id="outbound-webhooks">Outbound webhooks<a class="headerlink" href="#outbound-webhooks" title="Permanent link">&para;</a></h2>
-<p>Subscribe any URL to twelve events: device up/down, log errors, high CPU, high memory,
-certificate expiry, device discovered, firmware update available, config drift, and
-firmware rollout completed/failed.</p>
-<p>Deliveries are JSON <code>POST</code>s, <strong>HMAC-SHA256 signed</strong> in <code>X-MTM-Signature</code> when a secret is
-set. Last-delivery status is tracked per webhook and there is a Send-test button.</p>
-<p>Webhooks fire through the same pipeline as other alerts, so they respect alert rules,
-cooldowns and maintenance windows rather than bypassing them.</p>
-<h2 id="scheduled-email-reports">Scheduled email reports<a class="headerlink" href="#scheduled-email-reports" title="Permanent link">&para;</a></h2>
-<p>Daily, weekly or monthly HTML fleet summaries to any recipient list, using the same SMTP
-settings as email alerts. Each report covers devices online, outages and total downtime,
-error and warning counts, updates pending, backups taken, and top clients by traffic.
-Send-now is available for an immediate copy.</p>
-<h2 id="maintenance-windows">Maintenance windows<a class="headerlink" href="#maintenance-windows" title="Permanent link">&para;</a></h2>
-<p>Schedule planned downtime per device, or across a group, so alerts are suppressed
-automatically rather than being muted globally and forgotten.</p>
-<ul>
-<li>One-time or recurring (cron-based)</li>
-<li>Active windows can be deactivated early</li>
-<li>Managed under <strong>Settings → Maintenance</strong></li>
-</ul>
+<h2 id="what-it-does-not-do">What it does not do<a class="headerlink" href="#what-it-does-not-do" title="Permanent link">&para;</a></h2>
+<p>It does not configure anything beyond addressing and identity — no VLANs, no ports, no
+firewall. Use configuration templates (<strong>Settings → Config Templates</strong>) or
+<a href="../commands/">bulk commands</a> once the device is under management.</p>
 
 
 
