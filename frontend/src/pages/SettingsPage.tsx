@@ -19,6 +19,7 @@ import {
 import clsx from 'clsx';
 import CredentialPresetsSettings from '../components/settings/CredentialPresetsSettings';
 import FirmwareTimeoutCard from '../components/settings/FirmwareTimeoutCard';
+import TagRow from '../components/settings/TagRow';
 import AutomationSettings from '../components/settings/AutomationSettings';
 import OidcSettings from '../components/settings/OidcSettings';
 
@@ -2193,7 +2194,7 @@ export default function SettingsPage() {
                   value={newTagName}
                   onChange={(e) => setNewTagName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && newTagName.trim() && createTagMutation.mutate()}
-                  className="input-field flex-1 text-sm"
+                  className="input flex-1 text-sm"
                 />
                 <button
                   onClick={() => createTagMutation.mutate()}
@@ -2206,21 +2207,12 @@ export default function SettingsPage() {
             )}
             <div className="space-y-2">
               {tags.map((tag) => (
-                <div key={tag.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: 'var(--surface-2)' }}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-4 h-4 rounded-full" style={{ background: tag.color }} />
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{tag.name}</span>
-                    <span className="text-xs text-gray-400 dark:text-slate-500">{tag.device_count} device{tag.device_count !== 1 ? 's' : ''}</span>
-                  </div>
-                  {isAdmin && (
-                    <button
-                      onClick={() => deleteTagMutation.mutate(tag.id)}
-                      className="p-1 rounded text-gray-400 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+                <TagRow
+                  key={tag.id}
+                  tag={tag}
+                  canEdit={isAdmin}
+                  onDelete={(id) => deleteTagMutation.mutate(id)}
+                />
               ))}
               {tags.length === 0 && (
                 <p className="text-sm text-gray-400 dark:text-slate-500 text-center py-4">No tags created yet</p>
@@ -2246,7 +2238,7 @@ export default function SettingsPage() {
                   placeholder="Window name…"
                   value={mwForm.name}
                   onChange={(e) => setMwForm(f => ({ ...f, name: e.target.value }))}
-                  className="input-field text-sm"
+                  className="input text-sm"
                 />
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-gray-500 dark:text-slate-400">Start</label>
@@ -2254,7 +2246,7 @@ export default function SettingsPage() {
                     type="datetime-local"
                     value={mwForm.start_at}
                     onChange={(e) => setMwForm(f => ({ ...f, start_at: e.target.value }))}
-                    className="input-field text-sm"
+                    className="input text-sm"
                   />
                 </div>
                 <div className="flex flex-col gap-1">
@@ -2263,7 +2255,7 @@ export default function SettingsPage() {
                     type="datetime-local"
                     value={mwForm.end_at}
                     onChange={(e) => setMwForm(f => ({ ...f, end_at: e.target.value }))}
-                    className="input-field text-sm"
+                    className="input text-sm"
                   />
                 </div>
                 <button
@@ -2342,7 +2334,7 @@ export default function SettingsPage() {
                 placeholder="Search user, path, IP…"
                 value={auditSearch}
                 onChange={(e) => { setAuditSearch(e.target.value); setAuditPage(1); }}
-                className="input-field w-64 text-sm"
+                className="input w-64 text-sm"
               />
             </div>
             <div className="overflow-x-auto">

@@ -528,20 +528,23 @@ export default function DevicesPage() {
                         <GlowDot status={device.status} />
                       </td>
                       <td className="px-4 py-[12px]">
-                        <div className="text-[13px] font-medium" style={{ color: 'var(--ink)' }}>{device.name}</div>
-                        {device.tags && device.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {device.tags.map(tag => (
-                              <span
-                                key={tag.id}
-                                className="text-[10px] px-[5px] py-[1px] rounded-full font-medium"
-                                style={{ background: tag.color + '33', color: tag.color, border: `1px solid ${tag.color}55` }}
-                              >
-                                {tag.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        {/* Beside the name rather than beneath it: a second line per
+                            row doubles the table's height for the few rows that
+                            carry tags, and misaligns them with the rest (#149).
+                            flex-wrap keeps a long tag list from pushing the name
+                            off the row on narrow screens. */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[13px] font-medium" style={{ color: 'var(--ink)' }}>{device.name}</span>
+                          {device.tags?.map(tag => (
+                            <span
+                              key={tag.id}
+                              className="text-[10px] px-[5px] py-[1px] rounded-full font-medium"
+                              style={{ background: tag.color + '33', color: tag.color, border: `1px solid ${tag.color}55` }}
+                            >
+                              {tag.name}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td className="px-4 py-[12px]">
                         <TypePill type={device.device_type} />
