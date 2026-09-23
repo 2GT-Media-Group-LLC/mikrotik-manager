@@ -424,6 +424,15 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#dark-site-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dark Site Mode
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1134,6 +1143,15 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#dark-site-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dark Site Mode
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1295,6 +1313,58 @@ that key cannot be recovered. Re-enter device credentials, or restore from a bac
 <p>A self-signed certificate is generated on first run. Replace it under
 <strong>Settings → TLS Certificate</strong> by uploading a certificate and private key; nginx
 terminates TLS and redirects HTTP to HTTPS.</p>
+<h2 id="dark-site-mode">Dark Site Mode<a class="headerlink" href="#dark-site-mode" title="Permanent link">&para;</a></h2>
+<p><strong>Settings → Dark Site Mode</strong> lists every feature that makes a request to the
+internet on its own, with where each one goes and what stops working without it. Each can be
+turned off individually. All are <strong>on</strong> by default.</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Destination</th>
+<th>When off</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Maps and address lookup</td>
+<td><code>*.tile.openstreetmap.org</code>, <code>nominatim.openstreetmap.org</code></td>
+<td>No location maps; addresses are kept as text</td>
+</tr>
+<tr>
+<td>Platform update check</td>
+<td><code>raw.githubusercontent.com</code></td>
+<td>The dashboard does not report newer releases</td>
+</tr>
+<tr>
+<td>Daily RouterOS update check</td>
+<td>MikroTik's update servers, contacted <strong>by each device</strong></td>
+<td>Devices are not asked daily; the on-demand button still works</td>
+</tr>
+<tr>
+<td>RouterOS changelogs</td>
+<td><code>download.mikrotik.com</code></td>
+<td>Release notes are not shown</td>
+</tr>
+<tr>
+<td>MAC vendor database download</td>
+<td><code>standards-oui.ieee.org</code></td>
+<td>The vendor list is not refreshed; an existing copy is still used</td>
+</tr>
+<tr>
+<td>Documentation link</td>
+<td><code>2gt-media-group-llc.github.io</code></td>
+<td>The top-bar documentation button is hidden</td>
+</tr>
+</tbody>
+</table>
+<p>Alert channels — Slack, Discord, Telegram, ntfy, webhooks — are not listed. They send only
+when a destination has been configured, so leaving them unconfigured is already the off switch.</p>
+<p>The daily RouterOS check is the one that is easy to miss when auditing a firewall: the request
+comes from each MikroTik device, not from the manager's host.</p>
+<p>The MAC vendor database is downloaded at startup when the cached copy is older than its refresh
+interval. With the download off, the cached copy is used however old it is. Before v0.24.24 a
+failed download discarded the cache and left vendor lookups empty; it now falls back to it.</p>
 
 
 
