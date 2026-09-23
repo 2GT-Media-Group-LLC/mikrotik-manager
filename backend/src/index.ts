@@ -382,7 +382,11 @@ async function start(): Promise<void> {
   await query(`UPDATE clients SET vendor = NULL WHERE vendor = ''`).catch(() => {});
 
   // Start loading the OUI database in the background (doesn't block startup)
-  initOuiDatabase().catch(() => {});
+  // Dark Site Mode: read before the first download attempt, which happens here.
+  const ouiAllowed = await query<{ value: unknown }>(
+    `SELECT value FROM app_settings WHERE key = 'oui_download_enabled'`
+  ).then((r) => r[0]?.value !== false).catch(() => true);
+  initOuiDatabase(ouiAllowed).catch(() => {});
 
   // Connect Redis
   await redis.connect().catch(() => console.warn('Redis connection warning'));

@@ -643,11 +643,21 @@ function OperationsView({
   const hiddenRequests = activityAll.length - activity.length;
 
   // Platform update availability (checked against GitHub, cached server-side)
+  // Skipped outright in Dark Site Mode. The server would refuse to contact
+  // GitHub anyway; not asking at all keeps the dashboard from implying a check
+  // happened.
+  const { data: dashSettings } = useQuery({
+    queryKey: ['app-settings'],
+    queryFn: () => settingsApi.get().then(r => r.data),
+    staleTime: 300_000,
+  });
+  const updateCheckOn = dashSettings?.['update_check_enabled'] !== false;
   const { data: versionInfo } = useQuery({
     queryKey: ['version-check'],
     queryFn: () => systemApi.versionCheck().then(r => r.data),
     staleTime: 60 * 60_000,
     refetchOnWindowFocus: false,
+    enabled: updateCheckOn,
   });
 
   // Fleet security posture rollup (live per-device; cached 5 min, lazy)

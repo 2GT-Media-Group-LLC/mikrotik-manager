@@ -1096,6 +1096,13 @@ const DEFAULT_SETTINGS = [
   // Geocoding and map tiles are third-party requests that also disclose device
   // locations. Off-switch for isolated networks (issue #106).
   { key: 'maps_enabled', value: true },
+  // Dark Site Mode: every other feature that reaches the internet. All on by
+  // default; an isolated site turns off what it needs to (#159).
+  { key: 'update_check_enabled', value: true },
+  { key: 'device_update_check_enabled', value: true },
+  { key: 'firmware_changelog_enabled', value: true },
+  { key: 'oui_download_enabled', value: true },
+  { key: 'docs_link_enabled', value: true },
 ];
 
 export async function runMigrations(): Promise<void> {

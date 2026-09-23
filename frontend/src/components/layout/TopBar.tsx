@@ -4,6 +4,8 @@ import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import GlobalSearch from './GlobalSearch';
 import { docsUrl } from '../../version';
+import { useQuery } from '@tanstack/react-query';
+import { settingsApi } from '../../services/api';
 
 interface TopBarProps {
   onMenuClick: () => void;
@@ -11,6 +13,12 @@ interface TopBarProps {
 
 export default function TopBar({ onMenuClick }: TopBarProps) {
   const { user, logout } = useAuthStore();
+  const { data: appSettings } = useQuery({
+    queryKey: ['app-settings'],
+    queryFn: () => settingsApi.get().then((r) => r.data),
+    staleTime: 300_000,
+  });
+  const docsEnabled = appSettings?.['docs_link_enabled'] !== false;
   const { theme, toggleTheme } = useThemeStore();
   const navigate = useNavigate();
 
@@ -72,7 +80,9 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
         </div>
 
         {/* Documentation. Points at the series this build belongs to rather than
-            "latest", so the pages describe the version actually running. */}
+            "latest", so the pages describe the version actually running. Hidden
+            in Dark Site Mode, where the site cannot be reached. */}
+        {docsEnabled && (
         <a
           href={docsUrl()}
           target="_blank"
@@ -84,6 +94,7 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
         >
           <BookOpen className="w-4 h-4" />
         </a>
+        )}
 
         {/* Logout */}
         <button

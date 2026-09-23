@@ -389,7 +389,9 @@ export class PollerService {
       // Firmware update check — runs once per day
       const firmwareKey = 'task:firmware_check';
       const lastFirmware = await this.getTimestamp(firmwareKey);
-      if (now - lastFirmware > 86_400_000) {
+      // Dark Site Mode: each device contacts MikroTik itself for this, so on an
+      // isolated network it can only fail, once a day, on every device.
+      if (appSettings['device_update_check_enabled'] !== false && now - lastFirmware > 86_400_000) {
         await this.setTimestamp(firmwareKey, now);
         this.checkAllDevicesFirmware(devices).catch((e) =>
           console.error('[Poller] Firmware check error:', e)
@@ -456,6 +458,7 @@ export class PollerService {
         `SELECT key, value FROM app_settings
          WHERE key IN ('mac_scan_enabled', 'mac_scan_interval', 'reverse_dns_enabled',
                        'retention_clients_days', 'retention_events_days',
+                       'device_update_check_enabled',
                        'poll_clients_enabled', 'poll_neighbors_enabled',
                        'poll_logs_enabled', 'poll_certificates_enabled',
                        'spectral_scan_enabled',

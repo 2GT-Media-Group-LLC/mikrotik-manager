@@ -6,17 +6,40 @@
  */
 import https from 'https';
 import fs from 'fs';
+import path from 'path';
 
-const CACHE_FILE = '/tmp/oui-ieee.json';
+/**
+ * Kept on the persistent app_data volume rather than in /tmp.
+ *
+ * /tmp is inside the container, so every upgrade — which recreates it — threw
+ * the cache away. That was a slow re-download for most installs; for a dark site
+ * with the download turned off it meant vendor lookups went empty after every
+ * upgrade and never came back. /tmp remains the fallback where /app/data is not
+ * writable.
+ */
+function resolveCacheFile(): string {
+  const dir = process.env.SECRETS_DIR || '/app/data';
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+    return path.join(dir, 'oui-ieee.json');
+  } catch {
+    return '/tmp/oui-ieee.json';
+  }
+}
+const CACHE_FILE = resolveCacheFile();
 const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const IEEE_CSV_URL = 'https://standards-oui.ieee.org/oui/oui.csv';
 
 let db: Map<string, string> | null = null;
 let initPromise: Promise<void> | null = null;
 
-export function initOuiDatabase(): Promise<void> {
+/**
+ * @param allowDownload  false on a dark site: use whatever copy is on disk,
+ *   however old, and never contact the IEEE.
+ */
+export function initOuiDatabase(allowDownload = true): Promise<void> {
   if (initPromise) return initPromise;
-  initPromise = _load();
+  initPromise = _load(allowDownload);
   return initPromise;
 }
 
@@ -26,7 +49,22 @@ export function lookupVendor(mac: string): string {
   return db.get(oui) ?? '';
 }
 
-async function _load(): Promise<void> {
+/**
+ * Read the cached copy regardless of age. An out-of-date vendor list is far more
+ * useful than none, and on a dark site it may be the only one there will ever
+ * be. Previously a failed download discarded it and left lookups empty.
+ */
+function _readStaleCache(): Map<string, string> | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) as Record<string, string>;
+    const map = new Map(Object.entries(raw));
+    return map.size > 10_000 ? map : null;
+  } catch {
+    return null;
+  }
+}
+
+async function _load(allowDownload: boolean): Promise<void> {
   // Try valid cache first
   try {
     const stat = fs.statSync(CACHE_FILE);
@@ -40,6 +78,15 @@ async function _load(): Promise<void> {
       }
     }
   } catch { /* cache miss */ }
+
+  if (!allowDownload) {
+    const stale = _readStaleCache();
+    db = stale ?? new Map();
+    console.log(stale
+      ? `OUI: download disabled (Dark Site Mode); using cached copy, ${db.size} entries`
+      : 'OUI: download disabled (Dark Site Mode) and no cached copy; vendor lookups will be empty');
+    return;
+  }
 
   // Download fresh from IEEE
   try {
@@ -58,8 +105,11 @@ async function _load(): Promise<void> {
       db = new Map();
     }
   } catch (err) {
-    console.warn(`OUI: Download failed (${(err as Error).message}). Vendor lookups will be empty.`);
-    db = new Map();
+    const stale = _readStaleCache();
+    db = stale ?? new Map();
+    console.warn(stale
+      ? `OUI: Download failed (${(err as Error).message}); using older cached copy, ${db.size} entries`
+      : `OUI: Download failed (${(err as Error).message}). Vendor lookups will be empty.`);
   }
 }
 

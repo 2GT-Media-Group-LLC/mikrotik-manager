@@ -254,6 +254,15 @@ router.get('/changelog/:version', async (req: Request, res: Response) => {
   }
   const url = `https://download.mikrotik.com/routeros/${version}/CHANGELOG`;
 
+  // Dark Site Mode. Checked before the cache too, so turning it off takes
+  // effect immediately rather than after the cached copies expire.
+  const flag = await query<{ value: unknown }>(
+    `SELECT value FROM app_settings WHERE key = 'firmware_changelog_enabled'`
+  ).catch(() => []);
+  if (flag[0]?.value === false) {
+    return res.status(409).json({ version, url, disabled: true, error: 'RouterOS changelogs are disabled in Dark Site Mode' });
+  }
+
   const cached = changelogCache.get(version);
   if (cached) return res.json({ version, url, text: cached });
 

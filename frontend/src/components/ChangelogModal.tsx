@@ -18,6 +18,10 @@ export default function ChangelogModal({ version, onClose }: { version: string; 
   });
 
   const fallbackUrl = `https://download.mikrotik.com/routeros/${encodeURIComponent(version)}/CHANGELOG`;
+  // Dark Site Mode answers 409 with disabled: true. That is a decision, not a
+  // failure, so it gets its own wording instead of "couldn't load".
+  const disabled = (error as { response?: { data?: { disabled?: boolean } } } | null)
+    ?.response?.data?.disabled === true;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -47,6 +51,16 @@ export default function ChangelogModal({ version, onClose }: { version: string; 
           {isLoading ? (
             <div className="flex items-center gap-2 text-sm text-gray-400 py-8 justify-center">
               <RefreshCw className="w-4 h-4 animate-spin" /> Fetching release notes from MikroTik…
+            </div>
+          ) : disabled ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <AlertCircle className="w-6 h-6 text-gray-400" />
+              <p className="text-sm text-gray-600 dark:text-slate-300">
+                Changelogs are turned off in Dark Site Mode.
+              </p>
+              <p className="text-xs text-gray-400 dark:text-slate-500">
+                Settings → General → Dark Site Mode → RouterOS changelogs
+              </p>
             </div>
           ) : error || !data ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">

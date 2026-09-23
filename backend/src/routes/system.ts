@@ -4,6 +4,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { query } from '../config/database';
+import { DARK_SITE_FEATURES, DARK_SITE_KEYS, internetAllowed } from '../utils/darkSite';
 import type { PollerService } from '../services/PollerService';
 
 const router = Router();
@@ -114,8 +115,35 @@ router.post('/poller/drain', requireWrite, async (_req: Request, res: Response) 
   }
 });
 
+/**
+ * GET /api/system/dark-site — the internet-dependent features and their state.
+ *
+ * Served from the backend so the settings screen and the gates read one list;
+ * a second copy in the frontend would be the next thing to fall out of date.
+ */
+router.get('/dark-site', async (_req: Request, res: Response) => {
+  const rows = await query<{ key: string; value: unknown }>(
+    `SELECT key, value FROM app_settings WHERE key = ANY($1::text[])`, [DARK_SITE_KEYS]
+  ).catch(() => []);
+  const map: Record<string, unknown> = {};
+  for (const r of rows) map[r.key] = r.value;
+  res.json({
+    features: DARK_SITE_FEATURES.map((f) => ({ ...f, enabled: internetAllowed(map, f.key) })),
+  });
+});
+
 router.get('/version-check', async (_req: Request, res: Response) => {
   try {
+    // Dark Site Mode. Answered without contacting GitHub, and flagged so the
+    // dashboard can say "check disabled" rather than "you are up to date",
+    // which would be a claim it has no basis for.
+    const flag = await query<{ value: unknown }>(
+      `SELECT value FROM app_settings WHERE key = 'update_check_enabled'`
+    ).catch(() => []);
+    if (flag[0]?.value === false) {
+      return res.json({ current: CURRENT_VERSION, latest: null, update_available: false, disabled: true });
+    }
+
     // Check cache
     const cached = await query<{ value: { version: string; checked_at: string } }>(
       `SELECT value FROM app_settings WHERE key = 'version_check_cache'`

@@ -783,7 +783,9 @@ export const deviceToolsApi = {
 // ─── System ───────────────────────────────────────────────────────────────────
 export const systemApi = {
   versionCheck: () =>
-    api.get<{ current: string; latest: string | null; update_available: boolean }>('/system/version-check'),
+    api.get<{ current: string; latest: string | null; update_available: boolean; disabled?: boolean }>('/system/version-check'),
+  darkSite: () =>
+    api.get<{ features: DarkSiteFeature[] }>('/system/dark-site'),
 };
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -1817,3 +1819,12 @@ export const adoptionApi = {
   adopt: (body: AdoptRequest) => api.post<AdoptionResult>('/adoption/adopt', body),
   cleanup: () => api.post<{ removed: number }>('/adoption/cleanup'),
 };
+
+/** One internet-dependent feature, as listed in Dark Site Mode. */
+export interface DarkSiteFeature {
+  key: string;
+  label: string;
+  destination: string;
+  cost: string;
+  enabled: boolean;
+}
