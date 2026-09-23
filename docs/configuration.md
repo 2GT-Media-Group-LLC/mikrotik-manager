@@ -78,7 +78,7 @@ terminates TLS and redirects HTTP to HTTPS.
 
 ## Dark Site Mode
 
-**Settings → General → Dark Site Mode** lists every feature that makes a request to the
+**Settings → Dark Site Mode** lists every feature that makes a request to the
 internet on its own, with where each one goes and what stops working without it. Each can be
 turned off individually. All are **on** by default.
 

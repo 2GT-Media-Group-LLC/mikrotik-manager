@@ -59,7 +59,7 @@ export default function ChangelogModal({ version, onClose }: { version: string; 
                 Changelogs are turned off in Dark Site Mode.
               </p>
               <p className="text-xs text-gray-400 dark:text-slate-500">
-                Settings → General → Dark Site Mode → RouterOS changelogs
+                Settings → Dark Site Mode → RouterOS changelogs
               </p>
             </div>
           ) : error || !data ? (

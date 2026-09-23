@@ -3,8 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound, ClipboardList, FileText, Zap, LogIn,
-  Activity,
-} from 'lucide-react';
+  Activity, Moon} from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi, maintenanceApi, configTemplatesApi } from '../services/api';
 import type { MaintenanceWindow, ConfigTemplate } from '../services/api';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
@@ -69,7 +68,7 @@ export default function SettingsPage() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; }
   }, []);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller' | 'darksite'>('general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -498,6 +497,9 @@ export default function SettingsPage() {
         { key: 'certificate' as const, label: 'Certificate', icon: Lock },
         ...(isAdmin ? [{ key: 'audit' as const, label: 'Audit Log', icon: ClipboardList }] : []),
         ...(isAdmin ? [{ key: 'poller' as const, label: 'Polling', icon: Activity }] : []),
+        // Its own entry rather than a card inside General, where it sat six
+        // cards down and was not found (#159).
+        { key: 'darksite' as const, label: 'Dark Site Mode', icon: Moon },
       ],
     },
     {
@@ -771,10 +773,6 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Dark Site Mode — every internet-dependent feature, individually
-              switchable. Replaces the single Maps & Geocoding card (#106, #159). */}
-          <DarkSiteCard isAdmin={isAdmin} />
-
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Data Retention</h3>
             <div className="space-y-3">
@@ -958,6 +956,12 @@ export default function SettingsPage() {
       )}
 
       {/* ── Users ── */}
+      {activeTab === 'darksite' && (
+        <div className="max-w-2xl">
+          <DarkSiteCard isAdmin={isAdmin} />
+        </div>
+      )}
+
       {activeTab === 'poller' && (
         <div className="space-y-4">
           <div className="card p-5">
