@@ -6,6 +6,7 @@ import {
   Gauge, Server, AlertTriangle, ListChecks, KeyRound,
 } from 'lucide-react';
 import { devicesApi, certificatesApi } from '../services/api';
+import { activeChecks, countFindings, mutedCount } from '../utils/securityFindings';
 import type { SecurityCheck } from '../services/api';
 import type { Device } from '../types';
 import clsx from 'clsx';
@@ -50,6 +51,7 @@ function Kpi({ icon: Icon, label, value, accent, valueClass }: {
 export default function SecurityPage() {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
 
   const { data: certData, isLoading: certLoading } = useQuery({
     queryKey: ['fleet-certificates'],
@@ -88,17 +90,27 @@ export default function SecurityPage() {
 
   const scored = fleet.filter(f => f.score !== null);
   const avgScore = scored.length ? Math.round(scored.reduce((s, f) => s + (f.score ?? 0), 0) / scored.length) : null;
-  const totalFindings = fleet.reduce((s, f) => s + f.checks.length, 0);
-  const highCount = fleet.reduce((s, f) => s + f.checks.filter(c => c.severity === 'high').length, 0);
+  // Muted findings are excluded from every count here. They are still rendered,
+  // greyed and labelled "not counted" — which is precisely what the numbers used
+  // to contradict (#157).
+  const totalFindings = fleet.reduce((s, f) => s + countFindings(f.checks).total, 0);
+  const highCount = fleet.reduce((s, f) => s + countFindings(f.checks).high, 0);
+  const totalMuted = fleet.reduce((s, f) => s + mutedCount(f.checks), 0);
 
   // Aggregate identical findings across the fleet ("telnet enabled — 3 devices").
   const commonFindings = (() => {
-    const m = new Map<string, { title: string; severity: string; count: number }>();
-    for (const f of fleet) for (const c of f.checks) {
-      const e = m.get(c.title) ?? { title: c.title, severity: c.severity, count: 0 };
-      e.count++; m.set(c.title, e);
+    // Device names, not just a tally. A count with no way to find out *which*
+    // devices is a dead end — the card told you six devices needed an update and
+    // then left you to work out which six (#158).
+    const m = new Map<string, { title: string; severity: string; devices: string[] }>();
+    for (const f of fleet) for (const c of activeChecks(f.checks)) {
+      const e = m.get(c.title) ?? { title: c.title, severity: c.severity, devices: [] };
+      e.devices.push(f.name);
+      m.set(c.title, e);
     }
-    return [...m.values()].sort((a, b) => (SEV_ORDER[a.severity] - SEV_ORDER[b.severity]) || (b.count - a.count));
+    return [...m.values()].sort(
+      (a, b) => (SEV_ORDER[a.severity] - SEV_ORDER[b.severity]) || (b.devices.length - a.devices.length)
+    );
   })();
 
   const goManage = (id: number) => navigate(`/devices/${id}?tab=security`);
@@ -122,8 +134,10 @@ export default function SecurityPage() {
           value={avgScore ?? '—'} valueClass={scoreColor(avgScore)} />
         <Kpi icon={Server} label="Devices scanned" accent="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400"
           value={<>{scored.length}<span className="text-sm font-normal text-gray-400">/{online.length}</span></>} />
+        {/* Muted findings are excluded and reported separately rather than
+            folded in silently — this card used to include them (#157). */}
         <Kpi icon={ShieldAlert} label="Total findings" accent="bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400"
-          value={totalFindings} />
+          value={<>{totalFindings}{totalMuted > 0 && <span className="text-sm font-normal text-gray-400"> +{totalMuted} muted</span>}</>} />
         <Kpi icon={AlertTriangle} label="High severity" accent={highCount > 0 ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'}
           value={highCount} valueClass={highCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'} />
       </div>
@@ -144,9 +158,8 @@ export default function SecurityPage() {
             <div className="divide-y divide-gray-100 dark:divide-slate-700">
               {fleet.map(f => {
                 const open = expanded === f.id;
-                const highs = f.checks.filter(c => c.severity === 'high').length;
-                const meds = f.checks.filter(c => c.severity === 'medium').length;
-                const lows = f.checks.filter(c => c.severity === 'low').length;
+                const { high: highs, medium: meds, low: lows } = countFindings(f.checks);
+                const muted = mutedCount(f.checks);
                 return (
                   <div key={f.id}>
                     <div className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-slate-700/30">
@@ -157,13 +170,19 @@ export default function SecurityPage() {
                           <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{f.name}</div>
                           <div className="text-xs text-gray-400 font-mono">{f.ip_address}</div>
                         </div>
-                        {f.error ? <span className="text-xs text-red-500">{f.error}</span> : f.checks.length === 0 ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400"><ShieldCheck className="w-3.5 h-3.5" /> Clean</span>
+                        {f.error ? <span className="text-xs text-red-500">{f.error}</span> : highs + meds + lows === 0 ? (
+                          // Clean means nothing *counts*, not nothing exists. A
+                          // device whose only findings are muted used to show
+                          // badges for them (#157).
+                          <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                            <ShieldCheck className="w-3.5 h-3.5" /> Clean{muted > 0 ? ` · ${muted} muted` : ''}
+                          </span>
                         ) : (
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             {highs > 0 && <span className={clsx('text-xs px-1.5 py-0.5 rounded font-medium', SEV_BADGE.high)}>{highs} high</span>}
                             {meds > 0 && <span className={clsx('text-xs px-1.5 py-0.5 rounded font-medium', SEV_BADGE.medium)}>{meds} med</span>}
                             {lows > 0 && <span className={clsx('text-xs px-1.5 py-0.5 rounded font-medium', SEV_BADGE.low)}>{lows} low</span>}
+                            {muted > 0 && <span className="text-xs px-1.5 py-0.5 rounded font-medium" style={{ background: 'var(--surface-2)', color: 'var(--ink-4)' }}>{muted} muted</span>}
                           </div>
                         )}
                       </button>
@@ -231,13 +250,36 @@ export default function SecurityPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-slate-700">
-              {commonFindings.map(c => (
-                <div key={c.title} className="flex items-center gap-3 px-5 py-2.5">
-                  <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', SEV_DOT[c.severity])} />
-                  <span className="text-sm text-gray-700 dark:text-slate-300 flex-1 min-w-0 truncate" title={c.title}>{c.title}</span>
-                  <span className="text-xs text-gray-400 dark:text-slate-500 flex-shrink-0">{c.count} {c.count === 1 ? 'device' : 'devices'}</span>
-                </div>
-              ))}
+              {commonFindings.map(c => {
+                const open = expandedFinding === c.title;
+                return (
+                  <div key={c.title}>
+                    <button
+                      onClick={() => setExpandedFinding(open ? null : c.title)}
+                      className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-700/30 text-left"
+                    >
+                      {open ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                            : <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
+                      <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', SEV_DOT[c.severity])} />
+                      <span className="text-sm text-gray-700 dark:text-slate-300 flex-1 min-w-0 truncate" title={c.title}>{c.title}</span>
+                      <span className="text-xs text-gray-400 dark:text-slate-500 flex-shrink-0">
+                        {c.devices.length} {c.devices.length === 1 ? 'device' : 'devices'}
+                      </span>
+                    </button>
+                    {/* Answers "which ones?", which the tally alone never did (#158). */}
+                    {open && (
+                      <div className="px-5 pb-2.5 pl-12 flex flex-wrap gap-1.5">
+                        {c.devices.map(n => (
+                          <span key={n} className="mono text-[11px] px-1.5 py-0.5 rounded"
+                                style={{ background: 'var(--surface-2)', color: 'var(--ink-2)' }}>
+                            {n.trim()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

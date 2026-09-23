@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell } from 'lucide-react';
 import { devicesApi } from '../../services/api';
+import { activeChecks, mutedCount } from '../../utils/securityFindings';
 import type { SecurityCheck } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
@@ -92,6 +93,10 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
   });
 
   const checks: SecurityCheck[] = posture?.checks ?? [];
+
+  const activeCount = activeChecks(checks).length;
+
+  const muted = mutedCount(checks);
   const score = posture?.score ?? 100;
 
   return (
@@ -117,10 +122,18 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
               <div className="text-xs text-gray-400 uppercase tracking-wide" title="Heuristic hardening indicator, not an absolute grade">Hardening</div>
             </div>
             <div className="flex-1">
-              {checks.length === 0 ? (
-                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium"><ShieldCheck className="w-4 h-4" /> No issues found — this device passes all baseline checks.</div>
+              {/* Counts exclude muted findings. Each muted row already says "not
+                  counted"; this header counted them anyway, so the page
+                  contradicted itself (#157). */}
+              {activeCount === 0 ? (
+                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium">
+                  <ShieldCheck className="w-4 h-4" />
+                  {muted > 0
+                    ? `No issues found — ${muted} muted finding${muted !== 1 ? 's' : ''} excluded.`
+                    : 'No issues found — this device passes all baseline checks.'}
+                </div>
               ) : (
-                <div className="flex items-center gap-2 text-gray-600 dark:text-slate-300 text-sm"><ShieldAlert className="w-4 h-4 text-amber-500" /> {checks.length} issue{checks.length !== 1 ? 's' : ''} found. Review and remediate below.</div>
+                <div className="flex items-center gap-2 text-gray-600 dark:text-slate-300 text-sm"><ShieldAlert className="w-4 h-4 text-amber-500" /> {activeCount} issue{activeCount !== 1 ? 's' : ''} found{muted > 0 ? `, ${muted} muted` : ''}. Review and remediate below.</div>
               )}
             </div>
           </div>

@@ -10,7 +10,7 @@ import {
   Shield, Clock, FileText, Bell, ChevronRight, } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { metricsApi, eventsApi, devicesApi, clientsApi, trafficApi, operationsApi, topologyApi, systemApi } from '../services/api';
+import { metricsApi, eventsApi, devicesApi, clientsApi, trafficApi, operationsApi, topologyApi, systemApi, settingsApi} from '../services/api';
 import type { OpsAttentionItem, OpsCapacityRow, OpsActivityItem } from '../services/api';
 import TerminalModal from '../components/TerminalModal';
 import { useSocket } from '../hooks/useSocket';
@@ -273,6 +273,16 @@ function downsample<T>(arr: T[], max: number): T[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function SummaryView(props: Record<string, any>) {
+  // Privacy switch for map tiles and geocoding (#106). Read here because this
+  // card renders a map unprompted, unlike the device page where the operator
+  // has navigated to a location panel.
+  const { data: appSettings } = useQuery({
+    queryKey: ['app-settings'],
+    queryFn: () => settingsApi.get().then(r => r.data),
+    staleTime: 300_000,
+  });
+  const mapsEnabled = appSettings?.['maps_enabled'] !== false;
+
   const { summary, devices, wirelessCount, clientSparkline, clientsOverTime,
     chartRange, setChartRange, topClients, usingNetflowTop, recentEvents, severities, toggleSeverity, navigate } = props;
   const formatBytes = (bytes: number) => {
@@ -559,7 +569,12 @@ function SummaryView(props: Record<string, any>) {
         </div>
       </div>
 
-      {/* Locations map */}
+      {/* Locations map. Gated on maps_enabled, which exists so that operators on
+          isolated networks make no third-party tile requests and disclose no
+          device locations (#106). The setting covered the device page and the
+          sites view but not this card, so the map stayed visible here — the one
+          place it is shown without being asked for (#159). */}
+      {mapsEnabled && (
       <div className="card" style={{ overflow: 'hidden' }}>
         <div
           className="flex items-center justify-between px-[18px] py-[14px]"
@@ -577,6 +592,7 @@ function SummaryView(props: Record<string, any>) {
           <DeviceLocationsMap devices={devices as Device[]} />
         </div>
       </div>
+      )}
     </div>
   );
 }
