@@ -11,10 +11,10 @@
       
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../wireless/">
       
       
-        <link rel="next" href="../devices/">
+        <link rel="next" href="../cellular/">
       
       
       <link rel="icon" href="../assets/images/favicon.png">
@@ -22,7 +22,7 @@
     
     
       
-        <title>Configuration - MikroTik Manager</title>
+        <title>Network services - MikroTik Manager</title>
       
     
     
@@ -74,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#configuration" class="md-skip">
+        <a href="#network-services" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Configuration
+              Network services
             
           </span>
         </div>
@@ -274,8 +274,6 @@
       
   
   
-    
-  
   
   
     
@@ -287,11 +285,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
@@ -305,7 +303,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             Getting started
@@ -316,30 +314,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  <span class="md-ellipsis">
-    Configuration
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -348,86 +326,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#environment-variables" class="md-nav__link">
-    <span class="md-ellipsis">
-      Environment variables
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#secret-management-self-healing" class="md-nav__link">
-    <span class="md-ellipsis">
-      Secret management (self-healing)
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Secret management (self-healing)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#upgrading-is-non-breaking" class="md-nav__link">
-    <span class="md-ellipsis">
-      Upgrading is non-breaking
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#key-rotation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Key rotation
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#settings-stored-in-the-database" class="md-nav__link">
-    <span class="md-ellipsis">
-      Settings stored in the database
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#tls" class="md-nav__link">
-    <span class="md-ellipsis">
-      TLS
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -764,8 +662,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -775,11 +675,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
           <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
@@ -793,7 +693,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             Devices
@@ -825,10 +725,30 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../network-services/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Network services
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   <span class="md-ellipsis">
@@ -837,6 +757,89 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#dhcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      DHCP
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dns" class="md-nav__link">
+    <span class="md-ellipsis">
+      DNS
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ntp" class="md-nav__link">
+    <span class="md-ellipsis">
+      NTP
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wireguard" class="md-nav__link">
+    <span class="md-ellipsis">
+      WireGuard
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logging-syslog" class="md-nav__link">
+    <span class="md-ellipsis">
+      Logging (syslog)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#netflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      NetFlow
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discovery-and-snmp" class="md-nav__link">
+    <span class="md-ellipsis">
+      Discovery and SNMP
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1075,60 +1078,63 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#environment-variables" class="md-nav__link">
+  <a href="#dhcp" class="md-nav__link">
     <span class="md-ellipsis">
-      Environment variables
+      DHCP
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#secret-management-self-healing" class="md-nav__link">
+  <a href="#dns" class="md-nav__link">
     <span class="md-ellipsis">
-      Secret management (self-healing)
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Secret management (self-healing)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#upgrading-is-non-breaking" class="md-nav__link">
-    <span class="md-ellipsis">
-      Upgrading is non-breaking
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#key-rotation" class="md-nav__link">
-    <span class="md-ellipsis">
-      Key rotation
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#settings-stored-in-the-database" class="md-nav__link">
-    <span class="md-ellipsis">
-      Settings stored in the database
+      DNS
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#tls" class="md-nav__link">
+  <a href="#ntp" class="md-nav__link">
     <span class="md-ellipsis">
-      TLS
+      NTP
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wireguard" class="md-nav__link">
+    <span class="md-ellipsis">
+      WireGuard
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logging-syslog" class="md-nav__link">
+    <span class="md-ellipsis">
+      Logging (syslog)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#netflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      NetFlow
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discovery-and-snmp" class="md-nav__link">
+    <span class="md-ellipsis">
+      Discovery and SNMP
     </span>
   </a>
   
@@ -1152,149 +1158,50 @@
   
 
 
-<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
-<p><a href="../">← Documentation index</a></p>
-<h2 id="environment-variables">Environment variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
-<p>Set in <code>.env</code> at the project root. Changing any of these requires a container restart.</p>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>JWT_SECRET</code></td>
-<td><em>auto-generated &amp; persisted</em></td>
-<td>Signs session tokens. Set it to pin your own value.</td>
-</tr>
-<tr>
-<td><code>ENCRYPTION_KEY</code></td>
-<td><em>auto-generated &amp; persisted</em></td>
-<td>Encrypts device passwords at rest. Set it to pin your own value.</td>
-</tr>
-<tr>
-<td><code>CORS_ORIGIN</code></td>
-<td><em>localhost defaults</em></td>
-<td>Comma-separated browser origins allowed to call the API. <strong>Required in production.</strong></td>
-</tr>
-<tr>
-<td><code>DB_PASSWORD</code></td>
-<td><code>mikrotik_secure_pw</code></td>
-<td>PostgreSQL password</td>
-</tr>
-<tr>
-<td><code>INFLUXDB_TOKEN</code></td>
-<td><code>mytoken123456789</code></td>
-<td>InfluxDB admin token</td>
-</tr>
-<tr>
-<td><code>INFLUXDB_ORG</code></td>
-<td><code>mikrotik-manager</code></td>
-<td>InfluxDB organization</td>
-</tr>
-<tr>
-<td><code>INFLUXDB_BUCKET</code></td>
-<td><code>metrics</code></td>
-<td>InfluxDB bucket for time-series data</td>
-</tr>
-<tr>
-<td><code>INFLUXDB_ADMIN_PASSWORD</code></td>
-<td><code>admin_password_123</code></td>
-<td>InfluxDB admin UI password</td>
-</tr>
-<tr>
-<td><code>HTTP_PORT</code></td>
-<td><code>80</code></td>
-<td>Host port for HTTP (redirects to HTTPS)</td>
-</tr>
-<tr>
-<td><code>HTTPS_PORT</code></td>
-<td><code>443</code></td>
-<td>Host port for HTTPS</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>Never commit <code>.env</code>. It is already listed in <code>.gitignore</code>.</p>
-</blockquote>
-<p>For a production deployment the only variable you genuinely must set is <code>CORS_ORIGIN</code>.
-Both secrets generate themselves safely — see below.</p>
-<h2 id="secret-management-self-healing">Secret management (self-healing)<a class="headerlink" href="#secret-management-self-healing" title="Permanent link">&para;</a></h2>
-<p><code>JWT_SECRET</code> and <code>ENCRYPTION_KEY</code> are managed automatically so that a fresh install is
-secure by default and an upgrade never strands existing data.</p>
+<h1 id="network-services">Network services<a class="headerlink" href="#network-services" title="Permanent link">&para;</a></h1>
+<p>DHCP, DNS, NTP, WireGuard, logging, NetFlow and discovery, viewed across the fleet rather than
+one device at a time. <strong>Network Services → Overview</strong> summarises which devices run what.</p>
+<p>Everything here writes to the device. Changes go through <a href="../change-guard/">Change Guard</a> where
+they could affect reachability.</p>
+<h2 id="dhcp">DHCP<a class="headerlink" href="#dhcp" title="Permanent link">&para;</a></h2>
+<p>Servers, address pools and leases, per device.</p>
 <ul>
-<li><strong>Set to a strong value in the environment</strong> — that value is used, and you stay in
-  control.</li>
-<li><strong>Unset, or left at an old default</strong> — the backend generates a strong secret once,
-  persists it to the <code>app_data</code> volume (<code>SECRETS_DIR</code>, default <code>/app/data</code>), and reuses
-  it on every boot.</li>
+<li><strong>Leases</strong> lists every current lease across the fleet, with the client it belongs to. A
+  dynamic lease can be converted to static in place, which is the usual way to pin an address
+  to a device you care about.</li>
+<li><strong>Pools</strong> and <strong>servers</strong> can be created, edited and removed.</li>
 </ul>
-<p>Secrets live outside the database deliberately: a database dump alone cannot reveal the
-key protecting the credentials stored inside it.</p>
-<h3 id="upgrading-is-non-breaking">Upgrading is non-breaking<a class="headerlink" href="#upgrading-is-non-breaking" title="Permanent link">&para;</a></h3>
-<p>Existing ciphertext is decrypted through a <strong>legacy-key fallback</strong> — including previous
-shipped defaults — and transparently re-encrypted under the current key by a background
-sweep. Nothing needs to be re-entered.</p>
-<p>Rotating the JWT secret off a public default invalidates sessions signed with it. Users
-simply log in again once.</p>
-<h3 id="key-rotation">Key rotation<a class="headerlink" href="#key-rotation" title="Permanent link">&para;</a></h3>
-<p>Set a new <code>ENCRYPTION_KEY</code> (or delete the persisted secret to force regeneration) and
-restart. Old rows keep decrypting through the fallback and are re-encrypted forward
-automatically.</p>
-<blockquote>
-<p><strong>If the persisted secret and every prior key are lost</strong>, ciphertext encrypted under
-that key cannot be recovered. Re-enter device credentials, or restore from a backup.</p>
-</blockquote>
-<h2 id="settings-stored-in-the-database">Settings stored in the database<a class="headerlink" href="#settings-stored-in-the-database" title="Permanent link">&para;</a></h2>
-<p>These are edited in the Settings UI and take effect without a restart:</p>
-<table>
-<thead>
-<tr>
-<th>Area</th>
-<th>Settings</th>
-<th>Documented in</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Change Guard</td>
-<td><code>change_guard_enabled</code>, <code>change_guard_mode</code>, <code>change_guard_timeout_sec</code></td>
-<td><a href="../change-guard/">Change Guard</a></td>
-</tr>
-<tr>
-<td>Config Health</td>
-<td><code>config_health_enabled</code>, <code>config_health_interval_min</code></td>
-<td><a href="../change-guard/">Change Guard</a></td>
-</tr>
-<tr>
-<td>Polling</td>
-<td>fast / slow / log intervals, MAC scan, spectral and AP scan cadence</td>
-<td>Settings → Polling</td>
-</tr>
-<tr>
-<td>Config snapshots</td>
-<td><code>config_snapshot_enabled</code>, <code>config_snapshot_interval_min</code>, <code>config_snapshot_retention</code></td>
-<td>Settings → Config History</td>
-</tr>
-<tr>
-<td>NetFlow</td>
-<td>collector address and port, version, retention, top-N clients</td>
-<td>Settings → NetFlow</td>
-</tr>
-<tr>
-<td>Alerting</td>
-<td>rules, thresholds, cooldowns, channels</td>
-<td><a href="../alerting/">Alerting</a></td>
-</tr>
-</tbody>
-</table>
-<h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
-<p>A self-signed certificate is generated on first run. Replace it under
-<strong>Settings → TLS Certificate</strong> by uploading a certificate and private key; nginx
-terminates TLS and redirects HTTP to HTTPS.</p>
+<p>A DHCP server bound to an interface that later changes VLAN is a common way to hand out
+addresses on the wrong segment; the lease list is the quickest way to notice.</p>
+<h2 id="dns">DNS<a class="headerlink" href="#dns" title="Permanent link">&para;</a></h2>
+<p>The resolver configuration on each device, plus static entries.</p>
+<ul>
+<li><strong>Static DNS</strong> entries are managed per device, including regexp entries.</li>
+<li><strong>Flush cache</strong> clears the resolver cache on a device, which is worth doing after changing
+  an upstream server or a static entry.</li>
+</ul>
+<h2 id="ntp">NTP<a class="headerlink" href="#ntp" title="Permanent link">&para;</a></h2>
+<p>Client and server configuration. Worth more attention than it usually gets: a device with the
+wrong clock produces logs that cannot be correlated, certificates that appear
+invalid — see <a href="../alerting/#certificate-expiry">Alerting</a> — and scheduled work that fires at
+the wrong time.</p>
+<p><a href="../devices/">Configuration templates</a> can push the same NTP servers to many devices at once.</p>
+<h2 id="wireguard">WireGuard<a class="headerlink" href="#wireguard" title="Permanent link">&para;</a></h2>
+<p>Interfaces and peers per device: create, edit, enable, disable and remove. Peer public keys and
+allowed addresses are shown so a tunnel can be checked against the far end without leaving the
+platform.</p>
+<h2 id="logging-syslog">Logging (syslog)<a class="headerlink" href="#logging-syslog" title="Permanent link">&para;</a></h2>
+<p>Where each device sends its logs — remote actions and the rules that select which topics go to
+them. Rules can be toggled without deleting them.</p>
+<p>This is separate from the events the platform collects itself. The platform reads
+<code>/log/print</code> on its own cadence regardless of whether you forward logs anywhere.</p>
+<h2 id="netflow">NetFlow<a class="headerlink" href="#netflow" title="Permanent link">&para;</a></h2>
+<p>Configuration of the exporters on each device, and the collector built into the platform. See
+<a href="../traffic/">Traffic analytics</a> for what is done with the data.</p>
+<h2 id="discovery-and-snmp">Discovery and SNMP<a class="headerlink" href="#discovery-and-snmp" title="Permanent link">&para;</a></h2>
+<p>Neighbour discovery protocol settings (LLDP, CDP, MNDP) per device, and SNMP configuration.</p>
+<p>Discovery is what populates the topology map and finds devices to adopt. Turning it off on a
+device makes that device invisible to its neighbours — and this platform.</p>
 
 
 
