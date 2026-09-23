@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.24.22_Beta-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.24.23_Beta-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -373,6 +373,12 @@ so it moves when behaviour does.
 | Document | Covers |
 |---|---|
 | [Configuration](docs/configuration.md) | Environment variables, secret management, key rotation, TLS |
+| [Devices](docs/devices.md) | The device list, device tabs, ports and VLANs, per-device tools |
+| [Clients](docs/clients.md) | Where client data comes from, identification, history, per-port clients |
+| [Topology](docs/topology.md) | How links are discovered, spanning-tree resolution, manual links |
+| [Traffic analytics](docs/traffic.md) | The NetFlow collector, top talkers, application breakdown, retention |
+| [Wireless](docs/wireless.md) | Radios and SSIDs, RF health, signal bands, rogue APs, guest WiFi |
+| [Network services](docs/network-services.md) | DHCP, DNS, NTP, WireGuard, logging, discovery and SNMP |
 | [Adopting devices](docs/adoption.md) | Adding configured devices, and configuring factory-default ones so they can be managed |
 | [Change Guard and Config Health](docs/change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
 | [Sites](docs/sites.md) | Grouping devices into sites, switching between them, and what each site scopes |

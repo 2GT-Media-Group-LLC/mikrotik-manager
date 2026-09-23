@@ -59,8 +59,12 @@ nav:
   - Getting started:
       - Configuration: configuration.md
   - Operating:
+      - Devices: devices.md
+      - Clients: clients.md
       - Adopting devices: adoption.md
       - Sites: sites.md
+      - Topology: topology.md
+      - Traffic analytics: traffic.md
       - Change Guard and Config Health: change-guard.md
       - Polling and scaling: scaling.md
       - Alerting: alerting.md
@@ -69,6 +73,8 @@ nav:
       - Firmware rollouts: firmware.md
       - Backups: backups.md
   - Devices:
+      - Wireless: wireless.md
+      - Network services: network-services.md
       - Cellular (LTE): cellular.md
       - CAPsMAN: capsman.md
   - Integration:

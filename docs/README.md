@@ -6,6 +6,12 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | Document | Covers |
 |---|---|
 | [Configuration](configuration.md) | Environment variables, secret management and key rotation |
+| [Devices](devices.md) | The device list, the tabs on a device, ports and VLANs, and the per-device tools |
+| [Clients](clients.md) | Where client data comes from, identification, history, and per-port clients |
+| [Topology](topology.md) | How links are discovered, spanning-tree resolution, manual links |
+| [Traffic analytics](traffic.md) | The NetFlow collector, top talkers, application breakdown, retention |
+| [Wireless](wireless.md) | Radios and SSIDs, RF health, signal bands, rogue APs, guest WiFi |
+| [Network services](network-services.md) | DHCP, DNS, NTP, WireGuard, logging, discovery and SNMP |
 | [Adopting devices](adoption.md) | Adding configured devices, and configuring factory-default ones so they can be managed |
 | [Sites](sites.md) | Grouping devices into sites, switching between them, and what each site scopes |
 | [Change Guard and Config Health](change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
