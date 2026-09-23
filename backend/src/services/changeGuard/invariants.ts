@@ -180,6 +180,45 @@ export const INVARIANTS: Invariant[] = [
   },
 
   {
+    id: 'ingress-port-frame-types',
+    title: 'The ingress port still admits the frames management arrives in',
+    /**
+     * Added with #151, when setPortVlanConfig began writing frame-types.
+     *
+     * Until then nothing set frame admission, so no invariant modelled it — the
+     * other checks here only mention it in passing. It strands a device more
+     * directly than the PVID does: admit-only-vlan-tagged on the port carrying
+     * untagged management drops those frames at ingress, while every VLAN table
+     * row still lists the port and every other invariant stays satisfied.
+     */
+    check(snap, path) {
+      if (!path.ingressPort || !path.bridge || !filteringOn(snap, path.bridge)) return ok();
+      const port = snap.bridgePorts.find(
+        (p) => p['interface'] === path.ingressPort && p['bridge'] === path.bridge
+      );
+      if (!port) return ok(); // covered by ingress-port-member
+      const frames = (port['frame-types'] || '').trim();
+      if (!frames || frames === 'admit-all') return ok();
+
+      if (!path.taggedManagement && frames === 'admit-only-vlan-tagged') {
+        return {
+          ok: false,
+          severity: 'critical',
+          detail: `${path.ingressPort} would accept only VLAN-tagged frames, but management arrives untagged on it. Those frames would be dropped at ingress even though the VLAN table still lists the port.`,
+        };
+      }
+      if (path.taggedManagement && frames === 'admit-only-untagged-and-priority-tagged') {
+        return {
+          ok: false,
+          severity: 'critical',
+          detail: `${path.ingressPort} would accept only untagged frames, but management arrives tagged on VLAN ${path.mgmtVlanId ?? '?'}. Those frames would be dropped at ingress.`,
+        };
+      }
+      return ok();
+    },
+  },
+
+  {
     id: 'ingress-port-member',
     title: 'The ingress port is still a member of the bridge and enabled',
     check(snap, path) {

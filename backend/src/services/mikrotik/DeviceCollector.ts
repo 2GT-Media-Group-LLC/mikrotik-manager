@@ -47,6 +47,7 @@ import { alertService } from '../AlertService';
 import { readRevocation } from '../../utils/certRecord';
 import { stripOwnSessionNoise } from '../../utils/logNoise';
 import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
+import { planVlanWrite, frameTypesFor } from '../../utils/bridgeVlanPlan';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
 const TOPOLOGY_LINK_LIMITS = {
@@ -3521,61 +3522,55 @@ export class DeviceCollector {
     portName: string,
     pvid: number,
     taggedVlans: number[],
-    untaggedVlans: number[]
+    untaggedVlans: number[],
+    role?: 'access' | 'trunk'
   ): Promise<void> {
-    // 1. Find the bridge port entry and set PVID
     const bridgePorts = await this.client
       .execute('/interface/bridge/port/print', {}, [`?interface=${portName}`])
       .catch(() => []);
 
     const bridgePortEntry = bridgePorts[0];
     if (bridgePortEntry?.['.id']) {
+      // PVID *and* frame admission. Setting only the PVID left a trunk still
+      // accepting untagged frames and an access port still accepting tagged
+      // ones, so changing a port's type was half decorative (#151).
       await this.client.execute('/interface/bridge/port/set', {
         '.id': bridgePortEntry['.id'],
         pvid: String(pvid),
+        ...(role ? frameTypesFor(role) : {}),
       });
     }
 
     const bridge = bridgePortEntry?.['bridge'] || '';
     if (!bridge) return;
 
-    // 2. Update tagged VLANs in bridge VLAN table
-    for (const vlanId of taggedVlans) {
+    const applyVlan = async (vlanId: number, portRole: 'tagged' | 'untagged'): Promise<void> => {
       const existing = await this.client
         .execute('/interface/bridge/vlan/print', {}, [`?bridge=${bridge}`, `?vlan-ids=${vlanId}`])
         .catch(() => []);
 
-      if (existing[0]?.['.id']) {
-        const currentTagged = this.parseList(existing[0]['tagged'] || '');
-        const currentUntagged = this.parseList(existing[0]['untagged'] || '');
-        const newTagged = [...new Set([...currentTagged, portName])];
-        const newUntagged = currentUntagged.filter((p) => p !== portName);
-        await this.client.execute('/interface/bridge/vlan/set', {
-          '.id': existing[0]['.id'],
-          tagged: newTagged.join(','),
-          untagged: newUntagged.join(','),
-        });
-      }
-    }
+      const plan = planVlanWrite(existing[0], portName, portRole);
+      if (plan.action === 'noop') return;
 
-    // 3. Update untagged VLANs in bridge VLAN table
-    for (const vlanId of untaggedVlans) {
-      const existing = await this.client
-        .execute('/interface/bridge/vlan/print', {}, [`?bridge=${bridge}`, `?vlan-ids=${vlanId}`])
-        .catch(() => []);
-
-      if (existing[0]?.['.id']) {
-        const currentTagged = this.parseList(existing[0]['tagged'] || '');
-        const currentUntagged = this.parseList(existing[0]['untagged'] || '');
-        const newUntagged = [...new Set([...currentUntagged, portName])];
-        const newTagged = currentTagged.filter((p) => p !== portName);
+      if (plan.action === 'set') {
         await this.client.execute('/interface/bridge/vlan/set', {
-          '.id': existing[0]['.id'],
-          tagged: newTagged.join(','),
-          untagged: newUntagged.join(','),
+          '.id': plan.id, tagged: plan.tagged, untagged: plan.untagged,
         });
+        return;
       }
-    }
+
+      // add: either the VLAN had no row at all, or the only row was dynamic and
+      // therefore unmodifiable. A static row supersedes the dynamic one.
+      await this.client.execute('/interface/bridge/vlan/add', {
+        bridge,
+        'vlan-ids': String(vlanId),
+        tagged: plan.tagged,
+        untagged: plan.untagged,
+      });
+    };
+
+    for (const vlanId of taggedVlans) await applyVlan(vlanId, 'tagged');
+    for (const vlanId of untaggedVlans) await applyVlan(vlanId, 'untagged');
   }
 
   /**

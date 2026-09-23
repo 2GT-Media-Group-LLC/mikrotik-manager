@@ -13,7 +13,15 @@ import type { GuardDevice } from './ChangeGuard';
 
 export type PlannedChange =
   | { kind: 'bridge.vlan-filtering'; bridge: string; enabled: boolean }
-  | { kind: 'port.vlan'; port: string; pvid: number; tagged: number[]; untagged: number[] }
+  | {
+      kind: 'port.vlan'; port: string; pvid: number; tagged: number[]; untagged: number[];
+      /**
+       * Set when the caller is also changing frame admission. Present from
+       * v0.24.20; absent means only the PVID and membership move, which is a
+       * materially smaller change (#151).
+       */
+      mode?: 'access' | 'trunk';
+    }
   | { kind: 'vlan.add'; bridge: string; vlanId: number; tagged: string[]; untagged: string[] }
   | { kind: 'vlan.update'; bridge: string; vlanId: number; tagged: string[]; untagged: string[] }
   | { kind: 'vlan.delete'; bridge: string; vlanId: number }
@@ -78,6 +86,16 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
     case 'port.vlan': {
       const port = s.bridgePorts.find((p) => p['interface'] === change.port);
       if (port) port['pvid'] = String(change.pvid);
+      // Frame admission, when the caller is changing it. This matters more than
+      // the PVID for lockout: admit-only-vlan-tagged on the port carrying
+      // untagged management traffic cuts it off even though every VLAN row
+      // still lists the port (#151).
+      if (port && change.mode) {
+        port['frame-types'] = change.mode === 'access'
+          ? 'admit-only-untagged-and-priority-tagged'
+          : 'admit-only-vlan-tagged';
+        port['ingress-filtering'] = 'true';
+      }
       const bridge = port?.['bridge'];
       if (!bridge) break;
 

@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Building2, ChevronDown, Check, Plus, Pencil, Globe, X } from 'lucide-react';
 import clsx from 'clsx';
@@ -19,7 +18,6 @@ interface Props {
  * never have to learn what a site is.
  */
 export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const { currentSiteId, setCurrentSite } = useSiteStore();
@@ -89,9 +87,11 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
   function openAllSites() {
     closeAll();
     onNavigate?.();
-    // Navigate first: setting the site remounts the tree, and the route must
-    // already be /sites when it comes back.
-    navigate('/sites');
+    // Scope only. This used to navigate to /sites as well, which conflated
+    // "show me every site's data" with "take me to the sites page" and moved
+    // people off whatever page they were on (#153). The redirect existed
+    // because /sites had no other route; it has had a sidebar entry since
+    // #148, so it no longer needs one here.
     setCurrentSite(null);
   }
 

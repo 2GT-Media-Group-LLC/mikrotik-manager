@@ -655,7 +655,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   });
 
   const updateVlanMutation = useMutation({
-    mutationFn: ({ name, data, confirm }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[] }; confirm?: boolean }) =>
+    mutationFn: ({ name, data, confirm }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk' }; confirm?: boolean }) =>
       devicesApi.configurePortVlan(deviceId, name, confirm ? { ...data, confirm_lockout: true } : data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
@@ -891,9 +891,11 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
         .map((s) => parseInt(s.trim(), 10))
         .filter((n) => n > 0 && n <= 4094);
 
+      // mode is sent explicitly so the server sets frame-types and
+      // ingress-filtering to match, rather than only the PVID (#151).
       const vlanData = editForm.vlan_mode === 'access'
-        ? { pvid: editForm.pvid, untagged_vlans: [editForm.pvid], tagged_vlans: [] }
-        : { pvid: editForm.pvid, tagged_vlans: taggedList, untagged_vlans: [] };
+        ? { pvid: editForm.pvid, untagged_vlans: [editForm.pvid], tagged_vlans: [], mode: 'access' as const }
+        : { pvid: editForm.pvid, tagged_vlans: taggedList, untagged_vlans: [], mode: 'trunk' as const };
 
       await updateVlanMutation.mutateAsync({ name: editingPort.name, data: vlanData });
     }

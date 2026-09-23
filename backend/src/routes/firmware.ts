@@ -31,8 +31,21 @@ router.get('/overview', async (req: Request, res: Response) => {
         : ''}
       ORDER BY r.created_at DESC LIMIT 1`),
   ]);
+  // Tags, so the rollout table can show the same chips as the device list and a
+  // tagged group is recognisable when choosing what to upgrade (#152).
+  const tagRows = await query<{ device_id: number; id: number; name: string; color: string }>(
+    `SELECT dt.device_id, t.id, t.name, t.color
+       FROM device_tags dt JOIN tags t ON t.id = dt.tag_id`
+  ).catch(() => []);
+  const tagsByDevice = new Map<number, { id: number; name: string; color: string }[]>();
+  for (const t of tagRows) {
+    const list = tagsByDevice.get(t.device_id) ?? [];
+    list.push({ id: t.id, name: t.name, color: t.color });
+    tagsByDevice.set(t.device_id, list);
+  }
+
   res.json({
-    devices,
+    devices: (devices as { id: number }[]).map((d) => ({ ...d, tags: tagsByDevice.get(d.id) ?? [] })),
     latestRolloutId: latestRollout?.id ?? null,
     runningRolloutId: firmwareOrchestrator.running,
   });

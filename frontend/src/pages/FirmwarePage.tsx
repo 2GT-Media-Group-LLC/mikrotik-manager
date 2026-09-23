@@ -304,22 +304,25 @@ export default function FirmwarePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/40">
-                  {canWrite && <th className="px-4 py-2.5 w-8" />}
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Device</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Model</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">RouterOS</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Latest</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">RouterBOOT</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Status</th>
-                  {canWrite && <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Wave</th>}
+                  {canWrite && <th className="table-header px-4 py-[10px] w-8" />}
+                  <th className="table-header px-4 py-[10px]">Device</th>
+                  <th className="table-header px-4 py-[10px]">Model</th>
+                  <th className="table-header px-4 py-[10px]">RouterOS</th>
+                  <th className="table-header px-4 py-[10px]">Latest</th>
+                  <th className="table-header px-4 py-[10px]">RouterBOOT</th>
+                  <th className="table-header px-4 py-[10px]">Status</th>
+                  {canWrite && <th className="table-header px-4 py-[10px]">Wave</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700/50">
-                {devices.map((d, i) => {
+                {devices.map((d) => {
                   const isSel = selected.has(d.id);
                   const selectable = canWrite && d.firmware_update_available && d.status === 'online';
+                  // Zebra striping comes from index.css, as it does on /devices.
+                  // This table hand-rolled its own and so looked subtly
+                  // different from the main one (#152).
                   return (
-                    <tr key={d.id} className={clsx('transition-colors', isSel ? 'bg-blue-50/60 dark:bg-blue-900/10' : i % 2 === 0 ? 'bg-white dark:bg-slate-900/20' : 'bg-gray-50 dark:bg-slate-800/40')}>
+                    <tr key={d.id} className="transition-colors" style={isSel ? { background: 'var(--accent-soft)' } : undefined}>
                       {canWrite && (
                         <td className="px-4 py-2.5">
                           <input type="checkbox" className="w-4 h-4 rounded" checked={isSel} disabled={!selectable}
@@ -330,6 +333,15 @@ export default function FirmwarePage() {
                         <div className="flex items-center gap-2">
                           <TypePill type={d.device_type} />
                           <span className="font-medium text-gray-900 dark:text-white">{d.name}</span>
+                          {d.tags?.map(tag => (
+                            <span
+                              key={tag.id}
+                              className="text-[10px] px-[5px] py-[1px] rounded-full font-medium"
+                              style={{ background: tag.color + '33', color: tag.color, border: `1px solid ${tag.color}55` }}
+                            >
+                              {tag.name}
+                            </span>
+                          ))}
                           {d.status !== 'online' && <span className="text-[10px] text-red-400">offline</span>}
                         </div>
                       </td>

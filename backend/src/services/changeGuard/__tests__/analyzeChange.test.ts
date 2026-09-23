@@ -130,6 +130,26 @@ describe('analyzeChange — the VLAN lockout (golden case)', () => {
     expect(v.violations.map((x) => x.id)).toContain('ingress-port-pvid');
   });
 
+  it('flags making the management port tagged-only, which the PVID alone does not', () => {
+    // Added with #151: frame admission was never written, so the predictor had
+    // nothing to model. admit-only-vlan-tagged on the port carrying untagged
+    // management traffic strands it even though every VLAN row still lists it.
+    const change: PlannedChange = {
+      kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [], untagged: [], mode: 'trunk',
+    };
+    const v = analyzeChange(baseSnapshot(), device, change);
+    expect(v.severity).toBe('critical');
+  });
+
+  it('does not flag the same change when frame admission is left alone', () => {
+    // No mode means pre-0.24.20 behaviour: PVID and membership only. Inventing a
+    // violation here would block edits that were always safe.
+    const change: PlannedChange = {
+      kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [], untagged: [],
+    };
+    expect(analyzeChange(baseSnapshot(), device, change).severity).not.toBe('critical');
+  });
+
   it('flags deleting the management VLAN entirely', () => {
     const v = analyzeChange(baseSnapshot(), device, { kind: 'vlan.delete', bridge: 'bridge', vlanId: 1 });
     expect(v.severity).toBe('critical');

@@ -58,12 +58,30 @@ export function widthMhz(width: string | undefined): number {
 
 export interface RssiBand { label: string; min: number; max: number; color: string }
 
-// Signal-quality zones across the −90…−30 dBm scale (weak → excellent).
+/**
+ * Signal-quality zones across the −90…−30 dBm scale (weak → excellent).
+ *
+ * Boundaries at −70 / −55 / −45, reported from the field: an average
+ * smartphone drops off a network at around −75 dBm, and −85 is effectively the
+ * noise floor in ordinary conditions. The previous set called −65 "Good" and
+ * −75 merely "Fair", which flattered a signal most clients could not hold
+ * (#154).
+ *
+ * This is not only a recalibration. The app already disagreed with itself:
+ * RadiosTab coloured signals at −55/−70/−85 while this said −60/−70/−80, so
+ * the same client read differently on two pages. Both now come from here.
+ *
+ * Poor extends to −100 rather than stopping at −85 so that nothing falls
+ * outside a zone; the chart clamps to RSSI_MIN for drawing regardless.
+ * Dedicated point-to-point radios — SXTsq, GrooveA and the like — run happily
+ * near −80 and will read Poor here, which is a limitation of one scale for two
+ * very different jobs.
+ */
 export const RSSI_ZONES: RssiBand[] = [
-  { label: 'Poor',      min: -100, max: -80, color: '#ef4444' },
-  { label: 'Fair',      min: -80,  max: -70, color: '#f59e0b' },
-  { label: 'Good',      min: -70,  max: -60, color: '#84cc16' },
-  { label: 'Excellent', min: -60,  max: -20, color: '#22c55e' },
+  { label: 'Poor',      min: -100, max: -70, color: '#ef4444' },
+  { label: 'Fair',      min: -70,  max: -55, color: '#f59e0b' },
+  { label: 'Good',      min: -55,  max: -45, color: '#84cc16' },
+  { label: 'Excellent', min: -45,  max: -20, color: '#22c55e' },
 ];
 
 export function rssiColor(dbm: number): string {

@@ -883,6 +883,8 @@ export const automationApi = {
 
 // ─── Firmware orchestration ─────────────────────────────────────────────────────
 export interface FirmwareDeviceRow {
+  /** Same chips as the device list, so a tagged group is recognisable here. */
+  tags?: { id: number; name: string; color: string }[];
   id: number; name: string; device_type: string; status: string; model: string | null;
   ros_version: string | null; latest_ros_version: string | null;
   firmware_update_available: boolean;

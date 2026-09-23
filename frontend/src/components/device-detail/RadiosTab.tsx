@@ -598,10 +598,15 @@ interface APScanRecord {
   data: APNetworkEntry[];
 }
 
+/**
+ * Kept as Tailwind classes rather than the hex from rssiColor, but the
+ * thresholds now match RSSI_ZONES exactly. They used to differ from it, so a
+ * client at −58 dBm was "Good" here and "Fair" on the RF Health page (#154).
+ */
 function signalColor(dbm: number): string {
-  if (dbm >= -55) return 'text-green-600 dark:text-green-400';
+  if (dbm >= -45) return 'text-green-600 dark:text-green-400';
+  if (dbm >= -55) return 'text-lime-600 dark:text-lime-400';
   if (dbm >= -70) return 'text-yellow-600 dark:text-yellow-400';
-  if (dbm >= -85) return 'text-orange-500 dark:text-orange-400';
   return 'text-red-500 dark:text-red-400';
 }
 
