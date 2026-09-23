@@ -532,6 +532,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#reducing-the-work-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      Reducing the work itself
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      Event volume
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#behaviour-worth-knowing" class="md-nav__link">
     <span class="md-ellipsis">
       Behaviour worth knowing
@@ -988,6 +1006,24 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#reducing-the-work-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      Reducing the work itself
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      Event volume
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#behaviour-worth-knowing" class="md-nav__link">
     <span class="md-ellipsis">
       Behaviour worth knowing
@@ -1134,6 +1170,55 @@ duration and last error. Their difference is that distinction.</p>
 </table>
 <p>Raise concurrency first. Lengthen the interval second — it reduces freshness, which is the
 thing you are paying for.</p>
+<h2 id="reducing-the-work-itself">Reducing the work itself<a class="headerlink" href="#reducing-the-work-itself" title="Permanent link">&para;</a></h2>
+<p>Raising concurrency changes how much can be done at once. Switching off a collector changes
+how much there is to do, which is the larger lever on a big fleet: every collector is a round
+trip per device per cycle.</p>
+<p><strong>Settings → Polling → Collectors.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Collector</th>
+<th>Cadence</th>
+<th>Cost of switching it off</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Connected clients</td>
+<td>fast poll</td>
+<td>No client list, per-client traffic or fingerprinting</td>
+</tr>
+<tr>
+<td>Neighbour discovery</td>
+<td>slow poll</td>
+<td>Topology stops updating; no automatic discovery</td>
+</tr>
+<tr>
+<td>Device logs</td>
+<td>own 60s poll</td>
+<td>No events; log alerts go quiet. The session is skipped entirely</td>
+</tr>
+<tr>
+<td>Certificates</td>
+<td>slow poll</td>
+<td>No certificate inventory or expiry warnings</td>
+</tr>
+</tbody>
+</table>
+<p>Measured on the reference fleet, turning off clients and logs:</p>
+<div class="highlight"><pre><span></span><code>logs   694 ms  -&gt;    1 ms     (returns before connecting)
+fast   562 ms  -&gt;  211 ms     (-62%)
+</code></pre></div>
+<p>Each one costs the feature it feeds, and data already collected stops being refreshed rather
+than disappearing — pages will show figures that quietly age. That is the trade.</p>
+<h2 id="event-volume">Event volume<a class="headerlink" href="#event-volume" title="Permanent link">&para;</a></h2>
+<p>Events are device log lines, and they are the largest table by a wide margin on most installs.</p>
+<p><code>retention_events_days</code> (default 30) is enforced hourly, deleting in batches so that a first
+run on a long-unpruned install does not hold locks for the duration.</p>
+<p>Until v0.24.19 that setting existed and was read by nothing, so events grew without limit. If
+you are upgrading from an older build, expect a large one-off delete on the first poll cycle
+after the upgrade — 109,649 rows on a five-device fleet that had been running for 36 days.</p>
 <h2 id="behaviour-worth-knowing">Behaviour worth knowing<a class="headerlink" href="#behaviour-worth-knowing" title="Permanent link">&para;</a></h2>
 <p><strong>A device already queued is not enqueued again.</strong> Deduplication is by job id, so a
 backlog cannot compound: one outstanding poll per device and kind, however long it waits.</p>
