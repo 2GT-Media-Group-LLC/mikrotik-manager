@@ -56,13 +56,20 @@ export default function SettingsPage() {
   const canWrite = user?.role !== 'viewer';
   // Timezone for scheduled work. The browser's zone is offered as a shortcut
   // because it is almost always what the operator means.
+  // UTC is put first explicitly. Intl.supportedValuesOf('timeZone') lists 418
+  // canonical zones and UTC is not among them, so the default value matched no
+  // <option> and the browser displayed the first entry instead: every install
+  // on the default showed its backups scheduled in "Africa/Abidjan". Right only
+  // because Abidjan also sits at UTC+0.
   const timezoneOptions = useMemo<string[]>(() => {
     const supported = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf;
+    let zones: string[] = [];
     try {
-      return supported ? supported('timeZone') : ['UTC'];
+      zones = supported ? supported('timeZone') : [];
     } catch {
-      return ['UTC'];
+      zones = [];
     }
+    return ['UTC', ...zones.filter((z) => z !== 'UTC')];
   }, []);
   const browserTimezone = useMemo(() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; }
@@ -527,36 +534,63 @@ export default function SettingsPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h1>
 
-      <div className="flex flex-wrap gap-x-6 gap-y-2 border-b border-gray-200 dark:border-slate-700">
-        {tabGroups.map((group, gi) => (
-          <div key={group.label} className={clsx(gi > 0 && 'sm:border-l sm:border-gray-200 sm:dark:border-slate-700 sm:pl-6')}>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 select-none pt-1">
-              {group.label}
-            </div>
-            <div className="flex gap-1">
+      {/* Side navigation rather than a tab strip. Fourteen tabs across three
+          groups wrapped onto several lines above the content and scrolled out
+          of reach; down the side they stay put while a long tab scrolls. */}
+      <div className="flex flex-col md:flex-row gap-6 items-start">
+        {/* Phones get a dropdown. A sideways-scrolling strip showed two and a
+            half of fourteen tabs with nothing to say the rest existed. */}
+        <select
+          value={activeTab}
+          onChange={(e) => setActiveTab(e.target.value as typeof activeTab)}
+          className="input md:hidden w-full"
+          aria-label="Settings section"
+        >
+          {tabGroups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
               {group.tabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={clsx(
-                    'px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-2 whitespace-nowrap',
-                    activeTab === tab.key
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
-                  )}
-                >
-                  <tab.icon className="w-4 h-4" />
-                  {tab.label}
-                </button>
+                <option key={tab.key} value={tab.key}>{tab.label}</option>
               ))}
+            </optgroup>
+          ))}
+        </select>
+
+        <nav className="hidden md:flex md:w-52 flex-shrink-0 md:sticky md:top-2 flex-col gap-5">
+          {tabGroups.map((group) => (
+            <div key={group.label}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 select-none px-3 mb-1">
+                {group.label}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {group.tabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={clsx(
+                      'px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-2 whitespace-nowrap text-left',
+                      activeTab === tab.key
+                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                        : 'text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'
+                    )}
+                  >
+                    <tab.icon className="w-4 h-4 flex-shrink-0" />
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </nav>
+
+        <div className="flex-1 min-w-0 w-full space-y-4">
 
       {/* ── General ── */}
       {activeTab === 'general' && (
-        <div className="space-y-4 max-w-lg">
+        // Two flowing columns on wide screens. A single 512px column of eight
+        // cards left most of a monitor empty and made this the longest scroll in
+        // the app. Columns rather than a grid, so a short card such as
+        // Appearance does not leave a hole the height of its taller neighbour.
+        <div className="max-w-6xl xl:columns-2 xl:gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Appearance</h3>
             <div className="flex items-center justify-between">
@@ -922,6 +956,9 @@ export default function SettingsPage() {
                       onChange={(e) => updateSettingsMutation.mutate({ app_timezone: e.target.value })}
                       className="input text-xs py-1 max-w-[260px]"
                     >
+                      {!timezoneOptions.includes(appTimezone) && (
+                        <option value={appTimezone}>{appTimezone}</option>
+                      )}
                       {timezoneOptions.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
                     </select>
                     {browserTimezone && browserTimezone !== appTimezone && (
@@ -2404,6 +2441,8 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }
