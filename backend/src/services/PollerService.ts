@@ -9,6 +9,7 @@ import { alertService } from './AlertService';
 import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 import { cronMatches } from '../utils/cron';
+import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
 
@@ -146,6 +147,8 @@ export class PollerService {
   }
 
   async start(): Promise<void> {
+    const disabled = describeDisabled(resolveModules(await this.getAppSettings()));
+    if (disabled) console.log(`[Poller] Collectors disabled by settings: ${disabled}`);
     this.startWorkers();
     this.startScheduler();
     console.log('PollerService started');
@@ -415,6 +418,21 @@ export class PollerService {
         );
       }
 
+      // Event pruning — runs once per hour.
+      //
+      // retention_events_days has existed as a setting since the table did, was
+      // seeded by the migration, and was read by nothing. Meanwhile events grew
+      // to 95% of the database on a five-device fleet. A retention control that
+      // does not retain is worse than none, because it is believed.
+      const eventPruneKey = 'task:prune_events';
+      const lastEventPrune = await this.getTimestamp(eventPruneKey);
+      if (now - lastEventPrune > 3_600_000) {
+        await this.setTimestamp(eventPruneKey, now);
+        this.pruneOldEvents(appSettings).catch((e) =>
+          console.error('[Poller] Event prune error:', e)
+        );
+      }
+
       // Scheduled backups — fire when the cron expression matches the current minute/hour.
       // Redis key with 1-hour TTL prevents double-firing within the same cron window.
       if (backupScheduleEnabled && cronMatches(backupScheduleCron, new Date(), appTimezone)) {
@@ -437,7 +455,10 @@ export class PollerService {
       const rows = await query<{ key: string; value: unknown }>(
         `SELECT key, value FROM app_settings
          WHERE key IN ('mac_scan_enabled', 'mac_scan_interval', 'reverse_dns_enabled',
-                       'retention_clients_days', 'spectral_scan_enabled',
+                       'retention_clients_days', 'retention_events_days',
+                       'poll_clients_enabled', 'poll_neighbors_enabled',
+                       'poll_logs_enabled', 'poll_certificates_enabled',
+                       'spectral_scan_enabled',
                        'spectral_scan_interval_hours', 'ap_scan_enabled',
                        'ap_scan_interval_hours', 'backup_schedule_enabled',
                        'backup_schedule_cron', 'config_snapshot_enabled',
@@ -547,6 +568,40 @@ export class PollerService {
     const count = parseInt(result[0]?.count || '0', 10);
     if (count > 0) {
       console.log(`[Poller] NetFlow retention pruned ${count} daily rollup row(s) (> ${dailyDays} days)`);
+    }
+  }
+
+  /**
+   * Delete events older than retention_events_days.
+   *
+   * Deleted in bounded batches rather than one statement: on a fleet that has
+   * been accumulating unpruned events for months the first run has a great deal
+   * to remove, and a single unbounded DELETE would hold locks and bloat WAL for
+   * as long as it took.
+   */
+  private async pruneOldEvents(settings: Record<string, unknown>): Promise<void> {
+    const days = Number(settings['retention_events_days']);
+    if (!Number.isFinite(days) || days <= 0) return;
+
+    const BATCH = 20_000;
+    const MAX_BATCHES = 50; // ~1M rows per run; the next hourly run continues
+    let total = 0;
+    for (let i = 0; i < MAX_BATCHES; i++) {
+      const deleted = await query<{ id: number }>(
+        `DELETE FROM events
+          WHERE id IN (
+            SELECT id FROM events
+             WHERE event_time < NOW() - ($1 || ' days')::interval
+             LIMIT $2
+          )
+        RETURNING id`,
+        [String(days), BATCH]
+      );
+      total += deleted.length;
+      if (deleted.length < BATCH) break;
+    }
+    if (total > 0) {
+      console.log(`[Poller] Pruned ${total} events older than ${days} days`);
     }
   }
 
@@ -833,9 +888,11 @@ export class PollerService {
   private async processPollJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
+    const pollModules = resolveModules(await this.getAppSettings());
 
     const prevStatus = device.status; // capture before poll
     const collector = new DeviceCollector(device);
+    collector.modules = pollModules;
     try {
       await collector.connect();
 
@@ -1139,11 +1196,16 @@ export class PollerService {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
 
+    const modules = resolveModules(await this.getAppSettings());
     const collector = new DeviceCollector(device);
+    collector.modules = modules;
     try {
       await collector.connect();
       await collector.collectSlow();
-      await collector.collectNeighbors();
+      // Neighbour discovery is a round trip per device per cycle and the only
+      // thing that feeds topology, so a fleet not using the map can switch it
+      // off entirely.
+      if (modules.neighbors) await collector.collectNeighbors();
       await collector.collectStp();
       this.io?.emit('device:updated', { deviceId: device.id });
 
@@ -1176,6 +1238,9 @@ export class PollerService {
   private async processLogsJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
+    // Skipped before connecting: with logs off there is nothing to fetch, so
+    // the session itself is the waste.
+    if (!resolveModules(await this.getAppSettings()).logs) return;
 
     const collector = new DeviceCollector(device);
     try {

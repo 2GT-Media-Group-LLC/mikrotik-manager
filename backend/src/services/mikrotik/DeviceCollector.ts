@@ -45,6 +45,8 @@ export interface DownloadResult {
 }
 import { alertService } from '../AlertService';
 import { readRevocation } from '../../utils/certRecord';
+import { stripOwnSessionNoise } from '../../utils/logNoise';
+import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
 const TOPOLOGY_LINK_LIMITS = {
@@ -147,10 +149,16 @@ export class DeviceCollector {
 
   // ─── Fast poll (every 30s) ─────────────────────────────────────────────────
 
+  /**
+   * Which collectors are switched on. Defaults to all, so a caller that does
+   * not set them behaves exactly as before.
+   */
+  modules: PollModules = ALL_MODULES;
+
   async collectFast(): Promise<void> {
     await this.collectInterfaceTraffic();
     await this.collectResourceUsage();
-    await this.updateClients();
+    if (this.modules.clients) await this.updateClients();
     if (this.device.device_type === 'wireless_ap') {
       await this.collectWirelessStats();
     }
@@ -188,7 +196,7 @@ export class DeviceCollector {
     await this.collectSystemInfo();
     await this.collectStp();
     await this.collectLte();
-    await this.collectCertificates();
+    if (this.modules.certificates) await this.collectCertificates();
     if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
@@ -211,9 +219,12 @@ export class DeviceCollector {
     await this.collectVlans();
     await this.collectInterfaceTraffic();
     await this.collectResourceUsage();
-    await this.updateClients();
-    await this.collectEvents();
-    await this.collectNeighbors();
+    // A manual Sync honours the toggles as well. Collecting something that is
+    // switched off would populate data nothing refreshes afterwards, which is
+    // worse than not having it.
+    if (this.modules.clients) await this.updateClients();
+    if (this.modules.logs) await this.collectEvents();
+    if (this.modules.neighbors) await this.collectNeighbors();
     // Topology and spanning tree belong in a full resync: someone pressing Sync
     // after rewiring expects the map to catch up, and previously STP only
     // refreshed on the five-minute slow poll (#131).
@@ -923,8 +934,19 @@ export class DeviceCollector {
         parseTime: (raw) => this.parseLogTime(raw),
       });
 
+      // Drop the login/logout pair this poll itself just caused. Without this
+      // the manager stores its own connection noise once per poll per device:
+      // 99.8% of the events table on the reference fleet (see utils/logNoise).
+      const { kept, dropped } = stripOwnSessionNoise(
+        fresh as { topics?: string; message?: string }[],
+        this.device.api_username
+      );
+      if (dropped > 0) {
+        console.log(`[${this.device.name}] skipped ${dropped} of our own API session log lines`);
+      }
+
       const pending: unknown[][] = [];
-      for (const log of fresh) {
+      for (const log of kept as RawLogLine[]) {
         const rawId = (log['.id'] || '') as string;
         const topics = (log['topics'] as string) || '';
         const message = (log['message'] as string) || '';

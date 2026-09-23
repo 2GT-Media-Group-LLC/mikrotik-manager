@@ -67,6 +67,42 @@ All of these are environment variables and need a container restart.
 Raise concurrency first. Lengthen the interval second — it reduces freshness, which is the
 thing you are paying for.
 
+## Reducing the work itself
+
+Raising concurrency changes how much can be done at once. Switching off a collector changes
+how much there is to do, which is the larger lever on a big fleet: every collector is a round
+trip per device per cycle.
+
+**Settings → Polling → Collectors.**
+
+| Collector | Cadence | Cost of switching it off |
+|---|---|---|
+| Connected clients | fast poll | No client list, per-client traffic or fingerprinting |
+| Neighbour discovery | slow poll | Topology stops updating; no automatic discovery |
+| Device logs | own 60s poll | No events; log alerts go quiet. The session is skipped entirely |
+| Certificates | slow poll | No certificate inventory or expiry warnings |
+
+Measured on the reference fleet, turning off clients and logs:
+
+```
+logs   694 ms  ->    1 ms     (returns before connecting)
+fast   562 ms  ->  211 ms     (-62%)
+```
+
+Each one costs the feature it feeds, and data already collected stops being refreshed rather
+than disappearing — pages will show figures that quietly age. That is the trade.
+
+## Event volume
+
+Events are device log lines, and they are the largest table by a wide margin on most installs.
+
+`retention_events_days` (default 30) is enforced hourly, deleting in batches so that a first
+run on a long-unpruned install does not hold locks for the duration.
+
+Until v0.24.19 that setting existed and was read by nothing, so events grew without limit. If
+you are upgrading from an older build, expect a large one-off delete on the first poll cycle
+after the upgrade — 109,649 rows on a five-device fleet that had been running for 36 days.
+
 ## Behaviour worth knowing
 
 **A device already queued is not enqueued again.** Deduplication is by job id, so a

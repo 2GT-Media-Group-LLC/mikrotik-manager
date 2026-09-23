@@ -19,6 +19,7 @@ import {
 import clsx from 'clsx';
 import CredentialPresetsSettings from '../components/settings/CredentialPresetsSettings';
 import FirmwareTimeoutCard from '../components/settings/FirmwareTimeoutCard';
+import PollModulesCard from '../components/settings/PollModulesCard';
 import TagRow from '../components/settings/TagRow';
 import AutomationSettings from '../components/settings/AutomationSettings';
 import OidcSettings from '../components/settings/OidcSettings';
@@ -986,6 +987,11 @@ export default function SettingsPage() {
           <div className="card p-5">
             <PollerHealthCard />
           </div>
+          <PollModulesCard
+            settings={settings}
+            onChange={(data) => updateSettingsMutation.mutate(data)}
+            saving={updateSettingsMutation.isPending}
+          />
           <FirmwareTimeoutCard
             settings={settings}
             onSave={(data) => updateSettingsMutation.mutate(data)}

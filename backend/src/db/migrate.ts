@@ -1084,6 +1084,13 @@ const DEFAULT_SETTINGS = [
   // that MikroTik's download servers intermittently stall (#141).
   { key: 'firmware_download_timeout_min', value: 10 },
   { key: 'firmware_reboot_timeout_min', value: 12 },
+  // Collector toggles. A fleet doing firmware and configuration management has
+  // no use for per-client tracking, and every collector is a round trip per
+  // device per cycle -- the lever that matters at scale (#85, henkb-gh).
+  { key: 'poll_clients_enabled', value: true },
+  { key: 'poll_neighbors_enabled', value: true },
+  { key: 'poll_logs_enabled', value: true },
+  { key: 'poll_certificates_enabled', value: true },
   { key: 'config_health_enabled', value: true },
   { key: 'config_health_interval_min', value: 60 },
   // Geocoding and map tiles are third-party requests that also disclose device
