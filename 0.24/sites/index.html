@@ -532,6 +532,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#site-address-and-device-locations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Site address and device locations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-sites-scope-and-what-they-do-not" class="md-nav__link">
     <span class="md-ellipsis">
       What sites scope, and what they do not
@@ -1132,6 +1141,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#site-address-and-device-locations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Site address and device locations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-sites-scope-and-what-they-do-not" class="md-nav__link">
     <span class="md-ellipsis">
       What sites scope, and what they do not
@@ -1230,6 +1248,13 @@ several unrelated networks.</p>
 <p>Pins require an address, which is geocoded via Nominatim when you save it. If
 <strong>Settings → Maps enabled</strong> is off, no geocoding or tile request is made and the map is
 hidden; addresses are still stored and shown as text.</p>
+<h2 id="site-address-and-device-locations">Site address and device locations<a class="headerlink" href="#site-address-and-device-locations" title="Permanent link">&para;</a></h2>
+<p>A device uses its site's address unless it has its own location. That covers the dashboard
+map, the Devices location filter and the SNMP <code>{location}</code> variable. Set a device's own
+location under <strong>Overview → Physical Details</strong> only when it isn't at the site's address, for
+example another building. Clear it to go back to the site's address.</p>
+<p>Nothing is copied into the devices, so changing a site's address updates every device that
+uses it.</p>
 <h2 id="what-sites-scope-and-what-they-do-not">What sites scope, and what they do not<a class="headerlink" href="#what-sites-scope-and-what-they-do-not" title="Permanent link">&para;</a></h2>
 <p>Scoped to the selected site:</p>
 <ul>

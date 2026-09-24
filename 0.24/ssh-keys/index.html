@@ -658,6 +658,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#which-login-installs-the-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      Which login installs the key
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fleet-wide-deployment" class="md-nav__link">
     <span class="md-ellipsis">
       Fleet-wide deployment
@@ -1105,6 +1114,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#which-login-installs-the-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      Which login installs the key
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fleet-wide-deployment" class="md-nav__link">
     <span class="md-ellipsis">
       Fleet-wide deployment
@@ -1184,12 +1202,63 @@ record. Orphans left by a half-failed rotation would otherwise keep password SSH
 with no way back through the product.</p>
 <p>If deployment fails with an authentication error and orphaned keys are present, the error
 says so.</p>
+<h2 id="which-login-installs-the-key">Which login installs the key<a class="headerlink" href="#which-login-installs-the-key" title="Permanent link">&para;</a></h2>
+<p>The first key is installed by logging in over SSH with a password:</p>
+<ul>
+<li>If the device has an SSH username and password stored, those are used.</li>
+<li>If it has <strong>no SSH login stored</strong>, the API username and password are used, as a pair.
+  This is the same fallback backups and bulk commands already use.</li>
+<li>If the SSH username is the API user and no SSH password is stored, the API password is
+  used, since it is the same account.</li>
+<li>Anything else, such as a different SSH username with no password, is skipped with a
+  reason. The manager never pairs one account's name with another account's password.</li>
+</ul>
+<p>Whichever login is used, the key is bound to that user, and that user loses password SSH.</p>
 <h2 id="fleet-wide-deployment">Fleet-wide deployment<a class="headerlink" href="#fleet-wide-deployment" title="Permanent link">&para;</a></h2>
-<p><code>POST /api/devices/ssh-keys/deploy-all</code> keys every device that has a password but no
-verified key. It runs sequentially rather than in parallel — each deployment opens two SSH
-sessions and ends by proving the key.</p>
-<p>It <strong>refuses without explicit confirmation</strong>, because it disables password SSH on every
-device it touches.</p>
+<p><strong>Settings → SSH Keys</strong> (admins only) installs keys across the site you're viewing,
+optionally limited to tags. It shows a preview first:</p>
+<ul>
+<li>how many devices will get a key, how many already have one, and which are skipped and why</li>
+<li>the accounts that will lose password SSH, and on how many devices each</li>
+</ul>
+<p>After you tick the confirmation, it runs as a background job, one device at a time, and you
+can leave the page. It stops by itself after 5 failures in a row, since that usually means
+something fleet-wide is wrong. A device that fails is left as it was. Each device's result is
+written to the audit log.</p>
+<p>API, all admin-only:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/ssh-keys/fleet/preview?tag_ids=1,2</code></td>
+<td>What a run would do</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/ssh-keys/fleet/jobs</code></td>
+<td><code>{"device_ids": [...], "confirm": true}</code></td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/ssh-keys/fleet/jobs/:id</code></td>
+<td>Progress and per-device results</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/ssh-keys/fleet/jobs/:id/cancel</code></td>
+<td>Stops before the next device</td>
+</tr>
+</tbody>
+</table>
+<p>The older <code>POST /api/devices/ssh-keys/deploy-all</code> still works, with the same rules, but it
+runs inside one request and times out on large fleets.</p>
 <h2 id="what-uses-a-key">What uses a key<a class="headerlink" href="#what-uses-a-key" title="Permanent link">&para;</a></h2>
 <p>Backups and config export prefer a verified key where one exists and fall back to a
 password otherwise. <a href="../commands/">Bulk commands</a> use the same resolution.</p>
