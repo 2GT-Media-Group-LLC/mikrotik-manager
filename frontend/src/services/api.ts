@@ -1128,14 +1128,6 @@ export const searchApi = {
 // ─── Routers ──────────────────────────────────────────────────────────────────
 export const routersApi = {
   overview: () => api.get<Record<string, unknown>[]>('/devices/routers/overview'),
-  getLldpStatus: () => api.get<{
-    id: number; name: string; ip_address: string;
-    enabled: boolean | null; protocol: string | null; error?: string;
-  }[]>('/routers/lldp'),
-  setLldp: (enabled: boolean) => api.put<{
-    applied: number; total: number;
-    results: { id: number; name: string; success: boolean; error?: string }[];
-  }>('/routers/lldp', { enabled }),
   getSnmpStatus: () => api.get<{
     id: number; name: string; ip_address: string;
     enabled: boolean | null; community_name?: string; version?: string;
@@ -1191,14 +1183,6 @@ Object.assign(devicesApi, {
 // ─── Switches ─────────────────────────────────────────────────────────────────
 export const switchesApi = {
   list: () => api.get<Record<string, unknown>[]>('/switches'),
-  getLldpStatus: () => api.get<{
-    id: number; name: string; ip_address: string;
-    enabled: boolean | null; protocol: string | null; error?: string;
-  }[]>('/switches/lldp'),
-  setLldp: (enabled: boolean) => api.put<{
-    applied: number; total: number;
-    results: { id: number; name: string; success: boolean; error?: string }[];
-  }>('/switches/lldp', { enabled }),
   getSnmpStatus: () => api.get<{
     id: number; name: string; ip_address: string;
     enabled: boolean | null; community_name?: string; version?: string;
@@ -1458,6 +1442,17 @@ export const networkServicesApi = {
   // Overview
   overview: () =>
     api.get<Record<string, unknown>[]>('/network-services/overview', { timeout: 60_000 }),
+
+  // ── LLDP, every device type ───────────────────────────────────────────────
+  getLldp: () => api.get<{
+    id: number; name: string; ip_address: string; device_type: string;
+    enabled: boolean | null; protocol: string | null; error?: string;
+  }[]>('/network-services/lldp', { timeout: 60_000 }),
+  /** device_types omitted = every type. */
+  setLldp: (enabled: boolean, device_types?: string[]) => api.put<{
+    applied: number; total: number;
+    results: { id: number; name: string; success: boolean; error?: string }[];
+  }>('/network-services/lldp', { enabled, device_types }, { timeout: 60_000 }),
 
   // ── DHCP ──────────────────────────────────────────────────────────────────
   getDhcp: (deviceId: number) =>

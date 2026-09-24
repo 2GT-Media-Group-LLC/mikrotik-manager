@@ -4,6 +4,7 @@ import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
+import { getLldpStatuses, setLldpForTypes } from '../services/lldpApply';
 import { applySnmpConfig, SnmpInputError, type SnmpConfigInput } from '../services/snmpApply';
 
 const router = Router();
@@ -30,81 +31,20 @@ router.get('/', async (req: Request, res: Response) => {
   res.json(switches);
 });
 
-// GET /api/switches/lldp — LLDP enabled/disabled status per online switch
+// GET /api/switches/lldp — LLDP status per online switch in the active site.
+// Kept for API callers; the UI uses /api/network-services/lldp, which covers
+// every device type.
 router.get('/lldp', async (req: Request, res: Response) => {
-  const siteFilter = siteScopeDevices(activeSite(req));
-  const switches = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type = 'switch' AND status = 'online'
-       ${siteFilter ? `AND ${siteFilter}` : ''}`
-  );
-
-  const results = await Promise.allSettled(
-    switches.map(async (sw: DeviceRow) => {
-      const collector = new DeviceCollector(sw);
-      try {
-        await collector.connect();
-        const lldp = await collector.getLldpEnabled();
-        return { id: sw.id, name: sw.name, ip_address: sw.ip_address, ...lldp };
-      } finally {
-        collector.disconnect();
-      }
-    })
-  );
-
-  const statuses = results.map((r, i) => {
-    if (r.status === 'fulfilled') return r.value;
-    return {
-      id: switches[i].id,
-      name: switches[i].name,
-      ip_address: switches[i].ip_address,
-      enabled: null as boolean | null,
-      protocol: null as string | null,
-      error: (r.reason as Error).message,
-    };
-  });
-
-  res.json(statuses);
+  res.json(await getLldpStatuses(['switch'], activeSite(req)));
 });
 
-// PUT /api/switches/lldp — enable or disable LLDP on all online switches
+// PUT /api/switches/lldp — enable or disable LLDP on online switches in the active site
 router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
   const { enabled } = req.body;
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ error: '"enabled" (boolean) is required' });
   }
-
-  const switches = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type = 'switch' AND status = 'online'`
-  );
-
-  const results = await Promise.allSettled(
-    switches.map(async (sw: DeviceRow) => {
-      const collector = new DeviceCollector(sw);
-      try {
-        await collector.connect();
-        await collector.setLldpEnabled(enabled);
-        return { id: sw.id, name: sw.name, success: true };
-      } finally {
-        collector.disconnect();
-      }
-    })
-  );
-
-  const statuses = results.map((r, i) => {
-    if (r.status === 'fulfilled') return r.value;
-    return {
-      id: switches[i].id,
-      name: switches[i].name,
-      success: false,
-      error: (r.reason as Error).message,
-    };
-  });
-
-  return res.json({
-    applied: statuses.filter(s => s.success).length,
-    total: switches.length,
-    results: statuses,
-  });
+  return res.json(await setLldpForTypes(['switch'], enabled, activeSite(req)));
 });
 
 // GET /api/switches/snmp — SNMP config/status for all managed switches

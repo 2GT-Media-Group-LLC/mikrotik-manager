@@ -5,6 +5,7 @@ import { siteScopeDevices } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
+import { getLldpStatuses, setLldpForTypes, parseDeviceTypes, LLDP_DEVICE_TYPES } from '../services/lldpApply';
 
 const router = Router();
 router.use(requireAuth);
@@ -38,6 +39,27 @@ function deviceIdParam(req: Request, res: Response): number | null {
 }
 
 // ─── Overview (all online devices, all services) ──────────────────────────────
+
+// ─── LLDP, fleet-wide ──────────────────────────────────────────────────────────
+// Every RouterOS device has neighbour-discovery settings, not only routers and
+// switches. ?types= / device_types narrow it (router, switch, wireless_ap, other);
+// omitted means every type. Both are scoped to the active site.
+
+router.get('/lldp', async (req: Request, res: Response) => {
+  const types = parseDeviceTypes(req.query.types);
+  if (!types) return res.status(400).json({ error: `types must be from: ${LLDP_DEVICE_TYPES.join(', ')}` });
+  return res.json(await getLldpStatuses(types, activeSite(req)));
+});
+
+router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
+  const { enabled, device_types } = req.body ?? {};
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: '"enabled" (boolean) is required' });
+  }
+  const types = parseDeviceTypes(device_types);
+  if (!types) return res.status(400).json({ error: `device_types must be from: ${LLDP_DEVICE_TYPES.join(', ')}` });
+  return res.json(await setLldpForTypes(types, enabled, activeSite(req)));
+});
 
 router.get('/overview', async (req: Request, res: Response) => {
   const siteFilter = siteScopeDevices(activeSite(req));

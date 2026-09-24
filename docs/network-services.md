@@ -61,6 +61,14 @@ Neighbour discovery protocol settings (LLDP, CDP, MNDP) per device, and SNMP con
 Discovery is what populates the topology map and finds devices to adopt. Turning it off on a
 device makes that device invisible to its neighbours — and this platform.
 
+The LLDP section covers every online device in the current site: routers, switches, wireless
+APs and anything else running RouterOS. Use the tabs to narrow it to one type. **Enable** and
+**Disable** only touch the devices listed.
+
+The API is `GET /api/network-services/lldp` and `PUT /api/network-services/lldp` with
+`{"enabled": true, "device_types": ["wireless_ap"]}`. Leave out `device_types` to target
+every type. The older `/api/routers/lldp` and `/api/switches/lldp` still work.
+
 ### SNMP contact and location per device
 
 SNMP settings are applied when you press **Apply**, to every online switch (or router) in

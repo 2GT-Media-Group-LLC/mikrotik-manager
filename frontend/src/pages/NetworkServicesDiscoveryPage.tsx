@@ -2,18 +2,19 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Radio, RefreshCw, CheckCircle, XCircle, AlertCircle, Check,
-  HelpCircle, Shield, Eye, EyeOff, Router as RouterIcon, Layers,
+  HelpCircle, Shield, Eye, EyeOff, Router as RouterIcon, Layers, Wifi, Box,
 } from 'lucide-react';
-import { routersApi, switchesApi } from '../services/api';
+import { routersApi, switchesApi, networkServicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import clsx from 'clsx';
 
-type Scope = 'all' | 'routers' | 'switches';
+type Scope = 'all' | 'routers' | 'switches' | 'aps';
+type Kind = 'router' | 'switch' | 'wireless_ap' | 'other';
 
 interface LldpRow {
   id: number; name: string; ip_address: string;
   enabled: boolean | null; protocol: string | null; error?: string;
-  kind: 'router' | 'switch';
+  kind: Kind;
 }
 
 interface SnmpRow {
@@ -55,22 +56,36 @@ const SCOPES: { key: Scope; label: string }[] = [
   { key: 'all',      label: 'All Devices' },
   { key: 'routers',  label: 'Routers' },
   { key: 'switches', label: 'Switches' },
+  { key: 'aps',      label: 'Wireless APs' },
 ];
 
+/** SNMP here covers routers and switches only. */
 function scopeNoun(scope: Scope): string {
   return scope === 'routers' ? 'routers' : scope === 'switches' ? 'switches' : 'routers & switches';
 }
 
-function KindPill({ kind }: { kind: 'router' | 'switch' }) {
+/** LLDP covers every RouterOS device, access points included. */
+function lldpNoun(scope: Scope): string {
+  return scope === 'routers' ? 'routers' : scope === 'switches' ? 'switches' : scope === 'aps' ? 'wireless APs' : 'devices';
+}
+
+const SCOPE_KIND: Record<Exclude<Scope, 'all'>, Kind> = { routers: 'router', switches: 'switch', aps: 'wireless_ap' };
+
+function toKind(t: string): Kind {
+  return t === 'router' || t === 'switch' || t === 'wireless_ap' ? t : 'other';
+}
+
+function KindPill({ kind }: { kind: Kind }) {
+  const look = {
+    router:      { cls: 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300', icon: <RouterIcon className="w-3 h-3" />, label: 'Router' },
+    switch:      { cls: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300', icon: <Layers className="w-3 h-3" />, label: 'Switch' },
+    wireless_ap: { cls: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300', icon: <Wifi className="w-3 h-3" />, label: 'AP' },
+    other:       { cls: 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300', icon: <Box className="w-3 h-3" />, label: 'Other' },
+  }[kind];
   return (
-    <span className={clsx(
-      'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium',
-      kind === 'router'
-        ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300'
-        : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-    )}>
-      {kind === 'router' ? <RouterIcon className="w-3 h-3" /> : <Layers className="w-3 h-3" />}
-      {kind === 'router' ? 'Router' : 'Switch'}
+    <span className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium', look.cls)}>
+      {look.icon}
+      {look.label}
     </span>
   );
 }
@@ -103,42 +118,36 @@ export default function NetworkServicesDiscoveryPage() {
   const canWrite = useCanWrite();
   const [scope, setScope] = useState<Scope>('all');
 
-  const inScope = <T extends { kind: 'router' | 'switch' }>(rows: T[]) =>
-    scope === 'all' ? rows : rows.filter(r => (scope === 'routers' ? r.kind === 'router' : r.kind === 'switch'));
+  const inScope = <T extends { kind: Kind }>(rows: T[]) =>
+    scope === 'all' ? rows : rows.filter(r => r.kind === SCOPE_KIND[scope]);
 
   // ── LLDP state ──────────────────────────────────────────────────────────────
   const [lldpApplyResult, setLldpApplyResult] = useState<{ applied: number; total: number } | null>(null);
   const [lldpApplyError, setLldpApplyError]   = useState('');
 
-  const routerLldp = useQuery({
-    queryKey: ['routers-lldp'],
-    queryFn: () => routersApi.getLldpStatus().then(r => r.data),
-  });
-  const switchLldp = useQuery({
-    queryKey: ['switches-lldp'],
-    queryFn: () => switchesApi.getLldpStatus().then(r => r.data),
+  // Every device type in one call. Access points and "other" devices run
+  // RouterOS too and have the same discovery settings; this used to list only
+  // routers and switches.
+  const lldpQuery = useQuery({
+    queryKey: ['lldp-all'],
+    queryFn: () => networkServicesApi.getLldp().then(r => r.data),
   });
 
-  const lldpLoading  = routerLldp.isLoading || switchLldp.isLoading;
-  const lldpFetching = routerLldp.isFetching || switchLldp.isFetching;
-  const refetchLldp  = () => { routerLldp.refetch(); switchLldp.refetch(); };
+  const lldpLoading  = lldpQuery.isLoading;
+  const lldpFetching = lldpQuery.isFetching;
+  const refetchLldp  = () => { lldpQuery.refetch(); };
 
-  const lldpAll: LldpRow[] = [
-    ...(routerLldp.data ?? []).map(r => ({ ...r, kind: 'router' as const })),
-    ...(switchLldp.data ?? []).map(r => ({ ...r, kind: 'switch' as const })),
-  ];
+  const kindOrder: Kind[] = ['router', 'switch', 'wireless_ap', 'other'];
+  const lldpAll: LldpRow[] = (lldpQuery.data ?? [])
+    .map(r => ({ ...r, kind: toKind(r.device_type) }))
+    .sort((a, b) => kindOrder.indexOf(a.kind) - kindOrder.indexOf(b.kind) || a.name.localeCompare(b.name));
   const lldpStatuses = inScope(lldpAll);
 
   const setLldpMutation = useMutation({
     mutationFn: async (enabled: boolean) => {
-      const calls = [];
-      if (scope !== 'switches') calls.push(routersApi.setLldp(enabled));
-      if (scope !== 'routers')  calls.push(switchesApi.setLldp(enabled));
-      const results = await Promise.all(calls);
-      return results.reduce(
-        (acc, r) => ({ applied: acc.applied + r.data.applied, total: acc.total + r.data.total }),
-        { applied: 0, total: 0 },
-      );
+      const types = scope === 'all' ? undefined : [SCOPE_KIND[scope]];
+      const r = await networkServicesApi.setLldp(enabled, types);
+      return { applied: r.data.applied, total: r.data.total };
     },
     onSuccess: (res) => { setLldpApplyResult(res); setLldpApplyError(''); refetchLldp(); },
     onError: (err: unknown) => {
@@ -202,8 +211,8 @@ export default function NetworkServicesDiscoveryPage() {
   const setSnmpMutation = useMutation({
     mutationFn: async () => {
       const calls = [];
-      if (scope !== 'switches') calls.push(routersApi.setSnmp(snmpForm));
-      if (scope !== 'routers')  calls.push(switchesApi.setSnmp(snmpForm));
+      if (scope === 'all' || scope === 'routers')  calls.push(routersApi.setSnmp(snmpForm));
+      if (scope === 'all' || scope === 'switches') calls.push(switchesApi.setSnmp(snmpForm));
       const results = await Promise.all(calls);
       return results.reduce(
         (acc, r) => ({ applied: acc.applied + r.data.applied, total: acc.total + r.data.total }),
@@ -274,19 +283,19 @@ export default function NetworkServicesDiscoveryPage() {
                           'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'
           )}>
             {allEnabled ? <CheckCircle className="w-4 h-4" /> : allDisabled ? <XCircle className="w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
-            {allEnabled  ? `LLDP is enabled on all online ${scopeNoun(scope)}` :
-             allDisabled ? `LLDP is disabled on all online ${scopeNoun(scope)}` :
-                           `LLDP state is mixed across ${scopeNoun(scope)}`}
+            {allEnabled  ? `LLDP is enabled on all online ${lldpNoun(scope)}` :
+             allDisabled ? `LLDP is disabled on all online ${lldpNoun(scope)}` :
+                           `LLDP state is mixed across ${lldpNoun(scope)}`}
           </div>
         )}
 
         {lldpLoading ? (
           <div className="flex items-center gap-2 text-sm text-gray-400">
-            <RefreshCw className="w-4 h-4 animate-spin" /> Checking LLDP status on all {scopeNoun(scope)}…
+            <RefreshCw className="w-4 h-4 animate-spin" /> Checking LLDP status on all {lldpNoun(scope)}…
           </div>
         ) : lldpStatuses.length === 0 ? (
           <p className="text-sm text-gray-400 dark:text-slate-500">
-            No online {scopeNoun(scope)} found. Devices must be online to check or change LLDP settings.
+            No online {lldpNoun(scope)} found. Devices must be online to check or change LLDP settings.
           </p>
         ) : (
           <div className="rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
@@ -329,7 +338,7 @@ export default function NetworkServicesDiscoveryPage() {
 
         {lldpApplyResult && (
           <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-            <Check className="w-4 h-4" /> Applied to {lldpApplyResult.applied} of {lldpApplyResult.total} {scopeNoun(scope)}
+            <Check className="w-4 h-4" /> Applied to {lldpApplyResult.applied} of {lldpApplyResult.total} {lldpNoun(scope)}
           </div>
         )}
         {lldpApplyError && (
@@ -365,6 +374,19 @@ export default function NetworkServicesDiscoveryPage() {
       </div>
 
       {/* ── SNMP Card ───────────────────────────────────────────────────────────── */}
+      {scope === 'aps' ? (
+        <div className="card p-6 flex items-start gap-3">
+          <div className="w-9 h-9 bg-purple-50 dark:bg-purple-900/20 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-900 dark:text-white">SNMP</h2>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+              SNMP settings here cover routers and switches. Pick one of those tabs to configure it.
+            </p>
+          </div>
+        </div>
+      ) : (
       <div className="card p-6 space-y-5">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 bg-purple-50 dark:bg-purple-900/20 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -594,11 +616,12 @@ export default function NetworkServicesDiscoveryPage() {
             >
               {setSnmpMutation.isPending
                 ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Applying…</>
-                : <><Check className="w-3.5 h-3.5" /> Apply to {scope === 'all' ? 'All Devices' : scope === 'routers' ? 'All Routers' : 'All Switches'}</>}
+                : <><Check className="w-3.5 h-3.5" /> Apply to {scope === 'all' ? 'All Routers & Switches' : scope === 'routers' ? 'All Routers' : 'All Switches'}</>}
             </button>
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
