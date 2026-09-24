@@ -834,6 +834,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Discovery and SNMP">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#snmp-contact-and-location-per-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      SNMP contact and location per device
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -1138,6 +1153,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Discovery and SNMP">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#snmp-contact-and-location-per-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      SNMP contact and location per device
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -1202,6 +1232,54 @@ them. Rules can be toggled without deleting them.</p>
 <p>Neighbour discovery protocol settings (LLDP, CDP, MNDP) per device, and SNMP configuration.</p>
 <p>Discovery is what populates the topology map and finds devices to adopt. Turning it off on a
 device makes that device invisible to its neighbours — and this platform.</p>
+<p>The LLDP section covers every online device in the current site: routers, switches, wireless
+APs and anything else running RouterOS. Use the tabs to narrow it to one type. <strong>Enable</strong> and
+<strong>Disable</strong> only touch the devices listed.</p>
+<p>The API is <code>GET /api/network-services/lldp</code> and <code>PUT /api/network-services/lldp</code> with
+<code>{"enabled": true, "device_types": ["wireless_ap"]}</code>. Leave out <code>device_types</code> to target
+every type. The older <code>/api/routers/lldp</code> and <code>/api/switches/lldp</code> still work.</p>
+<h3 id="snmp-contact-and-location-per-device">SNMP contact and location per device<a class="headerlink" href="#snmp-contact-and-location-per-device" title="Permanent link">&para;</a></h3>
+<p>SNMP settings are applied when you press <strong>Apply</strong>, to every online switch (or router) in
+the current site. They are never pushed automatically. Contact, location and trap target can
+use variables, filled in per device:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{identity}</code></td>
+<td>RouterOS identity (<code>/system identity</code>). <code>{$systemidentity}</code> also works</td>
+</tr>
+<tr>
+<td><code>{name}</code></td>
+<td>Device name in the manager</td>
+</tr>
+<tr>
+<td><code>{ip}</code></td>
+<td>Management address</td>
+</tr>
+<tr>
+<td><code>{model}</code>, <code>{serial}</code></td>
+<td>From the device</td>
+</tr>
+<tr>
+<td><code>{site}</code></td>
+<td>Site name</td>
+</tr>
+<tr>
+<td><code>{location}</code></td>
+<td>The device's location address in the manager</td>
+</tr>
+</tbody>
+</table>
+<p>For example, contact <code>{identity}@example.com</code> or location <code>{site} / {location}</code>. An unknown
+variable is rejected before anything is written.</p>
+<p>A blank field keeps each device's current value. Before 0.24.26 a blank field overwrote it
+with nothing.</p>
 
 
 

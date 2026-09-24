@@ -688,6 +688,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Waves">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waves-from-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      Waves from tags
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#update-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update channels
+    </span>
+  </a>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1102,6 +1126,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Waves">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waves-from-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      Waves from tags
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#update-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update channels
+    </span>
+  </a>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1217,12 +1265,32 @@ return cleanly the device is asked again on a fresh connection what actually
 happened, rather than being declared failed: a slow download is not a broken one.</p>
 </div>
 <h2 id="waves">Waves<a class="headerlink" href="#waves" title="Permanent link">&para;</a></h2>
-<p>Waves are the point. Devices are assigned to wave 1, 2 or 3, and <strong>waves run strictly
+<p>Waves are the point. Devices are assigned to waves 1 to 9, and <strong>waves run strictly
 in sequence</strong>. Wave 1 is your canary: put one device in it, let it finish, and the
 rest of the fleet is still untouched if it goes wrong.</p>
 <p><strong>Halt on failure</strong> stops the rollout rather than continuing into the next wave.
 Devices never reached are marked <code>skipped</code>, not <code>failed</code> — they did not run.</p>
 <p>A device that comes back on the <em>old</em> version counts as a failure.</p>
+<h3 id="waves-from-tags">Waves from tags<a class="headerlink" href="#waves-from-tags" title="Permanent link">&para;</a></h3>
+<p><a href="../devices/">Tags</a> are how devices are grouped. Next to <strong>Select all updatable</strong> there is a
+chip for each tag in use. Clicking one adds that tag's updatable devices as the next wave. A
+typical rollout is one canary device in wave 1, then <code>lab</code>, then <code>branch</code>, then <code>core</code>.</p>
+<h2 id="update-channels">Update channels<a class="headerlink" href="#update-channels" title="Permanent link">&para;</a></h2>
+<p>RouterOS checks for updates on a channel: <code>stable</code>, <code>long-term</code>, <code>testing</code> or <code>development</code>.
+The <strong>Update channel</strong> card sets it.</p>
+<ul>
+<li><strong>Fleet default</strong> applies to every device. <em>Leave each device on its own channel</em> means the manager never changes a
+  device's channel.</li>
+<li><strong>Overrides</strong> pick a tag or a single device and give it a different channel, or set it back
+  to <em>follow fleet default</em>. A device override wins over the fleet default.</li>
+</ul>
+<p>The channel is written to the device (<code>/system/package/update/set channel=...</code>) the next time
+the manager checks it for updates, and only if it differs. The card also shows the channel
+each device last reported.</p>
+<div class="admonition note">
+<p class="admonition-title">RouterOS v6 to v7</p>
+<p>Moving a v6 device to v7 is not the same as changing channel and is not supported yet.</p>
+</div>
 <h2 id="upgrading-several-devices-at-once">Upgrading several devices at once<a class="headerlink" href="#upgrading-several-devices-at-once" title="Permanent link">&para;</a></h2>
 <p>By default the devices inside a wave upgrade <strong>one at a time</strong>. That is safe and slow:
 a CRS switch can take five minutes to reboot, so ten of them is most of an hour spent
