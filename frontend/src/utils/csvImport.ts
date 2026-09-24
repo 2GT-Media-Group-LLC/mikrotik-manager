@@ -74,8 +74,24 @@ export interface ParseResult {
   ignoredColumns: string[];
 }
 
+/**
+ * The separator a file uses. Excel writes semicolons instead of commas in many
+ * locales (wherever the decimal separator is a comma), and some exports use
+ * tabs. Decided from the header line, counting only characters outside quotes.
+ */
+export function detectDelimiter(headerLine: string): string {
+  const counts: Record<string, number> = { ',': 0, ';': 0, '\t': 0 };
+  let inQuotes = false;
+  for (const ch of headerLine) {
+    if (ch === '"') inQuotes = !inQuotes;
+    else if (!inQuotes && ch in counts) counts[ch]++;
+  }
+  const [best, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return n > 0 ? best : ',';
+}
+
 /** Split one CSV line, honouring quotes and doubled quotes inside them. */
-export function splitCsvLine(line: string): string[] {
+export function splitCsvLine(line: string, delimiter = ','): string[] {
   const out: string[] = [];
   let cur = '';
   let inQuotes = false;
@@ -86,7 +102,7 @@ export function splitCsvLine(line: string): string[] {
       else if (ch === '"') inQuotes = false;
       else cur += ch;
     } else if (ch === '"') inQuotes = true;
-    else if (ch === ',') { out.push(cur); cur = ''; }
+    else if (ch === delimiter) { out.push(cur); cur = ''; }
     else cur += ch;
   }
   out.push(cur);
@@ -114,7 +130,8 @@ export function parseDeviceCsv(
   const headerIdx = lines.findIndex((l) => l.trim() && !l.trim().startsWith('#'));
   if (headerIdx === -1) return { rows: [], fileErrors: ['The file is empty.'], ignoredColumns: [] };
 
-  const header = splitCsvLine(lines[headerIdx]).map((h) => h.toLowerCase().replace(/\s+/g, '_'));
+  const delimiter = detectDelimiter(lines[headerIdx]);
+  const header = splitCsvLine(lines[headerIdx], delimiter).map((h) => h.toLowerCase().replace(/\s+/g, '_'));
   const mapping = header.map((h) => COLUMNS[h]);
   const ignoredColumns = header.filter((h, i) => h && !mapping[i]);
   if (!mapping.includes('ip_address')) {
@@ -131,7 +148,7 @@ export function parseDeviceCsv(
     const raw = lines[i];
     if (!raw.trim() || raw.trim().startsWith('#')) continue;
 
-    const cells = splitCsvLine(raw);
+    const cells = splitCsvLine(raw, delimiter);
     const f: RowFields = {};
     mapping.forEach((key, c) => { if (key && cells[c] !== undefined && cells[c] !== '') f[key] = cells[c]; });
 
@@ -146,8 +163,14 @@ export function parseDeviceCsv(
     const key = addr.toLowerCase();
     if (addr && seen.has(key)) errors.push(`Same address as line ${seen.get(key)}.`);
     else if (addr) seen.set(key, line);
-    const skip = !!addr && existing.has(key);
-    if (skip) warnings.push('Already managed. Skipped.');
+    // The template's example rows use 192.0.2.0/24, which is reserved for
+    // documentation (RFC 5737) and never a real device. Left in by mistake,
+    // they are skipped rather than queued as devices that can never connect.
+    const example = /^192\.0\.2\.\d{1,3}$/.test(addr);
+    const managed = !!addr && existing.has(key);
+    const skip = example || managed;
+    if (example) warnings.push('Example row from the template. Skipped.');
+    else if (managed) warnings.push('Already managed. Skipped.');
 
     let deviceType: string | undefined;
     if (f.device_type) {
@@ -205,11 +228,28 @@ export function parseDeviceCsv(
   return { rows, fileErrors, ignoredColumns };
 }
 
-/** A starter file, offered as a download so people do not have to guess the columns. */
-export const CSV_TEMPLATE = [
-  'name,ip_address,type,preset,notes',
-  'core-sw-01,10.0.0.2,switch,Default,Rack A',
-  'edge-rtr-01,10.0.0.1,router,Default,',
-  '# Without a preset, supply username and password columns instead.',
-  '# Optional: ssh_username, ssh_password, ssh_port. Blank means SSH uses the API login.',
-].join('\n') + '\n';
+/**
+ * A starter file, offered as a download so people do not have to guess the
+ * columns. No comment lines: most people open this in a spreadsheet, where a
+ * "#" note shows up as a row of data. The example rows explain themselves in
+ * the notes column instead, and use documentation addresses (192.0.2.x) so
+ * they are skipped if left in.
+ *
+ * `presetName` is one of the installation's own presets, when it has any, so
+ * the preset example works as written.
+ */
+export function buildCsvTemplate(presetName?: string): string {
+  const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const rows: string[][] = [
+    ['name', 'ip_address', 'type', 'preset', 'username', 'password', 'ssh_username', 'ssh_password', 'notes'],
+  ];
+  if (presetName) {
+    rows.push(['example-switch', '192.0.2.10', 'switch', presetName, '', '', '', '',
+      'Example: logs in with a saved credential preset. Replace these rows with your devices.']);
+  }
+  rows.push(['example-router', '192.0.2.1', 'router', '', 'admin', 'your-password', '', '',
+    'Example: username and password instead of a preset.']);
+  rows.push(['example-ap', '192.0.2.20', 'ap', '', 'admin', 'your-password', 'backup', 'ssh-password',
+    'Example: separate SSH login. Leave SSH blank to use the same login.']);
+  return rows.map((r) => r.map(q).join(',')).join('\r\n') + '\r\n';
+}

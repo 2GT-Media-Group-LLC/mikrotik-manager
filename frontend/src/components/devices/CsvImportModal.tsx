@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { X, Upload, Download, Loader2, Check, AlertTriangle, FileText } from 'lucide-react';
 import clsx from 'clsx';
 import { credentialPresetsApi, devicesApi, type BulkAddJobStatus } from '../../services/api';
-import { parseDeviceCsv, CSV_TEMPLATE, MAX_ROWS } from '../../utils/csvImport';
+import { parseDeviceCsv, buildCsvTemplate, MAX_ROWS } from '../../utils/csvImport';
 
 /**
  * Bulk device import from a CSV file (#160).
@@ -53,7 +53,10 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
   };
 
   const downloadTemplate = () => {
-    const url = URL.createObjectURL(new Blob([CSV_TEMPLATE], { type: 'text/csv' }));
+    // The byte-order mark makes Excel read the file as UTF-8, so preset names
+    // and notes in other scripts survive. The importer strips it again.
+    const template = '\uFEFF' + buildCsvTemplate(presets[0]?.name);
+    const url = URL.createObjectURL(new Blob([template], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
     a.download = 'mikrotik-manager-devices.csv';
@@ -109,18 +112,44 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
         </div>
 
         <div className="p-5 space-y-4">
-          <p className="text-[13px] text-gray-600 dark:text-slate-300">
-            One device per row. Columns: <span className="mono">ip_address</span> (required),
-            <span className="mono"> name</span>, <span className="mono">type</span>, and either
-            <span className="mono"> preset</span> (a credential preset name) or
-            <span className="mono"> username</span> and <span className="mono">password</span>.
-            Optional <span className="mono">ssh_username</span>, <span className="mono">ssh_password</span>
-            and <span className="mono">ssh_port</span>; leave them out and SSH uses the API login.
-            Up to {MAX_ROWS} rows per file.{' '}
-            <button onClick={downloadTemplate} className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 underline">
-              <Download className="w-3 h-3" /> Download a template
+          <div className="text-[13px] text-gray-600 dark:text-slate-300 space-y-2">
+            <p>
+              Start from the template: open it in Excel or Google Sheets, replace the example rows with
+              your devices (one per row), and save as CSV. Up to {MAX_ROWS} devices per file.
+            </p>
+            <button onClick={downloadTemplate} className="btn-secondary inline-flex items-center gap-1.5 text-xs py-1.5">
+              <Download className="w-3.5 h-3.5" /> Download template
             </button>
-          </p>
+          </div>
+
+          <details className="text-[12.5px] rounded border border-gray-200 dark:border-slate-700">
+            <summary className="cursor-pointer px-3 py-2 text-gray-700 dark:text-slate-300 select-none">What goes in each column</summary>
+            <table className="w-full">
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                {[
+                  ['ip_address', 'Required', 'The device\'s IP address or hostname.'],
+                  ['name', 'Optional', 'What to call it here. Blank uses the address.'],
+                  ['type', 'Optional', 'router, switch, ap or other. Blank means router.'],
+                  ['preset', 'Login', presets.length
+                    ? `A saved credential preset, by name (yours: ${presets.map((x) => x.name).join(', ')}).`
+                    : 'A saved credential preset, by name. You have none yet; use username and password.'],
+                  ['username, password', 'Login', 'The RouterOS login, if you are not using a preset.'],
+                  ['ssh_username, ssh_password', 'Optional', 'Only if SSH uses a different login. Blank uses the one above.'],
+                  ['notes', 'Optional', 'Anything you like.'],
+                ].map(([col, need, what]) => (
+                  <tr key={col}>
+                    <td className="px-3 py-1.5 mono text-gray-900 dark:text-white whitespace-nowrap align-top">{col}</td>
+                    <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap align-top">{need}</td>
+                    <td className="px-3 py-1.5 text-gray-600 dark:text-slate-300">{what}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="px-3 py-2 text-[11.5px] text-gray-500 border-t border-gray-100 dark:border-slate-800">
+              Each device needs a login: either a preset, or a username and password. Leave the example
+              rows in by mistake and they&apos;re skipped. Commas, semicolons or tabs between columns all work.
+            </p>
+          </details>
 
           <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer border-gray-300 dark:border-slate-600 hover:border-blue-400">
             <Upload className="w-5 h-5 text-gray-400" />
@@ -145,7 +174,17 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
 
               <div className="flex flex-wrap gap-4 text-[13px]">
                 <span className="text-green-700 dark:text-green-400">{ready.length} ready to import</span>
-                {skipped.length > 0 && <span className="text-gray-500">{skipped.length} already managed, skipped</span>}
+                {skipped.length > 0 && (
+                  <span className="text-gray-500">
+                    {skipped.length} skipped
+                    {' ('}
+                    {[
+                      [skipped.filter((r) => r.warnings.some((w) => w.startsWith('Example'))).length, 'example'],
+                      [skipped.filter((r) => r.warnings.some((w) => w.startsWith('Already'))).length, 'already managed'],
+                    ].filter(([n]) => n).map(([n, l]) => `${n} ${l}`).join(', ')}
+                    {')'}
+                  </span>
+                )}
                 {broken.length > 0 && <span className="text-red-600 dark:text-red-400">{broken.length} with problems</span>}
               </div>
 

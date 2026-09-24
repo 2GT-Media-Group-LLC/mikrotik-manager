@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDeviceCsv, splitCsvLine, MAX_ROWS, CSV_TEMPLATE } from './csvImport';
+import { parseDeviceCsv, splitCsvLine, MAX_ROWS, buildCsvTemplate, detectDelimiter } from './csvImport';
 
 const presets = [{ id: 7, name: 'Default' }, { id: 9, name: 'Core Switches' }];
 
@@ -108,9 +108,43 @@ describe('parseDeviceCsv', () => {
     expect(parseDeviceCsv(`ip,preset\n${body}\n`, presets).fileErrors[0]).toMatch(/limit per import/);
   });
 
-  it('parses its own template cleanly', () => {
-    const r = parseDeviceCsv(CSV_TEMPLATE, presets);
+  it('parses its own template cleanly, with and without presets', () => {
+    for (const t of [buildCsvTemplate('Core Switches'), buildCsvTemplate()]) {
+      const r = parseDeviceCsv(t, presets);
+      expect(r.fileErrors).toEqual([]);
+      expect(r.ignoredColumns).toEqual([]);
+      expect(r.rows.every((x) => x.errors.length === 0)).toBe(true);
+    }
+  });
+
+  it('has no comment lines, which show up as data rows in a spreadsheet', () => {
+    expect(buildCsvTemplate('Default').split(/\r?\n/).some((l) => l.startsWith('#'))).toBe(false);
+  });
+
+  it('skips example rows left in from the template instead of importing them', () => {
+    const r = parseDeviceCsv(buildCsvTemplate('Default') + 'real-sw,10.0.0.9,switch,Default\r\n', presets);
+    const examples = r.rows.filter((x) => x.item?.ip_address?.startsWith('192.0.2.'));
+    expect(examples).toHaveLength(3);
+    expect(examples.every((x) => x.skip && x.warnings.some((w) => /Example row/.test(w)))).toBe(true);
+    const real = r.rows.find((x) => x.item?.ip_address === '10.0.0.9');
+    expect(real?.skip).toBe(false);
+    expect(real?.item).toMatchObject({ name: 'real-sw', credential_preset_id: 7 });
+  });
+
+  it('reads semicolon-separated files, as Excel saves them in many locales', () => {
+    const r = parseDeviceCsv('name;ip_address;type;preset;notes\nsw1;10.0.0.2;switch;Default;"a; b"\n', presets);
     expect(r.fileErrors).toEqual([]);
-    expect(r.rows.every((x) => x.errors.length === 0)).toBe(true);
+    expect(r.rows[0].item).toMatchObject({ name: 'sw1', ip_address: '10.0.0.2', notes: 'a; b' });
+  });
+
+  it('reads tab-separated files', () => {
+    const r = parseDeviceCsv('ip\tpreset\n10.0.0.2\tDefault\n', presets);
+    expect(r.rows[0].item).toMatchObject({ ip_address: '10.0.0.2', credential_preset_id: 7 });
+  });
+
+  it('picks the separator from the header, ignoring ones inside quotes', () => {
+    expect(detectDelimiter('a,b,c')).toBe(',');
+    expect(detectDelimiter('"x;y",b,c')).toBe(',');
+    expect(detectDelimiter('ip')).toBe(',');
   });
 });

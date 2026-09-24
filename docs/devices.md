@@ -19,28 +19,35 @@ closed browser tab and reports progress and failures per device.
 
 ### Importing from CSV
 
-**Import CSV** on the Devices page adds up to 500 devices from a spreadsheet. Download the
-template from the dialog, or write your own. Only `ip` is required:
+**Import CSV** on the Devices page adds up to 500 devices from a spreadsheet.
 
-```csv
-ip,name,type,preset,username,password,port,notes
-10.0.10.1,core-rtr,router,Default,,,,
-10.0.20.5,sw-floor2,switch,,admin,secret,8728,rack B
-```
+1. In the import dialog, click **Download template**.
+2. Open it in Excel or Google Sheets. It has one column per field and a few example rows.
+3. Replace the example rows with your devices, one per row, and save as CSV.
+4. Choose the file in the same dialog.
 
-| Column | Accepts |
-|---|---|
-| `ip` (or `address`, `host`) | IPv4 address or hostname |
-| `name` (or `identity`, `hostname`) | Optional. Defaults to the address |
-| `type` | `router`, `switch`, `ap` / `wireless`, `other`. Defaults to `router` |
-| `preset` | Name of a [credential preset](configuration.md). Use this, or `username` and `password` |
-| `port` | API port. Defaults to 8728 |
-| `ssh_username`, `ssh_password`, `ssh_port` | Optional. Leave them out and SSH uses the API login |
+| Column | Needed | What to put in it |
+|---|---|---|
+| `ip_address` | Required | The device's IP address or hostname |
+| `name` | Optional | What to call it. Blank uses the address |
+| `type` | Optional | `router`, `switch`, `ap` or `other`. Blank means router |
+| `preset` | Login | The name of a saved [credential preset](configuration.md) |
+| `username`, `password` | Login | The RouterOS login, if not using a preset |
+| `ssh_username`, `ssh_password` | Optional | Only if SSH uses a different login. Blank uses the one above |
+| `notes` | Optional | Anything you like |
 
-The file is checked before anything is sent. Each line shows as ready, skipped or a problem,
-with the reason. Addresses that are already managed are skipped. Duplicate addresses inside
-the file are flagged. Unknown columns are listed and ignored. Blank lines and lines starting
-with `#` are ignored.
+Each device needs a login: a preset, or a username and password. `port` and `ssh_port` can
+be added as extra columns if yours aren't the defaults (8728 and 22).
+
+The file is checked before anything is sent. Each row shows as ready, skipped or a problem,
+with the reason. Skipped rows are:
+
+- devices that are already managed
+- the template's example rows, if they were left in (they use `192.0.2.x`, an address range
+  reserved for examples)
+
+Columns can be separated by commas, semicolons (which Excel uses in many countries) or tabs.
+Unknown columns are listed and ignored.
 
 The import runs as the same server-side job as **Try All**, so the tab can be closed.
 
