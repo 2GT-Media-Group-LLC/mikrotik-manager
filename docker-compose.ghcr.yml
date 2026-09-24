@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ─────────────────────────────────────────────────────────────────────────────
 # GENERATED FILE — DO NOT EDIT.
 #
@@ -10,7 +8,6 @@ version: '3.8'
 # Pre-built image deployment — no source code or build toolchain required.
 # For development or building from source, use docker-compose.yml instead.
 # ─────────────────────────────────────────────────────────────────────────────
-
 services:
   nginx:
     image: ghcr.io/2gt-media-group-llc/mikrotik-manager-nginx:latest

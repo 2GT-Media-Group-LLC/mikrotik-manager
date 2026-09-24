@@ -69,10 +69,10 @@ function generate(source) {
     out = out.replace(swap.build, swap.image);
   }
 
-  // Banner goes after the version line so the file still parses from line one.
-  const versionLine = out.match(/^version:.*\n/);
-  if (!versionLine) throw new Error('docker-compose.yml has no version line to anchor the banner to');
-  return out.replace(versionLine[0], versionLine[0] + BANNER);
+  // Compose v2 ignores the top-level `version:` key and warns on every command
+  // that it is obsolete, so neither file carries one any more. The banner is a
+  // comment and can open the file directly.
+  return BANNER.replace(/^\n+/, '') + out.replace(/^version:.*\n\n?/, '');
 }
 
 const generated = generate(readFileSync(SOURCE, 'utf8'));
