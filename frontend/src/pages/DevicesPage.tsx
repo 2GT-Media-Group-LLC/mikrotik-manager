@@ -219,7 +219,8 @@ export default function DevicesPage() {
     () => [...new Set(devices.map(d => d.rack_name).filter(Boolean) as string[])].sort(),
     [devices]);
   const locationOptions = useMemo(
-    () => [...new Set(devices.map(d => d.location_address).filter(Boolean) as string[])].sort(),
+    // Effective location: a device without its own shows under its site's (#167).
+    () => [...new Set(devices.map(d => d.effective_location?.address).filter(Boolean) as string[])].sort(),
     [devices]);
 
   const cpuHistoryResults = useQueries({
@@ -246,12 +247,12 @@ export default function DevicesPage() {
         const q = search.toLowerCase();
         const haystack = [
           d.name, d.ip_address, d.model, d.serial_number,
-          d.location_address, d.rack_name, d.rack_slot,
+          d.effective_location?.address, d.rack_name, d.rack_slot,
         ];
         if (!haystack.some(v => v && String(v).toLowerCase().includes(q))) return false;
       }
       if (rackFilter && d.rack_name !== rackFilter) return false;
-      if (locationFilter && d.location_address !== locationFilter) return false;
+      if (locationFilter && d.effective_location?.address !== locationFilter) return false;
       if (statusFilter === 'online' && d.status !== 'online') return false;
       if (statusFilter === 'offline' && d.status !== 'offline') return false;
       if (statusFilter === 'updates' && !d.firmware_update_available && !d.routerboard_upgrade_available) return false;
@@ -269,7 +270,7 @@ export default function DevicesPage() {
           case 'model': return x.model || '';
           case 'serial_number': return x.serial_number || '';
           case 'rack_name': return x.rack_name || '';
-          case 'location_address': return x.location_address || '';
+          case 'location_address': return x.effective_location?.address || '';
           case 'ros_version': return x.ros_version || '';
           case 'status': return x.status || '';
           case 'last_seen': return x.last_seen ? new Date(x.last_seen).getTime() : 0;
@@ -574,7 +575,7 @@ export default function DevicesPage() {
                         <span
                           className="text-[11.5px] block truncate"
                           style={{ color: 'var(--ink-3)', maxWidth: 100 }}
-                          title={[device.rack_name, device.rack_slot && `slot ${device.rack_slot}`, device.location_address]
+                          title={[device.rack_name, device.rack_slot && `slot ${device.rack_slot}`, device.effective_location?.address]
                             .filter(Boolean).join(' · ') || undefined}
                         >
                           {device.rack_name

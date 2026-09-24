@@ -412,6 +412,40 @@ export const sshKeyApi = {
     '/devices/ssh-keys/deploy-all', { confirm: true }, { timeout: 600_000 }),
 };
 
+// ─── Fleet SSH key deployment (admin) ────────────────────────────────────────
+export interface FleetKeyPreview {
+  eligible: { id: number; name: string; ip_address: string; username: string; source: 'ssh' | 'api' }[];
+  keyed: { id: number; name: string }[];
+  skipped: { id: number; name: string; reason: string }[];
+  accounts: { username: string; devices: number; via_api_login: number }[];
+  halt_after: number;
+}
+
+export interface FleetKeyJob {
+  job_id: string;
+  status: 'queued' | 'active' | 'completed' | 'cancelled' | 'halted' | 'failed';
+  total: number;
+  processed: number;
+  keyed?: number;
+  failed?: number;
+  skipped?: number;
+  current_name?: string | null;
+  error?: string;
+  results: {
+    device_id: number; name: string; outcome: 'keyed' | 'failed' | 'skipped';
+    username?: string; source?: 'ssh' | 'api'; message: string;
+  }[];
+}
+
+export const sshFleetApi = {
+  preview: (tagIds: number[]) =>
+    api.get<FleetKeyPreview>('/ssh-keys/fleet/preview', { params: tagIds.length ? { tag_ids: tagIds.join(',') } : {} }),
+  start: (deviceIds: number[]) =>
+    api.post<{ job_id: string; total: number }>('/ssh-keys/fleet/jobs', { device_ids: deviceIds, confirm: true }),
+  status: (jobId: string) => api.get<FleetKeyJob>(`/ssh-keys/fleet/jobs/${jobId}`),
+  cancel: (jobId: string) => api.post<{ message: string }>(`/ssh-keys/fleet/jobs/${jobId}/cancel`),
+};
+
 
 // ─── Bulk commands (#118) ─────────────────────────────────────────────────────
 

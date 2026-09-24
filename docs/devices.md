@@ -35,6 +35,7 @@ ip,name,type,preset,username,password,port,notes
 | `type` | `router`, `switch`, `ap` / `wireless`, `other`. Defaults to `router` |
 | `preset` | Name of a [credential preset](configuration.md). Use this, or `username` and `password` |
 | `port` | API port. Defaults to 8728 |
+| `ssh_username`, `ssh_password`, `ssh_port` | Optional. Leave them out and SSH uses the API login |
 
 The file is checked before anything is sent. Each line shows as ready, skipped or a problem,
 with the reason. Addresses that are already managed are skipped. Duplicate addresses inside

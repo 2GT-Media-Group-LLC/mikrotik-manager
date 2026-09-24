@@ -82,7 +82,7 @@ use variables, filled in per device:
 | `{ip}` | Management address |
 | `{model}`, `{serial}` | From the device |
 | `{site}` | Site name |
-| `{location}` | The device's location address in the manager |
+| `{location}` | The device's location, or its site's address if it has none |
 
 For example, contact `{identity}@example.com` or location `{site} / {location}`. An unknown
 variable is rejected before anything is written.

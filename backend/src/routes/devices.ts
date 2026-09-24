@@ -22,6 +22,9 @@ import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAdd
 import { logSafe } from '../utils/logSafe';
 import { updateAvailable } from '../utils/rosVersion';
 import { DEVICE_BASE_COLUMNS } from '../services/deviceColumns';
+import { withEffectiveLocation } from '../services/deviceLocation';
+import { SSH_TARGET_COLS } from '../services/SshKeyService';
+import { classifyKeyTarget } from '../utils/sshKeyCredentials';
 import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
 import { siteScopeDevices, andSite } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
@@ -99,12 +102,12 @@ router.get('/', async (req: Request, res: Response) => {
     if (!tagsByDevice[t.device_id]) tagsByDevice[t.device_id] = [];
     tagsByDevice[t.device_id].push({ id: t.id, name: t.name, color: t.color });
   }
-  const result = (devices as { id: number }[]).map((d) => ({
+  const result = (devices as { id: number; site_id: number | null }[]).map((d) => ({
     ...d,
     tags: tagsByDevice[d.id] ?? [],
   }));
 
-  res.json(result);
+  res.json(await withEffectiveLocation(result));
 });
 
 // ─── Routers overview (router-type devices with route counts) ─────────────────
@@ -366,7 +369,8 @@ router.get('/:id', async (req: Request, res: Response) => {
     [req.params.id]
   );
   if (!device) return res.status(404).json({ error: 'Device not found' });
-  return res.json(device);
+  const [withLoc] = await withEffectiveLocation([device as { site_id: number | null }]);
+  return res.json(withLoc);
 });
 
 // PATCH /api/devices/:id/location — save physical location & rack info
@@ -405,7 +409,8 @@ router.patch('/:id/location', requireWrite, async (req: Request, res: Response) 
      FROM devices WHERE id = $1`,
     [req.params.id]
   );
-  return res.json(updated);
+  const [withLoc] = await withEffectiveLocation([updated as { site_id: number | null }]);
+  return res.json(withLoc);
 });
 
 // PUT /api/devices/:id
@@ -1605,9 +1610,6 @@ router.post('/:id/check-update', async (req: Request, res: Response) => {
 
 // ─── Per-device SSH keys (#110) ──────────────────────────────────────────────
 
-const SSH_TARGET_COLS =
-  `id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
-   api_port, api_username, api_password_encrypted`;
 
 /**
  * GET /api/devices/:id/ssh-key — key status.
@@ -1708,14 +1710,18 @@ router.post('/ssh-keys/deploy-all', requireWrite, async (req: Request, res: Resp
     });
   }
 
-  const targets = await query<any>(
-    `SELECT ${SSH_TARGET_COLS} FROM devices d
-      WHERE d.status != 'disabled' AND d.ssh_username IS NOT NULL
-        AND d.ssh_password_encrypted IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM device_ssh_keys k WHERE k.device_id = d.id AND k.status = 'verified')
+  // Same eligibility as the fleet job (/api/ssh-keys/fleet), including the
+  // API-login fallback. Kept for API callers; it runs inside one request, so
+  // large fleets should use the job instead.
+  const candidates = await query<any>(
+    `SELECT ${SSH_TARGET_COLS}, d.status,
+            EXISTS (SELECT 1 FROM device_ssh_keys k WHERE k.device_id = d.id AND k.status = 'verified')
+              AS has_verified_key
+       FROM devices d
+      WHERE d.status != 'disabled'
       ORDER BY d.name`
   );
+  const targets = candidates.filter((t) => classifyKeyTarget(t).kind === 'eligible');
 
   const { sshKeyService } = await import('../services/SshKeyService');
   const results: { device_id: number; name: string; ok: boolean; error?: string }[] = [];

@@ -18,8 +18,14 @@ import {
   generateDeviceKeyPair, keyFileName, keyComment, isUsablePrivateKey, type KeyStatus,
 } from '../utils/sshKeys';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
+import { resolveKeyCredentials } from '../utils/sshKeyCredentials';
 
 const CONNECT_TIMEOUT_MS = 20_000;
+
+/** The device columns an SshTarget needs. */
+export const SSH_TARGET_COLS =
+  `id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
+   api_port, api_username, api_password_encrypted`;
 
 export interface SshTarget {
   id: number;
@@ -171,13 +177,22 @@ export class SshKeyService {
    * just installed rather than leaving the device in that state.
    */
   async deploy(target: SshTarget, opts: { rotate?: boolean } = {}): Promise<DeviceKeyRow> {
-    const username = target.ssh_username?.trim();
-    if (!username) throw new Error('No SSH username configured for this device');
-
     const existing = await this.getKey(target.id);
-    const canUseExistingKey = existing && existing.status === 'verified';
-    if (!canUseExistingKey && !target.ssh_password_encrypted) {
-      throw new Error('An SSH password is required to install the first key');
+    const canUseExistingKey = !!existing && existing.status === 'verified';
+
+    // A rotation must use the account that already holds the key, whatever the
+    // device's stored logins say now. A first install uses resolveKeyCredentials:
+    // stored SSH login, or the API login when no SSH login is stored.
+    let username: string;
+    let passwordEncrypted: string | null = null;
+    if (canUseExistingKey) {
+      username = existing!.ssh_username || target.ssh_username?.trim() || target.api_username?.trim() || '';
+      if (!username) throw new Error('No SSH username on record for the existing key');
+    } else {
+      const cred = resolveKeyCredentials(target);
+      if (!cred.ok) throw new Error(cred.reason);
+      username = cred.username;
+      passwordEncrypted = cred.passwordEncrypted;
     }
 
     const pair = generateDeviceKeyPair(target.id);
@@ -190,7 +205,7 @@ export class SshKeyService {
     // password is no longer an option, so this order is not a preference.
     const auth: Auth = canUseExistingKey
       ? { privateKey: decrypt(existing!.private_key_encrypted) }
-      : { password: decrypt(target.ssh_password_encrypted!) };
+      : { password: decrypt(passwordEncrypted!) };
 
     const fileName = keyFileName(target.id);
     try {
@@ -302,7 +317,7 @@ export class SshKeyService {
   async verify(target: SshTarget): Promise<{ ok: boolean; error?: string }> {
     const row = await this.getKey(target.id);
     if (!row) return { ok: false, error: 'No key on record for this device' };
-    const username = row.ssh_username || target.ssh_username || '';
+    const username = row.ssh_username || target.ssh_username || target.api_username || '';
     if (!username) return { ok: false, error: 'No SSH username configured' };
 
     const result = await this.tryKey(target, username, decrypt(row.private_key_encrypted));

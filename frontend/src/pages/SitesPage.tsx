@@ -8,6 +8,7 @@ import { sitesApi, settingsApi } from '../services/api';
 import { useSiteStore, type Site } from '../store/siteStore';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { geocodeAddress, OSM_TILE_URL, OSM_ATTRIBUTION } from '../utils/geocode';
+import { escapeHtml } from '../utils/escapeHtml';
 
 /** World map with one pin per site that has coordinates. */
 function SitesMap({ sites, onSelect }: { sites: Site[]; onSelect: (id: number) => void }) {
@@ -30,7 +31,7 @@ function SitesMap({ sites, onSelect }: { sites: Site[]; onSelect: (id: number) =
         fillOpacity: 0.9,
       }).addTo(map);
       marker.bindPopup(
-        `<b>${s.name}</b><br/>${s.address ?? ''}<br/>` +
+        `<b>${escapeHtml(s.name)}</b><br/>${escapeHtml(s.address ?? '')}<br/>` +
         `${s.device_count} device${s.device_count === 1 ? '' : 's'}` +
         `${s.device_count ? ` &middot; ${s.online_count} online` : ''}`
       );

@@ -610,7 +610,8 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
 
         <div className="card p-5">
 
-          <SshKeyCard deviceId={deviceId} sshUsername={device.ssh_username} />
+          {/* No SSH login stored means the key is installed for the API user (see resolveKeyCredentials). */}
+          <SshKeyCard deviceId={deviceId} sshUsername={device.ssh_username || device.api_username} />
 
         </div>
 

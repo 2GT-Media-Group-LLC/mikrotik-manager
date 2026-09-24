@@ -9,6 +9,7 @@ import { devicesApi, settingsApi, sitesApi } from '../../services/api';
 import type { Device } from '../../types';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { geocodeAddress, OSM_TILE_URL, OSM_ATTRIBUTION } from '../../utils/geocode';
+import { escapeHtml } from '../../utils/escapeHtml';
 import { Network } from 'lucide-react';
 
 interface Props {
@@ -33,7 +34,7 @@ function MapEmbed({ lat, lng, address }: { lat: number | string; lng: number | s
     L.tileLayer(OSM_TILE_URL, { attribution: OSM_ATTRIBUTION }).addTo(map);
     L.circleMarker([latN, lngN], {
       radius: 9, color: '#fff', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.9,
-    }).bindPopup(`<b>${address}</b>`).addTo(map);
+    }).bindPopup(`<b>${escapeHtml(address)}</b>`).addTo(map);
     map.setView([latN, lngN], 15);
     return () => { map.remove(); };
   }, [latN, lngN, address]);
@@ -101,8 +102,11 @@ export default function DeviceLocationSection({ device }: Props) {
     notes: device.notes ?? '',
   });
 
-  const hasMap = device.location_lat != null && device.location_lng != null
-    && !isNaN(Number(device.location_lat)) && !isNaN(Number(device.location_lng));
+  // Shown location: the device's own, or its site's when it has none (#167).
+  const effective = device.effective_location ?? null;
+  const inherited = effective?.source === 'site';
+  const siteAddress = currentSite?.address?.trim() || '';
+  const hasMap = effective?.lat != null && effective?.lng != null;
 
   const mutation = useMutation({
     mutationFn: async (f: LocationForm) => {
@@ -207,9 +211,23 @@ export default function DeviceLocationSection({ device }: Props) {
                 className="input"
                 value={form.location_address}
                 onChange={(e) => setForm((f) => ({ ...f, location_address: e.target.value }))}
-                placeholder="123 Main St, City, State 00000"
+                placeholder={siteAddress ? `From site: ${siteAddress}` : '123 Main St, City, State 00000'}
               />
-              <p className="text-xs text-gray-400 mt-1">Address will be geocoded and shown on the map.</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {siteAddress
+                  ? <>Leave blank to use the site&apos;s address. Only set this if the device is somewhere else.{' '}</>
+                  : null}
+                {mapsEnabled ? 'An address entered here is geocoded and shown on the map.' : ''}
+              </p>
+              {siteAddress && form.location_address && (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, location_address: '' }))}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                >
+                  Use the site&apos;s address instead
+                </button>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -279,7 +297,8 @@ export default function DeviceLocationSection({ device }: Props) {
                 emptyText="Unassigned" />
             )}
             <InfoRow icon={<MapPin className="w-3.5 h-3.5 text-blue-500" />} label="Location"
-              value={device.location_address}
+              value={effective?.address ?? undefined}
+              hint={inherited ? 'From site' : undefined}
               emptyText="No location set" />
             <InfoRow icon={<Building2 className="w-3.5 h-3.5 text-blue-500" />} label="Rack"
               value={device.rack_name}
@@ -307,9 +326,9 @@ export default function DeviceLocationSection({ device }: Props) {
           map requests are permitted. */}
       {hasMap && !editing && mapsEnabled && (
         <MapEmbed
-          lat={device.location_lat!}
-          lng={device.location_lng!}
-          address={device.location_address!}
+          lat={effective!.lat!}
+          lng={effective!.lng!}
+          address={effective!.address ?? ''}
         />
       )}
     </div>
@@ -317,12 +336,14 @@ export default function DeviceLocationSection({ device }: Props) {
 }
 
 function InfoRow({
-  icon, label, value, emptyText,
+  icon, label, value, emptyText, hint,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string | undefined;
   emptyText: string;
+  /** Small note after the value, e.g. where it came from. */
+  hint?: string;
 }) {
   return (
     <div className="flex items-start gap-2">
@@ -335,6 +356,11 @@ function InfoRow({
           ? <span className="text-gray-900 dark:text-white">{value}</span>
           : <span className="text-gray-400 dark:text-slate-500 italic">{emptyText}</span>
         }
+        {value && hint && (
+          <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400">
+            {hint}
+          </span>
+        )}
       </div>
     </div>
   );

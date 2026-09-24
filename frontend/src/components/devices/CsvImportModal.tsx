@@ -114,6 +114,8 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
             <span className="mono"> name</span>, <span className="mono">type</span>, and either
             <span className="mono"> preset</span> (a credential preset name) or
             <span className="mono"> username</span> and <span className="mono">password</span>.
+            Optional <span className="mono">ssh_username</span>, <span className="mono">ssh_password</span>
+            and <span className="mono">ssh_port</span>; leave them out and SSH uses the API login.
             Up to {MAX_ROWS} rows per file.{' '}
             <button onClick={downloadTemplate} className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 underline">
               <Download className="w-3 h-3" /> Download a template

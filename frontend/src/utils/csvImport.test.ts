@@ -18,6 +18,28 @@ describe('parseDeviceCsv', () => {
     });
   });
 
+  it('passes SSH credentials through when given (#160 follow-up)', () => {
+    const r = parseDeviceCsv('ip,username,password,ssh_username,ssh_password,ssh_port\n10.0.0.5,admin,a,backup,b,2222\n', presets);
+    expect(r.rows[0].item).toMatchObject({ ssh_username: 'backup', ssh_password: 'b', ssh_port: 2222 });
+  });
+
+  it('leaves SSH out when blank, so SSH falls back to the API login', () => {
+    const r = parseDeviceCsv('ip,username,password,ssh_username,ssh_password\n10.0.0.5,admin,a,,\n', presets);
+    expect(r.rows[0].item).not.toHaveProperty('ssh_username');
+    expect(r.rows[0].errors).toEqual([]);
+  });
+
+  it('rejects half an SSH credential', () => {
+    const r = parseDeviceCsv('ip,username,password,ssh_username\n10.0.0.5,admin,a,backup\n', presets);
+    expect(r.rows[0].errors.join(' ')).toMatch(/both ssh_username and ssh_password/);
+  });
+
+  it('warns that SSH columns are ignored alongside a preset', () => {
+    const r = parseDeviceCsv('ip,preset,ssh_username,ssh_password\n10.0.0.5,Default,x,y\n', presets);
+    expect(r.rows[0].warnings.join(' ')).toMatch(/preset's SSH settings/);
+    expect(r.rows[0].item).not.toHaveProperty('ssh_username');
+  });
+
   it('matches preset names case-insensitively', () => {
     const r = parseDeviceCsv('ip,preset\n10.0.0.2,core switches\n', presets);
     expect(r.rows[0].item?.credential_preset_id).toBe(9);

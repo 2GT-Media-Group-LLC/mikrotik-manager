@@ -71,6 +71,16 @@ export interface Device {
   location_address?: string;
   location_lat?: number;
   location_lng?: number;
+  /**
+   * Where the device is for display: its own location, or its site's when it
+   * has none (#167). Computed by the server; never saved on the device.
+   */
+  effective_location?: {
+    address: string | null;
+    lat: number | null;
+    lng: number | null;
+    source: 'device' | 'site';
+  } | null;
   rack_name?: string;
   rack_slot?: string;
   /** Detected wireless role: none | standalone | cap | controller | controller_cap. */

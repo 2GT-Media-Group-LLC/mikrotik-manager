@@ -17,6 +17,7 @@ function extractEntity(path: string): { entityType: string | null; entityId: num
     'network-services': 'network_services',
     'credential-presets': 'credential_preset',
     'audit-log': 'audit_log',
+    'ssh-keys': 'ssh_keys',
     users: 'user',
   };
   const entityType = resourceMap[segments[0]] ?? segments[0] ?? null;
@@ -43,16 +44,21 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
     return;
   }
 
+  // Captured now, not in 'finish'. By the time the response finishes, Express
+  // has rewritten req.path to be relative to the router that handled it, so
+  // POST /api/devices/8/sync was recorded as "/8/sync" with no entity type.
+  const fullPath = (req.originalUrl || req.url).split('?')[0];
+
   res.on('finish', () => {
-    const { entityType, entityId } = extractEntity(req.path);
+    const { entityType, entityId } = extractEntity(fullPath);
     const { userId, username } = extractUser(req);
-    const summary = `${req.method} ${req.path}`;
+    const summary = `${req.method} ${fullPath}`;
     const ip = (req.ip ?? '').replace(/^::ffff:/, '');
 
     query(
       `INSERT INTO audit_log (user_id, username, method, path, entity_type, entity_id, summary, ip_address, status_code)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [userId, username, req.method, req.path, entityType, entityId, summary, ip, res.statusCode]
+      [userId, username, req.method, fullPath, entityType, entityId, summary, ip, res.statusCode]
     ).catch(() => {});
   });
 

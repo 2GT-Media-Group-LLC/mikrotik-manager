@@ -25,6 +25,8 @@ import {
   startBulkAddWorker,
   stopBulkAddWorker,
 } from './services/DeviceBulkAddWorker';
+import { startSshKeyFleetWorker, stopSshKeyFleetWorker } from './services/SshKeyFleetWorker';
+import sshKeysRoutes from './routes/sshKeys';
 import { netflowCollector } from './services/netflow/NetflowCollector';
 import { verifyToken, type AuthPayload } from './middleware/auth';
 import { rateLimitRedis } from './middleware/rateLimitRedis';
@@ -343,6 +345,7 @@ app.use('/api/config-history', configHistoryRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/commands', commandRoutes);
 app.use('/api/sites', sitesRoutes);
+app.use('/api/ssh-keys', sshKeysRoutes);
 app.use('/api/certificates', certificatesRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
@@ -415,6 +418,7 @@ async function start(): Promise<void> {
   void pollerService.dropStalePending().catch((e) =>
     console.error('[Poller] Stale-pending sweep failed:', e));
   await startBulkAddWorker();
+  await startSshKeyFleetWorker();
 
   // NetFlow/IPFIX collector (binds its UDP socket only when netflow_enabled)
   await netflowCollector.start();
@@ -442,6 +446,7 @@ async function start(): Promise<void> {
   const shutdown = async () => {
     console.log('Shutting down...');
     await stopBulkAddWorker();
+    await stopSshKeyFleetWorker();
     await netflowCollector.stop();
     await pollerService.stop();
     await redis.quit().catch(() => {});

@@ -51,6 +51,16 @@ Pins require an address, which is geocoded via Nominatim when you save it. If
 **Settings → Maps enabled** is off, no geocoding or tile request is made and the map is
 hidden; addresses are still stored and shown as text.
 
+## Site address and device locations
+
+A device uses its site's address unless it has its own location. That covers the dashboard
+map, the Devices location filter and the SNMP `{location}` variable. Set a device's own
+location under **Overview → Physical Details** only when it isn't at the site's address, for
+example another building. Clear it to go back to the site's address.
+
+Nothing is copied into the devices, so changing a site's address updates every device that
+uses it.
+
 ## What sites scope, and what they do not
 
 Scoped to the selected site:

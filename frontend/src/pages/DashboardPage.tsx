@@ -19,6 +19,7 @@ import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
 import { fleetStatus } from '../utils/fleetStatus';
+import { escapeHtml } from '../utils/escapeHtml';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -77,11 +78,12 @@ function TypePill({ type }: { type: string }) {
 
 // ─── Device Locations Map ─────────────────────────────────────────────────────
 
+
 function DeviceLocationsMap({ devices }: { devices: Device[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Devices without their own location sit at their site's (#167).
   const mapped = useMemo(() =>
-    devices.filter(d => d.location_lat != null && d.location_lng != null &&
-      !isNaN(Number(d.location_lat)) && !isNaN(Number(d.location_lng))),
+    devices.filter(d => d.effective_location?.lat != null && d.effective_location?.lng != null),
     [devices]
   );
 
@@ -94,28 +96,29 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
 
     const groups = new Map<string, Device[]>();
     for (const d of mapped) {
-      const key = `${Number(d.location_lat).toFixed(6)},${Number(d.location_lng).toFixed(6)}`;
+      const key = `${Number(d.effective_location!.lat).toFixed(6)},${Number(d.effective_location!.lng).toFixed(6)}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(d);
     }
 
     const markers: L.Layer[] = [];
     groups.forEach((groupDevices) => {
-      const lat = Number(groupDevices[0].location_lat);
-      const lng = Number(groupDevices[0].location_lng);
+      const lat = Number(groupDevices[0].effective_location!.lat);
+      const lng = Number(groupDevices[0].effective_location!.lng);
       const count = groupDevices.length;
       const hasOffline = groupDevices.some(d => d.status === 'offline');
       const colorHex = hasOffline ? '#f08a8a' : '#c1f17e';
 
       const deviceRows = groupDevices.map(d => {
         const c = d.status === 'online' ? '#8de08a' : '#f08a8a';
-        return `<b>${d.name}</b>&nbsp;<span style="color:${c};font-size:11px">● ${d.status}</span>`;
+        return `<b>${escapeHtml(d.name)}</b>&nbsp;<span style="color:${c};font-size:11px">● ${escapeHtml(d.status)}</span>`;
       }).join('<br/>');
-      const address = groupDevices[0].location_address
-        ? `<br/><span style="color:#8a877e;font-size:11px">${groupDevices[0].location_address}</span>`
+      const addr = groupDevices[0].effective_location?.address;
+      const address = addr
+        ? `<br/><span style="color:#8a877e;font-size:11px">${escapeHtml(addr)}</span>`
         : '';
       const tooltipHtml = groupDevices.map(d =>
-        `${d.status === 'online' ? '●' : '○'} ${d.name}`
+        `${d.status === 'online' ? '●' : '○'} ${escapeHtml(d.name)}`
       ).join('<br/>');
 
       let marker: L.Layer;
@@ -138,7 +141,7 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
     });
 
     if (markers.length === 1) {
-      map.setView([Number(mapped[0].location_lat), Number(mapped[0].location_lng)], 13);
+      map.setView([Number(mapped[0].effective_location!.lat), Number(mapped[0].effective_location!.lng)], 13);
     } else {
       map.fitBounds(L.featureGroup(markers).getBounds(), { padding: [40, 40] });
     }
@@ -148,7 +151,7 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
   if (mapped.length === 0) {
     return (
       <div className="flex items-center justify-center text-sm" style={{ height: 220, color: 'var(--ink-4)' }}>
-        No device locations configured — add addresses via Device › Overview › Physical Details
+        No locations yet. Add an address to a site, or to a device under Overview › Physical Details
       </div>
     );
   }
@@ -585,7 +588,7 @@ function SummaryView(props: Record<string, any>) {
             <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Locations</span>
           </div>
           <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
-            {(devices as Device[]).filter(d => d.location_lat != null).length} of {(devices as Device[]).length} mapped
+            {(devices as Device[]).filter(d => d.effective_location?.lat != null).length} of {(devices as Device[]).length} mapped
           </span>
         </div>
         <div style={{ padding: '0 0' }}>

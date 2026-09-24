@@ -30,6 +30,11 @@ const COLUMNS: Record<string, keyof RowFields> = {
   username: 'api_username', user: 'api_username', api_username: 'api_username',
   password: 'api_password', api_password: 'api_password',
   port: 'api_port', api_port: 'api_port',
+  // SSH is optional. Left blank, SSH (backups, bulk commands, key deployment)
+  // uses the API username and password, which is the usual case.
+  ssh_username: 'ssh_username', ssh_user: 'ssh_username',
+  ssh_password: 'ssh_password', ssh_pass: 'ssh_password',
+  ssh_port: 'ssh_port',
   notes: 'notes', note: 'notes', comment: 'notes',
 };
 
@@ -41,6 +46,9 @@ interface RowFields {
   api_username?: string;
   api_password?: string;
   api_port?: string;
+  ssh_username?: string;
+  ssh_password?: string;
+  ssh_port?: string;
   notes?: string;
 }
 
@@ -155,13 +163,24 @@ export function parseDeviceCsv(
       errors.push('Needs a credential preset, or both username and password.');
     }
 
-    let port: number | undefined;
-    if (f.api_port) {
-      port = Number(f.api_port);
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        errors.push(`Port "${f.api_port}" is not valid.`);
-        port = undefined;
-      }
+    const portOf = (v: string | undefined, label: string): number | undefined => {
+      if (!v) return undefined;
+      const n = Number(v);
+      if (Number.isInteger(n) && n >= 1 && n <= 65535) return n;
+      errors.push(`${label} "${v}" is not valid.`);
+      return undefined;
+    };
+    const port = portOf(f.api_port, 'Port');
+    const sshPort = portOf(f.ssh_port, 'SSH port');
+
+    // A username without a password (or the reverse) is half a credential, and
+    // the device would end up with SSH that can never log in.
+    const hasSsh = !!(f.ssh_username || f.ssh_password);
+    if (hasSsh && !(f.ssh_username && f.ssh_password)) {
+      errors.push('SSH needs both ssh_username and ssh_password, or neither.');
+    }
+    if (presetId !== undefined && (hasSsh || sshPort)) {
+      warnings.push('Uses the preset\'s SSH settings. The SSH columns on this line are ignored.');
     }
 
     const item: BulkAddDeviceItem | null = errors.length ? null : {
@@ -172,6 +191,8 @@ export function parseDeviceCsv(
         api_username: f.api_username, api_password: f.api_password,
       }),
       ...(port ? { api_port: port } : {}),
+      ...(presetId === undefined && hasSsh ? { ssh_username: f.ssh_username, ssh_password: f.ssh_password } : {}),
+      ...(presetId === undefined && sshPort ? { ssh_port: sshPort } : {}),
       ...(f.notes ? { notes: f.notes } : {}),
     };
     rows.push({ line, item, errors, warnings, skip });
@@ -190,4 +211,5 @@ export const CSV_TEMPLATE = [
   'core-sw-01,10.0.0.2,switch,Default,Rack A',
   'edge-rtr-01,10.0.0.1,router,Default,',
   '# Without a preset, supply username and password columns instead.',
+  '# Optional: ssh_username, ssh_password, ssh_port. Blank means SSH uses the API login.',
 ].join('\n') + '\n';

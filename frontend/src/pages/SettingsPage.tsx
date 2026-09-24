@@ -21,6 +21,7 @@ import FirmwareTimeoutCard from '../components/settings/FirmwareTimeoutCard';
 import PollModulesCard from '../components/settings/PollModulesCard';
 import TagRow from '../components/settings/TagRow';
 import DarkSiteCard from '../components/settings/DarkSiteCard';
+import FleetSshKeysCard from '../components/settings/FleetSshKeysCard';
 import AutomationSettings from '../components/settings/AutomationSettings';
 import OidcSettings from '../components/settings/OidcSettings';
 
@@ -75,7 +76,7 @@ export default function SettingsPage() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; }
   }, []);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller' | 'darksite'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller' | 'darksite' | 'sshkeys'>('general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -519,6 +520,7 @@ export default function SettingsPage() {
       label: 'Fleet',
       tabs: [
         { key: 'credentials' as const, label: 'Device Credentials', icon: KeyRound },
+        ...(isAdmin ? [{ key: 'sshkeys' as const, label: 'SSH Keys', icon: Key }] : []),
         { key: 'alerting' as const, label: 'Alerting', icon: Bell },
         { key: 'automation' as const, label: 'Automation', icon: Zap },
         ...(isAdmin ? [
@@ -1181,6 +1183,8 @@ export default function SettingsPage() {
       {activeTab === 'credentials' && (
         <CredentialPresetsSettings isAdmin={isAdmin} />
       )}
+
+      {activeTab === 'sshkeys' && isAdmin && <FleetSshKeysCard />}
 
       {/* ── My Password ── */}
       {activeTab === 'security' && (

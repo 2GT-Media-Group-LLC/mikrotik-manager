@@ -1,6 +1,7 @@
 import { query } from '../config/database';
 import { siteScopeDevices } from '../utils/siteScope';
 import { DeviceCollector, type DeviceRow } from './mikrotik/DeviceCollector';
+import { effectiveLocation } from '../utils/effectiveLocation';
 import { fieldToWrite, unknownVariables, type SnmpDeviceVars } from '../utils/snmpTemplate';
 
 /**
@@ -52,8 +53,11 @@ export async function applySnmpConfig(
   validateSnmpInput(config);
 
   const siteFilter = siteScopeDevices(siteId ?? null, 'd');
-  const devices = await query<DeviceRow & { site_name: string | null }>(
-    `SELECT d.*, s.name AS site_name
+  const devices = await query<DeviceRow & {
+    site_name: string | null; site_address: string | null; site_lat: string | null; site_lng: string | null;
+  }>(
+    `SELECT d.*, s.name AS site_name, s.address AS site_address,
+            s.location_lat AS site_lat, s.location_lng AS site_lng
        FROM devices d LEFT JOIN sites s ON s.id = d.site_id
       WHERE d.device_type = $1 AND d.status = 'online'
         ${siteFilter ? `AND ${siteFilter}` : ''}`,
@@ -75,7 +79,11 @@ export async function applySnmpConfig(
           model: (d as { model?: string | null }).model ?? null,
           serial: (d as { serial_number?: string | null }).serial_number ?? null,
           site: d.site_name,
-          location: (d as { location_address?: string | null }).location_address ?? null,
+          // The device's own location, or its site's when it has none (#167).
+          location: effectiveLocation(
+            d as { location_address?: string | null },
+            { address: d.site_address, location_lat: d.site_lat, location_lng: d.site_lng }
+          )?.address ?? null,
         };
         await collector.setSnmpConfig({
           ...config,

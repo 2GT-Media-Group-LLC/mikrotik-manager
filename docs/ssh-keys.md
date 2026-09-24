@@ -56,14 +56,44 @@ with no way back through the product.
 If deployment fails with an authentication error and orphaned keys are present, the error
 says so.
 
+## Which login installs the key
+
+The first key is installed by logging in over SSH with a password:
+
+- If the device has an SSH username and password stored, those are used.
+- If it has **no SSH login stored**, the API username and password are used, as a pair.
+  This is the same fallback backups and bulk commands already use.
+- If the SSH username is the API user and no SSH password is stored, the API password is
+  used, since it is the same account.
+- Anything else, such as a different SSH username with no password, is skipped with a
+  reason. The manager never pairs one account's name with another account's password.
+
+Whichever login is used, the key is bound to that user, and that user loses password SSH.
+
 ## Fleet-wide deployment
 
-`POST /api/devices/ssh-keys/deploy-all` keys every device that has a password but no
-verified key. It runs sequentially rather than in parallel — each deployment opens two SSH
-sessions and ends by proving the key.
+**Settings → SSH Keys** (admins only) installs keys across the site you're viewing,
+optionally limited to tags. It shows a preview first:
 
-It **refuses without explicit confirmation**, because it disables password SSH on every
-device it touches.
+- how many devices will get a key, how many already have one, and which are skipped and why
+- the accounts that will lose password SSH, and on how many devices each
+
+After you tick the confirmation, it runs as a background job, one device at a time, and you
+can leave the page. It stops by itself after 5 failures in a row, since that usually means
+something fleet-wide is wrong. A device that fails is left as it was. Each device's result is
+written to the audit log.
+
+API, all admin-only:
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/api/ssh-keys/fleet/preview?tag_ids=1,2` | What a run would do |
+| `POST` | `/api/ssh-keys/fleet/jobs` | `{"device_ids": [...], "confirm": true}` |
+| `GET` | `/api/ssh-keys/fleet/jobs/:id` | Progress and per-device results |
+| `POST` | `/api/ssh-keys/fleet/jobs/:id/cancel` | Stops before the next device |
+
+The older `POST /api/devices/ssh-keys/deploy-all` still works, with the same rules, but it
+runs inside one request and times out on large fleets.
 
 ## What uses a key
 
