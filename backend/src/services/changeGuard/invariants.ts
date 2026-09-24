@@ -180,6 +180,27 @@ export const INVARIANTS: Invariant[] = [
   },
 
   {
+    id: 'ingress-port-tagged-member',
+    title: 'The ingress port still carries the tagged management VLAN',
+    check(snap, path) {
+      // The tagged counterpart of ingress-port-pvid. Nothing checked this until
+      // #165 made unticking a VLAN in the port editor actually remove it: the
+      // bridge could stay a tagged member while the uplink the manager arrives
+      // on was dropped from the VLAN, and the frames would be filtered at ingress.
+      if (!path.taggedManagement || !path.bridge || !filteringOn(snap, path.bridge)) return ok();
+      if (!path.ingressPort || path.mgmtVlanId == null) return ok();
+      const m = vlanMembership(snap, path.bridge, path.mgmtVlanId);
+      if (!m.found) return ok(); // covered by vlan-iface-tagged
+      return m.tagged.includes(path.ingressPort)
+        ? ok()
+        : {
+            ok: false,
+            detail: `${path.ingressPort} would no longer be a tagged member of VLAN ${path.mgmtVlanId}. Management arrives tagged on that VLAN through ${path.ingressPort}, so the bridge would drop it at ingress.`,
+          };
+    },
+  },
+
+  {
     id: 'ingress-port-frame-types',
     title: 'The ingress port still admits the frames management arrives in',
     /**

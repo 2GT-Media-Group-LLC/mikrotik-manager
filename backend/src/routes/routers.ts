@@ -4,6 +4,7 @@ import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
+import { applySnmpConfig, SnmpInputError, type SnmpConfigInput } from '../services/snmpApply';
 
 const router = Router();
 router.use(requireAuth);
@@ -118,39 +119,14 @@ router.get('/snmp', async (req: Request, res: Response) => {
 
 // PUT /api/routers/snmp — apply SNMP config to all online routers
 router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
-  const config = req.body as {
-    enabled: boolean; community_name: string; version: 'v1' | 'v2c' | 'v3';
-    contact?: string; location?: string; trap_target?: string;
-    auth_protocol?: string; auth_password?: string;
-    priv_protocol?: string; priv_password?: string;
-  };
-  if (!config.community_name || !config.version) {
-    return res.status(400).json({ error: 'community_name and version are required' });
+  // See services/snmpApply.ts: per-device variables, blanks left alone, and
+  // only the active site's devices.
+  try {
+    return res.json(await applySnmpConfig('router', req.body as SnmpConfigInput, activeSite(req)));
+  } catch (e) {
+    if (e instanceof SnmpInputError) return res.status(400).json({ error: e.message });
+    throw e;
   }
-
-  const routers = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type = 'router' AND status = 'online'`
-  );
-
-  const results = await Promise.allSettled(
-    routers.map(async (r: DeviceRow) => {
-      const collector = new DeviceCollector(r);
-      try {
-        await collector.connect();
-        await collector.setSnmpConfig(config);
-        return { id: r.id, name: r.name, success: true };
-      } finally {
-        collector.disconnect();
-      }
-    })
-  );
-
-  const statuses = results.map((r, i) => {
-    if (r.status === 'fulfilled') return r.value;
-    return { id: routers[i].id, name: routers[i].name, success: false, error: (r.reason as Error).message };
-  });
-
-  return res.json({ applied: statuses.filter(s => s.success).length, total: routers.length, results: statuses });
 });
 
 export default router;

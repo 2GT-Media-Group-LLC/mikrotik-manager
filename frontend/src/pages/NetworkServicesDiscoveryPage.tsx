@@ -447,13 +447,22 @@ export default function NetworkServicesDiscoveryPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Contact</label>
-              <input className="input" value={snmpForm.contact} onChange={e => sf({ contact: e.target.value })} placeholder="admin@example.com" />
+              <input className="input" value={snmpForm.contact} onChange={e => sf({ contact: e.target.value })} placeholder="{identity}@example.com" />
             </div>
             <div>
               <label className="label">Location</label>
-              <input className="input" value={snmpForm.location} onChange={e => sf({ location: e.target.value })} placeholder="Server Room A" />
+              <input className="input" value={snmpForm.location} onChange={e => sf({ location: e.target.value })} placeholder="{site} / {location}" />
             </div>
           </div>
+          {/* Contact and location used to be written verbatim to every device,
+              and blank fields erased what each device already had (#164). */}
+          <p className="text-[11.5px] text-gray-500 dark:text-slate-400 -mt-1">
+            Leave a field blank to keep what each device already has. Variables are filled in per
+            device: <span className="mono">{'{identity}'}</span>, <span className="mono">{'{name}'}</span>,{' '}
+            <span className="mono">{'{ip}'}</span>, <span className="mono">{'{model}'}</span>,{' '}
+            <span className="mono">{'{serial}'}</span>, <span className="mono">{'{site}'}</span>,{' '}
+            <span className="mono">{'{location}'}</span>.
+          </p>
 
           <div>
             <label className="label">Trap Destination (optional)</label>

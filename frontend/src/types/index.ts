@@ -39,6 +39,9 @@ export interface PortVlanConfig {
   pvid?: number;
   tagged_vlans?: number[];
   untagged_vlans?: number[];
+  mode?: 'access' | 'trunk';
+  /** Trunk only: tagged_vlans is the complete set, so unlisted VLANs are removed. */
+  replace_tagged?: boolean;
 }
 
 export type DeviceStatus = 'online' | 'offline' | 'unknown';

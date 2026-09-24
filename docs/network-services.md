@@ -60,3 +60,24 @@ Neighbour discovery protocol settings (LLDP, CDP, MNDP) per device, and SNMP con
 
 Discovery is what populates the topology map and finds devices to adopt. Turning it off on a
 device makes that device invisible to its neighbours — and this platform.
+
+### SNMP contact and location per device
+
+SNMP settings are applied when you press **Apply**, to every online switch (or router) in
+the current site. They are never pushed automatically. Contact, location and trap target can
+use variables, filled in per device:
+
+| Variable | Value |
+|---|---|
+| `{identity}` | RouterOS identity (`/system identity`). `{$systemidentity}` also works |
+| `{name}` | Device name in the manager |
+| `{ip}` | Management address |
+| `{model}`, `{serial}` | From the device |
+| `{site}` | Site name |
+| `{location}` | The device's location address in the manager |
+
+For example, contact `{identity}@example.com` or location `{site} / {location}`. An unknown
+variable is rejected before anything is written.
+
+A blank field keeps each device's current value. Before 0.24.26 a blank field overwrote it
+with nothing.

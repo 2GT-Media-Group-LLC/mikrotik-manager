@@ -581,7 +581,7 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
 // Guarded: changing a port's PVID or its tagged/untagged membership is one of the
 // most common ways to strand the management VLAN on a switch.
 router.put('/:id/ports/:name/vlan', requireWrite, async (req: Request, res: Response) => {
-  const { pvid, tagged_vlans = [], untagged_vlans = [], mode } = req.body;
+  const { pvid, tagged_vlans = [], untagged_vlans = [], mode, replace_tagged } = req.body;
   if (pvid !== undefined && (typeof pvid !== 'number' || pvid < 1 || pvid > 4094)) {
     return res.status(400).json({ error: 'pvid must be 1-4094' });
   }
@@ -589,6 +589,9 @@ router.put('/:id/ports/:name/vlan', requireWrite, async (req: Request, res: Resp
   // frame admission is left alone, which is the pre-0.24.20 behaviour and what
   // an existing API caller expects.
   const role = mode === 'access' || mode === 'trunk' ? mode : undefined;
+  // Also opt-in: the tagged list becomes the port's complete tagged set, so
+  // VLANs left out are removed. Only meaningful for a trunk (#165).
+  const replaceTagged = role === 'trunk' && replace_tagged === true;
 
   await withGuardedChange(
     req.params.id,
@@ -606,17 +609,24 @@ router.put('/:id/ports/:name/vlan', requireWrite, async (req: Request, res: Resp
         // Surfaced to the guard: setting frame-types on the management port is
         // a far bigger change than a PVID edit, and the summary should say so.
         mode: role,
+        replaceTagged,
       },
     },
     async (c) => {
-      await c.setPortVlanConfig(
+      const { notRemoved } = await c.setPortVlanConfig(
         req.params.name,
         pvid ?? 1,
         tagged_vlans as number[],
         untagged_vlans as number[],
-        role
+        role,
+        replaceTagged
       );
-      return { message: 'VLAN configuration applied' };
+      return {
+        message: notRemoved.length
+          ? `VLAN configuration applied. Not removed: ${notRemoved.join(', ')} — they share a bridge VLAN row (a range) with VLANs this port keeps. Edit that row under VLANs to remove them.`
+          : 'VLAN configuration applied',
+        not_removed: notRemoved,
+      };
     },
     async (c) => { await c.collectVlans(); }
   );

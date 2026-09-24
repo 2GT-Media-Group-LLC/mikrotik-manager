@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { firmwareApi } from '../services/api';
+import UpdateChannelCard from '../components/firmware/UpdateChannelCard';
 import type { FirmwareRolloutDevice } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { formatDistanceToNow } from 'date-fns';
@@ -223,7 +224,30 @@ export default function FirmwarePage() {
       return next;
     });
   };
+  /** The server rejects anything outside 1-9 (routes/firmware.ts). */
+  const MAX_WAVE = 9;
   const setWave = (id: number, wave: number) => setSelected(prev => new Map(prev).set(id, wave));
+
+  // Tags with at least one device that can be upgraded right now.
+  const tagsInUse = (() => {
+    const m = new Map<number, { id: number; name: string; color: string; count: number }>();
+    for (const d of updatable) for (const t of d.tags ?? []) {
+      const e = m.get(t.id) ?? { ...t, count: 0 };
+      e.count++;
+      m.set(t.id, e);
+    }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
+  const addTagAsWave = (tagId: number) => setSelected(prev => {
+    const next = new Map(prev);
+    const wave = prev.size ? Math.min(MAX_WAVE, Math.max(...prev.values()) + 1) : 1;
+    for (const d of updatable) {
+      // Devices already chosen keep the wave they were given.
+      if (!next.has(d.id) && d.tags?.some(t => t.id === tagId)) next.set(d.id, wave);
+    }
+    return next;
+  });
 
   const selectedCount = selected.size;
   // Advisory only: which selected devices other selected devices reach the
@@ -286,15 +310,34 @@ export default function FirmwarePage() {
         </div>
       </div>
 
+      <UpdateChannelCard devices={devices} canWrite={canWrite} />
+
       {/* Fleet table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Fleet versions</h3>
           {canWrite && updatable.length > 0 && (
-            <button className="ml-auto text-xs text-blue-600 dark:text-blue-400 hover:underline"
-              onClick={() => setSelected(new Map(updatable.map((d, i) => [d.id, i === 0 ? 1 : 2])))}>
-              Select all updatable ({updatable.length})
-            </button>
+            <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+              {/* Tags work as groups here (#161). Each click adds that tag's
+                  updatable devices as the next wave, so "canary" then
+                  "production" gives a canary wave followed by the rest. */}
+              {tagsInUse.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => addTagAsWave(t.id)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+                  style={{ background: `${t.color}22`, color: t.color }}
+                  title={`Add the ${t.count} updatable device${t.count === 1 ? '' : 's'} tagged ${t.name} as the next wave`}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ background: t.color }} />
+                  {t.name} ({t.count})
+                </button>
+              ))}
+              <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                onClick={() => setSelected(new Map(updatable.map((d, i) => [d.id, i === 0 ? 1 : 2])))}>
+                Select all updatable ({updatable.length})
+              </button>
+            </div>
           )}
         </div>
         {isLoading ? (
@@ -375,7 +418,9 @@ export default function FirmwarePage() {
                           {isSel && (
                             <select className="input py-0.5 text-xs w-auto" value={selected.get(d.id)}
                               onChange={e => setWave(d.id, parseInt(e.target.value, 10))}>
-                              {[1, 2, 3].map(w => <option key={w} value={w}>{w === 1 ? '1 — canary' : String(w)}</option>)}
+                              {/* 1-9, matching what the server accepts. Offering only 1-3
+                                  meant a device placed in wave 4 displayed as "1 — canary". */}
+                              {Array.from({ length: MAX_WAVE }, (_, i) => i + 1).map(w => <option key={w} value={w}>{w === 1 ? '1 — canary' : String(w)}</option>)}
                             </select>
                           )}
                         </td>

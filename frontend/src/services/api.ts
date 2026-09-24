@@ -885,6 +885,10 @@ export const automationApi = {
 
 // ─── Firmware orchestration ─────────────────────────────────────────────────────
 export interface FirmwareDeviceRow {
+  /** Override set in the manager; null follows the fleet setting (#162). */
+  update_channel?: string | null;
+  /** The channel the device last reported during an update check. */
+  reported_update_channel?: string | null;
   /** Same chips as the device list, so a tagged group is recognisable here. */
   tags?: { id: number; name: string; color: string }[];
   id: number; name: string; device_type: string; status: string; model: string | null;
@@ -910,6 +914,8 @@ export interface FirmwareRolloutDevice {
 }
 
 export const firmwareApi = {
+  setChannel: (deviceIds: number[], channel: string | null) =>
+    api.put<{ updated: number }>('/firmware/channel', { deviceIds, channel }),
   overview: () =>
     api.get<{ devices: FirmwareDeviceRow[]; latestRolloutId: number | null; runningRolloutId: number | null }>('/firmware/overview'),
   checkAll: () =>

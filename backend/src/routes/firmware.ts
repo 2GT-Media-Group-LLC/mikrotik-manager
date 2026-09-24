@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
+import { isUpdateChannel, UPDATE_CHANNELS } from '../utils/updateChannel';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
@@ -19,7 +20,7 @@ router.get('/overview', async (req: Request, res: Response) => {
   const [devices, latestRollout] = await Promise.all([
     query(`SELECT id, name, device_type, status, model, ros_version, latest_ros_version,
                   firmware_update_available, firmware_version, upgrade_firmware_version,
-                  routerboard_upgrade_available
+                  routerboard_upgrade_available, update_channel, reported_update_channel
            FROM devices ${siteFilter ? `WHERE ${siteFilter}` : ''} ORDER BY name ASC`),
     // The banner links to this rollout, so it must be one this site took part in.
     queryOne<{ id: number }>(`
@@ -245,6 +246,30 @@ router.post('/rollouts/:id/start', requireWrite, async (req: Request, res: Respo
 // are immutable, so successful fetches are cached for the process lifetime.
 const changelogCache = new Map<string, string>();
 const CHANGELOG_CACHE_MAX = 100;
+
+/**
+ * PUT /api/firmware/channel -- set or clear the update channel override on
+ * several devices at once (#162).
+ *
+ * Takes a list so the same call serves one device and every device carrying a
+ * tag, which is how "group-level" overrides work: tags are the groups. A null
+ * channel clears the override and the devices follow the fleet setting again.
+ * Takes effect at each device's next update check.
+ */
+router.put('/channel', requireWrite, async (req: Request, res: Response) => {
+  const { deviceIds, channel } = req.body as { deviceIds?: unknown; channel?: unknown };
+  if (!Array.isArray(deviceIds) || deviceIds.length === 0 || !deviceIds.every((n) => Number.isInteger(n))) {
+    return res.status(400).json({ error: 'deviceIds must be a non-empty list of device ids' });
+  }
+  if (channel !== null && !isUpdateChannel(channel)) {
+    return res.status(400).json({ error: `channel must be one of ${UPDATE_CHANNELS.join(', ')}, or null` });
+  }
+  const rows = await query<{ id: number }>(
+    `UPDATE devices SET update_channel = $1 WHERE id = ANY($2::int[]) RETURNING id`,
+    [channel, deviceIds]
+  );
+  return res.json({ updated: rows.length });
+});
 
 router.get('/changelog/:version', async (req: Request, res: Response) => {
   const version = String(req.params.version).trim();

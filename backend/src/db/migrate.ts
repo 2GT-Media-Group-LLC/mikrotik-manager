@@ -1036,6 +1036,11 @@ ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_present BOOLEAN;
 ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_type VARCHAR(48);
 ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_connector VARCHAR(48);
 ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_vendor VARCHAR(64);
+-- RouterOS update channel (#162). update_channel is an override set in the
+-- manager (NULL = follow the fleet setting); reported_update_channel is what the
+-- device last said it was on, read during each update check.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS update_channel VARCHAR(16);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS reported_update_channel VARCHAR(16);
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);

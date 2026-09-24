@@ -19,6 +19,8 @@
  * never heard of silently achieved nothing.
  */
 
+import { expandVlanIds } from './vlan';
+
 export type PortRole = 'tagged' | 'untagged';
 
 export interface BridgeVlanRow {
@@ -105,4 +107,59 @@ export function frameTypesFor(role: 'access' | 'trunk'): FrameTypeConfig {
         'frame-types': 'admit-only-vlan-tagged',
         'ingress-filtering': 'yes',
       };
+}
+
+export interface BridgeVlanTableRow extends BridgeVlanRow {
+  bridge?: string;
+  'vlan-ids'?: string;
+}
+
+export interface TaggedRemovalPlan {
+  /** Static rows to rewrite with the port taken out of `tagged`. */
+  writes: { id: string; tagged: string; untagged: string; vlanIds: number[] }[];
+  /**
+   * VLANs the port should leave but cannot without splitting a row: the row
+   * also covers a VLAN the port is keeping (e.g. `vlan-ids=10-20` with only 15
+   * unticked). Left alone and reported rather than silently half-done.
+   */
+  mixed: number[];
+}
+
+/**
+ * Which rows to rewrite so a trunk port is tagged *only* on `keep` (#165).
+ *
+ * Saving used to be add-only: VLANs were added to the port but never taken
+ * away, so unticking one in the editor changed nothing on the device. This is
+ * the removal half. Only static rows are touched (dynamic ones reject writes),
+ * and only the `tagged` list — untagged/PVID membership is left alone.
+ */
+export function planTaggedRemovals(
+  rows: BridgeVlanTableRow[],
+  bridge: string,
+  port: string,
+  keep: number[]
+): TaggedRemovalPlan {
+  const keepSet = new Set(keep);
+  const plan: TaggedRemovalPlan = { writes: [], mixed: [] };
+  for (const row of rows) {
+    if (row.bridge !== undefined && row.bridge !== bridge) continue;
+    if (row.dynamic === 'true' || row.dynamic === 'yes' || !row['.id']) continue;
+    const tagged = list(row.tagged);
+    if (!tagged.includes(port)) continue;
+    const vids = expandVlanIds(row['vlan-ids']);
+    const leaving = vids.filter((v) => !keepSet.has(v));
+    if (leaving.length === 0) continue;
+    if (leaving.length < vids.length) {
+      plan.mixed.push(...leaving);
+      continue;
+    }
+    plan.writes.push({
+      id: row['.id'],
+      tagged: tagged.filter((p) => p !== port).join(','),
+      untagged: list(row.untagged).join(','),
+      vlanIds: vids,
+    });
+  }
+  plan.mixed.sort((a, b) => a - b);
+  return plan;
 }

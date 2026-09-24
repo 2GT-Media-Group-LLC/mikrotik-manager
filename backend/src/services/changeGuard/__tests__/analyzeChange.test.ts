@@ -150,6 +150,50 @@ describe('analyzeChange — the VLAN lockout (golden case)', () => {
     expect(analyzeChange(baseSnapshot(), device, change).severity).not.toBe('critical');
   });
 
+  describe('replaceTagged (#165: unticking a VLAN now removes it)', () => {
+    const taggedMgmt = () => baseSnapshot({
+      addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'vlan99', disabled: 'false' }],
+      vlanInterfaces: [{ name: 'vlan99', 'vlan-id': '99', interface: 'bridge' }],
+      interfaces: [
+        { name: 'bridge', type: 'bridge', disabled: 'false' },
+        { name: 'vlan99', type: 'vlan', disabled: 'false' },
+        { name: 'sfp28-1', type: 'ether', disabled: 'false' },
+        { name: 'ether1', type: 'ether', disabled: 'false' },
+      ],
+      bridgeVlans: [
+        { '.id': '*1', bridge: 'bridge', 'vlan-ids': '1', tagged: '', untagged: 'bridge,sfp28-1,ether1' },
+        { '.id': '*2', bridge: 'bridge', 'vlan-ids': '10', tagged: 'sfp28-1', untagged: '' },
+        { '.id': '*3', bridge: 'bridge', 'vlan-ids': '99', tagged: 'bridge,sfp28-1', untagged: '' },
+      ],
+    });
+
+    it('models the removal, so unticking the management VLAN is caught', () => {
+      const change: PlannedChange = {
+        kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [10], untagged: [], mode: 'trunk', replaceTagged: true,
+      };
+      const after = simulate(taggedMgmt(), change);
+      expect(after.bridgeVlans.find((r) => r['vlan-ids'] === '99')?.['tagged']).toBe('bridge');
+      expect(analyzeChange(taggedMgmt(), device, change).severity).toBe('critical');
+    });
+
+    it('is safe when only an unrelated VLAN is unticked', () => {
+      const change: PlannedChange = {
+        kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [99], untagged: [], mode: 'trunk', replaceTagged: true,
+      };
+      const after = simulate(taggedMgmt(), change);
+      expect(after.bridgeVlans.find((r) => r['vlan-ids'] === '10')?.['tagged']).toBe('');
+      expect(analyzeChange(taggedMgmt(), device, change).severity).not.toBe('critical');
+    });
+
+    it('stays add-only without the flag', () => {
+      const change: PlannedChange = {
+        kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [], untagged: [], mode: 'trunk',
+      };
+      const after = simulate(taggedMgmt(), change);
+      expect(after.bridgeVlans.find((r) => r['vlan-ids'] === '99')?.['tagged']).toBe('bridge,sfp28-1');
+    });
+  });
+
   it('flags deleting the management VLAN entirely', () => {
     const v = analyzeChange(baseSnapshot(), device, { kind: 'vlan.delete', bridge: 'bridge', vlanId: 1 });
     expect(v.severity).toBe('critical');

@@ -47,7 +47,8 @@ import { alertService } from '../AlertService';
 import { readRevocation } from '../../utils/certRecord';
 import { stripOwnSessionNoise } from '../../utils/logNoise';
 import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
-import { planVlanWrite, frameTypesFor } from '../../utils/bridgeVlanPlan';
+import { planVlanWrite, frameTypesFor, planTaggedRemovals } from '../../utils/bridgeVlanPlan';
+import { resolveChannel } from '../../utils/updateChannel';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
 const TOPOLOGY_LINK_LIMITS = {
@@ -3523,8 +3524,9 @@ export class DeviceCollector {
     pvid: number,
     taggedVlans: number[],
     untaggedVlans: number[],
-    role?: 'access' | 'trunk'
-  ): Promise<void> {
+    role?: 'access' | 'trunk',
+    replaceTagged = false
+  ): Promise<{ notRemoved: number[] }> {
     const bridgePorts = await this.client
       .execute('/interface/bridge/port/print', {}, [`?interface=${portName}`])
       .catch(() => []);
@@ -3542,7 +3544,7 @@ export class DeviceCollector {
     }
 
     const bridge = bridgePortEntry?.['bridge'] || '';
-    if (!bridge) return;
+    if (!bridge) return { notRemoved: [] };
 
     const applyVlan = async (vlanId: number, portRole: 'tagged' | 'untagged'): Promise<void> => {
       const existing = await this.client
@@ -3571,6 +3573,20 @@ export class DeviceCollector {
 
     for (const vlanId of taggedVlans) await applyVlan(vlanId, 'tagged');
     for (const vlanId of untaggedVlans) await applyVlan(vlanId, 'untagged');
+
+    // Removal runs after the additions, so the port is never briefly on fewer
+    // VLANs than both the old and new configuration agree on (#165).
+    if (!replaceTagged) return { notRemoved: [] };
+    const rows = await this.client
+      .execute('/interface/bridge/vlan/print', {}, [`?bridge=${bridge}`])
+      .catch(() => []);
+    const plan = planTaggedRemovals(rows as Record<string, string>[], bridge, portName, taggedVlans);
+    for (const w of plan.writes) {
+      await this.client.execute('/interface/bridge/vlan/set', {
+        '.id': w.id, tagged: w.tagged, untagged: w.untagged,
+      });
+    }
+    return { notRemoved: plan.mixed };
   }
 
   /**
@@ -3998,7 +4014,31 @@ export class DeviceCollector {
 
   // ─── Firmware updates ─────────────────────────────────────────────────────
 
+  /**
+   * Put the device on the configured update channel before checking (#162).
+   *
+   * Done here because every update check -- manual, daily, fleet-wide and the
+   * rollout orchestrator -- goes through checkForUpdates, so no path can check
+   * against the wrong channel. Nothing is changed when no channel is set.
+   */
+  private async applyUpdateChannel(): Promise<void> {
+    const [row] = await query<{ update_channel: string | null }>(
+      `SELECT update_channel FROM devices WHERE id = $1`, [this.device.id]
+    );
+    const [setting] = await query<{ value: unknown }>(
+      `SELECT value FROM app_settings WHERE key = 'firmware_update_channel'`
+    ).catch(() => []);
+    const desired = resolveChannel(row?.update_channel, setting?.value);
+    if (!desired) return;
+    const current = (await this.client.execute('/system/package/update/print'))[0]?.['channel'];
+    if (current !== desired) {
+      await this.client.execute('/system/package/update/set', { channel: desired });
+      console.log(`[${this.device.name ?? this.device.ip_address}] update channel ${current ?? '?'} -> ${desired}`);
+    }
+  }
+
   async checkForUpdates(): Promise<Record<string, string>> {
+    await this.applyUpdateChannel();
     // Reaches out to MikroTik's servers, so it can outlast the ordinary read
     // timeout on a slow or filtered link. The failure was previously swallowed
     // (.catch(() => {})), which hid a timed-out check and left the caller
@@ -4009,7 +4049,12 @@ export class DeviceCollector {
     // Give the device a moment to settle the result before reading it back.
     await new Promise<void>((resolve) => setTimeout(resolve, 3000));
     const result = await this.client.execute('/system/package/update/print');
-    return (result[0] as Record<string, string>) || {};
+    const status = (result[0] as Record<string, string>) || {};
+    if (status['channel']) {
+      await query(`UPDATE devices SET reported_update_channel = $1 WHERE id = $2`, [status['channel'], this.device.id])
+        .catch(() => {});
+    }
+    return status;
   }
 
   /**

@@ -17,6 +17,32 @@ retyped per device.
 **Try All** runs a bulk add across every discovered device as a server-side job. It survives a
 closed browser tab and reports progress and failures per device.
 
+### Importing from CSV
+
+**Import CSV** on the Devices page adds up to 500 devices from a spreadsheet. Download the
+template from the dialog, or write your own. Only `ip` is required:
+
+```csv
+ip,name,type,preset,username,password,port,notes
+10.0.10.1,core-rtr,router,Default,,,,
+10.0.20.5,sw-floor2,switch,,admin,secret,8728,rack B
+```
+
+| Column | Accepts |
+|---|---|
+| `ip` (or `address`, `host`) | IPv4 address or hostname |
+| `name` (or `identity`, `hostname`) | Optional. Defaults to the address |
+| `type` | `router`, `switch`, `ap` / `wireless`, `other`. Defaults to `router` |
+| `preset` | Name of a [credential preset](configuration.md). Use this, or `username` and `password` |
+| `port` | API port. Defaults to 8728 |
+
+The file is checked before anything is sent. Each line shows as ready, skipped or a problem,
+with the reason. Addresses that are already managed are skipped. Duplicate addresses inside
+the file are flagged. Unknown columns are listed and ignored. Blank lines and lines starting
+with `#` are ignored.
+
+The import runs as the same server-side job as **Try All**, so the tab can be closed.
+
 !!! note "Credentials are stored encrypted"
     API passwords are encrypted at rest with the key from `ENCRYPTION_KEY`. Losing that key
     means re-entering every device password; see [Configuration](configuration.md).
@@ -72,6 +98,16 @@ the setting is remembered.
 
 Selecting a port and setting it to **access** or **trunk** writes three things: the PVID, the
 bridge VLAN membership, and frame admission (`frame-types` and `ingress-filtering`).
+
+For a trunk, tick the tagged VLANs. The native VLAN (PVID) is greyed out because it is carried
+untagged. The text box below the checkboxes holds the same list, for copying between switches,
+and accepts ranges such as `10,20,100-110`. A VLAN typed there that the switch does not have
+yet is created on the bridge when you save.
+
+Unticking a VLAN removes the port from it. One exception: if the switch holds several VLANs
+in one bridge VLAN entry (for example `vlan-ids=100-110`) and the port keeps some of them,
+that entry is left alone and the editor tells you which VLANs are still tagged. Split the
+entry on the VLANs tab to remove them.
 
 !!! warning "This is a guarded change"
     Moving the port that carries management traffic is the most common way to lock a MikroTik

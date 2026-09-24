@@ -15,6 +15,8 @@ export type PlannedChange =
   | { kind: 'bridge.vlan-filtering'; bridge: string; enabled: boolean }
   | {
       kind: 'port.vlan'; port: string; pvid: number; tagged: number[]; untagged: number[];
+      /** Tagged list is the complete set: unlisted static tagged rows lose the port (#165). */
+      replaceTagged?: boolean;
       /**
        * Set when the caller is also changing frame admission. Present from
        * v0.24.20; absent means only the PVID and membership move, which is a
@@ -115,6 +117,21 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
         if (wantTagged) tagged.push(change.port);
         if (wantUntagged) untagged.push(change.port);
         setMembership(row, tagged, untagged);
+      }
+
+      // The removal half, when requested. Mirrors planTaggedRemovals: static
+      // rows only, whole rows only — a range row that still covers a kept VLAN
+      // is left as it is, exactly as the device write leaves it.
+      if (change.replaceTagged) {
+        const keep = new Set(change.tagged);
+        for (const row of s.bridgeVlans) {
+          if (row['bridge'] !== bridge || isDynamic(row)) continue;
+          const tagged = csv(row['current-tagged'] ?? row['tagged']);
+          if (!tagged.includes(change.port)) continue;
+          const vids = expandVlanIds(row['vlan-ids']);
+          if (vids.some((v) => keep.has(v))) continue;
+          setMembership(row, tagged.filter((p) => p !== change.port), csv(row['current-untagged'] ?? row['untagged']));
+        }
       }
       break;
     }

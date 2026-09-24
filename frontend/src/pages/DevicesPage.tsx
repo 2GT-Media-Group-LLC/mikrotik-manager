@@ -3,8 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, RefreshCw, Router, Trash2, ChevronRight, Search,
-  Radar, Pencil, ArrowUpDown, ArrowUp, ArrowDown, ShieldQuestion,
-} from 'lucide-react';
+  Radar, Pencil, ArrowUpDown, ArrowUp, ArrowDown, ShieldQuestion, Upload} from 'lucide-react';
 import { devicesApi, topologyApi, metricsApi, tagsApi, adoptionApi} from '../services/api';
 import type { Device } from '../types';
 import type { DiscoveredDevice, AdoptionCandidate} from '../services/api';
@@ -14,6 +13,7 @@ import AddDeviceModal from '../components/devices/AddDeviceModal';
 import AdoptDeviceModal from '../components/devices/AdoptDeviceModal';
 import EditDeviceModal from '../components/devices/EditDeviceModal';
 import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
+import CsvImportModal from '../components/devices/CsvImportModal';
 
 type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen' | 'rack_name' | 'location_address';
 type DiscoveredSortKey = 'identity' | 'address' | 'mac_address' | 'seen_by' | 'discovered_at';
@@ -140,6 +140,7 @@ export default function DevicesPage() {
   const [searching, setSearching] = useState(false);
   const [hideDuplicates, setHideDuplicates] = useState(true);
   const [showTryAllModal, setShowTryAllModal] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
   const [deviceSort, setDeviceSort] = useState<{ key: DeviceSortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
   // Physical-placement filters (#107). Both are free-form strings on the device, so
   // the options come from what is actually recorded rather than a fixed list.
@@ -358,6 +359,14 @@ export default function DevicesPage() {
             >
               <RefreshCw className={clsx('w-3.5 h-3.5', searching && 'animate-spin')} />
               {searching ? 'Searching…' : 'Discover'}
+            </button>
+            <button
+              onClick={() => setShowCsvImport(true)}
+              className="btn-secondary flex items-center gap-2 text-[12px] py-[6px]"
+              title="Add many devices from a CSV file"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Import CSV
             </button>
             <button
               onClick={() => { setAddPrefill(undefined); setShowAddModal(true); }}
@@ -870,6 +879,14 @@ export default function DevicesPage() {
             queryClient.invalidateQueries({ queryKey: ['devices'] });
             queryClient.invalidateQueries({ queryKey: ['devices-discovered'] });
           }}
+        />
+      )}
+
+      {showCsvImport && (
+        <CsvImportModal
+          existingAddresses={(devices as Device[]).map((d) => d.ip_address)}
+          onClose={() => setShowCsvImport(false)}
+          onSuccess={() => queryClient.invalidateQueries({ queryKey: ['devices'] })}
         />
       )}
 

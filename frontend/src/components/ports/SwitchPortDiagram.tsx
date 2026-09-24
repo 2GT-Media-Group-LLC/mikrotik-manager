@@ -7,6 +7,7 @@ import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVerdictOf, type GuardResult, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
 import { classifyPort, portBasis, portLabel, portSortKey } from '../../utils/portClass';
+import { parseVlanList, toggleVlan, formatVlanList } from '../../utils/vlanList';
 import {
   staggerBlocks, chunkRows, resolveColumns,
   DENSITY_OPTIONS, parseDensity, densityLabel, type Density,
@@ -594,6 +595,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     tagged_vlans: '',
   });
   const [saveError, setSaveError] = useState('');
+  const [saveNotice, setSaveNotice] = useState('');
   const [bondError, setBondError] = useState('');
   const [createTrunkForm, setCreateTrunkForm] = useState<CreateTrunkForm>({
     name: '',
@@ -655,7 +657,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   });
 
   const updateVlanMutation = useMutation({
-    mutationFn: ({ name, data, confirm }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk' }; confirm?: boolean }) =>
+    mutationFn: ({ name, data, confirm }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk'; replace_tagged?: boolean }; confirm?: boolean }) =>
       devicesApi.configurePortVlan(deviceId, name, confirm ? { ...data, confirm_lockout: true } : data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
@@ -840,6 +842,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
       return;
     }
     setSaveError('');
+    setSaveNotice('');
     const bridgePvid = port.bridgeInfo?.pvid ?? 1;
     const bridgeTagged = port.bridgeInfo?.tagged ?? false;
     setEditingPort(port);
@@ -857,13 +860,14 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
       pvid: bridgePvid,
       // Prefill from the port's actual tagged membership so opening the dialog and
       // saving does not silently strip the trunk's VLANs.
-      tagged_vlans: (port.bridgeInfo?.tagged_vlan_ids ?? []).join(','),
+      tagged_vlans: formatVlanList((port.bridgeInfo?.tagged_vlan_ids ?? []).map(Number).filter((n) => n > 0)),
     });
   };
 
   const handleSave = async () => {
     if (!editingPort) return;
     setSaveError('');
+    setSaveNotice('');
 
     const ifaceUpdates: Record<string, unknown> = {
       disabled: editForm.disabled,
@@ -886,18 +890,29 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     await updateInterfaceMutation.mutateAsync({ name: editingPort.name, updates: ifaceUpdates });
 
     if (editForm.vlan_mode !== 'none') {
-      const taggedList = editForm.tagged_vlans
-        .split(',')
-        .map((s) => parseInt(s.trim(), 10))
-        .filter((n) => n > 0 && n <= 4094);
+      // parseVlanList understands ranges. The previous split-and-parseInt read
+      // "10-12" as 10 and saved the wrong VLANs without complaint. The native
+      // VLAN is untagged by definition, so it is never also sent as tagged.
+      const taggedList = parseVlanList(editForm.tagged_vlans).filter((n) => n !== editForm.pvid);
 
       // mode is sent explicitly so the server sets frame-types and
       // ingress-filtering to match, rather than only the PVID (#151).
       const vlanData = editForm.vlan_mode === 'access'
         ? { pvid: editForm.pvid, untagged_vlans: [editForm.pvid], tagged_vlans: [], mode: 'access' as const }
-        : { pvid: editForm.pvid, tagged_vlans: taggedList, untagged_vlans: [], mode: 'trunk' as const };
+        // replace_tagged: the list is the port's whole tagged set, so an
+        // unticked VLAN is removed rather than quietly left in place (#165).
+        : { pvid: editForm.pvid, tagged_vlans: taggedList, untagged_vlans: [], mode: 'trunk' as const, replace_tagged: true };
 
-      await updateVlanMutation.mutateAsync({ name: editingPort.name, data: vlanData });
+      const res = await updateVlanMutation.mutateAsync({ name: editingPort.name, data: vlanData });
+      const notRemoved = (res?.data as { not_removed?: number[] } | undefined)?.not_removed ?? [];
+      if (notRemoved.length) {
+        // Saved, but not entirely as asked. Keep the editor open so this is seen.
+        setSaveNotice(
+          `Saved, but VLAN${notRemoved.length > 1 ? 's' : ''} ${formatVlanList(notRemoved)} ${notRemoved.length > 1 ? 'are' : 'is'} still tagged on this port. ` +
+          'They share a bridge VLAN entry (a range) with VLANs the port keeps. Split or edit that entry on the VLANs tab to remove them.'
+        );
+        return;
+      }
     }
 
     if (!updateInterfaceMutation.isError && !updateVlanMutation.isError) {
@@ -1544,7 +1559,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                             }
                           >
                             <option value={1}>1 (default)</option>
-                            {vlans.map((v) => (
+                            {vlans.filter((v) => v.vlan_id !== 1).map((v) => (
                               <option key={v.vlan_id} value={v.vlan_id}>
                                 {v.vlan_id} — {v.name || `VLAN ${v.vlan_id}`}
                               </option>
@@ -1552,17 +1567,53 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                           </select>
                         </div>
                         <div>
-                          <label className="label">Tagged VLANs (comma-separated IDs)</label>
+                          <label className="label">Tagged VLANs</label>
+                          {/* Checkboxes for the VLANs this device knows (#165). The
+                              native VLAN is greyed out: it is carried untagged, so
+                              tagging it too would be a misconfiguration. */}
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {[...vlans].sort((a, b) => a.vlan_id - b.vlan_id).map((v) => {
+                              const native = v.vlan_id === editForm.pvid;
+                              // RouterOS-generated names ("VLAN 100") only repeat the number.
+                              const label = v.name && v.name.trim() !== `VLAN ${v.vlan_id}` ? v.name : '';
+                              const on = !native && parseVlanList(editForm.tagged_vlans).includes(v.vlan_id);
+                              return (
+                                <label
+                                  key={v.vlan_id}
+                                  title={native ? 'Native VLAN (PVID), carried untagged' : v.name || `VLAN ${v.vlan_id}`}
+                                  className={clsx(
+                                    'flex items-center gap-1.5 px-2 py-1 rounded border text-xs select-none',
+                                    native ? 'opacity-40 cursor-not-allowed border-gray-200 dark:border-slate-700'
+                                      : on ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 cursor-pointer'
+                                      : 'border-gray-200 dark:border-slate-700 cursor-pointer'
+                                  )}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="w-3.5 h-3.5"
+                                    checked={on}
+                                    disabled={native}
+                                    onChange={() =>
+                                      setEditForm((f) => ({ ...f, tagged_vlans: toggleVlan(f.tagged_vlans, v.vlan_id) }))
+                                    }
+                                  />
+                                  <span className="mono">{v.vlan_id}</span>
+                                  {label && <span className="text-gray-500 dark:text-slate-400">{label}</span>}
+                                </label>
+                              );
+                            })}
+                          </div>
                           <input
                             className="input font-mono"
                             value={editForm.tagged_vlans}
                             onChange={(e) =>
                               setEditForm((f) => ({ ...f, tagged_vlans: e.target.value }))
                             }
-                            placeholder="e.g. 10, 20, 30"
+                            placeholder="e.g. 10,20,100-110"
                           />
                           <div className="text-xs text-gray-400 mt-1">
-                            Available VLANs: {vlans.map((v) => v.vlan_id).join(', ')}
+                            The same list as text, for copying between switches. Ranges like 100-110
+                            are accepted. VLANs not listed above are created on the bridge when saved.
                           </div>
                         </div>
                       </>
@@ -1570,6 +1621,13 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                   </div>
                 )}
               </div>
+
+              {saveNotice && (
+                <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-700 dark:text-amber-300">{saveNotice}</p>
+                </div>
+              )}
 
               {saveError && (
                 <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">

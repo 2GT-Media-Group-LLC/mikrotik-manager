@@ -51,7 +51,7 @@ never restarted for an image it does not have.
 
 ## Waves
 
-Waves are the point. Devices are assigned to wave 1, 2 or 3, and **waves run strictly
+Waves are the point. Devices are assigned to waves 1 to 9, and **waves run strictly
 in sequence**. Wave 1 is your canary: put one device in it, let it finish, and the
 rest of the fleet is still untouched if it goes wrong.
 
@@ -59,6 +59,29 @@ rest of the fleet is still untouched if it goes wrong.
 Devices never reached are marked `skipped`, not `failed` — they did not run.
 
 A device that comes back on the *old* version counts as a failure.
+
+### Waves from tags
+
+[Tags](devices.md) are how devices are grouped. Next to **Select all updatable** there is a
+chip for each tag in use. Clicking one adds that tag's updatable devices as the next wave. A
+typical rollout is one canary device in wave 1, then `lab`, then `branch`, then `core`.
+
+## Update channels
+
+RouterOS checks for updates on a channel: `stable`, `long-term`, `testing` or `development`.
+The **Update channel** card sets it.
+
+- **Fleet default** applies to every device. *Leave each device on its own channel* means the manager never changes a
+  device's channel.
+- **Overrides** pick a tag or a single device and give it a different channel, or set it back
+  to *follow fleet default*. A device override wins over the fleet default.
+
+The channel is written to the device (`/system/package/update/set channel=...`) the next time
+the manager checks it for updates, and only if it differs. The card also shows the channel
+each device last reported.
+
+!!! note "RouterOS v6 to v7"
+    Moving a v6 device to v7 is not the same as changing channel and is not supported yet.
 
 ## Upgrading several devices at once
 
