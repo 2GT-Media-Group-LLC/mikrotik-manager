@@ -83,12 +83,26 @@ export interface Device {
   } | null;
   rack_name?: string;
   rack_slot?: string;
+  /** Hardware health from /system/health (#168). */
+  health_status?: 'ok' | 'degraded' | 'unknown' | null;
+  health_issues?: { issues?: HealthIssue[]; ignored?: HealthIssue[] } | null;
+  health_checked_at?: string | null;
+  health_ignored?: string[];
+  /** Expected to drop out (solar, battery); see utils/deviceState. */
+  intermittent?: boolean;
+  intermittent_alert_after_min?: number;
   /** Detected wireless role: none | standalone | cap | controller | controller_cap. */
   wifi_role?: string | null;
   has_lte?: boolean;
   created_at: string;
   updated_at?: string;
   tags?: { id: number; name: string; color: string }[];
+}
+
+export interface HealthIssue {
+  item: string;
+  value: string;
+  message: string;
 }
 
 export interface Tag {
@@ -305,7 +319,7 @@ export interface ExternalTopologyNode {
 }
 
 export interface MetricsSummary {
-  devices: { total: number; online: number; offline: number };
+  devices: { total: number; online: number; offline: number; degraded?: number; intermittent_offline?: number };
   clients: { total: number; active: number };
   alerts: { critical: number; warning: number };
   availability?: { fleetUptimePct30d: number };

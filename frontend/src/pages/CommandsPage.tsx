@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban, Download } from 'lucide-react';
 import { commandsApi, devicesApi, type CommandRunDetail, tagsApi} from '../services/api';
+import CommandTemplateBar from '../components/commands/CommandTemplateBar';
 
 /**
  * Bulk command execution.
@@ -99,17 +100,19 @@ export default function CommandsPage() {
           <Terminal className="w-5 h-5 text-blue-500" /> Bulk commands
         </h1>
         <p className="text-sm text-gray-600 dark:text-slate-300 mt-1 max-w-3xl">
-          Run one RouterOS console command across many devices, in waves, stopping at the first
-          failure. Commands run over SSH, so console syntax such as <code>:put</code> works.
+          Run RouterOS console commands across many devices, in waves, stopping at the first
+          failure. Put several commands on separate lines to run them in order. Commands run over
+          SSH, so console syntax such as <code>:put</code> works.
         </p>
       </div>
 
       <div className="card p-5 space-y-4">
+        <CommandTemplateBar command={command} onLoad={setCommand} />
         <label className="block">
           <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Command</span>
           <textarea
             value={command} onChange={e => setCommand(e.target.value)}
-            rows={2} spellCheck={false}
+            rows={4} spellCheck={false}
             placeholder="/system note set note=&quot;maintenance window&quot;"
             className="input mt-1 w-full font-mono text-sm"
           />

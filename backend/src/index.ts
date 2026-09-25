@@ -27,6 +27,7 @@ import {
 } from './services/DeviceBulkAddWorker';
 import { startSshKeyFleetWorker, stopSshKeyFleetWorker } from './services/SshKeyFleetWorker';
 import sshKeysRoutes from './routes/sshKeys';
+import commandTemplatesRoutes from './routes/commandTemplates';
 import { netflowCollector } from './services/netflow/NetflowCollector';
 import { verifyToken, type AuthPayload } from './middleware/auth';
 import { rateLimitRedis } from './middleware/rateLimitRedis';
@@ -58,7 +59,7 @@ import certRoutes from './routes/cert';
 import searchRoutes from './routes/search';
 import switchesRoutes from './routes/switches';
 import routersRoutes from './routes/routers';
-import alertsRoutes from './routes/alerts';
+import alertsRoutes, { ensureDefaultRules } from './routes/alerts';
 import configTemplatesRoutes from './routes/configTemplates';
 import configHistoryRoutes from './routes/configHistory';
 import wirelessRoutes from './routes/wireless';
@@ -346,6 +347,7 @@ app.use('/api/system', systemRoutes);
 app.use('/api/commands', commandRoutes);
 app.use('/api/sites', sitesRoutes);
 app.use('/api/ssh-keys', sshKeysRoutes);
+app.use('/api/command-templates', commandTemplatesRoutes);
 app.use('/api/certificates', certificatesRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
@@ -369,6 +371,7 @@ async function start(): Promise<void> {
 
   // Run migrations
   await runMigrations();
+  await ensureDefaultRules().catch((e) => console.warn('[startup] default alert rules:', (e as Error).message));
 
   // Migrate any credentials still encrypted under a legacy/default key forward
   // to the current key (runs in the background; safe to skip on failure).

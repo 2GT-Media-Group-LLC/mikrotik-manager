@@ -23,6 +23,8 @@ import ConnectionsTab from '../components/device-detail/ConnectionsTab';
 import QueuesTab from '../components/device-detail/QueuesTab';
 import SecurityTab from '../components/device-detail/SecurityTab';
 import clsx from 'clsx';
+import { displayState, STATE_LABEL } from '../utils/deviceState';
+import DeviceHealthCard from '../components/device-detail/DeviceHealthCard';
 
 type TabKey = 'overview' | 'ports' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
 
@@ -156,24 +158,31 @@ export default function DeviceDetailPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">{device.name}</h1>
               <DeviceTagPicker deviceId={deviceId} />
-              <span
-                className={clsx(
-                  'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0',
-                  device.status === 'online' && 'status-online',
-                  device.status === 'offline' && 'status-offline',
-                  device.status === 'unknown' && 'status-unknown'
-                )}
-              >
-                <span
-                  className={clsx(
-                    'w-1.5 h-1.5 rounded-full',
-                    device.status === 'online' && 'bg-green-500 animate-pulse',
-                    device.status === 'offline' && 'bg-red-500',
-                    device.status === 'unknown' && 'bg-gray-400'
-                  )}
-                />
-                {device.status}
-              </span>
+              {(() => {
+                const st = displayState(device);
+                return (
+                  <span
+                    className={clsx(
+                      'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0',
+                      st === 'online' && 'status-online',
+                      st === 'degraded' && 'status-degraded',
+                      st === 'offline' && 'status-offline',
+                      (st === 'unknown' || st === 'expected-offline') && 'status-unknown'
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        'w-1.5 h-1.5 rounded-full',
+                        st === 'online' && 'bg-green-500 animate-pulse',
+                        st === 'degraded' && 'bg-amber-500 animate-pulse',
+                        st === 'offline' && 'bg-red-500',
+                        (st === 'unknown' || st === 'expected-offline') && 'bg-gray-400'
+                      )}
+                    />
+                    {STATE_LABEL[st]}
+                  </span>
+                );
+              })()}
             </div>
             <p className="text-sm text-gray-500 dark:text-slate-400 font-mono truncate">
               {device.ip_address}:{device.api_port}
@@ -372,6 +381,9 @@ export default function DeviceDetailPage() {
               ))}
             </div>
           </div>
+
+          {/* Hardware health and intermittent setting (#168) */}
+          <DeviceHealthCard device={device} />
 
           {/* Physical location, rack & notes */}
           <DeviceLocationSection device={device} />

@@ -16,8 +16,11 @@ cooldown that prevents a flapping device from flooding your channels.
 | `log_error` / `log_warning` | Matched from the device's own log |
 | `device_discovered` | An unmanaged neighbour appeared via LLDP/CDP/MNDP |
 | `config_drift` | The device's configuration changed (off by default) |
+| `device_degraded` / `device_health_restored` | A power supply, fan or temperature problem appeared or cleared. See [Hardware health](devices.md#hardware-health) |
 
 Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
+Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
+only send an offline alert once they have been gone longer than their limit.
 
 ## Certificate expiry
 
@@ -76,7 +79,7 @@ certificate.
 
 ## Delivery channels
 
-Email, Slack, Discord, Telegram and **ntfy**. Channels are configured under
+Email, Slack, Discord, Telegram, **ntfy** and **Gotify**. Channels are configured under
 **Settings → Alerts → Channels**; secrets are masked on read and preserved when you save
 a channel without retyping them.
 
@@ -106,6 +109,26 @@ being woken by:
 
 Each notification carries its event type as a **tag**, so a client can be filtered to
 wake only for the events you care about rather than needing a channel per event.
+
+### Gotify
+
+For a self-hosted [Gotify](https://gotify.net) server.
+
+| Field | Notes |
+|---|---|
+| **Server URL** | Required, e.g. `https://gotify.example.com` (a sub-path works too) |
+| **App token** | In Gotify, create an application under **Apps** and copy its token |
+| **Manager URL** | Optional. Makes each notification open the device it refers to |
+
+The token is sent in the `X-Gotify-Key` header, not the URL, so it doesn't end up in proxy logs.
+
+**Priority mapping.** Gotify's Android app treats 8 and above as high importance:
+
+| Events | Priority |
+|---|---|
+| Device offline or degraded, log errors, CPU/memory pressure | **8** |
+| Certificate expiry, config drift, firmware available | 5 |
+| Recovery, new device discovered | 2 |
 
 ## Outbound webhooks
 

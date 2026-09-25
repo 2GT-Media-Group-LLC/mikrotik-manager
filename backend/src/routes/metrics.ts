@@ -357,11 +357,15 @@ router.get('/summary', async (req: Request, res: Response) => {
   const cliFilter = siteScopeByDevice(siteId, 'device_id');
   const evtFilter = siteScopeByNullableDevice(siteId, 'device_id');
   const [deviceStats, clientStats, alertStats, availStats] = await Promise.all([
-    query<{ total: string; online: string; offline: string }>(
+    query<{ total: string; online: string; offline: string; degraded: string; intermittent_offline: string }>(
+      // Offline excludes devices marked intermittent: they are expected to drop
+      // out and are counted on their own (#168).
       `SELECT
         COUNT(*) as total,
         COUNT(*) FILTER (WHERE status='online') as online,
-        COUNT(*) FILTER (WHERE status='offline') as offline
+        COUNT(*) FILTER (WHERE status='offline' AND NOT intermittent) as offline,
+        COUNT(*) FILTER (WHERE status='online' AND health_status='degraded') as degraded,
+        COUNT(*) FILTER (WHERE status='offline' AND intermittent) as intermittent_offline
        FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`
     ),
     query<{ total: string; active: string }>(
@@ -396,6 +400,8 @@ router.get('/summary', async (req: Request, res: Response) => {
       total: deviceTotal,
       online: parseInt(deviceStats[0]?.online || '0', 10),
       offline: parseInt(deviceStats[0]?.offline || '0', 10),
+      degraded: parseInt(deviceStats[0]?.degraded || '0', 10),
+      intermittent_offline: parseInt(deviceStats[0]?.intermittent_offline || '0', 10),
     },
     clients: {
       total: parseInt(clientStats[0]?.total || '0', 10),

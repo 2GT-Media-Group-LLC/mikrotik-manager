@@ -50,4 +50,14 @@ describe('fleetStatus', () => {
       expect(`${s.headline} ${s.sentence}`).not.toMatch(/undefined|NaN|null/);
     }
   });
+
+  it('reports hardware-degraded devices, alone or alongside unreachable ones (#168)', () => {
+    expect(fleetStatus({ total: 4, online: 4, offline: 0, degraded: 1 }).headline).toBe('1 device degraded');
+    expect(fleetStatus({ total: 4, online: 3, offline: 1, degraded: 2 }).headline).toBe('1 device unreachable · 2 degraded');
+    expect(fleetStatus({ total: 4, online: 4, offline: 0, degraded: 1 }).tone).toBe('warn');
+  });
+
+  it('does not count expected dropouts as unreachable', () => {
+    expect(fleetStatus({ total: 4, online: 3, offline: 0, intermittent_offline: 1 }).kind).toBe('healthy');
+  });
 });

@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import * as https from 'https';
 import * as http from 'http';
 import { query } from '../config/database';
+import { buildGotifyRequest } from '../utils/gotify';
 
 export type AlertEventType =
   | 'device_offline'
@@ -13,7 +14,9 @@ export type AlertEventType =
   | 'cert_expiry'
   | 'device_discovered'
   | 'firmware_update_available'
-  | 'config_drift';
+  | 'config_drift'
+  | 'device_degraded'
+  | 'device_health_restored';
 
 export interface AlertContext {
   deviceId?: number;
@@ -33,7 +36,7 @@ interface AlertRule {
 interface AlertChannel {
   id: number;
   name: string;
-  type: 'email' | 'slack' | 'discord' | 'telegram' | 'ntfy';
+  type: 'email' | 'slack' | 'discord' | 'telegram' | 'ntfy' | 'gotify';
   enabled: boolean;
   config: Record<string, unknown>;
 }
@@ -53,6 +56,8 @@ const EVENT_LABELS: Record<string, string> = {
   device_discovered:        'New Device Discovered',
   firmware_update_available: 'Firmware Update Available',
   config_drift:             'Configuration Changed',
+  device_degraded:          'Device Degraded (Hardware)',
+  device_health_restored:   'Device Hardware Healthy Again',
 };
 
 const EVENT_EMOJI: Record<string, string> = {
@@ -66,6 +71,8 @@ const EVENT_EMOJI: Record<string, string> = {
   device_discovered:        '🔍',
   firmware_update_available: '🔄',
   config_drift:             '📝',
+  device_degraded:          '🟠',
+  device_health_restored:   '🟢',
 };
 
 export class AlertService {
@@ -204,6 +211,7 @@ export class AlertService {
       case 'discord':  await this.sendDiscord(ch.config, eventType, message, ctx); break;
       case 'telegram': await this.sendTelegram(ch.config, eventType, message, ctx); break;
       case 'ntfy':     await this.sendNtfy(ch.config, eventType, message, ctx); break;
+      case 'gotify':   await this.sendGotify(ch.config, eventType, message, ctx); break;
     }
   }
 
@@ -388,6 +396,22 @@ export class AlertService {
     await this.postJson(serverUrl, JSON.stringify(body), this.ntfyAuthHeaders(cfg));
   }
 
+  /** Gotify (#169). Request shape and priorities live in utils/gotify.ts. */
+  private async sendGotify(
+    cfg: Record<string, unknown>,
+    eventType: string,
+    message: string,
+    ctx: AlertContext
+  ): Promise<void> {
+    const label = EVENT_LABELS[eventType] ?? eventType;
+    const emoji = EVENT_EMOJI[eventType] ?? '\u{1F514}';
+    const lines = [message];
+    if (ctx.deviceName) lines.push(`Device: ${ctx.deviceName}`);
+    if (ctx.details)    lines.push(ctx.details);
+    const req = buildGotifyRequest(cfg, eventType, `${emoji} ${label}`, lines.join('\n'), ctx.deviceId);
+    await this.postJson(req.url, req.body, req.headers);
+  }
+
   /**
    * Access token if present, otherwise basic auth. Infrastructure alerts should not
    * require a world-writable topic, so both of ntfy's schemes are supported and the
@@ -412,8 +436,8 @@ export class AlertService {
    * channel stays worth being woken by.
    */
   private ntfyPriority(eventType: string): number {
-    if (['device_offline', 'log_error', 'high_cpu', 'high_memory'].includes(eventType)) return 4;
-    if (['device_online', 'device_discovered'].includes(eventType)) return 2;
+    if (['device_offline', 'device_degraded', 'log_error', 'high_cpu', 'high_memory'].includes(eventType)) return 4;
+    if (['device_online', 'device_health_restored', 'device_discovered'].includes(eventType)) return 2;
     return 3;
   }
 

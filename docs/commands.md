@@ -2,18 +2,29 @@
 
 [← Documentation index](README.md)
 
-Run one RouterOS console command across many devices, in waves, stopping at the first
-failure.
+Run RouterOS console commands across many devices, in waves, stopping at the first
+failure. Several commands on separate lines run in order.
 
 Commands run over **SSH**, because console syntax — `:put`, `:foreach`, `/interface print`
 — is not reachable through the binary API, which has its own command tree.
+
+## Templates
+
+Commands you run more than once can be saved. Type the command, click **Save as template**,
+and give it a name and, optionally, a description. **Load a saved template** puts it back in
+the command box, where it can be edited before running; **Update** saves the edited version.
+
+Loading a template only fills the box. It runs like any typed command, with the same waves,
+halt-on-failure and Change Guard. Templates will also be used for post-upgrade commands once
+that feature exists.
 
 ## Choosing devices
 
 Pick them individually, or use **All** / **None**.
 
 Where devices carry tags, each tag in use appears as a chip beside those buttons and selects
-every device carrying it. Tags are assigned on the device page, under the device name.
+every device carrying it. Tags are assigned on the device page, or to many devices at once
+from the [device list](devices.md#the-device-list).
 
 This is what tags are for. Sites group devices by where they are and device types group them
 by what they are, and both are single-valued; a tag is many-per-device and crosses both, which

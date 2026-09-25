@@ -14,6 +14,8 @@ import AdoptDeviceModal from '../components/devices/AdoptDeviceModal';
 import EditDeviceModal from '../components/devices/EditDeviceModal';
 import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
 import CsvImportModal from '../components/devices/CsvImportModal';
+import BulkTagBar from '../components/devices/BulkTagBar';
+import { displayState, STATE_COLOR } from '../utils/deviceState';
 
 type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen' | 'rack_name' | 'location_address';
 type DiscoveredSortKey = 'identity' | 'address' | 'mac_address' | 'seen_by' | 'discovered_at';
@@ -54,14 +56,19 @@ function SortableHeader({
   );
 }
 
-function GlowDot({ status }: { status: Device['status'] }) {
-  const color = status === 'online' ? 'var(--good)' : status === 'offline' ? 'var(--bad)' : 'var(--ink-4)';
+function GlowDot({ device }: { device: Device }) {
+  const state = displayState(device);
+  const color = STATE_COLOR[state];
+  const title = state === 'degraded'
+    ? `Degraded: ${(device.health_issues?.issues ?? []).map((i) => i.message).join(' ')}`
+    : state === 'expected-offline' ? 'Offline, which is expected for this device' : state;
   return (
     <span
+      title={title}
       style={{
         width: 8, height: 8, borderRadius: 999, display: 'inline-block',
         background: color, flexShrink: 0,
-        boxShadow: status === 'online' ? `0 0 0 2px ${color}33, 0 0 8px ${color}88` : 'none',
+        boxShadow: state === 'online' || state === 'degraded' ? `0 0 0 2px ${color}33, 0 0 8px ${color}88` : 'none',
       }}
     />
   );
@@ -141,6 +148,8 @@ export default function DevicesPage() {
   const [hideDuplicates, setHideDuplicates] = useState(true);
   const [showTryAllModal, setShowTryAllModal] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
+  // Row selection for bulk tagging (#161).
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deviceSort, setDeviceSort] = useState<{ key: DeviceSortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
   // Physical-placement filters (#107). Both are free-form strings on the device, so
   // the options come from what is actually recorded rather than a fixed list.
@@ -286,6 +295,15 @@ export default function DevicesPage() {
     });
     return sorted;
   }, [devices, search, statusFilter, typeFilter, tagFilter, rackFilter, locationFilter, deviceSort]);
+
+  // Bulk actions only ever apply to devices the operator can see. A selection
+  // made before narrowing the filters must not quietly include hidden rows.
+  const selectedVisible = filtered.filter((d) => selected.has(d.id));
+  const allVisibleSelected = filtered.length > 0 && selectedVisible.length === filtered.length;
+  const toggleSelected = (id: number) =>
+    setSelected((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAllVisible = () =>
+    setSelected(allVisibleSelected ? new Set() : new Set(filtered.map((d) => d.id)));
 
   const discoveredList = discovered as DiscoveredDevice[];
   const duplicateCount = useMemo(
@@ -485,10 +503,28 @@ export default function DevicesPage() {
         </div>
       ) : (
         <div className="card overflow-hidden">
+          {canWrite && selectedVisible.length > 0 && (
+            <BulkTagBar
+              devices={selectedVisible}
+              tags={allTags}
+              onClear={() => setSelected(new Set())}
+            />
+          )}
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                  {canWrite && (
+                    <th className="pl-4 pr-0 py-[10px]" style={{ width: 28 }}>
+                      <input
+                        type="checkbox"
+                        aria-label="Select all shown devices"
+                        checked={allVisibleSelected}
+                        ref={(el) => { if (el) el.indeterminate = selectedVisible.length > 0 && !allVisibleSelected; }}
+                        onChange={toggleAllVisible}
+                      />
+                    </th>
+                  )}
                   {[
                     { key: null,         label: '',           w: 22  },
                     { key: 'name',       label: 'DEVICE',     w: null },
@@ -534,8 +570,18 @@ export default function DevicesPage() {
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                       onClick={() => navigate(`/devices/${device.id}`)}
                     >
+                      {canWrite && (
+                        <td className="pl-4 pr-0 py-[12px]" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${device.name}`}
+                            checked={selected.has(device.id)}
+                            onChange={() => toggleSelected(device.id)}
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-[12px]">
-                        <GlowDot status={device.status} />
+                        <GlowDot device={device} />
                       </td>
                       <td className="px-4 py-[12px]">
                         {/* Beside the name rather than beneath it: a second line per

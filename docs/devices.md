@@ -34,7 +34,10 @@ closed browser tab and reports progress and failures per device.
 | `preset` | Login | The name of a saved [credential preset](configuration.md) |
 | `username`, `password` | Login | The RouterOS login, if not using a preset |
 | `ssh_username`, `ssh_password` | Optional | Only if SSH uses a different login. Blank uses the one above |
+| `tags` | Optional | Existing tags. Create them under Settings → Tags first |
 | `notes` | Optional | Anything you like |
+
+For several tags on one device, separate them with a vertical bar: `branch|lab`.
 
 Each device needs a login: a preset, or a username and password. `port` and `ssh_port` can
 be added as extra columns if yours aren't the defaults (8728 and 22).
@@ -60,9 +63,51 @@ The import runs as the same server-side job as **Try All**, so the tab can be cl
 Filter by status, type, tag, rack or location, and sort by any column. The search box matches
 name, address, serial and MAC.
 
-Tags appear beside the device name. They are assigned on the device page and are the only
-grouping that crosses both sites and device types — see [Bulk commands](commands.md) for
-selecting a fleet by tag.
+Tags appear beside the device name. They are the only grouping that crosses both sites and
+device types — see [Bulk commands](commands.md) for selecting a fleet by tag.
+
+To tag many devices at once, tick them in the list (the box in the header selects every device
+the current filters show), then choose **Add tag…** or **Remove tag…** in the bar that appears.
+Tags can also be picked when adding a device, and set per row in a [CSV import](#importing-from-csv).
+Tags themselves are created under **Settings → Tags**.
+
+## Status colours
+
+| Colour | Meaning |
+|---|---|
+| Green | Online |
+| Amber | **Degraded**: online, but a power supply or fan reports a failure, or a temperature is at or over the limit |
+| Red | Offline |
+| Grey | Unknown, or offline when the device is marked as expected to drop out |
+
+### Hardware health
+
+The manager reads `/system/health` every few minutes, and on **Sync**. A device is degraded
+when:
+
+- a power supply state (`psu1-state`, `psu2-state`, …) is anything other than `ok`
+- `fan-state` is anything other than `ok` (a fan speed of 0 on its own is not a failure, as
+  some models stop their fans when cool)
+- any temperature reaches the limit, 85 °C by default, set under **Settings → Alerting**
+
+Voltages are not judged, since normal ranges depend on the model and power source.
+
+The device's Overview tab lists the problem. If it is deliberate, for example a dual-supply
+switch fed from one supply, click **Ignore on this device** and that reading no longer counts.
+Ignored readings stay listed so they aren't forgotten.
+
+Becoming degraded, and recovering, raise the `device_degraded` and `device_health_restored`
+alerts, and are written to the device's event log.
+
+### Devices that go offline on purpose
+
+On a device's Overview tab, tick **Expected to go offline at times** for solar or battery
+powered devices, or anything else that drops out normally. Such a device:
+
+- shows grey rather than red when offline, and isn't counted as unreachable on the dashboard
+- sends no offline alert when it drops out
+- alerts once if it stays offline longer than its limit (24 hours by default; 0 means never),
+  and then sends a recovery alert when it returns
 
 ## Device tabs
 

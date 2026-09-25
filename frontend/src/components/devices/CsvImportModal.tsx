@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Upload, Download, Loader2, Check, AlertTriangle, FileText } from 'lucide-react';
 import clsx from 'clsx';
-import { credentialPresetsApi, devicesApi, type BulkAddJobStatus } from '../../services/api';
+import { credentialPresetsApi, devicesApi, tagsApi, type BulkAddJobStatus } from '../../services/api';
 import { parseDeviceCsv, buildCsvTemplate, MAX_ROWS } from '../../utils/csvImport';
 
 /**
@@ -34,9 +34,14 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
     queryFn: () => credentialPresetsApi.list().then((r) => r.data),
   });
 
+  const { data: tags = [] } = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => tagsApi.list().then((r) => r.data),
+  });
+
   const parsed = useMemo(
-    () => (text.trim() ? parseDeviceCsv(text, presets, existingAddresses) : null),
-    [text, presets, existingAddresses]
+    () => (text.trim() ? parseDeviceCsv(text, presets, existingAddresses, tags) : null),
+    [text, presets, existingAddresses, tags]
   );
   const ready = parsed?.rows.filter((r) => r.item && !r.skip) ?? [];
   const skipped = parsed?.rows.filter((r) => r.skip) ?? [];
@@ -55,7 +60,7 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
   const downloadTemplate = () => {
     // The byte-order mark makes Excel read the file as UTF-8, so preset names
     // and notes in other scripts survive. The importer strips it again.
-    const template = '\uFEFF' + buildCsvTemplate(presets[0]?.name);
+    const template = '\uFEFF' + buildCsvTemplate(presets[0]?.name, tags[0]?.name);
     const url = URL.createObjectURL(new Blob([template], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
@@ -135,6 +140,9 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
                     : 'A saved credential preset, by name. You have none yet; use username and password.'],
                   ['username, password', 'Login', 'The RouterOS login, if you are not using a preset.'],
                   ['ssh_username, ssh_password', 'Optional', 'Only if SSH uses a different login. Blank uses the one above.'],
+                  ['tags', 'Optional', tags.length
+                    ? `Existing tags, separated by | (yours: ${tags.map((x) => x.name).join(', ')}).`
+                    : 'Existing tags, separated by |. You have none yet; create them under Settings → Tags.'],
                   ['notes', 'Optional', 'Anything you like.'],
                 ].map(([col, need, what]) => (
                   <tr key={col}>

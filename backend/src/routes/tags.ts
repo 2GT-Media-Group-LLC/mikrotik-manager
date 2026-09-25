@@ -50,25 +50,29 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
 // POST /api/tags/:id/devices — assign tag to devices (operator+)
 router.post('/:id/devices', requireWrite, async (req: Request, res: Response) => {
   const tagId = parseInt(req.params.id, 10);
-  const { deviceIds, action } = req.body as { deviceIds: number[]; action: 'add' | 'remove' };
-  if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
+  const { deviceIds, action } = req.body as { deviceIds: unknown; action: 'add' | 'remove' };
+  const ids = Array.isArray(deviceIds) ? deviceIds.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+  if (ids.length === 0) {
     res.status(400).json({ error: 'deviceIds array required' });
     return;
   }
-  if (action === 'remove') {
-    await query(
-      `DELETE FROM device_tags WHERE tag_id = $1 AND device_id = ANY($2::int[])`,
-      [tagId, deviceIds]
-    );
-  } else {
-    for (const deviceId of deviceIds) {
-      await query(
-        `INSERT INTO device_tags (device_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [deviceId, tagId]
-      );
-    }
+  const tag = await query(`SELECT id FROM tags WHERE id = $1`, [tagId]);
+  if (!tag.length) {
+    res.status(404).json({ error: 'Tag not found' });
+    return;
   }
-  res.json({ ok: true });
+  // One statement either way. Used for bulk tagging from the Devices page
+  // (#161), where a selection can be hundreds of devices.
+  const changed = action === 'remove'
+    ? await query(
+        `DELETE FROM device_tags WHERE tag_id = $1 AND device_id = ANY($2::int[]) RETURNING device_id`,
+        [tagId, ids])
+    : await query(
+        `INSERT INTO device_tags (device_id, tag_id)
+         SELECT d.id, $1 FROM devices d WHERE d.id = ANY($2::int[])
+         ON CONFLICT DO NOTHING RETURNING device_id`,
+        [tagId, ids]);
+  res.json({ ok: true, changed: changed.length });
 });
 
 // GET /api/tags/device/:deviceId — tags for a specific device

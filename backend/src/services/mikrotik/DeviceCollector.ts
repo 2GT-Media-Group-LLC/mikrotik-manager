@@ -48,6 +48,7 @@ import { readRevocation } from '../../utils/certRecord';
 import { stripOwnSessionNoise } from '../../utils/logNoise';
 import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
 import { planVlanWrite, frameTypesFor, planTaggedRemovals } from '../../utils/bridgeVlanPlan';
+import { normalizeHealth, evaluateHealth, type HealthVerdict, type HealthIssue } from '../../utils/deviceHealth';
 import { resolveChannel } from '../../utils/updateChannel';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
@@ -1630,6 +1631,37 @@ export class DeviceCollector {
   /** Back-compat entry point used by the full-sync flow. */
   async saveFullConfig(): Promise<void> {
     await this.snapshotConfig('full-sync');
+  }
+
+  /**
+   * Read /system/health and store a verdict (#168). Returns the previous state
+   * so the poller can alert on a change, or null if health could not be read,
+   * in which case the stored verdict is left as it was.
+   */
+  async collectHealth(tempLimitC?: number): Promise<{
+    prevStatus: string | null;
+    prevItems: string[];
+    verdict: HealthVerdict;
+  } | null> {
+    let rows: Record<string, string>[];
+    try {
+      rows = (await this.client.execute('/system/health/print')) as Record<string, string>[];
+    } catch {
+      return null;
+    }
+    const [prev] = await query<{ health_status: string | null; health_issues: { issues?: HealthIssue[] } | null; health_ignored: string[] | null }>(
+      `SELECT health_status, health_issues, health_ignored FROM devices WHERE id = $1`, [this.device.id]
+    );
+    const verdict = evaluateHealth(normalizeHealth(rows), { tempLimitC, ignored: prev?.health_ignored ?? [] });
+    await query(
+      `UPDATE devices SET health_status = $2, health_issues = $3, health_checked_at = NOW() WHERE id = $1`,
+      [this.device.id, verdict.status, JSON.stringify({ issues: verdict.issues, ignored: verdict.ignored })]
+    );
+    return {
+      prevStatus: prev?.health_status ?? null,
+      prevItems: (prev?.health_issues?.issues ?? []).map((i) => i.item),
+      verdict,
+    };
   }
 
   async updateDeviceStatus(status: string): Promise<void> {

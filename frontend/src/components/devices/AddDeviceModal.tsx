@@ -4,6 +4,7 @@ import { X, CheckCircle, AlertCircle, Loader2, KeyRound } from 'lucide-react';
 import {
   devicesApi,
   credentialPresetsApi,
+  tagsApi,
   type DuplicateSerialError,
 } from '../../services/api';
 import ConfirmDuplicateModal from './ConfirmDuplicateModal';
@@ -41,6 +42,7 @@ export default function AddDeviceModal({
     notes: '',
   });
   const [presetId, setPresetId] = useState<number | null>(null);
+  const [tagIds, setTagIds] = useState<number[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [duplicateSerial, setDuplicateSerial] = useState<DuplicateSerialError | null>(null);
@@ -50,6 +52,14 @@ export default function AddDeviceModal({
     queryFn: () => credentialPresetsApi.list().then((r) => r.data),
     staleTime: 30_000,
   });
+
+  const { data: tags = [] } = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => tagsApi.list().then((r) => r.data),
+    staleTime: 30_000,
+  });
+  const toggleTag = (id: number) =>
+    setTagIds((cur) => (cur.includes(id) ? cur.filter((t) => t !== id) : [...cur, id]));
 
   const selectedPreset = presetId != null ? presets.find((p) => p.id === presetId) ?? null : null;
 
@@ -61,6 +71,7 @@ export default function AddDeviceModal({
     const extra = {
       combine_with_device_id: opts.combineWithDeviceId,
       force_replace_existing_by_serial: opts.forceReplace,
+      ...(tagIds.length ? { tag_ids: tagIds } : {}),
     };
     if (selectedPreset) {
       return {
@@ -303,6 +314,30 @@ export default function AddDeviceModal({
               </>
             )}
           </div>
+
+          {tags.length > 0 && (
+            <div>
+              <label className="label">Tags (optional)</label>
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((t) => {
+                  const on = tagIds.includes(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggleTag(t.id)}
+                      className="px-2 py-0.5 rounded-full text-xs border"
+                      style={on
+                        ? { background: t.color + '33', color: t.color, borderColor: t.color }
+                        : { borderColor: 'var(--line, #e5e7eb)', color: 'var(--ink-3, #6b7280)' }}
+                    >
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="label">Notes (optional)</label>

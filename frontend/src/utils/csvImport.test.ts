@@ -137,6 +137,24 @@ describe('parseDeviceCsv', () => {
     expect(r.rows[0].item).toMatchObject({ name: 'sw1', ip_address: '10.0.0.2', notes: 'a; b' });
   });
 
+  it('applies existing tags by name, several per cell (#161)', () => {
+    const tags = [{ id: 3, name: 'Branch' }, { id: 4, name: 'lab' }];
+    const r = parseDeviceCsv('ip,preset,tags\n10.0.0.2,Default,"branch|Lab"\n', presets, [], tags);
+    expect(r.rows[0].item).toMatchObject({ tag_ids: [3, 4] });
+  });
+
+  it('rejects an unknown tag instead of creating one', () => {
+    const r = parseDeviceCsv('ip,preset,tags\n10.0.0.2,Default,brnach\n', presets, [], [{ id: 3, name: 'Branch' }]);
+    expect(r.rows[0].errors.join(' ')).toMatch(/No tag called "brnach"/);
+  });
+
+  it('puts a real tag in the template when there is one', () => {
+    const t = buildCsvTemplate('Default', 'Branch');
+    const r = parseDeviceCsv(t, presets, [], [{ id: 3, name: 'Branch' }]);
+    expect(r.rows.every((x) => x.errors.length === 0)).toBe(true);
+    expect(t.split('\r\n')[0]).toContain('tags');
+  });
+
   it('reads tab-separated files', () => {
     const r = parseDeviceCsv('ip\tpreset\n10.0.0.2\tDefault\n', presets);
     expect(r.rows[0].item).toMatchObject({ ip_address: '10.0.0.2', credential_preset_id: 7 });

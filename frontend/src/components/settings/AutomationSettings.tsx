@@ -14,6 +14,7 @@ const EVENT_LABEL: Record<string, string> = {
   high_cpu: 'High CPU', high_memory: 'High memory', cert_expiry: 'Cert expiry',
   device_discovered: 'Device discovered', firmware_update_available: 'Firmware update',
   config_drift: 'Config drift', rollout_completed: 'Rollout completed', rollout_failed: 'Rollout failed',
+  device_degraded: 'Device degraded', device_health_restored: 'Hardware healthy again',
 };
 
 // ─── API tokens ────────────────────────────────────────────────────────────────

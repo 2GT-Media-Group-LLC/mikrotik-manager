@@ -35,6 +35,8 @@ const COLUMNS: Record<string, keyof RowFields> = {
   ssh_username: 'ssh_username', ssh_user: 'ssh_username',
   ssh_password: 'ssh_password', ssh_pass: 'ssh_password',
   ssh_port: 'ssh_port',
+  // Several tags in one cell, separated by | or ; (or commas, inside quotes).
+  tags: 'tags', tag: 'tags', groups: 'tags', group: 'tags',
   notes: 'notes', note: 'notes', comment: 'notes',
 };
 
@@ -49,6 +51,7 @@ interface RowFields {
   ssh_username?: string;
   ssh_password?: string;
   ssh_port?: string;
+  tags?: string;
   notes?: string;
 }
 
@@ -121,8 +124,10 @@ function validAddress(v: string): boolean {
 export function parseDeviceCsv(
   text: string,
   presets: Pick<CredentialPreset, 'id' | 'name'>[],
-  existingAddresses: string[] = []
+  existingAddresses: string[] = [],
+  tags: { id: number; name: string }[] = []
 ): ParseResult {
+  const tagByName = new Map(tags.map((t) => [t.name.trim().toLowerCase(), t.id]));
   const fileErrors: string[] = [];
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
 
@@ -206,6 +211,15 @@ export function parseDeviceCsv(
       warnings.push('Uses the preset\'s SSH settings. The SSH columns on this line are ignored.');
     }
 
+    // Existing tags only: creating tags is an admin action, and a typo should
+    // be caught here rather than quietly start a new group.
+    const tagIds: number[] = [];
+    for (const name of (f.tags ?? '').split(/[|;,]/).map((t) => t.trim()).filter(Boolean)) {
+      const id = tagByName.get(name.toLowerCase());
+      if (id === undefined) errors.push(`No tag called "${name}". Create it under Settings → Tags first.`);
+      else if (!tagIds.includes(id)) tagIds.push(id);
+    }
+
     const item: BulkAddDeviceItem | null = errors.length ? null : {
       name: f.name?.trim() || addr,
       ip_address: addr,
@@ -216,6 +230,7 @@ export function parseDeviceCsv(
       ...(port ? { api_port: port } : {}),
       ...(presetId === undefined && hasSsh ? { ssh_username: f.ssh_username, ssh_password: f.ssh_password } : {}),
       ...(presetId === undefined && sshPort ? { ssh_port: sshPort } : {}),
+      ...(tagIds.length ? { tag_ids: tagIds } : {}),
       ...(f.notes ? { notes: f.notes } : {}),
     };
     rows.push({ line, item, errors, warnings, skip });
@@ -238,18 +253,19 @@ export function parseDeviceCsv(
  * `presetName` is one of the installation's own presets, when it has any, so
  * the preset example works as written.
  */
-export function buildCsvTemplate(presetName?: string): string {
+export function buildCsvTemplate(presetName?: string, tagName?: string): string {
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const rows: string[][] = [
-    ['name', 'ip_address', 'type', 'preset', 'username', 'password', 'ssh_username', 'ssh_password', 'notes'],
+    ['name', 'ip_address', 'type', 'preset', 'username', 'password', 'ssh_username', 'ssh_password', 'tags', 'notes'],
   ];
+  const tag = tagName ?? '';
   if (presetName) {
-    rows.push(['example-switch', '192.0.2.10', 'switch', presetName, '', '', '', '',
+    rows.push(['example-switch', '192.0.2.10', 'switch', presetName, '', '', '', '', tag,
       'Example: logs in with a saved credential preset. Replace these rows with your devices.']);
   }
-  rows.push(['example-router', '192.0.2.1', 'router', '', 'admin', 'your-password', '', '',
+  rows.push(['example-router', '192.0.2.1', 'router', '', 'admin', 'your-password', '', '', tag,
     'Example: username and password instead of a preset.']);
-  rows.push(['example-ap', '192.0.2.20', 'ap', '', 'admin', 'your-password', 'backup', 'ssh-password',
+  rows.push(['example-ap', '192.0.2.20', 'ap', '', 'admin', 'your-password', 'backup', 'ssh-password', '',
     'Example: separate SSH login. Leave SSH blank to use the same login.']);
   return rows.map((r) => r.map(q).join(',')).join('\r\n') + '\r\n';
 }

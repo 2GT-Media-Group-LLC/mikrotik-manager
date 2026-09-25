@@ -25,6 +25,8 @@ import { DEVICE_BASE_COLUMNS } from '../services/deviceColumns';
 import { withEffectiveLocation } from '../services/deviceLocation';
 import { SSH_TARGET_COLS } from '../services/SshKeyService';
 import { classifyKeyTarget } from '../utils/sshKeyCredentials';
+import type { HealthIssue } from '../utils/deviceHealth';
+import { runHealthCheck } from '../services/healthCheck';
 import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
 import { siteScopeDevices, andSite } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
@@ -373,6 +375,64 @@ router.get('/:id', async (req: Request, res: Response) => {
   return res.json(withLoc);
 });
 
+// PATCH /api/devices/:id/monitoring — health and intermittent settings (#168)
+//   intermittent: expected to drop out (solar, battery); no alert per outage
+//   intermittent_alert_after_min: alert once if offline longer (0 = never)
+//   health_ignored: /system/health readings this device is not judged on
+router.patch('/:id/monitoring', requireWrite, async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as {
+    intermittent?: unknown; intermittent_alert_after_min?: unknown; health_ignored?: unknown;
+  };
+  const sets: string[] = [];
+  const params: unknown[] = [req.params.id];
+  if (body.intermittent !== undefined) {
+    if (typeof body.intermittent !== 'boolean') return res.status(400).json({ error: 'intermittent must be true or false' });
+    params.push(body.intermittent); sets.push(`intermittent = $${params.length}`);
+    // Turning it off must not leave a stale "already alerted" mark behind.
+    if (!body.intermittent) sets.push('intermittent_alerted_at = NULL');
+  }
+  if (body.intermittent_alert_after_min !== undefined) {
+    const n = Number(body.intermittent_alert_after_min);
+    if (!Number.isInteger(n) || n < 0 || n > 60 * 24 * 90) {
+      return res.status(400).json({ error: 'intermittent_alert_after_min must be 0 (never) to 129600 minutes' });
+    }
+    params.push(n); sets.push(`intermittent_alert_after_min = $${params.length}`);
+  }
+  if (body.health_ignored !== undefined) {
+    const list = Array.isArray(body.health_ignored) ? body.health_ignored.map(String) : null;
+    if (!list || list.some((x) => !/^[a-z0-9-]{1,64}$/.test(x))) {
+      return res.status(400).json({ error: 'health_ignored must be a list of health reading names' });
+    }
+    params.push([...new Set(list)]); sets.push(`health_ignored = $${params.length}::text[]`);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'Nothing to change' });
+  const [row] = await query(
+    `UPDATE devices SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1
+     RETURNING id, intermittent, intermittent_alert_after_min, health_ignored`,
+    params
+  );
+  if (!row) return res.status(404).json({ error: 'Device not found' });
+
+  // Re-sort the stored problems under the new ignore list now, rather than
+  // leaving the device amber until the next slow poll.
+  if (body.health_ignored !== undefined) {
+    const [cur] = await query<{ health_status: string | null; health_issues: { issues?: HealthIssue[]; ignored?: HealthIssue[] } | null }>(
+      `SELECT health_status, health_issues FROM devices WHERE id = $1`, [req.params.id]
+    );
+    if (cur?.health_issues && cur.health_status !== 'unknown') {
+      const all = [...(cur.health_issues.issues ?? []), ...(cur.health_issues.ignored ?? [])];
+      const ignore = new Set((row as { health_ignored: string[] }).health_ignored);
+      const issues = all.filter((i) => !ignore.has(i.item));
+      const ignored = all.filter((i) => ignore.has(i.item));
+      await query(
+        `UPDATE devices SET health_status = $2, health_issues = $3 WHERE id = $1`,
+        [req.params.id, issues.length ? 'degraded' : 'ok', JSON.stringify({ issues, ignored })]
+      );
+    }
+  }
+  return res.json(row);
+});
+
 // PATCH /api/devices/:id/location — save physical location & rack info
 router.patch('/:id/location', requireWrite, async (req: Request, res: Response) => {
   const { location_address, location_lat, location_lng, rack_name, rack_slot, notes } = req.body;
@@ -521,6 +581,7 @@ router.post('/:id/sync', requireWrite, async (req: Request, res: Response) => {
   try {
     await collector.connect();
     await collector.collectAll();
+    await runHealthCheck(collector, deviceRow);
     return res.json({ message: 'Sync completed' });
   } catch (err) {
     return res.status(500).json({ error: `Sync failed: ${(err as Error).message}` });

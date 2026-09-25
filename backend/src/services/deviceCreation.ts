@@ -65,6 +65,8 @@ export interface CreateDeviceInput {
   ssh_port?: unknown;
   combine_with_device_id?: number;
   force_replace_existing_by_serial?: boolean;
+  /** Existing tag ids to put on the device once it is added (#161). Unknown ids are ignored. */
+  tag_ids?: unknown;
 }
 
 export type CreateDeviceResult =
@@ -73,8 +75,32 @@ export type CreateDeviceResult =
 
 /**
  * Shared device creation logic used by POST /api/devices and bulk-add worker.
+ * Tags are applied after either success path (a new device, or a duplicate
+ * serial merged into an existing one).
  */
 export async function createDeviceFromBody(
+  input: CreateDeviceInput,
+  pollerService: PollerService | null,
+  ctx?: CreateDeviceContext
+): Promise<CreateDeviceResult> {
+  const result = await createDevice(input, pollerService, ctx);
+  const deviceId = Number(result.body?.id);
+  const tagIds = Array.isArray(input.tag_ids)
+    ? input.tag_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0)
+    : [];
+  if (result.ok && Number.isInteger(deviceId) && tagIds.length) {
+    // Only tags that exist; creating tags stays an admin action.
+    await query(
+      `INSERT INTO device_tags (device_id, tag_id)
+       SELECT $1, t.id FROM tags t WHERE t.id = ANY($2::int[])
+       ON CONFLICT DO NOTHING`,
+      [deviceId, tagIds]
+    ).catch((e) => console.warn(`[deviceCreation] tags not applied to ${deviceId}: ${(e as Error).message}`));
+  }
+  return result;
+}
+
+async function createDevice(
   input: CreateDeviceInput,
   pollerService: PollerService | null,
   ctx?: CreateDeviceContext

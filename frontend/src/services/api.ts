@@ -157,6 +157,8 @@ export interface BulkAddDeviceItem {
   ssh_username?: string;
   ssh_password?: string;
   ssh_port?: number;
+  /** Existing tags to apply once added (#161). */
+  tag_ids?: number[];
 }
 
 export interface BulkAddJobResponse {
@@ -465,6 +467,26 @@ export interface CommandRunDetail extends CommandRunSummary {
   devices: CommandRunDevice[];
 }
 
+// ─── Command templates (#163) ───────────────────────────────────────────────
+export interface CommandTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  command: string;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const commandTemplatesApi = {
+  list: () => api.get<CommandTemplate[]>('/command-templates'),
+  create: (data: { name: string; command: string; description?: string }) =>
+    api.post<CommandTemplate>('/command-templates', data),
+  update: (id: number, data: Partial<Pick<CommandTemplate, 'name' | 'command' | 'description'>>) =>
+    api.put<CommandTemplate>(`/command-templates/${id}`, data),
+  delete: (id: number) => api.delete(`/command-templates/${id}`),
+};
+
 export const commandsApi = {
   preview: (command: string, device_ids: number[], wave_size: number) =>
     api.post<{
@@ -501,6 +523,8 @@ export const devicesApi = {
       credential_preset_id?: number;
       force_replace_existing_by_serial?: boolean;
       combine_with_device_id?: number;
+      /** Existing tags to apply once added (#161). */
+      tag_ids?: number[];
     })
   ) => api.post<Device>('/devices', data),
   update: (
@@ -656,6 +680,12 @@ export const devicesApi = {
     rack_slot?: string | null;
     notes?: string | null;
   }) => api.patch<Device>(`/devices/${id}/location`, data),
+  /** Health and intermittent settings (#168). */
+  patchMonitoring: (id: number, data: {
+    intermittent?: boolean;
+    intermittent_alert_after_min?: number;
+    health_ignored?: string[];
+  }) => api.patch(`/devices/${id}/monitoring`, data),
 };
 
 // ─── Credential Presets ──────────────────────────────────────────────────────
@@ -1247,7 +1277,7 @@ export interface AlertRule {
 export interface AlertChannel {
   id: number;
   name: string;
-  type: 'email' | 'slack' | 'discord' | 'telegram' | 'ntfy';
+  type: 'email' | 'slack' | 'discord' | 'telegram' | 'ntfy' | 'gotify';
   enabled: boolean;
   config: Record<string, unknown>;
   created_at: string;

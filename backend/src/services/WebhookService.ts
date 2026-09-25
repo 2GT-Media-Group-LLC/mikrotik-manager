@@ -67,6 +67,7 @@ export const WEBHOOK_EVENTS = [
   'high_cpu', 'high_memory', 'cert_expiry', 'device_discovered',
   'firmware_update_available', 'config_drift',
   'rollout_completed', 'rollout_failed',
+  'device_degraded', 'device_health_restored',
 ] as const;
 export type WebhookEvent = typeof WEBHOOK_EVENTS[number] | 'test';
 

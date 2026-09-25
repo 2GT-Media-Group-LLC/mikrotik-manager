@@ -12,6 +12,8 @@ import { cronMatches } from '../utils/cron';
 import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
+import { offlineAction, recoveryAlert, describeDuration } from '../utils/intermittent';
+import { runHealthCheck } from './healthCheck';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -901,6 +903,7 @@ export class PollerService {
 
       if (data.type === 'full') {
         await collector.collectAll();
+        await this.checkHealth(collector, device);
       } else if (data.type === 'macscan') {
         await collector.runMacScan();
         this.io?.emit('clients:updated', { deviceId: device.id });
@@ -911,10 +914,18 @@ export class PollerService {
 
       // Device came online (first poll after add, or recovery from offline)
       if (prevStatus !== 'online') {
-        alertService.dispatch('device_online', `${device.name} is back online`, {
-          deviceId: device.id,
-          deviceName: device.name,
-        }).catch(() => {});
+        // Intermittent devices (#168) only announce recovery if their
+        // long-offline alert went out; otherwise they came and went quietly.
+        const d = device as DeviceRow & { intermittent?: boolean; intermittent_alerted_at?: string | null };
+        if (recoveryAlert(!!d.intermittent, !!d.intermittent_alerted_at)) {
+          alertService.dispatch('device_online', `${device.name} is back online`, {
+            deviceId: device.id,
+            deviceName: device.name,
+          }).catch(() => {});
+        }
+        if (d.intermittent_alerted_at) {
+          query(`UPDATE devices SET intermittent_alerted_at = NULL WHERE id = $1`, [device.id]).catch(() => {});
+        }
         // Close the open outage row if one exists
         if (prevStatus === 'offline') {
           query(
@@ -1205,6 +1216,7 @@ export class PollerService {
     try {
       await collector.connect();
       await collector.collectSlow();
+      await this.checkHealth(collector, device);
       // Neighbour discovery is a round trip per device per cycle and the only
       // thing that feeds topology, so a fleet not using the map can switch it
       // off entirely.
@@ -1279,15 +1291,55 @@ export class PollerService {
     }
   }
 
+  /** Hardware health (#168); the logic lives in services/healthCheck.ts. */
+  private async checkHealth(collector: DeviceCollector, device: DeviceRow): Promise<void> {
+    const changed = await runHealthCheck(collector, device);
+    if (changed) this.io?.emit('device:updated', { deviceId: device.id });
+  }
+
   private async handleDeviceFailure(deviceId: number, message: string): Promise<void> {
     const device = await this.getDevice(deviceId);
     const prevStatus = device?.status;
     await query(`UPDATE devices SET status = 'offline', updated_at = NOW() WHERE id = $1`, [deviceId]);
-    if (prevStatus !== 'offline') {
+
+    // Normal devices alert when they go offline. Intermittent ones (#168) alert
+    // only once they have been gone longer than their limit.
+    const d = device as (DeviceRow & {
+      intermittent?: boolean; intermittent_alert_after_min?: number; intermittent_alerted_at?: string | null;
+    }) | null;
+    let offlineSince: Date | null = null;
+    if (d?.intermittent && prevStatus === 'offline') {
+      const [open] = await query<{ went_offline_at: string }>(
+        `SELECT went_offline_at FROM device_availability
+          WHERE device_id = $1 AND came_back_online_at IS NULL
+          ORDER BY went_offline_at DESC LIMIT 1`, [deviceId]
+      ).catch(() => []);
+      offlineSince = open ? new Date(open.went_offline_at) : null;
+    }
+    const action = offlineAction({
+      intermittent: !!d?.intermittent,
+      alertAfterMin: d?.intermittent_alert_after_min,
+      wasOffline: prevStatus === 'offline',
+      offlineSince,
+      alreadyAlerted: !!d?.intermittent_alerted_at,
+      now: new Date(),
+    });
+    if (action === 'alert') {
       alertService.dispatch('device_offline', `${device?.name ?? `Device #${deviceId}`} is offline: ${message}`, {
         deviceId,
         deviceName: device?.name,
       }).catch(() => {});
+    } else if (action === 'alert-long-offline' && offlineSince) {
+      const mins = (Date.now() - offlineSince.getTime()) / 60000;
+      alertService.dispatch('device_offline',
+        `${device?.name ?? `Device #${deviceId}`} has been offline for ${describeDuration(mins)}. ` +
+        'It is marked as expected to drop out, but not for this long.', {
+          deviceId,
+          deviceName: device?.name,
+        }).catch(() => {});
+      await query(`UPDATE devices SET intermittent_alerted_at = NOW() WHERE id = $1`, [deviceId]).catch(() => {});
+    }
+    if (prevStatus !== 'offline') {
       // Open a new availability outage row
       query(
         `INSERT INTO device_availability (device_id, went_offline_at) VALUES ($1, NOW())`,

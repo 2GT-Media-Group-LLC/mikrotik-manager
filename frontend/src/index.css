@@ -223,6 +223,11 @@
     background: var(--surface-2);
     color: var(--ink-3);
   }
+  /* Reachable, with a hardware fault (#168). */
+  .status-degraded {
+    background: var(--warn-bg);
+    color: var(--warn);
+  }
 
   /* ── Severity pills ── */
   .severity-error {

@@ -487,6 +487,8 @@ export default function SettingsPage() {
     high_memory: 'High memory usage',
     cert_expiry: 'Certificate expiring soon',
     device_discovered: 'New device discovered',
+    device_degraded: 'Device degraded (power supply, fan or temperature)',
+    device_health_restored: 'Device hardware healthy again',
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';
@@ -1657,6 +1659,34 @@ export default function SettingsPage() {
       {activeTab === 'alerting' && (
         <div className="space-y-4">
 
+          {/* Hardware health limit (#168) */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Hardware health</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
+              A device shows as degraded when a power supply or fan reports a failure, or a temperature
+              reaches this limit. Readings can be ignored per device on its Overview tab.
+            </p>
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
+              Temperature limit
+              <input
+                key={String(settings['health_temp_limit_c'] ?? 85)}
+                type="number"
+                min={40}
+                max={150}
+                className="input w-20 py-1"
+                defaultValue={Number(settings['health_temp_limit_c'] ?? 85)}
+                disabled={!isAdmin}
+                onBlur={(e) => {
+                  const v = Number(e.target.value);
+                  if (Number.isInteger(v) && v >= 40 && v <= 150 && v !== Number(settings['health_temp_limit_c'] ?? 85)) {
+                    updateSettingsMutation.mutate({ health_temp_limit_c: v });
+                  }
+                }}
+              />
+              °C
+            </label>
+          </div>
+
           {/* Alert Rules */}
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Alert Rules</h3>
@@ -1875,7 +1905,7 @@ export default function SettingsPage() {
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Type</label>
                   <select className="input w-full" value={chForm.type} onChange={(e) => setChForm((f) => ({ ...f, type: e.target.value as AlertChannel['type'], config: {} }))} disabled={chModal.mode === 'edit'}>
-                    {(['slack', 'discord', 'telegram', 'ntfy', 'email'] as const).map((t) => (
+                    {(['slack', 'discord', 'telegram', 'ntfy', 'gotify', 'email'] as const).map((t) => (
                       <option key={t} value={t}>{t === 'ntfy' ? 'ntfy' : t.charAt(0).toUpperCase() + t.slice(1)}</option>
                     ))}
                   </select>
@@ -1907,6 +1937,25 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Chat ID</label>
                     <input className="input w-full" value={cfgStr('chat_id')} onChange={(e) => setCfg('chat_id', e.target.value)} placeholder="-100123456789" />
+                  </div>
+                </>
+              ) : chForm.type === 'gotify' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Server URL</label>
+                    <input className="input w-full font-mono text-xs" value={cfgStr('server_url')} onChange={(e) => setCfg('server_url', e.target.value)} placeholder="https://gotify.example.com" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">App Token</label>
+                    <input type="password" className="input w-full font-mono text-xs" value={cfgStr('app_token')} onChange={(e) => setCfg('app_token', e.target.value)} placeholder="A1b2C3..." />
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">
+                      In Gotify, create an application under Apps and copy its token. Outages are sent at priority 8, recoveries at 2.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Manager URL (optional)</label>
+                    <input className="input w-full font-mono text-xs" value={cfgStr('click_url')} onChange={(e) => setCfg('click_url', e.target.value)} placeholder="https://mikrotik.example.com" />
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">Makes each notification open the device it refers to.</p>
                   </div>
                 </>
               ) : chForm.type === 'ntfy' ? (

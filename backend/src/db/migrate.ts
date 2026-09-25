@@ -283,7 +283,7 @@ CREATE TABLE IF NOT EXISTS alert_rules (
 CREATE TABLE IF NOT EXISTS alert_channels (
   id          SERIAL PRIMARY KEY,
   name        VARCHAR(100) NOT NULL,
-  type        VARCHAR(20)  NOT NULL CHECK (type IN ('email','slack','discord','telegram','ntfy')),
+  type        VARCHAR(20)  NOT NULL CHECK (type IN ('email','slack','discord','telegram','ntfy','gotify')),
   enabled     BOOLEAN      NOT NULL DEFAULT true,
   config      JSONB        NOT NULL DEFAULT '{}',
   created_at  TIMESTAMPTZ  DEFAULT NOW(),
@@ -629,11 +629,13 @@ CREATE TABLE IF NOT EXISTS insight_dismissals (
 );
 CREATE INDEX IF NOT EXISTS idx_insight_dismissals_expiry ON insight_dismissals(expires_at);
 
--- ntfy.sh notification channel (github issue #93). The channel type is a CHECK
--- constraint rather than a lookup table, so widening it means replacing it.
+-- ntfy.sh notification channel (github issue #93), Gotify (#169). The channel
+-- type is a CHECK constraint rather than a lookup table, so widening it means
+-- replacing it -- here, in this one statement. A second, later replacement would
+-- have this one re-add the narrower list first and fail on existing rows.
 ALTER TABLE alert_channels DROP CONSTRAINT IF EXISTS alert_channels_type_check;
 ALTER TABLE alert_channels ADD CONSTRAINT alert_channels_type_check
-  CHECK (type IN ('email','slack','discord','telegram','ntfy'));
+  CHECK (type IN ('email','slack','discord','telegram','ntfy','gotify'));
 
 -- Change Guard ledger: committed_at used to be stamped for every terminal status,
 -- so an abandoned or failed guard read as though the change had been kept. It now
@@ -1041,6 +1043,29 @@ ALTER TABLE interfaces ADD COLUMN IF NOT EXISTS sfp_vendor VARCHAR(64);
 -- device last said it was on, read during each update check.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS update_channel VARCHAR(16);
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS reported_update_channel VARCHAR(16);
+-- Hardware health (#168): 'ok' | 'degraded' | 'unknown', from /system/health on
+-- the slow poll. health_ignored lists readings this device should not be judged
+-- on (a dual-PSU switch deliberately fed from one supply).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS health_status VARCHAR(12);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS health_issues JSONB;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS health_checked_at TIMESTAMPTZ;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS health_ignored TEXT[] NOT NULL DEFAULT '{}';
+-- Devices expected to drop out, e.g. solar powered (#168). They alert only when
+-- offline longer than intermittent_alert_after_min (0 = never).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS intermittent BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS intermittent_alert_after_min INTEGER NOT NULL DEFAULT 1440;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS intermittent_alerted_at TIMESTAMPTZ;
+-- Saved command templates for Bulk Commands (#163). Post-upgrade commands will
+-- use the same library when that work is done.
+CREATE TABLE IF NOT EXISTS command_templates (
+  id          SERIAL PRIMARY KEY,
+  name        VARCHAR(100) NOT NULL UNIQUE,
+  description TEXT,
+  command     TEXT NOT NULL,
+  created_by  VARCHAR(100),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);

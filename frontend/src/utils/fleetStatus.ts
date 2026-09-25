@@ -15,7 +15,12 @@
 export interface FleetSummaryDevices {
   total: number;
   online: number;
+  /** Unreachable, not counting devices marked intermittent. */
   offline: number;
+  /** Reachable, with a hardware problem (#168). */
+  degraded?: number;
+  /** Intermittent devices currently offline, which is expected. */
+  intermittent_offline?: number;
 }
 
 export type FleetStatusKind = 'loading' | 'empty' | 'healthy' | 'degraded';
@@ -41,7 +46,10 @@ export function fleetStatus(devices?: FleetSummaryDevices | null): FleetStatus {
       tone: 'neutral',
     };
   }
-  if (devices.offline === 0) {
+  const n = devices.offline;
+  const d = devices.degraded ?? 0;
+  const plural = (k: number) => `device${k === 1 ? '' : 's'}`;
+  if (n === 0 && d === 0) {
     return {
       kind: 'healthy',
       headline: 'All systems nominal',
@@ -49,12 +57,14 @@ export function fleetStatus(devices?: FleetSummaryDevices | null): FleetStatus {
       tone: 'good',
     };
   }
-  const n = devices.offline;
-  const noun = `device${n === 1 ? '' : 's'}`;
+  const parts = [
+    n > 0 ? `${n} ${plural(n)} unreachable` : null,
+    d > 0 ? `${d} ${n > 0 ? '' : `${plural(d)} `}degraded` : null,
+  ].filter(Boolean).map((p) => (p as string).replace(/\s+/g, ' ').trim());
   return {
     kind: 'degraded',
-    headline: `${n} ${noun} unreachable`,
-    sentence: `${n} ${noun} unreachable.`,
+    headline: parts.join(' · '),
+    sentence: `${parts.join(', ')}.`,
     tone: 'warn',
   };
 }

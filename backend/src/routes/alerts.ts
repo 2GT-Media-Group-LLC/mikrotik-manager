@@ -21,9 +21,18 @@ const DEFAULT_RULES = [
   { event_type: 'device_discovered',        enabled: false, threshold: null, cooldown_min: 60   },
   { event_type: 'firmware_update_available', enabled: true,  threshold: null, cooldown_min: 1440 },
   { event_type: 'config_drift',      enabled: false, threshold: null, cooldown_min: 15   },
+  // Hardware health (#168). On by default: a failed PSU or fan is exactly what
+  // someone wants to hear about, and it only fires on a change.
+  { event_type: 'device_degraded',         enabled: true, threshold: null, cooldown_min: 60 },
+  { event_type: 'device_health_restored',  enabled: true, threshold: null, cooldown_min: 60 },
 ];
 
-async function ensureDefaultRules(): Promise<void> {
+/**
+ * Insert any default rule that is missing; never changes an existing one.
+ * Also run at startup: rules added in an upgrade (device_degraded) otherwise
+ * did not exist, and so never fired, until someone opened the Alerting page.
+ */
+export async function ensureDefaultRules(): Promise<void> {
   for (const rule of DEFAULT_RULES) {
     await query(
       `INSERT INTO alert_rules (event_type, enabled, threshold, cooldown_min)
@@ -81,7 +90,7 @@ router.post('/channels', requireWrite, async (req, res) => {
   if (!name || !type) {
     return res.status(400).json({ error: 'name and type are required' });
   }
-  const validTypes = ['email', 'slack', 'discord', 'telegram', 'ntfy'];
+  const validTypes = ['email', 'slack', 'discord', 'telegram', 'ntfy', 'gotify'];
   if (!validTypes.includes(type)) {
     return res.status(400).json({ error: `type must be one of: ${validTypes.join(', ')}` });
   }
@@ -173,6 +182,7 @@ const SENSITIVE_KEYS: Record<string, string[]> = {
   telegram: ['bot_token'],
   // ntfy accepts either an access token or basic auth; both are secrets.
   ntfy:     ['token', 'password'],
+  gotify:   ['app_token'],
 };
 
 function maskConfig(type: string, config: Record<string, unknown>): Record<string, unknown> {
