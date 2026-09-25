@@ -683,6 +683,9 @@ function OperationsView({
   const [busy, setBusy] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [pickTerminal, setPickTerminal] = useState(false);
+  // Capacity lists the busiest devices first and stops at CAPACITY_ROWS, which
+  // silently hid the rest: nine devices showed eight rows, reported as a bug.
+  const [showAllCapacity, setShowAllCapacity] = useState(false);
   const [terminalDevice, setTerminalDevice] = useState<{ id: number; name: string } | null>(null);
 
   async function runAction(key: string, fn: () => Promise<string>) {
@@ -729,6 +732,8 @@ function OperationsView({
   const scoreColor = (s: number | null) => s == null ? 'var(--ink-3)' : s >= 85 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : 'var(--bad)';
 
   const sortedCapacity = [...capacity].sort((a, b) => Math.max(b.cpu, b.mem_pct) - Math.max(a.cpu, a.mem_pct));
+  const CAPACITY_ROWS = 8;
+  const shownCapacity = showAllCapacity ? sortedCapacity : sortedCapacity.slice(0, CAPACITY_ROWS);
   const meterColor = (v: number) => v >= 90 ? 'var(--bad)' : v >= 75 ? 'var(--warn)' : 'var(--accent)';
 
   const sevColor = (s: string) => s === 'error' ? 'var(--bad)' : s === 'warn' ? 'var(--warn)' : 'var(--info)';
@@ -922,13 +927,13 @@ function OperationsView({
           <div className="flex items-center gap-2 px-5 py-[14px]" style={{ borderBottom: '1px solid var(--line)' }}>
             <Cpu className="w-4 h-4" style={{ color: 'var(--accent)' }} />
             <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Capacity &amp; health</span>
-            <span className="mono text-[11px] ml-auto" style={{ color: 'var(--ink-3)' }}>CPU · MEM</span>
+            <span className="mono text-[11px] ml-auto" style={{ color: 'var(--ink-3)' }}>busiest first · CPU · MEM</span>
           </div>
           {sortedCapacity.length === 0 ? (
             <div className="py-8 text-center text-[13px]" style={{ color: 'var(--ink-3)' }}>No resource data yet.</div>
           ) : (
             <div className="px-5 py-3 space-y-3">
-              {sortedCapacity.slice(0, 8).map((c) => (
+              {shownCapacity.map((c) => (
                 <button key={c.id} onClick={() => navigate(`/devices/${c.id}`)}
                   className="w-full text-left flex items-center gap-3 group">
                   <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--ink)', width: 130 }}>{c.name}</div>
@@ -945,6 +950,20 @@ function OperationsView({
                   </div>
                 </button>
               ))}
+              {sortedCapacity.length > CAPACITY_ROWS && (
+                <div className="pt-1 text-[11.5px] flex items-center gap-2" style={{ color: 'var(--ink-3)' }}>
+                  {showAllCapacity
+                    ? `All ${sortedCapacity.length} devices`
+                    : `${CAPACITY_ROWS} busiest of ${sortedCapacity.length} shown`}
+                  <button
+                    onClick={() => setShowAllCapacity((v) => !v)}
+                    className="underline"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    {showAllCapacity ? 'Show fewer' : 'Show all'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
