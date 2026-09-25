@@ -643,6 +643,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Templates
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-devices" class="md-nav__link">
     <span class="md-ellipsis">
       Choosing devices
@@ -1087,6 +1096,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Templates
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-devices" class="md-nav__link">
     <span class="md-ellipsis">
       Choosing devices
@@ -1178,14 +1196,22 @@
 
 <h1 id="bulk-commands">Bulk commands<a class="headerlink" href="#bulk-commands" title="Permanent link">&para;</a></h1>
 <p><a href="../">← Documentation index</a></p>
-<p>Run one RouterOS console command across many devices, in waves, stopping at the first
-failure.</p>
+<p>Run RouterOS console commands across many devices, in waves, stopping at the first
+failure. Several commands on separate lines run in order.</p>
 <p>Commands run over <strong>SSH</strong>, because console syntax — <code>:put</code>, <code>:foreach</code>, <code>/interface print</code>
 — is not reachable through the binary API, which has its own command tree.</p>
+<h2 id="templates">Templates<a class="headerlink" href="#templates" title="Permanent link">&para;</a></h2>
+<p>Commands you run more than once can be saved. Type the command, click <strong>Save as template</strong>,
+and give it a name and, optionally, a description. <strong>Load a saved template</strong> puts it back in
+the command box, where it can be edited before running; <strong>Update</strong> saves the edited version.</p>
+<p>Loading a template only fills the box. It runs like any typed command, with the same waves,
+halt-on-failure and Change Guard. Templates will also be used for post-upgrade commands once
+that feature exists.</p>
 <h2 id="choosing-devices">Choosing devices<a class="headerlink" href="#choosing-devices" title="Permanent link">&para;</a></h2>
 <p>Pick them individually, or use <strong>All</strong> / <strong>None</strong>.</p>
 <p>Where devices carry tags, each tag in use appears as a chip beside those buttons and selects
-every device carrying it. Tags are assigned on the device page, under the device name.</p>
+every device carrying it. Tags are assigned on the device page, or to many devices at once
+from the <a href="../devices/#the-device-list">device list</a>.</p>
 <p>This is what tags are for. Sites group devices by where they are and device types group them
 by what they are, and both are single-valued; a tag is many-per-device and crosses both, which
 makes it the right way to express "the three switches I upgrade first" or "never touch these

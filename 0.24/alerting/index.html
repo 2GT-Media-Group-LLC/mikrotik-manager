@@ -637,6 +637,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#gotify" class="md-nav__link">
+    <span class="md-ellipsis">
+      Gotify
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1120,6 +1129,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#gotify" class="md-nav__link">
+    <span class="md-ellipsis">
+      Gotify
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1211,9 +1229,15 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 <td><code>config_drift</code></td>
 <td>The device's configuration changed (off by default)</td>
 </tr>
+<tr>
+<td><code>device_degraded</code> / <code>device_health_restored</code></td>
+<td>A power supply, fan or temperature problem appeared or cleared. See <a href="../devices/#hardware-health">Hardware health</a></td>
+</tr>
 </tbody>
 </table>
-<p>Alerts are suppressed for devices inside an active <a href="#maintenance-windows">maintenance window</a>.</p>
+<p>Alerts are suppressed for devices inside an active <a href="#maintenance-windows">maintenance window</a>.
+Devices marked as <a href="../devices/#devices-that-go-offline-on-purpose">expected to go offline</a>
+only send an offline alert once they have been gone longer than their limit.</p>
 <h2 id="certificate-expiry">Certificate expiry<a class="headerlink" href="#certificate-expiry" title="Permanent link">&para;</a></h2>
 <p>Certificates on each device are read on the slow poll and checked hourly. The
 <code>cert_expiry</code> rule decides the rest: its <strong>threshold</strong> is the warning window in days
@@ -1287,7 +1311,7 @@ configured, an alert can fire, be logged to the server log, and leave no row. Th
 server log line begins <code>[Certs]</code>.</p>
 </div>
 <h2 id="delivery-channels">Delivery channels<a class="headerlink" href="#delivery-channels" title="Permanent link">&para;</a></h2>
-<p>Email, Slack, Discord, Telegram and <strong>ntfy</strong>. Channels are configured under
+<p>Email, Slack, Discord, Telegram, <strong>ntfy</strong> and <strong>Gotify</strong>. Channels are configured under
 <strong>Settings → Alerts → Channels</strong>; secrets are masked on read and preserved when you save
 a channel without retyping them.</p>
 <h3 id="ntfy">ntfy<a class="headerlink" href="#ntfy" title="Permanent link">&para;</a></h3>
@@ -1350,6 +1374,54 @@ being woken by:</p>
 </table>
 <p>Each notification carries its event type as a <strong>tag</strong>, so a client can be filtered to
 wake only for the events you care about rather than needing a channel per event.</p>
+<h3 id="gotify">Gotify<a class="headerlink" href="#gotify" title="Permanent link">&para;</a></h3>
+<p>For a self-hosted <a href="https://gotify.net">Gotify</a> server.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Server URL</strong></td>
+<td>Required, e.g. <code>https://gotify.example.com</code> (a sub-path works too)</td>
+</tr>
+<tr>
+<td><strong>App token</strong></td>
+<td>In Gotify, create an application under <strong>Apps</strong> and copy its token</td>
+</tr>
+<tr>
+<td><strong>Manager URL</strong></td>
+<td>Optional. Makes each notification open the device it refers to</td>
+</tr>
+</tbody>
+</table>
+<p>The token is sent in the <code>X-Gotify-Key</code> header, not the URL, so it doesn't end up in proxy logs.</p>
+<p><strong>Priority mapping.</strong> Gotify's Android app treats 8 and above as high importance:</p>
+<table>
+<thead>
+<tr>
+<th>Events</th>
+<th>Priority</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Device offline or degraded, log errors, CPU/memory pressure</td>
+<td><strong>8</strong></td>
+</tr>
+<tr>
+<td>Certificate expiry, config drift, firmware available</td>
+<td>5</td>
+</tr>
+<tr>
+<td>Recovery, new device discovered</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>
 <h2 id="outbound-webhooks">Outbound webhooks<a class="headerlink" href="#outbound-webhooks" title="Permanent link">&para;</a></h2>
 <p>Subscribe any URL to twelve events: device up/down, log errors, high CPU, high memory,
 certificate expiry, device discovered, firmware update available, config drift, and

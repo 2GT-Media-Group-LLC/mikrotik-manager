@@ -466,6 +466,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#status-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      Status colours
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Status colours">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hardware-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hardware health
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#devices-that-go-offline-on-purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      Devices that go offline on purpose
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#device-tabs" class="md-nav__link">
     <span class="md-ellipsis">
       Device tabs
@@ -1132,6 +1165,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#status-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      Status colours
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Status colours">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hardware-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hardware health
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#devices-that-go-offline-on-purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      Devices that go offline on purpose
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#device-tabs" class="md-nav__link">
     <span class="md-ellipsis">
       Device tabs
@@ -1261,12 +1327,18 @@ closed browser tab and reports progress and failures per device.</p>
 <td>Only if SSH uses a different login. Blank uses the one above</td>
 </tr>
 <tr>
+<td><code>tags</code></td>
+<td>Optional</td>
+<td>Existing tags. Create them under Settings → Tags first</td>
+</tr>
+<tr>
 <td><code>notes</code></td>
 <td>Optional</td>
 <td>Anything you like</td>
 </tr>
 </tbody>
 </table>
+<p>For several tags on one device, separate them with a vertical bar: <code>branch|lab</code>.</p>
 <p>Each device needs a login: a preset, or a username and password. <code>port</code> and <code>ssh_port</code> can
 be added as extra columns if yours aren't the defaults (8728 and 22).</p>
 <p>The file is checked before anything is sent. Each row shows as ready, skipped or a problem,
@@ -1287,9 +1359,63 @@ means re-entering every device password; see <a href="../configuration/">Configu
 <h2 id="the-device-list">The device list<a class="headerlink" href="#the-device-list" title="Permanent link">&para;</a></h2>
 <p>Filter by status, type, tag, rack or location, and sort by any column. The search box matches
 name, address, serial and MAC.</p>
-<p>Tags appear beside the device name. They are assigned on the device page and are the only
-grouping that crosses both sites and device types — see <a href="../commands/">Bulk commands</a> for
-selecting a fleet by tag.</p>
+<p>Tags appear beside the device name. They are the only grouping that crosses both sites and
+device types — see <a href="../commands/">Bulk commands</a> for selecting a fleet by tag.</p>
+<p>To tag many devices at once, tick them in the list (the box in the header selects every device
+the current filters show), then choose <strong>Add tag…</strong> or <strong>Remove tag…</strong> in the bar that appears.
+Tags can also be picked when adding a device, and set per row in a <a href="#importing-from-csv">CSV import</a>.
+Tags themselves are created under <strong>Settings → Tags</strong>.</p>
+<h2 id="status-colours">Status colours<a class="headerlink" href="#status-colours" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Colour</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Green</td>
+<td>Online</td>
+</tr>
+<tr>
+<td>Amber</td>
+<td><strong>Degraded</strong>: online, but a power supply or fan reports a failure, or a temperature is at or over the limit</td>
+</tr>
+<tr>
+<td>Red</td>
+<td>Offline</td>
+</tr>
+<tr>
+<td>Grey</td>
+<td>Unknown, or offline when the device is marked as expected to drop out</td>
+</tr>
+</tbody>
+</table>
+<h3 id="hardware-health">Hardware health<a class="headerlink" href="#hardware-health" title="Permanent link">&para;</a></h3>
+<p>The manager reads <code>/system/health</code> every few minutes, and on <strong>Sync</strong>. A device is degraded
+when:</p>
+<ul>
+<li>a power supply state (<code>psu1-state</code>, <code>psu2-state</code>, …) is anything other than <code>ok</code></li>
+<li><code>fan-state</code> is anything other than <code>ok</code> (a fan speed of 0 on its own is not a failure, as
+  some models stop their fans when cool)</li>
+<li>any temperature reaches the limit, 85 °C by default, set under <strong>Settings → Alerting</strong></li>
+</ul>
+<p>Voltages are not judged, since normal ranges depend on the model and power source.</p>
+<p>The device's Overview tab lists the problem. If it is deliberate, for example a dual-supply
+switch fed from one supply, click <strong>Ignore on this device</strong> and that reading no longer counts.
+Ignored readings stay listed so they aren't forgotten.</p>
+<p>Becoming degraded, and recovering, raise the <code>device_degraded</code> and <code>device_health_restored</code>
+alerts, and are written to the device's event log.</p>
+<h3 id="devices-that-go-offline-on-purpose">Devices that go offline on purpose<a class="headerlink" href="#devices-that-go-offline-on-purpose" title="Permanent link">&para;</a></h3>
+<p>On a device's Overview tab, tick <strong>Expected to go offline at times</strong> for solar or battery
+powered devices, or anything else that drops out normally. Such a device:</p>
+<ul>
+<li>shows grey rather than red when offline, and isn't counted as unreachable on the dashboard</li>
+<li>sends no offline alert when it drops out</li>
+<li>alerts once if it stays offline longer than its limit (24 hours by default; 0 means never),
+  and then sends a recovery alert when it returns</li>
+</ul>
 <h2 id="device-tabs">Device tabs<a class="headerlink" href="#device-tabs" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
