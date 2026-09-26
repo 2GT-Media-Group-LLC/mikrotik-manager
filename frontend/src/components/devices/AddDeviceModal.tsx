@@ -1,6 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, CheckCircle, AlertCircle, Loader2, KeyRound } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, KeyRound } from 'lucide-react';
 import {
   devicesApi,
   credentialPresetsApi,
@@ -9,6 +9,7 @@ import {
 } from '../../services/api';
 import ConfirmDuplicateModal from './ConfirmDuplicateModal';
 import { parsePort } from '../../utils/parsePort';
+import { isValidDeviceAddress, classifyAddress, splitAddressAndPort } from '../../utils/deviceAddress';
 
 interface Props {
   onClose: () => void;
@@ -65,6 +66,26 @@ export default function AddDeviceModal({
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  // A pasted URL or "host:port" is split so the port lands in the API Port
+  // field instead of failing address validation.
+  const setAddress = (v: string) => {
+    const { address, port } = splitAddressAndPort(v);
+    if (port && address !== v) {
+      setForm((f) => ({ ...f, ip_address: address, api_port: String(port) }));
+    } else {
+      set('ip_address', v);
+    }
+  };
+
+  const addressTrimmed = form.ip_address.trim();
+  const addressInvalid = addressTrimmed.length > 0 && !isValidDeviceAddress(addressTrimmed);
+  // Plaintext RouterOS API (port 8728) sending credentials over the internet
+  // is worth a nudge; a LAN address or an already-TLS port (8729) is not.
+  const showPlaintextWarning =
+    addressTrimmed.length > 0 && !addressInvalid &&
+    classifyAddress(addressTrimmed) !== 'private' &&
+    parsePort(form.api_port, 8728) !== 8729;
+
   const createPayload = (
     opts: { combineWithDeviceId?: number; forceReplace?: boolean } = {}
   ) => {
@@ -101,7 +122,11 @@ export default function AddDeviceModal({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.ip_address) {
-      setError('Name and IP address are required');
+      setError('Name and address are required');
+      return;
+    }
+    if (addressInvalid) {
+      setError(`"${addressTrimmed}" is not a valid IP address or hostname`);
       return;
     }
     if (!selectedPreset && (!form.api_username || !form.api_password)) {
@@ -179,13 +204,24 @@ export default function AddDeviceModal({
               />
             </div>
             <div>
-              <label className="label">IP Address *</label>
+              <label className="label">Address (IP or hostname) *</label>
               <input
                 className="input"
                 value={form.ip_address}
-                onChange={(e) => set('ip_address', e.target.value)}
-                placeholder="192.168.1.1"
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="192.168.88.1 or router.example.com"
               />
+              {addressInvalid && (
+                <p className="text-[11px] text-red-500 mt-1">
+                  Not a valid IP address or hostname.
+                </p>
+              )}
+              {showPlaintextWarning && (
+                <p className="flex items-start gap-1 text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                  <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <span>Credentials travel unencrypted to this address. Prefer api-ssl on port 8729, or a VPN.</span>
+                </p>
+              )}
             </div>
             <div>
               <label className="label">Device Type</label>

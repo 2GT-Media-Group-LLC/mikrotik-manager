@@ -11,6 +11,7 @@ import type { CredentialPresetRow } from './credentialPresets';
 import { createDeviceFromBody, type CreateDeviceInput, type CreateDeviceContext } from '../services/deviceCreation';
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
+import { normalizeDeviceAddress } from '../utils/deviceAddress';
 import { detectLockoutRisk } from '../utils/firewallSafety';
 import { withSafeApply, probeCapability, probeUndoCapability, type GuardDevice } from '../services/changeGuard/ChangeGuard';
 import { captureSnapshot, resolveManagementPath } from '../services/changeGuard/pathModel';
@@ -475,13 +476,21 @@ router.patch('/:id/location', requireWrite, async (req: Request, res: Response) 
 
 // PUT /api/devices/:id
 router.put('/:id', requireWrite, async (req: Request, res: Response) => {
-  const { name, ip_address, device_type, notes, credential_preset_id } = req.body as {
+  const { name, ip_address: rawIpAddress, device_type, notes, credential_preset_id } = req.body as {
     name?: string;
     ip_address?: string;
     device_type?: string;
     notes?: string;
     credential_preset_id?: number | null;
   };
+
+  // Accepts an IPv4/IPv6 literal or a hostname, same as device creation.
+  let ip_address: string | undefined;
+  if (typeof rawIpAddress === 'string' && rawIpAddress) {
+    const normalized = normalizeDeviceAddress(rawIpAddress);
+    if (!normalized.ok) return res.status(400).json({ error: normalized.reason });
+    ip_address = normalized.address;
+  }
 
   const existing = await queryOne<{
     id: number;

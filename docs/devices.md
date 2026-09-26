@@ -14,6 +14,21 @@ configured one is simply registered. See [Adopting devices](adoption.md).
 optionally a [credential preset](configuration.md) so the same username and password are not
 retyped per device.
 
+The address can be a LAN IP, a public IP, an IPv6 address, or a hostname (a local DNS name, or
+a router's own `/ip cloud` DDNS name). Pasting a full URL like `https://203.0.113.5:8729/`
+works too — the port is pulled out into the API Port field automatically. Reaching a device
+over the internet on the plaintext API port (8728) sends the login unencrypted, so the form
+warns and suggests api-ssl (port 8729) or a VPN instead.
+
+!!! note "Reachable over a VPN but not over its public IP?"
+    RouterOS's own `IP → Services` list restricts each service (`api`, `api-ssl`) by an
+    **"Available From"** address list. It accepts the TCP connection from anywhere, then
+    silently drops it mid-login if the source isn't on that list — which shows up here as
+    "The device closed the connection during login," not a normal refused/timed-out error.
+    If a device connects fine over WireGuard (or another VPN) but not from its public IP,
+    check that field: either add the reachable range, or leave it restricted and keep using
+    the VPN, which is the safer choice for internet-facing management anyway.
+
 **Try All** runs a bulk add across every discovered device as a server-side job. It survives a
 closed browser tab and reports progress and failures per device.
 

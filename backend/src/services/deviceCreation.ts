@@ -2,6 +2,7 @@ import { query, queryOne } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
+import { normalizeDeviceAddress } from '../utils/deviceAddress';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import type { PollerService } from './PollerService';
 import type { CredentialPresetRow } from '../routes/credentialPresets';
@@ -139,7 +140,16 @@ async function createDevice(
     };
   }
 
-  const testClient = new RouterOSClient(ip_address, api_port, api_username, api_password, 10_000);
+  // Accepts an IPv4/IPv6 literal or a hostname (DDNS name, public FQDN, etc.),
+  // not only a LAN IP — connecting still happens by resolving at connect time,
+  // so a DDNS name that moves keeps working without editing the device.
+  const normalizedAddress = normalizeDeviceAddress(ip_address);
+  if (!normalizedAddress.ok) {
+    return { ok: false, status: 400, body: { error: normalizedAddress.reason } };
+  }
+  const address = normalizedAddress.address;
+
+  const testClient = new RouterOSClient(address, api_port, api_username, api_password, 10_000);
   let detectedSerial: string | null;
   try {
     await testClient.connect();
@@ -182,7 +192,7 @@ async function createDevice(
             candidate: {
               serial_number: detectedSerial,
               identity: name,
-              ip_address,
+              ip_address: address,
             },
           },
         };
@@ -206,7 +216,7 @@ async function createDevice(
          WHERE id = $11`,
         [
           name,
-          ip_address,
+          address,
           api_port,
           api_username,
           encryptedPass,
@@ -255,7 +265,7 @@ async function createDevice(
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'unknown',
              COALESCE($11::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)))
      RETURNING id`,
-    [name, ip_address, api_port, api_username, encryptedPass,
+    [name, address, api_port, api_username, encryptedPass,
      ssh_port, ssh_username || null, encryptedSshPass, device_type, notes || null,
      ctx?.siteId ?? null]
   );

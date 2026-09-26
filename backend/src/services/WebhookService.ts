@@ -9,41 +9,14 @@ import * as dns from 'dns';
 import { isIP } from 'net';
 import { URL } from 'url';
 import { query } from '../config/database';
+import { isBlockedAddress } from '../utils/deviceAddress';
 
 const dnsLookup = dns.promises.lookup;
 
-/**
- * True if an IP literal is in a range we must never let a webhook reach —
- * loopback, private, link-local (incl. cloud metadata 169.254.169.254), CGNAT,
- * or unspecified. Guards against SSRF to internal services.
- */
-export function isBlockedAddress(ip: string): boolean {
-  const v = isIP(ip);
-  if (v === 4) {
-    const o = ip.split('.').map(Number);
-    if (o.length !== 4 || o.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true;
-    const [a, b] = o;
-    if (a === 0 || a === 10 || a === 127) return true;               // this-net, private, loopback
-    if (a === 169 && b === 254) return true;                          // link-local + metadata
-    if (a === 172 && b >= 16 && b <= 31) return true;                 // private
-    if (a === 192 && b === 168) return true;                         // private
-    if (a === 100 && b >= 64 && b <= 127) return true;               // CGNAT
-    if (a >= 224) return true;                                        // multicast/reserved/broadcast
-    return false;
-  }
-  if (v === 6) {
-    const lower = ip.toLowerCase();
-    if (lower === '::1' || lower === '::') return true;
-    // IPv4-mapped (::ffff:1.2.3.4) — validate the embedded IPv4
-    const mapped = lower.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return isBlockedAddress(mapped[1]);
-    const head = lower.split(':')[0];
-    if (head.startsWith('fe8') || head.startsWith('fe9') || head.startsWith('fea') || head.startsWith('feb')) return true; // fe80::/10
-    if (head.startsWith('fc') || head.startsWith('fd')) return true; // fc00::/7 unique-local
-    return false;
-  }
-  return true; // not a valid IP literal → refuse
-}
+// isBlockedAddress (loopback/private/link-local/CGNAT/unspecified) lives in
+// utils/deviceAddress.ts, shared with device-address classification. Guards
+// against SSRF to internal services.
+export { isBlockedAddress };
 
 async function assertPublicHost(hostname: string): Promise<string> {
   // Already an IP literal — check directly.
