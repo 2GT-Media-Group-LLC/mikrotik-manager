@@ -257,7 +257,14 @@ export class DeviceCollector {
 
       const info = resource[0] || {};
       const rb = routerboard[0] || {};
-      const identityName = identity[0]?.['name'] || this.device.name;
+      // Only adopt the router's own /system/identity as the display name when
+      // nothing more meaningful has been set — i.e. the name is still the
+      // address placeholder that CSV import/Try All use when no name is given.
+      // Without this gate, the very first poll after "+ Add Device" silently
+      // overwrote whatever the operator just typed (often with RouterOS's
+      // factory identity, literally "MikroTik") the moment it ran.
+      const nameIsPlaceholder = this.device.name === this.device.ip_address;
+      const identityName = (nameIsPlaceholder && identity[0]?.['name']) || this.device.name;
 
       const rosVersion = (info['version'] || '').split(' ')[0];
       const model = rb['model'] || info['board-name'] || null;
