@@ -11,7 +11,7 @@ import type { CredentialPresetRow } from './credentialPresets';
 import { createDeviceFromBody, type CreateDeviceInput, type CreateDeviceContext } from '../services/deviceCreation';
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
-import { normalizeDeviceAddress } from '../utils/deviceAddress';
+import { normalizeDeviceAddress, reconcileAddressPort } from '../utils/deviceAddress';
 import { detectLockoutRisk } from '../utils/firewallSafety';
 import { withSafeApply, probeCapability, probeUndoCapability, type GuardDevice } from '../services/changeGuard/ChangeGuard';
 import { captureSnapshot, resolveManagementPath } from '../services/changeGuard/pathModel';
@@ -486,10 +486,12 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 
   // Accepts an IPv4/IPv6 literal or a hostname, same as device creation.
   let ip_address: string | undefined;
+  let addressPort: number | undefined;
   if (typeof rawIpAddress === 'string' && rawIpAddress) {
     const normalized = normalizeDeviceAddress(rawIpAddress);
     if (!normalized.ok) return res.status(400).json({ error: normalized.reason });
     ip_address = normalized.address;
+    addressPort = normalized.port;
   }
 
   const existing = await queryOne<{
@@ -518,7 +520,9 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 
   // When a preset is applied, its values take precedence over anything else
   // in the body so "apply preset" has a single unambiguous meaning.
-  const api_port = preset?.api_port ?? parsePort(req.body.api_port, existing.api_port);
+  const portCheck = reconcileAddressPort(addressPort, preset?.api_port ?? req.body.api_port);
+  if (!portCheck.ok) return res.status(400).json({ error: portCheck.reason });
+  const api_port = portCheck.port ?? preset?.api_port ?? parsePort(req.body.api_port, existing.api_port);
   const api_username = preset?.api_username ?? req.body.api_username;
   const api_password = preset?.api_password ?? req.body.api_password;
   const ssh_port = preset?.ssh_port ?? parsePort(req.body.ssh_port, existing.ssh_port ?? 22);

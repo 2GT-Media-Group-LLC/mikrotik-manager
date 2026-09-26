@@ -22,6 +22,17 @@ describe('safeConnectionError', () => {
       .toMatch(/hostname could not be resolved/i);
   });
 
+  // Seen on real hardware: these arrive as plain messages from RouterOSClient.
+  it('says when the login itself was refused', () => {
+    expect(safeConnectionError('ctx', new Error('invalid user name or password (6)')))
+      .toBe('Login failed: the username or password is wrong.');
+  });
+
+  it('says when the port answered but not as the API (e.g. Winbox 8291)', () => {
+    expect(safeConnectionError('ctx', new Error('Read timeout waiting for API response')))
+      .toMatch(/did not answer as the RouterOS API/);
+  });
+
   it('maps ECONNREFUSED to a service-not-enabled message', () => {
     expect(safeConnectionError('ctx', errWithCode('connect ECONNREFUSED 1.2.3.4:8728', 'ECONNREFUSED')))
       .toMatch(/connection refused/i);
@@ -53,8 +64,8 @@ describe('safeConnectionError', () => {
     expect(msg).toMatch(/available from/i);
   });
 
-  it('falls back to the generic message for anything else (e.g. bad credentials)', () => {
-    expect(safeConnectionError('ctx', new Error('invalid user name or password')))
+  it('falls back to the generic message for anything else', () => {
+    expect(safeConnectionError('ctx', new Error('something unexpected')))
       .toMatch(/cannot connect to device/i);
   });
 });

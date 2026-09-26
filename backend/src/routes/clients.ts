@@ -99,6 +99,11 @@ router.get('/', async (req: Request, res: Response) => {
     device_name: `LOWER(COALESCE(deduped.device_name, ''))`,
     traffic_today_bytes: `traffic_today_bytes`,
     last_seen: `deduped.last_seen`,
+    // Asked for by Stanley (discussion #85). Wired clients have no SSID or
+    // signal; NULLIF keeps a blank SSID NULL so NULLS LAST puts them at the end
+    // in both directions. Signal is dBm, so descending is strongest first.
+    ssid: `LOWER(NULLIF(deduped.ssid, ''))`,
+    signal_strength: `deduped.signal_strength`,
   };
   const sortExpr = SORT_EXPR[String(sort)] ?? SORT_EXPR.last_seen;
   const sortDir = String(dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';

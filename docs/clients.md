@@ -20,6 +20,9 @@ That merge is why a client shows a switch port *and* an access point: the MAC is
 Filter by type (wired or wireless), category, device, VLAN, or signal range. Search matches
 hostname, MAC, IP address and vendor.
 
+Every column sorts. With **Wireless** selected, SSID and Signal replace the Type column and
+sort too; Signal sorts strongest first on the first click.
+
 **Active** means the client was present at the most recent poll of the device it is attached
 to. Clients that disappear are kept and marked inactive rather than deleted, so history
 survives a laptop closing its lid; `retention_clients_days` (default 7) decides how long an

@@ -253,7 +253,9 @@ export default function ClientsPage() {
   // page), so changing the sort returns to page 1 and refetches.
   const toggleSort = (col: string) => {
     if (sortCol === col) setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
-    else { setSortCol(col); setSortDir('asc'); }
+    // Signal is dBm: the first click shows the strongest first, which is what
+    // someone sorting by signal is almost always looking for.
+    else { setSortCol(col); setSortDir(col === 'signal_strength' ? 'desc' : 'asc'); }
     setPage(0);
   };
 
@@ -475,11 +477,11 @@ export default function ClientsPage() {
                     { col: 'hostname',       label: 'Host / Vendor / MAC', align: 'left'  },
                     { col: 'ip_address',     label: 'IP Address',          align: 'left'  },
                     // When filtered to wireless, the Type column is redundant —
-                    // show SSID + signal quality instead (not server-sortable).
+                    // show SSID + signal quality instead.
                     ...(isWireless
                       ? [
-                          { col: 'ssid',            label: 'SSID',   align: 'left' as const, noSort: true },
-                          { col: 'signal_strength', label: 'Signal', align: 'left' as const, noSort: true },
+                          { col: 'ssid',            label: 'SSID',   align: 'left' as const },
+                          { col: 'signal_strength', label: 'Signal', align: 'left' as const },
                         ]
                       : [{ col: 'client_type', label: 'Type', align: 'left' as const }]),
                     { col: 'interface_name', label: 'Port',                align: 'left'  },

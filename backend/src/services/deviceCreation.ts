@@ -2,7 +2,7 @@ import { query, queryOne } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
-import { normalizeDeviceAddress } from '../utils/deviceAddress';
+import { normalizeDeviceAddress, reconcileAddressPort } from '../utils/deviceAddress';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import type { PollerService } from './PollerService';
 import type { CredentialPresetRow } from '../routes/credentialPresets';
@@ -124,7 +124,7 @@ async function createDevice(
 
   const api_username: string | undefined = preset?.api_username ?? input.api_username;
   const api_password: string | undefined = preset?.api_password ?? input.api_password;
-  const api_port: number = preset?.api_port ?? parsePort(input.api_port, 8728);
+  let api_port: number = preset?.api_port ?? parsePort(input.api_port, 8728);
   const ssh_username: string | null = preset ? preset.ssh_username : (input.ssh_username ?? null);
   const ssh_password: string | null = preset ? preset.ssh_password : (input.ssh_password ?? null);
   const ssh_port: number = preset?.ssh_port ?? parsePort(input.ssh_port, 22);
@@ -148,6 +148,9 @@ async function createDevice(
     return { ok: false, status: 400, body: { error: normalizedAddress.reason } };
   }
   const address = normalizedAddress.address;
+  const portCheck = reconcileAddressPort(normalizedAddress.port, preset?.api_port ?? input.api_port);
+  if (!portCheck.ok) return { ok: false, status: 400, body: { error: portCheck.reason } };
+  if (portCheck.port) api_port = portCheck.port;
 
   const testClient = new RouterOSClient(address, api_port, api_username, api_password, 10_000);
   let detectedSerial: string | null;

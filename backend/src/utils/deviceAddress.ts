@@ -125,3 +125,24 @@ export function classifyAddress(address: string): AddressKind {
   }
   return 'hostname';
 }
+
+/**
+ * A port written into the address ("router.example.com:8729") must not be
+ * dropped. The forms split it into the port field, but an API or CSV caller
+ * sending host:port got the host stored and a silent connection to 8728.
+ *
+ * Used when no separate port was given; refused when both were given and
+ * disagree, since guessing which one was meant would be worse.
+ */
+export function reconcileAddressPort(
+  addressPort: number | undefined,
+  explicitPort: unknown
+): { ok: true; port?: number } | { ok: false; reason: string } {
+  if (!addressPort) return { ok: true };
+  const given = explicitPort === undefined || explicitPort === null || explicitPort === '' ? undefined : Number(explicitPort);
+  if (given === undefined || Number.isNaN(given)) return { ok: true, port: addressPort };
+  if (given !== addressPort) {
+    return { ok: false, reason: `The address includes port ${addressPort}, but the API port is ${given}. Use one or the other.` };
+  }
+  return { ok: true };
+}

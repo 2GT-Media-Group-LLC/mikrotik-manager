@@ -116,3 +116,19 @@ describe('classifyAddress', () => {
     expect(classifyAddress('router.example.com')).toBe('hostname');
   });
 });
+
+import { reconcileAddressPort } from '../deviceAddress';
+
+describe('reconcileAddressPort', () => {
+  it('uses a port written into the address when none is given separately', () => {
+    expect(reconcileAddressPort(8729, undefined)).toEqual({ ok: true, port: 8729 });
+    expect(reconcileAddressPort(8729, '')).toEqual({ ok: true, port: 8729 });
+  });
+  it('accepts both when they agree, and changes nothing without an address port', () => {
+    expect(reconcileAddressPort(8729, 8729)).toEqual({ ok: true });
+    expect(reconcileAddressPort(undefined, 8728)).toEqual({ ok: true });
+  });
+  it('refuses a conflict instead of guessing', () => {
+    expect(reconcileAddressPort(8729, 8728).ok).toBe(false);
+  });
+});

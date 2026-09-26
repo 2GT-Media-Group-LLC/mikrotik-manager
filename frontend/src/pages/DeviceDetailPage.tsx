@@ -193,7 +193,10 @@ export default function DeviceDetailPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap sm:ml-auto sm:flex-shrink-0">
           <button
-            onClick={() => window.open(`http://${device.ip_address}/`, '_blank', 'noopener,noreferrer')}
+            onClick={() => window.open(
+              // An IPv6 literal needs brackets in a URL (addresses can be IPv6 since #170).
+              `http://${device.ip_address.includes(':') ? `[${device.ip_address}]` : device.ip_address}/`,
+              '_blank', 'noopener,noreferrer')}
             className="btn-secondary flex items-center gap-2 text-sm"
             title="Open device web interface"
           >

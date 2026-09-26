@@ -24,6 +24,16 @@ export function safeConnectionError(context: string, err: unknown): string {
     case 'ECONNRESET':
       return 'Connection was reset. Check the port and that api-ssl is used if required.';
     default:
+      // RouterOS's own login refusal, surfaced by RouterOSClient as a message.
+      if (/invalid user name or password/i.test(raw)) {
+        return 'Login failed: the username or password is wrong.';
+      }
+      // Connected, but nothing answered in the API protocol: usually the Winbox,
+      // SSH or web port rather than the API one.
+      if (/read timeout waiting for api response/i.test(raw)) {
+        return 'The device accepted the connection but did not answer as the RouterOS API. '
+          + 'Check the port is the API port (8728, or 8729 for api-ssl).';
+      }
       // RouterOSClient's own connect-timeout has no .code, only a message.
       if (/connection timeout/i.test(raw)) {
         return 'Timed out connecting to the device. Check the address, port, and firewall rules.';

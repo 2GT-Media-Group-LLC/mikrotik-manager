@@ -16,7 +16,9 @@ retyped per device.
 
 The address can be a LAN IP, a public IP, an IPv6 address, or a hostname (a local DNS name, or
 a router's own `/ip cloud` DDNS name). Pasting a full URL like `https://203.0.113.5:8729/`
-works too — the port is pulled out into the API Port field automatically. Reaching a device
+works too — the port is pulled out into the API Port field automatically. The same goes for an
+address with a port sent through the API: it is used as the API port, and refused if a
+different port is also given. Reaching a device
 over the internet on the plaintext API port (8728) sends the login unencrypted, so the form
 warns and suggests api-ssl (port 8729) or a VPN instead.
 
