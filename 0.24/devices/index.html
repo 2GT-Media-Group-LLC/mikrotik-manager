@@ -1277,6 +1277,23 @@ configured one is simply registered. See <a href="../adoption/">Adopting devices
 <p><strong>+ Add Device</strong> is the manual route when discovery cannot see it: address, credentials, and
 optionally a <a href="../configuration/">credential preset</a> so the same username and password are not
 retyped per device.</p>
+<p>The address can be a LAN IP, a public IP, an IPv6 address, or a hostname (a local DNS name, or
+a router's own <code>/ip cloud</code> DDNS name). Pasting a full URL like <code>https://203.0.113.5:8729/</code>
+works too — the port is pulled out into the API Port field automatically. The same goes for an
+address with a port sent through the API: it is used as the API port, and refused if a
+different port is also given. Reaching a device
+over the internet on the plaintext API port (8728) sends the login unencrypted, so the form
+warns and suggests api-ssl (port 8729) or a VPN instead.</p>
+<div class="admonition note">
+<p class="admonition-title">Reachable over a VPN but not over its public IP?</p>
+<p>RouterOS's own <code>IP → Services</code> list restricts each service (<code>api</code>, <code>api-ssl</code>) by an
+<strong>"Available From"</strong> address list. It accepts the TCP connection from anywhere, then
+silently drops it mid-login if the source isn't on that list — which shows up here as
+"The device closed the connection during login," not a normal refused/timed-out error.
+If a device connects fine over WireGuard (or another VPN) but not from its public IP,
+check that field: either add the reachable range, or leave it restricted and keep using
+the VPN, which is the safer choice for internet-facing management anyway.</p>
+</div>
 <p><strong>Try All</strong> runs a bulk add across every discovered device as a server-side job. It survives a
 closed browser tab and reports progress and failures per device.</p>
 <h3 id="importing-from-csv">Importing from CSV<a class="headerlink" href="#importing-from-csv" title="Permanent link">&para;</a></h3>
