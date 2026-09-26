@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, CheckCircle, AlertCircle, Loader2, Network } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network } from 'lucide-react';
 import { devicesApi } from '../../services/api';
 import { parsePort } from '../../utils/parsePort';
+import { isValidDeviceAddress, classifyAddress, splitAddressAndPort } from '../../utils/deviceAddress';
 import type { Device, DeviceType, IpAddress } from '../../types';
 
 interface Props {
@@ -49,6 +50,24 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  // A pasted URL or "host:port" is split so the port lands in the API Port
+  // field instead of failing address validation.
+  const setAddress = (v: string) => {
+    const { address, port } = splitAddressAndPort(v);
+    if (port && address !== v) {
+      setForm((f) => ({ ...f, ip_address: address, api_port: String(port) }));
+    } else {
+      set('ip_address', v);
+    }
+  };
+
+  const addressTrimmed = form.ip_address.trim();
+  const addressInvalid = addressTrimmed.length > 0 && !isValidDeviceAddress(addressTrimmed);
+  const showPlaintextWarning =
+    addressTrimmed.length > 0 && !addressInvalid &&
+    classifyAddress(addressTrimmed) !== 'private' &&
+    parsePort(form.api_port, 8728) !== 8729;
+
   // Live IPs from the router itself — useful so you can change the
   // management IP to something the device actually owns instead of guessing.
   const { data: ipRows, isLoading: ipsLoading, error: ipsError } = useQuery({
@@ -82,7 +101,11 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.ip_address || !form.api_username) {
-      setError('Name, IP address, and username are required');
+      setError('Name, address, and username are required');
+      return;
+    }
+    if (addressInvalid) {
+      setError(`"${addressTrimmed}" is not a valid IP address or hostname`);
       return;
     }
     setLoading(true);
@@ -140,7 +163,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
 
             <div className="col-span-2">
               <label className="label flex items-center justify-between">
-                <span>Management IP *</span>
+                <span>Management address (IP or hostname) *</span>
                 {device.status !== 'online' && (
                   <span className="text-[10px] font-normal text-gray-400 dark:text-slate-500 normal-case tracking-normal">
                     Device offline — IP list unavailable, enter manually
@@ -150,9 +173,20 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
               <input
                 className="input"
                 value={form.ip_address}
-                onChange={(e) => set('ip_address', e.target.value)}
-                placeholder="192.168.1.1"
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="192.168.88.1 or router.example.com"
               />
+              {addressInvalid && (
+                <p className="text-[11px] text-red-500 mt-1">
+                  Not a valid IP address or hostname.
+                </p>
+              )}
+              {showPlaintextWarning && (
+                <p className="flex items-start gap-1 text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                  <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <span>Credentials travel unencrypted to this address. Prefer api-ssl on port 8729, or a VPN.</span>
+                </p>
+              )}
               {device.status === 'online' && (
                 <div className="mt-2 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
                   <div className="px-3 py-1.5 bg-gray-50 dark:bg-slate-700/50 text-[11px] uppercase tracking-wide font-semibold text-gray-500 dark:text-slate-400 flex items-center gap-1.5">

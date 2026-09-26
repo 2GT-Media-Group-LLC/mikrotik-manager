@@ -267,6 +267,11 @@ ALTER TABLE device_configs ADD CONSTRAINT device_configs_backup_id_fkey
 -- when the address is not the device's management IP.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS ip_addresses_jsonb JSONB;
 
+-- The management address can now be a hostname (DDNS name, public FQDN), not
+-- only a LAN IP, so 45 chars (enough for an IPv6 literal) is too narrow —
+-- widen to fit a full DNS name. A no-op if already this size or larger.
+ALTER TABLE devices ALTER COLUMN ip_address TYPE VARCHAR(253);
+
 -- Allow multiple neighbors per interface (one row per neighbor, not per port)
 ALTER TABLE topology_links DROP CONSTRAINT IF EXISTS topology_links_from_device_id_from_interface_key;
 

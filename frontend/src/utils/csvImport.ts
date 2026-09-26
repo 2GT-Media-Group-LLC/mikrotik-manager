@@ -1,4 +1,5 @@
 import type { BulkAddDeviceItem, CredentialPreset } from '../services/api';
+import { isValidDeviceAddress } from './deviceAddress';
 
 /**
  * Parsing a device list for bulk import (#160).
@@ -112,15 +113,6 @@ export function splitCsvLine(line: string, delimiter = ','): string[] {
   return out.map((f) => f.trim());
 }
 
-const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-const HOSTNAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
-
-function validAddress(v: string): boolean {
-  const m = IPV4.exec(v);
-  if (m) return m.slice(1).every((o) => Number(o) <= 255);
-  return HOSTNAME.test(v);
-}
-
 export function parseDeviceCsv(
   text: string,
   presets: Pick<CredentialPreset, 'id' | 'name'>[],
@@ -163,7 +155,7 @@ export function parseDeviceCsv(
     const addr = (f.ip_address || '').trim();
 
     if (!addr) errors.push('Missing address.');
-    else if (!validAddress(addr)) errors.push(`"${addr}" is not a valid IP address or hostname.`);
+    else if (!isValidDeviceAddress(addr)) errors.push(`"${addr}" is not a valid IP address or hostname.`);
 
     const key = addr.toLowerCase();
     if (addr && seen.has(key)) errors.push(`Same address as line ${seen.get(key)}.`);
