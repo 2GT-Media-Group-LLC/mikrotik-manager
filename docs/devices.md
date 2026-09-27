@@ -80,6 +80,21 @@ The import runs as the same server-side job as **Try All**, so the tab can be cl
 Filter by status, type, tag, rack or location, and sort by any column. The search box matches
 name, address, serial and MAC.
 
+The list updates by itself as polls finish; there is no need to reload.
+
+### Device names
+
+A device's name follows its RouterOS identity (`/system identity`): rename a router on the
+device, or from its System tab here, and the new name shows up at the next poll.
+
+A name you choose yourself is kept instead. That happens when you type a name in **Add
+Device** that differs from the router's identity, or rename a device in **Edit Device**. The
+name then stays put whatever the identity says, and Edit Device shows "Set manually". Click
+**Use the router's identity** there to go back to following it.
+
+A device added without a name (from a CSV row with no `name`, or **Try All**) starts out named
+after its address, and switches to its identity at the first poll.
+
 Tags appear beside the device name. They are the only grouping that crosses both sites and
 device types — see [Bulk commands](commands.md) for selecting a fleet by tag.
 
