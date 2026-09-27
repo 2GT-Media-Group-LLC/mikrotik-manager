@@ -92,8 +92,10 @@ describe('installRouterboardUpgrade', () => {
 // ── collectSystemInfo: name vs. router identity ─────────────────────────────
 //
 // Regression test for a device's "+ Add Device" name getting silently
-// clobbered by RouterOS's own /system/identity on the very first poll — see
-// the `nameIsPlaceholder` gate in collectSystemInfo().
+// clobbered by RouterOS's own /system/identity on the very first poll.
+// The decision now lives entirely in device.name_locked (set at creation by
+// deviceCreation.ts, and on every rename by PUT /devices/:id) rather than a
+// heuristic here — collectSystemInfo just obeys the flag.
 
 describe('collectSystemInfo', () => {
   const resourceRow = [{ version: '7.15 (stable)' }];
@@ -110,33 +112,43 @@ describe('collectSystemInfo', () => {
     return jest.fn((path: string) => Promise.resolve(responses[path] ?? []));
   }
 
+  async function collectedName(device: DeviceRow, identityName: string): Promise<string> {
+    const collector = new DeviceCollector(device);
+    (collector as unknown as { client: { execute: jest.Mock } }).client.execute = mockExecute(identityName);
+    await collector.collectSystemInfo();
+    const [, params] = (query as jest.Mock).mock.calls[0];
+    return params[0];
+  }
+
   beforeEach(() => {
     (query as jest.Mock).mockClear();
   });
 
-  it("adopts the router's identity when the stored name is still the address placeholder", async () => {
-    // CSV import / Try All default an un-named device's name to its address —
-    // that placeholder should be replaced by something more useful once known.
-    const device: DeviceRow = { ...testDevice, name: testDevice.ip_address };
-    const collector = new DeviceCollector(device);
-    (collector as unknown as { client: { execute: jest.Mock } }).client.execute = mockExecute('Core-Switch');
+  it("adopts the router's identity when unlocked, even for the address placeholder", async () => {
+    // CSV import / Try All default an un-named device's name to its address,
+    // and those rows start unlocked — that placeholder should be replaced by
+    // something more useful once known.
+    const device: DeviceRow = { ...testDevice, name: testDevice.ip_address, name_locked: false };
+    expect(await collectedName(device, 'Core-Switch')).toBe('Core-Switch');
+  });
 
-    await collector.collectSystemInfo();
-
-    const [sql, params] = (query as jest.Mock).mock.calls[0];
-    expect(sql).toMatch(/UPDATE devices/);
-    expect(params[0]).toBe('Core-Switch');
+  it('adopts the router\'s identity when unlocked, even for a name that looks deliberate', async () => {
+    // The deciding factor is the flag, not what the name happens to look
+    // like — an unlocked row always follows, address-shaped or not.
+    const device: DeviceRow = { ...testDevice, name: 'aaa', name_locked: false };
+    expect(await collectedName(device, 'Core-Switch')).toBe('Core-Switch');
   });
 
   it("never overwrites a name the operator actually typed, even with RouterOS's un-customized factory identity", async () => {
-    const device: DeviceRow = { ...testDevice, name: 'aaa' };
-    const collector = new DeviceCollector(device);
+    const device: DeviceRow = { ...testDevice, name: 'aaa', name_locked: true };
     // RouterOS ships with this as the un-customized default identity.
-    (collector as unknown as { client: { execute: jest.Mock } }).client.execute = mockExecute('MikroTik');
+    expect(await collectedName(device, 'MikroTik')).toBe('aaa');
+  });
 
-    await collector.collectSystemInfo();
-
-    const [, params] = (query as jest.Mock).mock.calls[0];
-    expect(params[0]).toBe('aaa');
+  it('never overwrites a locked name even if it happens to equal the address', async () => {
+    // Legacy data (locked before a later address change) shouldn't fall back
+    // to the placeholder heuristic — the flag wins outright.
+    const device: DeviceRow = { ...testDevice, name: testDevice.ip_address, name_locked: true };
+    expect(await collectedName(device, 'Core-Switch')).toBe(testDevice.ip_address);
   });
 });

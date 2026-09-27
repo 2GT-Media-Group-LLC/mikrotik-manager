@@ -272,6 +272,13 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS ip_addresses_jsonb JSONB;
 -- widen to fit a full DNS name. A no-op if already this size or larger.
 ALTER TABLE devices ALTER COLUMN ip_address TYPE VARCHAR(253);
 
+-- Whether the name column should keep following the router's own
+-- /system/identity on every poll (DeviceCollector.collectSystemInfo), or was
+-- set deliberately by an operator and must be left alone until they choose to
+-- follow it again. Defaults false for every existing row, so nothing already
+-- relying on the old always-follow behaviour changes.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS name_locked BOOLEAN NOT NULL DEFAULT false;
+
 -- Allow multiple neighbors per interface (one row per neighbor, not per port)
 ALTER TABLE topology_links DROP CONSTRAINT IF EXISTS topology_links_from_device_id_from_interface_key;
 

@@ -529,7 +529,13 @@ export const devicesApi = {
   ) => api.post<Device>('/devices', data),
   update: (
     id: number,
-    data: Partial<Device> & { api_password?: string; ssh_password?: string; credential_preset_id?: number | null }
+    data: Partial<Device> & {
+      api_password?: string;
+      ssh_password?: string;
+      credential_preset_id?: number | null;
+      /** "Use the router's identity" in Edit Device — sent alone, no other fields. */
+      unlock_name?: boolean;
+    }
   ) => api.put<Device>(`/devices/${id}`, data),
   delete: (id: number) => api.delete(`/devices/${id}`),
   sync: (id: number) => api.post(`/devices/${id}/sync`, undefined, { timeout: 60_000 }),

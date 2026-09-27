@@ -12,7 +12,7 @@
  * every response at once and cannot be half-applied again.
  */
 export const DEVICE_BASE_COLUMNS = `
-  id, name, ip_address, api_port, api_username, model, serial_number,
+  id, name, name_locked, ip_address, api_port, api_username, model, serial_number,
   firmware_version, ros_version, device_type, status, last_seen, notes, site_id,
   health_status, health_issues, health_checked_at, health_ignored,
   intermittent, intermittent_alert_after_min

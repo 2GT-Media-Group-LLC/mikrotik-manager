@@ -8,6 +8,7 @@ import { devicesApi, topologyApi, metricsApi, tagsApi, adoptionApi} from '../ser
 import type { Device } from '../types';
 import type { DiscoveredDevice, AdoptionCandidate} from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { useSocket } from '../hooks/useSocket';
 import clsx from 'clsx';
 import AddDeviceModal from '../components/devices/AddDeviceModal';
 import AdoptDeviceModal from '../components/devices/AdoptDeviceModal';
@@ -206,6 +207,14 @@ export default function DevicesPage() {
   const { data: allTags = [] } = useQuery({
     queryKey: ['tags'],
     queryFn: () => tagsApi.list().then((r) => r.data),
+  });
+
+  // The 30s refetchInterval above eventually catches a background poll's
+  // effect on a device (e.g. a name that follows the router's identity again
+  // after "Use the router's identity"), but a live event means it shows up
+  // immediately instead of leaving that update to the next tick.
+  useSocket({
+    'device:updated': () => queryClient.invalidateQueries({ queryKey: ['devices'] }),
   });
 
   const syncMutation = useMutation({

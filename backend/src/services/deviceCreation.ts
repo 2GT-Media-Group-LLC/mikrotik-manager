@@ -3,6 +3,7 @@ import { encrypt, decrypt } from '../utils/crypto';
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
 import { normalizeDeviceAddress, reconcileAddressPort } from '../utils/deviceAddress';
+import { logSafe } from '../utils/logSafe';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import type { PollerService } from './PollerService';
 import type { CredentialPresetRow } from '../routes/credentialPresets';
@@ -73,6 +74,30 @@ export interface CreateDeviceInput {
 export type CreateDeviceResult =
   | { ok: true; status: 200 | 201; body: Record<string, unknown> }
   | { ok: false; status: number; body: Record<string, unknown> };
+
+/**
+ * Whether a newly-created (or duplicate-merged) device's `name` should stop
+ * following the router's own /system/identity on every poll (see
+ * DeviceCollector.collectSystemInfo) — i.e. whether an operator gave it a
+ * name that was clearly a deliberate choice rather than a placeholder.
+ *
+ * Never locked when:
+ *  - `name` is just the address (CSV import / Try All default an unnamed
+ *    device to its address as typed — that's not a choice, it's "nothing was
+ *    given"; compared case-insensitively, since normalizeDeviceAddress
+ *    lowercases a hostname before it ever reaches here, so an unnamed
+ *    "Router.Example.com" row must still count as a placeholder),
+ *  - or the router's identity couldn't be read (fail open: keep the old
+ *    always-follow behaviour rather than guess),
+ *  - or `name` already matches the router's identity (nothing to lock —
+ *    following it going forward changes nothing).
+ * Locked otherwise: the operator typed something else on purpose.
+ */
+export function computeNameLocked(name: string, address: string, deviceIdentity: string | null): boolean {
+  if (name.toLowerCase() === address.toLowerCase()) return false;
+  if (!deviceIdentity) return false;
+  return name !== deviceIdentity;
+}
 
 /**
  * Shared device creation logic used by POST /api/devices and bulk-add worker.
@@ -154,10 +179,16 @@ async function createDevice(
 
   const testClient = new RouterOSClient(address, api_port, api_username, api_password, 10_000);
   let detectedSerial: string | null;
+  let deviceIdentity: string | null;
   try {
     await testClient.connect();
     const rb = await testClient.execute('/system/routerboard/print').catch(() => [] as Record<string, string>[]);
     detectedSerial = (rb[0]?.['serial-number'] || '').trim() || null;
+    const identity = await testClient.execute('/system/identity/print').catch((e) => {
+      console.warn(`[deviceCreation] /system/identity/print failed for ${logSafe(address)}: ${logSafe((e as Error)?.message)}`);
+      return [] as Record<string, string>[];
+    });
+    deviceIdentity = (identity[0]?.['name'] || '').trim() || null;
   } catch (err) {
     return {
       ok: false,
@@ -167,6 +198,7 @@ async function createDevice(
   } finally {
     testClient.disconnect();
   }
+  const nameLocked = computeNameLocked(name, address, deviceIdentity);
 
   if (detectedSerial) {
     const existingBySerial = await queryOne<{
@@ -206,19 +238,21 @@ async function createDevice(
       await query(
         `UPDATE devices SET
            name=COALESCE($1,name),
-           ip_address=$2,
-           api_port=$3,
-           api_username=$4,
-           api_password_encrypted=$5,
-           ssh_port=$6,
-           ssh_username=COALESCE($7,ssh_username),
-           ssh_password_encrypted=COALESCE($8,ssh_password_encrypted),
-           device_type=COALESCE($9,device_type),
-           notes=COALESCE($10,notes),
+           name_locked=$2,
+           ip_address=$3,
+           api_port=$4,
+           api_username=$5,
+           api_password_encrypted=$6,
+           ssh_port=$7,
+           ssh_username=COALESCE($8,ssh_username),
+           ssh_password_encrypted=COALESCE($9,ssh_password_encrypted),
+           device_type=COALESCE($10,device_type),
+           notes=COALESCE($11,notes),
            updated_at=NOW()
-         WHERE id = $11`,
+         WHERE id = $12`,
         [
           name,
+          nameLocked,
           address,
           api_port,
           api_username,
@@ -262,13 +296,13 @@ async function createDevice(
   const encryptedSshPass = ssh_password ? encrypt(ssh_password) : null;
 
   const rows = await query<{ id: number }>(
-    `INSERT INTO devices (name, ip_address, api_port, api_username, api_password_encrypted,
+    `INSERT INTO devices (name, name_locked, ip_address, api_port, api_username, api_password_encrypted,
                           ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status,
                           site_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'unknown',
-             COALESCE($11::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)))
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'unknown',
+             COALESCE($12::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)))
      RETURNING id`,
-    [name, address, api_port, api_username, encryptedPass,
+    [name, nameLocked, address, api_port, api_username, encryptedPass,
      ssh_port, ssh_username || null, encryptedSshPass, device_type, notes || null,
      ctx?.siteId ?? null]
   );

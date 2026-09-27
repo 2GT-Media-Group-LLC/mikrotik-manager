@@ -188,10 +188,10 @@ export class RouterOSClient extends EventEmitter {
       if (sentence.type === '!re') {
         results.push(sentence.words);
       } else if (sentence.type === '!trap') {
-        // RouterOS always sends !done after !trap — drain it to keep the stream in sync.
-        // Without this, the stale !done is consumed by the next command, causing it to
-        // exit immediately with empty results before its real response arrives.
-        await this.readNextSentence().catch(() => {});
+        // A !trap's reply always ends with a trailing !done — drain up to it to
+        // keep the stream in sync. See drainUntilDone() for why this has to
+        // keep reading rather than assume exactly one more sentence.
+        await this.drainUntilDone();
         throw new RouterOSError(
           sentence.words['message'] || `Command failed: ${command}`,
           sentence.words['category']
@@ -476,6 +476,38 @@ export class RouterOSClient extends EventEmitter {
   }
 
   /**
+   * After a !trap, RouterOS's reply always ends with a trailing !done — but
+   * that !done is not always the very next sentence: an unrecognized command
+   * path (e.g. /system/routerboard/print on x86/CHR, which has no routerboard
+   * submenu at all) replies with *two* !trap sentences — "no such command or
+   * directory (routerboard)", then "no such command prefix" — before !done.
+   *
+   * Draining exactly one sentence assumed there was only ever one !trap, so
+   * on a double-trap it consumed the second trap instead of the real !done,
+   * leaving that !done sitting in the queue for the *next* command's very
+   * first read. That command then saw type '!done' immediately and returned
+   * an empty result before its real reply ever arrived — reached in practice
+   * as /system/identity/print silently returning [] right after a
+   * /system/routerboard/print trap on non-routerboard hardware.
+   *
+   * Reads and discards sentences until !done actually shows up, or a read
+   * fails/times out (already logged via poison() in that case, so there is
+   * nothing more to safely drain).
+   *
+   * Bounded to MAX_TRAP_SENTENCES reads: the per-read timeout already stops
+   * this from hanging, but every !trap sequence actually observed is two
+   * sentences at most, so an explicit cap keeps "how much this can discard"
+   * obviously finite rather than implicit in that timeout.
+   */
+  private async drainUntilDone(timeoutMs?: number): Promise<void> {
+    const MAX_TRAP_SENTENCES = 16;
+    for (let i = 0; i < MAX_TRAP_SENTENCES; i++) {
+      const sentence = await this.readNextSentence(timeoutMs).catch(() => null);
+      if (!sentence || sentence.type === '!done') return;
+    }
+  }
+
+  /**
    * Abandon a connection whose reply stream can no longer be trusted.
    *
    * Anything already queued belongs to a command that gave up, so it is
@@ -557,8 +589,9 @@ export class RouterOSClient extends EventEmitter {
         // Command finished on its own (shouldn't happen for generators, but handle it)
         return results;
       } else if (sentence.type === '!trap') {
-        // Drain the !done that follows !trap
-        await this.readNextSentence(5_000).catch(() => {});
+        // See drainUntilDone(): a !trap's trailing !done isn't always the very
+        // next sentence.
+        await this.drainUntilDone(5_000);
         throw new RouterOSError(
           sentence.words['message'] || `Command failed: ${command}`,
           sentence.words['category']

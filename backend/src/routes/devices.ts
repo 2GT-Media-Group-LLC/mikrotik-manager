@@ -476,12 +476,17 @@ router.patch('/:id/location', requireWrite, async (req: Request, res: Response) 
 
 // PUT /api/devices/:id
 router.put('/:id', requireWrite, async (req: Request, res: Response) => {
-  const { name, ip_address: rawIpAddress, device_type, notes, credential_preset_id } = req.body as {
+  const {
+    name, ip_address: rawIpAddress, device_type, notes, credential_preset_id,
+    unlock_name,
+  } = req.body as {
     name?: string;
     ip_address?: string;
     device_type?: string;
     notes?: string;
     credential_preset_id?: number | null;
+    /** "Use the router's identity" in Edit Device — see name_locked below. */
+    unlock_name?: boolean;
   };
 
   // Accepts an IPv4/IPv6 literal or a hostname, same as device creation.
@@ -496,17 +501,28 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 
   const existing = await queryOne<{
     id: number;
+    name: string;
     ip_address: string;
     api_port: number;
     api_username: string;
     api_password_encrypted: string;
     ssh_port: number | null;
   }>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted, ssh_port
+    `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted, ssh_port
        FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!existing) return res.status(404).json({ error: 'Device not found' });
+
+  // name_locked: false only on an explicit "use the router's identity" request
+  // (unlock_name, sent alone); true the moment a rename is actually given here
+  // (Edit Device is a deliberate action, unlike the placeholder names CSV
+  // import/Try All fall back to); otherwise left untouched (COALESCE below) —
+  // e.g. saving the form again without touching the name must not re-lock it.
+  const nameLockedUpdate: boolean | null =
+    unlock_name === true
+      ? false
+      : (typeof name === 'string' && name && name !== existing.name) ? true : null;
 
   let preset: Awaited<ReturnType<typeof loadCredentialPreset>>;
   try {
@@ -557,16 +573,24 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 
   await query(
     `UPDATE devices SET
-       name=COALESCE($1,name), ip_address=COALESCE($2,ip_address),
-       api_port=COALESCE($3,api_port),
-       api_username=COALESCE($4,api_username), api_password_encrypted=$5,
-       ssh_port=COALESCE($6,ssh_port), ssh_username=COALESCE($7,ssh_username),
-       ssh_password_encrypted=COALESCE($8,ssh_password_encrypted),
-       device_type=COALESCE($9,device_type), notes=COALESCE($10,notes),
+       name=COALESCE($1,name), name_locked=COALESCE($2,name_locked),
+       ip_address=COALESCE($3,ip_address),
+       api_port=COALESCE($4,api_port),
+       api_username=COALESCE($5,api_username), api_password_encrypted=$6,
+       ssh_port=COALESCE($7,ssh_port), ssh_username=COALESCE($8,ssh_username),
+       ssh_password_encrypted=COALESCE($9,ssh_password_encrypted),
+       device_type=COALESCE($10,device_type), notes=COALESCE($11,notes),
        updated_at=NOW()
-     WHERE id = $11`,
-    [name, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id]
+     WHERE id = $12`,
+    [name, nameLockedUpdate, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id]
   );
+
+  // Unlocking asks to follow the router's identity again — resync promptly
+  // rather than leaving the old name showing until the next slow poll (up to
+  // 5 minutes away).
+  if (nameLockedUpdate === false && pollerService) {
+    await pollerService.scheduleDeviceSync(Number(req.params.id), 'full');
+  }
 
   const updated = await queryOne(
     `SELECT ${DEVICE_BASE_COLUMNS} FROM devices WHERE id = $1`,

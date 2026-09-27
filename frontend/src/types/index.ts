@@ -50,6 +50,12 @@ export type DeviceType = 'router' | 'switch' | 'wireless_ap' | 'other';
 export interface Device {
   id: number;
   name: string;
+  /**
+   * False: `name` follows the router's own /system/identity on every poll.
+   * True: an operator named it deliberately (Add Device, or a rename in Edit
+   * Device) and it stays put until "Use the router's identity" clears this.
+   */
+  name_locked?: boolean;
   ip_address: string;
   api_port: number;
   api_username: string;

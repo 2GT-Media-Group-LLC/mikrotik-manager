@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network, RotateCcw } from 'lucide-react';
 import { devicesApi } from '../../services/api';
 import { parsePort } from '../../utils/parsePort';
 import { isValidDeviceAddress, classifyAddress, splitAddressAndPort } from '../../utils/deviceAddress';
@@ -47,8 +47,27 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  // "Use the router's identity": clears name_locked so collectSystemInfo goes
+  // back to following /system/identity, without touching anything else here —
+  // sent alone, deliberately not bundled with whatever else is unsaved in
+  // this form.
+  const handleUnlockName = async () => {
+    setUnlocking(true);
+    setError('');
+    try {
+      await devicesApi.update(device.id, { unlock_name: true });
+      onSuccess();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setError(msg || 'Failed to unlock the name');
+    } finally {
+      setUnlocking(false);
+    }
+  };
 
   // A pasted URL or "host:port" is split so the port lands in the API Port
   // field instead of failing address validation.
@@ -153,12 +172,31 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
           {/* Basic info */}
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="label">Device Name *</label>
+              <label className="label flex items-center justify-between">
+                <span>Device Name *</span>
+                {device.name_locked && (
+                  <button
+                    type="button"
+                    onClick={handleUnlockName}
+                    disabled={unlocking}
+                    className="flex items-center gap-1 text-[11px] font-normal normal-case tracking-normal text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                    title="Stop keeping this name and follow the router's own identity again"
+                  >
+                    {unlocking ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                    Use the router&apos;s identity
+                  </button>
+                )}
+              </label>
               <input
                 className="input"
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
               />
+              {device.name_locked && (
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Set manually — the router&apos;s own identity won&apos;t override this until unlocked.
+                </p>
+              )}
             </div>
 
             <div className="col-span-2">

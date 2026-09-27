@@ -105,6 +105,16 @@ function parseWifiMonitorChannel(channel: string): { frequency: number; width: s
 export interface DeviceRow {
   id: number;
   name: string;
+  /**
+   * True once an operator has deliberately named this device (Add Device with
+   * a name unlike the router's own identity, or a rename in Edit Device) —
+   * collectSystemInfo() then leaves `name` alone instead of following
+   * /system/identity on every poll. Optional/falsy on a DeviceRow built by
+   * hand for a single narrow action (never poured through collectSystemInfo),
+   * so `undefined` safely means "not locked" rather than requiring every call
+   * site to know about it.
+   */
+  name_locked?: boolean;
   ip_address: string;
   api_port: number;
   ssh_port?: number;
@@ -258,13 +268,14 @@ export class DeviceCollector {
       const info = resource[0] || {};
       const rb = routerboard[0] || {};
       // Only adopt the router's own /system/identity as the display name when
-      // nothing more meaningful has been set — i.e. the name is still the
-      // address placeholder that CSV import/Try All use when no name is given.
-      // Without this gate, the very first poll after "+ Add Device" silently
-      // overwrote whatever the operator just typed (often with RouterOS's
-      // factory identity, literally "MikroTik") the moment it ran.
-      const nameIsPlaceholder = this.device.name === this.device.ip_address;
-      const identityName = (nameIsPlaceholder && identity[0]?.['name']) || this.device.name;
+      // nothing has been deliberately set — i.e. name_locked is false. Without
+      // this gate, the very first poll after "+ Add Device" (or a rename in
+      // Edit Device) silently reverted whatever the operator just typed,
+      // often to RouterOS's un-customized factory identity, "MikroTik".
+      // name_locked itself is decided at creation (deviceCreation.ts) and on
+      // every Edit Device rename (routes/devices.ts), and "Use the router's
+      // identity" in Edit Device clears it to opt back into following it.
+      const identityName = (!this.device.name_locked && identity[0]?.['name']) || this.device.name;
 
       const rosVersion = (info['version'] || '').split(' ')[0];
       const model = rb['model'] || info['board-name'] || null;

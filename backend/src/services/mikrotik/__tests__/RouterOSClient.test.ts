@@ -12,6 +12,12 @@ const word = (s: string): Buffer => {
 const sentence = (...kv: string[]): Buffer =>
   Buffer.concat([word('!re'), ...kv.map(p => word('=' + p)), Buffer.from([0x00])]);
 
+/** Build a complete sentence of any type (`!trap`, `!done`, ...) from raw `key=value` words. */
+const rawSentence = (type: string, ...kv: string[]): Buffer =>
+  Buffer.concat([word(type), ...kv.map(p => word('=' + p)), Buffer.from([0x00])]);
+const trap = (message: string): Buffer => rawSentence('!trap', `message=${message}`);
+const done = (): Buffer => rawSentence('!done');
+
 /** Feed bytes straight to the parser, bypassing the socket. */
 function parse(bytes: Buffer): RouterOSSentence | null {
   const client = new RouterOSClient('127.0.0.1', 8728, 'x', 'x');
@@ -163,5 +169,85 @@ describe('read timeout', () => {
     await expect(internals.readNextSentence(20)).resolves.toMatchObject({
       words: { status: 'ok' },
     });
+  });
+});
+
+/**
+ * Double-!trap desync — reproduced live against an x86/CHR device (no
+ * routerboard submenu): /system/routerboard/print replies with *two* !trap
+ * sentences ("no such command or directory (routerboard)", then "no such
+ * command prefix") before the trailing !done, not the single !trap the old
+ * drain-one-sentence code assumed.
+ *
+ * Draining exactly one sentence after the first !trap consumed the second
+ * !trap instead of !done, leaving that !done in the queue for the very next
+ * command. That command's first read then saw type '!done' immediately and
+ * returned an empty result before its real reply ever arrived — in practice,
+ * /system/identity/print silently returning [] right after that failed
+ * routerboard probe, which is how a typed "+ Add Device" name kept getting
+ * treated as un-lockable: the identity read to compare it against came back
+ * empty every time on this class of hardware.
+ */
+describe('!trap draining', () => {
+  type Internals = {
+    buffer: Buffer;
+    connected: boolean;
+    socket: unknown;
+    sentenceQueue: RouterOSSentence[];
+    processBuffer(): void;
+    drainUntilDone(timeoutMs?: number): Promise<void>;
+  };
+
+  const makeExecClient = () => {
+    const client = new RouterOSClient('127.0.0.1', 8728, 'x', 'x');
+    const internals = client as unknown as Internals;
+    internals.connected = true;
+    internals.socket = { write: (_d: Buffer, cb: () => void) => cb(), destroy() {} };
+    return { client, internals };
+  };
+
+  it('rejects with the first trap\'s message on a single !trap', async () => {
+    const { client, internals } = makeExecClient();
+    internals.buffer = Buffer.concat([trap('no such command'), done()]);
+    internals.processBuffer();
+
+    await expect(client.execute('/nonexistent/print')).rejects.toThrow('no such command');
+  });
+
+  it('does not let a double !trap steal the next command\'s reply', async () => {
+    const { client, internals } = makeExecClient();
+
+    internals.buffer = Buffer.concat([
+      trap('no such command or directory (routerboard)'),
+      trap('no such command prefix'),
+      done(),
+    ]);
+    internals.processBuffer();
+
+    await expect(client.execute('/system/routerboard/print'))
+      .rejects.toThrow('no such command or directory (routerboard)');
+
+    // The next command's real reply must not have been eaten by the drain.
+    internals.buffer = Buffer.concat([sentence('name=MikroTik'), done()]);
+    internals.processBuffer();
+    await expect(client.execute('/system/identity/print'))
+      .resolves.toEqual([{ name: 'MikroTik' }]);
+  });
+
+  // Never observed in practice — RouterOS has only ever sent at most two
+  // !trap sentences for one failed command — but the cap must still hold if
+  // it somehow did, rather than reading forever until the per-read timeout.
+  it('gives up after a bounded number of sentences if !done never arrives', async () => {
+    const { internals } = makeExecClient();
+    internals.buffer = Buffer.concat(Array.from({ length: 20 }, () => trap('spam')));
+    internals.processBuffer();
+    expect(internals.sentenceQueue).toHaveLength(20);
+
+    await internals.drainUntilDone(50);
+
+    // Drained exactly the cap (16) and stopped, leaving the rest queued
+    // rather than consuming everything while waiting for a !done that never
+    // comes.
+    expect(internals.sentenceQueue).toHaveLength(4);
   });
 });
