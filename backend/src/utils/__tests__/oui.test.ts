@@ -28,10 +28,17 @@ describe('lookupVendor - after initialization from cache', () => {
   beforeEach(async () => {
     jest.resetModules();
 
+    // The fresh-cache read opens the file once and checks age and content on
+    // that handle (alert #98), so the handle-based calls are what is mocked.
     jest.doMock('fs', () => ({
+      openSync: () => 3,
+      fstatSync: () => ({ mtimeMs: Date.now() - 1000 }),
+      closeSync: jest.fn(),
       statSync: () => ({ mtimeMs: Date.now() - 1000 }),
       readFileSync: () => JSON.stringify(fakeCache),
       writeFileSync: jest.fn(),
+      existsSync: () => true,
+      mkdirSync: jest.fn(),
     }));
 
     // eslint-disable-next-line @typescript-eslint/no-require-imports

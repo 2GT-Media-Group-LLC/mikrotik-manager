@@ -1,5 +1,6 @@
 import { query, queryOne } from '../config/database';
 import { decrypt } from '../utils/crypto';
+import { logSafe } from '../utils/logSafe';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { createDeviceFromBody } from './deviceCreation';
 import type { PollerService } from './PollerService';
@@ -159,7 +160,8 @@ export class DeviceAdoptionService {
     const steps: AdoptionStep[] = [];
     const note = (step: string, ok: boolean, detail?: string) => {
       steps.push({ step, ok, detail });
-      console.log(`[Adopt] ${ok ? 'ok  ' : 'FAIL'} ${step}${detail ? ` — ${detail}` : ''}`);
+      // detail can carry device-reported text (CodeQL alert #97).
+      console.log(`[Adopt] ${ok ? 'ok  ' : 'FAIL'} ${logSafe(step)}${detail ? ` — ${logSafe(detail)}` : ''}`);
     };
 
     const candidate = (await this.listCandidates()).find(

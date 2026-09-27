@@ -65,11 +65,19 @@ function _readStaleCache(): Map<string, string> | null {
 }
 
 async function _load(allowDownload: boolean): Promise<void> {
-  // Try valid cache first
+  // Try valid cache first. Opened once, and the age checked and the bytes read
+  // from that one handle: checking by path and then reading by path again let
+  // the file change in between (CodeQL js/file-system-race, alert #98).
   try {
-    const stat = fs.statSync(CACHE_FILE);
-    if (Date.now() - stat.mtimeMs < CACHE_MAX_AGE_MS) {
-      const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) as Record<string, string>;
+    const fd = fs.openSync(CACHE_FILE, 'r');
+    let fresh: string | null = null;
+    try {
+      if (Date.now() - fs.fstatSync(fd).mtimeMs < CACHE_MAX_AGE_MS) fresh = fs.readFileSync(fd, 'utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+    if (fresh !== null) {
+      const raw = JSON.parse(fresh) as Record<string, string>;
       const map = new Map(Object.entries(raw));
       if (map.size > 10_000) {
         db = map;
