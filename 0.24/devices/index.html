@@ -463,6 +463,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The device list">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#device-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device names
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1162,6 +1177,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The device list">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#device-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device names
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1376,6 +1406,16 @@ means re-entering every device password; see <a href="../configuration/">Configu
 <h2 id="the-device-list">The device list<a class="headerlink" href="#the-device-list" title="Permanent link">&para;</a></h2>
 <p>Filter by status, type, tag, rack or location, and sort by any column. The search box matches
 name, address, serial and MAC.</p>
+<p>The list updates by itself as polls finish; there is no need to reload.</p>
+<h3 id="device-names">Device names<a class="headerlink" href="#device-names" title="Permanent link">&para;</a></h3>
+<p>A device's name follows its RouterOS identity (<code>/system identity</code>): rename a router on the
+device, or from its System tab here, and the new name shows up at the next poll.</p>
+<p>A name you choose yourself is kept instead. That happens when you type a name in <strong>Add
+Device</strong> that differs from the router's identity, or rename a device in <strong>Edit Device</strong>. The
+name then stays put whatever the identity says, and Edit Device shows "Set manually". Click
+<strong>Use the router's identity</strong> there to go back to following it.</p>
+<p>A device added without a name (from a CSV row with no <code>name</code>, or <strong>Try All</strong>) starts out named
+after its address, and switches to its identity at the first poll.</p>
 <p>Tags appear beside the device name. They are the only grouping that crosses both sites and
 device types — see <a href="../commands/">Bulk commands</a> for selecting a fleet by tag.</p>
 <p>To tag many devices at once, tick them in the list (the box in the header selects every device
