@@ -694,6 +694,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#passwords-and-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      Passwords and keys
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#finding-one" class="md-nav__link">
     <span class="md-ellipsis">
       Finding one
@@ -1078,6 +1087,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#passwords-and-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      Passwords and keys
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#finding-one" class="md-nav__link">
     <span class="md-ellipsis">
       Finding one
@@ -1153,6 +1171,28 @@ same device. It also means a backup is human-readable text, which is why preview
 and comparing them is possible at all.</p>
 <p>It also means a backup does <strong>not</strong> capture things <code>/export</code> omits: user passwords,
 certificates and files on disk. A <code>.rsc</code> restores a configuration, not a device.</p>
+<h2 id="passwords-and-keys">Passwords and keys<a class="headerlink" href="#passwords-and-keys" title="Permanent link">&para;</a></h2>
+<p>By default RouterOS v7 also leaves out Wi-Fi keys, VPN and PPP secrets, WireGuard private
+keys and SNMP communities, so a restore brings back the configuration without them.</p>
+<p><strong>Settings → General → Include passwords and keys in backups</strong> (admins only, off by default)
+adds them, using <code>/export compact show-sensitive</code>. A backup that holds them:</p>
+<ul>
+<li>is <strong>encrypted on disk</strong> with <code>ENCRYPTION_KEY</code>, the same key that protects device logins</li>
+<li>is marked <strong>secrets</strong> in the Backups list</li>
+<li>can be <strong>previewed, compared and downloaded only by admins</strong>; the download is the readable
+  <code>.rsc</code>, decrypted</li>
+<li>can still be <strong>restored by operators</strong>, since restoring sends the secrets back to the device
+  without showing them to anyone</li>
+</ul>
+<p>Config History snapshots never include secrets, because their text is kept in the database
+and shown in diffs.</p>
+<p>RouterOS v6 is the other way round: its <code>/export</code> includes secrets by default. v6 backups are
+therefore always treated as holding secrets, encrypted and admin-only, whatever the setting.</p>
+<div class="admonition warning">
+<p class="admonition-title">Keep ENCRYPTION_KEY safe</p>
+<p>An encrypted backup can only be read with the key it was written under (or an older key
+still configured for rotation). Lose the key and those backups can't be read.</p>
+</div>
 <h2 id="finding-one">Finding one<a class="headerlink" href="#finding-one" title="Permanent link">&para;</a></h2>
 <p>The table filters by <strong>device</strong>, <strong>type</strong>, a <strong>date range</strong> and free text across
 device name, filename and notes. Date ranges include both ends — "to: 3 September"
