@@ -31,6 +31,8 @@ describe('lookupVendor - after initialization from cache', () => {
     // The fresh-cache read opens the file once and checks age and content on
     // that handle (alert #98), so the handle-based calls are what is mocked.
     jest.doMock('fs', () => ({
+      accessSync: () => undefined,           // data directory is writable
+      constants: { W_OK: 2 },
       openSync: () => 3,
       fstatSync: () => ({ mtimeMs: Date.now() - 1000 }),
       closeSync: jest.fn(),
@@ -82,5 +84,27 @@ describe('initOuiDatabase - singleton', () => {
     const p1 = initOuiDatabase();
     const p2 = initOuiDatabase();
     expect(p1).toBe(p2);
+  });
+});
+
+describe('cache location (#101)', () => {
+  afterEach(() => jest.resetModules());
+
+  it('never falls back to a fixed name in /tmp when the data directory is not writable', async () => {
+    jest.resetModules();
+    const opened: string[] = [];
+    const written: string[] = [];
+    jest.doMock('fs', () => ({
+      accessSync: () => { throw new Error('EACCES'); },
+      constants: { W_OK: 2 },
+      openSync: (p: string) => { opened.push(p); throw new Error('ENOENT'); },
+      readFileSync: (p: string) => { opened.push(String(p)); throw new Error('ENOENT'); },
+      writeFileSync: (p: string) => { written.push(p); },
+    }));
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('../oui') as { initOuiDatabase: (allowDownload?: boolean) => Promise<void> };
+    await mod.initOuiDatabase(false);
+    expect(opened.filter((p) => p.startsWith('/tmp'))).toEqual([]);
+    expect(written).toEqual([]);
   });
 });

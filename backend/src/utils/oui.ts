@@ -14,16 +14,21 @@ import path from 'path';
  * /tmp is inside the container, so every upgrade — which recreates it — threw
  * the cache away. That was a slow re-download for most installs; for a dark site
  * with the download turned off it meant vendor lookups went empty after every
- * upgrade and never came back. /tmp remains the fallback where /app/data is not
- * writable.
+ * upgrade and never came back. Where /app/data is not writable the list is not
+ * cached at all; see resolveCacheFile().
  */
-function resolveCacheFile(): string {
+function resolveCacheFile(): string | null {
   const dir = process.env.SECRETS_DIR || '/app/data';
   try {
     fs.accessSync(dir, fs.constants.W_OK);
     return path.join(dir, 'oui-ieee.json');
   } catch {
-    return '/tmp/oui-ieee.json';
+    // No fallback to a fixed name in the shared /tmp: another local user could
+    // create it first or plant a symlink there, and have us read their vendor
+    // list or write through the link (CodeQL js/insecure-temporary-file,
+    // alert #101). Without a writable data directory the list is simply not
+    // cached to disk. In Docker the data directory is always the app_data volume.
+    return null;
   }
 }
 const CACHE_FILE = resolveCacheFile();
@@ -55,6 +60,7 @@ export function lookupVendor(mac: string): string {
  * be. Previously a failed download discarded it and left lookups empty.
  */
 function _readStaleCache(): Map<string, string> | null {
+  if (!CACHE_FILE) return null;
   try {
     const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) as Record<string, string>;
     const map = new Map(Object.entries(raw));
@@ -69,6 +75,7 @@ async function _load(allowDownload: boolean): Promise<void> {
   // from that one handle: checking by path and then reading by path again let
   // the file change in between (CodeQL js/file-system-race, alert #98).
   try {
+    if (!CACHE_FILE) throw new Error('no cache file');
     const fd = fs.openSync(CACHE_FILE, 'r');
     let fresh: string | null = null;
     try {
@@ -107,7 +114,7 @@ async function _load(allowDownload: boolean): Promise<void> {
       // Persist cache
       const obj: Record<string, string> = {};
       for (const [k, v] of map) obj[k] = v;
-      fs.writeFileSync(CACHE_FILE, JSON.stringify(obj));
+      if (CACHE_FILE) fs.writeFileSync(CACHE_FILE, JSON.stringify(obj));
     } else {
       console.warn('OUI: Downloaded file too small, ignoring');
       db = new Map();
