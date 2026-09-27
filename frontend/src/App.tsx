@@ -13,6 +13,7 @@ import TopologyPage from './pages/TopologyPage';
 import BackupsPage from './pages/BackupsPage';
 import FirmwarePage from './pages/FirmwarePage';
 import CommandsPage from './pages/CommandsPage';
+import TemplatesPage from './pages/TemplatesPage';
 import SettingsPage from './pages/SettingsPage';
 import OidcCallbackPage from './pages/OidcCallbackPage';
 import WirelessPage from './pages/WirelessPage';
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="backups" element={<BackupsPage />} />
           <Route path="firmware" element={<FirmwarePage />} />
           <Route path="commands" element={<CommandsPage />} />
+          <Route path="templates" element={<TemplatesPage />} />
           <Route path="sites" element={<SitesPage />} />
           <Route path="settings" element={<SettingsPage />} />
           {/* Legacy routes — consolidated in the v0.16.4 UI reorganization */}

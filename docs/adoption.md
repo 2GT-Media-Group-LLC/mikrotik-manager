@@ -115,5 +115,5 @@ chassis and known to anyone with physical access.
 ## What it does not do
 
 It does not configure anything beyond addressing and identity — no VLANs, no ports, no
-firewall. Use configuration templates (**Settings → Config Templates**) or
-[bulk commands](commands.md) once the device is under management.
+firewall. Use [templates](commands.md#templates) and [bulk commands](commands.md) once the
+device is under management.

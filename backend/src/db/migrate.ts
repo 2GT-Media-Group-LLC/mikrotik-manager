@@ -1071,6 +1071,10 @@ CREATE TABLE IF NOT EXISTS command_templates (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Config Templates are merged into command templates (#163). Rows are converted
+-- once at startup (services/convertConfigTemplates.ts) and marked here; the old
+-- table is kept rather than dropped so nothing is lost.
+ALTER TABLE config_templates ADD COLUMN IF NOT EXISTS converted_at TIMESTAMPTZ;
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);

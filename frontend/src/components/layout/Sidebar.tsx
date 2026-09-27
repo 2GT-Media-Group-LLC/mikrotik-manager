@@ -46,6 +46,7 @@ const networkServicesSubItems = [
 const operationsItems = [
   { to: '/firmware',  icon: ArrowUpCircle,   label: 'Firmware' },
   { to: '/commands',  icon: TerminalSquare,  label: 'Bulk Commands' },
+  { to: '/templates', icon: FileText,        label: 'Templates' },
   { to: '/backups',   icon: HardDrive,       label: 'Backups' },
 ];
 

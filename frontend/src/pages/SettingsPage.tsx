@@ -1,11 +1,12 @@
+import { Link } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound, ClipboardList, FileText, Zap, LogIn,
   Activity, Moon} from 'lucide-react';
-import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi, maintenanceApi, configTemplatesApi } from '../services/api';
-import type { MaintenanceWindow, ConfigTemplate } from '../services/api';
+import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi, maintenanceApi } from '../services/api';
+import type { MaintenanceWindow } from '../services/api';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
 import PollerHealthCard from '../components/system/PollerHealthCard';
 import { useAuthStore } from '../store/authStore';
@@ -279,69 +280,6 @@ export default function SettingsPage() {
       reader.readAsText(file);
     });
 
-  // ─── Config Templates ──────────────────────────────────────────────────────
-  const [tplFormOpen, setTplFormOpen] = useState(false);
-  const [tplForm, setTplForm] = useState<{
-    name: string; description: string; applies_to_type: string;
-    dns_servers: string; ntp_servers: string; syslog_host: string;
-  }>({ name: '', description: '', applies_to_type: '', dns_servers: '', ntp_servers: '', syslog_host: '' });
-  const [tplApplyId, setTplApplyId] = useState<number | null>(null);
-  const [tplApplyDeviceIds, setTplApplyDeviceIds] = useState<number[]>([]);
-  const [tplApplyResults, setTplApplyResults] = useState<{ device_id: number; device_name: string; ok: boolean; error?: string }[] | null>(null);
-  const [tplError, setTplError] = useState('');
-
-  const { data: templates = [] } = useQuery({
-    queryKey: ['config-templates'],
-    queryFn: () => configTemplatesApi.list().then((r) => r.data),
-    enabled: activeTab === 'templates',
-  });
-
-  const { data: allDevicesList = [] } = useQuery({
-    queryKey: ['devices-list-for-templates'],
-    queryFn: () => import('../services/api').then(m => m.default.get<{ id: number; name: string }[]>('/devices').then(r => r.data)),
-    enabled: tplApplyId != null,
-  });
-
-  const createTemplateMutation = useMutation({
-    mutationFn: () => {
-      const tj: ConfigTemplate['template_json'] = {};
-      if (tplForm.dns_servers.trim()) tj.dns_servers = tplForm.dns_servers.split(',').map((s) => s.trim()).filter(Boolean);
-      if (tplForm.ntp_servers.trim()) tj.ntp_servers = tplForm.ntp_servers.split(',').map((s) => s.trim()).filter(Boolean);
-      if (tplForm.syslog_host.trim()) tj.syslog_host = tplForm.syslog_host.trim();
-      return configTemplatesApi.create({
-        name: tplForm.name.trim(),
-        description: tplForm.description.trim() || null,
-        applies_to_type: tplForm.applies_to_type || null,
-        template_json: tj,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config-templates'] });
-      setTplFormOpen(false);
-      setTplForm({ name: '', description: '', applies_to_type: '', dns_servers: '', ntp_servers: '', syslog_host: '' });
-      setTplError('');
-    },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setTplError(msg || 'Failed to create template');
-    },
-  });
-
-  const deleteTemplateMutation = useMutation({
-    mutationFn: (id: number) => configTemplatesApi.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['config-templates'] }),
-  });
-
-  const applyTemplateMutation = useMutation({
-    mutationFn: () => configTemplatesApi.apply(tplApplyId!, tplApplyDeviceIds),
-    onSuccess: (res) => {
-      setTplApplyResults(res.data.results);
-    },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setTplError(msg || 'Failed to apply template');
-    },
-  });
 
   // ─── Tags ─────────────────────────────────────────────────────────────────
   const { data: tags = [] } = useQuery({
@@ -526,7 +464,7 @@ export default function SettingsPage() {
         { key: 'alerting' as const, label: 'Alerting', icon: Bell },
         { key: 'automation' as const, label: 'Automation', icon: Zap },
         ...(isAdmin ? [
-          { key: 'templates' as const, label: 'Config Templates', icon: FileText },
+          { key: 'templates' as const, label: 'Config Templates (moved)', icon: FileText },
           { key: 'tags' as const, label: 'Tags', icon: ShieldCheck },
           { key: 'maintenance' as const, label: 'Maintenance', icon: ShieldAlert },
         ] : []),
@@ -2098,156 +2036,18 @@ export default function SettingsPage() {
       {activeTab === 'sso' && (
         <OidcSettings isAdmin={isAdmin} />
       )}
-      {/* ── Config Templates ── */}
+      {/* ── Config Templates: moved (#163) ── */}
       {activeTab === 'templates' && (
-        <div className="space-y-4">
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-semibold text-gray-900 dark:text-white">Configuration Templates</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Define reusable config sets (DNS, NTP, Syslog) and push them to multiple devices at once.
-                </p>
-              </div>
-              <button onClick={() => { setTplFormOpen(true); setTplError(''); }} className="btn-primary text-sm">
-                <Plus className="w-4 h-4" /> New Template
-              </button>
-            </div>
-
-            {tplError && (
-              <div className="flex items-center gap-2 text-sm text-red-500 mb-3">
-                <AlertCircle className="w-4 h-4" /> {tplError}
-              </div>
-            )}
-
-            {/* Create form */}
-            {tplFormOpen && (
-              <div className="border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4 space-y-3 bg-blue-50/30 dark:bg-blue-900/10">
-                <h4 className="text-sm font-semibold text-gray-800 dark:text-white">New Template</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">Name</label>
-                    <input className="input" value={tplForm.name} onChange={(e) => setTplForm((f) => ({ ...f, name: e.target.value }))} placeholder="Standard Office Config" />
-                  </div>
-                  <div>
-                    <label className="label">Device Type (optional)</label>
-                    <select className="input" value={tplForm.applies_to_type} onChange={(e) => setTplForm((f) => ({ ...f, applies_to_type: e.target.value }))}>
-                      <option value="">All devices</option>
-                      <option value="router">Router</option>
-                      <option value="switch">Switch</option>
-                      <option value="wireless">Wireless AP</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="label">Description (optional)</label>
-                  <input className="input" value={tplForm.description} onChange={(e) => setTplForm((f) => ({ ...f, description: e.target.value }))} placeholder="Standard DNS and NTP for main office" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">DNS Servers (comma-separated)</label>
-                    <input className="input" value={tplForm.dns_servers} onChange={(e) => setTplForm((f) => ({ ...f, dns_servers: e.target.value }))} placeholder="8.8.8.8, 1.1.1.1" />
-                  </div>
-                  <div>
-                    <label className="label">NTP Servers (comma-separated)</label>
-                    <input className="input" value={tplForm.ntp_servers} onChange={(e) => setTplForm((f) => ({ ...f, ntp_servers: e.target.value }))} placeholder="pool.ntp.org" />
-                  </div>
-                </div>
-                <div>
-                  <label className="label">Syslog Host (optional)</label>
-                  <input className="input" value={tplForm.syslog_host} onChange={(e) => setTplForm((f) => ({ ...f, syslog_host: e.target.value }))} placeholder="192.168.1.100" />
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => createTemplateMutation.mutate()} disabled={!tplForm.name.trim() || createTemplateMutation.isPending} className="btn-primary text-sm">
-                    Create Template
-                  </button>
-                  <button onClick={() => { setTplFormOpen(false); setTplError(''); }} className="btn-secondary text-sm">Cancel</button>
-                </div>
-              </div>
-            )}
-
-            {/* Template list */}
-            {templates.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-slate-400">No templates yet. Create one to get started.</p>
-            ) : (
-              <div className="space-y-2">
-                {templates.map((tpl) => (
-                  <div key={tpl.id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm text-gray-900 dark:text-white">{tpl.name}</span>
-                          {tpl.applies_to_type && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                              {tpl.applies_to_type}
-                            </span>
-                          )}
-                        </div>
-                        {tpl.description && <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{tpl.description}</p>}
-                        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500 dark:text-slate-400">
-                          {tpl.template_json.dns_servers?.length ? <span>DNS: {tpl.template_json.dns_servers.join(', ')}</span> : null}
-                          {tpl.template_json.ntp_servers?.length ? <span>NTP: {tpl.template_json.ntp_servers.join(', ')}</span> : null}
-                          {tpl.template_json.syslog_host ? <span>Syslog: {tpl.template_json.syslog_host}</span> : null}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => { setTplApplyId(tpl.id); setTplApplyDeviceIds([]); setTplApplyResults(null); setTplError(''); }}
-                          className="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white transition-colors flex items-center gap-1"
-                        >
-                          <Send className="w-3 h-3" /> Apply
-                        </button>
-                        <button onClick={() => deleteTemplateMutation.mutate(tpl.id)} className="text-gray-400 hover:text-red-500 transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Apply panel */}
-                    {tplApplyId === tpl.id && (
-                      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-slate-700 space-y-2">
-                        <p className="text-xs font-medium text-gray-700 dark:text-slate-300">Select devices to apply this template to:</p>
-                        <div className="max-h-40 overflow-y-auto space-y-1">
-                          {allDevicesList.map((d) => (
-                            <label key={d.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={tplApplyDeviceIds.includes(d.id)}
-                                onChange={(e) => setTplApplyDeviceIds((ids) =>
-                                  e.target.checked ? [...ids, d.id] : ids.filter((x) => x !== d.id)
-                                )}
-                              />
-                              <span className="text-gray-800 dark:text-slate-200">{d.name}</span>
-                            </label>
-                          ))}
-                        </div>
-                        {tplApplyResults && (
-                          <div className="space-y-1 mt-2">
-                            {tplApplyResults.map((r) => (
-                              <div key={r.device_id} className={`text-xs flex items-center gap-1.5 ${r.ok ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
-                                {r.ok ? <CheckCircle className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
-                                {r.device_name}: {r.ok ? 'Applied successfully' : r.error}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => applyTemplateMutation.mutate()}
-                            disabled={tplApplyDeviceIds.length === 0 || applyTemplateMutation.isPending}
-                            className="btn-primary text-xs"
-                          >
-                            {applyTemplateMutation.isPending ? 'Applying...' : `Apply to ${tplApplyDeviceIds.length} device${tplApplyDeviceIds.length !== 1 ? 's' : ''}`}
-                          </button>
-                          <button onClick={() => { setTplApplyId(null); setTplApplyResults(null); }} className="btn-secondary text-xs">Cancel</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="card p-5 max-w-2xl space-y-3">
+          <h3 className="font-semibold text-gray-900 dark:text-white">Config Templates have moved</h3>
+          <p className="text-sm text-gray-600 dark:text-slate-300">
+            They are now <strong>command templates</strong>: saved RouterOS commands that run through Bulk
+            Commands, in waves and with Change Guard. Any Config Templates you had were converted
+            automatically, with the same DNS, NTP and syslog settings.
+          </p>
+          <Link to="/templates" className="btn-primary inline-flex items-center gap-1.5 text-sm">
+            <FileText className="w-4 h-4" /> Open templates
+          </Link>
         </div>
       )}
 

@@ -10,13 +10,33 @@ Commands run over **SSH**, because console syntax — `:put`, `:foreach`, `/inte
 
 ## Templates
 
-Commands you run more than once can be saved. Type the command, click **Save as template**,
-and give it a name and, optionally, a description. **Load a saved template** puts it back in
-the command box, where it can be edited before running; **Update** saves the edited version.
+Commands you run more than once can be saved as templates: firewall rules, LTE settings, DNS
+and NTP defaults, anything you would otherwise keep in a notes file.
 
-Loading a template only fills the box. It runs like any typed command, with the same waves,
-halt-on-failure and Change Guard. Templates will also be used for post-upgrade commands once
-that feature exists.
+- The **Templates** page (under Operations) lists them all, with search, and lets you create,
+  edit, duplicate and delete them. **Run** opens a template in Bulk Commands.
+- On Bulk Commands, **Save as template** saves what's in the command box, and **Load a saved
+  template** puts one back. Edit it there if needed; **Update** saves the edited version.
+
+Loading or running a template only fills the command box. It runs like any typed command, with
+the same waves, halt-on-failure and Change Guard. Templates will also be used for post-upgrade
+commands once that feature exists.
+
+### Config Templates
+
+Config Templates, which could only set DNS servers, NTP servers and a syslog host, have been
+merged into templates. Existing ones are converted automatically on upgrade, marked "from
+Config Templates", into the equivalent commands:
+
+```
+/ip dns set servers="1.1.1.1,8.8.8.8"
+/system ntp client set enabled=yes servers="pool.ntp.org"
+:local a [/system logging action find target=remote]; :if ([:len $a] > 0) do={ /system logging action set ($a->0) remote="10.0.0.5" }
+```
+
+The syslog line does what Config Templates did: it updates the first remote logging action and
+does nothing if there isn't one. The NTP line uses RouterOS v7 syntax; the old version also
+tried the v6 form. The old `/api/config-templates` endpoints now answer `410 Gone`.
 
 ## Choosing devices
 

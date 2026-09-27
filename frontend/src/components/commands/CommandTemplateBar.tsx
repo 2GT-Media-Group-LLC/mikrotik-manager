@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookMarked, Save, Trash2, X } from 'lucide-react';
 import { commandTemplatesApi, type CommandTemplate } from '../../services/api';
@@ -9,9 +9,11 @@ import { commandTemplatesApi, type CommandTemplate } from '../../services/api';
  * Loading only fills the command box. Nothing runs until the operator picks
  * devices and presses Run, with the same waves and guards as a typed command.
  */
-export default function CommandTemplateBar({ command, onLoad }: {
+export default function CommandTemplateBar({ command, onLoad, initialTemplateId }: {
   command: string;
   onLoad: (command: string) => void;
+  /** From the Templates page's Run button (/commands?template=ID). */
+  initialTemplateId?: number | null;
 }) {
   const qc = useQueryClient();
   const [loaded, setLoaded] = useState<CommandTemplate | null>(null);
@@ -24,6 +26,20 @@ export default function CommandTemplateBar({ command, onLoad }: {
     queryKey: ['command-templates'],
     queryFn: () => commandTemplatesApi.list().then((r) => r.data),
   });
+
+  // Load the template named in the link (Run on the Templates page), once.
+  useEffect(() => {
+    if (!initialTemplateId) return;
+    let cancelled = false;
+    qc.fetchQuery({
+      queryKey: ['command-templates'],
+      queryFn: () => commandTemplatesApi.list().then((r) => r.data),
+    }).then((list) => {
+      const t = list.find((x) => x.id === initialTemplateId);
+      if (!cancelled && t) { setLoaded(t); onLoad(t.command); }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [initialTemplateId, onLoad, qc]);
 
   const done = () => { qc.invalidateQueries({ queryKey: ['command-templates'] }); setError(''); };
   const errMsg = (e: unknown) =>

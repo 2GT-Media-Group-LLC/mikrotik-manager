@@ -28,6 +28,7 @@ import {
 import { startSshKeyFleetWorker, stopSshKeyFleetWorker } from './services/SshKeyFleetWorker';
 import sshKeysRoutes from './routes/sshKeys';
 import commandTemplatesRoutes from './routes/commandTemplates';
+import { convertConfigTemplates } from './services/convertConfigTemplates';
 import { netflowCollector } from './services/netflow/NetflowCollector';
 import { verifyToken, type AuthPayload } from './middleware/auth';
 import { rateLimitRedis } from './middleware/rateLimitRedis';
@@ -372,6 +373,7 @@ async function start(): Promise<void> {
   // Run migrations
   await runMigrations();
   await ensureDefaultRules().catch((e) => console.warn('[startup] default alert rules:', (e as Error).message));
+  await convertConfigTemplates().catch((e) => console.warn('[startup] config template conversion:', (e as Error).message));
 
   // Migrate any credentials still encrypted under a legacy/default key forward
   // to the current key (runs in the background; safe to skip on failure).

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban, Download } from 'lucide-react';
 import { commandsApi, devicesApi, type CommandRunDetail, tagsApi} from '../services/api';
@@ -34,6 +35,9 @@ async function downloadCsv(runId: number): Promise<void> {
 export default function CommandsPage() {
   const queryClient = useQueryClient();
   const [command, setCommand] = useState('');
+  // Run from the Templates page arrives as /commands?template=ID.
+  const [searchParams] = useSearchParams();
+  const initialTemplateId = Number(searchParams.get('template')) || null;
   const [selected, setSelected] = useState<number[]>([]);
 
   const { data: tags = [] } = useQuery({
@@ -107,7 +111,7 @@ export default function CommandsPage() {
       </div>
 
       <div className="card p-5 space-y-4">
-        <CommandTemplateBar command={command} onLoad={setCommand} />
+        <CommandTemplateBar command={command} onLoad={setCommand} initialTemplateId={initialTemplateId} />
         <label className="block">
           <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Command</span>
           <textarea
