@@ -1566,9 +1566,13 @@ export class DeviceCollector {
       const device = this.device as unknown as import('../BackupService').BackupDevice;
 
       // The export requires SSH; without it there's no restorable snapshot to take.
+      // Never with secrets: the snapshot text is stored in the database and
+      // shown in Config History diffs (#172). v6 exports still carry them, so
+      // the linked backup below is marked and encrypted accordingly.
       let rsc: string;
+      let rscHasSecrets = false;
       try {
-        rsc = await backupService.exportConfig(device);
+        ({ text: rsc, containsSecrets: rscHasSecrets } = await backupService.exportConfig(device));
       } catch (e) {
         console.warn(`[${this.device.name}] config snapshot skipped — /export failed: ${(e as Error).message}`);
         return false;
@@ -1599,7 +1603,8 @@ export class DeviceCollector {
           device,
           rsc,
           `Config snapshot (${reason})`,
-          'config-snapshot'
+          'config-snapshot',
+          rscHasSecrets
         );
       } catch (e) {
         console.warn(`[${this.device.name}] snapshot backup unavailable: ${(e as Error).message}`);
@@ -4157,7 +4162,11 @@ export class DeviceCollector {
 
   async installRouterboardUpgrade(): Promise<void> {
     await this.client.execute('/system/routerboard/upgrade');
-    await this.client.execute('/system/reboot');
+    // Through reboot(), which expects the session to die. Calling /system/reboot
+    // directly reported "Connection closed" as a failed RouterBOOT upgrade
+    // whenever the socket closed before RouterOS acknowledged the command, a
+    // race, which is why it was rare (#141).
+    await this.reboot();
   }
 
   /**

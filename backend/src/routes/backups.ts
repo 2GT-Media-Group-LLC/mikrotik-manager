@@ -6,6 +6,16 @@ import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { BackupService } from '../services/BackupService';
+import { decrypt } from '../utils/crypto';
+
+/**
+ * Backups holding passwords and keys (#172) are admin-only to read. Restoring
+ * one stays open to operators: it sends the secrets back to the device they
+ * came from without showing them to anyone.
+ */
+const SECRETS_ADMIN_ONLY =
+  'This backup contains passwords and keys, so only an admin can view or download it.';
+const isAdmin = (req: Request) => req.user?.role === 'admin';
 
 const router = Router();
 router.use(requireAuth);
@@ -160,17 +170,27 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
 
 // GET /api/backups/:id/download
 router.get('/:id/download', async (req: Request, res: Response) => {
-  const backup = await queryOne<{ file_path: string; filename: string }>(
-    `SELECT file_path, filename FROM backups WHERE id = $1`,
+  const backup = await queryOne<{ file_path: string; filename: string; contains_secrets: boolean; encrypted: boolean }>(
+    `SELECT file_path, filename, contains_secrets, encrypted FROM backups WHERE id = $1`,
     [req.params.id]
   );
   if (!backup) return res.status(404).json({ error: 'Backup not found' });
+  if (backup.contains_secrets && !isAdmin(req)) return res.status(403).json({ error: SECRETS_ADMIN_ONLY });
   if (!fs.existsSync(backup.file_path)) {
     return res.status(404).json({ error: 'Backup file not found on disk' });
   }
 
   res.setHeader('Content-Disposition', `attachment; filename="${backup.filename}"`);
   res.setHeader('Content-Type', 'text/plain');
+  // An encrypted backup is decrypted for the download: the file is readable
+  // RouterOS script either way, which is what someone restoring by hand needs.
+  if (backup.encrypted) {
+    try {
+      return res.send(BackupService.readContent(backup));
+    } catch (e) {
+      return res.status(500).json({ error: `Could not decrypt the backup: ${(e as Error).message}` });
+    }
+  }
   return res.sendFile(path.resolve(backup.file_path));
 });
 
@@ -203,17 +223,18 @@ router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
  * binary `.backup` blob — so they can be read in place instead of downloaded
  * and opened elsewhere (#134).
  */
-async function readBackupText(id: string | number): Promise<
+async function readBackupText(id: string | number, admin: boolean): Promise<
   { meta: BackupMeta; text: string } | { error: string; status: number }
 > {
   const meta = await queryOne<BackupMeta>(
     `SELECT b.id, b.filename, b.size_bytes, b.backup_type, b.notes, b.created_at,
-            b.file_path, b.device_id, d.name AS device_name
+            b.file_path, b.device_id, b.contains_secrets, b.encrypted, d.name AS device_name
        FROM backups b JOIN devices d ON d.id = b.device_id
       WHERE b.id = $1`,
     [id]
   );
   if (!meta) return { error: 'Backup not found', status: 404 };
+  if (meta.contains_secrets && !admin) return { error: SECRETS_ADMIN_ONLY, status: 403 };
 
   // Open once, then stat and read *that handle*.
   //
@@ -230,13 +251,15 @@ async function readBackupText(id: string | number): Promise<
   }
   try {
     const stat = await handle.stat();
-    if (stat.size > MAX_PREVIEW_BYTES) {
+    // An encrypted file is hex, a little over twice the readable size.
+    if (stat.size > MAX_PREVIEW_BYTES * (meta.encrypted ? 2 : 1) + 128) {
       return {
         error: `This backup is ${Math.round(stat.size / 1024)} KB, too large to preview. Download it instead.`,
         status: 413,
       };
     }
-    return { meta, text: await handle.readFile('utf8') };
+    const raw = await handle.readFile('utf8');
+    return { meta, text: meta.encrypted ? decrypt(raw) : raw };
   } catch (e) {
     return { error: `Could not read the backup file: ${(e as Error).message}`, status: 500 };
   } finally {
@@ -254,11 +277,13 @@ interface BackupMeta {
   file_path: string;
   device_id: number;
   device_name: string;
+  contains_secrets: boolean;
+  encrypted: boolean;
 }
 
 // GET /api/backups/:id/content — preview in place
 router.get('/:id/content', async (req: Request, res: Response) => {
-  const result = await readBackupText(req.params.id);
+  const result = await readBackupText(req.params.id, isAdmin(req));
   if ('error' in result) return res.status(result.status).json({ error: result.error });
   const { file_path: _omit, ...meta } = result.meta;
   return res.json({ ...meta, content: result.text });
@@ -269,8 +294,8 @@ router.get('/:id/content', async (req: Request, res: Response) => {
 // browser renders them with the same lineDiff used for config snapshots.
 router.get('/:fromId/diff/:toId', async (req: Request, res: Response) => {
   const [from, to] = await Promise.all([
-    readBackupText(req.params.fromId),
-    readBackupText(req.params.toId),
+    readBackupText(req.params.fromId, isAdmin(req)),
+    readBackupText(req.params.toId, isAdmin(req)),
   ]);
   for (const r of [from, to]) {
     if ('error' in r) return res.status(r.status).json({ error: r.error });

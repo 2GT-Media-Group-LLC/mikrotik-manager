@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   HardDrive, Plus, Download, RotateCcw, Trash2, AlertCircle, AlertTriangle,
-  Loader2, X, Search, GitCompare, FileText, FilterX,
+  Loader2, X, Search, GitCompare, FileText, FilterX, Lock,
 } from 'lucide-react';
 import { backupsApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { useAuthStore } from '../store/authStore';
 import type { Backup } from '../types';
 import BackupViewerModal from '../components/backups/BackupViewerModal';
 import { orderForDiff } from '../utils/backupCompare';
@@ -29,6 +30,7 @@ function formatBytes(bytes?: number): string {
 export default function BackupsPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
+  const isAdmin = useAuthStore((st) => st.user?.role === 'admin');
   const [selectedDevice, setSelectedDevice] = useState('');
   const [notes, setNotes] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -405,6 +407,14 @@ export default function BackupsPage() {
                     >
                       {TYPE_LABEL[backup.backup_type ?? ''] ?? backup.backup_type ?? 'Manual'}
                     </span>
+                    {backup.contains_secrets && (
+                      <span
+                        className="ml-1.5 inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                        title="Includes passwords and keys. Encrypted on disk; only admins can view or download it."
+                      >
+                        <Lock className="w-3 h-3" /> secrets
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">
                     {formatBytes(backup.size_bytes)}
@@ -419,15 +429,17 @@ export default function BackupsPage() {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => setViewing([backup.id])}
-                        className="p-1.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                        title="Preview"
+                        disabled={backup.contains_secrets && !isAdmin}
+                        className="p-1.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+                        title={backup.contains_secrets && !isAdmin ? 'Contains passwords and keys: admins only' : 'Preview'}
                       >
                         <FileText className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => downloadBackup(backup.id, backup.filename)}
-                        className="p-1.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                        title="Download"
+                        disabled={backup.contains_secrets && !isAdmin}
+                        className="p-1.5 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+                        title={backup.contains_secrets && !isAdmin ? 'Contains passwords and keys: admins only' : 'Download'}
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>

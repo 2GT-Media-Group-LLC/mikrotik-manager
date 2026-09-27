@@ -779,6 +779,42 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Passwords and keys in backups (#172) */}
+          {(() => {
+            const on = settings['backup_include_secrets'] === true;
+            return (
+              <div className="card p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Include passwords and keys in backups</h3>
+                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                      Without them, RouterOS v7 leaves Wi-Fi keys, VPN and PPP secrets, WireGuard private keys
+                      and SNMP communities out of a backup, so a restore can&apos;t bring a device back exactly.
+                      With them, those backups are encrypted on disk, marked in the Backups list, and only admins
+                      can view or download them. Config History never includes them. RouterOS v6 exports always
+                      include them, so v6 backups are handled the same way either way.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => isAdmin && updateSettingsMutation.mutate({ backup_include_secrets: !on })}
+                    disabled={!isAdmin}
+                    aria-label="Include passwords and keys in backups"
+                    className={clsx(
+                      'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
+                      isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
+                      on ? 'bg-blue-600' : 'bg-gray-300 dark:bg-slate-600'
+                    )}
+                  >
+                    <span className={clsx(
+                      'inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200',
+                      on ? 'translate-x-5' : 'translate-x-0'
+                    )} />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Scheduled Backups */}
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Scheduled Backups</h3>

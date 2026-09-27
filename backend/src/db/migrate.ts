@@ -1075,6 +1075,11 @@ CREATE TABLE IF NOT EXISTS command_templates (
 -- once at startup (services/convertConfigTemplates.ts) and marked here; the old
 -- table is kept rather than dropped so nothing is lost.
 ALTER TABLE config_templates ADD COLUMN IF NOT EXISTS converted_at TIMESTAMPTZ;
+-- Backups that hold passwords and keys (#172): opted in on v7 (show-sensitive),
+-- or any v6 export. Their files are encrypted with ENCRYPTION_KEY and only
+-- admins can view or download them.
+ALTER TABLE backups ADD COLUMN IF NOT EXISTS contains_secrets BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE backups ADD COLUMN IF NOT EXISTS encrypted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);

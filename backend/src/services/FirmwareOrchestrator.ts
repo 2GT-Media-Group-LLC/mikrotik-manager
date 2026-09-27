@@ -37,6 +37,11 @@ const AVAILABLE_GRACE_POLLS = 3;
 /** Reads better than a bare version in a sentence that may have none. */
 const latestLabel = (v: string) => (v ? `Version ${v}` : 'The update');
 const REBOOT_POLL_MS = 15_000;       // probe cadence while waiting
+// A device that has just booted can accept an API connection and drop it while
+// its services are still starting (#141). Settle before the RouterBOOT step,
+// and retry its first connection rather than failing on it.
+const ROUTERBOOT_SETTLE_MS = 10_000;
+const ROUTERBOOT_CONNECT_ATTEMPTS = 3;
 const REBOOT_TIMEOUT_MS = 12 * 60_000; // give slow flash writes room
 
 /**
@@ -84,6 +89,8 @@ export class FirmwareOrchestrator {
    */
   private downloadMs = DOWNLOAD_TIMEOUT_MS;
   private rebootMs = REBOOT_TIMEOUT_MS;
+  /** Pause before (and between) RouterBOOT connection attempts; a field so tests can shorten it. */
+  routerbootSettleMs = ROUTERBOOT_SETTLE_MS;
   private activeRolloutId: number | null = null;
   private cancelRequested = false;
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
@@ -565,31 +572,62 @@ export class FirmwareOrchestrator {
     device: DeviceRow,
     item: RolloutDeviceRow
   ): Promise<{ ok: true } | { ok: false; error: string }> {
-    let before: string;
-    try {
-      const probe = new DeviceCollector(device);
-      await probe.connect();
-      const status = await probe.checkRouterboardUpgrade();
-      before = status.currentFirmware;
-      if (!status.upgradeAvailable) {
+    await sleep(this.routerbootSettleMs);
+
+    // Connect and check, with retries: this runs moments after the RouterOS
+    // reboot, when the device may still be starting its services.
+    let probe: DeviceCollector | null = null;
+    let status: Awaited<ReturnType<DeviceCollector['checkRouterboardUpgrade']>> | null = null;
+    let lastError = '';
+    for (let attempt = 1; attempt <= ROUTERBOOT_CONNECT_ATTEMPTS && !status; attempt++) {
+      if (this.cancelRequested) return { ok: false, error: 'cancelled before the RouterBOOT upgrade' };
+      probe = new DeviceCollector(device);
+      try {
+        await probe.connect();
+        status = await probe.checkRouterboardUpgrade();
+      } catch (e) {
+        lastError = (e as Error).message;
         probe.disconnect();
-        console.log(`[Firmware] ${device.name}: RouterBOOT already current (${before || 'unknown'})`);
-        return { ok: true };
+        probe = null;
+        if (attempt < ROUTERBOOT_CONNECT_ATTEMPTS) await sleep(this.routerbootSettleMs);
       }
-      await this.setItem(item.id, { status: 'routerboot' });
-      await probe.installRouterboardUpgrade();   // upgrades, then reboots
-      probe.disconnect();
-    } catch (e) {
-      return { ok: false, error: (e as Error).message };
+    }
+    if (!status || !probe) {
+      return { ok: false, error: `could not reach the device after ${ROUTERBOOT_CONNECT_ATTEMPTS} attempts (${lastError})` };
     }
 
-    // Second reboot of this upgrade. Same budget as the first.
+    const before = status.currentFirmware;
+    if (!status.upgradeAvailable) {
+      probe.disconnect();
+      console.log(`[Firmware] ${device.name}: RouterBOOT already current (${before || 'unknown'})`);
+      return { ok: true };
+    }
+    const uptimeBefore: number | null = await probe.getUptimeSeconds().catch(() => null);
+    try {
+      await this.setItem(item.id, { status: 'routerboot' });
+      await probe.installRouterboardUpgrade();   // upgrades, then reboots
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    } finally {
+      probe.disconnect();
+    }
+
+    // Second reboot of this upgrade. Same budget as the first. The device may
+    // still be up for a few seconds after the reboot command, so a reading only
+    // counts once uptime proves it restarted; otherwise the old bootloader
+    // version would be read and reported as a failed upgrade.
     const deadline = Date.now() + this.rebootMs;
     while (Date.now() < deadline) {
       if (this.cancelRequested) return { ok: false, error: 'cancelled while rebooting' };
+      await sleep(REBOOT_POLL_MS);
       const probe = new DeviceCollector(device);
       try {
         await probe.connect();
+        const uptimeNow = await probe.getUptimeSeconds().catch(() => null);
+        if (uptimeBefore != null && uptimeNow != null && uptimeNow >= uptimeBefore) {
+          probe.disconnect();
+          continue;   // not restarted yet
+        }
         const after = await probe.checkRouterboardUpgrade();
         probe.disconnect();
         if (after.currentFirmware && before && after.currentFirmware === before) {
@@ -603,7 +641,6 @@ export class FirmwareOrchestrator {
         return { ok: true };
       } catch {
         probe.disconnect();
-        await sleep(REBOOT_POLL_MS);
       }
     }
     return { ok: false, error: `device did not come back within ${Math.round(this.rebootMs / 60000)} minutes after the RouterBOOT upgrade` };

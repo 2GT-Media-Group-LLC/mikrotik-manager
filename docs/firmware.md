@@ -32,7 +32,9 @@ Each device goes through the same sequence:
 4. **Reboot**
 5. **Prove the reboot happened** — uptime must have gone *backwards*
 6. **Verify the version moved**
-7. **RouterBOOT** (optional) — a second flash and a second reboot
+7. **RouterBOOT** (optional) — a second flash and a second reboot. It waits for the device
+   to settle after the first reboot and retries its first connection, then proves the second
+   reboot the same way as step 5 before reading the bootloader version
 
 Steps 3 and 5 exist because of a specific failure. `/system/package/update/install`
 bundles download and reboot into one call whose progress cannot be observed, and a
@@ -75,6 +77,9 @@ The **Update channel** card sets it.
   device's channel.
 - **Overrides** pick a tag or a single device and give it a different channel, or set it back
   to *follow fleet default*. A device override wins over the fleet default.
+- Devices with an override are **listed** under the card, with the channel each one reports now.
+  **Clear** removes one override, **Clear all** removes them all. With no fleet default set, a
+  cleared device stays on whatever channel it is on.
 
 The channel is written to the device (`/system/package/update/set channel=...`) the next time
 the manager checks it for updates, and only if it differs. The card also shows the channel

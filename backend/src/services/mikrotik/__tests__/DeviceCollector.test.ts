@@ -62,3 +62,28 @@ describe('parseUptime', () => {
     expect(parse('0s')).toBe(0);
   });
 });
+
+// ── installRouterboardUpgrade (#141) ────────────────────────────────────────
+
+describe('installRouterboardUpgrade', () => {
+  const withExecute = (impl: (path: string) => Promise<unknown>) => {
+    const collector = new DeviceCollector(testDevice);
+    const execute = jest.fn(impl);
+    (collector as unknown as { client: { execute: jest.Mock } }).client.execute = execute;
+    return { collector, execute };
+  };
+
+  it('treats the reboot dropping the connection as expected, not a failed upgrade', async () => {
+    // The reported case: the socket closed before RouterOS acknowledged the reboot.
+    const { collector, execute } = withExecute((path) =>
+      path === '/system/reboot' ? Promise.reject(new Error('Connection closed')) : Promise.resolve([]));
+    await expect(collector.installRouterboardUpgrade()).resolves.toBeUndefined();
+    expect(execute.mock.calls.map((c) => c[0])).toEqual(['/system/routerboard/upgrade', '/system/reboot']);
+  });
+
+  it('still fails when the upgrade itself is refused', async () => {
+    const { collector } = withExecute((path) =>
+      path === '/system/routerboard/upgrade' ? Promise.reject(new Error('failure: not allowed')) : Promise.resolve([]));
+    await expect(collector.installRouterboardUpgrade()).rejects.toThrow('not allowed');
+  });
+});

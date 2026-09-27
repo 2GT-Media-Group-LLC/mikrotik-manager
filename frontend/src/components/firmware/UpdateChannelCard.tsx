@@ -52,7 +52,12 @@ export default function UpdateChannelCard({ devices, canWrite }: Props) {
     }
     return [...m.entries()];
   }, [devices]);
-  const overrides = devices.filter((d) => d.update_channel).length;
+  // Listed, not just counted: "2 with an override" gave no way to see which
+  // devices, or to clear them short of picking each one again (#162).
+  const overridden = useMemo(
+    () => devices.filter((d) => d.update_channel).sort((a, b) => a.name.trim().localeCompare(b.name.trim())),
+    [devices]
+  );
 
   const saveFleet = useMutation({
     mutationFn: (v: string) => settingsApi.update({ firmware_update_channel: v || null }),
@@ -75,6 +80,18 @@ export default function UpdateChannelCard({ devices, canWrite }: Props) {
       qc.invalidateQueries({ queryKey: ['fw-overview'] });
     },
     onError: () => setMessage('Could not save the override.'),
+  });
+
+  const clearOverrides = useMutation({
+    mutationFn: (ids: number[]) => firmwareApi.setChannel(ids, null),
+    onSuccess: (r) => {
+      setMessage(
+        `Override cleared on ${r.data.updated} device${r.data.updated === 1 ? '' : 's'}. ` +
+        (fleet ? 'They follow the fleet default again.' : 'With no fleet default set, they stay on the channel they are on now.')
+      );
+      qc.invalidateQueries({ queryKey: ['fw-overview'] });
+    },
+    onError: () => setMessage('Could not clear the override.'),
   });
 
   return (
@@ -138,8 +155,57 @@ export default function UpdateChannelCard({ devices, canWrite }: Props) {
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-gray-500 dark:text-slate-400">
         <span>Devices report:</span>
         {reported.map(([ch, n]) => <span key={ch}><span className="mono">{ch}</span> {n}</span>)}
-        {overrides > 0 && <span>· {overrides} with an override</span>}
+        {overridden.length > 0 && <span>· {overridden.length} with an override</span>}
       </div>
+
+      {overridden.length > 0 && (
+        <div className="rounded-lg border border-gray-200 dark:border-slate-700">
+          <div className="flex items-center px-3 py-2 text-[12px] font-medium text-gray-600 dark:text-slate-300 border-b border-gray-100 dark:border-slate-700">
+            <span className="flex-1">Overrides</span>
+            {canWrite && overridden.length > 1 && (
+              <button
+                className="text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                disabled={clearOverrides.isPending}
+                onClick={() => {
+                  if (confirm(`Clear the override on all ${overridden.length} devices? They will follow the fleet default.`)) {
+                    clearOverrides.mutate(overridden.map((d) => d.id));
+                  }
+                }}
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+          <table className="w-full text-[12px]">
+            <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+              {overridden.map((d) => (
+                <tr key={d.id}>
+                  <td className="px-3 py-1.5 text-gray-900 dark:text-white">{d.name.trim()}</td>
+                  <td className="px-3 py-1.5"><span className="mono">{d.update_channel}</span></td>
+                  <td className="px-3 py-1.5 text-gray-500 dark:text-slate-400">
+                    {d.reported_update_channel
+                      ? d.reported_update_channel === d.update_channel
+                        ? 'on it now'
+                        : <>reports <span className="mono">{d.reported_update_channel}</span>, moves at the next check</>
+                      : 'not checked yet'}
+                  </td>
+                  <td className="px-3 py-1.5 text-right">
+                    {canWrite && (
+                      <button
+                        className="text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                        disabled={clearOverrides.isPending}
+                        onClick={() => clearOverrides.mutate([d.id])}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

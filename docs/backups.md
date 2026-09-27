@@ -18,6 +18,31 @@ and comparing them is possible at all.
 It also means a backup does **not** capture things `/export` omits: user passwords,
 certificates and files on disk. A `.rsc` restores a configuration, not a device.
 
+## Passwords and keys
+
+By default RouterOS v7 also leaves out Wi-Fi keys, VPN and PPP secrets, WireGuard private
+keys and SNMP communities, so a restore brings back the configuration without them.
+
+**Settings → General → Include passwords and keys in backups** (admins only, off by default)
+adds them, using `/export compact show-sensitive`. A backup that holds them:
+
+- is **encrypted on disk** with `ENCRYPTION_KEY`, the same key that protects device logins
+- is marked **secrets** in the Backups list
+- can be **previewed, compared and downloaded only by admins**; the download is the readable
+  `.rsc`, decrypted
+- can still be **restored by operators**, since restoring sends the secrets back to the device
+  without showing them to anyone
+
+Config History snapshots never include secrets, because their text is kept in the database
+and shown in diffs.
+
+RouterOS v6 is the other way round: its `/export` includes secrets by default. v6 backups are
+therefore always treated as holding secrets, encrypted and admin-only, whatever the setting.
+
+!!! warning "Keep ENCRYPTION_KEY safe"
+    An encrypted backup can only be read with the key it was written under (or an older key
+    still configured for rotation). Lose the key and those backups can't be read.
+
 ## Finding one
 
 The table filters by **device**, **type**, a **date range** and free text across

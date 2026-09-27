@@ -274,6 +274,8 @@ export interface Backup {
   backup_type: 'manual' | 'scheduled' | 'config-snapshot';
   notes?: string;
   created_at: string;
+  /** Holds passwords and keys; encrypted on disk, admin-only to view (#172). */
+  contains_secrets?: boolean;
 }
 
 export interface TopologyDevice {

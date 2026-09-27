@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Client as SSHClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
-import { decrypt } from '../utils/crypto';
+import { encrypt, decrypt } from '../utils/crypto';
+import { exportPlan } from '../utils/backupExport';
 
 const BACKUPS_DIR = process.env.BACKUPS_DIR || '/app/backups';
 
@@ -35,9 +36,18 @@ export class BackupService {
    * time we fall back rather than giving up, so introducing keys can never make
    * backups less reliable than they were without them.
    */
-  async exportConfig(device: BackupDevice): Promise<string> {
+  async exportConfig(
+    device: BackupDevice,
+    opts: { includeSecrets?: boolean } = {}
+  ): Promise<{ text: string; containsSecrets: boolean }> {
     const sshUser = device.ssh_username || device.api_username;
     const port = device.ssh_port || 22;
+    const [ver] = await query<{ ros_version: string | null }>(
+      `SELECT ros_version FROM devices WHERE id = $1`, [device.id]
+    ).catch(() => []);
+    const plan = exportPlan(ver?.ros_version, !!opts.includeSecrets);
+    const run = async (user: string, auth: { password: string } | { privateKey: string }) =>
+      ({ text: await this.sshExport(device.ip_address, port, user, auth, plan.command), containsSecrets: plan.containsSecrets });
 
     const key = await queryOne<{ private_key_encrypted: string; ssh_username: string | null }>(
       `SELECT private_key_encrypted, ssh_username FROM device_ssh_keys
@@ -47,10 +57,7 @@ export class BackupService {
 
     if (key) {
       try {
-        return await this.sshExport(
-          device.ip_address, port, key.ssh_username || sshUser,
-          { privateKey: decrypt(key.private_key_encrypted) }
-        );
+        return await run(key.ssh_username || sshUser, { privateKey: decrypt(key.private_key_encrypted) });
       } catch (e) {
         console.warn(`[Backup] ${device.name}: key auth failed, falling back to password: ${(e as Error).message}`);
       }
@@ -59,7 +66,21 @@ export class BackupService {
     const sshPass = device.ssh_password_encrypted
       ? decrypt(device.ssh_password_encrypted)
       : decrypt(device.api_password_encrypted);
-    return this.sshExport(device.ip_address, port, sshUser, { password: sshPass });
+    return run(sshUser, { password: sshPass });
+  }
+
+  /** Whether backups should include passwords and keys (Settings, admin only). */
+  async includeSecretsSetting(): Promise<boolean> {
+    const [row] = await query<{ value: unknown }>(
+      `SELECT value FROM app_settings WHERE key = 'backup_include_secrets'`
+    ).catch(() => []);
+    return row?.value === true;
+  }
+
+  /** A backup's text, decrypted when it was stored encrypted. */
+  static readContent(row: { file_path: string; encrypted?: boolean | null }): string {
+    const raw = fs.readFileSync(row.file_path, 'utf8');
+    return row.encrypted ? decrypt(raw) : raw;
   }
 
   /** Persist already-fetched .rsc text as a backup file + DB row. Returns the backup id. */
@@ -67,7 +88,8 @@ export class BackupService {
     device: BackupDevice,
     content: string,
     notes?: string,
-    type: string = 'manual'
+    type: string = 'manual',
+    containsSecrets = false
   ): Promise<number> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `${device.name.replace(/[^a-z0-9]/gi, '_')}_${timestamp}.rsc`;
@@ -79,21 +101,23 @@ export class BackupService {
       fs.mkdirSync(deviceDir, { recursive: true });
     }
 
-    fs.writeFileSync(filePath, content, 'utf8');
-    const stats = fs.statSync(filePath);
+    // Passwords and keys are never written in plain text (#172). The recorded
+    // size is the readable size, which is what the UI shows.
+    fs.writeFileSync(filePath, containsSecrets ? encrypt(content) : content, { encoding: 'utf8', mode: 0o600 });
+    const size = Buffer.byteLength(content, 'utf8');
 
     const rows = await query<{ id: number }>(
-      `INSERT INTO backups (device_id, filename, file_path, size_bytes, backup_type, notes)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [device.id, filename, filePath, stats.size, type, notes || null]
+      `INSERT INTO backups (device_id, filename, file_path, size_bytes, backup_type, notes, contains_secrets, encrypted)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
+      [device.id, filename, filePath, size, type, notes || null, containsSecrets]
     );
 
     return rows[0].id;
   }
 
   async createBackup(device: BackupDevice, notes?: string, type: string = 'manual'): Promise<number> {
-    const exportContent = await this.exportConfig(device);
-    return this.createBackupFromContent(device, exportContent, notes, type);
+    const { text, containsSecrets } = await this.exportConfig(device, { includeSecrets: await this.includeSecretsSetting() });
+    return this.createBackupFromContent(device, text, notes, type, containsSecrets);
   }
 
   async restoreBackup(backupId: number): Promise<void> {
@@ -101,14 +125,15 @@ export class BackupService {
       file_path: string;
       device_id: number;
       filename: string;
+      encrypted: boolean;
     }>(`SELECT b.*, d.ip_address, d.ssh_port, d.ssh_username, d.ssh_password_encrypted, d.api_username, d.api_password_encrypted
         FROM backups b JOIN devices d ON d.id = b.device_id
         WHERE b.id = $1`, [backupId]);
 
     if (!backup[0]) throw new Error('Backup not found');
 
-    const b = backup[0] as unknown as BackupDevice & { file_path: string };
-    const content = fs.readFileSync(b.file_path, 'utf8');
+    const b = backup[0] as unknown as BackupDevice & { file_path: string; encrypted: boolean };
+    const content = BackupService.readContent(b);
 
     const sshUser = b.ssh_username || b.api_username;
     const sshPass = b.ssh_password_encrypted
@@ -140,7 +165,8 @@ export class BackupService {
     host: string,
     port: number,
     username: string,
-    auth: { password: string } | { privateKey: string }
+    auth: { password: string } | { privateKey: string },
+    command = '/export compact'
   ): Promise<string> {
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
@@ -151,7 +177,7 @@ export class BackupService {
       }, 30_000);
 
       conn.on('ready', () => {
-        conn.exec('/export compact', (err, stream) => {
+        conn.exec(command, (err, stream) => {
           if (err) {
             clearTimeout(timeout);
             conn.end();
