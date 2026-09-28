@@ -14,7 +14,7 @@
         <link rel="prev" href="../traffic/">
       
       
-        <link rel="next" href="../scaling/">
+        <link rel="next" href="../security/">
       
       
       <link rel="icon" href="../assets/images/favicon.png">
@@ -697,6 +697,27 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Security page
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1651,6 +1672,8 @@ fix it, how long it has been present, and links the relevant MikroTik documentat
 </tr>
 </tbody>
 </table>
+<p>Both are under <strong>Settings → General → Config Health</strong>. Before 0.24.37 the scheduler never
+read them, so the audit always ran hourly whatever they said.</p>
 <h3 id="a-note-on-false-positives">A note on false positives<a class="headerlink" href="#a-note-on-false-positives" title="Permanent link">&para;</a></h3>
 <p>Rules are calibrated against real hardware rather than documentation alone. For example,
 RouterOS 7 relocates an address configured on a bridge slave port onto the bridge itself

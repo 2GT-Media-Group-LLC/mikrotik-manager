@@ -11,7 +11,7 @@
       
       
       
-        <link rel="prev" href="../change-guard/">
+        <link rel="prev" href="../security/">
       
       
         <link rel="next" href="../alerting/">
@@ -518,6 +518,27 @@
   
   <span class="md-ellipsis">
     Change Guard and Config Health
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Security page
   </span>
   
 
@@ -1275,7 +1296,7 @@ duration and last error. Their difference is that distinction.</p>
 <tr>
 <td><code>POLLER_JOB_TIMEOUT_MS</code></td>
 <td>45000</td>
-<td>Ceiling on one poll, so a dead device cannot hold a worker</td>
+<td>Ceiling on one poll, so a dead device cannot hold a worker. A poll that runs past it is cancelled and its connection closed</td>
 </tr>
 <tr>
 <td><code>POLLER_JOB_RETENTION_SEC</code></td>
@@ -1296,6 +1317,13 @@ duration and last error. Their difference is that distinction.</p>
 </table>
 <p>Raise concurrency first. Lengthen the interval second — it reduces freshness, which is the
 thing you are paying for.</p>
+<p><strong>When a poll hits the time limit.</strong> A fast poll that runs out of time counts as a failed
+poll (the device goes offline if it keeps happening). A slow poll that runs out of time is
+simply cancelled; it says nothing about whether the device is up, so it never marks the
+device offline. Any open outage is closed by the next successful poll. Before 0.24.37 a poll
+that hit the limit kept running after it had been counted as failed, and when it finished it
+marked the device online without closing the outage it had opened, so the device's uptime
+kept falling while it was up.</p>
 <h2 id="reducing-the-work-itself">Reducing the work itself<a class="headerlink" href="#reducing-the-work-itself" title="Permanent link">&para;</a></h2>
 <p>Raising concurrency changes how much can be done at once. Switching off a collector changes
 how much there is to do, which is the larger lever on a big fleet: every collector is a round

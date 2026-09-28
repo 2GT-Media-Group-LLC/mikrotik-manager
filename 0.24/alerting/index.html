@@ -534,6 +534,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Security page
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../scaling/" class="md-nav__link">
         
   
@@ -1436,13 +1457,19 @@ settings as email alerts. Each report covers devices online, outages and total d
 error and warning counts, updates pending, backups taken, and top clients by traffic.
 Send-now is available for an immediate copy.</p>
 <h2 id="maintenance-windows">Maintenance windows<a class="headerlink" href="#maintenance-windows" title="Permanent link">&para;</a></h2>
-<p>Schedule planned downtime per device, or across a group, so alerts are suppressed
-automatically rather than being muted globally and forgotten.</p>
+<p>Schedule planned downtime so alerts are held back automatically, rather than being muted
+globally and forgotten. Managed under <strong>Settings → Maintenance</strong>.</p>
 <ul>
-<li>One-time or recurring (cron-based)</li>
-<li>Active windows can be deactivated early</li>
-<li>Managed under <strong>Settings → Maintenance</strong></li>
+<li><strong>Devices:</strong> all devices, or the ones you tick. A window with no devices ticked covers
+  every device.</li>
+<li><strong>Repeat:</strong> just once, every day, or every week on the same day. A repeating window starts
+  on the date you give and lasts as long as the first occurrence (end minus start); the time
+  of day follows the manager's time zone (<strong>Settings → General</strong>).</li>
+<li>Windows can be disabled early and deleted.</li>
 </ul>
+<p>Through the API a window can repeat on any cron expression (<code>recurring_cron</code>, five fields).</p>
+<p>Before 0.24.37, windows made in the UI suppressed nothing: the form saved an empty device
+list, which matched no device, and repeating windows only ever worked once.</p>
 
 
 

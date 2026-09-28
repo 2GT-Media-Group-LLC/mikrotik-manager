@@ -434,6 +434,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#updating-and-image-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Updating and image versions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#dark-site-mode" class="md-nav__link">
     <span class="md-ellipsis">
       Dark Site Mode
@@ -636,6 +645,27 @@
   
   <span class="md-ellipsis">
     Change Guard and Config Health
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Security page
   </span>
   
 
@@ -1162,6 +1192,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#updating-and-image-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Updating and image versions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#dark-site-mode" class="md-nav__link">
     <span class="md-ellipsis">
       Dark Site Mode
@@ -1340,8 +1379,17 @@ can't decrypt the credentials inside it.</p>
 </table>
 <h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
 <p>A self-signed certificate is generated on first run. Replace it under
-<strong>Settings → TLS Certificate</strong> by uploading a certificate and private key; nginx
-terminates TLS and redirects HTTP to HTTPS.</p>
+<strong>Settings → TLS Certificate</strong> by uploading a certificate and private key, or regenerate the
+self-signed one; nginx terminates TLS, picks up the new certificate within a few seconds, and
+redirects HTTP to HTTPS.</p>
+<p>Before 0.24.37 both failed with "permission denied": the certificate volume was owned by
+root and the backend runs as a normal user. The nginx container now hands the volume to the
+backend user (uid 100, gid 101) at every start, which also fixes existing installs.</p>
+<h2 id="updating-and-image-versions">Updating and image versions<a class="headerlink" href="#updating-and-image-versions" title="Permanent link">&para;</a></h2>
+<p>Images are published to GHCR only after CI has passed on that commit:
+<code>ghcr.io/2gt-media-group-llc/mikrotik-manager-backend</code> and <code>…-nginx</code>. Each is tagged
+<code>latest</code>, its version (for example <code>0.24.37-beta</code>) and <code>sha-&lt;commit&gt;</code>. To stay on a
+version, replace <code>latest</code> with the version tag in <code>docker-compose.ghcr.yml</code>.</p>
 <h2 id="dark-site-mode">Dark Site Mode<a class="headerlink" href="#dark-site-mode" title="Permanent link">&para;</a></h2>
 <p><strong>Settings → Dark Site Mode</strong> lists every feature that makes a request to the
 internet on its own, with where each one goes and what stops working without it. Each can be
@@ -1379,6 +1427,11 @@ turned off individually. All are <strong>on</strong> by default.</p>
 <td>MAC vendor database download</td>
 <td><code>standards-oui.ieee.org</code></td>
 <td>The vendor list is not refreshed; an existing copy is still used</td>
+</tr>
+<tr>
+<td>RouterOS vulnerability list</td>
+<td><code>services.nvd.nist.gov</code>, <code>www.cisa.gov</code></td>
+<td>The Security page doesn't list known CVEs for the fleet's versions</td>
 </tr>
 <tr>
 <td>Documentation link</td>
