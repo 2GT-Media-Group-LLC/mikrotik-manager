@@ -174,9 +174,14 @@ export class CommandRunner {
         return true;
       }
 
+      // The operator chose Change Guard for this run, so a device that cannot
+      // arm it is failed rather than quietly run without it. The failure also
+      // counts toward halt-on-failure, so a fleet of unprotectable devices
+      // stops at the first wave.
       const outcome = await withSafeApply(device, {
         kind: 'command.bulk',
         summary: `Bulk command: ${run.command.slice(0, 80)}`,
+        requireProtection: true,
       }, execute);
 
       if (outcome.autoReverting) {
@@ -191,7 +196,9 @@ export class CommandRunner {
       }
 
       await this.finish(item.id, 'success', outcome.result ?? null,
-        outcome.unprotectedReason ? `Ran unprotected: ${outcome.unprotectedReason}` : null);
+        outcome.revertMayFireAt
+          ? `Applied, but the auto-revert could not be confirmed removed; the device may restore its previous configuration at about ${new Date(outcome.revertMayFireAt).toLocaleTimeString()}.`
+          : outcome.unprotectedReason ? `Ran unprotected: ${outcome.unprotectedReason}` : null);
       return true;
     } catch (e) {
       await this.finish(item.id, 'failed', null, (e as Error).message);

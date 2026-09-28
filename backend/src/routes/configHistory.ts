@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
-import { BackupService } from '../services/BackupService';
+import { BackupService, describeRestore } from '../services/BackupService';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 
 const router = Router();
@@ -136,8 +136,12 @@ router.post('/:deviceId/:id/rollback', requireWrite, async (req: Request, res: R
   }
 
   try {
-    await backupService.restoreBackup(snap.backup_id);
-    return res.json({ message: 'Rollback initiated successfully' });
+    const outcome = await backupService.restoreBackup(snap.backup_id, { userId: req.user?.userId ?? null });
+    const message = describeRestore(outcome);
+    // Only a complete (or self-reverting) restore is a success; the UI shows the
+    // message either way, and a partial one says exactly where it stopped.
+    const ok = outcome.status === 'applied' || outcome.status === 'reverting';
+    return res.status(ok ? 200 : 422).json({ ...outcome, message, ...(ok ? {} : { error: message }) });
   } catch (err) {
     return res.status(500).json({ error: `Rollback failed: ${(err as Error).message}` });
   }

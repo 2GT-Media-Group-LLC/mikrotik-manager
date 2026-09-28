@@ -157,7 +157,7 @@ powered devices, or anything else that drops out normally. Such a device:
 | **LTE** | Signal, carrier, bands and the data cap — see [Cellular](cellular.md) |
 | **Security** | Baseline hardening checks and the posture score |
 | **Config** | System settings, certificates, SSH keys, clock |
-| **Config History** | Snapshots of `/export`, diffs, and one-click rollback |
+| **Config History** | Snapshots of `/export`, diffs, and rollback ([what rollback can do](backups.md#restoring)) |
 | **Tools** | Ping, traceroute, IP scan, Wake-on-LAN, packet capture, bandwidth test |
 
 Tabs appear only where they apply: a switch has no Radios tab, a device without a modem has no

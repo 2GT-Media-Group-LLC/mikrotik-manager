@@ -7,6 +7,8 @@ export interface User {
   role: UserRole;
   auth_provider?: 'local' | 'oidc';
   created_at?: string;
+  /** Still on the default password: must change it before using the app. */
+  must_change_password?: boolean;
 }
 
 export interface IpAddress {

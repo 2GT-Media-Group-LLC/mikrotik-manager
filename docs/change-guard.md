@@ -70,15 +70,21 @@ Every protected change is recorded per device:
 
 | Status | Meaning |
 |---|---|
-| `committed` | Change applied, device confirmed reachable, guard disarmed |
+| `committed` | Change applied, device confirmed reachable, guard disarmed and proven gone |
 | `reverted` | Contact lost; the device was left to restore itself |
 | `failed` | Change rejected by the device; nothing applied, guard disarmed |
+| `uncertain` | Change applied and the device is reachable, but the revert scheduler could not be confirmed removed. The device may still restore its previous configuration when the timeout runs out; the UI gives the time. |
+
+Disarming is only counted once the manager has re-read the device's schedulers and seen
+the revert gone. A failed read is a failure, not an empty list: before 0.24.36 a timed-out
+read could record `committed` while the revert stayed armed and later undid the change.
+While a revert may still fire, the device stays locked against other protected changes.
 
 ### Settings
 
 | Setting | Default | Description |
 |---|---|---|
-| `change_guard_enabled` | `true` | Master switch. When off, guarded changes still apply — with no safety net and no lockout refusal. |
+| `change_guard_enabled` | `true` | Master switch. When off, routine guarded changes apply with no safety net, and changes that need protection (see below) are refused. |
 | `change_guard_mode` | `binary` | See below. |
 | `change_guard_timeout_sec` | `120` | How long the device waits before rescuing itself. |
 
@@ -123,6 +129,31 @@ The resulting warning names the mechanism:
 Deliberately awkward. The API requires `confirm_lockout: true` in the request body, and
 the UI requires typing the device name. The change then runs under Change Guard regardless,
 so an override is a decision to *rely on* auto-revert — not to bypass protection.
+
+### When protection is required
+
+Auto-revert is mandatory, not best effort, for a change that:
+
+- you confirmed past a lockout warning,
+- the prediction flagged as a warning, or
+- could not be analysed (the device's state couldn't be read).
+
+If the device can't arm auto-revert for one of these (the API user can't save a backup or
+add a scheduler, the flash is full, or Change Guard is turned off), the change is **refused
+before anything is applied**, with HTTP 422 and `code: "guard_required"`. Until 0.24.36 it
+ran unprotected and only said so afterwards. Bulk commands with Change Guard ticked follow
+the same rule: a device that can't arm it is marked failed, which counts toward
+halt-on-failure.
+
+The lockout dialog checks this before you confirm, so it never promises protection the
+device can't give:
+
+```
+POST /api/devices/:id/change-guard/check   ->  { "ready": true, "mode": "binary", "reason": null }
+```
+
+The check does what a real guard does, with throwaway names: it saves a restore point and
+adds a scheduler, then removes both.
 
 A pre-existing violation is reported separately from one your change would cause. That
 distinction matters: if an invariant is already broken, that check cannot detect a new

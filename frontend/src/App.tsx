@@ -30,10 +30,13 @@ import NetworkServicesNetflowPage from './pages/NetworkServicesNetflowPage';
 import NetworkServicesDiscoveryPage from './pages/NetworkServicesDiscoveryPage';
 import TrafficAnalyticsPage from './pages/TrafficAnalyticsPage';
 import SecurityPage from './pages/SecurityPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
+  const mustChange = useAuthStore((s) => !!s.user?.must_change_password);
   if (!token) return <Navigate to="/login" replace />;
+  if (mustChange) return <Navigate to="/change-password" replace />;
   return <>{children}</>;
 }
 
@@ -42,6 +45,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/change-password" element={<ChangePasswordPage />} />
         <Route path="/auth/callback" element={<OidcCallbackPage />} />
         <Route
           path="/"

@@ -48,7 +48,7 @@ export default function ConfigHistoryTab({ deviceId }: Props) {
   const fail = (err: unknown, fallback: string) => {
     const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
     setError(msg || fallback);
-    setTimeout(() => setError(''), 6000);
+    setTimeout(() => setError(''), 20000);
   };
 
   const captureMutation = useMutation({
@@ -62,9 +62,9 @@ export default function ConfigHistoryTab({ deviceId }: Props) {
 
   const rollbackMutation = useMutation({
     mutationFn: (id: number) => configHistoryApi.rollback(deviceId, id),
-    onSuccess: () => {
+    onSuccess: (r) => {
       setRollbackConfirm(null);
-      flash('Rollback initiated — the device is importing the restored configuration.');
+      flash(r.data.message || 'Rolled back.');
     },
     onError: (err) => {
       setRollbackConfirm(null);

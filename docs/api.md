@@ -49,6 +49,7 @@ or 2FA changes.
 | `POST /api/devices/:id/sync` | Force an immediate full collection for one device |
 | `GET /api/devices/:id/management-path` | How the manager reaches a device, with the reason for each hop |
 | `POST /api/devices/:id/preflight` | Analyse a change **without applying it** |
+| `POST /api/devices/:id/change-guard/check` | Can this device arm auto-revert right now? (`ready`, `reason`) |
 | `POST /api/devices/:id/change-guard/probe` | Report which safety mechanisms the device supports |
 | `GET /api/devices/:id/config-health` | Latest standing-audit findings |
 | `GET /api/topology` | Graph of devices, links, external nodes, and distrusted identifiers |
@@ -95,9 +96,19 @@ curl -sk -X PUT https://manager.example.com/api/devices/8/ports/ether1/vlan \
   -d '{"pvid":99,"tagged_vlans":[],"untagged_vlans":[99],"confirm_lockout":true}'
 ```
 
-A successful guarded change returns a `guard` block describing what happened —
-`confirmed`, `auto_reverting`, or an `unprotected_reason` when the safety net could not be
-armed. Check it rather than relying on the HTTP status alone.
+A confirmed override requires auto-revert. If the device can't arm it, the request fails
+with **422** and `code: "guard_required"`, and nothing is applied. The same applies when
+the prediction flagged a warning or couldn't read the device.
+
+A successful guarded change returns a `guard` block describing what happened:
+`confirmed`, `auto_reverting`, an `unprotected_reason` when a routine change ran without
+the safety net, or `revert_may_fire_at` when the change was kept but its revert couldn't be
+confirmed removed. Check it rather than relying on the HTTP status alone.
+
+Restores (`POST /api/backups/:id/restore`, and Config History rollback) return a `status`
+of `applied`, `reverting`, `nothing_applied` or `partial`, with a `message`. The last two
+come with HTTP 422, plus `failedLine` and `error` saying where RouterOS stopped. See
+[Backups → Restoring](backups.md#restoring).
 
 ## Webhooks
 

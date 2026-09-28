@@ -185,3 +185,28 @@ describe('non-session tokens', () => {
     expect(next).toHaveBeenCalled();
   });
 });
+
+// ── Default password must be changed first (P1-3) ───────────────────────────
+
+describe('must-change-password sessions', () => {
+  const restricted = () => signToken({ userId: 1, username: 'admin', role: 'admin', mustChangePassword: true });
+  const reqFor = (path: string) =>
+    ({ headers: { authorization: `Bearer ${restricted()}` }, originalUrl: path } as unknown as Request);
+
+  it('can reach the password change endpoint', () => {
+    const next = jest.fn() as unknown as NextFunction;
+    const res = mockRes();
+    requireAuth(reqFor('/api/auth/password'), res, next);
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('is refused everywhere else, even as an admin', () => {
+    for (const path of ['/api/devices', '/api/settings/users', '/api/devices/8/reboot?x=1']) {
+      const next = jest.fn() as unknown as NextFunction;
+      const res = mockRes();
+      requireAuth(reqFor(path), res, next);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    }
+  });
+});

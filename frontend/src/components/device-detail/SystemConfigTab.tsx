@@ -807,6 +807,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
 
       {lockout && (
         <LockoutVerdictDialog
+          deviceId={deviceId}
           verdict={lockout.verdict}
           confirmPhrase={device.name}
           pending={addIpMutation.isPending || removeIpMutation.isPending}

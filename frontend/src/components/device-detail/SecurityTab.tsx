@@ -257,6 +257,7 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
 
       {lockout && (
         <LockoutVerdictDialog
+          deviceId={deviceId}
           verdict={lockout.verdict}
           confirmPhrase={deviceName || 'confirm'}
           pending={toggleSvc.isPending}

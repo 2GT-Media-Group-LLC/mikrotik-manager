@@ -1104,6 +1104,10 @@ UPDATE device_configs dc
  WHERE d.id = dc.device_id AND dc.contains_secrets IS NULL;
 UPDATE device_configs SET contains_secrets = TRUE WHERE contains_secrets IS NULL;
 
+-- Forced password change (P1-3): the seeded admin/admin must be changed at
+-- first login before anything else works.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- API tokens are recorded as "token:<name>" with names up to 100 characters;
 -- at 50 the insert failed and the write went unrecorded.
 ALTER TABLE audit_log ALTER COLUMN username TYPE VARCHAR(150);
@@ -1211,11 +1215,22 @@ export async function runMigrations(): Promise<void> {
     if (parseInt(userCount.rows[0].count, 10) === 0) {
       const hash = await bcrypt.hash('admin', 12);
       await client.query(
-        `INSERT INTO users (username, password_hash, role) VALUES ($1, $2, $3)`,
+        `INSERT INTO users (username, password_hash, role, must_change_password) VALUES ($1, $2, $3, TRUE)`,
         ['admin', hash, 'admin']
       );
       console.log('Default admin user created (username: admin, password: admin)');
-      console.log('⚠️  Please change the default password after first login!');
+      console.log('The password must be changed at first login.');
+    }
+
+    // Existing installs still on admin/admin get the same forced change. Checked
+    // against the hash, so it clears itself once the password is changed.
+    const admin = await client.query<{ id: number; password_hash: string | null; must_change_password: boolean }>(
+      `SELECT id, password_hash, must_change_password FROM users WHERE username = 'admin' LIMIT 1`
+    );
+    const a = admin.rows[0];
+    if (a?.password_hash && !a.must_change_password && (await bcrypt.compare('admin', a.password_hash))) {
+      await client.query(`UPDATE users SET must_change_password = TRUE WHERE id = $1`, [a.id]);
+      console.log('The admin account still uses the default password; it must be changed at next login.');
     }
 
     console.log('Database migrations completed successfully');

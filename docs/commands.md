@@ -77,6 +77,11 @@ error it guards against.
 Each device is wrapped by [Change Guard](change-guard.md) by default, so one that stops
 answering after the command restores itself.
 
+With Change Guard on, a device that can't arm it (for example, its API user isn't allowed
+to save a backup) is marked **failed** rather than run without protection, and that counts
+toward halt-on-failure. A device where the revert couldn't be confirmed removed is marked
+successful, with a note giving the time it may still revert.
+
 It is **one click to turn off**. You may know exactly why you are running something that
 will drop a device, and a tool that refuses to cut is not a sharp tool.
 

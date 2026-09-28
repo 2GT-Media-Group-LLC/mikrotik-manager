@@ -4,6 +4,10 @@ import { Client as SSHClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
 import { exportPlan } from '../utils/backupExport';
+import { randomBytes } from 'crypto';
+import { withSafeApply, type GuardDevice, type GuardOutcome } from './changeGuard/ChangeGuard';
+import { resolveAuth, type SshExecDevice } from './sshExec';
+import { parseImportOutput, type ImportResult } from '../utils/importResult';
 
 const BACKUPS_DIR = process.env.BACKUPS_DIR || '/app/backups';
 
@@ -120,27 +124,40 @@ export class BackupService {
     return this.createBackupFromContent(device, text, notes, type, containsSecrets);
   }
 
-  async restoreBackup(backupId: number): Promise<void> {
-    const backup = await query<{
-      file_path: string;
-      device_id: number;
-      filename: string;
-      encrypted: boolean;
-    }>(`SELECT b.*, d.ip_address, d.ssh_port, d.ssh_username, d.ssh_password_encrypted, d.api_username, d.api_password_encrypted
-        FROM backups b JOIN devices d ON d.id = b.device_id
+  /**
+   * Replay a backup onto its device and report what really happened (P1-10).
+   *
+   * Runs under Change Guard, so an import that cuts the device off restores the
+   * previous configuration by itself, and reads RouterOS's output, because
+   * `/import` exits 0 whether or not it worked. Uses the device's SSH key when
+   * one is deployed; the password alone fails once a key is installed.
+   */
+  async restoreBackup(backupId: number, opts: { userId?: number | null } = {}): Promise<RestoreOutcome> {
+    const rows = await query<GuardDevice & SshExecDevice & { file_path: string; encrypted: boolean; backup_filename: string }>(
+      `SELECT d.*, b.file_path, b.encrypted, b.filename AS backup_filename
+         FROM backups b JOIN devices d ON d.id = b.device_id
         WHERE b.id = $1`, [backupId]);
+    const row = rows[0];
+    if (!row) throw new Error('Backup not found');
 
-    if (!backup[0]) throw new Error('Backup not found');
+    const content = BackupService.readContent(row);
 
-    const b = backup[0] as unknown as BackupDevice & { file_path: string; encrypted: boolean };
-    const content = BackupService.readContent(b);
-
-    const sshUser = b.ssh_username || b.api_username;
-    const sshPass = b.ssh_password_encrypted
-      ? decrypt(b.ssh_password_encrypted)
-      : decrypt(b.api_password_encrypted);
-
-    await this.sshImport(b.ip_address, b.ssh_port || 22, sshUser, sshPass, content);
+    try {
+      const outcome = await withSafeApply(
+        row,
+        { kind: 'backup.restore', summary: `Restore ${row.backup_filename}`, userId: opts.userId ?? null },
+        async () => {
+          const result = await this.sshImport(row, content);
+          if (result.status !== 'applied') throw new ImportFailedError({ ...result, status: result.status });
+          return result;
+        }
+      );
+      if (outcome.autoReverting) return { status: 'reverting', guard: guardSummary(outcome) };
+      return { status: 'applied', guard: guardSummary(outcome) };
+    } catch (err) {
+      if (err instanceof ImportFailedError) return { ...err.result, guard: null };
+      throw err;
+    }
   }
 
   async deleteBackup(backupId: number): Promise<void> {
@@ -209,71 +226,107 @@ export class BackupService {
     });
   }
 
-  private sshImport(
-    host: string,
-    port: number,
-    username: string,
-    password: string,
-    content: string
-  ): Promise<void> {
+  /**
+   * Upload the script under a name of its own, run it, delete it, and return
+   * RouterOS's verdict. A shared filename let two restores of one device import
+   * each other's backups, and the file (which can hold secrets) was left behind.
+   */
+  private async sshImport(device: SshExecDevice, content: string): Promise<ImportResult> {
+    const { username, auth } = await resolveAuth(device);
+    const remoteFile = `mtm-restore-${randomBytes(6).toString('hex')}.rsc`;
+
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
-      const timeout = setTimeout(() => {
-        conn.end();
-        reject(new Error('SSH timeout during restore'));
-      }, 60_000);
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        try { conn.end(); } catch { /* closing */ }
+        fn();
+      };
+      const timeout = setTimeout(() => finish(() => reject(new Error('SSH timeout during restore'))), 180_000);
+
+      const exec = (cmd: string): Promise<string> => new Promise((res, rej) => {
+        conn.exec(cmd, (err, stream) => {
+          if (err) return rej(err);
+          let out = '';
+          stream.on('data', (d: Buffer) => { out += d.toString(); });
+          stream.stderr.on('data', (d: Buffer) => { out += d.toString(); });
+          stream.on('close', () => res(out));
+          stream.on('error', rej);
+        });
+      });
 
       conn.on('ready', () => {
-        // Upload via SFTP then execute
         conn.sftp((err, sftp) => {
-          if (err) {
-            clearTimeout(timeout);
-            conn.end();
-            return reject(err);
-          }
-
-          const remoteFile = '/restore_config.rsc';
+          if (err) return finish(() => reject(err));
           const writeStream = sftp.createWriteStream(remoteFile);
-
+          writeStream.on('error', (e: Error) => finish(() => reject(e)));
           writeStream.on('close', () => {
-            // Execute the import
-            conn.exec(`/import file-name=${remoteFile}`, (err2, stream) => {
-              if (err2) {
-                clearTimeout(timeout);
-                conn.end();
-                return reject(err2);
+            void (async () => {
+              try {
+                const output = await exec(`/import file-name=${remoteFile}`);
+                await exec(`/file remove [find name="${remoteFile}"]`).catch(() => '');
+                finish(() => resolve(parseImportOutput(output, content)));
+              } catch (e) {
+                finish(() => reject(e));
               }
-
-              stream.on('close', () => {
-                clearTimeout(timeout);
-                conn.end();
-                resolve();
-              });
-
-              stream.on('error', (e: Error) => {
-                clearTimeout(timeout);
-                conn.end();
-                reject(e);
-              });
-            });
+            })();
           });
-
-          writeStream.on('error', (e: Error) => {
-            clearTimeout(timeout);
-            conn.end();
-            reject(e);
-          });
-
           writeStream.end(Buffer.from(content, 'utf8'));
         });
       });
 
-      conn.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-
-      conn.connect({ host, port, username, password, readyTimeout: 10_000 });
+      conn.on('error', (err) => finish(() => reject(err)));
+      conn.connect({ host: device.ip_address, port: device.ssh_port || 22, username, ...auth, readyTimeout: 10_000 });
     });
+  }
+}
+
+export type RestoreOutcome =
+  | { status: 'applied' | 'reverting'; guard: RestoreGuard }
+  | (ImportResult & { status: 'nothing_applied' | 'partial'; guard: null });
+
+interface RestoreGuard {
+  protected: boolean;
+  confirmed: boolean;
+  auto_reverting: boolean;
+  unprotected_reason: string | null;
+  revert_may_fire_at: string | null;
+}
+
+function guardSummary(o: GuardOutcome<unknown>): RestoreGuard {
+  return {
+    protected: !o.unprotectedReason,
+    confirmed: o.confirmed,
+    auto_reverting: o.autoReverting,
+    unprotected_reason: o.unprotectedReason ?? null,
+    revert_may_fire_at: o.revertMayFireAt ?? null,
+  };
+}
+
+/** The import ran but did not complete; carries RouterOS's verdict out of the guard. */
+class ImportFailedError extends Error {
+  constructor(readonly result: ImportResult & { status: 'nothing_applied' | 'partial' }) {
+    super(result.error || 'The import did not complete');
+  }
+}
+
+/** A plain-language account of a restore, for the API response. */
+export function describeRestore(r: RestoreOutcome): string {
+  switch (r.status) {
+    case 'applied':
+      return 'Restored: RouterOS ran the whole backup, and the device was confirmed reachable afterwards.';
+    case 'reverting':
+      return 'The device stopped responding during the restore, so it is putting its previous configuration back. It should return shortly.';
+    case 'partial':
+      return `Partly restored. RouterOS ran ${r.appliedCommands} command${r.appliedCommands === 1 ? '' : 's'}, then stopped at line ${r.failedLine}: ${r.error}. ` +
+        'The device now has a mix of the backup and its previous configuration.';
+    default:
+      return r.failedLine
+        ? `Nothing was changed. RouterOS stopped at line ${r.failedLine}: ${r.error}. ` +
+          'A backup replays its commands onto the running configuration, so it stops at the first object that already exists.'
+        : `Nothing was changed: ${r.error || 'RouterOS did not confirm the import'}.`;
   }
 }

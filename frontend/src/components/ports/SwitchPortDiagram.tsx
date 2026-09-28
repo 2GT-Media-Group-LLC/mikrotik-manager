@@ -2048,6 +2048,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
 
       {confirmDestroyBond && (
         <ChangeGuardDialog
+          deviceId={deviceId}
           title="Destroy bond?"
           description={`Bond "${confirmDestroyBond}" will be removed and its member ports released as individual interfaces.`}
           reason={
@@ -2063,6 +2064,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
 
       {lockout && (
         <LockoutVerdictDialog
+          deviceId={deviceId}
           verdict={lockout.verdict}
           confirmPhrase={deviceName || 'confirm'}
           pending={

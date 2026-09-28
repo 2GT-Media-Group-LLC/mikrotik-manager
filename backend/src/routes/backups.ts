@@ -5,7 +5,7 @@ import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
-import { BackupService } from '../services/BackupService';
+import { BackupService, describeRestore } from '../services/BackupService';
 import { decrypt } from '../utils/crypto';
 
 /**
@@ -200,8 +200,12 @@ router.post('/:id/restore', requireWrite, async (req: Request, res: Response) =>
   if (!backup) return res.status(404).json({ error: 'Backup not found' });
 
   try {
-    await backupService.restoreBackup(parseInt(req.params.id));
-    return res.json({ message: 'Restore initiated successfully' });
+    const outcome = await backupService.restoreBackup(parseInt(req.params.id), { userId: req.user?.userId ?? null });
+    const message = describeRestore(outcome);
+    // Only a complete (or self-reverting) restore is a success; the UI shows the
+    // message either way, and a partial one says exactly where it stopped.
+    const ok = outcome.status === 'applied' || outcome.status === 'reverting';
+    return res.status(ok ? 200 : 422).json({ ...outcome, message, ...(ok ? {} : { error: message }) });
   } catch (err) {
     return res.status(500).json({ error: `Restore failed: ${(err as Error).message}` });
   }

@@ -36,6 +36,31 @@ router.get(
   }
 );
 
+/**
+ * A session for a user who has passed every login step. An account still on the
+ * default password gets a session that can only change it (see requireAuth).
+ */
+function sessionResponse(user: { id: number; username: string; role: string; must_change_password?: boolean }) {
+  const mustChange = !!user.must_change_password;
+  const token = signToken({
+    userId: user.id, username: user.username, role: user.role,
+    ...(mustChange ? { mustChangePassword: true } : {}),
+  });
+  return {
+    token,
+    user: { id: user.id, username: user.username, role: user.role, must_change_password: mustChange },
+  };
+}
+
+// GET /api/auth/login-hints — public. Whether the login page should still show
+// the default admin/admin credentials: only until that password is changed.
+router.get('/login-hints', async (_req: Request, res: Response) => {
+  const row = await queryOne<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM users WHERE username = 'admin' AND must_change_password = TRUE`
+  ).catch(() => null);
+  return res.json({ default_credentials: parseInt(row?.n ?? '0', 10) > 0 });
+});
+
 // lgtm[js/missing-rate-limiting] - loginRateLimit() middleware handles per-IP rate limiting
 router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
   const { username, password } = req.body;
@@ -50,7 +75,8 @@ router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
     password_hash: string;
     role: string;
     totp_enabled: boolean;
-  }>(`SELECT id, username, password_hash, role, totp_enabled FROM users WHERE username = $1`, [username]);
+    must_change_password: boolean;
+  }>(`SELECT id, username, password_hash, role, totp_enabled, must_change_password FROM users WHERE username = $1`, [username]);
 
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ error: 'Invalid credentials' });
@@ -61,8 +87,7 @@ router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
     return res.json({ requires_totp: true, totp_token: totpToken });
   }
 
-  const token = signToken({ userId: user.id, username: user.username, role: user.role });
-  return res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+  return res.json(sessionResponse(user));
 });
 
 // Exchange partial TOTP token + code for a full session token
@@ -81,8 +106,8 @@ router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: '
     return res.status(401).json({ error: 'Invalid token type' });
   }
 
-  const user = await queryOne<{ id: number; username: string; role: string; totp_secret: string | null; totp_enabled: boolean }>(
-    `SELECT id, username, role, totp_secret, totp_enabled FROM users WHERE id = $1`,
+  const user = await queryOne<{ id: number; username: string; role: string; totp_secret: string | null; totp_enabled: boolean; must_change_password: boolean }>(
+    `SELECT id, username, role, totp_secret, totp_enabled, must_change_password FROM users WHERE id = $1`,
     [payload.userId]
   );
   if (!user || !user.totp_enabled || !user.totp_secret) {
@@ -95,8 +120,7 @@ router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: '
     return res.status(401).json({ error: 'Invalid TOTP code' });
   }
 
-  const token = signToken({ userId: user.id, username: user.username, role: user.role });
-  return res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+  return res.json(sessionResponse(user));
 });
 
 // Generate a new TOTP secret + QR code for the current user (does not enable yet).
@@ -204,10 +228,18 @@ router.put('/password', requireAuth, async (req: Request, res: Response) => {
   if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
     return res.status(401).json({ error: 'Current password is incorrect' });
   }
+  if (newPassword === currentPassword) {
+    return res.status(400).json({ error: 'The new password must be different from the current one' });
+  }
 
   const hash = await bcrypt.hash(newPassword, 12);
-  await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, req.user!.userId]);
-  return res.json({ message: 'Password updated' });
+  const updated = await queryOne<{ id: number; username: string; role: string; must_change_password: boolean }>(
+    `UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2
+     RETURNING id, username, role, must_change_password`,
+    [hash, req.user!.userId]
+  );
+  // A fresh session, so a forced change ends the restricted one straight away.
+  return res.json({ message: 'Password updated', ...(updated ? sessionResponse(updated) : {}) });
 });
 
 export default router;

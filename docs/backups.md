@@ -97,9 +97,31 @@ so it cannot reach into another site's history.
 
 ## Restoring
 
-Restore uploads the `.rsc` and applies it. This is a real configuration change with
-all the risk that implies — read the backup first if you are not certain what is in
-it, which is what the preview is for.
+Restore (and Config History's rollback) uploads the `.rsc` and runs it with `/import`.
+This is a real configuration change with all the risk that implies, so it runs under
+[Change Guard](change-guard.md): if the device stops responding during the import, it
+puts its previous configuration back by itself. It signs in with the device's SSH key
+when one is deployed.
+
+**Know what `/import` does before relying on it.** It replays the backup's commands onto
+the *running* configuration, one line at a time, and stops at the first one that fails.
+A full backup starts by creating things (`/interface bridge add name=bridge`), and on a
+device that still has them the very first `add` fails. So on a working device, a restore
+usually changes nothing. It is most useful on a device that has been reset, or for a
+backup trimmed down to the part you want back.
+
+The result tells you exactly what happened:
+
+| Result | Meaning |
+|---|---|
+| **Restored** | RouterOS ran every line, and the device was confirmed reachable afterwards |
+| **Nothing was changed** | It stopped before running any command, and the message gives the line and reason |
+| **Partly restored** | It ran some commands, then stopped at the line given. The device now has a mix of the backup and its previous configuration |
+| **Restoring itself** | The device stopped responding, so Change Guard is putting the previous configuration back |
+
+`/import` exits successfully even when it fails, so before 0.24.36 every restore reported
+success. Each restore also uploads under a name of its own and deletes the file afterwards,
+since a backup can hold secrets.
 
 ## API
 

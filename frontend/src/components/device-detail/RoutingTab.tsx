@@ -243,6 +243,7 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
 
       {lockout && (
         <LockoutVerdictDialog
+          deviceId={deviceId}
           verdict={lockout.verdict}
           confirmPhrase={deviceName || 'confirm'}
           pending={addMutation.isPending || deleteMutation.isPending}

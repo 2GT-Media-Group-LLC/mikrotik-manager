@@ -456,6 +456,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
 
       {lockout && (
         <LockoutVerdictDialog
+          deviceId={deviceId}
           verdict={lockout.verdict}
           confirmPhrase={deviceName || 'confirm'}
           pending={addMutation.isPending || updateMutation.isPending || deleteMutation.isPending}

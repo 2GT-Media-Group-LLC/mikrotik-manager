@@ -120,7 +120,10 @@ io.use((socket, next) => {
   const token = (socket.handshake.auth as { token?: string })?.token;
   if (!token) return next(new Error('No token'));
   try {
-    socket.data.user = verifyToken(token);
+    const payload = verifyToken(token);
+    // A session that must change the default password gets nothing else.
+    if (payload.mustChangePassword) return next(new Error('Change the default password first'));
+    socket.data.user = payload;
     next();
   } catch {
     next(new Error('Invalid or expired token'));
@@ -173,6 +176,7 @@ terminalNs.use((socket, next) => {
   if (!token) return next(new Error('No token'));
   try {
     const payload = verifyToken(token);
+    if (payload.mustChangePassword) return next(new Error('Change the default password first'));
     if (!TERMINAL_ROLES.has(payload.role)) {
       return next(new Error('Console access denied for this role'));
     }

@@ -39,6 +39,8 @@ export default function BackupsPage() {
   // Config-snapshot backups are confirmed via a modal (deleting also removes the snapshot).
   const [snapshotDeleteTarget, setSnapshotDeleteTarget] = useState<Backup | null>(null);
   const [error, setError] = useState('');
+  /** Outcome of the last restore, shown above the list (the form's error box is hidden when it's closed). */
+  const [restoreResult, setRestoreResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Filters (#134). Held together so the query key is a single object.
   const [filters, setFilters] = useState({ deviceId: '', type: '', from: '', to: '', search: '' });
@@ -119,10 +121,14 @@ export default function BackupsPage() {
 
   const restoreMutation = useMutation({
     mutationFn: (id: number) => backupsApi.restore(id),
-    onSuccess: () => setRestoreConfirm(null),
+    onSuccess: (r) => {
+      setRestoreConfirm(null);
+      setRestoreResult({ ok: true, text: r.data?.message || 'Restored.' });
+    },
     onError: (err: unknown) => {
+      setRestoreConfirm(null);
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(msg || 'Restore failed');
+      setRestoreResult({ ok: false, text: msg || 'Restore failed' });
     },
   });
 
@@ -171,6 +177,18 @@ export default function BackupsPage() {
           </button>
         )}
       </div>
+
+      {restoreResult && (
+        <div className={clsx(
+          'rounded-lg border p-3 text-sm flex items-start justify-between gap-3',
+          restoreResult.ok
+            ? 'border-green-300 bg-green-50 text-green-800 dark:bg-green-900/20 dark:border-green-800 dark:text-green-300'
+            : 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-200'
+        )}>
+          <span>{restoreResult.text}</span>
+          <button onClick={() => setRestoreResult(null)} className="text-xs opacity-70 hover:opacity-100">Dismiss</button>
+        </div>
+      )}
 
       {/* Create backup form */}
       {showCreateForm && (

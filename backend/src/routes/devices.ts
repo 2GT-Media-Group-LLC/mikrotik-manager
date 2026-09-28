@@ -13,7 +13,7 @@ import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
 import { normalizeDeviceAddress, reconcileAddressPort } from '../utils/deviceAddress';
 import { detectLockoutRisk } from '../utils/firewallSafety';
-import { withSafeApply, probeCapability, probeUndoCapability, type GuardDevice } from '../services/changeGuard/ChangeGuard';
+import { withSafeApply, probeCapability, probeUndoCapability, GuardRequiredError, type GuardDevice } from '../services/changeGuard/ChangeGuard';
 import { captureSnapshot, resolveManagementPath } from '../services/changeGuard/pathModel';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
 import { runConfigHealth } from '../services/changeGuard/configHealth';
@@ -1104,12 +1104,20 @@ async function withGuardedChange<T>(
   if (!deviceRow) { res.status(404).json({ error: 'Device not found' }); return; }
 
   // Pre-flight: simulate the change against live state and refuse a predicted
-  // lockout unless the user has explicitly accepted it. Analysis failures must
-  // never block a legitimate change — the auto-revert net still applies.
-  if (meta.change && req.body?.confirm_lockout !== true) {
+  // lockout unless the user has explicitly accepted it.
+  //
+  // Whenever this is anything short of a clean "safe" (a warning, a lockout the
+  // user confirmed past, or an analysis that could not run), the change also
+  // requires auto-revert: if the device cannot arm it, the change is refused
+  // rather than applied with no way back. An analysis failure still does not
+  // block a change on its own; it just means the safety net is not optional.
+  const confirmedLockout = req.body?.confirm_lockout === true;
+  let requireProtection = confirmedLockout;
+  if (meta.change && !confirmedLockout) {
     try {
       const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);
       const verdict = analyzeChange(snap, deviceRow as unknown as GuardDevice, meta.change);
+      if (verdict.severity !== 'safe') requireProtection = true;
       if (verdict.severity === 'critical') {
         res.status(409).json({
           lockout: true,
@@ -1133,6 +1141,7 @@ async function withGuardedChange<T>(
         return;
       }
     } catch (err) {
+      requireProtection = true;
       console.warn(`[preflight] analysis skipped for device ${logSafe(id)}: ${logSafe((err as Error).message)}`);
     }
   }
@@ -1141,7 +1150,7 @@ async function withGuardedChange<T>(
   try {
     const outcome = await withSafeApply(
       deviceRow as unknown as GuardDevice,
-      { ...meta, userId: req.user?.userId ?? null },
+      { ...meta, userId: req.user?.userId ?? null, requireProtection },
       async () => {
         await collector.connect();
         return fn(collector);
@@ -1167,9 +1176,14 @@ async function withGuardedChange<T>(
         confirmed: outcome.confirmed,
         auto_reverting: outcome.autoReverting,
         unprotected_reason: outcome.unprotectedReason ?? null,
+        revert_may_fire_at: outcome.revertMayFireAt ?? null,
       },
     });
   } catch (err) {
+    if (err instanceof GuardRequiredError) {
+      res.status(422).json({ error: err.message, code: err.code });
+      return;
+    }
     res.status(500).json({ error: (err as Error).message });
   } finally {
     try { collector.disconnect(); } catch { /* device may be gone */ }
@@ -1243,6 +1257,17 @@ router.post('/:id/change-guard/probe', requireWrite, async (req: Request, res: R
   } catch (err) {
     return res.status(502).json({ error: `Could not probe device: ${(err as Error).message}` });
   }
+});
+
+// POST /api/devices/:id/change-guard/check — can this device arm auto-revert right
+// now? Shown in the lockout dialog before the user confirms, so it never promises
+// protection the device cannot give. Saves and removes a throwaway restore point
+// and scheduler, exactly as a real guard would.
+router.post('/:id/change-guard/check', requireWrite, async (req: Request, res: Response) => {
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const r = await probeCapability(deviceRow as unknown as GuardDevice);
+  return res.json({ ready: r.ok, mode: r.mode, reason: r.reason ?? null });
 });
 
 // GET /api/devices/:id/config-health — the standing audit's latest findings, read

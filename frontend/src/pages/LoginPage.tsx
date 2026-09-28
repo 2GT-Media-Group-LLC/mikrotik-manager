@@ -17,6 +17,8 @@ export default function LoginPage() {
   const totpInputRef = useRef<HTMLInputElement>(null);
 
   const [sso, setSso] = useState<{ enabled: boolean; button_label: string }>({ enabled: false, button_label: 'Sign in with SSO' });
+  // Shown only while the admin account still has its default password.
+  const [showDefaultHint, setShowDefaultHint] = useState(false);
 
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
@@ -24,6 +26,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     authApi.oidcStatus().then((r) => setSso(r.data)).catch(() => {});
+    authApi.loginHints().then((r) => setShowDefaultHint(r.data.default_credentials)).catch(() => {});
     // Surface an SSO error passed back on the redirect (?error=sso&reason=...).
     const params = new URLSearchParams(window.location.search);
     if (params.get('error') === 'sso') {
@@ -43,7 +46,7 @@ export default function LoginPage() {
       try {
         const { data } = await authApi.totpVerify(totpToken, totpCode);
         setAuth(data.token, data.user!);
-        navigate('/dashboard');
+        navigate(data.user?.must_change_password ? '/change-password' : '/dashboard');
       } catch (err: unknown) {
         const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
         setError(msg || 'Invalid code. Please try again.');
@@ -66,7 +69,12 @@ export default function LoginPage() {
         setTimeout(() => totpInputRef.current?.focus(), 50);
       } else {
         setAuth(data.token!, data.user!);
-        navigate('/dashboard');
+        if (data.user?.must_change_password) {
+          // Carried in memory only, so the current password needn't be typed twice.
+          navigate('/change-password', { state: { currentPassword: password } });
+        } else {
+          navigate('/dashboard');
+        }
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -271,9 +279,11 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className={`text-center text-xs mt-6 ${isDark ? 'text-slate-600' : 'text-slate-500'}`}>
-          Default credentials: admin / admin
-        </p>
+        {showDefaultHint && (
+          <p className={`text-center text-xs mt-6 ${isDark ? 'text-slate-600' : 'text-slate-500'}`}>
+            Default credentials: admin / admin (you&apos;ll set a new password after signing in)
+          </p>
+        )}
       </div>
     </div>
   );

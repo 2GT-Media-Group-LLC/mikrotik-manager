@@ -48,6 +48,13 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       useAuthStore.getState().logout();
     }
+    // The account is still on the default password: nothing works until it is
+    // changed, so go straight to the page that does it.
+    const code = (error.response?.data as { code?: string } | undefined)?.code;
+    if (error.response?.status === 403 && code === 'password_change_required'
+        && window.location.pathname !== '/change-password') {
+      window.location.assign('/change-password');
+    }
     return Promise.reject(error);
   }
 );
@@ -71,7 +78,9 @@ export const authApi = {
     api.get<{ totp_enabled: boolean }>('/auth/totp/status'),
   me: () => api.get('/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
-    api.put('/auth/password', { currentPassword, newPassword }),
+    api.put<{ message: string; token?: string; user?: import('../types').User }>('/auth/password', { currentPassword, newPassword }),
+  /** Public: whether the login page should still show the default credentials. */
+  loginHints: () => api.get<{ default_credentials: boolean }>('/auth/login-hints'),
   securityStatus: () =>
     api.get<{ warnings: string[] }>('/auth/security-status'),
   oidcStatus: () =>
@@ -678,6 +687,9 @@ export const devicesApi = {
     api.get<ConfigHealthResponse>(`/devices/${id}/config-health`),
   scanConfigHealth: (id: number) =>
     api.post<ConfigHealthResponse>(`/devices/${id}/config-health/scan`),
+  /** Can this device arm Change Guard's auto-revert right now? Saves and removes a throwaway restore point. */
+  changeGuardCheck: (id: number) =>
+    api.post<{ ready: boolean; mode: 'binary' | 'script'; reason: string | null }>(`/devices/${id}/change-guard/check`),
   patchLocation: (id: number, data: {
     location_address?: string | null;
     location_lat?: number | null;
@@ -1098,7 +1110,7 @@ export const backupsApi = {
   content: (id: number) => api.get<BackupContent>(`/backups/${id}/content`),
   diff: (fromId: number, toId: number) =>
     api.get<{ from: BackupDiffSide; to: BackupDiffSide }>(`/backups/${fromId}/diff/${toId}`),
-  restore: (id: number) => api.post(`/backups/${id}/restore`),
+  restore: (id: number) => api.post<{ status: string; message: string }>(`/backups/${id}/restore`),
   delete: (id: number) => api.delete(`/backups/${id}`),
   bulkDeletePreview: (ids: number[]) =>
     api.get<{ backups: number; snapshots: number; devices: { name: string; count: number }[] }>(

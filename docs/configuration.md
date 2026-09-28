@@ -24,6 +24,14 @@ Set in `.env` at the project root. Changing any of these requires a container re
 For a production deployment the only variable you genuinely must set is `CORS_ORIGIN`.
 Both secrets generate themselves safely — see below.
 
+## First login
+
+A new install has one account, **admin** with the password **admin**. Signing in with it
+goes straight to a page that asks for a new password (at least 10 characters, with a
+letter and a number); nothing else works until it is set. The login page shows the
+default credentials only until then. An existing install still using admin/admin gets
+the same prompt at its next login.
+
 ## Secret management (self-healing)
 
 `JWT_SECRET` and `ENCRYPTION_KEY` are managed automatically so that a fresh install is

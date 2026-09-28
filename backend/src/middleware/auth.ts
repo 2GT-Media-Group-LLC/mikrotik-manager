@@ -10,7 +10,17 @@ export interface AuthPayload {
   role: string;
   /** Set when the request authenticated with an API token instead of a session. */
   tokenAuth?: boolean;
+  /**
+   * The account still has the default password. The session can only reach
+   * the endpoints needed to change it (PASSWORD_CHANGE_PATHS).
+   */
+  mustChangePassword?: boolean;
 }
+
+/** All a must-change-password session may call. */
+const PASSWORD_CHANGE_PATHS = new Set([
+  '/api/auth/me', '/api/auth/password', '/api/auth/logout', '/api/auth/security-status',
+]);
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -122,12 +132,22 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
+  let user: AuthPayload;
   try {
-    req.user = verifyToken(token);
-    next();
+    user = verifyToken(token);
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
+    return;
   }
+  if (user.mustChangePassword) {
+    const path = (req.originalUrl || req.url || '').split('?')[0];
+    if (!PASSWORD_CHANGE_PATHS.has(path)) {
+      res.status(403).json({ error: 'Change the default password before continuing.', code: 'password_change_required' });
+      return;
+    }
+  }
+  req.user = user;
+  next();
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
