@@ -7,6 +7,7 @@ import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { getLldpStatuses, setLldpForTypes, parseDeviceTypes, LLDP_DEVICE_TYPES } from '../services/lldpApply';
+import { applySnmpConfig, getSnmpStatuses, getSnmpTemplates, SnmpInputError, type SnmpConfigInput, type SnmpTarget } from '../services/snmpApply';
 
 const router = Router();
 router.use(requireAuth);
@@ -63,6 +64,43 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
   const types = parseDeviceTypes(device_types);
   if (!types) return res.status(400).json({ error: `device_types must be from: ${LLDP_DEVICE_TYPES.join(', ')}` });
   return res.json(await setLldpForTypes(types, enabled, activeSite(req)));
+});
+
+// ─── SNMP, fleet-wide ──────────────────────────────────────────────────────────
+// Every device type, like LLDP. Changes go only to the devices named in
+// device_ids, or to every online device in the site with "all" (optionally
+// narrowed by device_types). There is no default: a request that doesn't say
+// which devices is refused.
+
+router.get('/snmp', async (req: Request, res: Response) => {
+  const types = req.query.types ? parseDeviceTypes(req.query.types) : undefined;
+  if (types === null) return res.status(400).json({ error: `types must be from: ${LLDP_DEVICE_TYPES.join(', ')}` });
+  return res.json(await getSnmpStatuses(activeSite(req), types));
+});
+
+// The contact / location / trap destination last applied, as typed (#164).
+router.get('/snmp/templates', async (_req: Request, res: Response) => {
+  return res.json(await getSnmpTemplates());
+});
+
+router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
+  const { device_ids, device_types, ...config } = (req.body ?? {}) as Record<string, unknown>;
+  let target: SnmpTarget;
+  if (device_ids === 'all') {
+    const types = device_types === undefined ? undefined : parseDeviceTypes(device_types);
+    if (types === null) return res.status(400).json({ error: `device_types must be from: ${LLDP_DEVICE_TYPES.join(', ')}` });
+    target = { all: true, deviceTypes: types };
+  } else if (Array.isArray(device_ids) && device_ids.every((id) => Number.isInteger(id))) {
+    target = { deviceIds: device_ids as number[] };
+  } else {
+    return res.status(400).json({ error: 'device_ids is required: a list of device ids, or "all"' });
+  }
+  try {
+    return res.json(await applySnmpConfig(target, config as SnmpConfigInput, activeSite(req)));
+  } catch (e) {
+    if (e instanceof SnmpInputError) return res.status(400).json({ error: e.message });
+    throw e;
+  }
 });
 
 router.get('/overview', async (req: Request, res: Response) => {

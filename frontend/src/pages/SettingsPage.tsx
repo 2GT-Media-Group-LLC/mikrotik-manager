@@ -5,8 +5,8 @@ import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound, ClipboardList, FileText, Zap, LogIn,
   Activity, Moon} from 'lucide-react';
-import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi, maintenanceApi } from '../services/api';
-import type { MaintenanceWindow } from '../services/api';
+import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
+import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
 import PollerHealthCard from '../components/system/PollerHealthCard';
 import { useAuthStore } from '../store/authStore';
@@ -82,7 +82,6 @@ export default function SettingsPage() {
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#6366f1');
-  const [mwForm, setMwForm] = useState({ name: '', start_at: '', end_at: '' });
 
   // ─── App settings ─────────────────────────────────────────────────────────
   const { data: settings = {} } = useQuery({
@@ -302,38 +301,8 @@ export default function SettingsPage() {
   });
 
   // ─── Maintenance Windows ───────────────────────────────────────────────────
-  const { data: maintenanceWindows = [] } = useQuery({
-    queryKey: ['maintenance-windows'],
-    queryFn: () => maintenanceApi.list().then((r) => r.data),
-    enabled: activeTab === 'maintenance',
-  });
-
-  const createMwMutation = useMutation({
-    mutationFn: () => maintenanceApi.create({
-      name: mwForm.name.trim(),
-      device_ids: [],
-      start_at: mwForm.start_at,
-      end_at: mwForm.end_at,
-      recurring_cron: null,
-      active: true,
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['maintenance-windows'] });
-      setMwForm({ name: '', start_at: '', end_at: '' });
-    },
-  });
-
-  const deleteMwMutation = useMutation({
-    mutationFn: (id: number) => maintenanceApi.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maintenance-windows'] }),
-  });
-
-  const toggleMwMutation = useMutation({
-    mutationFn: ({ id, active }: { id: number; active: boolean }) => maintenanceApi.update(id, { active }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maintenance-windows'] }),
-  });
-
   // ─── Audit Log ────────────────────────────────────────────────────────────
+
   const { data: auditData } = useQuery({
     queryKey: ['audit-log', auditPage, auditSearch],
     queryFn: () => auditLogApi.list({ page: auditPage, limit: 50, search: auditSearch || undefined }).then((r) => r.data),
@@ -720,6 +689,49 @@ export default function SettingsPage() {
                   step="1"
                   disabled={!isAdmin || settings['config_snapshot_enabled'] === false}
                 />
+              </div>
+            </div>
+          </div>
+
+          {/* Config Health */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Config Health</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
+              A standing audit of each device&apos;s live configuration for things RouterOS accepts but
+              that don&apos;t work, shown on the Operations dashboard and each device&apos;s Config Health
+              card. Read-only on the device.
+            </p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Run the audit automatically</div>
+                <button
+                  onClick={() => isAdmin && updateSettingsMutation.mutate({ config_health_enabled: settings['config_health_enabled'] === false })}
+                  disabled={!isAdmin}
+                  className={clsx(
+                    'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
+                    isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
+                    settings['config_health_enabled'] !== false ? 'bg-blue-600' : 'bg-gray-300 dark:bg-slate-600'
+                  )}
+                >
+                  <span className={clsx(
+                    'inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200',
+                    settings['config_health_enabled'] !== false ? 'translate-x-5' : 'translate-x-0'
+                  )} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="text-sm font-medium text-gray-700 dark:text-slate-300">How often</div>
+                <select
+                  className="input w-36 disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={String(settings['config_health_interval_min'] ?? 60)}
+                  onChange={(e) => updateSettingsMutation.mutate({ config_health_interval_min: Number(e.target.value) })}
+                  disabled={!isAdmin || settings['config_health_enabled'] === false}
+                >
+                  {[[15, 'Every 15 minutes'], [30, 'Every 30 minutes'], [60, 'Hourly'], [240, 'Every 4 hours'],
+                    [720, 'Every 12 hours'], [1440, 'Daily']].map(([v, label]) => (
+                    <option key={v} value={String(v)}>{label}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -2137,98 +2149,7 @@ export default function SettingsPage() {
       {/* ── Maintenance Windows ── */}
       {activeTab === 'maintenance' && (
         <div className="space-y-4">
-          <div className="card p-5">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-1">Maintenance Windows</h3>
-            <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">
-              Alerts are suppressed for devices during active maintenance windows.
-            </p>
-
-            {isAdmin && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-                <input
-                  type="text"
-                  placeholder="Window name…"
-                  value={mwForm.name}
-                  onChange={(e) => setMwForm(f => ({ ...f, name: e.target.value }))}
-                  className="input text-sm"
-                />
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-gray-500 dark:text-slate-400">Start</label>
-                  <input
-                    type="datetime-local"
-                    value={mwForm.start_at}
-                    onChange={(e) => setMwForm(f => ({ ...f, start_at: e.target.value }))}
-                    className="input text-sm"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-gray-500 dark:text-slate-400">End</label>
-                  <input
-                    type="datetime-local"
-                    value={mwForm.end_at}
-                    onChange={(e) => setMwForm(f => ({ ...f, end_at: e.target.value }))}
-                    className="input text-sm"
-                  />
-                </div>
-                <button
-                  onClick={() => createMwMutation.mutate()}
-                  disabled={!mwForm.name.trim() || !mwForm.start_at || !mwForm.end_at || createMwMutation.isPending}
-                  className="btn-primary text-sm sm:col-span-3 justify-center flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create Window
-                </button>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              {(maintenanceWindows as MaintenanceWindow[]).map((mw) => {
-                const now = new Date();
-                const start = new Date(mw.start_at);
-                const end = new Date(mw.end_at);
-                const isActive = mw.active && now >= start && now <= end;
-                const isPast = now > end;
-                return (
-                  <div key={mw.id} className={clsx(
-                    'flex items-center justify-between p-3 rounded-lg',
-                    isActive ? 'border border-yellow-400 dark:border-yellow-600' : ''
-                  )} style={{ background: 'var(--surface-2)' }}>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">{mw.name}</span>
-                        {isActive && <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Active</span>}
-                        {isPast && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400">Expired</span>}
-                        {!mw.active && <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-500">Disabled</span>}
-                      </div>
-                      <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-                        {new Date(mw.start_at).toLocaleString()} – {new Date(mw.end_at).toLocaleString()}
-                        {mw.device_ids.length > 0 && ` · ${mw.device_ids.length} device(s)`}
-                      </div>
-                    </div>
-                    {isAdmin && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => toggleMwMutation.mutate({ id: mw.id, active: !mw.active })}
-                          className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300"
-                        >
-                          {mw.active ? 'Disable' : 'Enable'}
-                        </button>
-                        <button
-                          onClick={() => deleteMwMutation.mutate(mw.id)}
-                          className="p-1 rounded text-gray-400 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {(maintenanceWindows as MaintenanceWindow[]).length === 0 && (
-                <p className="text-sm text-gray-400 dark:text-slate-500 text-center py-4">No maintenance windows created</p>
-              )}
-            </div>
-          </div>
+          <MaintenanceWindowsCard isAdmin={isAdmin} timeZone={(settings['app_timezone'] as string) || 'UTC'} />
         </div>
       )}
 

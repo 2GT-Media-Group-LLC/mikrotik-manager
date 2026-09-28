@@ -58,7 +58,11 @@ jobs:
           {
             git log -1 --pretty=%B "$SHIP"
             printf '\n---\n'
-            printf 'Container image: `ghcr.io/2gt-media-group-llc/mikrotik-manager:%s`\n\n' "$VERSION"
+            BT=$(printf '\140')   # a markdown backtick, kept out of shell quoting
+            IMG=ghcr.io/2gt-media-group-llc/mikrotik-manager
+            printf 'Container images (published once CI passes):\n'
+            printf -- "- ${BT}%s-backend:%s${BT}\n" "$IMG" "$VERSION"
+            printf -- "- ${BT}%s-nginx:%s${BT}\n\n" "$IMG" "$VERSION"
             printf 'Documentation: https://2gt-media-group-llc.github.io/mikrotik-manager/\n'
           } > /tmp/release-notes.md
 

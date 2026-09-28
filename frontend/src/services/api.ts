@@ -1217,8 +1217,9 @@ export const routersApi = {
     contact?: string; location?: string; trap_target?: string;
     error?: string;
   }[]>('/routers/snmp'),
+  /** Only the fields present are changed on each device. */
   setSnmp: (config: {
-    enabled: boolean; community_name: string; version: 'v1' | 'v2c' | 'v3';
+    enabled?: boolean; community_name?: string; version?: 'v1' | 'v2c' | 'v3';
     contact?: string; location?: string; trap_target?: string;
     auth_protocol?: string; auth_password?: string;
     priv_protocol?: string; priv_password?: string;
@@ -1272,8 +1273,9 @@ export const switchesApi = {
     contact?: string; location?: string; trap_target?: string;
     error?: string;
   }[]>('/switches/snmp'),
+  /** Only the fields present are changed on each device. */
   setSnmp: (config: {
-    enabled: boolean; community_name: string; version: 'v1' | 'v2c' | 'v3';
+    enabled?: boolean; community_name?: string; version?: 'v1' | 'v2c' | 'v3';
     contact?: string; location?: string; trap_target?: string;
     auth_protocol?: string; auth_password?: string;
     priv_protocol?: string; priv_password?: string;
@@ -1526,6 +1528,26 @@ export const networkServicesApi = {
     api.get<Record<string, unknown>[]>('/network-services/overview', { timeout: 60_000 }),
 
   // ── LLDP, every device type ───────────────────────────────────────────────
+  /** SNMP settings of every online device in the site, of any type. */
+  getSnmp: () => api.get<{
+    id: number; name: string; ip_address: string; device_type: string;
+    enabled: boolean | null; community_name?: string; version?: string;
+    auth_protocol?: string; priv_protocol?: string;
+    contact?: string; location?: string; trap_target?: string;
+    error?: string;
+  }[]>('/network-services/snmp'),
+  /** Contact / location / trap destination as last applied, variables and all (#164). */
+  getSnmpTemplates: () => api.get<{ contact?: string; location?: string; trap_target?: string }>('/network-services/snmp/templates'),
+  /** Change SNMP on the given devices (or "all" in the site). Only the fields present are changed. */
+  setSnmp: (deviceIds: number[] | 'all', config: {
+    enabled?: boolean; community_name?: string; version?: 'v1' | 'v2c' | 'v3';
+    contact?: string; location?: string; trap_target?: string;
+    auth_protocol?: string; auth_password?: string;
+    priv_protocol?: string; priv_password?: string;
+  }) => api.put<{
+    applied: number; total: number; skipped: number[];
+    results: { id: number; name: string; success: boolean; error?: string }[];
+  }>('/network-services/snmp', { device_ids: deviceIds, ...config }),
   getLldp: () => api.get<{
     id: number; name: string; ip_address: string; device_type: string;
     enabled: boolean | null; protocol: string | null; error?: string;
@@ -1799,6 +1821,24 @@ export interface CertificatesResponse {
   /** How many would alert. Server-derived, so it matches what gets sent. */
   attentionCount: number;
 }
+
+// ─── RouterOS vulnerabilities (#175) ──────────────────────────────────────────
+export interface FleetCve {
+  id: string; severity: string | null; score: number | null; known_exploited: boolean;
+  published: string | null; summary: string; fixed_in: string | null; hardware_specific: boolean;
+}
+export interface FleetCveReport {
+  enabled: boolean;
+  fetched_at: string | null;
+  last_error: string | null;
+  total_cves: number;
+  unranged: number;
+  versions: { version: string; devices: { id: number; name: string }[]; cves: FleetCve[] }[];
+}
+export const cvesApi = {
+  report: () => api.get<FleetCveReport>('/security/cves'),
+  refresh: () => api.post<FleetCveReport>('/security/cves/refresh', undefined, { timeout: 120_000 }),
+};
 
 export const certificatesApi = {
   list: (deviceId?: number) =>

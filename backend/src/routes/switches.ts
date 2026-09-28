@@ -6,7 +6,7 @@ import { siteScopeDevices } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { getLldpStatuses, setLldpForTypes } from '../services/lldpApply';
-import { applySnmpConfig, SnmpInputError, type SnmpConfigInput } from '../services/snmpApply';
+import { applySnmpConfig, getSnmpStatuses, SnmpInputError, type SnmpConfigInput } from '../services/snmpApply';
 
 const router = Router();
 router.use(requireAuth);
@@ -55,33 +55,9 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
 // Includes offline/unknown devices so the list never disappears during a poll cycle.
 // Unreachable devices fall through to the Promise.allSettled error path and render with an error note.
 router.get('/snmp', async (req: Request, res: Response) => {
-  const siteFilter = siteScopeDevices(activeSite(req));
-  const switches = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type = 'switch'
-       ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
-  );
-
-  const results = await Promise.allSettled(
-    switches.map(async (sw: DeviceRow) => {
-      const collector = new DeviceCollector(sw);
-      try {
-        await collector.connect();
-        const snmp = await collector.getSnmpConfig();
-        return { id: sw.id, name: sw.name, ip_address: sw.ip_address, ...snmp };
-      } finally {
-        collector.disconnect();
-      }
-    })
-  );
-
-  const statuses = results.map((r, i) => {
-    if (r.status === 'fulfilled') return r.value;
-    return {
-      id: switches[i].id, name: switches[i].name, ip_address: switches[i].ip_address,
-      enabled: null as boolean | null, error: (r.reason as Error).message,
-    };
-  });
-  res.json(statuses);
+  // Kept for existing API users; the page uses /api/network-services/snmp,
+  // which covers every device type.
+  res.json(await getSnmpStatuses(activeSite(req), ['switch']));
 });
 
 // PUT /api/switches/snmp — apply SNMP config to all online switches
@@ -89,7 +65,7 @@ router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
   // See services/snmpApply.ts: per-device variables, blanks left alone, and
   // only the active site's devices.
   try {
-    return res.json(await applySnmpConfig('switch', req.body as SnmpConfigInput, activeSite(req)));
+    return res.json(await applySnmpConfig({ all: true, deviceTypes: ['switch'] }, req.body as SnmpConfigInput, activeSite(req)));
   } catch (e) {
     if (e instanceof SnmpInputError) return res.status(400).json({ error: e.message });
     throw e;

@@ -4,6 +4,7 @@ import * as http from 'http';
 import { query } from '../config/database';
 import { buildGotifyRequest } from '../utils/gotify';
 import { resolveAlertTarget } from '../utils/alertTarget';
+import { isDeviceInMaintenance } from '../routes/maintenanceWindows';
 
 export type AlertEventType =
   | 'device_offline'
@@ -86,12 +87,8 @@ export class AlertService {
 
       // Maintenance window suppression — skip if device is in a currently active window
       if (ctx.deviceId != null) {
-        const inMaintenance = await query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count FROM maintenance_windows
-           WHERE active = true AND $1 = ANY(device_ids) AND NOW() BETWEEN start_at AND end_at`,
-          [ctx.deviceId]
-        ).catch(() => [{ count: '0' }]);
-        if (parseInt(inMaintenance[0]?.count || '0', 10) > 0) {
+        const inMaintenance = await isDeviceInMaintenance(ctx.deviceId).catch(() => false);
+        if (inMaintenance) {
           console.log(`[AlertService] Suppressed ${eventType} for device ${ctx.deviceId} (maintenance window)`);
           return;
         }

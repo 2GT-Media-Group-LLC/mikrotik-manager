@@ -57,6 +57,12 @@ export const DARK_SITE_FEATURES: DarkSiteFeature[] = [
     cost: 'The vendor list is not refreshed. A copy already downloaded is still used; without one, client vendors show as unknown.',
   },
   {
+    key: 'cve_feed_enabled',
+    label: 'RouterOS vulnerability list',
+    destination: 'services.nvd.nist.gov, www.cisa.gov',
+    cost: 'The Security page no longer lists known vulnerabilities (CVEs) for the RouterOS versions in the fleet.',
+  },
+  {
     key: 'docs_link_enabled',
     label: 'Documentation link',
     destination: '2gt-media-group-llc.github.io',

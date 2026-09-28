@@ -15,6 +15,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Adopting devices](adoption.md) | Adding configured devices, and configuring factory-default ones so they can be managed |
 | [Sites](sites.md) | Grouping devices into sites, switching between them, and what each site scopes |
 | [Change Guard and Config Health](change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
+| [Security page](security.md) | Firewall posture, certificates, and known vulnerabilities (CVEs) in the fleet's RouterOS versions |
 | [Alerting](alerting.md) | Alert rules, delivery channels, webhooks, scheduled reports, maintenance windows |
 | [Single sign-on (OIDC)](sso-oidc.md) | Identity provider setup, group-to-role mapping, break-glass behaviour |
 | [CAPsMAN](capsman.md) | How centrally provisioned access points are modelled, and current limits |

@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Radio, RefreshCw, CheckCircle, XCircle, AlertCircle, Check,
-  HelpCircle, Shield, Eye, EyeOff, Router as RouterIcon, Layers, Wifi, Box,
+  HelpCircle, Shield, Eye, EyeOff, Router as RouterIcon, Layers, Wifi, Box, ChevronDown,
 } from 'lucide-react';
-import { routersApi, switchesApi, networkServicesApi } from '../services/api';
+import { networkServicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import clsx from 'clsx';
 
@@ -23,7 +23,8 @@ interface SnmpRow {
   auth_protocol?: string; priv_protocol?: string;
   contact?: string; location?: string; trap_target?: string;
   error?: string;
-  kind: 'router' | 'switch';
+  device_type: string;
+  kind: Kind;
 }
 
 interface SnmpForm {
@@ -41,7 +42,7 @@ interface SnmpForm {
 
 const DEFAULT_SNMP: SnmpForm = {
   enabled: true,
-  community_name: 'public',
+  community_name: '',
   version: 'v2c',
   contact: '',
   location: '',
@@ -59,13 +60,8 @@ const SCOPES: { key: Scope; label: string }[] = [
   { key: 'aps',      label: 'Wireless APs' },
 ];
 
-/** SNMP here covers routers and switches only. */
+/** LLDP and SNMP both cover every RouterOS device, access points included. */
 function scopeNoun(scope: Scope): string {
-  return scope === 'routers' ? 'routers' : scope === 'switches' ? 'switches' : 'routers & switches';
-}
-
-/** LLDP covers every RouterOS device, access points included. */
-function lldpNoun(scope: Scope): string {
   return scope === 'routers' ? 'routers' : scope === 'switches' ? 'switches' : scope === 'aps' ? 'wireless APs' : 'devices';
 }
 
@@ -163,70 +159,177 @@ export default function NetworkServicesDiscoveryPage() {
   const [snmpForm, setSnmpForm] = useState<SnmpForm>(DEFAULT_SNMP);
   const [snmpApplyResult, setSnmpApplyResult] = useState<{ applied: number; total: number } | null>(null);
   const [snmpApplyError, setSnmpApplyError]   = useState('');
-  const [snmpFormEdited, setSnmpFormEdited]   = useState(false);
+  // Only the fields the operator edited are sent. The form used to be
+  // prefilled from one device with every field sent, so "apply to all" copied
+  // that device's community, version and on/off state to the whole fleet
+  // (P1-11). Devices differ, so the form can't show "their" value; instead it
+  // remembers what was touched, highlights it, and Apply lists exactly that.
+  type SnmpField = 'enabled' | 'version' | 'community' | 'contact' | 'location' | 'trap_target';
+  const [edited, setEdited] = useState<Set<SnmpField>>(new Set());
+  const FIELD_OF = new Map<keyof SnmpForm, SnmpField>([
+    ['enabled', 'enabled'], ['version', 'version'], ['community_name', 'community'],
+    ['contact', 'contact'], ['location', 'location'], ['trap_target', 'trap_target'],
+    // SNMPv3 security travels with the version.
+    ['auth_protocol', 'version'], ['auth_password', 'version'], ['priv_protocol', 'version'], ['priv_password', 'version'],
+  ]);
+  const sf = (patch: Partial<SnmpForm>) => {
+    setSnmpForm(f => ({ ...f, ...patch }));
+    setEdited(prev => {
+      const next = new Set(prev);
+      for (const k of Object.keys(patch) as (keyof SnmpForm)[]) {
+        const f = FIELD_OF.get(k);
+        if (f) next.add(f);
+      }
+      return next;
+    });
+  };
+  const resetSnmpForm = () => { setSnmpForm(DEFAULT_SNMP); setEdited(new Set()); };
+  /** A light highlight on a field that Apply will send. */
+  const editedRing = (f: SnmpField) => (edited.has(f) ? 'ring-2 ring-amber-300 dark:ring-amber-500/60 rounded-lg' : '');
 
-  const sf = (patch: Partial<SnmpForm>) => { setSnmpForm(f => ({ ...f, ...patch })); setSnmpFormEdited(true); };
-
-  const routerSnmp = useQuery({
-    queryKey: ['routers-snmp'],
-    queryFn: () => routersApi.getSnmpStatus().then(r => r.data),
+  // Every device type, like LLDP above. This used to read routers and switches
+  // only, so access points could not be configured here at all.
+  const snmpQuery = useQuery({
+    queryKey: ['snmp-all'],
+    queryFn: () => networkServicesApi.getSnmp().then(r => r.data),
   });
-  const switchSnmp = useQuery({
-    queryKey: ['switches-snmp'],
-    queryFn: () => switchesApi.getSnmpStatus().then(r => r.data),
+
+  const templatesQuery = useQuery({
+    queryKey: ['snmp-templates'],
+    queryFn: () => networkServicesApi.getSnmpTemplates().then(r => r.data),
   });
+  const templates = templatesQuery.data ?? {};
 
-  const snmpLoading  = routerSnmp.isLoading || switchSnmp.isLoading;
-  const snmpFetching = routerSnmp.isFetching || switchSnmp.isFetching;
-  const refetchSnmp  = () => { routerSnmp.refetch(); switchSnmp.refetch(); };
+  const snmpLoading  = snmpQuery.isLoading;
+  const snmpFetching = snmpQuery.isFetching;
+  const refetchSnmp  = () => { snmpQuery.refetch(); templatesQuery.refetch(); };
 
-  const snmpAll: SnmpRow[] = [
-    ...(routerSnmp.data ?? []).map(r => ({ ...r, kind: 'router' as const })),
-    ...(switchSnmp.data ?? []).map(r => ({ ...r, kind: 'switch' as const })),
-  ];
+  const snmpAll: SnmpRow[] = (snmpQuery.data ?? [])
+    .map(r => ({ ...r, kind: toKind(r.device_type) }))
+    .sort((a, b) => kindOrder.indexOf(a.kind) - kindOrder.indexOf(b.kind) || a.name.localeCompare(b.name));
   const snmpStatuses = inScope(snmpAll);
 
-  // Pre-populate the form from the first successful device result, unless the
-  // user has already started editing.
-  useEffect(() => {
-    if (snmpFormEdited) return;
-    const first = snmpAll.find(s => s.enabled != null && !s.error);
-    if (first) {
-      setSnmpForm({
-        enabled:        first.enabled ?? true,
-        community_name: first.community_name ?? 'public',
-        version:        (first.version as 'v1' | 'v2c' | 'v3') ?? 'v2c',
-        contact:        first.contact ?? '',
-        location:       first.location ?? '',
-        trap_target:    first.trap_target ?? '',
-        auth_protocol:  first.auth_protocol ?? 'MD5',
-        auth_password:  '',
-        priv_protocol:  first.priv_protocol ?? 'none',
-        priv_password:  '',
-      });
+  // Which devices a change goes to. Only devices shown under the current tab
+  // that answered can be chosen; the table shows what each one has now.
+  const snmpTargets = snmpStatuses.filter(r => !r.error);
+  const [snmpPicked, setSnmpPicked] = useState<Set<number>>(new Set());
+  const pickedInScope = snmpTargets.filter(r => snmpPicked.has(r.id));
+  const togglePick = (id: number) => setSnmpPicked(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+
+  /** Exactly what Apply will send: only the fields that were edited. */
+  const snmpPayload = () => {
+    const p: Partial<SnmpForm> = {};
+    if (edited.has('enabled')) p.enabled = snmpForm.enabled;
+    if (edited.has('community')) p.community_name = snmpForm.community_name.trim();
+    if (edited.has('contact')) p.contact = snmpForm.contact;
+    if (edited.has('location')) p.location = snmpForm.location;
+    if (edited.has('trap_target')) p.trap_target = snmpForm.trap_target;
+    if (edited.has('version')) {
+      p.version = snmpForm.version;
+      if (snmpForm.version === 'v3') {
+        p.auth_protocol = snmpForm.auth_protocol; p.auth_password = snmpForm.auth_password;
+        p.priv_protocol = snmpForm.priv_protocol; p.priv_password = snmpForm.priv_password;
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routerSnmp.data, switchSnmp.data]);
+    return p;
+  };
+
+  /** One line per change, for the confirmation. Blank text fields change nothing. */
+  const snmpChangeLines = (): string[] => {
+    const lines: string[] = [];
+    if (edited.has('enabled')) lines.push(`SNMP: ${snmpForm.enabled ? 'on' : 'OFF'}`);
+    if (edited.has('version')) lines.push(`Version: ${snmpForm.version}`);
+    if (edited.has('community') && snmpForm.community_name.trim()) {
+      lines.push(`${snmpForm.version === 'v3' ? 'User' : 'Community'}: ${snmpForm.community_name.trim()} (added if a device doesn't have it; existing ones are kept)`);
+    }
+    if (edited.has('contact') && snmpForm.contact.trim()) lines.push(`Contact: ${snmpForm.contact.trim()}`);
+    if (edited.has('location') && snmpForm.location.trim()) lines.push(`Location: ${snmpForm.location.trim()}`);
+    if (edited.has('trap_target') && snmpForm.trap_target.trim()) lines.push(`Trap destination: ${snmpForm.trap_target.trim()}`);
+    return lines;
+  };
+
+  /** Confirm the exact change and the devices it goes to, then send it. */
+  const applySnmpTo = (targets: SnmpRow[]) => {
+    const lines = snmpChangeLines();
+    const who = targets.length <= 6
+      ? targets.map(t => `  • ${t.name}`).join('\n')
+      : `  ${targets.length} ${scopeNoun(scope)}`;
+    if (!confirm(`Change SNMP on:\n${who}\n\n${lines.join('\n')}\n\nAnything not listed is left as it is on each device.`)) return;
+    setPickerOpen(false);
+    setSnmpApplyResult(null); setSnmpApplyError('');
+    setSnmpMutation.mutate(targets.map(t => t.id));
+  };
 
   const setSnmpMutation = useMutation({
-    mutationFn: async () => {
-      const calls = [];
-      if (scope === 'all' || scope === 'routers')  calls.push(routersApi.setSnmp(snmpForm));
-      if (scope === 'all' || scope === 'switches') calls.push(switchesApi.setSnmp(snmpForm));
-      const results = await Promise.all(calls);
-      return results.reduce(
-        (acc, r) => ({ applied: acc.applied + r.data.applied, total: acc.total + r.data.total }),
-        { applied: 0, total: 0 },
-      );
+    mutationFn: async (deviceIds: number[]) => {
+      const r = await networkServicesApi.setSnmp(deviceIds, snmpPayload());
+      return { applied: r.data.applied, total: r.data.total };
     },
-    onSuccess: (res) => { setSnmpApplyResult(res); setSnmpApplyError(''); refetchSnmp(); },
+    onSuccess: (res) => { setSnmpApplyResult(res); setSnmpApplyError(''); resetSnmpForm(); refetchSnmp(); },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setSnmpApplyError(msg || 'Failed to apply SNMP settings');
     },
   });
 
-  const isV3 = snmpForm.version === 'v3';
+  // What the form shows: the chosen devices' real settings (or, with none
+  // chosen, those of every device listed), with the operator's edits on top.
+  // A setting the devices don't share shows as "differs" rather than a made-up
+  // default. Before this the slider always showed "on" and V2C was always
+  // selected, which looked like each device's state but wasn't, and wasn't sent.
+  const basisRows = pickedInScope.length ? pickedInScope : snmpTargets;
+  const common = <T,>(pick: (r: SnmpRow) => T): T | undefined => {
+    if (!basisRows.length) return undefined;
+    const first = pick(basisRows[0]);
+    return basisRows.every(r => pick(r) === first) ? first : undefined;
+  };
+  const basis = {
+    enabled:        common(r => r.enabled ?? null) ?? undefined,
+    version:        common(r => r.version ?? ''),
+    community_name: common(r => r.community_name ?? ''),
+    // A saved template (#164) is shown as typed, e.g. {identity}@example.com,
+    // rather than one device's filled-in result.
+    contact:        templates.contact ?? common(r => r.contact ?? ''),
+    location:       templates.location ?? common(r => r.location ?? ''),
+    trap_target:    templates.trap_target ?? common(r => r.trap_target ?? ''),
+  };
+  type TemplField = 'contact' | 'location' | 'trap_target';
+  const templateOf = (f: TemplField) =>
+    f === 'contact' ? templates.contact : f === 'location' ? templates.location : templates.trap_target;
+  const showsTemplate = (f: TemplField) => !edited.has(f) && !!templateOf(f);
+  /** Under a field showing a saved template: it isn't sent unless chosen. */
+  const templateNote = (f: TemplField) => showsTemplate(f) ? (
+    <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">
+      Last applied template; not sent unless you change it.{' '}
+      <button type="button" className="text-blue-600 dark:text-blue-400 hover:underline"
+              onClick={() => sf(f === 'contact' ? { contact: templateOf(f)! } : f === 'location' ? { location: templateOf(f)! } : { trap_target: templateOf(f)! })}>
+        Send it
+      </button>
+    </p>
+  ) : null;
+  const shown = {
+    enabled:        edited.has('enabled') ? snmpForm.enabled : (basis.enabled ?? undefined),
+    version:        edited.has('version') ? snmpForm.version : (basis.version || undefined),
+    community_name: edited.has('community') ? snmpForm.community_name : (basis.community_name ?? ''),
+    contact:        edited.has('contact') ? snmpForm.contact : (basis.contact ?? ''),
+    location:       edited.has('location') ? snmpForm.location : (basis.location ?? ''),
+    trap_target:    edited.has('trap_target') ? snmpForm.trap_target : (basis.trap_target ?? ''),
+  };
+  const differs = (f: 'version' | 'community_name' | 'contact' | 'location' | 'trap_target') =>
+    basisRows.length > 1 && (
+      f === 'version' ? basis.version === undefined
+      : f === 'community_name' ? basis.community_name === undefined
+      : f === 'contact' ? basis.contact === undefined
+      : f === 'location' ? basis.location === undefined
+      : basis.trap_target === undefined);
+  const onCount = basisRows.filter(r => r.enabled === true).length;
+  const isV3 = shown.version === 'v3';
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -283,19 +386,19 @@ export default function NetworkServicesDiscoveryPage() {
                           'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'
           )}>
             {allEnabled ? <CheckCircle className="w-4 h-4" /> : allDisabled ? <XCircle className="w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
-            {allEnabled  ? `LLDP is enabled on all online ${lldpNoun(scope)}` :
-             allDisabled ? `LLDP is disabled on all online ${lldpNoun(scope)}` :
-                           `LLDP state is mixed across ${lldpNoun(scope)}`}
+            {allEnabled  ? `LLDP is enabled on all online ${scopeNoun(scope)}` :
+             allDisabled ? `LLDP is disabled on all online ${scopeNoun(scope)}` :
+                           `LLDP state is mixed across ${scopeNoun(scope)}`}
           </div>
         )}
 
         {lldpLoading ? (
           <div className="flex items-center gap-2 text-sm text-gray-400">
-            <RefreshCw className="w-4 h-4 animate-spin" /> Checking LLDP status on all {lldpNoun(scope)}…
+            <RefreshCw className="w-4 h-4 animate-spin" /> Checking LLDP status on all {scopeNoun(scope)}…
           </div>
         ) : lldpStatuses.length === 0 ? (
           <p className="text-sm text-gray-400 dark:text-slate-500">
-            No online {lldpNoun(scope)} found. Devices must be online to check or change LLDP settings.
+            No online {scopeNoun(scope)} found. Devices must be online to check or change LLDP settings.
           </p>
         ) : (
           <div className="rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
@@ -338,7 +441,7 @@ export default function NetworkServicesDiscoveryPage() {
 
         {lldpApplyResult && (
           <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-            <Check className="w-4 h-4" /> Applied to {lldpApplyResult.applied} of {lldpApplyResult.total} {lldpNoun(scope)}
+            <Check className="w-4 h-4" /> Applied to {lldpApplyResult.applied} of {lldpApplyResult.total} {scopeNoun(scope)}
           </div>
         )}
         {lldpApplyError && (
@@ -397,48 +500,55 @@ export default function NetworkServicesDiscoveryPage() {
               Simple Network Management Protocol (SNMP)
             </h2>
             <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-              Configure SNMP across your managed {scopeNoun(scope)}. Settings are applied network-wide.
-              SNMPv3 provides authentication and optional encryption for secure monitoring.
+              Configure SNMP on any of your {scopeNoun(scope)}: choose devices from the list, or apply to all.
+              Only the fields you change are sent (they&apos;re highlighted); everything else stays as it is
+              on each device. The table below shows what each device has now.
             </p>
           </div>
         </div>
 
         <fieldset disabled={!canWrite} className="space-y-4 disabled:opacity-60">
           {/* Enable toggle */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700/40 rounded-lg">
+          <div className={clsx('flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700/40 rounded-lg', editedRing('enabled'))}>
             <div>
-              <p className="text-sm font-medium text-gray-900 dark:text-white">Enable SNMP</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">Enable SNMP
+              </p>
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                Allow SNMP polling and trap generation on all {scopeNoun(scope)}
+                {shown.enabled === undefined && basisRows.length > 1
+                  ? `Differs: on for ${onCount} of ${basisRows.length} devices. Click to set it for all of them.`
+                  : 'Allow SNMP polling and trap generation'}
               </p>
             </div>
             <button
               type="button"
-              onClick={() => sf({ enabled: !snmpForm.enabled })}
+              onClick={() => sf({ enabled: shown.enabled !== true })}
+              aria-label={shown.enabled === undefined ? 'SNMP differs between devices; click to turn on' : shown.enabled ? 'SNMP is on; click to turn off' : 'SNMP is off; click to turn on'}
               className={clsx(
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                snmpForm.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-slate-600'
+                shown.enabled === true ? 'bg-blue-600' : shown.enabled === false ? 'bg-gray-300 dark:bg-slate-600' : 'bg-gray-200 dark:bg-slate-700 border border-dashed border-gray-400'
               )}
             >
               <span className={clsx(
                 'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                snmpForm.enabled ? 'translate-x-6' : 'translate-x-1'
+                shown.enabled === true ? 'translate-x-6' : shown.enabled === false ? 'translate-x-1' : 'translate-x-3.5'
               )} />
             </button>
           </div>
 
           {/* Version */}
           <div>
-            <label className="label">SNMP Version</label>
-            <div className="flex rounded-lg border border-gray-300 dark:border-slate-600 overflow-hidden w-fit">
+            <label className="label">SNMP Version
+            </label>
+            <div className={clsx('flex rounded-lg border border-gray-300 dark:border-slate-600 overflow-hidden w-fit', editedRing('version'))}>
               {(['v1', 'v2c', 'v3'] as const).map(v => (
                 <button
                   key={v}
                   type="button"
+                  aria-pressed={shown.version === v}
                   onClick={() => sf({ version: v })}
                   className={clsx(
                     'px-5 py-2 text-sm font-medium transition-colors',
-                    snmpForm.version === v
+                    shown.version === v
                       ? 'bg-blue-600 text-white'
                       : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700'
                   )}
@@ -448,20 +558,22 @@ export default function NetworkServicesDiscoveryPage() {
               ))}
             </div>
             <p className="text-xs text-gray-400 dark:text-slate-500 mt-1.5">
-              {snmpForm.version === 'v1'  && 'SNMPv1 — community string, no encryption. Legacy use only.'}
-              {snmpForm.version === 'v2c' && 'SNMPv2c — community string, supports 64-bit counters. Recommended for read-only monitoring.'}
-              {snmpForm.version === 'v3'  && 'SNMPv3 — username-based with authentication and optional encryption. Most secure.'}
+              {shown.version === 'v1'  && 'SNMPv1 — community string, no encryption. Legacy use only.'}
+              {shown.version === 'v2c' && 'SNMPv2c — community string, supports 64-bit counters. Recommended for read-only monitoring.'}
+              {shown.version === 'v3'  && 'SNMPv3 — username-based with authentication and optional encryption. Most secure.'}
+              {shown.version === undefined && differs('version') && 'The chosen devices use different versions. Pick one to set it on all of them.'}
             </p>
           </div>
 
           {/* Community / Username */}
           <div>
-            <label className="label">{isV3 ? 'Username' : 'Community Name'}</label>
+            <label className="label">{isV3 ? 'Username' : 'Community Name'}
+            </label>
             <input
-              className="input max-w-xs"
-              value={snmpForm.community_name}
+              className={clsx('input max-w-xs', editedRing('community'))}
+              value={shown.community_name}
               onChange={e => sf({ community_name: e.target.value })}
-              placeholder={isV3 ? 'snmpv3user' : 'public'}
+              placeholder={differs('community_name') ? 'Differs between devices' : isV3 ? 'snmpv3user' : 'public'}
             />
           </div>
 
@@ -469,18 +581,20 @@ export default function NetworkServicesDiscoveryPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Contact</label>
-              <input className="input" value={snmpForm.contact} onChange={e => sf({ contact: e.target.value })} placeholder="{identity}@example.com" />
+              <input className={clsx('input', editedRing('contact'))} value={shown.contact} onChange={e => sf({ contact: e.target.value })} placeholder={differs('contact') ? 'Differs between devices' : '{identity}@example.com'} />
+              {templateNote('contact')}
             </div>
             <div>
               <label className="label">Location</label>
-              <input className="input" value={snmpForm.location} onChange={e => sf({ location: e.target.value })} placeholder="{site} / {location}" />
+              <input className={clsx('input', editedRing('location'))} value={shown.location} onChange={e => sf({ location: e.target.value })} placeholder={differs('location') ? 'Differs between devices' : '{site} / {location}'} />
+              {templateNote('location')}
             </div>
           </div>
           {/* Contact and location used to be written verbatim to every device,
               and blank fields erased what each device already had (#164). */}
           <p className="text-[11.5px] text-gray-500 dark:text-slate-400 -mt-1">
-            Leave a field blank to keep what each device already has. Variables are filled in per
-            device: <span className="mono">{'{identity}'}</span>, <span className="mono">{'{name}'}</span>,{' '}
+            Fields show what the chosen devices have now; only a field you change is sent, and a
+            field you clear is left as it is on each device. Variables are filled in per device: <span className="mono">{'{identity}'}</span>, <span className="mono">{'{name}'}</span>,{' '}
             <span className="mono">{'{ip}'}</span>, <span className="mono">{'{model}'}</span>,{' '}
             <span className="mono">{'{serial}'}</span>, <span className="mono">{'{site}'}</span>,{' '}
             <span className="mono">{'{location}'}</span>.
@@ -488,7 +602,8 @@ export default function NetworkServicesDiscoveryPage() {
 
           <div>
             <label className="label">Trap Destination (optional)</label>
-            <input className="input max-w-xs" value={snmpForm.trap_target} onChange={e => sf({ trap_target: e.target.value })} placeholder="192.168.1.100" />
+            <input className={clsx('input max-w-xs', editedRing('trap_target'))} value={shown.trap_target} onChange={e => sf({ trap_target: e.target.value })} placeholder={differs('trap_target') ? 'Differs between devices' : '192.168.1.100'} />
+            {templateNote('trap_target')}
           </div>
 
           {/* SNMPv3 section */}
@@ -552,6 +667,8 @@ export default function NetworkServicesDiscoveryPage() {
                   <th className="table-header px-4 py-2.5 text-left">SNMP</th>
                   <th className="table-header px-4 py-2.5 text-left">Version</th>
                   <th className="table-header px-4 py-2.5 text-left">Community / User</th>
+                  <th className="table-header px-4 py-2.5 text-left">Contact</th>
+                  <th className="table-header px-4 py-2.5 text-left">Location</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
@@ -585,6 +702,12 @@ export default function NetworkServicesDiscoveryPage() {
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400">
                       {r.community_name ?? '—'}
                     </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 max-w-[12rem] truncate" title={r.contact || ''}>
+                      {r.contact || '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 max-w-[12rem] truncate" title={r.location || ''}>
+                      {r.location || '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -594,7 +717,7 @@ export default function NetworkServicesDiscoveryPage() {
 
         {snmpApplyResult && (
           <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-            <Check className="w-4 h-4" /> Applied to {snmpApplyResult.applied} of {snmpApplyResult.total} {scopeNoun(scope)}
+            <Check className="w-4 h-4" /> Applied to {snmpApplyResult.applied} of {snmpApplyResult.total} device{snmpApplyResult.total === 1 ? '' : 's'}
           </div>
         )}
         {snmpApplyError && (
@@ -605,19 +728,69 @@ export default function NetworkServicesDiscoveryPage() {
         )}
 
         {canWrite && (
-          <div className="flex items-center gap-3 pt-1">
+          <div className="flex flex-wrap items-center gap-3 pt-1">
             <button onClick={() => { setSnmpApplyResult(null); refetchSnmp(); }} disabled={snmpFetching} className="btn-secondary flex items-center gap-1.5 text-sm">
               <RefreshCw className={clsx('w-3.5 h-3.5', snmpFetching && 'animate-spin')} /> Refresh Status
             </button>
+
+            {/* Device picker: one, several, or use Apply to all */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setPickerOpen(o => !o)}
+                disabled={snmpTargets.length === 0}
+                aria-haspopup="true"
+                aria-expanded={pickerOpen}
+                title="Choose the devices to change"
+                className="btn-secondary flex items-center gap-1.5 text-sm"
+              >
+                {pickedInScope.length === 0
+                  ? 'Choose devices'
+                  : pickedInScope.length === 1 ? pickedInScope[0].name : `${pickedInScope.length} devices`}
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {pickerOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setPickerOpen(false)} />
+                  <div className="absolute z-20 bottom-full mb-1 left-0 w-72 max-h-72 overflow-y-auto card p-2 shadow-lg">
+                    <div className="flex items-center justify-between px-1 pb-1.5 mb-1 border-b border-gray-100 dark:border-slate-700 text-xs">
+                      <button type="button" className="text-blue-600" onClick={() => setSnmpPicked(new Set(snmpTargets.map(r => r.id)))}>Select all</button>
+                      <button type="button" className="text-gray-500" onClick={() => setSnmpPicked(new Set())}>Clear</button>
+                    </div>
+                    {snmpTargets.map(r => (
+                      <label key={r.id} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-gray-50 dark:hover:bg-slate-700/50 text-sm text-gray-800 dark:text-slate-200 cursor-pointer">
+                        <input type="checkbox" checked={snmpPicked.has(r.id)} onChange={() => togglePick(r.id)} />
+                        <span className="flex-1 truncate">{r.name}</span>
+                        <KindPill kind={r.kind} />
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
             <button
-              disabled={setSnmpMutation.isPending || snmpStatuses.length === 0}
+              disabled={setSnmpMutation.isPending || pickedInScope.length === 0 || snmpChangeLines().length === 0}
               className="btn-primary flex items-center gap-1.5 text-sm"
-              onClick={() => { setSnmpApplyResult(null); setSnmpApplyError(''); setSnmpMutation.mutate(); }}
+              onClick={() => applySnmpTo(pickedInScope)}
             >
               {setSnmpMutation.isPending
                 ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Applying…</>
-                : <><Check className="w-3.5 h-3.5" /> Apply to {scope === 'all' ? 'All Routers & Switches' : scope === 'routers' ? 'All Routers' : 'All Switches'}</>}
+                : <><Check className="w-3.5 h-3.5" /> Apply to selected{pickedInScope.length ? ` (${pickedInScope.length})` : ''}</>}
             </button>
+            <button
+              disabled={setSnmpMutation.isPending || snmpTargets.length === 0 || snmpChangeLines().length === 0}
+              className="btn-secondary flex items-center gap-1.5 text-sm"
+              onClick={() => applySnmpTo(snmpTargets)}
+            >
+              Apply to all {snmpTargets.length} {scopeNoun(scope)}
+            </button>
+            {edited.size > 0 && (
+              <button type="button" onClick={resetSnmpForm} disabled={setSnmpMutation.isPending}
+                      className="text-sm text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200">
+                Reset
+              </button>
+            )}
           </div>
         )}
       </div>

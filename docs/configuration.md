@@ -85,8 +85,20 @@ These are edited in the Settings UI and take effect without a restart:
 ## TLS
 
 A self-signed certificate is generated on first run. Replace it under
-**Settings → TLS Certificate** by uploading a certificate and private key; nginx
-terminates TLS and redirects HTTP to HTTPS.
+**Settings → TLS Certificate** by uploading a certificate and private key, or regenerate the
+self-signed one; nginx terminates TLS, picks up the new certificate within a few seconds, and
+redirects HTTP to HTTPS.
+
+Before 0.24.37 both failed with "permission denied": the certificate volume was owned by
+root and the backend runs as a normal user. The nginx container now hands the volume to the
+backend user (uid 100, gid 101) at every start, which also fixes existing installs.
+
+## Updating and image versions
+
+Images are published to GHCR only after CI has passed on that commit:
+`ghcr.io/2gt-media-group-llc/mikrotik-manager-backend` and `…-nginx`. Each is tagged
+`latest`, its version (for example `0.24.37-beta`) and `sha-<commit>`. To stay on a
+version, replace `latest` with the version tag in `docker-compose.ghcr.yml`.
 
 
 ## Dark Site Mode
@@ -102,6 +114,7 @@ turned off individually. All are **on** by default.
 | Daily RouterOS update check | MikroTik's update servers, contacted **by each device** | Devices are not asked daily; the on-demand button still works |
 | RouterOS changelogs | `download.mikrotik.com` | Release notes are not shown |
 | MAC vendor database download | `standards-oui.ieee.org` | The vendor list is not refreshed; an existing copy is still used |
+| RouterOS vulnerability list | `services.nvd.nist.gov`, `www.cisa.gov` | The Security page doesn't list known CVEs for the fleet's versions |
 | Documentation link | `2gt-media-group-llc.github.io` | The top-bar documentation button is hidden |
 
 Alert channels — Slack, Discord, Telegram, ntfy, webhooks — are not listed. They send only

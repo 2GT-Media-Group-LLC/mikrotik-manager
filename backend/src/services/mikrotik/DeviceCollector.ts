@@ -50,6 +50,7 @@ import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
 import { planVlanWrite, frameTypesFor, planTaggedRemovals } from '../../utils/bridgeVlanPlan';
 import { normalizeHealth, evaluateHealth, type HealthVerdict, type HealthIssue } from '../../utils/deviceHealth';
 import { resolveChannel } from '../../utils/updateChannel';
+import { registerPollSession } from '../../utils/pollJobContext';
 
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
 const TOPOLOGY_LINK_LIMITS = {
@@ -150,13 +151,29 @@ export class DeviceCollector {
       device.api_username,
       decrypt(device.api_password_encrypted)
     );
+    // Lets the poller cancel this session if its job runs out of time.
+    registerPollSession(this);
   }
 
+  /** Set once the poller gave up on this job; see abort(). */
+  private aborted = false;
+
   async connect(): Promise<void> {
+    if (this.aborted) throw new Error('Poll cancelled: it ran past its time limit');
     await this.client.connect();
   }
 
   disconnect(): void {
+    this.client.disconnect();
+  }
+
+  /**
+   * Stop a poll that ran past its time limit (utils/pollJobContext.ts). The
+   * connection is closed, and the device is not marked online afterwards: the
+   * job already counted as failed, and a late "online" left its outage open.
+   */
+  abort(): void {
+    this.aborted = true;
     this.client.disconnect();
   }
 
@@ -181,6 +198,7 @@ export class DeviceCollector {
     if ((this.device as unknown as { has_lte?: boolean }).has_lte) {
       await this.collectLte();
     }
+    if (this.aborted) throw new Error('Poll cancelled: it ran past its time limit');
     await this.updateDeviceStatus('online');
   }
 
@@ -1460,46 +1478,64 @@ export class DeviceCollector {
     }
   }
 
+  /**
+   * Apply SNMP changes to this device, touching only the fields given.
+   *
+   * Used for fleet changes, so it must never write something the operator did
+   * not choose. Two things it used to do:
+   *   - required on/off, version and community on every call, so they were
+   *     always written;
+   *   - when no community matched the name, renamed the device's first one
+   *     (often "public", possibly a community something else relies on).
+   *     A community that doesn't exist is now added alongside the others.
+   */
   async setSnmpConfig(config: {
-    enabled: boolean; contact?: string; location?: string; trap_target?: string;
-    community_name: string; version: 'v1' | 'v2c' | 'v3';
+    enabled?: boolean; contact?: string; location?: string; trap_target?: string;
+    community_name?: string; version?: 'v1' | 'v2c' | 'v3';
     auth_protocol?: string; auth_password?: string;
     priv_protocol?: string; priv_password?: string;
   }): Promise<void> {
     // 1. Global settings
-    const globalParams: Record<string, string> = { enabled: config.enabled ? 'yes' : 'no' };
+    const globalParams: Record<string, string> = {};
+    if (typeof config.enabled === 'boolean') globalParams['enabled'] = config.enabled ? 'yes' : 'no';
     if (config.contact  !== undefined) globalParams['contact']      = config.contact;
     if (config.location !== undefined) globalParams['location']     = config.location;
     if (config.trap_target !== undefined) globalParams['trap-target'] = config.trap_target;
-    globalParams['trap-version'] = config.version === 'v1' ? '1' : config.version === 'v3' ? '3' : '2';
-    await this.client.execute('/snmp/set', globalParams);
+    if (config.version) globalParams['trap-version'] = config.version === 'v1' ? '1' : config.version === 'v3' ? '3' : '2';
+    if (Object.keys(globalParams).length) await this.client.execute('/snmp/set', globalParams);
 
-    // 2. Community security level
-    let security = 'none';
-    if (config.version === 'v3') {
-      const hasPriv = config.priv_protocol && config.priv_protocol !== 'none' && config.priv_password;
-      security = hasPriv ? 'private' : 'authorized';
-    }
+    // 2. The community (v1/v2c) or user (v3), only when one was named.
+    const name = config.community_name?.trim();
+    if (!name) return;
 
-    const communityParams: Record<string, string> = { name: config.community_name, security };
+    const communityParams: Record<string, string> = { name };
     if (config.version === 'v3') {
+      // A privacy protocol means encrypted SNMP, whether or not the password is
+      // being changed. Deciding on the password alone downgraded an existing
+      // encrypted setup to authentication-only whenever the form left it blank
+      // to keep the current one (P2-13).
+      const wantsPriv = !!config.priv_protocol && config.priv_protocol !== 'none';
+      communityParams['security'] = wantsPriv ? 'private' : 'authorized';
       if (config.auth_protocol && config.auth_protocol !== 'none') {
         communityParams['authentication-protocol'] = config.auth_protocol;
         if (config.auth_password) communityParams['authentication-password'] = config.auth_password;
       }
-      if (config.priv_protocol && config.priv_protocol !== 'none') {
-        communityParams['encryption-protocol'] = config.priv_protocol;
+      if (wantsPriv) {
+        communityParams['encryption-protocol'] = config.priv_protocol!;
         if (config.priv_password) communityParams['encryption-password'] = config.priv_password;
       }
+    } else if (config.version) {
+      communityParams['security'] = 'none';
     }
 
-    // Find existing community by name or fall back to first
-    const communities = await this.client.execute('/snmp/community/print').catch(() => [] as Record<string, string>[]);
-    const existing = (communities as Record<string, string>[]).find(c => c['name'] === config.community_name)
-      ?? (communities as Record<string, string>[])[0];
-
+    const communities = await this.client.execute('/snmp/community/print');
+    const existing = communities.find((c) => c['name'] === name);
     if (existing?.['.id']) {
-      await this.client.execute('/snmp/community/set', { '.id': existing['.id'], ...communityParams });
+      const { name: _n, ...changes } = communityParams;
+      void _n;
+      if (Object.keys(changes).length) {
+        await this.client.execute('/snmp/community/set', { '.id': existing['.id'], ...changes });
+      }
     } else {
       await this.client.execute('/snmp/community/add', communityParams);
     }

@@ -71,6 +71,7 @@ import commandRoutes from './routes/commands';
 import systemRoutes, { setPollerService as setSystemPoller } from './routes/system';
 import sitesRoutes from './routes/sites';
 import certificatesRoutes from './routes/certificates';
+import cveRoutes from './routes/cves';
 import adoptionRoutes, { setPollerService as setAdoptionPoller } from './routes/adoption';
 import { siteContext } from './middleware/site';
 import { auditMiddleware } from './middleware/auditMiddleware';
@@ -360,6 +361,7 @@ app.use('/api/sites', sitesRoutes);
 app.use('/api/ssh-keys', sshKeysRoutes);
 app.use('/api/command-templates', commandTemplatesRoutes);
 app.use('/api/certificates', certificatesRoutes);
+app.use('/api/security/cves', cveRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
 app.use(errorHandler);
@@ -472,6 +474,15 @@ async function start(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 }
+
+// A promise rejection nobody handled ends a Node process by default. One
+// missed .catch() (a database restart under a background task, say) would then
+// take down the API, every poll, and any rollout or bulk job in flight. Log it
+// loudly instead, with enough to find the missing handler.
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error('[unhandledRejection] a promise failed with no handler:', err.stack || err.message);
+});
 
 start().catch((err) => {
   console.error('Failed to start:', err);

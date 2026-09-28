@@ -69,11 +69,40 @@ The API is `GET /api/network-services/lldp` and `PUT /api/network-services/lldp`
 `{"enabled": true, "device_types": ["wireless_ap"]}`. Leave out `device_types` to target
 every type. The older `/api/routers/lldp` and `/api/switches/lldp` still work.
 
+### Applying SNMP settings
+
+The SNMP section covers every online device in the current site: routers, switches, wireless
+APs and anything else running RouterOS (it used to cover routers and switches only). Use the
+tabs to narrow the list to one type.
+
+Choose where a change goes with **Choose devices** (one or several, with Select all), then
+**Apply to selected**, or use **Apply to all**. Nothing is pushed automatically, and Apply
+asks you to confirm the exact changes and the devices they go to first.
+
+**The form shows what the chosen devices have now**, or, with none chosen, what every listed
+device has. A setting they don't all share shows as *differs* (the slider sits in the middle)
+instead of a made-up default.
+
+**Only what you change is sent.** The form remembers which fields you edited and
+highlights them; everything else is left as it is on each device, so setting a trap
+destination doesn't also rewrite each device's community or turn SNMP on or off. **Reset**
+discards your edits. A community name a device doesn't have is **added** next to its existing
+ones; nothing is renamed or removed. Before 0.24.37 the form was filled in from one device and every field was sent, so
+Apply copied that device's community, version and on/off state to the whole fleet, renaming
+each device's first community.
+
+For SNMPv3, leaving the privacy password blank keeps the current one and keeps the user
+encrypted. It used to drop the user to authentication only.
+
+The API is `GET /api/network-services/snmp` (every device type) and
+`PUT /api/network-services/snmp`, which needs `device_ids`: a list of device ids, or `"all"`
+(optionally with `device_types`). Only the settings in the body are changed, for example
+`{"device_ids": [8, 12], "trap_target": "10.0.0.5"}`. The older `/api/routers/snmp` and
+`/api/switches/snmp` still work.
+
 ### SNMP contact and location per device
 
-SNMP settings are applied when you press **Apply**, to every online switch (or router) in
-the current site. They are never pushed automatically. Contact, location and trap target can
-use variables, filled in per device:
+Contact, location and trap target can use variables, filled in per device:
 
 | Variable | Value |
 |---|---|
@@ -86,6 +115,11 @@ use variables, filled in per device:
 
 For example, contact `{identity}@example.com` or location `{site} / {location}`. An unknown
 variable is rejected before anything is written.
+
+The form remembers the last contact, location and trap destination you applied, variables
+and all, and shows them when you come back (the table shows each device's filled-in value).
+A remembered value isn't sent unless you change it or press **Send it** under the field,
+which is how you apply the same template to devices added later.
 
 A blank field keeps each device's current value. Before 0.24.26 a blank field overwrote it
 with nothing.

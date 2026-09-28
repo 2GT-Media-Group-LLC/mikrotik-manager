@@ -32,8 +32,11 @@ COPY --from=builder /app/dist ./dist
 # ownership, so the non-root process can persist backups and secrets.
 RUN mkdir -p /app/backups /app/data
 
-# Create non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Create non-root user. The IDs are pinned to what `adduser -S` has always
+# picked here (100:101), so existing volumes stay owned by this user, and so
+# the nginx container can hand the shared /certs volume to it (see
+# nginx/entrypoint.sh): the certificate upload in Settings writes there.
+RUN addgroup -S -g 101 appgroup && adduser -S -u 100 -G appgroup appuser
 RUN chown -R appuser:appgroup /app
 USER appuser
 

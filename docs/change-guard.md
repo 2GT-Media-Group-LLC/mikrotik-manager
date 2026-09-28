@@ -218,6 +218,9 @@ Findings appear on the device's Security tab and in the dashboard's *Things to h
 | `config_health_enabled` | `true` | Runs the standing audit |
 | `config_health_interval_min` | `60` | Cadence per device — one read-only snapshot over the API |
 
+Both are under **Settings → General → Config Health**. Before 0.24.37 the scheduler never
+read them, so the audit always ran hourly whatever they said.
+
 ### A note on false positives
 
 Rules are calibrated against real hardware rather than documentation alone. For example,

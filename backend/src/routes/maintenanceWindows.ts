@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite, requireAdmin } from '../middleware/auth';
+import { windowCovers } from '../utils/maintenance';
 
 const router = Router();
 router.use(requireAuth);
@@ -16,16 +17,19 @@ export interface MaintenanceWindow {
   created_at: string;
 }
 
-// Returns true if deviceId is currently in an active maintenance window
+/**
+ * Whether a device is in a maintenance window right now. An empty device list
+ * means every device, and repeating windows follow their cron in the
+ * manager's time zone (utils/maintenance.ts).
+ */
 export async function isDeviceInMaintenance(deviceId: number): Promise<boolean> {
-  const rows = await query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM maintenance_windows
-     WHERE active = true
-       AND $1 = ANY(device_ids)
-       AND NOW() BETWEEN start_at AND end_at`,
-    [deviceId]
-  ).catch(() => [{ count: '0' }]);
-  return parseInt(rows[0]?.count || '0', 10) > 0;
+  const [windows, tz] = await Promise.all([
+    query<MaintenanceWindow>(`SELECT * FROM maintenance_windows WHERE active = true`).catch(() => []),
+    query<{ value: unknown }>(`SELECT value FROM app_settings WHERE key = 'app_timezone'`).catch(() => []),
+  ]);
+  const timeZone = typeof tz[0]?.value === 'string' ? tz[0].value : 'UTC';
+  const now = new Date();
+  return windows.some((w) => windowCovers(w, deviceId, now, timeZone));
 }
 
 // GET /api/maintenance-windows
@@ -36,6 +40,17 @@ router.get('/', async (_req: Request, res: Response) => {
   res.json(rows);
 });
 
+function validateWindow(startAt: string, endAt: string, cron?: string | null): string | null {
+  const start = new Date(startAt).getTime();
+  const end = new Date(endAt).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return 'start_at and end_at must be valid dates';
+  if (end <= start) return 'The window must end after it starts';
+  if (cron && cron.trim().split(/\s+/).length !== 5) {
+    return 'recurring_cron must have five fields (minute hour day month weekday)';
+  }
+  return null;
+}
+
 // POST /api/maintenance-windows (admin)
 router.post('/', requireAdmin, async (req: Request, res: Response) => {
   const { name, device_ids, start_at, end_at, recurring_cron } = req.body as {
@@ -45,6 +60,8 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
     res.status(400).json({ error: 'name, start_at, and end_at are required' });
     return;
   }
+  const invalid = validateWindow(start_at, end_at, recurring_cron);
+  if (invalid) { res.status(400).json({ error: invalid }); return; }
   const rows = await query<MaintenanceWindow>(
     `INSERT INTO maintenance_windows (name, device_ids, start_at, end_at, recurring_cron)
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,

@@ -152,3 +152,46 @@ describe('collectSystemInfo', () => {
     expect(await collectedName(device, 'Core-Switch')).toBe(testDevice.ip_address);
   });
 });
+
+// ── setSnmpConfig: fleet changes touch only what was chosen (P1-11, P2-13) ──
+
+describe('setSnmpConfig', () => {
+  function collectorWith(communities: Record<string, string>[]) {
+    const collector = new DeviceCollector(testDevice);
+    const calls: { cmd: string; params: Record<string, string> }[] = [];
+    (collector as unknown as { client: { execute: jest.Mock } }).client = {
+      execute: jest.fn(async (cmd: string, params: Record<string, string> = {}) => {
+        calls.push({ cmd, params });
+        return cmd === '/snmp/community/print' ? communities : [];
+      }),
+    };
+    return { collector, calls };
+  }
+
+  it('writes only the fields given', async () => {
+    const { collector, calls } = collectorWith([{ '.id': '*1', name: 'public' }]);
+    await collector.setSnmpConfig({ trap_target: '10.0.0.5' });
+    expect(calls).toEqual([{ cmd: '/snmp/set', params: { 'trap-target': '10.0.0.5' } }]);
+  });
+
+  it('adds a community that does not exist instead of renaming the first one', async () => {
+    const { collector, calls } = collectorWith([{ '.id': '*1', name: 'public' }]);
+    await collector.setSnmpConfig({ community_name: 'monitoring', version: 'v2c' });
+    expect(calls.some((c) => c.cmd === '/snmp/community/set')).toBe(false);
+    expect(calls).toContainEqual({ cmd: '/snmp/community/add', params: { name: 'monitoring', security: 'none' } });
+  });
+
+  it('keeps an encrypted SNMPv3 user encrypted when the privacy password is left blank', async () => {
+    const { collector, calls } = collectorWith([{ '.id': '*2', name: 'nms' }]);
+    await collector.setSnmpConfig({ community_name: 'nms', version: 'v3', auth_protocol: 'SHA1', priv_protocol: 'AES' });
+    const set = calls.find((c) => c.cmd === '/snmp/community/set');
+    expect(set?.params.security).toBe('private');
+    expect(set?.params['encryption-password']).toBeUndefined();
+  });
+
+  it('never switches SNMP on or off unless asked', async () => {
+    const { collector, calls } = collectorWith([]);
+    await collector.setSnmpConfig({ contact: 'noc@example.com' });
+    expect(calls[0].params.enabled).toBeUndefined();
+  });
+});

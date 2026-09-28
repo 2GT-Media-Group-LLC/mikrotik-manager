@@ -21,7 +21,8 @@ if printf '%s' "$CMD" | grep -q -- '--dry-run'; then
   exit 0
 fi
 
-REPO="/Users/rteslow/mikrotik-manager"
+# The repository this script lives in, wherever it is checked out.
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -x "$REPO/scripts/ci-preflight.sh" ]] || exit 0   # nothing to enforce
 
 if OUTPUT="$("$REPO/scripts/ci-preflight.sh" 2>&1)"; then

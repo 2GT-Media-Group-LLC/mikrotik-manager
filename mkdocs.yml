@@ -66,6 +66,7 @@ nav:
       - Topology: topology.md
       - Traffic analytics: traffic.md
       - Change Guard and Config Health: change-guard.md
+      - Security page: security.md
       - Polling and scaling: scaling.md
       - Alerting: alerting.md
       - SSH keys: ssh-keys.md

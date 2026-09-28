@@ -15,6 +15,8 @@ import { certExpiryState, needsAttention, describeCert } from '../utils/certExpi
 import { offlineAction, recoveryAlert, describeDuration } from '../utils/intermittent';
 import { runHealthCheck } from './healthCheck';
 import { gateTtlSeconds } from '../utils/schedulerGate';
+import { runPollJob, pollJobAborted } from '../utils/pollJobContext';
+import { refreshCveFeed } from './cveFeed';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -62,13 +64,20 @@ const POLL_INTERVAL_MS = Math.max(10_000, Number(process.env.POLLER_INTERVAL_MS 
  */
 const JOB_TIMEOUT_MS = Math.max(5_000, Number(process.env.POLLER_JOB_TIMEOUT_MS || 45_000));
 
-/** Fails the job rather than letting it occupy a worker indefinitely. */
-function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+/**
+ * Fails the job rather than letting it occupy a worker indefinitely, and
+ * cancels its device sessions when it does (onTimeout). Without that the work
+ * carried on after the job had already been counted as failed.
+ */
+function withTimeout<T>(work: Promise<T>, ms: number, label: string, onTimeout?: () => void): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
     work.finally(() => clearTimeout(timer)),
     new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms`)), ms);
+      timer = setTimeout(() => {
+        try { onTimeout?.(); } catch { /* cancelling is best effort */ }
+        reject(new Error(`${label} exceeded ${ms}ms`));
+      }, ms);
     }),
   ]);
 }
@@ -401,6 +410,16 @@ export class PollerService {
         );
       }
 
+      // RouterOS vulnerability list (#175) — once a day, unless Dark Site Mode
+      // turned it off. One request to NVD and one to CISA for the whole fleet.
+      const cveKey = 'task:cve_feed';
+      const lastCve = await this.getTimestamp(cveKey);
+      if (appSettings['cve_feed_enabled'] !== false && now - lastCve > 86_400_000) {
+        await this.setTimestamp(cveKey, now, 86_400_000);
+        refreshCveFeed().catch((e) =>
+          console.warn('[Poller] RouterOS vulnerability list not refreshed:', (e as Error).message));
+      }
+
       // NetFlow data retention — runs once per day. Purges old client_traffic
       // points from InfluxDB and old daily rollups from Postgres.
       const netflowPruneKey = 'task:netflow_retention';
@@ -457,18 +476,11 @@ export class PollerService {
 
   private async getAppSettings(): Promise<Record<string, unknown>> {
     try {
+      // Every setting, not a list of keys. A list drifted: Config Health's
+      // on/off switch and interval were read here but never selected, so
+      // turning it off did nothing and it always ran hourly.
       const rows = await query<{ key: string; value: unknown }>(
-        `SELECT key, value FROM app_settings
-         WHERE key IN ('mac_scan_enabled', 'mac_scan_interval', 'reverse_dns_enabled',
-                       'retention_clients_days', 'retention_events_days',
-                       'device_update_check_enabled',
-                       'poll_clients_enabled', 'poll_neighbors_enabled',
-                       'poll_logs_enabled', 'poll_certificates_enabled',
-                       'spectral_scan_enabled',
-                       'spectral_scan_interval_hours', 'ap_scan_enabled',
-                       'ap_scan_interval_hours', 'backup_schedule_enabled',
-                       'backup_schedule_cron', 'config_snapshot_enabled',
-                       'config_snapshot_interval_min', 'app_timezone')`
+        `SELECT key, value FROM app_settings`
       );
       const map: Record<string, unknown> = {};
       for (const row of rows) map[row.key] = row.value;
@@ -868,7 +880,11 @@ export class PollerService {
       async (job: Job<PollJob>) => {
         const started = Date.now();
         try {
-          await withTimeout(fn(job.data), JOB_TIMEOUT_MS, `${kind} poll`);
+          const { promise, abortJob } = runPollJob(() => fn(job.data));
+          // A cancelled job's own rejection arrives after the timeout's; it has
+          // nowhere to go, so it is handled here rather than left unhandled.
+          promise.catch(() => {});
+          await withTimeout(promise, JOB_TIMEOUT_MS, `${kind} poll`, abortJob);
           await this.recordPollOutcome(job.data.deviceId, kind, Date.now() - started, null);
         } catch (err) {
           await this.recordPollOutcome(job.data.deviceId, kind, Date.now() - started, (err as Error).message);
@@ -890,9 +906,13 @@ export class PollerService {
       { ...workerOptions, connection: createRedisConnection() }
     );
 
+    // The one place a failed fast poll is handled (the job itself only throws).
+    // Caught: this is an event listener, and a rejection here (the database
+    // restarting, say) used to be unhandled, which ends a Node process.
     this.fastWorker.on('failed', (job, err) => {
       if (job) {
-        this.handleDeviceFailure(job.data.deviceId, err.message);
+        this.handleDeviceFailure(job.data.deviceId, err.message).catch((e) =>
+          console.error(`[Poller] Could not record device ${job.data.deviceId} as failed:`, (e as Error).message));
       }
     });
   }
@@ -919,6 +939,18 @@ export class PollerService {
         await collector.collectFast();
       }
 
+      // Any open outage ends with a successful poll, whatever the status said
+      // before it. Keyed on the pre-poll status, an outage opened while this
+      // poll was running (a timeout) was never closed, and the device's uptime
+      // kept falling while it was up.
+      query(
+        `UPDATE device_availability
+         SET came_back_online_at = NOW(),
+             duration_seconds = EXTRACT(EPOCH FROM (NOW() - went_offline_at))::INTEGER
+         WHERE device_id = $1 AND came_back_online_at IS NULL`,
+        [device.id]
+      ).catch(() => {});
+
       // Device came online (first poll after add, or recovery from offline)
       if (prevStatus !== 'online') {
         // Intermittent devices (#168) only announce recovery if their
@@ -933,24 +965,13 @@ export class PollerService {
         if (d.intermittent_alerted_at) {
           query(`UPDATE devices SET intermittent_alerted_at = NULL WHERE id = $1`, [device.id]).catch(() => {});
         }
-        // Close the open outage row if one exists
-        if (prevStatus === 'offline') {
-          query(
-            `UPDATE device_availability
-             SET came_back_online_at = NOW(),
-                 duration_seconds = EXTRACT(EPOCH FROM (NOW() - went_offline_at))::INTEGER
-             WHERE device_id = $1 AND came_back_online_at IS NULL`,
-            [device.id]
-          ).catch(() => {});
-        }
       }
 
       this.io?.emit('device:updated', { deviceId: device.id });
       this.io?.emit('clients:updated', { deviceId: device.id });
-    } catch (err) {
-      await this.handleDeviceFailure(device.id, (err as Error).message);
-      throw err;
     } finally {
+      // A failure is recorded by the worker's 'failed' listener, which also
+      // sees timeouts. Recording it here as well counted every failure twice.
       collector.disconnect();
     }
   }
@@ -1251,6 +1272,10 @@ export class PollerService {
         ).catch(() => {});
       }
     } catch (err) {
+      // A slow poll that ran out of time was cancelled, which says nothing
+      // about whether the device is up; the fast poll decides that. Marking it
+      // offline here would raise a false outage on every large, slow device.
+      if (pollJobAborted()) return;
       await this.handleDeviceFailure(device.id, (err as Error).message);
     } finally {
       collector.disconnect();
@@ -1305,6 +1330,14 @@ export class PollerService {
   }
 
   private async handleDeviceFailure(deviceId: number, message: string): Promise<void> {
+    try {
+      await this.recordDeviceFailure(deviceId, message);
+    } catch (err) {
+      console.error(`[Poller] Failed to record device ${deviceId} as offline:`, (err as Error).message);
+    }
+  }
+
+  private async recordDeviceFailure(deviceId: number, message: string): Promise<void> {
     const device = await this.getDevice(deviceId);
     const prevStatus = device?.status;
     await query(`UPDATE devices SET status = 'offline', updated_at = NOW() WHERE id = $1`, [deviceId]);

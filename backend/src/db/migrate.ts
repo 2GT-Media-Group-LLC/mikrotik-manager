@@ -1108,6 +1108,22 @@ UPDATE device_configs SET contains_secrets = TRUE WHERE contains_secrets IS NULL
 -- first login before anything else works.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- RouterOS vulnerabilities (#175): from NIST's NVD, refreshed daily, with the
+-- ones CISA lists as actively exploited marked. Replaced as a whole on refresh.
+CREATE TABLE IF NOT EXISTS ros_cves (
+  cve_id            VARCHAR(32) PRIMARY KEY,
+  published         TIMESTAMPTZ,
+  last_modified     TIMESTAMPTZ,
+  summary           TEXT NOT NULL DEFAULT '',
+  score             NUMERIC(3,1),
+  severity          VARCHAR(16),
+  cvss_version      VARCHAR(8),
+  ranges            JSONB NOT NULL DEFAULT '[]',
+  unranged          BOOLEAN NOT NULL DEFAULT FALSE,
+  hardware_specific BOOLEAN NOT NULL DEFAULT FALSE,
+  known_exploited   BOOLEAN NOT NULL DEFAULT FALSE
+);
+
 -- API tokens are recorded as "token:<name>" with names up to 100 characters;
 -- at 50 the insert failed and the write went unrecorded.
 ALTER TABLE audit_log ALTER COLUMN username TYPE VARCHAR(150);

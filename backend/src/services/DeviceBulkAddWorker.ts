@@ -3,6 +3,7 @@ import { createRedisConnection } from '../config/redis';
 import { redis } from '../config/redis';
 import { createDeviceFromBody, type CreateDeviceInput } from './deviceCreation';
 import type { PollerService } from './PollerService';
+import { sealItems, openItem } from '../utils/bulkAddSecrets';
 
 const QUEUE_NAME = 'bulk-add-devices';
 const JOB_TTL_SEC = 86400;
@@ -88,7 +89,7 @@ async function processJob(job: Job<BulkJobPayload>): Promise<void> {
       return;
     }
 
-    const item = items[i];
+    const item = openItem(items[i]);
     const identity = item.name || item.ip_address || '';
     await writeMeta(jobId, {
       processed: i,
@@ -145,9 +146,11 @@ export async function enqueueBulkAddJob(
   if (!queue) {
     queue = new Queue(QUEUE_NAME, { connection: createRedisConnection() });
   }
-  await queue.add('run', { jobId, items, siteId, requestingUserRole } satisfies BulkJobPayload, {
+  // Passwords are encrypted before they reach Redis, and a finished job is
+  // removed at once: progress and results live in their own keys.
+  await queue.add('run', { jobId, items: sealItems(items), siteId, requestingUserRole } satisfies BulkJobPayload, {
     attempts: 1,
-    removeOnComplete: { age: 3600, count: 100 },
+    removeOnComplete: true,
     removeOnFail: { age: 86400 },
   });
 }

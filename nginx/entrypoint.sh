@@ -21,6 +21,18 @@ if [ ! -f "$CERT" ] || [ ! -f "$KEY" ]; then
     echo "[entrypoint] Self-signed certificate generated (valid 10 years)."
 fi
 
+# The backend (a non-root user, uid 100 / gid 101 in backend/Dockerfile)
+# replaces these files when a certificate is uploaded or regenerated in
+# Settings. Left owned by root, as this script creates them, that failed with
+# "permission denied". nginx itself runs as root here and reads them either way.
+# The key stays readable by its owner only.
+BACKEND_UID="${CERTS_OWNER_UID:-100}"
+BACKEND_GID="${CERTS_OWNER_GID:-101}"
+chown -R "$BACKEND_UID:$BACKEND_GID" /certs 2>/dev/null || echo "[entrypoint] warning: could not hand /certs to the backend user"
+chmod 700 /certs
+chmod 600 "$KEY"
+chmod 644 "$CERT"
+
 # Background watcher: reload nginx when backend writes a .reload signal file
 (while true; do
     if [ -f "$RELOAD_SIGNAL" ]; then

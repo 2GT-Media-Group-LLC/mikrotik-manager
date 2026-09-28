@@ -151,9 +151,17 @@ Send-now is available for an immediate copy.
 
 ## Maintenance windows
 
-Schedule planned downtime per device, or across a group, so alerts are suppressed
-automatically rather than being muted globally and forgotten.
+Schedule planned downtime so alerts are held back automatically, rather than being muted
+globally and forgotten. Managed under **Settings → Maintenance**.
 
-- One-time or recurring (cron-based)
-- Active windows can be deactivated early
-- Managed under **Settings → Maintenance**
+- **Devices:** all devices, or the ones you tick. A window with no devices ticked covers
+  every device.
+- **Repeat:** just once, every day, or every week on the same day. A repeating window starts
+  on the date you give and lasts as long as the first occurrence (end minus start); the time
+  of day follows the manager's time zone (**Settings → General**).
+- Windows can be disabled early and deleted.
+
+Through the API a window can repeat on any cron expression (`recurring_cron`, five fields).
+
+Before 0.24.37, windows made in the UI suppressed nothing: the form saved an empty device
+list, which matched no device, and repeating windows only ever worked once.

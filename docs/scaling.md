@@ -59,13 +59,21 @@ All of these are environment variables and need a container restart.
 |---|---|---|
 | `POLLER_CONCURRENCY` | 12 | Workers per queue. The first lever when headroom is low |
 | `POLLER_INTERVAL_MS` | 30000 | Scheduler tick. Lengthening reduces demand |
-| `POLLER_JOB_TIMEOUT_MS` | 45000 | Ceiling on one poll, so a dead device cannot hold a worker |
+| `POLLER_JOB_TIMEOUT_MS` | 45000 | Ceiling on one poll, so a dead device cannot hold a worker. A poll that runs past it is cancelled and its connection closed |
 | `POLLER_JOB_RETENTION_SEC` | 3600 | How long finished jobs are kept |
 | `POLLER_JOB_RETENTION_COUNT` | 5000 | How many finished jobs are kept |
 | `REDIS_MAXMEMORY` | 512mb | Ceiling on Redis |
 
 Raise concurrency first. Lengthen the interval second — it reduces freshness, which is the
 thing you are paying for.
+
+**When a poll hits the time limit.** A fast poll that runs out of time counts as a failed
+poll (the device goes offline if it keeps happening). A slow poll that runs out of time is
+simply cancelled; it says nothing about whether the device is up, so it never marks the
+device offline. Any open outage is closed by the next successful poll. Before 0.24.37 a poll
+that hit the limit kept running after it had been counted as failed, and when it finished it
+marked the device online without closing the outage it had opened, so the device's uptime
+kept falling while it was up.
 
 ## Reducing the work itself
 
