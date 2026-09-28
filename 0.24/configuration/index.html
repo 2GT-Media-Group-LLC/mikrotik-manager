@@ -374,6 +374,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#first-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      First login
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#secret-management-self-healing" class="md-nav__link">
     <span class="md-ellipsis">
       Secret management (self-healing)
@@ -1093,6 +1102,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#first-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      First login
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#secret-management-self-healing" class="md-nav__link">
     <span class="md-ellipsis">
       Secret management (self-healing)
@@ -1240,6 +1258,12 @@
 </blockquote>
 <p>For a production deployment the only variable you genuinely must set is <code>CORS_ORIGIN</code>.
 Both secrets generate themselves safely — see below.</p>
+<h2 id="first-login">First login<a class="headerlink" href="#first-login" title="Permanent link">&para;</a></h2>
+<p>A new install has one account, <strong>admin</strong> with the password <strong>admin</strong>. Signing in with it
+goes straight to a page that asks for a new password (at least 10 characters, with a
+letter and a number); nothing else works until it is set. The login page shows the
+default credentials only until then. An existing install still using admin/admin gets
+the same prompt at its next login.</p>
 <h2 id="secret-management-self-healing">Secret management (self-healing)<a class="headerlink" href="#secret-management-self-healing" title="Permanent link">&para;</a></h2>
 <p><code>JWT_SECRET</code> and <code>ENCRYPTION_KEY</code> are managed automatically so that a fresh install is
 secure by default and an upgrade never strands existing data.</p>

@@ -1239,6 +1239,10 @@ or 2FA changes.</p>
 <td>Analyse a change <strong>without applying it</strong></td>
 </tr>
 <tr>
+<td><code>POST /api/devices/:id/change-guard/check</code></td>
+<td>Can this device arm auto-revert right now? (<code>ready</code>, <code>reason</code>)</td>
+</tr>
+<tr>
 <td><code>POST /api/devices/:id/change-guard/probe</code></td>
 <td>Report which safety mechanisms the device supports</td>
 </tr>
@@ -1289,9 +1293,17 @@ curl<span class="w"> </span>-sk<span class="w"> </span>-X<span class="w"> </span
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer mtm_…"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"pvid":99,"tagged_vlans":[],"untagged_vlans":[99],"confirm_lockout":true}'</span>
 </code></pre></div>
-<p>A successful guarded change returns a <code>guard</code> block describing what happened —
-<code>confirmed</code>, <code>auto_reverting</code>, or an <code>unprotected_reason</code> when the safety net could not be
-armed. Check it rather than relying on the HTTP status alone.</p>
+<p>A confirmed override requires auto-revert. If the device can't arm it, the request fails
+with <strong>422</strong> and <code>code: "guard_required"</code>, and nothing is applied. The same applies when
+the prediction flagged a warning or couldn't read the device.</p>
+<p>A successful guarded change returns a <code>guard</code> block describing what happened:
+<code>confirmed</code>, <code>auto_reverting</code>, an <code>unprotected_reason</code> when a routine change ran without
+the safety net, or <code>revert_may_fire_at</code> when the change was kept but its revert couldn't be
+confirmed removed. Check it rather than relying on the HTTP status alone.</p>
+<p>Restores (<code>POST /api/backups/:id/restore</code>, and Config History rollback) return a <code>status</code>
+of <code>applied</code>, <code>reverting</code>, <code>nothing_applied</code> or <code>partial</code>, with a <code>message</code>. The last two
+come with HTTP 422, plus <code>failedLine</code> and <code>error</code> saying where RouterOS stopped. See
+<a href="../backups/#restoring">Backups → Restoring</a>.</p>
 <h2 id="webhooks">Webhooks<a class="headerlink" href="#webhooks" title="Permanent link">&para;</a></h2>
 <p>For push rather than poll, see <a href="../alerting/#outbound-webhooks">Alerting → outbound webhooks</a>.
 Deliveries are HMAC-SHA256 signed and respect alert rules, cooldowns and maintenance

@@ -1279,6 +1279,10 @@ error it guards against.</p>
 <h2 id="change-guard">Change Guard<a class="headerlink" href="#change-guard" title="Permanent link">&para;</a></h2>
 <p>Each device is wrapped by <a href="../change-guard/">Change Guard</a> by default, so one that stops
 answering after the command restores itself.</p>
+<p>With Change Guard on, a device that can't arm it (for example, its API user isn't allowed
+to save a backup) is marked <strong>failed</strong> rather than run without protection, and that counts
+toward halt-on-failure. A device where the revert couldn't be confirmed removed is marked
+successful, with a note giving the time it may still revert.</p>
 <p>It is <strong>one click to turn off</strong>. You may know exactly why you are running something that
 will drop a device, and a tool that refuses to cut is not a sharp tool.</p>
 <p>The one combination that asks for explicit acknowledgement is a command that can sever
