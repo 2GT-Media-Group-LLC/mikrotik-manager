@@ -1246,7 +1246,8 @@ secure by default and an upgrade never strands existing data.</p>
 <ul>
 <li><strong>Set to a strong value in the environment</strong> — that value is used, and you stay in
   control.</li>
-<li><strong>Unset, or left at an old default</strong> — the backend generates a strong secret once,
+<li><strong>Unset, or left at a value from an example file</strong> (for <code>JWT_SECRET</code>, anything
+  starting <code>changeme</code>) — the backend generates a strong secret once,
   persists it to the <code>app_data</code> volume (<code>SECRETS_DIR</code>, default <code>/app/data</code>), and reuses
   it on every boot.</li>
 </ul>
@@ -1259,13 +1260,17 @@ sweep. Nothing needs to be re-entered.</p>
 <p>Rotating the JWT secret off a public default invalidates sessions signed with it. Users
 simply log in again once.</p>
 <h3 id="key-rotation">Key rotation<a class="headerlink" href="#key-rotation" title="Permanent link">&para;</a></h3>
-<p>Set a new <code>ENCRYPTION_KEY</code> (or delete the persisted secret to force regeneration) and
-restart. Old rows keep decrypting through the fallback and are re-encrypted forward
-automatically.</p>
-<blockquote>
-<p><strong>If the persisted secret and every prior key are lost</strong>, ciphertext encrypted under
-that key cannot be recovered. Re-enter device credentials, or restore from a backup.</p>
-</blockquote>
+<p>Don't rotate <code>ENCRYPTION_KEY</code> for now, and <strong>never delete <code>secrets.json</code></strong> from the
+<code>app_data</code> volume. The old key is kept for decryption only when the backend generated
+it itself. Replacing a key you set in <code>.env</code>, or deleting the file, throws the old key
+away, and every stored device password, SSH key and encrypted backup stops decrypting.
+A safe rotation procedure is being worked on.</p>
+<div class="admonition warning">
+<p class="admonition-title">Back up the key with the database</p>
+<p>Keep a copy of the <code>app_data</code> volume (or your own <code>ENCRYPTION_KEY</code>) wherever you keep
+database backups, and store it separately from them. A database dump without the key
+can't decrypt the credentials inside it.</p>
+</div>
 <h2 id="settings-stored-in-the-database">Settings stored in the database<a class="headerlink" href="#settings-stored-in-the-database" title="Permanent link">&para;</a></h2>
 <p>These are edited in the Settings UI and take effect without a restart:</p>
 <table>

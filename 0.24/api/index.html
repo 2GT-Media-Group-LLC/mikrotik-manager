@@ -890,6 +890,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Scoped API tokens">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-read-only-access-can-see" class="md-nav__link">
+    <span class="md-ellipsis">
+      What read-only access can see
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1081,6 +1096,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Scoped API tokens">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-read-only-access-can-see" class="md-nav__link">
+    <span class="md-ellipsis">
+      What read-only access can see
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1168,11 +1198,19 @@ does is available to a script.</p>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer mtm_your_token_here"</span>
 </code></pre></div>
 <p>A token with <code>read</code> scope is rejected on any mutating request, so a monitoring integration
-cannot change your network even if the token leaks.</p>
+cannot change your network even if the token leaks. It is also refused on requests that make
+a device do something, such as a firmware check or a wireless scan, and it gets device secrets
+masked (see below).</p>
+<h3 id="what-read-only-access-can-see">What read-only access can see<a class="headerlink" href="#what-read-only-access-can-see" title="Permanent link">&para;</a></h3>
+<p>Viewers and <code>read</code> tokens see configuration, but not the secrets inside it. Wi-Fi keys,
+WireGuard private keys, SNMP communities and hotspot user passwords come back as
+<code>••••••••</code>, as do Slack and Discord webhook URLs for everyone. Operators and admins get the
+real values, because the edit forms need them.</p>
 <h2 id="session-authentication">Session authentication<a class="headerlink" href="#session-authentication" title="Permanent link">&para;</a></h2>
 <p>The UI authenticates with a JWT obtained from <code>/api/auth/login</code>, optionally followed by
 <code>/api/auth/totp/verify</code> when two-factor is enabled. Tokens are bearer credentials and are
-sent in the same <code>Authorization</code> header.</p>
+sent in the same <code>Authorization</code> header. The short-lived token <code>/login</code> returns while waiting
+for the two-factor code only works for <code>/api/auth/totp/verify</code>; it isn't a session.</p>
 <p>For scripting, prefer an API token — it is scoped, revocable, and unaffected by password
 or 2FA changes.</p>
 <h2 id="endpoints-worth-knowing">Endpoints worth knowing<a class="headerlink" href="#endpoints-worth-knowing" title="Permanent link">&para;</a></h2>
