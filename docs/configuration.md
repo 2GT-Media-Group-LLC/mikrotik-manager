@@ -31,7 +31,8 @@ secure by default and an upgrade never strands existing data.
 
 - **Set to a strong value in the environment** — that value is used, and you stay in
   control.
-- **Unset, or left at an old default** — the backend generates a strong secret once,
+- **Unset, or left at a value from an example file** (for `JWT_SECRET`, anything
+  starting `changeme`) — the backend generates a strong secret once,
   persists it to the `app_data` volume (`SECRETS_DIR`, default `/app/data`), and reuses
   it on every boot.
 
@@ -49,12 +50,16 @@ simply log in again once.
 
 ### Key rotation
 
-Set a new `ENCRYPTION_KEY` (or delete the persisted secret to force regeneration) and
-restart. Old rows keep decrypting through the fallback and are re-encrypted forward
-automatically.
+Don't rotate `ENCRYPTION_KEY` for now, and **never delete `secrets.json`** from the
+`app_data` volume. The old key is kept for decryption only when the backend generated
+it itself. Replacing a key you set in `.env`, or deleting the file, throws the old key
+away, and every stored device password, SSH key and encrypted backup stops decrypting.
+A safe rotation procedure is being worked on.
 
-> **If the persisted secret and every prior key are lost**, ciphertext encrypted under
-> that key cannot be recovered. Re-enter device credentials, or restore from a backup.
+!!! warning "Back up the key with the database"
+    Keep a copy of the `app_data` volume (or your own `ENCRYPTION_KEY`) wherever you keep
+    database backups, and store it separately from them. A database dump without the key
+    can't decrypt the credentials inside it.
 
 ## Settings stored in the database
 

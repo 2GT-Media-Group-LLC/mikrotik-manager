@@ -13,21 +13,31 @@ export function rosList(val: string | undefined): string[] {
   return val.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-/** Every VLAN ID a `vlan-ids` spec covers, in the order RouterOS lists them. */
+/** The valid 802.1Q range; RouterOS accepts nothing outside it. */
+export const MIN_VLAN_ID = 1;
+export const MAX_VLAN_ID = 4094;
+
+/**
+ * Every VLAN ID a `vlan-ids` spec covers, in the order RouterOS lists them.
+ *
+ * Ranges are clamped to 1-4094. The spec comes from the device, and without a
+ * bound a single row reading `1-4000000000` expanded to billions of entries on
+ * every poll and exhausted the manager's memory.
+ */
 export function expandVlanIds(spec: string | undefined): number[] {
   const out: number[] = [];
   for (const part of rosList(spec)) {
     const range = part.match(/^(\d+)\s*-\s*(\d+)$/);
     if (range) {
-      const from = parseInt(range[1], 10);
-      const to = parseInt(range[2], 10);
+      const from = Math.max(parseInt(range[1], 10), MIN_VLAN_ID);
+      const to = Math.min(parseInt(range[2], 10), MAX_VLAN_ID);
       if (!isNaN(from) && !isNaN(to) && to >= from) {
         for (let v = from; v <= to; v++) out.push(v);
       }
       continue;
     }
     const n = parseInt(part, 10);
-    if (!isNaN(n)) out.push(n);
+    if (!isNaN(n) && n >= MIN_VLAN_ID && n <= MAX_VLAN_ID) out.push(n);
   }
   return out;
 }

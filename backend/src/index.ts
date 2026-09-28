@@ -87,6 +87,12 @@ function provisionSecrets(): void {
   } else {
     console.log(`[secrets] ${sourceLine}`);
   }
+  if (info.envJwtIgnored) {
+    console.warn(
+      '[secrets] JWT_SECRET in the environment is a placeholder or shorter than 32 characters, ' +
+      'so it is ignored and a generated secret is used instead. Remove it from .env or set a long random value.'
+    );
+  }
   if (info.ephemeral) {
     console.error(
       '[secrets] WARNING: generated secrets could not be persisted (SECRETS_DIR not writable). ' +

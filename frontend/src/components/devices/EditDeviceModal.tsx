@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network, RotateCcw } from 'lucide-react';
 import { devicesApi } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
 import { isValidDeviceAddress, classifyAddress, splitAddressAndPort } from '../../utils/deviceAddress';
 import type { Device, DeviceType, IpAddress } from '../../types';
@@ -81,6 +82,10 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   };
 
   const addressTrimmed = form.ip_address.trim();
+  // The server only sends the saved password to the address it was saved for;
+  // anyone but an admin moving a device has to type it again.
+  const isAdmin = useAuthStore((st) => st.user?.role === 'admin');
+  const passwordNeededForMove = !isAdmin && addressTrimmed !== '' && addressTrimmed !== device.ip_address && !form.api_password;
   const addressInvalid = addressTrimmed.length > 0 && !isValidDeviceAddress(addressTrimmed);
   const showPlaintextWarning =
     addressTrimmed.length > 0 && !addressInvalid &&
@@ -315,7 +320,11 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                 />
               </div>
               <div className="col-span-2">
-                <label className="label">New Password (leave blank to keep existing)</label>
+                <label className="label">
+                  {passwordNeededForMove
+                    ? 'Password (needed to change the address)'
+                    : 'New Password (leave blank to keep existing)'}
+                </label>
                 <input
                   className="input"
                   type="password"

@@ -10,6 +10,18 @@ import { EventEmitter } from 'events';
  */
 export const REPEATED_ATTRIBUTES_KEY = '.repeated';
 
+/**
+ * Ceilings on what a device may send. A reply is data from the device, and a
+ * compromised or broken device (or anyone on the path of a plaintext session)
+ * controls it. Without limits, one crafted length header could grow the buffer
+ * until the process ran out of memory. Real replies are far below these.
+ */
+const MAX_WORD_BYTES = 8 * 1024 * 1024;
+const MAX_BUFFER_BYTES = 32 * 1024 * 1024;
+
+/** The device sent something the API protocol does not allow. */
+class ProtocolError extends Error {}
+
 
 export interface RouterOSSentence {
   type: string;
@@ -103,8 +115,27 @@ export class RouterOSClient extends EventEmitter {
       }
 
       this.socket.on('data', (data: Buffer) => {
-        this.buffer = Buffer.concat([this.buffer, data]);
-        this.processBuffer();
+        // Nothing thrown here may escape: this runs from the socket's event
+        // emitter, where an exception is uncaught and ends the whole process.
+        // A bad reply costs this one connection, never the manager.
+        try {
+          this.buffer = Buffer.concat([this.buffer, data]);
+          if (this.buffer.length > MAX_BUFFER_BYTES) {
+            throw new ProtocolError(`reply exceeded ${MAX_BUFFER_BYTES} bytes`);
+          }
+          this.processBuffer();
+        } catch (err) {
+          const reason = `Protocol error from device: ${(err as Error).message}`;
+          const pending = this.pendingRead;
+          this.pendingRead = null;
+          if (pending) {
+            clearTimeout(pending.timeout);
+            pending.reject(new RouterOSError(reason));
+          }
+          clearTimeout(timer);
+          this.poison(reason);
+          reject(new RouterOSError(reason));
+        }
       });
 
       this.socket.on('error', (err) => {
@@ -316,22 +347,28 @@ export class RouterOSClient extends EventEmitter {
       if (offset + 3 >= buf.length) return null;
       return {
         length:
-          ((b & 0x0f) << 24) |
+          (((b & 0x0f) << 24) |
           (buf[offset + 1] << 16) |
           (buf[offset + 2] << 8) |
-          buf[offset + 3],
+          buf[offset + 3]) >>> 0,
         bytesConsumed: 4,
       };
-    } else {
+    } else if (b === 0xf0) {
       if (offset + 4 >= buf.length) return null;
+      // `>>> 0` keeps this unsigned. JavaScript's `<<` works on signed 32-bit
+      // integers, so a top byte of 0x80 or more used to decode as a negative
+      // length, which slipped past the bounds check and spun the parser.
       return {
         length:
-          (buf[offset + 1] << 24) |
+          ((buf[offset + 1] << 24) |
           (buf[offset + 2] << 16) |
           (buf[offset + 3] << 8) |
-          buf[offset + 4],
+          buf[offset + 4]) >>> 0,
         bytesConsumed: 5,
       };
+    } else {
+      // 0xF1-0xFF are reserved control bytes, never a length.
+      throw new ProtocolError(`reserved control byte 0x${b.toString(16)}`);
     }
   }
 
@@ -387,6 +424,9 @@ export class RouterOSClient extends EventEmitter {
       if (!dec) return null; // need more bytes
 
       const { length, bytesConsumed } = dec;
+      if (length > MAX_WORD_BYTES) {
+        throw new ProtocolError(`word of ${length} bytes exceeds the ${MAX_WORD_BYTES}-byte limit`);
+      }
 
       if (length === 0) {
         // End of sentence — consume it
@@ -395,7 +435,10 @@ export class RouterOSClient extends EventEmitter {
         if (words.length === 0) return null;
 
         const type = words[0];
-        const parsed: Record<string, string> = {};
+        // No prototype: attribute names come from the device, and on a plain
+        // object a name like `constructor` or `__proto__` hits Object.prototype
+        // instead of being stored as data (`'constructor' in {}` is true).
+        const parsed: Record<string, string> = Object.create(null);
         let tag: string | undefined;
         // A sentence may carry the same attribute more than once — an LTE modem
         // reports one `ca-band` per aggregated carrier — and a flat object can
@@ -410,8 +453,8 @@ export class RouterOSClient extends EventEmitter {
             if (eq > 0) {
               const key = w.slice(1, eq);
               const value = w.slice(eq + 1);
-              if (key in parsed) {
-                repeated ??= {};
+              if (Object.hasOwn(parsed, key)) {
+                repeated ??= Object.create(null) as Record<string, string[]>;
                 repeated[key] ??= [parsed[key]];
                 repeated[key].push(value);
               }

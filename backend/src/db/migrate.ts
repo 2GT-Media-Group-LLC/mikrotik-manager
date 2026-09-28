@@ -1091,6 +1091,22 @@ ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);
 CREATE INDEX IF NOT EXISTS idx_devices_site ON devices(site_id);
+
+-- Config History snapshots that may hold secrets. RouterOS v6 exported them by
+-- default, so snapshots taken from v6 (or a device whose version was unknown)
+-- before hide-sensitive was used can contain passwords; only admins may read
+-- those. The column is nullable with no default so this classification runs
+-- once, on rows that existed before it; new rows always set it.
+ALTER TABLE device_configs ADD COLUMN IF NOT EXISTS contains_secrets BOOLEAN;
+UPDATE device_configs dc
+   SET contains_secrets = (COALESCE(d.ros_version, '') !~ '^7[.]')
+  FROM devices d
+ WHERE d.id = dc.device_id AND dc.contains_secrets IS NULL;
+UPDATE device_configs SET contains_secrets = TRUE WHERE contains_secrets IS NULL;
+
+-- API tokens are recorded as "token:<name>" with names up to 100 characters;
+-- at 50 the insert failed and the write went unrecorded.
+ALTER TABLE audit_log ALTER COLUMN username TYPE VARCHAR(150);
 `;
 
 const DEFAULT_SETTINGS = [

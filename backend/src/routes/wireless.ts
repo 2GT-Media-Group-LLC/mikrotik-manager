@@ -1,14 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { lookupVendor } from '../utils/oui';
 import { analyzeSpectrum, summarize, BAND_RANGES, parseChannelSpec } from '../utils/rfSpectrum';
+import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
 router.use(requireAuth);
+// Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
+// WireGuard private keys, SNMP communities, hotspot passwords).
+router.use(maskSecretsForReadOnly);
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -635,7 +640,7 @@ router.get('/:id/monitor/:iface', async (req: Request, res: Response) => {
 });
 
 // GET /api/wireless/:id/scan/:iface — scan for nearby APs (5 s)
-router.get('/:id/scan/:iface', async (req: Request, res: Response) => {
+router.get('/:id/scan/:iface', requireWrite, async (req: Request, res: Response) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -1028,7 +1033,7 @@ router.get('/rf/tx-quality', async (req: Request, res: Response) => {
   const { getQueryApi } = await import('../config/influxdb');
   const queryApi = getQueryApi();
   const bucket = process.env.INFLUXDB_BUCKET || 'mikrotik';
-  const deviceFilter = deviceId ? `|> filter(fn: (r) => r["device_id"] == "${deviceId}")` : '';
+  const deviceFilter = deviceId ? `|> filter(fn: (r) => r["device_id"] == ${fluxString(String(deviceId))})` : '';
 
   const flux = `
     from(bucket: "${bucket}")

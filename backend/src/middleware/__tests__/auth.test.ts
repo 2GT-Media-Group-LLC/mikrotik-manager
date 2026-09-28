@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { signToken, verifyToken, requireAuth, requireAdmin, requireWrite, AuthPayload } from '../auth';
+import { signToken, signRawToken, verifyToken, requireAuth, requireAdmin, requireWrite, AuthPayload } from '../auth';
 
 const TEST_PAYLOAD: AuthPayload = { userId: 1, username: 'alice', role: 'admin' };
 
@@ -137,6 +137,48 @@ describe('requireWrite', () => {
   it('calls next for operator role', () => {
     const req = mockReq();
     (req as Request & { user: AuthPayload }).user = { userId: 4, username: 'dave', role: 'operator' };
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+    requireWrite(req, res, next);
+    expect(next).toHaveBeenCalled();
+  });
+});
+
+// ── Tokens that are signed correctly but are not sessions ───────────────────
+
+describe('non-session tokens', () => {
+  it('rejects the partial two-factor token as a session', () => {
+    // Issued after the password, before the code. It shares the signing secret,
+    // so only its shape tells it apart.
+    const partial = signRawToken({ userId: 1, partial: true }, { expiresIn: '5m' });
+    expect(() => verifyToken(partial)).toThrow();
+
+    const req = mockReq(`Bearer ${partial}`);
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+    requireAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a signed token with no role or an unknown role', () => {
+    expect(() => verifyToken(signRawToken({ userId: 1, username: 'x' }, { expiresIn: '5m' }))).toThrow();
+    expect(() => verifyToken(signRawToken({ userId: 1, username: 'x', role: 'root' }, { expiresIn: '5m' }))).toThrow();
+  });
+
+  it('requireWrite refuses a user with no recognised role', () => {
+    const req = mockReq();
+    (req as Request & { user: AuthPayload }).user = { userId: 9 } as AuthPayload;
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+    requireWrite(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('requireWrite lets an operator through', () => {
+    const req = mockReq();
+    (req as Request & { user: AuthPayload }).user = { userId: 2, username: 'op', role: 'operator' };
     const res = mockRes();
     const next = jest.fn() as unknown as NextFunction;
     requireWrite(req, res, next);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { alertService } from '../services/AlertService';
+import { maskConfig, mergeConfig } from '../utils/alertChannelSecrets';
 
 const router = Router();
 
@@ -123,7 +124,9 @@ router.put('/channels/:id', requireWrite, async (req, res) => {
   const type           = existing[0].type;
 
   // Merge new config over existing, preserving existing passwords when placeholders sent
-  const mergedConfig = mergeConfig(type, existingConfig, config ?? {});
+  const merge = mergeConfig(type, existingConfig, config ?? {});
+  if ('error' in merge) return res.status(400).json({ error: merge.error });
+  const mergedConfig = merge.merged;
 
   const rows = await query(
     `UPDATE alert_channels
@@ -172,40 +175,5 @@ router.get('/history', async (req, res) => {
   );
   res.json(rows);
 });
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-const SENSITIVE_KEYS: Record<string, string[]> = {
-  email:    ['smtp_pass'],
-  slack:    [],
-  discord:  [],
-  telegram: ['bot_token'],
-  // ntfy accepts either an access token or basic auth; both are secrets.
-  ntfy:     ['token', 'password'],
-  gotify:   ['app_token'],
-};
-
-function maskConfig(type: string, config: Record<string, unknown>): Record<string, unknown> {
-  const masked = { ...config };
-  for (const key of SENSITIVE_KEYS[type] ?? []) {
-    if (masked[key]) masked[key] = '••••••••';
-  }
-  return masked;
-}
-
-/** When updating, if a sensitive field comes back as the mask placeholder, keep the original. */
-function mergeConfig(
-  type: string,
-  existing: Record<string, unknown>,
-  incoming: Record<string, unknown>
-): Record<string, unknown> {
-  const merged = { ...existing, ...incoming };
-  for (const key of SENSITIVE_KEYS[type] ?? []) {
-    if (incoming[key] === '••••••••') {
-      merged[key] = existing[key]; // restore original
-    }
-  }
-  return merged;
-}
 
 export default router;

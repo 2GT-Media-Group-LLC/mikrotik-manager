@@ -2,13 +2,13 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { Client as SshClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
-import { requireAuth, requireWrite } from '../middleware/auth';
+import { requireAuth, requireWrite, requireAdmin } from '../middleware/auth';
+import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { encrypt, decrypt } from '../utils/crypto';
 import { RouterOSClient } from '../services/mikrotik/RouterOSClient';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { PollerService } from '../services/PollerService';
-import type { CredentialPresetRow } from './credentialPresets';
-import { createDeviceFromBody, type CreateDeviceInput, type CreateDeviceContext } from '../services/deviceCreation';
+import { createDeviceFromBody, loadCredentialPreset, type CreateDeviceInput } from '../services/deviceCreation';
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
 import { normalizeDeviceAddress, reconcileAddressPort } from '../utils/deviceAddress';
@@ -39,44 +39,13 @@ function intervalToMs(interval: string): number {
   return (Number(n) || 0) * (per[unit] ?? 0);
 }
 import { parseBandList, uplinkAnchor, totalBandwidthMhz, type LteBandInfo } from '../utils/lte';
-
-// Resolve a credential preset id into decrypted credentials. Returns null if
-// no id was provided; throws a readable error if the id is invalid.
-async function loadCredentialPreset(
-  id: number | null | undefined,
-  ctx?: CreateDeviceContext
-): Promise<{
-  api_username: string;
-  api_password: string;
-  api_port: number | null;
-  ssh_username: string | null;
-  ssh_password: string | null;
-  ssh_port: number | null;
-} | null> {
-  if (id === null || id === undefined) return null;
-  const preset = await queryOne<CredentialPresetRow>(
-    `SELECT * FROM credential_presets WHERE id = $1`,
-    [id]
-  );
-  if (!preset) throw new Error(`Credential preset ${id} not found`);
-  const allowOp = preset.allow_operator_use !== false;
-  if (ctx?.requestingUserRole === 'operator' && !allowOp) {
-    const err = new Error('This credential preset is restricted to administrators');
-    (err as Error & { statusCode?: number }).statusCode = 403;
-    throw err;
-  }
-  return {
-    api_username: preset.api_username,
-    api_password: decrypt(preset.api_password_encrypted),
-    api_port: preset.api_port,
-    ssh_username: preset.ssh_username,
-    ssh_password: preset.ssh_password_encrypted ? decrypt(preset.ssh_password_encrypted) : null,
-    ssh_port: preset.ssh_port,
-  };
-}
+import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
 router.use(requireAuth);
+// Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
+// WireGuard private keys, SNMP communities, hotspot passwords).
+router.use(maskSecretsForReadOnly);
 
 let pollerService: PollerService | null = null;
 export function setPollerService(p: PollerService): void {
@@ -323,7 +292,7 @@ router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) 
     BULK_ADD_META_TTL_SEC
   );
   await redis.set(`device-bulk-add:${jobId}:results`, '[]', 'EX', BULK_ADD_META_TTL_SEC);
-  await enqueueBulkAddJob(jobId, items as CreateDeviceInput[], activeSite(req));
+  await enqueueBulkAddJob(jobId, items as CreateDeviceInput[], activeSite(req), req.user!.role);
   return res.status(202).json({ job_id: jobId, total: items.length });
 });
 
@@ -552,6 +521,20 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
   const portChanged = typeof api_port === 'number' && api_port !== existing.api_port;
   const userChanged = typeof api_username === 'string' && api_username && api_username !== existing.api_username;
   const presetReplacesApiCreds = !!preset;
+
+  // Verifying a new address means logging in there, and the RouterOS API login
+  // sends the password in the clear. With the stored password, anyone who could
+  // edit a device could point it at a host they run and collect that device's
+  // admin password, which is exactly what encrypting it at rest is meant to
+  // prevent. So a non-admin moving a device must supply the password; admins
+  // already hold full control and may reuse the stored one.
+  if (ipChanged && !api_password && !presetReplacesApiCreds && req.user?.role !== 'admin') {
+    return res.status(400).json({
+      error: "Enter the device's API password to change its address. The saved password is only sent to the address it was saved for.",
+      code: 'password_required_for_address_change',
+    });
+  }
+
   if (ipChanged || portChanged || userChanged || api_password || presetReplacesApiCreds) {
     const testIp = ip_address ?? existing.ip_address;
     const testPort = api_port;
@@ -1673,7 +1656,7 @@ router.delete('/:id/ip-addresses/:addrId', requireWrite, async (req: Request, re
 });
 
 // POST /api/devices/:id/check-update
-router.post('/:id/check-update', async (req: Request, res: Response) => {
+router.post('/:id/check-update', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
     `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
@@ -1795,7 +1778,7 @@ router.delete('/:id/ssh-key', requireWrite, async (req: Request, res: Response) 
  * ends by proving the key, and running sixty of those at once would be a
  * thundering herd against the fleet for no wall-clock gain worth having.
  */
-router.post('/ssh-keys/deploy-all', requireWrite, async (req: Request, res: Response) => {
+router.post('/ssh-keys/deploy-all', requireAdmin, async (req: Request, res: Response) => {
   // This is the most consequential call in the feature: it disables password SSH
   // across an entire fleet in one request. The per-device path asks for an
   // acknowledgement in the UI, and an endpoint that can do it sixty times over
@@ -1895,7 +1878,7 @@ router.post('/:id/install-update', requireWrite, async (req: Request, res: Respo
 });
 
 // POST /api/devices/:id/check-routerboard
-router.post('/:id/check-routerboard', async (req: Request, res: Response) => {
+router.post('/:id/check-routerboard', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
     `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
@@ -2827,14 +2810,14 @@ router.get('/:id/lte/metrics', async (req: Request, res: Response) => {
   const bucket = process.env.INFLUXDB_BUCKET || 'mikrotik';
 
   const ifaceFilter = iface
-    ? `|> filter(fn: (r) => r["interface"] == "${iface.replace(/["\\]/g, '')}")`
+    ? `|> filter(fn: (r) => r["interface"] == ${fluxString(String(iface))})`
     : '';
 
   const flux = `
     from(bucket: "${bucket}")
       |> range(start: -${fluxRange})
       |> filter(fn: (r) => r["_measurement"] == "lte_signal")
-      |> filter(fn: (r) => r["device_id"] == "${String(req.params.id).replace(/[^0-9]/g, '')}")
+      |> filter(fn: (r) => r["device_id"] == ${fluxString(String(req.params.id))})
       ${ifaceFilter}
       |> filter(fn: (r) => r["_field"] == "rsrp" or r["_field"] == "rsrq"
                         or r["_field"] == "sinr" or r["_field"] == "rssi"
@@ -2894,14 +2877,14 @@ router.get('/:id/wireless/metrics', async (req: Request, res: Response) => {
   const bucket = process.env.INFLUXDB_BUCKET || 'mikrotik';
 
   const ifaceFilter = iface
-    ? `|> filter(fn: (r) => r["interface"] == "${iface}")`
+    ? `|> filter(fn: (r) => r["interface"] == ${fluxString(String(iface))})`
     : '';
 
   const flux = `
     from(bucket: "${bucket}")
       |> range(start: -${fluxRange})
       |> filter(fn: (r) => r["_measurement"] == "wireless_stats")
-      |> filter(fn: (r) => r["device_id"] == "${req.params.id}")
+      |> filter(fn: (r) => r["device_id"] == ${fluxString(String(req.params.id))})
       ${ifaceFilter}
       |> filter(fn: (r) => r["_field"] == "registered_clients" or r["_field"] == "noise_floor")
       |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
@@ -2935,7 +2918,7 @@ router.get('/:id/wireless/metrics', async (req: Request, res: Response) => {
 });
 
 // POST /api/devices/:id/test
-router.post('/:id/test', async (req: Request, res: Response) => {
+router.post('/:id/test', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
     `SELECT ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]

@@ -623,6 +623,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
               <Download className="w-3.5 h-3.5 text-gray-400" />
               RouterOS
             </h4>
+            {canWrite && (
             <button
               onClick={() => checkUpdateMutation.mutate()}
               disabled={updateChecking}
@@ -631,6 +632,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
               <RefreshCw className={clsx('w-3 h-3', updateChecking && 'animate-spin')} />
               {updateChecking ? 'Checking...' : 'Check for Updates'}
             </button>
+            )}
           </div>
 
           {updateError && (
@@ -721,6 +723,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
               <Cpu className="w-3.5 h-3.5 text-gray-400" />
               RouterBOOT Firmware
             </h4>
+            {canWrite && (
             <button
               onClick={() => checkRouterboardMutation.mutate()}
               disabled={rbChecking}
@@ -729,6 +732,7 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
               <RefreshCw className={clsx('w-3 h-3', rbChecking && 'animate-spin')} />
               {rbChecking ? 'Checking...' : 'Check RouterBOOT'}
             </button>
+            )}
           </div>
 
           {rbError && (

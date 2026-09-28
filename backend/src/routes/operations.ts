@@ -8,6 +8,7 @@ import { certExpiryState, needsAttention, describeCert } from '../utils/certExpi
 import { alertService } from '../services/AlertService';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { BackupService, BackupDevice } from '../services/BackupService';
+import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
 router.use(requireAuth);
@@ -551,16 +552,16 @@ async function detectAnomalies(siteId: number | null): Promise<AttentionItem[]> 
     const base = `
       from(bucket: "${bucket}")
         |> range(start: -14d)
-        |> filter(fn: (r) => r["_measurement"] == "${measurement}")
-        |> filter(fn: (r) => r["_field"] == "${field}")
+        |> filter(fn: (r) => r["_measurement"] == ${fluxString(String(measurement))})
+        |> filter(fn: (r) => r["_field"] == ${fluxString(String(field))})
         |> hourSelection(start: ${hour}, stop: ${hour})
         |> group(columns: ["device_id"])`;
     const [cur, mean, std] = await Promise.all([
       influxGroupValues(`
         from(bucket: "${bucket}")
           |> range(start: -30m)
-          |> filter(fn: (r) => r["_measurement"] == "${measurement}")
-          |> filter(fn: (r) => r["_field"] == "${field}")
+          |> filter(fn: (r) => r["_measurement"] == ${fluxString(String(measurement))})
+          |> filter(fn: (r) => r["_field"] == ${fluxString(String(field))})
           |> group(columns: ["device_id"])
           |> mean()`),
       influxGroupValues(`${base}\n  |> mean()`),

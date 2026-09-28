@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { verifyToken } from './auth';
+import { logSafe } from '../utils/logSafe';
 
 function extractEntity(path: string): { entityType: string | null; entityId: number | null } {
   // e.g. /api/devices/42/interfaces → 'device', 42
@@ -58,8 +59,13 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
     query(
       `INSERT INTO audit_log (user_id, username, method, path, entity_type, entity_id, summary, ip_address, status_code)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [userId, username, req.method, fullPath, entityType, entityId, summary, ip, res.statusCode]
-    ).catch(() => {});
+      [userId, username?.slice(0, 150) ?? null, req.method, fullPath, entityType, entityId, summary, ip, res.statusCode]
+    ).catch((err) => {
+      // A failed insert is a write with no audit trail, so it must at least be
+      // visible. It used to be swallowed: long API token names overflowed the
+      // username column and those writes went unrecorded without a trace.
+      console.error(`[audit] could not record ${logSafe(summary)}: ${logSafe((err as Error).message)}`);
+    });
   });
 
   next();

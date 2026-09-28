@@ -1585,14 +1585,18 @@ export class DeviceCollector {
 
       // The export requires SSH; without it there's no restorable snapshot to take.
       // Never with secrets: the snapshot text is stored in the database and
-      // shown in Config History diffs (#172). v6 exports still carry them, so
-      // the linked backup below is marked and encrypted accordingly.
+      // shown in Config History diffs (#172). v6 uses hide-sensitive for this.
       let rsc: string;
       let rscHasSecrets = false;
       try {
         ({ text: rsc, containsSecrets: rscHasSecrets } = await backupService.exportConfig(device));
       } catch (e) {
         console.warn(`[${this.device.name}] config snapshot skipped — /export failed: ${(e as Error).message}`);
+        return false;
+      }
+      // Only when the version is unknown (not read yet); the next poll knows it.
+      if (rscHasSecrets) {
+        console.warn(`[${this.device.name}] config snapshot skipped — RouterOS version not known yet, so the export may hold secrets`);
         return false;
       }
 
@@ -1629,8 +1633,8 @@ export class DeviceCollector {
       }
 
       await query(
-        `INSERT INTO device_configs (device_id, config_json, config_text, config_hash, change_summary, backup_id)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO device_configs (device_id, config_json, config_text, config_hash, change_summary, backup_id, contains_secrets)
+         VALUES ($1, $2, $3, $4, $5, $6, false)`,
         [this.device.id, '{}', text, hash, summary, backupId]
       );
 

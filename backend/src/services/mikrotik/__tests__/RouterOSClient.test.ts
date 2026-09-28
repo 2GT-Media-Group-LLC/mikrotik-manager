@@ -1,3 +1,4 @@
+import * as net from 'net';
 import { RouterOSClient, RouterOSSentence, REPEATED_ATTRIBUTES_KEY } from '../RouterOSClient';
 import { REPEATED_KEY, parseBandSpecs } from '../../../utils/lte';
 
@@ -249,5 +250,49 @@ describe('!trap draining', () => {
     // rather than consuming everything while waiting for a !done that never
     // comes.
     expect(internals.sentenceQueue).toHaveLength(4);
+  });
+});
+
+// ── Hostile replies ──────────────────────────────────────────────────────────
+//
+// A device controls its own replies. None of these may hang or crash the
+// manager; the worst allowed outcome is losing that one connection.
+
+describe('hostile replies', () => {
+  it('decodes a 5-byte length as unsigned', () => {
+    // 0xF0 then 0x80 00 00 05: 2,147,483,653 bytes. Signed shifts made this
+    // negative, it passed the "enough bytes?" check and the parser span.
+    const bytes = Buffer.from([0xf0, 0x80, 0x00, 0x00, 0x05, 0x41, 0x42]);
+    expect(() => parse(bytes)).toThrow(/exceeds/);
+  });
+
+  it('rejects the reserved control bytes', () => {
+    expect(() => parse(Buffer.from([0xf8, 0x00]))).toThrow(/reserved control byte/);
+    expect(() => parse(Buffer.from([0xff]))).toThrow(/reserved control byte/);
+  });
+
+  it('stores attributes named after Object.prototype members as data', () => {
+    const s = parse(sentence('constructor=a', 'constructor=b', '__proto__=c', 'toString=d'))!;
+    expect(s.words['constructor']).toBe('b');
+    expect(s.words['__proto__']).toBe('c');
+    expect(s.words['toString']).toBe('d');
+    expect(JSON.parse(s.words[REPEATED_ATTRIBUTES_KEY])).toEqual({ constructor: ['a', 'b'] });
+  });
+
+  it('drops the connection, not the process, on a malicious reply', async () => {
+    // A fake "router" that answers the login with the negative-length header.
+    const server = net.createServer((sock) => {
+      sock.on('data', () => sock.write(Buffer.from([0xf0, 0x80, 0x00, 0x00, 0x05, 0x00])));
+      sock.on('error', () => {});
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as net.AddressInfo;
+    const client = new RouterOSClient('127.0.0.1', port, 'admin', 'pw', 3_000, 3_000);
+    try {
+      await expect(client.connect()).rejects.toThrow(/Protocol error from device/);
+    } finally {
+      client.disconnect();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
   });
 });

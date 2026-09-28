@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { siteScopeDevices } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
@@ -9,6 +10,9 @@ import { applySnmpConfig, SnmpInputError, type SnmpConfigInput } from '../servic
 
 const router = Router();
 router.use(requireAuth);
+// Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
+// WireGuard private keys, SNMP communities, hotspot passwords).
+router.use(maskSecretsForReadOnly);
 
 // GET /api/routers/lldp — LLDP status per online router in the active site.
 // Kept for API callers; the UI uses /api/network-services/lldp, which covers

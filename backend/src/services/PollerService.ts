@@ -14,6 +14,7 @@ import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
 import { offlineAction, recoveryAlert, describeDuration } from '../utils/intermittent';
 import { runHealthCheck } from './healthCheck';
+import { gateTtlSeconds } from '../utils/schedulerGate';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -269,7 +270,7 @@ export class PollerService {
         const lastSlow = await this.getTimestamp(slowKey);
         if (now - lastSlow > 300_000) {
           await this.scheduleDeviceSync(device.id, 'slow');
-          await this.setTimestamp(slowKey, now);
+          await this.setTimestamp(slowKey, now, 300_000);
         }
 
         // Logs poll every 60s
@@ -277,7 +278,7 @@ export class PollerService {
         const lastLogs = await this.getTimestamp(logsKey);
         if (now - lastLogs > 60_000) {
           await this.scheduleDeviceSync(device.id, 'logs');
-          await this.setTimestamp(logsKey, now);
+          await this.setTimestamp(logsKey, now, 60_000);
         }
 
         // MAC scan — switches only, user-configured interval
@@ -286,7 +287,7 @@ export class PollerService {
           const lastMac = await this.getTimestamp(macKey);
           if (now - lastMac > macScanInterval * 1_000) {
             await this.scheduleDeviceSync(device.id, 'macscan');
-            await this.setTimestamp(macKey, now);
+            await this.setTimestamp(macKey, now, macScanInterval * 1_000);
           }
         }
 
@@ -296,7 +297,7 @@ export class PollerService {
           const lastSpectral = await this.getTimestamp(spectralKey);
           if (now - lastSpectral > spectralIntervalHours * 3_600_000) {
             await this.scheduleDeviceSync(device.id, 'spectral');
-            await this.setTimestamp(spectralKey, now);
+            await this.setTimestamp(spectralKey, now, spectralIntervalHours * 3_600_000);
           }
         }
 
@@ -306,7 +307,7 @@ export class PollerService {
           const lastApScan = await this.getTimestamp(apScanKey);
           if (now - lastApScan > apScanIntervalHours * 3_600_000) {
             await this.scheduleDeviceSync(device.id, 'apscan');
-            await this.setTimestamp(apScanKey, now);
+            await this.setTimestamp(apScanKey, now, apScanIntervalHours * 3_600_000);
           }
         }
 
@@ -320,7 +321,7 @@ export class PollerService {
             await this.scheduleDeviceSync(device.id, 'configsnap');
             // Keep the gate key alive for the full interval (+ buffer) so the
             // snapshot honours the configured cadence rather than the default TTL.
-            await this.setTimestamp(configKey, now, configSnapIntervalMin * 60 + 120);
+            await this.setTimestamp(configKey, now, configSnapIntervalMin * 60_000);
           }
         }
 
@@ -331,7 +332,7 @@ export class PollerService {
           const lastHealth = await this.getTimestamp(healthKey);
           if (now - lastHealth > configHealthIntervalMin * 60_000) {
             await this.scheduleDeviceSync(device.id, 'confighealth');
-            await this.setTimestamp(healthKey, now, configHealthIntervalMin * 60 + 120);
+            await this.setTimestamp(healthKey, now, configHealthIntervalMin * 60_000);
           }
         }
       }
@@ -341,7 +342,7 @@ export class PollerService {
         const rdnsKey = 'task:reverse_dns';
         const lastRdns = await this.getTimestamp(rdnsKey);
         if (now - lastRdns > 300_000) {
-          await this.setTimestamp(rdnsKey, now);
+          await this.setTimestamp(rdnsKey, now, 300_000);
           this.resolveClientHostnames().catch((e) =>
             console.error('[Poller] Reverse DNS error:', e)
           );
@@ -355,7 +356,7 @@ export class PollerService {
       const staleLinksKey = 'task:stale_topology_links';
       const lastStaleLinks = await this.getTimestamp(staleLinksKey);
       if (now - lastStaleLinks > 900_000) {
-        await this.setTimestamp(staleLinksKey, now);
+        await this.setTimestamp(staleLinksKey, now, 900_000);
         query(`DELETE FROM topology_links WHERE discovered_at < NOW() - INTERVAL '20 minutes'`)
           .catch((e) => console.error('[Poller] Stale topology-link cleanup error:', e));
       }
@@ -372,7 +373,7 @@ export class PollerService {
       const certKey = 'task:cert_expiry';
       const lastCert = await this.getTimestamp(certKey);
       if (now - lastCert > 3_600_000) {
-        await this.setTimestamp(certKey, now);
+        await this.setTimestamp(certKey, now, 3_600_000);
         this.checkCertificateExpiry()
           .catch((e) => console.error('[Poller] Certificate expiry check failed:', e));
       }
@@ -383,7 +384,7 @@ export class PollerService {
       const staleKey = 'task:stale_pending';
       const lastStale = await this.getTimestamp(staleKey);
       if (now - lastStale > 300_000) {
-        await this.setTimestamp(staleKey, now);
+        await this.setTimestamp(staleKey, now, 300_000);
         this.dropStalePending().catch((e) =>
           console.error('[Poller] Stale-pending sweep error:', e));
       }
@@ -394,7 +395,7 @@ export class PollerService {
       // Dark Site Mode: each device contacts MikroTik itself for this, so on an
       // isolated network it can only fail, once a day, on every device.
       if (appSettings['device_update_check_enabled'] !== false && now - lastFirmware > 86_400_000) {
-        await this.setTimestamp(firmwareKey, now);
+        await this.setTimestamp(firmwareKey, now, 86_400_000);
         this.checkAllDevicesFirmware(devices).catch((e) =>
           console.error('[Poller] Firmware check error:', e)
         );
@@ -405,7 +406,7 @@ export class PollerService {
       const netflowPruneKey = 'task:netflow_retention';
       const lastNetflowPrune = await this.getTimestamp(netflowPruneKey);
       if (now - lastNetflowPrune > 86_400_000) {
-        await this.setTimestamp(netflowPruneKey, now, 86_400 + 3_600);
+        await this.setTimestamp(netflowPruneKey, now, 86_400_000);
         this.purgeNetflowData().catch((e) =>
           console.error('[Poller] NetFlow retention error:', e)
         );
@@ -416,7 +417,7 @@ export class PollerService {
       const pruneKey = 'task:prune_clients';
       const lastPrune = await this.getTimestamp(pruneKey);
       if (now - lastPrune > 3_600_000) {
-        await this.setTimestamp(pruneKey, now);
+        await this.setTimestamp(pruneKey, now, 3_600_000);
         this.pruneStaleClients(appSettings).catch((e) =>
           console.error('[Poller] Client prune error:', e)
         );
@@ -431,7 +432,7 @@ export class PollerService {
       const eventPruneKey = 'task:prune_events';
       const lastEventPrune = await this.getTimestamp(eventPruneKey);
       if (now - lastEventPrune > 3_600_000) {
-        await this.setTimestamp(eventPruneKey, now);
+        await this.setTimestamp(eventPruneKey, now, 3_600_000);
         this.pruneOldEvents(appSettings).catch((e) =>
           console.error('[Poller] Event prune error:', e)
         );
@@ -443,7 +444,7 @@ export class PollerService {
         const backupKey = 'task:scheduled_backup';
         const lastBackup = await this.getTimestamp(backupKey);
         if (now - lastBackup > 3_600_000) {
-          await this.setTimestamp(backupKey, now);
+          await this.setTimestamp(backupKey, now, 3_600_000);
           this.runScheduledBackups().catch((e) =>
             console.error('[Poller] Scheduled backup error:', e)
           );
@@ -838,10 +839,16 @@ export class PollerService {
     };
   }
 
-  private async setTimestamp(key: string, ts: number, ttlSec = 600): Promise<void> {
+  /**
+   * Record when a gated task last ran. The key must outlive the task's own
+   * interval: a missing key reads as "never ran". It used to expire after a
+   * fixed 10 minutes, so every "daily" or "hourly" task (the firmware check,
+   * certificate check, spectral and AP scans) ran about every 10 minutes.
+   */
+  private async setTimestamp(key: string, ts: number, intervalMs: number): Promise<void> {
     try {
       const { redis } = await import('../config/redis');
-      await redis.set(key, String(ts), 'EX', ttlSec);
+      await redis.set(key, String(ts), 'EX', gateTtlSeconds(intervalMs));
     } catch { /* redis unavailable — timestamp not cached */ }
   }
 

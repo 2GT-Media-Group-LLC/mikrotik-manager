@@ -4,6 +4,7 @@ import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, clientSeriesTag } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
+import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
 router.use(requireAuth);
@@ -45,7 +46,7 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_counts")
       |> filter(fn: (r) => r._field == "total_clients")
-      |> filter(fn: (r) => r.device_id == "${seriesTag}")
+      |> filter(fn: (r) => r.device_id == ${fluxString(String(seriesTag))})
       |> aggregateWindow(every: 5m, fn: last, createEmpty: false)
       |> yield(name: "clients_over_time")
   `;
@@ -79,7 +80,7 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
       // An empty site has no series to fall back to, and must show an empty
       // chart rather than the fleet's (issue #130).
       deviceFilter = ids.length
-        ? `|> filter(fn: (r) => ${ids.map((d) => `r.device_id == "${d.id}"`).join(' or ')})`
+        ? `|> filter(fn: (r) => ${ids.map((d) => `r.device_id == ${fluxString(String(d.id))}`).join(' or ')})`
         : null;
     }
     if (deviceFilter) {
@@ -141,8 +142,8 @@ router.get('/interface/:deviceId/:interface', async (req: Request, res: Response
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "interface_traffic")
-      |> filter(fn: (r) => r.device_id == "${deviceId}")
-      |> filter(fn: (r) => r.interface == "${iface}")
+      |> filter(fn: (r) => r.device_id == ${fluxString(String(deviceId))})
+      |> filter(fn: (r) => r.interface == ${fluxString(String(iface))})
       |> filter(fn: (r) => r._field == "rx_bytes" or r._field == "tx_bytes")
       |> aggregateWindow(every: 1m, fn: last, createEmpty: false)
       |> derivative(unit: 1s, nonNegative: true)
@@ -185,8 +186,8 @@ router.get('/interface/:deviceId/:interface/packets', async (req: Request, res: 
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "interface_traffic")
-      |> filter(fn: (r) => r.device_id == "${deviceId}")
-      |> filter(fn: (r) => r.interface == "${iface}")
+      |> filter(fn: (r) => r.device_id == ${fluxString(String(deviceId))})
+      |> filter(fn: (r) => r.interface == ${fluxString(String(iface))})
       |> filter(fn: (r) => r._field == "rx_packets" or r._field == "tx_packets")
       |> aggregateWindow(every: 1m, fn: last, createEmpty: false)
       |> derivative(unit: 1s, nonNegative: true)
@@ -227,7 +228,7 @@ router.get('/device/:deviceId/resources', async (req: Request, res: Response) =>
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "device_resources")
-      |> filter(fn: (r) => r.device_id == "${deviceId}")
+      |> filter(fn: (r) => r.device_id == ${fluxString(String(deviceId))})
       |> filter(fn: (r) => r._field == "cpu_load" or r._field == "memory_used" or r._field == "memory_total")
       |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
       |> yield(name: "resources")
@@ -265,7 +266,7 @@ router.get('/device/:deviceId/poe', async (req: Request, res: Response) => {
     from(bucket: "${bucket}")
       |> range(start: -5m)
       |> filter(fn: (r) => r._measurement == "poe_power")
-      |> filter(fn: (r) => r.device_id == "${deviceId}")
+      |> filter(fn: (r) => r.device_id == ${fluxString(String(deviceId))})
       |> filter(fn: (r) => r._field == "watts" or r._field == "current_ma" or r._field == "voltage_v")
       |> last()
   `;
@@ -287,7 +288,7 @@ router.get('/device/:deviceId/poe', async (req: Request, res: Response) => {
     from(bucket: "${bucket}")
       |> range(start: -1h)
       |> filter(fn: (r) => r._measurement == "poe_power")
-      |> filter(fn: (r) => r.device_id == "${deviceId}")
+      |> filter(fn: (r) => r.device_id == ${fluxString(String(deviceId))})
       |> filter(fn: (r) => r._field == "watts")
       |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)
   `;

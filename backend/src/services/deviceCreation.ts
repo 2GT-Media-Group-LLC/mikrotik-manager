@@ -20,7 +20,7 @@ export type CreateDeviceContext = {
   siteId?: number | null;
 };
 
-async function loadCredentialPreset(
+export async function loadCredentialPreset(
   id: number | null | undefined,
   ctx?: CreateDeviceContext
 ): Promise<{
@@ -38,7 +38,10 @@ async function loadCredentialPreset(
   );
   if (!preset) throw new Error(`Credential preset ${id} not found`);
   const allowOp = (preset as CredentialPresetRow & { allow_operator_use?: boolean }).allow_operator_use !== false;
-  if (ctx?.requestingUserRole === 'operator' && !allowOp) {
+  // A restricted preset needs an admin. Checked as "not admin" rather than "is
+  // operator", so a caller that passes no role (the bulk-add worker used to)
+  // gets least privilege instead of slipping past the check.
+  if (!allowOp && ctx?.requestingUserRole !== 'admin') {
     const err = new Error('This credential preset is restricted to administrators');
     (err as Error & { statusCode?: number }).statusCode = 403;
     throw err;

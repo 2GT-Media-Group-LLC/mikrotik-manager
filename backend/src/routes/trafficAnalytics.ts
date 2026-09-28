@@ -3,6 +3,7 @@ import { getQueryApi, bucket } from '../config/influxdb';
 import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
+import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
 router.use(requireAuth);
@@ -149,7 +150,7 @@ router.get('/apps', async (req: Request, res: Response) => {
   if (req.query.mac) {
     const mac = sanitizeMac(String(req.query.mac));
     if (!mac) return res.status(400).json({ error: 'Invalid mac' });
-    macFilter = `|> filter(fn: (r) => r.mac == "${mac}")`;
+    macFilter = `|> filter(fn: (r) => r.mac == ${fluxString(String(mac))})`;
   }
 
   const fluxQuery = `
@@ -197,7 +198,7 @@ router.get('/client/:mac', async (req: Request, res: Response) => {
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_traffic")
       |> filter(fn: (r) => r._field == "bytes")
-      |> filter(fn: (r) => r.mac == "${mac}")
+      |> filter(fn: (r) => r.mac == ${fluxString(String(mac))})
       |> group(columns: ["direction"])
       |> aggregateWindow(every: ${every}, fn: sum, createEmpty: false)
   `;
@@ -221,7 +222,7 @@ router.get('/client/:mac', async (req: Request, res: Response) => {
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_traffic")
       |> filter(fn: (r) => r._field == "bytes" or r._field == "packets")
-      |> filter(fn: (r) => r.mac == "${mac}")
+      |> filter(fn: (r) => r.mac == ${fluxString(String(mac))})
       |> group(columns: ["app", "_field"])
       |> sum()
   `;

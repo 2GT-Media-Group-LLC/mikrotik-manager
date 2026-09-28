@@ -6,14 +6,14 @@ describe('exportPlan (#172)', () => {
     expect(exportPlan('7.24.4', true)).toEqual({ command: '/export compact show-sensitive', containsSecrets: true });
   });
 
-  it('treats an unknown version like v7', () => {
-    expect(exportPlan(null, false).containsSecrets).toBe(false);
-    expect(exportPlan('', true).command).toBe('/export compact show-sensitive');
+  it('treats an unknown version as holding secrets, since it may be v6', () => {
+    expect(exportPlan(null, false)).toEqual({ command: '/export compact', containsSecrets: true });
+    expect(exportPlan('', true)).toEqual({ command: '/export compact', containsSecrets: true });
   });
 
-  it('marks v6 exports as holding secrets either way, since v6 includes them by default', () => {
-    expect(exportPlan('6.49.10', false)).toEqual({ command: '/export compact', containsSecrets: true });
-    expect(exportPlan('6.49.10', true).containsSecrets).toBe(true);
+  it('hides v6 secrets unless asked, since v6 includes them by default', () => {
+    expect(exportPlan('6.49.10', false)).toEqual({ command: '/export compact hide-sensitive', containsSecrets: false });
+    expect(exportPlan('6.49.10', true)).toEqual({ command: '/export compact', containsSecrets: true });
   });
 
   it('recognises v6 versions only', () => {

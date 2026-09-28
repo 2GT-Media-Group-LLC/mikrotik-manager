@@ -70,6 +70,25 @@ describe('self-healing secrets', () => {
     expect(secrets.jwtVerifierSecrets()).not.toContain('changeme_use_a_long_random_secret');
   });
 
+  it('ignores the JWT_SECRET that .env.example used to ship with', async () => {
+    // Over 32 characters, so it used to pass as strong: every quick-start install
+    // signed sessions with a string published in the repo.
+    const placeholder = 'changeme_use_a_long_random_secret_at_least_32_chars';
+    process.env.JWT_SECRET = placeholder;
+    const secrets = await import('../secrets');
+    const info = secrets.initSecrets();
+    expect(info.jwtSource).toBe('generated');
+    expect(info.envJwtIgnored).toBe(true);
+    expect(secrets.jwtSigningSecret()).not.toBe(placeholder);
+    expect(secrets.jwtVerifierSecrets()).not.toContain(placeholder);
+  });
+
+  it('treats any long changeme… value as a placeholder', async () => {
+    process.env.JWT_SECRET = 'changeme-please-this-is-long-enough-to-pass';
+    const secrets = await import('../secrets');
+    expect(secrets.initSecrets().jwtSource).toBe('generated');
+  });
+
   it('decrypts ciphertext written under the old default key after self-heal', async () => {
     // Legacy data on disk: encrypted under the old built-in default key.
     const legacyCipher = legacyEncrypt('router-admin-pw', 'changeme32byteslongencryptionkey');

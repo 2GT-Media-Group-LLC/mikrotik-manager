@@ -1,6 +1,12 @@
 import { expandVlanIds, isMultiVlanSpec, aggregateBridgeVlans, portVlanMembership } from '../vlan';
 
 describe('expandVlanIds', () => {
+  it('clamps ranges to 1-4094 so a hostile spec cannot exhaust memory', () => {
+    expect(expandVlanIds('1-4000000000')).toHaveLength(4094);
+    expect(expandVlanIds('4090-9999')).toEqual([4090, 4091, 4092, 4093, 4094]);
+    expect(expandVlanIds('0,5000,10')).toEqual([10]);
+  });
+
   it('handles a single id, a list, and a range', () => {
     expect(expandVlanIds('10')).toEqual([10]);
     expect(expandVlanIds('10,20,30')).toEqual([10, 20, 30]);

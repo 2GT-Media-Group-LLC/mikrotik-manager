@@ -9,6 +9,7 @@ import { PollerService } from '../services/PollerService';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/clientFingerprint';
 import { parseRoamLine, buildSessions, flappingSessions } from '../utils/roaming';
+import { fluxString } from '@influxdata/influxdb-client';
 
 // Effective category: the user's override wins; otherwise the fingerprint.
 function withCategory<T extends Record<string, unknown>>(row: T): T & { device_category: string; auto_category: string } {
@@ -286,7 +287,7 @@ router.get('/:mac/presence', async (req: Request, res: Response) => {
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_presence")
       |> filter(fn: (r) => r._field == "online")
-      |> filter(fn: (r) => r.mac_address == "${mac}")
+      |> filter(fn: (r) => r.mac_address == ${fluxString(String(mac))})
       |> group(columns: ["_measurement", "_field", "mac_address"])
       |> aggregateWindow(every: ${window}, fn: max, createEmpty: true)
       |> fill(value: 0)
@@ -325,7 +326,7 @@ router.get('/:mac/traffic', async (req: Request, res: Response) => {
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_presence")
       |> filter(fn: (r) => r._field == "tx_bytes" or r._field == "rx_bytes")
-      |> filter(fn: (r) => r.mac_address == "${mac}")
+      |> filter(fn: (r) => r.mac_address == ${fluxString(String(mac))})
       |> group(columns: ["_measurement", "_field", "mac_address"])
       |> aggregateWindow(every: ${window}, fn: last, createEmpty: false)
       |> yield(name: "traffic_raw")
@@ -387,7 +388,7 @@ router.get('/:mac/signal', async (req: Request, res: Response) => {
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_presence")
       |> filter(fn: (r) => r._field == "signal_strength")
-      |> filter(fn: (r) => r.mac_address == "${mac}")
+      |> filter(fn: (r) => r.mac_address == ${fluxString(String(mac))})
       |> group(columns: ["_measurement", "_field", "mac_address"])
       |> aggregateWindow(every: ${window}, fn: mean, createEmpty: false)
       |> yield(name: "signal")

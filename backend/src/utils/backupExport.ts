@@ -7,14 +7,15 @@
  * Including them is opt-in (setting backup_include_secrets), and a backup that
  * holds them is encrypted on disk and viewable only by admins.
  *
- * RouterOS v6 is the other way round: its /export includes secrets by default.
- * Its command is left unchanged (there is no v6 hardware here to verify
- * hide-sensitive on), but its backups are now marked as holding secrets, so
- * they get the same encryption and access rules instead of sitting in plain
- * text as before.
+ * RouterOS v6 is the other way round: its /export includes secrets unless
+ * told `hide-sensitive`. So v6 uses hide-sensitive when secrets were not asked
+ * for, and the plain export (which carries them) when they were. Previously a
+ * v6 export always carried them, and since Config History snapshots are stored
+ * as text and shown to every user, a viewer could read a v6 device's passwords.
  *
- * Config snapshots (Config History) always use the plain v7 export: their text
- * is stored in the database and shown in diffs, where secrets must not appear.
+ * An unknown version (the device has not been read yet) could be either, so
+ * its export is treated as holding secrets: encrypted, admin-only, and never
+ * used as a Config History snapshot.
  */
 
 export interface ExportPlan {
@@ -27,7 +28,13 @@ export function isRouterOs6(version: string | null | undefined): boolean {
 }
 
 export function exportPlan(version: string | null | undefined, includeSecrets: boolean): ExportPlan {
-  if (isRouterOs6(version)) return { command: '/export compact', containsSecrets: true };
+  if (isRouterOs6(version)) {
+    return includeSecrets
+      ? { command: '/export compact', containsSecrets: true }
+      : { command: '/export compact hide-sensitive', containsSecrets: false };
+  }
+  // Works on both versions; on v6 it carries secrets, so assume it does.
+  if (!(version ?? '').trim()) return { command: '/export compact', containsSecrets: true };
   return includeSecrets
     ? { command: '/export compact show-sensitive', containsSecrets: true }
     : { command: '/export compact', containsSecrets: false };

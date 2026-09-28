@@ -25,17 +25,39 @@ export function signToken(payload: AuthPayload): string {
   return jwt.sign(payload, jwtSigningSecret(), { expiresIn: '24h' });
 }
 
+const SESSION_ROLES = new Set(['admin', 'operator', 'viewer']);
+
+/**
+ * True only for a full session payload. The same secret also signs the short
+ * "password accepted, now enter your code" token, which carries `partial: true`
+ * and no role. A valid signature is therefore not enough: without this check
+ * that token worked as a session and passed requireWrite, so a password alone
+ * got past two-factor login.
+ */
+function isSessionPayload(p: unknown): p is AuthPayload {
+  if (!p || typeof p !== 'object') return false;
+  const o = p as Record<string, unknown>;
+  return o['partial'] === undefined
+    && typeof o['userId'] === 'number'
+    && typeof o['username'] === 'string' && o['username'] !== ''
+    && typeof o['role'] === 'string' && SESSION_ROLES.has(o['role']);
+}
+
 export function verifyToken(token: string): AuthPayload {
   // Accept the current signing secret plus any prior strong secret, so a secret
   // rotation doesn't invalidate sessions already issued under the previous one.
   const secrets = jwtVerifierSecrets();
   let lastErr: unknown;
   for (const secret of secrets) {
+    let decoded: unknown;
     try {
-      return jwt.verify(token, secret) as AuthPayload;
+      decoded = jwt.verify(token, secret);
     } catch (e) {
       lastErr = e;
+      continue;
     }
+    if (!isSessionPayload(decoded)) throw new Error('not a session token');
+    return decoded;
   }
   throw lastErr instanceof Error ? lastErr : new Error('invalid token');
 }
@@ -117,7 +139,9 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
 }
 
 export function requireWrite(req: Request, res: Response, next: NextFunction): void {
-  if (!req.user || req.user.role === 'viewer') {
+  // An allow-list, not "anything but viewer": a token with no role or an
+  // unexpected one must not be treated as a writer.
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'operator')) {
     res.status(403).json({ error: 'Write access denied for viewer role' });
     return;
   }

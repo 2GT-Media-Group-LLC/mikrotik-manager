@@ -35,6 +35,8 @@ interface BulkJobPayload {
   items: CreateDeviceInput[];
   /** Site the batch was queued from, so queued adds land where the operator was looking. */
   siteId?: number | null;
+  /** Role of the user who queued the job, so preset restrictions apply here too. */
+  requestingUserRole?: string;
 }
 
 async function readMeta(jobId: string): Promise<Record<string, unknown>> {
@@ -70,7 +72,7 @@ async function appendResults(jobId: string, rows: BulkAddResultRow[]): Promise<v
 }
 
 async function processJob(job: Job<BulkJobPayload>): Promise<void> {
-  const { jobId, items, siteId } = job.data;
+  const { jobId, items, siteId, requestingUserRole } = job.data;
   await writeMeta(jobId, { status: 'active', processed: 0 });
   const poller = pollerService;
 
@@ -99,7 +101,10 @@ async function processJob(job: Job<BulkJobPayload>): Promise<void> {
         device_type: item.device_type || 'router',
       },
       poller,
-      { siteId: siteId ?? null }
+      // Without the role, an operator could use an admin-only preset here, and
+      // since the add connects to the address in the item, send that preset's
+      // credentials to a host of their choosing.
+      { siteId: siteId ?? null, requestingUserRole }
     );
 
     let failMsg = 'Failed';
@@ -134,12 +139,13 @@ async function processJob(job: Job<BulkJobPayload>): Promise<void> {
 export async function enqueueBulkAddJob(
   jobId: string,
   items: CreateDeviceInput[],
-  siteId: number | null = null
+  siteId: number | null = null,
+  requestingUserRole?: string
 ): Promise<void> {
   if (!queue) {
     queue = new Queue(QUEUE_NAME, { connection: createRedisConnection() });
   }
-  await queue.add('run', { jobId, items, siteId } satisfies BulkJobPayload, {
+  await queue.add('run', { jobId, items, siteId, requestingUserRole } satisfies BulkJobPayload, {
     attempts: 1,
     removeOnComplete: { age: 3600, count: 100 },
     removeOnFail: { age: 86400 },

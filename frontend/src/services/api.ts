@@ -811,20 +811,20 @@ export const clientsApi = {
     dir?: 'asc' | 'desc';
   }) =>
     api.get<{ clients: Client[]; total: number }>('/clients', { params }),
-  get: (mac: string) => api.get<ClientDetail>(`/clients/${mac}`),
+  get: (mac: string) => api.get<ClientDetail>(`/clients/${encodeURIComponent(mac)}`),
   getRoaming: (mac: string, range = '24h') =>
-    api.get<RoamingHistory>(`/clients/${mac}/roaming`, { params: { range } }),
+    api.get<RoamingHistory>(`/clients/${encodeURIComponent(mac)}/roaming`, { params: { range } }),
   getPresence: (mac: string, range = '24h') =>
-    api.get<PresencePoint[]>(`/clients/${mac}/presence`, { params: { range } }),
+    api.get<PresencePoint[]>(`/clients/${encodeURIComponent(mac)}/presence`, { params: { range } }),
   getTraffic: (mac: string, range = '24h') =>
-    api.get<TrafficPoint2[]>(`/clients/${mac}/traffic`, { params: { range } }),
+    api.get<TrafficPoint2[]>(`/clients/${encodeURIComponent(mac)}/traffic`, { params: { range } }),
   getSignal: (mac: string, range = '24h') =>
-    api.get<SignalPoint[]>(`/clients/${mac}/signal`, { params: { range } }),
-  wol: (mac: string) => api.post<{ success: boolean; message: string }>(`/clients/${mac}/wol`),
+    api.get<SignalPoint[]>(`/clients/${encodeURIComponent(mac)}/signal`, { params: { range } }),
+  wol: (mac: string) => api.post<{ success: boolean; message: string }>(`/clients/${encodeURIComponent(mac)}/wol`),
   updateNotes: (mac: string, notes: string) =>
-    api.put<Client>(`/clients/${mac}/notes`, { notes }),
+    api.put<Client>(`/clients/${encodeURIComponent(mac)}/notes`, { notes }),
   updateHostname: (mac: string, hostname: string) =>
-    api.put<Client>(`/clients/${mac}/hostname`, { hostname }),
+    api.put<Client>(`/clients/${encodeURIComponent(mac)}/hostname`, { hostname }),
   updateCategory: (mac: string, category: string | null) =>
     api.put<Client>(`/clients/${encodeURIComponent(mac)}/category`, { category }),
   purgeStale: () => api.post<{ message: string; count: number }>('/clients/purge'),

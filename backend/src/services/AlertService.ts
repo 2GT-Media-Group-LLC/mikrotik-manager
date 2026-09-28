@@ -3,6 +3,7 @@ import * as https from 'https';
 import * as http from 'http';
 import { query } from '../config/database';
 import { buildGotifyRequest } from '../utils/gotify';
+import { resolveAlertTarget } from '../utils/alertTarget';
 
 export type AlertEventType =
   | 'device_offline'
@@ -443,35 +444,44 @@ export class AlertService {
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  private postJson(url: string, body: string, extraHeaders: Record<string, string> = {}): Promise<void> {
+  private async postJson(url: string, body: string, extraHeaders: Record<string, string> = {}): Promise<void> {
+    const parsed  = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('URL must be http(s)');
+    const isHttps = parsed.protocol === 'https:';
+    const lib     = isHttps ? https : http;
+    // Checked and pinned before connecting: see utils/alertTarget.ts.
+    const address = await resolveAlertTarget(parsed.hostname);
+
     return new Promise((resolve, reject) => {
-      const parsed   = new URL(url);
-      const isHttps  = parsed.protocol === 'https:';
-      const lib      = isHttps ? https : http;
-      const options  = {
-        hostname: parsed.hostname,
-        port:     parsed.port || (isHttps ? 443 : 80),
-        path:     parsed.pathname + parsed.search,
-        method:   'POST',
+      const options = {
+        host:       address,
+        port:       parsed.port || (isHttps ? 443 : 80),
+        path:       parsed.pathname + parsed.search,
+        method:     'POST',
+        // Certificate check and virtual hosting use the real name.
+        servername: isHttps ? parsed.hostname.replace(/^\[|\]$/g, '') : undefined,
+        timeout:    10_000,
         headers:  {
           'Content-Type':   'application/json',
           'Content-Length': Buffer.byteLength(body),
+          Host:             parsed.host,
           ...extraHeaders,
         },
       };
 
       const req = lib.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
+        // The body is deliberately not read into the error. It used to be
+        // returned (200 characters of it) to whoever pressed Test, which
+        // turned a channel pointed at an internal service into a way to read
+        // that service's replies.
+        res.resume();
         res.on('end', () => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            resolve();
-          } else {
-            reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`));
-          }
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) resolve();
+          else reject(new Error(`The server answered HTTP ${res.statusCode}`));
         });
       });
 
+      req.on('timeout', () => req.destroy(new Error('No answer within 10 seconds')));
       req.on('error', reject);
       req.write(body);
       req.end();

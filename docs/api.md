@@ -20,13 +20,23 @@ curl -sk https://manager.example.com/api/devices \
 ```
 
 A token with `read` scope is rejected on any mutating request, so a monitoring integration
-cannot change your network even if the token leaks.
+cannot change your network even if the token leaks. It is also refused on requests that make
+a device do something, such as a firmware check or a wireless scan, and it gets device secrets
+masked (see below).
+
+### What read-only access can see
+
+Viewers and `read` tokens see configuration, but not the secrets inside it. Wi-Fi keys,
+WireGuard private keys, SNMP communities and hotspot user passwords come back as
+`••••••••`, as do Slack and Discord webhook URLs for everyone. Operators and admins get the
+real values, because the edit forms need them.
 
 ## Session authentication
 
 The UI authenticates with a JWT obtained from `/api/auth/login`, optionally followed by
 `/api/auth/totp/verify` when two-factor is enabled. Tokens are bearer credentials and are
-sent in the same `Authorization` header.
+sent in the same `Authorization` header. The short-lived token `/login` returns while waiting
+for the two-factor code only works for `/api/auth/totp/verify`; it isn't a session.
 
 For scripting, prefer an API token — it is scoped, revocable, and unaffected by password
 or 2FA changes.

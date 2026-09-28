@@ -5,7 +5,7 @@ jest.mock('../../utils/crypto', () => ({
   decrypt: (s: string) => s,
 }));
 
-import { computeNameLocked, createDeviceFromBody } from '../deviceCreation';
+import { computeNameLocked, createDeviceFromBody, loadCredentialPreset } from '../deviceCreation';
 import { query, queryOne } from '../../config/database';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
 
@@ -131,5 +131,42 @@ describe('createDeviceFromBody (name_locked wiring)', () => {
 
     expect(result.ok).toBe(true);
     expect(insertedNameLocked()).toBe(false);
+  });
+});
+
+/**
+ * Admin-only credential presets. The bulk-add worker used to pass no role, and
+ * the check only stopped callers whose role was exactly "operator", so a bulk
+ * add could use a restricted preset (and, since adding a device connects to
+ * the address given, send its credentials to any host).
+ */
+describe('loadCredentialPreset (admin-only presets)', () => {
+  const restricted = {
+    id: 5, api_username: 'admin', api_password_encrypted: 'pw', api_port: 8728,
+    ssh_username: null, ssh_password_encrypted: null, ssh_port: null,
+    allow_operator_use: false,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (queryOne as jest.Mock).mockResolvedValue(restricted);
+  });
+
+  it('lets an admin use a restricted preset', async () => {
+    await expect(loadCredentialPreset(5, { requestingUserRole: 'admin' })).resolves.toMatchObject({ api_username: 'admin' });
+  });
+
+  it('refuses an operator', async () => {
+    await expect(loadCredentialPreset(5, { requestingUserRole: 'operator' })).rejects.toThrow(/restricted to administrators/);
+  });
+
+  it('refuses a caller that passed no role at all', async () => {
+    await expect(loadCredentialPreset(5, {})).rejects.toThrow(/restricted to administrators/);
+    await expect(loadCredentialPreset(5)).rejects.toThrow(/restricted to administrators/);
+  });
+
+  it('still lets anyone use a preset open to operators', async () => {
+    (queryOne as jest.Mock).mockResolvedValue({ ...restricted, allow_operator_use: true });
+    await expect(loadCredentialPreset(5, {})).resolves.toMatchObject({ api_username: 'admin' });
   });
 });

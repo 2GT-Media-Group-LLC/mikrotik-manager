@@ -36,8 +36,15 @@ adds them, using `/export compact show-sensitive`. A backup that holds them:
 Config History snapshots never include secrets, because their text is kept in the database
 and shown in diffs.
 
-RouterOS v6 is the other way round: its `/export` includes secrets by default. v6 backups are
-therefore always treated as holding secrets, encrypted and admin-only, whatever the setting.
+RouterOS v6 is the other way round: its `/export` includes secrets unless told
+`hide-sensitive`. v6 devices now follow the same setting as v7: with it off, backups and
+snapshots use `/export compact hide-sensitive`; with it on, backups carry the secrets and are
+encrypted and admin-only. Until 0.24.35, v6 snapshots kept secrets in Config History. Those
+older snapshots are now admin-only.
+
+A device whose RouterOS version hasn't been read yet (before its first poll) is treated as
+possibly v6: its backups are marked as holding secrets, and no snapshot is taken until the
+version is known.
 
 !!! warning "Keep ENCRYPTION_KEY safe"
     An encrypted backup can only be read with the key it was written under (or an older key

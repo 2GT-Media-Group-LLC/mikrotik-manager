@@ -95,7 +95,7 @@ router.post('/adopt', requireWrite, async (req: Request, res: Response) => {
  * Exposed separately so the form can say so before anything is written, rather
  * than the operator discovering a clash only when adoption refuses.
  */
-router.post('/check-address', async (req: Request, res: Response) => {
+router.post('/check-address', requireWrite, async (req: Request, res: Response) => {
   const { address, jumpHostId } = req.body as { address?: unknown; jumpHostId?: unknown };
   if (typeof address !== 'string' || typeof jumpHostId !== 'number') {
     return res.status(400).json({ error: 'address and jumpHostId are required' });

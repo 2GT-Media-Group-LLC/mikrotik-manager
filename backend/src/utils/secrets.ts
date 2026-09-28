@@ -20,7 +20,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Publicly known defaults shipped in this repo / compose files.
-const KNOWN_DEFAULT_JWT = ['changeme', 'changeme_use_a_long_random_secret'];
+// The .env.example value is listed exactly: it is over 32 characters, so
+// before it was listed a quick-start install signed sessions with a string
+// anyone can read in the repo. Anything else starting "changeme" is treated as
+// an unedited placeholder too.
+const KNOWN_DEFAULT_JWT = [
+  'changeme',
+  'changeme_use_a_long_random_secret',
+  'changeme_use_a_long_random_secret_at_least_32_chars',
+];
 const KNOWN_DEFAULT_ENC = ['defaultkey32byteslongencryptkey!', 'changeme32byteslongencryptionkey'];
 
 interface PersistedSecrets {
@@ -36,6 +44,8 @@ export interface SecretsInfo {
   persisted: boolean;
   /** True if a secret was generated but could NOT be persisted (won't survive restart). */
   ephemeral: boolean;
+  /** JWT_SECRET is set in the environment but is a public placeholder, so it was ignored. */
+  envJwtIgnored: boolean;
 }
 
 interface ResolvedSecrets {
@@ -48,8 +58,12 @@ interface ResolvedSecrets {
 
 let resolved: ResolvedSecrets | null = null;
 
+function isPlaceholderJwt(v: string): boolean {
+  return KNOWN_DEFAULT_JWT.includes(v) || /^changeme/i.test(v);
+}
+
 function isStrongJwt(v: string | undefined): v is string {
-  return !!v && !KNOWN_DEFAULT_JWT.includes(v) && v.length >= 32;
+  return !!v && !isPlaceholderJwt(v) && v.length >= 32;
 }
 
 function deriveKey(material: string): Buffer {
@@ -185,6 +199,7 @@ export function initSecrets(): SecretsInfo {
     encSource,
     persisted: persistedOk,
     ephemeral: (generatedJwt || generatedEnc) && !persistedOk,
+    envJwtIgnored: !!envJwt && !isStrongJwt(envJwt),
   };
 
   resolved = {

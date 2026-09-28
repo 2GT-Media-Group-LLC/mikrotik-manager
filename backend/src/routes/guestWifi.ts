@@ -2,10 +2,14 @@ import { Router, Request, Response } from 'express';
 import { randomBytes } from 'crypto';
 import { queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 
 const router = Router();
 router.use(requireAuth);
+// Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
+// WireGuard private keys, SNMP communities, hotspot passwords).
+router.use(maskSecretsForReadOnly);
 
 async function getDevice(id: number): Promise<DeviceRow | null> {
   return queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]);
