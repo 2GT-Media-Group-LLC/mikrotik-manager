@@ -30,6 +30,7 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
  * learned to abandon a timed-out connection, desynchronised the session (#137).
  */
 const LOG_READ_TIMEOUT_MS = 120_000;
+import { storeProxyConnections } from '../ProxyLogService';
 import { selectNewLogLines, highestStoredId, surrogateLogId, type RawLogLine } from '../../utils/logDedup';
 import {
   parseUpdateStatus, latestFromStream, peakPercent, type UpdateStatus,
@@ -1024,6 +1025,21 @@ export class DeviceCollector {
           chunk.flat()
         );
         newCount += inserted.length;
+      }
+
+      // Proxy access logs from containers: parse into their own table. Failure here
+      // must not affect event collection.
+      try {
+        await storeProxyConnections(
+          this.device.id,
+          (kept as RawLogLine[]).map((log, i) => ({
+            logId: pending[i][6] as string,
+            topics: (log['topics'] as string) || '',
+            message: (log['message'] as string) || '',
+          })),
+        );
+      } catch (err) {
+        console.error(`[${this.device.name}] Failed to store proxy connections:`, err);
       }
 
       if (newCount > 0) {

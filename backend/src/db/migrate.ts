@@ -1,5 +1,6 @@
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
+import { backfillProxyConnections } from '../services/ProxyLogService';
 
 const MIGRATION_SQL = `
 -- Users
@@ -1127,6 +1128,35 @@ CREATE TABLE IF NOT EXISTS ros_cves (
 -- API tokens are recorded as "token:<name>" with names up to 100 characters;
 -- at 50 the insert failed and the write went unrecorded.
 ALTER TABLE audit_log ALTER COLUMN username TYPE VARCHAR(150);
+
+-- Proxy access logs written by RouterOS containers (3proxy JSON lines), parsed out
+-- of the device log so the dashboard can rank clients, users and destinations.
+CREATE TABLE IF NOT EXISTS proxy_connections (
+  id             BIGSERIAL PRIMARY KEY,
+  device_id      INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  log_id         VARCHAR(20) NOT NULL,
+  event_time     TIMESTAMPTZ NOT NULL,
+  source         VARCHAR(64) NOT NULL,
+  proxy_type     VARCHAR(16) NOT NULL,
+  proxy_port     INTEGER,
+  client_ip      VARCHAR(45) NOT NULL,
+  client_port    INTEGER,
+  server_ip      VARCHAR(45),
+  server_port    INTEGER,
+  auth_user      VARCHAR(255),
+  hostname       VARCHAR(255),
+  method         VARCHAR(16),
+  bytes_sent     BIGINT NOT NULL DEFAULT 0,
+  bytes_received BIGINT NOT NULL DEFAULT 0,
+  error_code     VARCHAR(8),
+  status         VARCHAR(8) NOT NULL DEFAULT 'ok'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_proxy_conn_device_log ON proxy_connections(device_id, log_id);
+CREATE INDEX IF NOT EXISTS idx_proxy_conn_time ON proxy_connections(event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_proxy_conn_client ON proxy_connections(client_ip, event_time DESC);
+-- Fold per-worker suffixes (3proxy-b-32 -> 3proxy) on rows stored before they were stripped.
+UPDATE proxy_connections SET source = COALESCE(NULLIF(regexp_replace(source, '(-[a-zA-Z])?-[0-9]+$', ''), ''), 'proxy')
+  WHERE source ~ '-[0-9]+$';
 `;
 
 const DEFAULT_SETTINGS = [
@@ -1134,6 +1164,7 @@ const DEFAULT_SETTINGS = [
   { key: 'polling_slow_interval', value: 300 },
   { key: 'polling_logs_interval', value: 60 },
   { key: 'retention_events_days', value: 30 },
+  { key: 'retention_proxy_days', value: 30 },
   { key: 'backup_schedule_enabled', value: false },
   { key: 'backup_schedule_cron', value: '0 2 * * *' },
   // Scheduled work was evaluated against the container clock, which is UTC in
@@ -1247,6 +1278,14 @@ export async function runMigrations(): Promise<void> {
     if (a?.password_hash && !a.must_change_password && (await bcrypt.compare('admin', a.password_hash))) {
       await client.query(`UPDATE users SET must_change_password = TRUE WHERE id = $1`, [a.id]);
       console.log('The admin account still uses the default password; it must be changed at next login.');
+    }
+
+    // One-time backfill of proxy connections from events already collected.
+    try {
+      const n = await backfillProxyConnections(client);
+      if (n > 0) console.log(`Backfilled ${n} proxy connection(s) from events`);
+    } catch (err) {
+      console.error('Proxy connection backfill failed (non-fatal):', err);
     }
 
     console.log('Database migrations completed successfully');

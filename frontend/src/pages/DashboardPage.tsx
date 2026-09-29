@@ -13,6 +13,7 @@ import 'leaflet/dist/leaflet.css';
 import { metricsApi, eventsApi, devicesApi, clientsApi, trafficApi, operationsApi, topologyApi, systemApi, settingsApi} from '../services/api';
 import type { OpsAttentionItem, OpsCapacityRow, OpsActivityItem } from '../services/api';
 import TerminalModal from '../components/TerminalModal';
+import ProxyUsageCard from '../components/ProxyUsageCard';
 import { useSocket } from '../hooks/useSocket';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
@@ -433,6 +434,9 @@ function SummaryView(props: Record<string, any>) {
           </div>
         </div>
       </div>
+
+      {/* Proxy usage — renders nothing unless a container proxy has logged connections. */}
+      <ProxyUsageCard />
 
       {/* Second row: Mix + Top talkers + Activity */}
       <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1.2fr 1fr' }}>

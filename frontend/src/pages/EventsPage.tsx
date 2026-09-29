@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Bell, Search, Trash2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { eventsApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
@@ -25,7 +26,9 @@ const ALL_SEVERITIES = ['error', 'warning', 'info'] as const;
 export default function EventsPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
-  const [search, setSearch] = useState('');
+  // ?search= lets other pages (e.g. the dashboard proxy card) deep-link a filter.
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get('search') ?? '');
   const [severities, setSeverities] = useState<Set<string>>(new Set(ALL_SEVERITIES));
   const [topic, setTopic] = useState('');
   const [deviceId, setDeviceId] = useState('');
