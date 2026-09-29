@@ -44,6 +44,23 @@ Two settings, both in **Settings**:
 Flow records are the bulky ones; the daily rollups are small and are what the longer ranges are
 drawn from. Raising the first is the expensive change.
 
+## Proxy usage
+
+If a router runs a proxy in a RouterOS container (3proxy, for example) that writes its access
+log as JSON to the device log, the dashboard shows a **Proxy usage** card. It ranks the busiest
+**Clients**, authenticated **Users**, **Destinations**, and **Denied** attempts over 1 hour,
+24 hours, 7 days or 30 days, with a selector when there is more than one proxy. Clicking a row
+opens the matching lines on the Events page.
+
+The lines are read from the log the manager already collects, under the topics
+`container,info,debug`, so nothing extra runs on the device. The card only appears once such
+lines exist. Parsed records are kept for **Proxy log retention** days (Settings → General,
+30 by default). On the first start after updating, existing events are scanned once for proxy
+lines.
+
+`GET /api/proxy/top?by=client|user|destination|denied&range=1h|24h|7d|30d` and
+`GET /api/proxy/sources` serve the card. Contributed by thanhtrung5763 in #177.
+
 ## If no data appears
 
 1. Is the collector enabled? `netflow_enabled` in **Settings**.
