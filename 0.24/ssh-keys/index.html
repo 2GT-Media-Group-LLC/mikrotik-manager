@@ -1200,9 +1200,12 @@ password login immediately.</p>
 <p>On a shared fleet this is a change to announce, not to discover.</p>
 <h2 id="how-deployment-works">How deployment works<a class="headerlink" href="#how-deployment-works" title="Permanent link">&para;</a></h2>
 <ol>
-<li>A unique <strong>ed25519</strong> keypair is generated on the manager — one per device, never a
+<li>A unique keypair is generated on the manager — one per device, never a
    fleet key. A shared key would make any single compromise fleet-wide and would make
-   rotating one device impossible without touching all of them.</li>
+   rotating one device impossible without touching all of them. It is <strong>Ed25519</strong> on
+   RouterOS 7.12 and later, and <strong>RSA</strong> (3072-bit) on anything older, including all of v6:
+   RouterOS only accepts Ed25519 user keys from 7.12, and older releases import one without
+   complaint and then refuse to log in with it.</li>
 <li>The public half is uploaded over the existing password session and imported.</li>
 <li>A <strong>completely fresh connection</strong> authenticates with the new key.</li>
 <li>Only then is anything stored.</li>
