@@ -565,6 +565,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#proxy-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Proxy usage
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#if-no-data-appears" class="md-nav__link">
     <span class="md-ellipsis">
       If no data appears
@@ -1099,6 +1108,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#proxy-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Proxy usage
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#if-no-data-appears" class="md-nav__link">
     <span class="md-ellipsis">
       If no data appears
@@ -1195,6 +1213,19 @@ what it is: anything on 443 reads as HTTPS whether or not it is a browser.</p>
 </table>
 <p>Flow records are the bulky ones; the daily rollups are small and are what the longer ranges are
 drawn from. Raising the first is the expensive change.</p>
+<h2 id="proxy-usage">Proxy usage<a class="headerlink" href="#proxy-usage" title="Permanent link">&para;</a></h2>
+<p>If a router runs a proxy in a RouterOS container (3proxy, for example) that writes its access
+log as JSON to the device log, the dashboard shows a <strong>Proxy usage</strong> card. It ranks the busiest
+<strong>Clients</strong>, authenticated <strong>Users</strong>, <strong>Destinations</strong>, and <strong>Denied</strong> attempts over 1 hour,
+24 hours, 7 days or 30 days, with a selector when there is more than one proxy. Clicking a row
+opens the matching lines on the Events page.</p>
+<p>The lines are read from the log the manager already collects, under the topics
+<code>container,info,debug</code>, so nothing extra runs on the device. The card only appears once such
+lines exist. Parsed records are kept for <strong>Proxy log retention</strong> days (Settings → General,
+30 by default). On the first start after updating, existing events are scanned once for proxy
+lines.</p>
+<p><code>GET /api/proxy/top?by=client|user|destination|denied&amp;range=1h|24h|7d|30d</code> and
+<code>GET /api/proxy/sources</code> serve the card. Contributed by thanhtrung5763 in #177.</p>
 <h2 id="if-no-data-appears">If no data appears<a class="headerlink" href="#if-no-data-appears" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Is the collector enabled? <code>netflow_enabled</code> in <strong>Settings</strong>.</li>
