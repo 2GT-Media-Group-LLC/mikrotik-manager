@@ -455,6 +455,9 @@ export class PollerService {
         this.pruneOldEvents(appSettings).catch((e) =>
           console.error('[Poller] Event prune error:', e)
         );
+        this.pruneProxyConnections(appSettings).catch((e) =>
+          console.error('[Poller] Proxy prune error:', e)
+        );
       }
 
       // Scheduled backups — fire when the cron expression matches the current minute/hour.
@@ -620,6 +623,19 @@ export class PollerService {
     }
     if (total > 0) {
       console.log(`[Poller] Pruned ${total} events older than ${days} days`);
+    }
+  }
+
+  /** Delete parsed proxy connections older than retention_proxy_days (default 30). */
+  private async pruneProxyConnections(settings: Record<string, unknown>): Promise<void> {
+    const days = Number(settings['retention_proxy_days'] ?? 30);
+    if (!Number.isFinite(days) || days <= 0) return;
+    const deleted = await query<{ id: number }>(
+      `DELETE FROM proxy_connections WHERE event_time < NOW() - ($1 || ' days')::interval RETURNING id`,
+      [String(days)]
+    );
+    if (deleted.length > 0) {
+      console.log(`[Poller] Pruned ${deleted.length} proxy connections older than ${days} days`);
     }
   }
 

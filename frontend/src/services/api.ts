@@ -1934,3 +1934,19 @@ export interface DarkSiteFeature {
   cost: string;
   enabled: boolean;
 }
+
+export interface ProxyTopRow {
+  key: string;
+  requests: number;
+  bytes_in: number;
+  bytes_out: number;
+  distinct_peers: number;
+  last_seen: string;
+}
+export interface ProxySource { source: string; proxy_type: string; proxy_port: number | null; requests: number }
+
+export const proxyApi = {
+  top: (params: { by: 'client' | 'user' | 'destination' | 'denied'; range: string; limit?: number; source?: string; port?: number }) =>
+    api.get<ProxyTopRow[]>('/proxy/top', { params }),
+  sources: () => api.get<ProxySource[]>('/proxy/sources'),
+};

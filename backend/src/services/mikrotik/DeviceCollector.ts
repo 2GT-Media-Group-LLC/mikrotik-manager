@@ -19,6 +19,7 @@ import {
 import { bytesSince, periodKey, shouldSend } from '../../utils/dataCap';
 import { parseDeviceLogTime } from '../../utils/deviceTime';
 import { BackupService } from '../BackupService';
+import { storeProxyConnections } from '../ProxyLogService';
 
 /** RouterOS update commands reach out to MikroTik's servers and are slow by nature. */
 const UPDATE_CHECK_TIMEOUT_MS = 90_000;
@@ -1027,6 +1028,21 @@ export class DeviceCollector {
           chunk.flat()
         );
         newCount += inserted.length;
+      }
+
+      // Proxy access logs from containers: parse into their own table. Failure here
+      // must not affect event collection.
+      try {
+        await storeProxyConnections(
+          this.device.id,
+          (kept as RawLogLine[]).map((log, i) => ({
+            logId: pending[i][6] as string,
+            topics: (log['topics'] as string) || '',
+            message: (log['message'] as string) || '',
+          })),
+        );
+      } catch (err) {
+        console.error(`[${this.device.name}] Failed to store proxy connections:`, err);
       }
 
       if (newCount > 0) {

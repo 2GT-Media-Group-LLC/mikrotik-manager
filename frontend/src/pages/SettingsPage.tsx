@@ -766,6 +766,7 @@ export default function SettingsPage() {
             <div className="space-y-3">
               {[
                 { key: 'retention_events_days', label: 'Events retention', desc: 'Auto-delete event log entries older than this many days' },
+                { key: 'retention_proxy_days', label: 'Proxy log retention', desc: 'Auto-delete parsed proxy connection records older than this many days' },
                 { key: 'retention_clients_days', label: 'Client retention', desc: 'Auto-delete inactive client records not seen within this many days' },
                 { key: 'netflow_retention_days', label: 'Traffic detail retention', desc: 'Auto-delete per-client NetFlow time-series data older than this many days' },
                 { key: 'netflow_daily_retention_days', label: 'Traffic daily rollup retention', desc: 'Auto-delete per-client daily traffic totals older than this many days' },
