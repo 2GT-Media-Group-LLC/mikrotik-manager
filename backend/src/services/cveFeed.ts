@@ -2,7 +2,7 @@ import { query, pool } from '../config/database';
 import { internetAllowed } from '../utils/darkSite';
 import { siteScopeDevices } from '../utils/siteScope';
 import {
-  parseNvdResponse, parseKevResponse, affects, fixedIn, severityRank,
+  parseNvdResponse, parseKevResponse, affects, fixedIn, severityRank, correctedAway, matchUncertainty,
   type ParsedCve, type VersionRange,
 } from '../utils/cveMatch';
 
@@ -23,7 +23,9 @@ const ERROR_KEY = 'cve_feed_last_error';
 async function getJson(url: string): Promise<unknown> {
   const headers: Record<string, string> = { 'User-Agent': 'mikrotik-manager (+https://github.com/2GT-Media-Group-LLC/mikrotik-manager)' };
   // An NVD API key raises the rate limit; optional, one request a day doesn't need it.
-  if (url.startsWith('https://services.nvd.nist.gov') && process.env.NVD_API_KEY) headers['apiKey'] = process.env.NVD_API_KEY;
+  // Compared on the parsed host, not a string prefix, so the key can only ever
+  // go to NVD itself.
+  if (new URL(url).hostname === 'services.nvd.nist.gov' && process.env.NVD_API_KEY) headers['apiKey'] = process.env.NVD_API_KEY;
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(90_000) });
   if (!res.ok) throw new Error(`${new URL(url).hostname} answered HTTP ${res.status}`);
   return res.json();
@@ -99,7 +101,11 @@ export interface FleetCveReport {
     cves: {
       id: string; severity: string | null; score: number | null; known_exploited: boolean;
       published: string | null; summary: string; fixed_in: string | null; hardware_specific: boolean;
+      /** Why this match may not really apply (see matchUncertainty); null when it's listed for this line. */
+      uncertain: string | null;
     }[];
+    /** Matches a known correction removed, with the reason. */
+    corrected: { id: string; reason: string }[];
   }[];
 }
 
@@ -133,24 +139,36 @@ export async function fleetCveReport(siteId: number | null | undefined): Promise
     known_exploited: r.known_exploited,
   }));
 
-  const versions = [...byVersion.entries()].map(([version, devs]) => ({
-    version,
-    devices: devs,
-    cves: cves
-      .filter((c) => affects(c, version))
-      .map((c) => ({
-        id: c.id, severity: c.severity, score: c.score, known_exploited: c.known_exploited,
-        published: c.published || null, summary: c.summary, fixed_in: fixedIn(c, version),
-        hardware_specific: c.hardwareSpecific,
-      }))
-      .sort((a, b) =>
-        Number(b.known_exploited) - Number(a.known_exploited)
-        || severityRank(b.severity) - severityRank(a.severity)
-        || (b.score ?? 0) - (a.score ?? 0)),
-  }));
+  const versions = [...byVersion.entries()].map(([version, devs]) => {
+    const matched = cves.filter((c) => affects(c, version));
+    return {
+      version,
+      devices: devs,
+      cves: matched
+        .filter((c) => !correctedAway(c.id, version))
+        .map((c) => ({
+          id: c.id, severity: c.severity, score: c.score, known_exploited: c.known_exploited,
+          published: c.published || null, summary: c.summary, fixed_in: fixedIn(c, version),
+          hardware_specific: c.hardwareSpecific,
+          // An exploited CVE is never played down, however vague its range.
+          uncertain: c.known_exploited ? null : matchUncertainty(c, version),
+        }))
+        .sort((a, b) =>
+          Number(!!a.uncertain) - Number(!!b.uncertain)
+          || Number(b.known_exploited) - Number(a.known_exploited)
+          || severityRank(b.severity) - severityRank(a.severity)
+          || (b.score ?? 0) - (a.score ?? 0)),
+      corrected: matched
+        .map((c) => ({ id: c.id, reason: correctedAway(c.id, version) }))
+        .filter((c): c is { id: string; reason: string } => !!c.reason),
+    };
+  });
   // Worst first: exploited, then the highest severity, then the most CVEs.
-  const worst = (v: (typeof versions)[number]) =>
-    (v.cves.some((c) => c.known_exploited) ? 100 : 0) + Math.max(0, ...v.cves.map((c) => severityRank(c.severity))) * 10 + Math.min(v.cves.length, 9);
+  // Uncertain matches don't count toward it.
+  const worst = (v: (typeof versions)[number]) => {
+    const sure = v.cves.filter((c) => !c.uncertain);
+    return (sure.some((c) => c.known_exploited) ? 100 : 0) + Math.max(0, ...sure.map((c) => severityRank(c.severity))) * 10 + Math.min(sure.length, 9);
+  };
   versions.sort((a, b) => worst(b) - worst(a) || a.version.localeCompare(b.version));
 
   const fetched = setting(FETCHED_KEY);

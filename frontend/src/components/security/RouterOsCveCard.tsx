@@ -48,7 +48,8 @@ export default function RouterOsCveCard() {
   });
 
   const toggle = (v: string) => setOpen((s) => { const n = new Set(s); if (n.has(v)) n.delete(v); else n.add(v); return n; });
-  const affected = data?.versions.filter((v) => v.cves.length > 0) ?? [];
+  const sureOf = (v: { cves: FleetCve[] }) => v.cves.filter((c) => !c.uncertain);
+  const affected = data?.versions.filter((v) => sureOf(v).length > 0) ?? [];
   const exploitedDevices = new Set(
     (data?.versions ?? []).filter((v) => v.cves.some((c) => c.known_exploited)).flatMap((v) => v.devices.map((d) => d.id))
   ).size;
@@ -96,29 +97,37 @@ export default function RouterOsCveCard() {
         <div className="divide-y divide-gray-100 dark:divide-slate-700/60">
           {data.versions.map((v) => {
             const isOpen = open.has(v.version);
-            const exploited = v.cves.filter((c) => c.known_exploited).length;
+            const sure = sureOf(v);
+            const unsure = v.cves.length - sure.length;
+            const exploited = sure.filter((c) => c.known_exploited).length;
+            const expandable = v.cves.length > 0 || v.corrected.length > 0;
             return (
               <div key={v.version}>
-                <button onClick={() => v.cves.length && toggle(v.version)}
-                        className={clsx('w-full px-5 py-2.5 flex items-center gap-3 text-left', v.cves.length && 'hover:bg-gray-50 dark:hover:bg-slate-700/30')}>
-                  <ChevronRight className={clsx('w-4 h-4 text-gray-400 transition-transform', isOpen && 'rotate-90', !v.cves.length && 'invisible')} />
+                <button onClick={() => expandable && toggle(v.version)}
+                        className={clsx('w-full px-5 py-2.5 flex items-center gap-3 text-left', expandable && 'hover:bg-gray-50 dark:hover:bg-slate-700/30')}>
+                  <ChevronRight className={clsx('w-4 h-4 text-gray-400 transition-transform', isOpen && 'rotate-90', !expandable && 'invisible')} />
                   <span className="mono text-sm font-medium text-gray-900 dark:text-white w-28">{v.version}</span>
                   <span className="text-xs text-gray-500 dark:text-slate-400 w-24">
                     {v.devices.length} device{v.devices.length === 1 ? '' : 's'}
                   </span>
-                  {v.cves.length === 0 ? (
+                  {sure.length === 0 ? (
                     <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                       <ShieldCheck className="w-3.5 h-3.5" /> No known CVEs
                     </span>
                   ) : (
                     <span className="flex items-center gap-2 text-xs text-gray-700 dark:text-slate-300 flex-wrap">
-                      {v.cves.length} CVE{v.cves.length === 1 ? '' : 's'}
+                      {sure.length} CVE{sure.length === 1 ? '' : 's'}
                       {exploited > 0 && (
                         <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-600 text-white text-[11px] font-medium">
                           <Flame className="w-3 h-3" /> {exploited} actively exploited
                         </span>
                       )}
-                      <SeverityPill c={v.cves[0]} />
+                      <SeverityPill c={sure[0]} />
+                    </span>
+                  )}
+                  {unsure > 0 && (
+                    <span className="text-xs text-gray-400 dark:text-slate-500">
+                      + {unsure} that may not apply
                     </span>
                   )}
                 </button>
@@ -131,7 +140,7 @@ export default function RouterOsCveCard() {
                       ))}
                     </div>
                     {v.cves.map((c) => (
-                      <div key={c.id} className="text-sm">
+                      <div key={c.id} className={clsx('text-sm', c.uncertain && 'opacity-60')}>
                         <div className="flex items-center gap-2 flex-wrap">
                           <a href={`https://nvd.nist.gov/vuln/detail/${c.id}`} target="_blank" rel="noopener noreferrer"
                              className="mono font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
@@ -146,8 +155,16 @@ export default function RouterOsCveCard() {
                           {c.fixed_in && <span className="text-xs text-green-700 dark:text-green-400">Fixed in {c.fixed_in}</span>}
                           {c.hardware_specific && <span className="text-xs text-gray-400">Only on some hardware</span>}
                         </div>
+                        {c.uncertain && (
+                          <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">May not apply: {c.uncertain}.</p>
+                        )}
                         <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 line-clamp-2">{c.summary}</p>
                       </div>
+                    ))}
+                    {v.corrected.map((c) => (
+                      <p key={c.id} className="text-xs text-gray-400 dark:text-slate-500">
+                        Not shown: <span className="mono">{c.id}</span>. NVD lists it for this version, but {c.reason}.
+                      </p>
                     ))}
                   </div>
                 )}

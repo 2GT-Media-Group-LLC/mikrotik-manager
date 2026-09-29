@@ -89,6 +89,49 @@ export function affects(cve: Pick<ParsedCve, 'ranges'>, version: string): boolea
   return cve.ranges.some((r) => versionInRange(version, r));
 }
 
+/**
+ * Corrections to NVD, for entries whose ranges are known to be wrong. NVD often
+ * lists a CVE as "before 7.x" with no starting version, which takes in every
+ * RouterOS 6 release even when the flaw is in something v6 never had. Each
+ * entry says which major versions it does not apply to, and why.
+ */
+export const CVE_CORRECTIONS = new Map<string, { notMajors: number[]; reason: string }>([
+  ['CVE-2025-6443', { notMajors: [6], reason: 'the flaw is in VXLAN, which RouterOS 6 does not have' }],
+]);
+
+function majorOf(version: string): number | null {
+  const m = /^(\d+)/.exec(version.trim());
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/** Whether a correction says this CVE doesn't apply to this version. */
+export function correctedAway(cveId: string, version: string): string | null {
+  const c = CVE_CORRECTIONS.get(cveId);
+  const major = majorOf(version);
+  return c && major !== null && c.notMajors.includes(major) ? c.reason : null;
+}
+
+/**
+ * How sure a match is. "Listed" when the range was written for this release
+ * line. "Uncertain" when the only matching range is open-ended ("before 7.5",
+ * no start) and ends in a later major version than the device runs: NVD then
+ * takes in all of v6 by default, and often the flaw was only ever in v7.
+ */
+export function matchUncertainty(cve: Pick<ParsedCve, 'ranges'>, version: string): string | null {
+  const hits = cve.ranges.filter((r) => versionInRange(version, r));
+  if (!hits.length) return null;
+  const major = majorOf(version);
+  const openEnded = (r: VersionRange) => !r.exact && !r.startIncluding && !r.startExcluding;
+  const endMajor = (r: VersionRange) => majorOf(r.endExcluding ?? r.endIncluding ?? '');
+  const allVague = hits.every((r) => {
+    const em = endMajor(r);
+    return openEnded(r) && major !== null && em !== null && em > major;
+  });
+  if (!allVague) return null;
+  const end = hits[0].endExcluding ?? hits[0].endIncluding;
+  return `listed only as "before ${end}", which NVD applies to every earlier release; it may only affect v${endMajor(hits[0])}`;
+}
+
 /** The first release no longer affected, when the matching range says ("7.24.2"). */
 export function fixedIn(cve: Pick<ParsedCve, 'ranges'>, version: string): string | null {
   const hit = cve.ranges.find((r) => versionInRange(version, r));

@@ -1826,6 +1826,8 @@ export interface CertificatesResponse {
 export interface FleetCve {
   id: string; severity: string | null; score: number | null; known_exploited: boolean;
   published: string | null; summary: string; fixed_in: string | null; hardware_specific: boolean;
+  /** Why the match may not really apply (an open-ended "before 7.x" entry on v6); null when sure. */
+  uncertain: string | null;
 }
 export interface FleetCveReport {
   enabled: boolean;
@@ -1833,7 +1835,11 @@ export interface FleetCveReport {
   last_error: string | null;
   total_cves: number;
   unranged: number;
-  versions: { version: string; devices: { id: number; name: string }[]; cves: FleetCve[] }[];
+  versions: {
+    version: string; devices: { id: number; name: string }[]; cves: FleetCve[];
+    /** Matches a known correction to NVD removed, with the reason. */
+    corrected: { id: string; reason: string }[];
+  }[];
 }
 export const cvesApi = {
   report: () => api.get<FleetCveReport>('/security/cves'),

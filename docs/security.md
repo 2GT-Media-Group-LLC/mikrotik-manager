@@ -28,6 +28,16 @@ device can be attacked: many CVEs need a particular service (SSH, winbox, btest,
 interface, hotspot) to be reachable. Read each one before acting. A few NVD entries give no
 usable version range; they aren't matched, and the page says how many.
 
+**Matches that may not apply.** NVD often lists a CVE as "before 7.5" with no starting
+version, which takes in every RouterOS 6 release even when the flaw was only ever in v7. On a
+v6 device such a match is shown greyed out as *may not apply*, with the reason, and isn't
+counted in the version's total. Actively exploited CVEs are never greyed out.
+
+**Corrections.** A few entries are known to be wrong for a release line and are left out,
+with a note saying so. For example, CVE-2025-6443 is a VXLAN flaw listed as "before 7.20",
+but RouterOS 6 has no VXLAN. If you find another, please
+[open an issue](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues) with the CVE id.
+
 **Dark Site Mode.** The download is listed under **Settings → Dark Site Mode** as
 *RouterOS vulnerability list*. Turned off, nothing is fetched and the card says so.
 

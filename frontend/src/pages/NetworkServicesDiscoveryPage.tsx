@@ -401,7 +401,7 @@ export default function NetworkServicesDiscoveryPage() {
             No online {scopeNoun(scope)} found. Devices must be online to check or change LLDP settings.
           </p>
         ) : (
-          <div className="rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+          <div className="rounded-lg border border-gray-200 dark:border-slate-700 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 dark:bg-slate-700/50 border-b border-gray-200 dark:border-slate-700">
@@ -657,7 +657,7 @@ export default function NetworkServicesDiscoveryPage() {
             <RefreshCw className="w-4 h-4 animate-spin" /> Checking SNMP status on all {scopeNoun(scope)}…
           </div>
         ) : snmpStatuses.length > 0 && (
-          <div className="rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+          <div className="rounded-lg border border-gray-200 dark:border-slate-700 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 dark:bg-slate-700/50 border-b border-gray-200 dark:border-slate-700">

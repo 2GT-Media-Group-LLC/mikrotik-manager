@@ -1,5 +1,5 @@
 import fixture from './fixtures-nvd-routeros.json';
-import { parseNvdResponse, parseKevResponse, affects, fixedIn, versionInRange, rangeFromCpeMatch } from '../cveMatch';
+import { parseNvdResponse, parseKevResponse, affects, fixedIn, versionInRange, rangeFromCpeMatch, matchUncertainty, correctedAway } from '../cveMatch';
 
 // Real NVD 2.0 entries for RouterOS (fetched 2026-09-28).
 const cves = parseNvdResponse(fixture);
@@ -71,5 +71,26 @@ describe('parseKevResponse', () => {
       { cveID: 'CVE-2021-44228', vendorProject: 'Apache' },
     ] });
     expect([...ids]).toEqual(['CVE-2026-67277']);
+  });
+});
+
+// Henk's report on #175: on 6.49.21 (current long-term) three CVEs matched that
+// NVD lists only as "before 7.x", with no starting version.
+describe('uncertain and corrected matches', () => {
+  const before75 = { ranges: [{ endExcluding: '7.5' }] };                       // CVE-2022-45313 in NVD
+  const lined = { ranges: [{ startIncluding: '6.0', endExcluding: '6.49.21' }] }; // written for v6
+
+  it('marks an open-ended "before 7.x" match on v6 as uncertain', () => {
+    expect(matchUncertainty(before75, '6.49.21')).toMatch(/before 7\.5/);
+  });
+
+  it('is sure when the range was written for the device release line', () => {
+    expect(matchUncertainty(lined, '6.48.6')).toBeNull();
+    expect(matchUncertainty(before75, '7.4')).toBeNull();   // on v7 "before 7.5" means what it says
+  });
+
+  it('knows CVE-2025-6443 (VXLAN) does not apply to RouterOS 6', () => {
+    expect(correctedAway('CVE-2025-6443', '6.49.21')).toMatch(/VXLAN/);
+    expect(correctedAway('CVE-2025-6443', '7.19')).toBeNull();
   });
 });
