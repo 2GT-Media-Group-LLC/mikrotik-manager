@@ -15,7 +15,7 @@ import { Client as SSHClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
 import {
-  generateDeviceKeyPair, keyFileName, keyComment, isUsablePrivateKey, type KeyStatus,
+  generateDeviceKeyPair, keyFileName, keyComment, isUsablePrivateKey, keyTypeForVersion, type KeyStatus,
 } from '../utils/sshKeys';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { resolveKeyCredentials } from '../utils/sshKeyCredentials';
@@ -195,7 +195,11 @@ export class SshKeyService {
       passwordEncrypted = cred.passwordEncrypted;
     }
 
-    const pair = generateDeviceKeyPair(target.id);
+    // RSA for devices older than RouterOS 7.12, which can't use Ed25519 keys.
+    const version = await queryOne<{ ros_version: string | null }>(
+      `SELECT ros_version FROM devices WHERE id = $1`, [target.id]
+    ).catch(() => null);
+    const pair = generateDeviceKeyPair(target.id, undefined, keyTypeForVersion(version?.ros_version));
     if (!isUsablePrivateKey(pair.privateKey)) {
       throw new Error('Generated key could not be parsed — refusing to deploy it');
     }

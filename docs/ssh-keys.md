@@ -25,9 +25,12 @@ On a shared fleet this is a change to announce, not to discover.
 
 ## How deployment works
 
-1. A unique **ed25519** keypair is generated on the manager — one per device, never a
+1. A unique keypair is generated on the manager — one per device, never a
    fleet key. A shared key would make any single compromise fleet-wide and would make
-   rotating one device impossible without touching all of them.
+   rotating one device impossible without touching all of them. It is **Ed25519** on
+   RouterOS 7.12 and later, and **RSA** (3072-bit) on anything older, including all of v6:
+   RouterOS only accepts Ed25519 user keys from 7.12, and older releases import one without
+   complaint and then refuse to log in with it.
 2. The public half is uploaded over the existing password session and imported.
 3. A **completely fresh connection** authenticates with the new key.
 4. Only then is anything stored.

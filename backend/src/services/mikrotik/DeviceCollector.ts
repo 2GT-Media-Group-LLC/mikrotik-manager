@@ -52,6 +52,9 @@ import { normalizeHealth, evaluateHealth, type HealthVerdict, type HealthIssue }
 import { resolveChannel } from '../../utils/updateChannel';
 import { registerPollSession } from '../../utils/pollJobContext';
 
+/** A RouterOS property name: lower-case words joined by '-' or '.', never '.id'. */
+const ROS_PROPERTY = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/;
+
 /** DB column limits for topology_links (see migrate.ts); reject oversize rows instead of silent truncation. */
 const TOPOLOGY_LINK_LIMITS = {
   from_interface: 512,
@@ -2706,23 +2709,25 @@ export class DeviceCollector {
    * object than the one in the URL and the audit log.
    */
   private async setItem(menu: string, id: string, params: Record<string, string>): Promise<void> {
-    const set: Record<string, string> = {};
-    const clear: string[] = [];
-    for (const [k, v] of Object.entries(params)) {
-      if (k === '.id' || k === 'numbers') continue;
-      if (v === '') clear.push(k); else set[k] = v;
-    }
-    if (Object.keys(set).length) await this.client.execute(`${menu}/set`, { ...set, '.id': id });
+    // Property names come from request bodies on some routes, so only names
+    // shaped like RouterOS properties ("dst-port", "security.passphrase") are
+    // accepted, and the words are built as entries rather than by writing
+    // arbitrary keys onto an object.
+    const entries = Object.entries(params).filter(([k]) => ROS_PROPERTY.test(k) && k !== 'numbers');
+    const toSet = entries.filter(([, v]) => v !== '');
+    const clear = entries.filter(([, v]) => v === '').map(([k]) => k);
+    if (toSet.length) await this.client.execute(`${menu}/set`, Object.fromEntries([...toSet, ['.id', id]]));
     if (!clear.length) return;
 
     const item = (await this.client.execute(`${menu}/print`, { detail: '' })).find((r) => r['.id'] === id);
+    const current = new Map(Object.entries(item ?? {}));
     for (const k of clear) {
-      if (!item || item[k] === undefined || item[k] === '') continue;   // already clear
+      if (!current.get(k)) continue;   // already clear
       try {
         await this.client.execute(`${menu}/unset`, { numbers: id, 'value-name': k });
       } catch {
         // A property that can't be unset but takes an empty value (a comment, say).
-        await this.client.execute(`${menu}/set`, { '.id': id, [k]: '' });
+        await this.client.execute(`${menu}/set`, Object.fromEntries([[k, ''], ['.id', id]]));
       }
     }
   }

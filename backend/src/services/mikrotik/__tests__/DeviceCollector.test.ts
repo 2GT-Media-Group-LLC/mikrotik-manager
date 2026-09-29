@@ -227,6 +227,12 @@ describe('updating an item (setItem)', () => {
     expect(calls.some((c) => c.cmd.endsWith('/unset'))).toBe(false);
   });
 
+  it('ignores names that are not RouterOS properties', async () => {
+    const { collector, calls } = collectorOn({});
+    await collector.updateNatRule('*2', { __proto__: 'x', 'Bad Name': 'y', comment: 'ok' } as unknown as Record<string, string>);
+    expect(calls).toEqual([{ cmd: '/ip/firewall/nat/set', params: { comment: 'ok', '.id': '*2' } }]);
+  });
+
   it('always writes to the item in the URL, never an id from the body', async () => {
     const { collector, calls } = collectorOn({});
     await collector.updateNatRule('*2', { '.id': '*99', numbers: '*98', comment: 'x' });

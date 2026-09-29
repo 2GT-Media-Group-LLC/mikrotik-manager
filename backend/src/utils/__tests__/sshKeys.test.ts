@@ -1,6 +1,6 @@
 import {
   generateDeviceKeyPair, fingerprintPublicKey, isUsablePrivateKey,
-  keyComment, keyFileName, preferredAuth,
+  keyComment, keyFileName, preferredAuth, keyTypeForVersion,
 } from '../sshKeys';
 
 describe('generateDeviceKeyPair', () => {
@@ -89,5 +89,29 @@ describe('key comments', () => {
     expect(a.comment).not.toBe(b.comment);
     expect(a.comment.startsWith(keyComment(5))).toBe(true);
     expect(a.publicKey.trim().split(/\s+/).pop()).toBe(a.comment);
+  });
+});
+
+// Stanley's report (#85 discussion): on RouterOS 6.49.22 an Ed25519 key was
+// accepted by /user/ssh-keys/import but every login with it failed. RouterOS
+// only takes Ed25519 user keys from 7.12.
+describe('key type by RouterOS version', () => {
+  it('uses Ed25519 from 7.12 and RSA before that', () => {
+    expect(keyTypeForVersion('7.24.4')).toBe('ed25519');
+    expect(keyTypeForVersion('7.12')).toBe('ed25519');
+    expect(keyTypeForVersion('7.11.2')).toBe('rsa');
+    expect(keyTypeForVersion('6.49.22')).toBe('rsa');
+  });
+
+  it('uses RSA when the version is unknown, since every release accepts it', () => {
+    expect(keyTypeForVersion(null)).toBe('rsa');
+    expect(keyTypeForVersion('')).toBe('rsa');
+  });
+
+  it('generates a usable RSA key with the device comment', () => {
+    const pair = generateDeviceKeyPair(7, 'abcd1234', 'rsa');
+    expect(pair.keyType).toBe('rsa');
+    expect(pair.publicKey).toMatch(/^ssh-rsa \S+ mikrotik-manager-device-7-abcd1234$/);
+    expect(isUsablePrivateKey(pair.privateKey)).toBe(true);
   });
 });

@@ -9,9 +9,12 @@
  */
 import * as crypto from 'crypto';
 import { utils as sshUtils } from 'ssh2';
+import { compareRosVersions, parseRosVersion } from './rosVersion';
+
+export type SshKeyType = 'ed25519' | 'rsa';
 
 export interface GeneratedKeyPair {
-  keyType: 'ed25519';
+  keyType: SshKeyType;
   publicKey: string;
   privateKey: string;
   fingerprint: string;
@@ -54,22 +57,41 @@ export function fingerprintPublicKey(publicKey: string): string {
   return `SHA256:${hash.replace(/=+$/, '')}`;
 }
 
+/** RouterOS accepts Ed25519 user keys from this release on. */
+export const ED25519_MIN_ROS = '7.12';
+
 /**
- * Generate a keypair for one device.
+ * The key type a device can authenticate with.
  *
- * Ed25519 rather than RSA: shorter, faster to verify, and supported by the
- * RouterOS versions this platform targets. The private half never leaves the
- * manager and is never returned by the API.
+ * RouterOS only accepts Ed25519 user keys from 7.12. Older releases, including
+ * all of v6, import an Ed25519 key without complaint and then refuse to log in
+ * with it, which is what a v6.49 user saw: "installed but would not
+ * authenticate". RSA works on every release, so it is used for anything older
+ * than 7.12 and for a device whose version isn't known yet.
  */
-export function generateDeviceKeyPair(deviceId: number, suffix = newKeySuffix()): GeneratedKeyPair {
+export function keyTypeForVersion(rosVersion: string | null | undefined): SshKeyType {
+  if (!parseRosVersion(rosVersion)) return 'rsa';
+  return compareRosVersions(rosVersion, ED25519_MIN_ROS) >= 0 ? 'ed25519' : 'rsa';
+}
+
+/**
+ * Generate a keypair for one device: Ed25519 where the device supports it
+ * (shorter and faster), RSA otherwise (see keyTypeForVersion). The private
+ * half never leaves the manager and is never returned by the API.
+ */
+export function generateDeviceKeyPair(
+  deviceId: number, suffix = newKeySuffix(), keyType: SshKeyType = 'ed25519'
+): GeneratedKeyPair {
   const comment = keyComment(deviceId, suffix);
-  const kp = sshUtils.generateKeyPairSync('ed25519', { comment });
+  const kp = keyType === 'rsa'
+    ? sshUtils.generateKeyPairSync('rsa', { bits: 3072, comment })
+    : sshUtils.generateKeyPairSync('ed25519', { comment });
   // generateKeyPairSync already appends the comment; appending it again produced
   // keys tagged twice, which is harmless but reads like a bug on the device.
   const generated = kp.public.trim();
   const publicKey = generated.endsWith(comment) ? generated : `${generated} ${comment}`;
   return {
-    keyType: 'ed25519',
+    keyType,
     publicKey,
     privateKey: kp.private,
     fingerprint: fingerprintPublicKey(kp.public),
