@@ -1,6 +1,6 @@
 import {
   generateDeviceKeyPair, fingerprintPublicKey, isUsablePrivateKey,
-  keyComment, keyFileName, preferredAuth, keyTypeForVersion,
+  keyComment, keyFileName, preferredAuth, keyTypeForVersion, importRejection,
 } from '../sshKeys';
 
 describe('generateDeviceKeyPair', () => {
@@ -113,5 +113,26 @@ describe('key type by RouterOS version', () => {
     expect(pair.keyType).toBe('rsa');
     expect(pair.publicKey).toMatch(/^ssh-rsa \S+ mikrotik-manager-device-7-abcd1234$/);
     expect(isUsablePrivateKey(pair.privateKey)).toBe(true);
+  });
+});
+
+// The rest of Stanley's report: the manager sent /user/ssh-keys/import, which
+// RouterOS 6 answers with a CLI parse error. The old check didn't treat that
+// as a failure, so a key that was never imported was reported as installed.
+describe('importRejection', () => {
+  it('accepts the empty output a successful import prints', () => {
+    expect(importRejection('')).toBeNull();
+    expect(importRejection('  \r\n')).toBeNull();
+  });
+
+  it('catches the CLI parse error RouterOS 6 gives for v7 menu paths', () => {
+    expect(importRejection('expected command name (line 1 column 6)')).toMatch(/expected command name/);
+    expect(importRejection('syntax error (line 1 column 20)')).toMatch(/syntax error/);
+    expect(importRejection('bad command name import (line 1 column 15)')).toMatch(/bad command/);
+  });
+
+  it('catches import failures RouterOS reports in words', () => {
+    expect(importRejection('failure: no such item')).toMatch(/failure/);
+    expect(importRejection('input does not match any value of user')).toMatch(/does not match/);
   });
 });

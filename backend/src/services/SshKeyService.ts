@@ -15,7 +15,7 @@ import { Client as SSHClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
 import {
-  generateDeviceKeyPair, keyFileName, keyComment, isUsablePrivateKey, keyTypeForVersion, type KeyStatus,
+  generateDeviceKeyPair, keyFileName, keyComment, isUsablePrivateKey, keyTypeForVersion, importRejection, type KeyStatus,
 } from '../utils/sshKeys';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { resolveKeyCredentials } from '../utils/sshKeyCredentials';
@@ -215,12 +215,12 @@ export class SshKeyService {
     try {
       await withSsh(target, username, auth, async (conn) => {
         await putFile(conn, fileName, pair.publicKey + '\n');
-        const out = await exec(conn, `/user/ssh-keys/import public-key-file=${fileName} user=${username}`);
-        // RouterOS reports failure in the output rather than an exit code.
-        if (/failure|error|no such/i.test(out)) {
-          throw new Error(`Device rejected the key import: ${out.trim().slice(0, 200)}`);
-        }
-        await exec(conn, `/file/remove ${fileName}`).catch(() => '');
+        // Space-separated menu paths: RouterOS 6 rejects the /user/ssh-keys form
+        // that v7 accepts, and v7 accepts both.
+        const out = await exec(conn, `/user ssh-keys import public-key-file=${fileName} user=${username}`);
+        const rejected = importRejection(out);
+        if (rejected) throw new Error(`Device rejected the key import: ${rejected}`);
+        await exec(conn, `/file remove ${fileName}`).catch(() => '');
       });
     } catch (e) {
       const msg = (e as Error).message;
@@ -305,7 +305,7 @@ export class SshKeyService {
     target: SshTarget, username: string, privateKey: string,
   ): Promise<{ ok: boolean; error?: string }> {
     try {
-      await withSsh(target, username, { privateKey }, (conn) => exec(conn, '/system/identity/print'));
+      await withSsh(target, username, { privateKey }, (conn) => exec(conn, '/system identity print'));
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error).message };

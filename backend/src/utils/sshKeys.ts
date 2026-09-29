@@ -75,6 +75,23 @@ export function keyTypeForVersion(rosVersion: string | null | undefined): SshKey
 }
 
 /**
+ * Why RouterOS refused `/user ssh-keys import`, or null if it didn't.
+ *
+ * The command exits 0 either way; the only signal is what it prints. That
+ * includes the CLI's own parse errors ("expected command name", "syntax
+ * error"), which are easy to miss: RouterOS 6 answered the v7-style
+ * `/user/ssh-keys/import` with one, the old check did not recognise it, and a
+ * key that was never imported was reported as installed.
+ */
+export function importRejection(output: string): string | null {
+  const text = output.trim();
+  if (!text) return null;
+  return /failure|error|no such|expected|bad command|invalid|does not match|not allowed|denied/i.test(text)
+    ? text.slice(0, 200)
+    : null;
+}
+
+/**
  * Generate a keypair for one device: Ed25519 where the device supports it
  * (shorter and faster), RSA otherwise (see keyTypeForVersion). The private
  * half never leaves the manager and is never returned by the API.
