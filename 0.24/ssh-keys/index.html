@@ -1204,9 +1204,11 @@ password login immediately.</p>
    fleet key. A shared key would make any single compromise fleet-wide and would make
    rotating one device impossible without touching all of them. It is <strong>Ed25519</strong> on
    RouterOS 7.12 and later, and <strong>RSA</strong> (3072-bit) on anything older, including all of v6:
-   RouterOS only accepts Ed25519 user keys from 7.12, and older releases import one without
-   complaint and then refuse to log in with it.</li>
-<li>The public half is uploaded over the existing password session and imported.</li>
+   RouterOS only accepts Ed25519 user keys from 7.12. Older releases take the import without
+   an error but never actually add the key.</li>
+<li>The public half is uploaded over the existing password session and imported. The
+   commands use space-separated menu paths (<code>/user ssh-keys import</code>), which work on v6 and
+   v7 alike; RouterOS 6 rejects the <code>/user/ssh-keys/import</code> form.</li>
 <li>A <strong>completely fresh connection</strong> authenticates with the new key.</li>
 <li>Only then is anything stored.</li>
 </ol>
