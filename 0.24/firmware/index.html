@@ -1264,11 +1264,14 @@ delay rather than a risk.</p>
 <p>Each device goes through the same sequence:</p>
 <ol>
 <li><strong>Pre-upgrade backup</strong> (optional, on by default)</li>
-<li><strong>Check for updates</strong> — a device already on the target version is <em>skipped</em>, not failed</li>
+<li><strong>Check for updates</strong> — a device already on the target version is <em>skipped</em>, not failed.
+   So is one whose channel offers an <strong>older</strong> version (a stable device pointed at long-term,
+   say): nothing is downgraded automatically, even though RouterOS calls that release "New
+   version is available". The device's <strong>Install</strong> button follows the same rule</li>
 <li><strong>Download the image, and confirm it landed</strong></li>
 <li><strong>Reboot</strong></li>
 <li><strong>Prove the reboot happened</strong> — uptime must have gone <em>backwards</em></li>
-<li><strong>Verify the version moved</strong></li>
+<li><strong>Verify the version</strong> — the device must report exactly the version that was installed</li>
 <li><strong>RouterBOOT</strong> (optional) — a second flash and a second reboot. It waits for the device
    to settle after the first reboot and retries its first connection, then proves the second
    reboot the same way as step 5 before reading the bootloader version</li>
@@ -1293,7 +1296,9 @@ in sequence</strong>. Wave 1 is your canary: put one device in it, let it finish
 rest of the fleet is still untouched if it goes wrong.</p>
 <p><strong>Halt on failure</strong> stops the rollout rather than continuing into the next wave.
 Devices never reached are marked <code>skipped</code>, not <code>failed</code> — they did not run.</p>
-<p>A device that comes back on the <em>old</em> version counts as a failure.</p>
+<p>A device counts as upgraded only when it comes back reporting the exact version that was
+installed. Coming back on the old version, on some other version, or with a version that
+can't be read is a failure. RouterBOOT is checked against its target version the same way.</p>
 <h3 id="waves-from-tags">Waves from tags<a class="headerlink" href="#waves-from-tags" title="Permanent link">&para;</a></h3>
 <p><a href="../devices/">Tags</a> are how devices are grouped. Next to <strong>Select all updatable</strong> there is a
 chip for each tag in use. Clicking one adds that tag's updatable devices as the next wave. A
@@ -1371,6 +1376,11 @@ neighbours at once — and naming the wrong switch would be worse than saying no
 <h2 id="scheduling-and-cancelling">Scheduling and cancelling<a class="headerlink" href="#scheduling-and-cancelling" title="Permanent link">&para;</a></h2>
 <p>A rollout can be scheduled; pair it with a maintenance window by scheduling inside
 one. One rollout runs at a time.</p>
+<p>A scheduled rollout only starts inside its window: from its scheduled time until <strong>Don't
+start after</strong>, or an hour later if that's left blank. If the manager can't start it in time
+(it was down, or an earlier rollout ran long) the rollout is marked <strong>missed</strong> and nothing is
+upgraded; schedule it again when it suits. Before 0.24.39 a late rollout started whenever the
+manager got to it, which could mean rebooting devices in the middle of the day.</p>
 <p>Devices already belonging to an unfinished rollout are refused by name when you try
 to create another for them, before anything is written.</p>
 <p><strong>Cancelling never interrupts an in-flight flash.</strong> It stops before the <em>next</em> device,
