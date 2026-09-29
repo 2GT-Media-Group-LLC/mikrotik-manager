@@ -276,7 +276,8 @@ function SsidModal({
 
   const parseArr = (v?: string) => v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-  const [form, setForm] = useState<SsidForm>(() => existing ? {
+  // What the form held when it opened; an edit sends only what differs from it.
+  const [loadedForm] = useState<SsidForm>(() => existing ? {
     ssid:                existing.ssid || '',
     mode:                existing.mode || (isNewWifiPkg ? 'ap' : 'ap-bridge'),
     band:                existing.band || '',
@@ -296,6 +297,7 @@ function SsidModal({
     country:             existing.country || '',
     installation:        existing.installation || 'indoor',
   } : defaultSsidForm(isNewWifiPkg, availableRadios[0]?.name ?? '', availableRadios[0]?.band ?? ''));
+  const [form, setForm] = useState<SsidForm>(loadedForm);
 
   const set = (k: keyof SsidForm) => (v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
 
@@ -373,25 +375,38 @@ function SsidModal({
       setError('Select at least one AP to deploy to');
       return;
     }
+    const build = (f: SsidForm): Record<string, unknown> => {
     const data: Record<string, unknown> = {
-      ssid: form.ssid, mode: form.mode, disabled: form.disabled,
+      ssid: f.ssid, mode: f.mode, disabled: f.disabled,
     };
-    if (form.band) data.band = form.band;
-    if (form.passphrase.trim()) data.passphrase = form.passphrase;
-    if (form.authentication_types.length > 0) data.authentication_types = form.authentication_types;
+    if (f.band) data.band = f.band;
+    if (f.passphrase.trim()) data.passphrase = f.passphrase;
+    if (f.authentication_types.length > 0) data.authentication_types = f.authentication_types;
     // Bridge and radio are per-device — only apply in single-AP mode
     if (!isBulk) {
-      data.bridge = form.bridge;
-      if (form.bridge && form.vlan_id) data.vlan_id = form.vlan_id;
-      if (form.master_interface) data.master_interface = form.master_interface;
+      data.bridge = f.bridge;
+      if (f.bridge && f.vlan_id) data.vlan_id = f.vlan_id;
+      if (f.master_interface) data.master_interface = f.master_interface;
     }
-    if (form.frequency)     data.frequency     = form.frequency;
-    if (form.channel_width) data.channel_width = form.channel_width;
-    if (form.tx_power)      data.tx_power      = form.tx_power;
-    if (form.tx_power_mode) data.tx_power_mode = form.tx_power_mode;
-    if (form.antenna_gain)  data.antenna_gain  = form.antenna_gain;
-    if (form.country)       data.country       = form.country;
-    if (form.installation)  data.installation  = form.installation;
+    if (f.frequency)     data.frequency     = f.frequency;
+    if (f.channel_width) data.channel_width = f.channel_width;
+    if (f.tx_power)      data.tx_power      = f.tx_power;
+    if (f.tx_power_mode) data.tx_power_mode = f.tx_power_mode;
+    if (f.antenna_gain)  data.antenna_gain  = f.antenna_gain;
+    if (f.country)       data.country       = f.country;
+    if (f.installation)  data.installation  = f.installation;
+    return data;
+    };
+    let data = build(form);
+    if (isEdit) {
+      // Only what changed. Re-sending every field on each save could pin the
+      // radio's channel and rewrite settings nobody touched.
+      const before = build(loadedForm);
+      data = Object.fromEntries(Object.entries(data).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(before[k])));
+      // A frequency that was cleared means "automatic" again.
+      if (loadedForm.frequency && !form.frequency) data.frequency = 'auto';
+      if (!Object.keys(data).length) { onClose(); return; }
+    }
 
     if (isBulk) {
       bulkMutation.mutate(data);

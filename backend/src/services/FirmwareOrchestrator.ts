@@ -15,6 +15,7 @@ import { BackupService } from './BackupService';
 import { mapWithConcurrency, clampConcurrency } from '../utils/concurrency';
 import { interruptedOutcome, INTERRUPTED_RUN_ERROR } from '../utils/interrupted';
 import { describeUpdateStatus, type UpdateStatus } from '../utils/updateStatus';
+import { upgradeDecision, verifyUpgrade, scheduleDecision } from '../utils/firmwarePlan';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 /**
@@ -153,13 +154,37 @@ export class FirmwareOrchestrator {
     if (this.schedulerTimer) { clearInterval(this.schedulerTimer); this.schedulerTimer = null; }
   }
 
+  /**
+   * Start the next scheduled rollout that is inside its window. One whose window
+   * has passed (manager downtime, or an earlier rollout that ran long) is marked
+   * 'missed' instead: starting late would reboot devices at a time nobody chose.
+   */
   private async startDueRollouts(): Promise<void> {
     if (this.activeRolloutId) return;
-    const due = await queryOne<{ id: number }>(
-      `SELECT id FROM firmware_rollouts
+    const due = await query<{ id: number; name: string; scheduled_at: string; scheduled_until: string | null }>(
+      `SELECT id, name, scheduled_at, scheduled_until FROM firmware_rollouts
        WHERE status = 'pending' AND scheduled_at IS NOT NULL AND scheduled_at <= NOW()
-       ORDER BY scheduled_at ASC LIMIT 1`);
-    if (due) await this.start(due.id).catch(e => console.error(`[Firmware] scheduled start of #${due.id} failed:`, e));
+       ORDER BY scheduled_at ASC`);
+    for (const r of due) {
+      const decision = scheduleDecision(new Date(r.scheduled_at), r.scheduled_until ? new Date(r.scheduled_until) : null);
+      if (decision === 'missed') {
+        await query(
+          `UPDATE firmware_rollouts SET status = 'missed', finished_at = NOW() WHERE id = $1 AND status = 'pending'`,
+          [r.id]
+        );
+        await query(
+          `UPDATE firmware_rollout_devices SET status = 'skipped', error = 'The rollout missed its start window', finished_at = NOW()
+            WHERE rollout_id = $1 AND status = 'pending'`,
+          [r.id]
+        );
+        console.warn(`[Firmware] rollout #${r.id} ("${r.name}") missed its start window and was not started`);
+        continue;
+      }
+      if (decision === 'start') {
+        await this.start(r.id).catch(e => console.error(`[Firmware] scheduled start of #${r.id} failed:`, e));
+        return;
+      }
+    }
   }
 
   async start(rolloutId: number): Promise<void> {
@@ -308,14 +333,22 @@ export class FirmwareOrchestrator {
     // reboots, and means a device is never restarted for an image it lacks.
     await this.setItem(item.id, { status: 'upgrading' });
     let uptimeBefore: number | null;
+    // Read from the device just before the download, not the stored copy: the
+    // "before" version and the target are what the result is checked against.
+    let installed: string;
+    let latest: string;
     const collector = new DeviceCollector(device);
     try {
       await collector.connect();
       const status = await collector.checkForUpdates();
-      const installed = (status['installed-version'] || '').trim();
-      const latest = (status['latest-version'] || '').trim();
-      if (!latest || latest === installed) {
-        await this.setItem(item.id, { status: 'skipped', error: 'Already up to date', to_version: installed || null });
+      installed = (status['installed-version'] || '').trim();
+      latest = (status['latest-version'] || '').trim();
+      if (installed) await this.setItem(item.id, { from_version: installed });
+      // Only a genuinely newer version is installed. A channel offering an older
+      // release (long-term, say) would otherwise downgrade the device.
+      const decision = upgradeDecision(installed, latest);
+      if (decision.action === 'skip') {
+        await this.setItem(item.id, { status: 'skipped', error: decision.reason, to_version: installed || null });
         await query(`UPDATE firmware_rollout_devices SET finished_at=NOW() WHERE id=$1`, [item.id]);
         collector.disconnect();
         return true;
@@ -528,14 +561,15 @@ export class FirmwareOrchestrator {
       return fail(`Device did not come back online within ${Math.round(this.rebootMs / 60000)} minutes after the upgrade — check it manually (a pre-upgrade backup ${rollout.pre_backup ? 'exists' : 'was NOT taken'})`);
     }
 
-    // 4. Verify the version actually moved
-    if (newVersion && fromVersion && newVersion === fromVersion) {
+    // 4. Verify the device is on the version we installed. Compared with the
+    // target, not the stored version: an upgrade that never moved, or landed on
+    // something else, or whose version can't be read, is not a success.
+    const verdict = verifyUpgrade(latest, newVersion, installed || fromVersion);
+    if (!verdict.ok) {
       return fail(
         uptimeComparable
-          ? `Device rebooted but still reports ${newVersion} — the update did not apply. ` +
-            `The image was confirmed on the device beforehand, so check its free space and logs.`
-          : `Device still reports ${newVersion} after the upgrade, and its uptime could not be ` +
-            `read, so whether it restarted at all is unknown. Nothing here proves a reboot happened.`
+          ? `${verdict.error}. The image was confirmed on the device beforehand, so check its free space and logs.`
+          : `${verdict.error}. Its uptime could not be read either, so whether it restarted at all is unknown.`
       );
     }
     // 5. RouterBOOT, if asked for (issue #113).
@@ -597,6 +631,7 @@ export class FirmwareOrchestrator {
     }
 
     const before = status.currentFirmware;
+    const target = status.upgradeFirmware;
     if (!status.upgradeAvailable) {
       probe.disconnect();
       console.log(`[Firmware] ${device.name}: RouterBOOT already current (${before || 'unknown'})`);
@@ -630,8 +665,15 @@ export class FirmwareOrchestrator {
         }
         const after = await probe.checkRouterboardUpgrade();
         probe.disconnect();
-        if (after.currentFirmware && before && after.currentFirmware === before) {
+        // Checked against the target, and an unreadable version is not a pass.
+        if (!after.currentFirmware) {
+          return { ok: false, error: 'the device came back but its RouterBOOT version could not be read, so the upgrade can\u2019t be confirmed' };
+        }
+        if (before && after.currentFirmware === before) {
           return { ok: false, error: `device rebooted but RouterBOOT still reports ${after.currentFirmware}` };
+        }
+        if (target && after.currentFirmware !== target) {
+          return { ok: false, error: `expected RouterBOOT ${target}, but the device reports ${after.currentFirmware}` };
         }
         await query(
           `UPDATE devices SET routerboard_upgrade_available = FALSE, firmware_version = COALESCE(NULLIF($2,''), firmware_version) WHERE id = $1`,

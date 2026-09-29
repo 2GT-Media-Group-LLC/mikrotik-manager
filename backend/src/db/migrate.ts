@@ -1124,6 +1124,10 @@ CREATE TABLE IF NOT EXISTS ros_cves (
   known_exploited   BOOLEAN NOT NULL DEFAULT FALSE
 );
 
+-- A scheduled rollout starts only inside its window (P2-9); one that misses it
+-- is marked 'missed' rather than started late. NULL means the default window.
+ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS scheduled_until TIMESTAMPTZ;
+
 -- API tokens are recorded as "token:<name>" with names up to 100 characters;
 -- at 50 the insert failed and the write went unrecorded.
 ALTER TABLE audit_log ALTER COLUMN username TYPE VARCHAR(150);

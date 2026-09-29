@@ -40,6 +40,7 @@ function intervalToMs(interval: string): number {
 }
 import { parseBandList, uplinkAnchor, totalBandwidthMhz, type LteBandInfo } from '../utils/lte';
 import { fluxString } from '@influxdata/influxdb-client';
+import { upgradeDecision } from '../utils/firmwarePlan';
 
 const router = Router();
 router.use(requireAuth);
@@ -647,10 +648,10 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
       await collector.setFecMode(req.params.name, fec_mode);
     }
     if (tx_flow_control !== undefined || rx_flow_control !== undefined) {
-      const txFc = tx_flow_control ?? 'off';
-      const rxFc = rx_flow_control ?? 'off';
-      if (['on', 'off', 'auto'].includes(txFc) && ['on', 'off', 'auto'].includes(rxFc)) {
-        await collector.setFlowControl(req.params.name, txFc, rxFc);
+      // Only the direction(s) given; a missing one is left as it is.
+      const ok = (v: unknown) => v === undefined || ['on', 'off', 'auto'].includes(String(v));
+      if (ok(tx_flow_control) && ok(rx_flow_control)) {
+        await collector.setFlowControl(req.params.name, tx_flow_control, rx_flow_control);
       }
     }
     if (typeof auto_negotiation === 'boolean') {
@@ -870,13 +871,18 @@ const FW_FIELD_MAP: Record<string, string> = {
   src_address_list: 'src-address-list', dst_address_list: 'dst-address-list',
 };
 
-function bodyToRosParams(body: Record<string, unknown>): Record<string, string> {
+/**
+ * Map a firewall form body to RouterOS properties. When editing (keepEmpty),
+ * an empty value is kept, meaning "clear this" (DeviceCollector.setItem
+ * unsets it); dropping it left the old value on the device (P2-10).
+ */
+function bodyToRosParams(body: Record<string, unknown>, keepEmpty = false): Record<string, string> {
   const params: Record<string, string> = {};
   for (const [jsKey, rosKey] of Object.entries(FW_FIELD_MAP)) {
     const val = body[jsKey];
-    if (val !== undefined && val !== null && val !== '') {
-      params[rosKey] = String(val);
-    }
+    if (val === undefined || val === null) continue;
+    if (val === '' && !keepEmpty) continue;
+    params[rosKey] = String(val);
   }
   return params;
 }
@@ -907,7 +913,7 @@ router.post('/:id/firewall', requireWrite, async (req: Request, res: Response) =
 
 // PUT /api/devices/:id/firewall/:ruleId
 router.put('/:id/firewall/:ruleId', requireWrite, async (req: Request, res: Response) => {
-  const params = bodyToRosParams(req.body);
+  const params = bodyToRosParams(req.body, true);
   if (!req.body.force) {
     const lock = detectLockoutRisk(params);
     if (lock.risky) return res.status(409).json({ lockout: true, reason: lock.reason });
@@ -986,11 +992,11 @@ const NAT_FIELD_MAP: Record<string, string> = {
   log: 'log', log_prefix: 'log-prefix',
 };
 
-function natBodyToRosParams(body: Record<string, unknown>): Record<string, string> {
+function natBodyToRosParams(body: Record<string, unknown>, keepEmpty = false): Record<string, string> {
   const params: Record<string, string> = {};
   for (const [jsKey, rosKey] of Object.entries(NAT_FIELD_MAP)) {
     const val = body[jsKey];
-    if (val !== undefined && val !== null && val !== '') {
+    if (val !== undefined && val !== null && (val !== '' || keepEmpty)) {
       params[rosKey] = String(val);
     }
   }
@@ -1037,7 +1043,7 @@ router.put('/:id/nat/:ruleId', requireWrite, async (req: Request, res: Response)
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
-    await collector.updateNatRule(req.params.ruleId, natBodyToRosParams(req.body));
+    await collector.updateNatRule(req.params.ruleId, natBodyToRosParams(req.body, true));
     return res.json(await collector.getNatRules());
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message });
@@ -1350,11 +1356,11 @@ const QUEUE_FIELD_MAP: Record<string, string> = {
   burst_threshold: 'burst-threshold', burst_time: 'burst-time', priority: 'priority',
   comment: 'comment', parent: 'parent',
 };
-function queueBodyToRos(body: Record<string, unknown>): Record<string, string> {
+function queueBodyToRos(body: Record<string, unknown>, keepEmpty = false): Record<string, string> {
   const p: Record<string, string> = {};
   for (const [js, ros] of Object.entries(QUEUE_FIELD_MAP)) {
     const v = body[js];
-    if (v !== undefined && v !== null && v !== '') p[ros] = String(v);
+    if (v !== undefined && v !== null && (v !== '' || keepEmpty)) p[ros] = String(v);
   }
   if (body.disabled !== undefined) p.disabled = body.disabled ? 'yes' : 'no';
   return p;
@@ -1371,7 +1377,7 @@ router.post('/:id/queues', requireWrite, async (req, res) => {
 });
 
 router.put('/:id/queues/:queueId', requireWrite, async (req, res) => {
-  await withCollector(req.params.id, res, async (c) => { await c.updateSimpleQueue(req.params.queueId, queueBodyToRos(req.body)); return c.getSimpleQueues(); });
+  await withCollector(req.params.id, res, async (c) => { await c.updateSimpleQueue(req.params.queueId, queueBodyToRos(req.body, true)); return c.getSimpleQueues(); });
 });
 
 router.delete('/:id/queues/:queueId', requireWrite, async (req, res) => {
@@ -1603,18 +1609,24 @@ router.put('/:id/system-config', requireWrite, async (req: Request, res: Respons
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
+    // Each setting is applied only when it is in the request (the form sends
+    // only what changed). NTP and DNS used to be rewritten whenever the form was
+    // saved, and turning NTP on or off alone did nothing at all.
     if (identity !== undefined) {
       await collector.setSystemIdentity(identity);
     }
-    if (ntp_primary !== undefined) {
-      await collector.setNtpConfig(
-        ntp_enabled !== false,
-        ntp_primary || '',
-        ntp_secondary || ''
-      );
+    if (ntp_enabled !== undefined || ntp_primary !== undefined || ntp_secondary !== undefined) {
+      await collector.setNtpConfig({
+        enabled: ntp_enabled === undefined ? undefined : ntp_enabled !== false,
+        primary: ntp_primary,
+        secondary: ntp_secondary,
+      });
     }
-    if (dns_servers !== undefined) {
-      await collector.setDnsConfig(dns_servers, dns_allow_remote === true);
+    if (dns_servers !== undefined || dns_allow_remote !== undefined) {
+      await collector.setDnsConfig({
+        servers: dns_servers,
+        allowRemote: dns_allow_remote === undefined ? undefined : dns_allow_remote === true,
+      });
     }
     return res.json({ message: 'System configuration updated' });
   } finally {
@@ -1871,7 +1883,13 @@ router.post('/:id/install-update', requireWrite, async (req: Request, res: Respo
     const installed = (status['installed-version'] || '').trim();
     const latest = (status['latest-version'] || '').trim();
 
-    if (!latest || latest === installed) {
+    // Only a genuinely newer version: a channel offering an older release would
+    // otherwise install it, a downgrade (P2-9).
+    const decision = upgradeDecision(installed, latest);
+    if (decision.action === 'skip' && decision.reason !== 'Already up to date') {
+      return res.json({ started: false, installed_version: installed || null, message: decision.reason });
+    }
+    if (decision.action === 'skip') {
       // Nothing to do is a real answer, not a failure — and it is the one state
       // in which the device genuinely is current, so the flag can be trusted.
       await query(

@@ -980,11 +980,13 @@ export interface FirmwareDeviceRow {
   routerboard_upgrade_available: boolean;
 }
 export interface FirmwareRollout {
-  id: number; name: string; status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  id: number; name: string; status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'missed';
   halt_on_failure: boolean; pre_backup: boolean; routerboot_after: boolean;
   /** Devices per wave allowed to upgrade at once; 1 is sequential (#135). */
   wave_concurrency?: number;
   scheduled_at: string | null; started_at: string | null; finished_at: string | null; created_at: string;
+  /** Latest time a scheduled rollout may start; null means within an hour of scheduled_at. */
+  scheduled_until?: string | null;
   device_count?: number; success_count?: number; failed_count?: number;
 }
 export interface FirmwareRolloutDevice {
@@ -1006,6 +1008,8 @@ export const firmwareApi = {
   createRollout: (data: {
     name: string; halt_on_failure: boolean; pre_backup: boolean; routerboot_after?: boolean;
     scheduled_at?: string | null; start?: boolean;
+    /** Don't start after this time (a missed window is recorded, not caught up). */
+    scheduled_until?: string | null;
     /** Devices per wave allowed to upgrade at once; 1 is sequential (#135). */
     wave_concurrency?: number;
     devices: { device_id: number; wave: number }[];

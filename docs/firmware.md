@@ -27,11 +27,14 @@ delay rather than a risk.
 Each device goes through the same sequence:
 
 1. **Pre-upgrade backup** (optional, on by default)
-2. **Check for updates** — a device already on the target version is *skipped*, not failed
+2. **Check for updates** — a device already on the target version is *skipped*, not failed.
+   So is one whose channel offers an **older** version (a stable device pointed at long-term,
+   say): nothing is downgraded automatically, even though RouterOS calls that release "New
+   version is available". The device's **Install** button follows the same rule
 3. **Download the image, and confirm it landed**
 4. **Reboot**
 5. **Prove the reboot happened** — uptime must have gone *backwards*
-6. **Verify the version moved**
+6. **Verify the version** — the device must report exactly the version that was installed
 7. **RouterBOOT** (optional) — a second flash and a second reboot. It waits for the device
    to settle after the first reboot and retries its first connection, then proves the second
    reboot the same way as step 5 before reading the bootloader version
@@ -60,7 +63,9 @@ rest of the fleet is still untouched if it goes wrong.
 **Halt on failure** stops the rollout rather than continuing into the next wave.
 Devices never reached are marked `skipped`, not `failed` — they did not run.
 
-A device that comes back on the *old* version counts as a failure.
+A device counts as upgraded only when it comes back reporting the exact version that was
+installed. Coming back on the old version, on some other version, or with a version that
+can't be read is a failure. RouterBOOT is checked against its target version the same way.
 
 ### Waves from tags
 
@@ -131,6 +136,12 @@ A reasonable pattern for a large fleet on a well-known patch release:
 
 A rollout can be scheduled; pair it with a maintenance window by scheduling inside
 one. One rollout runs at a time.
+
+A scheduled rollout only starts inside its window: from its scheduled time until **Don't
+start after**, or an hour later if that's left blank. If the manager can't start it in time
+(it was down, or an earlier rollout ran long) the rollout is marked **missed** and nothing is
+upgraded; schedule it again when it suits. Before 0.24.39 a late rollout started whenever the
+manager got to it, which could mean rebooting devices in the middle of the day.
 
 Devices already belonging to an unfinished rollout are refused by name when you try
 to create another for them, before anything is written.

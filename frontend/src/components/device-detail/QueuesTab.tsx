@@ -92,11 +92,12 @@ export default function QueuesTab({ deviceId }: { deviceId: number }) {
   });
   const invalidate = () => qc.invalidateQueries({ queryKey: ['queues', deviceId] });
 
-  const payload = (f: QForm) => ({ name: f.name, target: f.target, max_limit: joinLimit(f.up, f.down), comment: f.comment || undefined, disabled: f.disabled });
+  // When editing, an emptied comment is sent as '' so it is cleared on the device.
+  const payload = (f: QForm, forEdit = false) => ({ name: f.name, target: f.target, max_limit: joinLimit(f.up, f.down), comment: f.comment || (forEdit ? '' : undefined), disabled: f.disabled });
 
   const addMut = useMutation({ mutationFn: () => devicesApi.addQueue(deviceId, payload(form)),
     onSuccess: () => { invalidate(); setShowAdd(false); setErr(''); }, onError: e => setErr(errMsg(e)) });
-  const updMut = useMutation({ mutationFn: (id: string) => devicesApi.updateQueue(deviceId, id, payload(form)),
+  const updMut = useMutation({ mutationFn: (id: string) => devicesApi.updateQueue(deviceId, id, payload(form, true)),
     onSuccess: () => { invalidate(); setEditing(null); setErr(''); }, onError: e => setErr(errMsg(e)) });
   const delMut = useMutation({ mutationFn: (id: string) => devicesApi.removeQueue(deviceId, id), onSuccess: invalidate });
 

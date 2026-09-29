@@ -135,9 +135,16 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
         'public-key': pubKey,
         'allowed-address': allowedAddr,
       };
-      if (endpointAddr) body['endpoint-address'] = endpointAddr;
-      if (endpointPort) body['endpoint-port'] = endpointPort;
-      if (keepalive) body['persistent-keepalive'] = keepalive;
+      // When editing, an emptied field is sent as '' so it is cleared on the
+      // device; it used to be left out and the old value stayed (P2-10). The
+      // preshared key is the exception: its box is always blank, meaning keep.
+      const opt = (key: string, value: string) => {
+        if (value) Object.assign(body, { [key]: value });
+        else if (existing) Object.assign(body, { [key]: '' });
+      };
+      opt('endpoint-address', endpointAddr);
+      opt('endpoint-port', endpointPort);
+      opt('persistent-keepalive', keepalive);
       if (presharedKey) body['preshared-key'] = presharedKey;
 
       return existing?.['.id']

@@ -14,6 +14,7 @@ import RfHealth from '../wireless/RfHealth';
 import type { WirelessInterface, WirelessMetricPoint } from '../../types';
 import clsx from 'clsx';
 import { format } from 'date-fns';
+import { changedFields } from '../../utils/formDiff';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ function RadioEditModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({
+  const loaded = {
     ssid:          iface.ssid || '',
     band:          iface.band || '2ghz-b/g/n',
     frequency:     String(iface.frequency || ''),
@@ -70,7 +71,8 @@ function RadioEditModal({
     country:       iface.country || 'united states',
     installation:  iface.installation || 'indoor',
     disabled:      iface.disabled,
-  });
+  };
+  const [form, setForm] = useState(loaded);
   const set = (k: keyof typeof form) => (v: string | boolean) =>
     setForm(f => ({ ...f, [k]: v }));
 
@@ -87,18 +89,12 @@ function RadioEditModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    mutation.mutate({
-      ssid: form.ssid,
-      band: form.band,
-      frequency: form.frequency,
-      channel_width: form.channel_width,
-      tx_power: form.tx_power,
-      tx_power_mode: form.tx_power_mode,
-      antenna_gain: form.antenna_gain,
-      country: form.country,
-      installation: form.installation,
-      disabled: form.disabled,
-    });
+    // Only what changed. The frequency shown is the one the radio is running
+    // on now; re-sending it on every save pinned a radio set to choose its
+    // channel automatically to that frequency.
+    const changes = changedFields(loaded, form);
+    if (!Object.keys(changes).length) { onClose(); return; }
+    mutation.mutate(changes);
   };
 
   return (

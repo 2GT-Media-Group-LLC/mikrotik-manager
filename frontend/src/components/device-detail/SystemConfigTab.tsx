@@ -9,6 +9,7 @@ import { devicesApi, certificatesApi } from '../../services/api';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { Device, IpAddress, Interface } from '../../types';
 import clsx from 'clsx';
+import { changedFields } from '../../utils/formDiff';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangelogModal from '../ChangelogModal';
 import CertificateList from '../CertificateList';
@@ -46,25 +47,30 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
     dns_allow_remote: false,
   });
   const [clockForm, setClockForm] = useState({ date: '', time: '', timezone: '' });
+  // What the forms held when editing started, so a save sends only changes.
+  const [loadedSys, setLoadedSys] = useState(sysForm);
+  const [loadedClock, setLoadedClock] = useState(clockForm);
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
   const [saving, setSaving] = useState(false);
 
   const startEdit = () => {
     if (!sysConfig) return;
-    setSysForm({
+    const sys = {
       identity: sysConfig.identity,
-      ntp_enabled: sysConfig.ntp.enabled !== 'no',
+      ntp_enabled: sysConfig.ntp.enabled !== 'no' && sysConfig.ntp.enabled !== 'false',
       ntp_primary: sysConfig.ntp['primary-ntp'] || '',
       ntp_secondary: sysConfig.ntp['secondary-ntp'] || '',
       dns_servers: sysConfig.dns['servers'] || '',
       dns_allow_remote: sysConfig.dns['allow-remote-requests'] === 'yes',
-    });
-    setClockForm({
+    };
+    const clock = {
       date: clockData?.date || '',
       time: clockData?.time || '',
       timezone: clockData?.timezone || '',
-    });
+    };
+    setSysForm(sys); setLoadedSys(sys);
+    setClockForm(clock); setLoadedClock(clock);
     setSaveError('');
     setEditing(true);
   };
@@ -73,8 +79,13 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
     setSaving(true);
     setSaveError('');
     try {
-      await devicesApi.updateSystemConfig(deviceId, sysForm);
-      await devicesApi.setClock(deviceId, clockForm);
+      // Only what changed. Sending the whole form re-sent the clock as it was
+      // when editing started (rewinding the device) and rewrote NTP and DNS
+      // on every save, even one that only renamed the device.
+      const sysChanges = changedFields(loadedSys, sysForm);
+      const clockChanges = changedFields(loadedClock, clockForm);
+      if (Object.keys(sysChanges).length) await devicesApi.updateSystemConfig(deviceId, sysChanges);
+      if (Object.keys(clockChanges).length) await devicesApi.setClock(deviceId, clockChanges);
       queryClient.invalidateQueries({ queryKey: ['system-config', deviceId] });
       queryClient.invalidateQueries({ queryKey: ['device-clock', deviceId] });
       queryClient.invalidateQueries({ queryKey: ['device', deviceId] });
@@ -389,6 +400,12 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
                     />
                   </div>
                 </div>
+                {Number(sysConfig?.ntp['extra-servers'] || 0) > 0 && (
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                    This device has {sysConfig?.ntp['extra-servers']} more NTP server{sysConfig?.ntp['extra-servers'] === '1' ? '' : 's'} after
+                    these two; they&apos;re kept as they are.
+                  </p>
+                )}
               </div>
             </div>
 

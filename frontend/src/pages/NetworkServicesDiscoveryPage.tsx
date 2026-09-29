@@ -332,7 +332,7 @@ export default function NetworkServicesDiscoveryPage() {
   const isV3 = shown.version === 'v3';
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-5xl">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

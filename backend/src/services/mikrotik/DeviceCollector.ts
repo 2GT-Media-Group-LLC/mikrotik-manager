@@ -2692,8 +2692,43 @@ export class DeviceCollector {
     await this.client.execute('/ip/firewall/filter/add', params);
   }
 
+  /**
+   * Update one item in a RouterOS menu (outside review P2-10, P2-14).
+   *
+   * A value sent as '' means "clear it". RouterOS rejects an empty value for
+   * many properties (an address matcher expects an address), so a cleared
+   * property is removed with `unset`, and only if the item actually has it.
+   * Before this, empty values were dropped on the way in and the device kept
+   * the old value while the UI showed it gone.
+   *
+   * The item is always the one named by `id`: a '.id' or 'numbers' in the
+   * request body used to override it, so a write could land on a different
+   * object than the one in the URL and the audit log.
+   */
+  private async setItem(menu: string, id: string, params: Record<string, string>): Promise<void> {
+    const set: Record<string, string> = {};
+    const clear: string[] = [];
+    for (const [k, v] of Object.entries(params)) {
+      if (k === '.id' || k === 'numbers') continue;
+      if (v === '') clear.push(k); else set[k] = v;
+    }
+    if (Object.keys(set).length) await this.client.execute(`${menu}/set`, { ...set, '.id': id });
+    if (!clear.length) return;
+
+    const item = (await this.client.execute(`${menu}/print`, { detail: '' })).find((r) => r['.id'] === id);
+    for (const k of clear) {
+      if (!item || item[k] === undefined || item[k] === '') continue;   // already clear
+      try {
+        await this.client.execute(`${menu}/unset`, { numbers: id, 'value-name': k });
+      } catch {
+        // A property that can't be unset but takes an empty value (a comment, say).
+        await this.client.execute(`${menu}/set`, { '.id': id, [k]: '' });
+      }
+    }
+  }
+
   async updateFirewallRule(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/ip/firewall/filter/set', { '.id': id, ...params });
+    await this.setItem('/ip/firewall/filter', id, params);
   }
 
   async deleteFirewallRule(id: string): Promise<void> {
@@ -2722,7 +2757,7 @@ export class DeviceCollector {
   }
 
   async updateNatRule(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/ip/firewall/nat/set', { '.id': id, ...params });
+    await this.setItem('/ip/firewall/nat', id, params);
   }
 
   async deleteNatRule(id: string): Promise<void> {
@@ -2746,7 +2781,7 @@ export class DeviceCollector {
   }
 
   async updateAddressListEntry(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/ip/firewall/address-list/set', { '.id': id, ...params });
+    await this.setItem('/ip/firewall/address-list', id, params);
   }
 
   async removeAddressListEntry(id: string): Promise<void> {
@@ -2777,7 +2812,7 @@ export class DeviceCollector {
   }
 
   async updateSimpleQueue(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/queue/simple/set', { '.id': id, ...params });
+    await this.setItem('/queue/simple', id, params);
   }
 
   async removeSimpleQueue(id: string): Promise<void> {
@@ -3745,6 +3780,8 @@ export class DeviceCollector {
         .catch(() => []);
       if (servers[0]) ntpConfig['primary-ntp'] = (servers[0] as Record<string, string>)['address'] || '';
       if (servers[1]) ntpConfig['secondary-ntp'] = (servers[1] as Record<string, string>)['address'] || '';
+      // The form edits the first two; tell it about the rest so it can say they're kept.
+      if (servers.length > 2) ntpConfig['extra-servers'] = String(servers.length - 2);
     }
 
     // RouterOS 7 DNS returns booleans as "true"/"false" instead of "yes"/"no"
@@ -3765,46 +3802,54 @@ export class DeviceCollector {
     await this.client.execute('/system/identity/set', { name });
   }
 
-  async setNtpConfig(enabled: boolean, primaryNtp: string, secondaryNtp: string): Promise<void> {
-    // Try RouterOS v6 format first (primary-ntp / secondary-ntp as direct properties)
-    try {
-      await this.client.execute('/system/ntp/client/set', {
-        enabled: enabled ? 'yes' : 'no',
-        'primary-ntp': primaryNtp,
-        'secondary-ntp': secondaryNtp,
-      });
+  /**
+   * Change the NTP client, touching only what is given. On RouterOS v7 the
+   * servers are a list: the first two entries are set as primary and secondary
+   * and any further servers are kept (they used to be deleted on every save).
+   * An empty primary or secondary removes that entry.
+   */
+  async setNtpConfig(opts: { enabled?: boolean; primary?: string; secondary?: string }): Promise<void> {
+    const { enabled, primary, secondary } = opts;
+    const current = (await this.client.execute('/system/ntp/client/print').catch(() => [{}]))[0] ?? {};
+    const isV6 = 'primary-ntp' in current;
+
+    if (isV6) {
+      const params: Record<string, string> = {};
+      if (enabled !== undefined) params['enabled'] = enabled ? 'yes' : 'no';
+      if (primary !== undefined) params['primary-ntp'] = primary || '0.0.0.0';
+      if (secondary !== undefined) params['secondary-ntp'] = secondary || '0.0.0.0';
+      if (Object.keys(params).length) await this.client.execute('/system/ntp/client/set', params);
       return;
-    } catch {
-      // RouterOS v7 dropped primary-ntp/secondary-ntp — fall through to server-list approach
     }
 
-    // RouterOS v7: enabled flag is separate; servers are managed as a list
-    await this.client.execute('/system/ntp/client/set', {
-      enabled: enabled ? 'yes' : 'no',
-    });
+    if (enabled !== undefined) {
+      await this.client.execute('/system/ntp/client/set', { enabled: enabled ? 'yes' : 'no' });
+    }
+    if (primary === undefined && secondary === undefined) return;
 
-    // Replace existing server entries
-    const existing = await this.client
-      .execute('/system/ntp/client/servers/print')
-      .catch(() => []);
-    for (const s of existing) {
-      await this.client
-        .execute('/system/ntp/client/servers/remove', { '.id': (s as Record<string, string>)['.id'] })
-        .catch(() => {});
+    const existing = (await this.client.execute('/system/ntp/client/servers/print')) as Record<string, string>[];
+    const first = existing[0]?.['address'] ?? '';
+    const second = existing[1]?.['address'] ?? '';
+    const wantFirst = primary !== undefined ? primary.trim() : first;
+    const wantSecond = secondary !== undefined ? secondary.trim() : second;
+    if (wantFirst === first && wantSecond === second) return;
+
+    // Rebuild only the first two slots; everything after them stays as it was.
+    const extras = existing.slice(2).map((e) => e['address']).filter(Boolean);
+    for (const e of existing) {
+      if (e['.id']) await this.client.execute('/system/ntp/client/servers/remove', { '.id': e['.id'] });
     }
-    if (primaryNtp) {
-      await this.client.execute('/system/ntp/client/servers/add', { address: primaryNtp });
-    }
-    if (secondaryNtp) {
-      await this.client.execute('/system/ntp/client/servers/add', { address: secondaryNtp });
+    for (const address of [wantFirst, wantSecond, ...extras].filter(Boolean)) {
+      await this.client.execute('/system/ntp/client/servers/add', { address });
     }
   }
 
-  async setDnsConfig(servers: string, allowRemoteRequests: boolean): Promise<void> {
-    await this.client.execute('/ip/dns/set', {
-      servers,
-      'allow-remote-requests': allowRemoteRequests ? 'yes' : 'no',
-    });
+  /** Change DNS, touching only what is given. */
+  async setDnsConfig(opts: { servers?: string; allowRemote?: boolean }): Promise<void> {
+    const params: Record<string, string> = {};
+    if (opts.servers !== undefined) params['servers'] = opts.servers;
+    if (opts.allowRemote !== undefined) params['allow-remote-requests'] = opts.allowRemote ? 'yes' : 'no';
+    if (Object.keys(params).length) await this.client.execute('/ip/dns/set', params);
   }
 
   // ─── IP Addresses ─────────────────────────────────────────────────────────
@@ -4258,12 +4303,11 @@ export class DeviceCollector {
     await this.client.execute('/interface/ethernet/set', { numbers: name, 'fec-mode': fecMode });
   }
 
-  async setFlowControl(name: string, txFc: string, rxFc: string): Promise<void> {
-    await this.client.execute('/interface/ethernet/set', {
-      numbers: name,
-      'tx-flow-control': txFc,
-      'rx-flow-control': rxFc,
-    });
+  async setFlowControl(name: string, txFc?: string, rxFc?: string): Promise<void> {
+    const params: Record<string, string> = { numbers: name };
+    if (txFc) params['tx-flow-control'] = txFc;
+    if (rxFc) params['rx-flow-control'] = rxFc;
+    if (Object.keys(params).length > 1) await this.client.execute('/interface/ethernet/set', params);
   }
 
   async setAutoNegotiation(name: string, autoNeg: boolean, speed?: string): Promise<void> {
@@ -4366,8 +4410,8 @@ export class DeviceCollector {
   }
 
   async updateFilterRule(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/routing/filter/rule/set', { '.id': id, ...params })
-      .catch(() => this.client.execute('/routing/filter/set', { '.id': id, ...params }));
+    await this.setItem('/routing/filter/rule', id, params)
+      .catch(() => this.setItem('/routing/filter', id, params));
   }
 
   async removeFilterRule(id: string): Promise<void> {
@@ -4402,7 +4446,7 @@ export class DeviceCollector {
 
   async updateDhcpServer(id: string, params: Record<string, string>, protocol: 'ipv4' | 'ipv6'): Promise<void> {
     const base = protocol === 'ipv4' ? '/ip/dhcp-server' : '/ipv6/dhcp-server';
-    await this.client.execute(`${base}/set`, { '.id': id, ...params });
+    await this.setItem(base, id, params);
   }
 
   async removeDhcpServer(id: string, protocol: 'ipv4' | 'ipv6'): Promise<void> {
@@ -4488,7 +4532,7 @@ export class DeviceCollector {
   }
 
   async updateDnsStaticEntry(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/ip/dns/static/set', { '.id': id, ...params });
+    await this.setItem('/ip/dns/static', id, params);
   }
 
   async removeDnsStaticEntry(id: string): Promise<void> {
@@ -4562,7 +4606,7 @@ export class DeviceCollector {
   }
 
   async updateSyslogAction(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/system/logging/action/set', { '.id': id, ...params });
+    await this.setItem('/system/logging/action', id, params);
   }
 
   async removeSyslogAction(id: string): Promise<void> {
@@ -4578,7 +4622,7 @@ export class DeviceCollector {
   }
 
   async updateSyslogRule(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/system/logging/set', { '.id': id, ...params });
+    await this.setItem('/system/logging', id, params);
   }
 
   async removeSyslogRule(id: string): Promise<void> {
@@ -4602,7 +4646,7 @@ export class DeviceCollector {
   }
 
   async updateWireGuardInterface(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/interface/wireguard/set', { '.id': id, ...params });
+    await this.setItem('/interface/wireguard', id, params);
   }
 
   async removeWireGuardInterface(id: string): Promise<void> {
@@ -4623,7 +4667,7 @@ export class DeviceCollector {
   }
 
   async updateWireGuardPeer(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/interface/wireguard/peers/set', { '.id': id, ...params });
+    await this.setItem('/interface/wireguard/peers', id, params);
   }
 
   async removeWireGuardPeer(id: string): Promise<void> {
@@ -4650,7 +4694,7 @@ export class DeviceCollector {
   }
 
   async updateTrafficFlowTarget(id: string, params: Record<string, string>): Promise<void> {
-    await this.client.execute('/ip/traffic-flow/target/set', { '.id': id, ...params });
+    await this.setItem('/ip/traffic-flow/target', id, params);
   }
 
   async removeTrafficFlowTarget(id: string): Promise<void> {

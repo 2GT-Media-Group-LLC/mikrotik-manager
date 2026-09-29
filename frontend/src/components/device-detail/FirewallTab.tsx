@@ -85,22 +85,32 @@ function ruleToForm(r: Row): RuleForm {
     comment: r.comment ?? '', disabled: r.disabled === 'true',
   };
 }
-function fwPayload(f: RuleForm, force = false): Record<string, unknown> {
+/**
+ * The rule as RouterOS properties. When editing, a field left empty is sent as
+ * '' so it is cleared on the device (P2-10); it used to be left out, and the
+ * old value stayed while the UI showed it gone. Switching a source or
+ * destination between an address and an address list clears the other one.
+ */
+function fwPayload(f: RuleForm, force = false, forEdit = false): Record<string, unknown> {
   const p: Record<string, unknown> = { chain: f.chain, action: f.action, disabled: f.disabled ? 'yes' : 'no' };
-  if (f.src_kind === 'address') p.src_address = f.src_value;
-  if (f.src_kind === 'list')    p.src_address_list = f.src_value;
-  if (f.dst_kind === 'address') p.dst_address = f.dst_value;
-  if (f.dst_kind === 'list')    p.dst_address_list = f.dst_value;
-  if (f.protocol)         p.protocol = f.protocol;
-  if (f.src_port)         p.src_port = f.src_port;
-  if (f.dst_port)         p.dst_port = f.dst_port;
-  if (f.in_interface)     p.in_interface = f.in_interface;
-  if (f.out_interface)    p.out_interface = f.out_interface;
-  if (f.connection_state) p.connection_state = f.connection_state;
+  const put = (key: string, value: string, use = true) => {
+    if (use && value) Object.assign(p, { [key]: value });
+    else if (forEdit) Object.assign(p, { [key]: '' });
+  };
+  put('src_address', f.src_value, f.src_kind === 'address');
+  put('src_address_list', f.src_value, f.src_kind === 'list');
+  put('dst_address', f.dst_value, f.dst_kind === 'address');
+  put('dst_address_list', f.dst_value, f.dst_kind === 'list');
+  put('protocol', f.protocol);
+  put('src_port', f.src_port);
+  put('dst_port', f.dst_port);
+  put('in_interface', f.in_interface);
+  put('out_interface', f.out_interface);
+  put('connection_state', f.connection_state);
   if (f.action === 'jump' && f.jump_target) p.jump_target = f.jump_target;
   p.log = f.log ? 'yes' : 'no';
-  if (f.log && f.log_prefix) p.log_prefix = f.log_prefix;
-  if (f.comment) p.comment = f.comment;
+  put('log_prefix', f.log_prefix, f.log);
+  put('comment', f.comment);
   if (force) p.force = true;
   return p;
 }
@@ -514,13 +524,15 @@ function natRuleToForm(r: Row): NatForm {
     comment: r.comment ?? '', disabled: r.disabled === 'true',
   };
 }
-function natPayload(f: NatForm): Record<string, unknown> {
+/** The NAT rule as RouterOS properties; when editing, an emptied field is sent as '' to clear it. */
+function natPayload(f: NatForm, forEdit = false): Record<string, unknown> {
   const p: Record<string, unknown> = { chain: f.chain, action: f.action, disabled: f.disabled ? 'yes' : 'no' };
   for (const [k, ros] of [['src_address', 'src_address'], ['dst_address', 'dst_address'], ['protocol', 'protocol'],
     ['src_port', 'src_port'], ['dst_port', 'dst_port'], ['in_interface', 'in_interface'], ['out_interface', 'out_interface'],
     ['to_addresses', 'to_addresses'], ['to_ports', 'to_ports'], ['comment', 'comment']] as const) {
-    const v = (f as unknown as Record<string, string>)[k];
-    if (v) p[ros] = v;
+    const v = new Map(Object.entries(f)).get(k) as string | undefined;
+    if (v) Object.assign(p, { [ros]: v });
+    else if (forEdit) Object.assign(p, { [ros]: '' });
   }
   return p;
 }
@@ -690,7 +702,7 @@ function NatCard({ deviceId }: { deviceId: number }) {
       {showAdd && <NatModal title="Add NAT Rule" form={form} setForm={setForm} isPending={addMut.isPending} error={err}
         onClose={() => setShowAdd(false)} onSave={() => addMut.mutate(natPayload(form))} />}
       {editing && <NatModal title="Edit NAT Rule" form={form} setForm={setForm} isPending={updMut.isPending} error={err}
-        onClose={() => setEditing(null)} onSave={() => updMut.mutate({ id: editing['.id'], d: natPayload(form) })} />}
+        onClose={() => setEditing(null)} onSave={() => updMut.mutate({ id: editing['.id'], d: natPayload(form, true) })} />}
     </div>
   );
 }
@@ -732,11 +744,11 @@ export default function FirewallTab({ deviceId }: { deviceId: number }) {
 
   const handleErr = (e: unknown, mode: 'add' | 'edit', id?: string) => {
     const lo = lockoutOf(e);
-    if (lo) setLockout({ payload: fwPayload(form, false), mode, id, reason: lo });
+    if (lo) setLockout({ payload: fwPayload(form, false, mode === 'edit'), mode, id, reason: lo });
     else setErr(errMsg(e));
   };
   const submitAdd = () => addMut.mutate(fwPayload(form), { onError: (e) => handleErr(e, 'add') });
-  const submitEdit = () => editing && updMut.mutate({ id: editing['.id'], d: fwPayload(form) }, { onError: (e) => handleErr(e, 'edit', editing['.id']) });
+  const submitEdit = () => editing && updMut.mutate({ id: editing['.id'], d: fwPayload(form, false, true) }, { onError: (e) => handleErr(e, 'edit', editing['.id']) });
   const confirmLockout = () => {
     if (!lockout) return;
     const forced = { ...lockout.payload, force: true };

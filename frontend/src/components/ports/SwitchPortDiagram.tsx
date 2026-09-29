@@ -876,10 +876,10 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     };
     if (editForm.poe_out) ifaceUpdates.poe_out = editForm.poe_out;
     if (editForm.fec_mode) ifaceUpdates.fec_mode = editForm.fec_mode;
-    if (editForm.tx_flow_control || editForm.rx_flow_control) {
-      ifaceUpdates.tx_flow_control = editForm.tx_flow_control || 'off';
-      ifaceUpdates.rx_flow_control = editForm.rx_flow_control || 'off';
-    }
+    // Each direction only when chosen. Filling the other with 'off' turned off
+    // a direction the operator never touched.
+    if (editForm.tx_flow_control) ifaceUpdates.tx_flow_control = editForm.tx_flow_control;
+    if (editForm.rx_flow_control) ifaceUpdates.rx_flow_control = editForm.rx_flow_control;
     if (editForm.auto_negotiation !== null) {
       ifaceUpdates.auto_negotiation = editForm.auto_negotiation;
       if (!editForm.auto_negotiation && editForm.speed) {

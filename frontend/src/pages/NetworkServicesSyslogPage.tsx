@@ -144,6 +144,7 @@ function ActionForm({ existing, allDevices, targetName, onSave, onClose, isPendi
   function handleSubmit() {
     const data: NS = { name: name.trim(), type };
     if (srcAddr.trim()) data['src-address'] = srcAddr.trim();
+    else if (existing) data['src-address'] = '';   // cleared on the device
     if (type === 'remote') {
       data['remote'] = remote.trim();
       data['remote-port'] = port || '514';
@@ -261,6 +262,7 @@ function RuleForm({ existing, actions, allDevices, targetName, onSave, onClose, 
   function handleSubmit() {
     const data: NS = { topics: topics.trim(), action: action.trim() };
     if (prefix.trim()) data['prefix'] = prefix.trim();
+    else if (existing) data['prefix'] = '';   // cleared on the device
     data['disabled'] = disabled ? 'yes' : 'no';
     onSave(data);
   }

@@ -29,6 +29,7 @@ const ROLLOUT_STATUS: Record<string, string> = {
   completed: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
   failed:    'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
   cancelled: 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400',
+  missed:    'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300',
 };
 
 function TypePill({ type }: { type: string }) {
@@ -82,6 +83,12 @@ function RolloutPanel({ rolloutId, canWrite }: { rolloutId: number; canWrite: bo
         {rollout.scheduled_at && rollout.status === 'pending' && (
           <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
             <Clock className="w-3 h-3" />starts {formatDistanceToNow(new Date(rollout.scheduled_at), { addSuffix: true })}
+            {' '}(not after {new Date(rollout.scheduled_until ?? new Date(rollout.scheduled_at).getTime() + 60 * 60_000).toLocaleString()})
+          </span>
+        )}
+        {rollout.status === 'missed' && (
+          <span className="text-xs text-amber-700 dark:text-amber-400">
+            Missed its start window, so it didn&apos;t run. Nothing was upgraded; schedule it again when it suits.
           </span>
         )}
         <span className="ml-auto flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500">
@@ -158,6 +165,8 @@ export default function FirmwarePage() {
   // strictness for wall-clock time, which is the operator's call (#135).
   const [waveConcurrency, setWaveConcurrency] = useState(1);
   const [scheduleAt, setScheduleAt] = useState('');
+  /** Latest start; empty means up to an hour after scheduleAt. */
+  const [scheduleUntil, setScheduleUntil] = useState('');
   const [viewRolloutId, setViewRolloutId] = useState<number | null>(null);
   const [checkResult, setCheckResult] = useState<string | null>(null);
   const [changelogVersion, setChangelogVersion] = useState<string | null>(null);
@@ -206,6 +215,7 @@ export default function FirmwarePage() {
       routerboot_after: routerbootAfter,
       wave_concurrency: waveConcurrency,
       scheduled_at: scheduleAt ? new Date(scheduleAt).toISOString() : null,
+      scheduled_until: scheduleAt && scheduleUntil ? new Date(scheduleUntil).toISOString() : null,
       start: !scheduleAt,
       devices: [...selected.entries()].map(([device_id, wave]) => ({ device_id, wave })),
     }),
@@ -474,6 +484,15 @@ export default function FirmwarePage() {
                 <Clock className="w-4 h-4 text-gray-400" />
                 <input type="datetime-local" className="input py-1 text-xs w-auto" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} />
               </label>
+              {scheduleAt && (
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-400"
+                       title="If the manager can't start it by then (it was down, or another rollout ran long), the rollout is marked missed instead of starting late.">
+                  Don&apos;t start after
+                  <input type="datetime-local" className="input py-1 text-xs w-auto" value={scheduleUntil}
+                         min={scheduleAt} onChange={e => setScheduleUntil(e.target.value)} />
+                  {!scheduleUntil && <span className="text-gray-400">(1 hour later if blank)</span>}
+                </label>
+              )}
             </div>
 
             {waveConcurrency > 1 && (

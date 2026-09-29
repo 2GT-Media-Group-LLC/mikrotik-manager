@@ -40,6 +40,7 @@ function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
       else if (type === 'TXT') body['text'] = text;
       else body['address'] = address; // MX, NS, PTR, SRV share address field
       if (ttl) body['ttl'] = ttl;
+      else if (existing) body['ttl'] = '';   // back to the default TTL on the device
       body['disabled'] = disabled ? 'yes' : 'no';
 
       return existing?.['.id']

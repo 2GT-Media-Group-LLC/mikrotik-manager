@@ -163,6 +163,21 @@ powered devices, or anything else that drops out normally. Such a device:
 Tabs appear only where they apply: a switch has no Radios tab, a device without a modem has no
 LTE tab.
 
+### Editing settings
+
+A save changes only what you changed. The Config tab, radio settings and SSIDs send just the
+fields you edited, so renaming a device no longer resets its clock to the time the form was
+opened, and editing an SSID no longer pins a radio set to choose its channel automatically.
+The Config tab edits the first two NTP servers and keeps any others the device has.
+
+Clearing a field clears it on the device. Emptying a firewall or NAT rule's address, port or
+comment, a queue's comment, or a WireGuard peer's endpoint removes that setting from the item.
+Switching a rule's source or destination between an address and an address list removes the
+other one. Before 0.24.39 an emptied field was left out of the save and the device kept the old
+value, while the page showed it gone.
+
+On a switch port, changing flow control in one direction leaves the other direction alone.
+
 ## Ports and the faceplate
 
 The faceplate mirrors the physical front panel — copper staggered odd above even as the

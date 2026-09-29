@@ -84,10 +84,12 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
 // POST /api/firmware/rollouts — create a rollout (optionally scheduled)
 router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   const {
-    name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, devices, start,
+    name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, devices, start,
     wave_concurrency,
   } = req.body as {
     name?: string; halt_on_failure?: boolean; pre_backup?: boolean; routerboot_after?: boolean; scheduled_at?: string | null;
+    /** Don't start after this time; without it the rollout may start up to an hour late. */
+    scheduled_until?: string | null;
     devices?: { device_id: number; wave: number }[]; start?: boolean;
     wave_concurrency?: number;
   };
@@ -99,6 +101,13 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
     }
   }
   if (scheduled_at && isNaN(Date.parse(scheduled_at))) return res.status(400).json({ error: 'scheduled_at must be a valid timestamp' });
+  if (scheduled_until) {
+    if (!scheduled_at) return res.status(400).json({ error: 'scheduled_until needs scheduled_at' });
+    if (isNaN(Date.parse(scheduled_until))) return res.status(400).json({ error: 'scheduled_until must be a valid timestamp' });
+    if (Date.parse(scheduled_until) <= Date.parse(scheduled_at)) {
+      return res.status(400).json({ error: '"Don\u2019t start after" must be later than the scheduled time' });
+    }
+  }
 
   // Refuse before creating anything (#139). The rollout used to be written
   // first and started second, so a rejected start left the rows behind: the
@@ -136,10 +145,10 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   }
 
   const rollout = await queryOne<{ id: number }>(
-    `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, wave_concurrency)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, wave_concurrency)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
     [name.trim().slice(0, 100), halt_on_failure !== false, pre_backup !== false, routerboot_after === true,
-     scheduled_at || null, clampConcurrency(wave_concurrency ?? 1)]);
+     scheduled_at || null, scheduled_until || null, clampConcurrency(wave_concurrency ?? 1)]);
   for (const d of devices) {
     await query(
       `INSERT INTO firmware_rollout_devices (rollout_id, device_id, wave) VALUES ($1,$2,$3)`,

@@ -195,3 +195,71 @@ describe('setSnmpConfig', () => {
     expect(calls[0].params.enabled).toBeUndefined();
   });
 });
+
+// ── Edits change only what was asked, and clearing clears (P2-10, P2-11, P2-14) ──
+
+function collectorOn(responses: Record<string, Record<string, string>[]>) {
+  const collector = new DeviceCollector(testDevice);
+  const calls: { cmd: string; params: Record<string, string> }[] = [];
+  (collector as unknown as { client: { execute: jest.Mock } }).client = {
+    execute: jest.fn(async (cmd: string, params: Record<string, string> = {}) => {
+      calls.push({ cmd, params });
+      return responses[cmd] ?? [];
+    }),
+  };
+  return { collector, calls };
+}
+
+describe('updating an item (setItem)', () => {
+  it('unsets a cleared matcher instead of dropping it', async () => {
+    const { collector, calls } = collectorOn({
+      '/ip/firewall/filter/print': [{ '.id': '*5', 'src-address': '10.0.0.0/8', 'dst-port': '22' }],
+    });
+    await collector.updateFirewallRule('*5', { action: 'accept', 'src-address': '', 'dst-port': '' });
+    expect(calls).toContainEqual({ cmd: '/ip/firewall/filter/set', params: { action: 'accept', '.id': '*5' } });
+    expect(calls).toContainEqual({ cmd: '/ip/firewall/filter/unset', params: { numbers: '*5', 'value-name': 'src-address' } });
+    expect(calls).toContainEqual({ cmd: '/ip/firewall/filter/unset', params: { numbers: '*5', 'value-name': 'dst-port' } });
+  });
+
+  it('does not unset what is already clear', async () => {
+    const { collector, calls } = collectorOn({ '/ip/firewall/nat/print': [{ '.id': '*2' }] });
+    await collector.updateNatRule('*2', { 'to-ports': '' });
+    expect(calls.some((c) => c.cmd.endsWith('/unset'))).toBe(false);
+  });
+
+  it('always writes to the item in the URL, never an id from the body', async () => {
+    const { collector, calls } = collectorOn({});
+    await collector.updateNatRule('*2', { '.id': '*99', numbers: '*98', comment: 'x' });
+    expect(calls[0]).toEqual({ cmd: '/ip/firewall/nat/set', params: { comment: 'x', '.id': '*2' } });
+  });
+});
+
+describe('setNtpConfig on RouterOS 7', () => {
+  it('changes the first two servers and keeps the rest', async () => {
+    const { collector, calls } = collectorOn({
+      '/system/ntp/client/print': [{ enabled: 'true', mode: 'unicast' }],
+      '/system/ntp/client/servers/print': [
+        { '.id': '*1', address: 'a.pool' }, { '.id': '*2', address: 'b.pool' }, { '.id': '*3', address: 'c.pool' },
+      ],
+    });
+    await collector.setNtpConfig({ primary: 'x.pool' });
+    const added = calls.filter((c) => c.cmd === '/system/ntp/client/servers/add').map((c) => c.params.address);
+    expect(added).toEqual(['x.pool', 'b.pool', 'c.pool']);
+    expect(calls.some((c) => c.cmd === '/system/ntp/client/set')).toBe(false);   // enabled not touched
+  });
+
+  it('does nothing to the servers when only enabled changes', async () => {
+    const { collector, calls } = collectorOn({ '/system/ntp/client/print': [{ enabled: 'true' }] });
+    await collector.setNtpConfig({ enabled: false });
+    expect(calls).toContainEqual({ cmd: '/system/ntp/client/set', params: { enabled: 'no' } });
+    expect(calls.some((c) => c.cmd.includes('/servers/'))).toBe(false);
+  });
+});
+
+describe('setFlowControl', () => {
+  it('changes only the direction given', async () => {
+    const { collector, calls } = collectorOn({});
+    await collector.setFlowControl('ether1', undefined, 'on');
+    expect(calls).toEqual([{ cmd: '/interface/ethernet/set', params: { numbers: 'ether1', 'rx-flow-control': 'on' } }]);
+  });
+});
