@@ -3,26 +3,16 @@ import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
+import { resolveProxyQuery } from '../utils/proxyQuery';
 
 const router = Router();
 router.use(requireAuth);
 
-const RANGES: Record<string, string> = { '1h': '1 hour', '24h': '24 hours', '7d': '7 days', '30d': '30 days' };
-
-/** Grouping key per view. Only trusted literals reach the SQL. */
-const GROUPS = {
-  client: { key: 'client_ip', where: `status = 'ok'`, distinct: 'COALESCE(hostname, server_ip)' },
-  user: { key: 'auth_user', where: `status = 'ok' AND auth_user IS NOT NULL`, distinct: 'client_ip' },
-  destination: { key: 'COALESCE(hostname, server_ip)', where: `status = 'ok' AND COALESCE(hostname, server_ip) IS NOT NULL`, distinct: 'client_ip' },
-  denied: { key: 'client_ip', where: `status <> 'ok' AND auth_user IS NULL`, distinct: 'proxy_port::text' },
-} as const;
-
 // GET /api/proxy/top?by=client|user|destination|denied&range=24h&limit=10&source=&port=&deviceId=
 router.get('/top', async (req: Request, res: Response) => {
-  const by = String(req.query.by || 'client') as keyof typeof GROUPS;
-  const group = GROUPS[by];
-  if (!group) return res.status(400).json({ error: 'Invalid "by" value' });
-  const interval = RANGES[String(req.query.range || '24h')] ?? RANGES['24h'];
+  const choice = resolveProxyQuery(req.query.by, req.query.range);
+  if ('error' in choice) return res.status(400).json({ error: choice.error });
+  const { group, interval } = choice;
   const limit = Math.min(Math.max(parseInt(String(req.query.limit || '10'), 10) || 10, 1), 100);
 
   const filters = [group.where, `event_time > NOW() - $1::interval`];

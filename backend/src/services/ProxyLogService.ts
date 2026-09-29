@@ -52,8 +52,27 @@ export async function storeProxyConnections(deviceId: number, lines: ProxyLogInp
   return parsed.length;
 }
 
-/** Populate proxy_connections from existing events, once (only while the table is empty). */
+const BACKFILL_FLAG = 'proxy_backfill_done';
+
+/**
+ * Populate proxy_connections from existing events, once. Completion is recorded in
+ * app_settings so installs with no proxy containers do not rescan the (possibly
+ * very large) events table on every boot. A failed run leaves the flag unset and
+ * is retried next boot.
+ */
 export async function backfillProxyConnections(client: PoolClient): Promise<number> {
+  const done = await client.query('SELECT 1 FROM app_settings WHERE key = $1', [BACKFILL_FLAG]);
+  if (done.rowCount) return 0;
+
+  const total = await runBackfill(client);
+  await client.query(
+    `INSERT INTO app_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+    [BACKFILL_FLAG, JSON.stringify(true)],
+  );
+  return total;
+}
+
+async function runBackfill(client: PoolClient): Promise<number> {
   const existing = await client.query('SELECT 1 FROM proxy_connections LIMIT 1');
   if (existing.rowCount) return 0;
 

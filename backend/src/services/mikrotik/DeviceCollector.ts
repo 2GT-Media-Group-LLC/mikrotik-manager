@@ -19,6 +19,7 @@ import {
 import { bytesSince, periodKey, shouldSend } from '../../utils/dataCap';
 import { parseDeviceLogTime } from '../../utils/deviceTime';
 import { BackupService } from '../BackupService';
+import { storeProxyConnections } from '../ProxyLogService';
 
 /** RouterOS update commands reach out to MikroTik's servers and are slow by nature. */
 const UPDATE_CHECK_TIMEOUT_MS = 90_000;
@@ -30,7 +31,6 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
  * learned to abandon a timed-out connection, desynchronised the session (#137).
  */
 const LOG_READ_TIMEOUT_MS = 120_000;
-import { storeProxyConnections } from '../ProxyLogService';
 import { selectNewLogLines, highestStoredId, surrogateLogId, type RawLogLine } from '../../utils/logDedup';
 import {
   parseUpdateStatus, latestFromStream, peakPercent, type UpdateStatus,
