@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { networkServicesApi, settingsApi, trafficApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { useIsSiteScoped } from '../hooks/useCanWrite';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -80,9 +81,12 @@ export default function NetworkServicesNetflowPage() {
   }
 
   // ── Collector status (live) ───────────────────────────────────────────────
+  // The collector's statistics are fleet-wide (P1-7).
+  const siteScopedTraffic = useIsSiteScoped();
   const { data: status } = useQuery({
     queryKey: ['traffic-status'],
     queryFn: () => trafficApi.status().then(r => r.data),
+    enabled: !siteScopedTraffic,
     refetchInterval: 10_000,
   });
 

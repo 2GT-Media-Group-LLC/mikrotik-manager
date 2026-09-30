@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { deviceSiteAccess, deviceIdParam, deviceIdQuery, devicesDenied } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import { query } from '../config/database';
@@ -13,6 +14,10 @@ import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
 router.use(requireAuth);
+// A site-scoped account only reaches devices in its own sites, with its role there (P1-7).
+router.use(deviceSiteAccess(deviceIdParam));
+// The fleet RF views also take ?deviceId=.
+router.use(deviceSiteAccess(deviceIdQuery));
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
 // WireGuard private keys, SNMP communities, hotspot passwords).
 router.use(maskSecretsForReadOnly);
@@ -37,6 +42,10 @@ router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
 
   if (!Array.isArray(apIds) || apIds.length === 0) {
     return res.status(400).json({ error: '"apIds" must be a non-empty array' });
+  }
+  // Every AP must be one the caller operates (P1-7).
+  if (req.user?.siteRoles && (await devicesDenied(req.user, apIds.map(Number), 'operator')).length > 0) {
+    return res.status(404).json({ error: 'Some of those access points were not found.' });
   }
   if (!ssidBody.ssid) {
     return res.status(400).json({ error: '"ssid" is required' });

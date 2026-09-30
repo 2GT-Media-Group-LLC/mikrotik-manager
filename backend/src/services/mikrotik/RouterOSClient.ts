@@ -74,6 +74,15 @@ export class RouterOSClient extends EventEmitter {
     this.useTls = useTls ?? port === 8729;
   }
 
+  /**
+   * Checks the certificate a device presents on API-SSL, before any login is
+   * sent. Registered once at startup (index.ts); throws to refuse the device.
+   */
+  static tlsVerifier: ((host: string, port: number, fingerprint: string) => Promise<void>) | null = null;
+
+  /** SHA-256 fingerprint of the certificate seen on the last TLS connect, lowercase hex. */
+  tlsFingerprint: string | null = null;
+
   async connect(): Promise<void> {
     if (this.connected) return;
     // A fresh connection starts trusted, so a client that was abandoned earlier
@@ -101,14 +110,33 @@ export class RouterOSClient extends EventEmitter {
       };
 
       if (this.useTls) {
-        // api-ssl: RouterOS devices ship self-signed certificates by default,
-        // so certificate verification is intentionally disabled — the same
-        // trust model as the plaintext API this replaces, but with the
-        // credentials and session encrypted in transit.
-        this.socket = tls.connect(
+        // api-ssl: RouterOS devices ship self-signed certificates, so there is
+        // no CA to check against. Instead the certificate is pinned: the
+        // registered verifier compares it with the one the device presented the
+        // first time, before the login is sent (outside review P1-4).
+        const tlsSocket = tls.connect(
           { host: this.host, port: this.port, rejectUnauthorized: false },
-          () => { void onReady(); }
+          () => {
+            void (async () => {
+              try {
+                const cert = tlsSocket.getPeerCertificate();
+                const fp = cert?.fingerprint256;
+                if (!fp) throw new RouterOSError('The device presented no certificate on API-SSL');
+                this.tlsFingerprint = fp.replace(/:/g, '').toLowerCase();
+                if (RouterOSClient.tlsVerifier) {
+                  await RouterOSClient.tlsVerifier(this.host, this.port, this.tlsFingerprint);
+                }
+              } catch (err) {
+                clearTimeout(timer);
+                tlsSocket.destroy();
+                reject(err);
+                return;
+              }
+              await onReady();
+            })();
+          }
         );
+        this.socket = tlsSocket;
       } else {
         this.socket = net.createConnection({ host: this.host, port: this.port });
         this.socket.on('connect', () => { void onReady(); });

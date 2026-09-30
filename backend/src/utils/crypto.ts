@@ -7,12 +7,17 @@
  * "Credential encryption (ENCRYPTION_KEY)".
  */
 import * as crypto from 'crypto';
-import { encryptionKey, decryptionKeys } from './secrets';
+import { encryptionKey, decryptionKeys, encryptionKeyMissing } from './secrets';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 
 export function encrypt(text: string): string {
+  // Writing under a key that isn't the one the stored data needs would mix two
+  // keys, and restoring the original would then lose the new values (P2-29).
+  if (encryptionKeyMissing()) {
+    throw new Error('The encryption key is missing, so new credentials cannot be saved. Restore the original key first (Settings → General → Encryption key).');
+  }
   const key = encryptionKey();
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
@@ -49,7 +54,28 @@ export function decrypt(encryptedText: string): string {
       lastErr = e;
     }
   }
-  throw lastErr instanceof Error ? lastErr : new Error('Unable to decrypt');
+  // OpenSSL's own wording ("unable to authenticate data") means nothing to
+  // someone looking at a failed poll.
+  throw new Error(
+    'A stored credential could not be decrypted with the current encryption key. ' +
+    'See Settings → General → Encryption key.',
+    { cause: lastErr },
+  );
+}
+
+/** Which known key opens this ciphertext: 'current', 'old', or 'none'. */
+export function ciphertextKeyState(encryptedText: string): 'current' | 'old' | 'none' {
+  const parts = encryptedText.split(':');
+  if (parts.length !== 3) return 'none';
+  const [iv, tag, data] = parts.map((x) => Buffer.from(x, 'hex'));
+  const current = encryptionKey();
+  for (const key of decryptionKeys()) {
+    try {
+      decryptWith(key, iv, tag, data);
+      return key.equals(current) ? 'current' : 'old';
+    } catch { /* try the next */ }
+  }
+  return 'none';
 }
 
 /**

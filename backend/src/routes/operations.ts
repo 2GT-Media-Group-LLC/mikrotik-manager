@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { getQueryApi } from '../config/influxdb';
-import { requireAuth, requireWrite } from '../middleware/auth';
-import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice } from '../utils/siteScope';
-import { activeSite } from '../middleware/site';
+import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
+import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, type SiteScope } from '../utils/siteScope';
+import { activeSite, writableScope } from '../middleware/site';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
 import { alertService } from '../services/AlertService';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
@@ -482,7 +482,7 @@ router.get('/insights', async (req: Request, res: Response) => {
  * item that is genuinely resolved stops being generated anyway — so a dismissal that
  * never lapsed would only ever hide things that are still true.
  */
-router.post('/insights/dismiss', requireWrite, async (req: Request, res: Response) => {
+router.post('/insights/dismiss', requireWrite, fleetOnly, async (req: Request, res: Response) => {
   const { fingerprint, category, title, hours } = req.body as
     { fingerprint?: string; category?: string; title?: string; hours?: number };
   if (!fingerprint) return res.status(400).json({ error: 'fingerprint is required' });
@@ -506,7 +506,7 @@ router.get('/insights/dismissed', async (_req: Request, res: Response) => {
 });
 
 /** DELETE — bring an item back before its dismissal lapses. */
-router.delete('/insights/dismiss/:fingerprint', requireWrite, async (req: Request, res: Response) => {
+router.delete('/insights/dismiss/:fingerprint', requireWrite, fleetOnly, async (req: Request, res: Response) => {
   await query(`DELETE FROM insight_dismissals WHERE fingerprint = $1`, [req.params.fingerprint]);
   res.status(204).end();
 });
@@ -536,7 +536,7 @@ async function influxGroupValues(flux: string): Promise<Map<string, number>> {
   return out;
 }
 
-async function detectAnomalies(siteId: number | null): Promise<AttentionItem[]> {
+async function detectAnomalies(siteId: SiteScope): Promise<AttentionItem[]> {
   const items: AttentionItem[] = [];
   const hour = new Date().getUTCHours();
   const nameById = new Map<string, { id: number; name: string }>();
@@ -638,7 +638,7 @@ async function detectAnomalies(siteId: number | null): Promise<AttentionItem[]> 
 // who did what to the install -- they carry no device and so belong to no site,
 // and repeating "admin changed a setting" into every site would misattribute it.
 // Device-scoped history (config changes, events) is filtered normally.
-async function buildActivity(siteId: number | null) {
+async function buildActivity(siteId: SiteScope) {
   const cfgFilter = siteScopeByDevice(siteId, 'dc.device_id');
   const evtFilter = siteScopeByNullableDevice(siteId, 'e.device_id');
   const [configs, audits, events] = await Promise.all([
@@ -676,7 +676,7 @@ async function buildActivity(siteId: number | null) {
 router.post('/backup-all', requireWrite, async (req: Request, res: Response) => {
   // Scoped to the active site. A bulk action that silently spans customers is
   // exactly the blast radius the bulk-command guards exist to contain (#130).
-  const siteFilter = siteScopeDevices(activeSite(req));
+  const siteFilter = siteScopeDevices(writableScope(req));
   const devices = await query<DeviceRow>(
     `SELECT * FROM devices WHERE status = 'online'
        ${siteFilter ? `AND ${siteFilter}` : ''}`
@@ -704,7 +704,7 @@ router.post('/backup-all', requireWrite, async (req: Request, res: Response) => 
 router.post('/sync-all', requireWrite, async (req: Request, res: Response) => {
   // Scoped to the active site. A bulk action that silently spans customers is
   // exactly the blast radius the bulk-command guards exist to contain (#130).
-  const siteFilter = siteScopeDevices(activeSite(req));
+  const siteFilter = siteScopeDevices(writableScope(req));
   const devices = await query<DeviceRow>(
     `SELECT * FROM devices WHERE status = 'online'
        ${siteFilter ? `AND ${siteFilter}` : ''}`

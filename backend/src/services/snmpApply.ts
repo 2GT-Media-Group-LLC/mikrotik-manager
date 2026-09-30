@@ -1,5 +1,5 @@
 import { query } from '../config/database';
-import { siteScopeDevices } from '../utils/siteScope';
+import { siteScopeDevices, type SiteScope } from '../utils/siteScope';
 import { DeviceCollector, type DeviceRow } from './mikrotik/DeviceCollector';
 import { effectiveLocation } from '../utils/effectiveLocation';
 import { fieldToWrite, unknownVariables, type SnmpDeviceVars } from '../utils/snmpTemplate';
@@ -71,7 +71,7 @@ export type SnmpTarget =
 export async function applySnmpConfig(
   target: SnmpTarget,
   config: SnmpConfigInput,
-  siteId: number | null | undefined
+  siteId: SiteScope | undefined
 ) {
   validateSnmpInput(config);
   if ('deviceIds' in target && target.deviceIds.length === 0) {
@@ -178,7 +178,7 @@ async function saveSnmpTemplates(config: SnmpConfigInput): Promise<void> {
 }
 
 /** Current SNMP settings of every online device in the site, of any type. */
-export async function getSnmpStatuses(siteId: number | null | undefined, deviceTypes?: string[]) {
+export async function getSnmpStatuses(siteId: SiteScope | undefined, deviceTypes?: string[]) {
   const siteFilter = siteScopeDevices(siteId ?? null);
   const params: unknown[] = [];
   const where = [`status = 'online'`];

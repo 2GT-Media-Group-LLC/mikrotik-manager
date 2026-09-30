@@ -7,6 +7,17 @@ import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
 router.use(requireAuth);
+// NetFlow data isn't recorded per site yet: flows from every exporter are merged
+// and clients are matched by address across the fleet. Until it is, a
+// site-scoped account would see other sites' traffic here, so it is refused
+// (outside review P1-7, J4).
+router.use((req: Request, res: Response, next) => {
+  if (!req.user?.siteRoles) return next();
+  res.status(403).json({
+    code: 'fleet_only',
+    error: 'Traffic analytics covers the whole fleet, so it is not available to accounts limited to particular sites yet.',
+  });
+});
 
 function rangeToFlux(range: string): string {
   const allowed = ['1h', '2h', '3h', '6h', '12h', '24h', '7d', '30d'];

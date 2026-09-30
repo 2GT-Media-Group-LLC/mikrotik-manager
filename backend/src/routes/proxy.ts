@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { deviceSiteAccess, deviceIdQuery } from '../utils/siteAccess';
 import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
@@ -7,6 +8,8 @@ import { resolveProxyQuery } from '../utils/proxyQuery';
 
 const router = Router();
 router.use(requireAuth);
+// ?deviceId= must be a device the account can see (P1-7).
+router.use(deviceSiteAccess(deviceIdQuery));
 
 // GET /api/proxy/top?by=client|user|destination|denied&range=24h&limit=10&source=&port=&deviceId=
 router.get('/top', async (req: Request, res: Response) => {

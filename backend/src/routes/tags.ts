@@ -1,17 +1,34 @@
 import { Router, Request, Response } from 'express';
+import { resourceSiteAccess } from '../utils/siteAccess';
 import { query } from '../config/database';
 import { requireAuth, requireWrite, requireAdmin } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
+// Tagging devices, or reading one device's tags, is limited to the account's
+// own sites for a site-scoped account (P1-7).
+router.use(resourceSiteAccess(async (req) => {
+  const one = /^\/device\/(\d+)(?:\/|$)/.exec(req.path);
+  if (one) return [parseInt(one[1], 10)];
+  if (req.method === 'POST' && /^\/\d+\/devices\/?$/.test(req.path)) {
+    const ids = (req.body as { deviceIds?: unknown })?.deviceIds;
+    return Array.isArray(ids) ? ids.map(Number) : null;
+  }
+  return null;
+}, 'Device not found'));
 
 // GET /api/tags — list all tags with device count
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
+  // Tags are shared across the fleet, but a site-scoped account (P1-7) only
+  // counts the devices it can see, not how many other sites have.
+  const own = req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null;
   const tags = await query<{ id: number; name: string; color: string; device_count: string }>(
-    `SELECT t.id, t.name, t.color, COUNT(dt.device_id)::text AS device_count
+    `SELECT t.id, t.name, t.color, COUNT(d.id)::text AS device_count
      FROM tags t
      LEFT JOIN device_tags dt ON dt.tag_id = t.id
-     GROUP BY t.id ORDER BY t.name`
+     LEFT JOIN devices d ON d.id = dt.device_id ${own ? 'AND d.site_id = ANY($1::int[])' : ''}
+     GROUP BY t.id ORDER BY t.name`,
+    own ? [own] : []
   );
   res.json(tags.map(t => ({ ...t, device_count: parseInt(t.device_count, 10) })));
 });

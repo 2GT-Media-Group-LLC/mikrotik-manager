@@ -1161,6 +1161,38 @@ CREATE INDEX IF NOT EXISTS idx_proxy_conn_client ON proxy_connections(client_ip,
 -- Fold per-worker suffixes (3proxy-b-32 -> 3proxy) on rows stored before they were stripped.
 UPDATE proxy_connections SET source = COALESCE(NULLIF(regexp_replace(source, '(-[a-zA-Z])?-[0-9]+$', ''), ''), 'proxy')
   WHERE source ~ '-[0-9]+$';
+
+-- Session revocation (outside review P2-1): every session carries the account's
+-- session_version, which goes up when the role or password changes, ending
+-- every session issued before.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+
+-- Device identity pinning (outside review P1-4): the API-SSL certificate and SSH
+-- host key a device presented the first time, so a different one is caught
+-- before credentials are sent to it. seen_fingerprint holds a changed one until
+-- an admin trusts it.
+CREATE TABLE IF NOT EXISTS device_identity_pins (
+  device_id        INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  kind             VARCHAR(16) NOT NULL,          -- 'api-tls' | 'ssh-host'
+  fingerprint      VARCHAR(128) NOT NULL,
+  pinned_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  seen_fingerprint VARCHAR(128),
+  mismatch_at      TIMESTAMPTZ,
+  PRIMARY KEY (device_id, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_devices_ip_address ON devices(ip_address);
+
+-- Per-site roles (outside review P1-7). A user with no rows here has fleet-wide
+-- access under users.role, which is every user until an admin assigns sites.
+-- A user with rows sees and acts only in those sites, with the role given for each.
+CREATE TABLE IF NOT EXISTS user_site_roles (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  site_id    INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  role       VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, site_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_site_roles_site ON user_site_roles(site_id);
 `;
 
 const DEFAULT_SETTINGS = [

@@ -1,8 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { signToken, signRawToken, verifyToken, requireAuth, requireAdmin, requireWrite, AuthPayload } from '../auth';
+import { validateSession } from '../../utils/sessionState';
 
-const TEST_PAYLOAD: AuthPayload = { userId: 1, username: 'alice', role: 'admin' };
+// The account check hits the database; each test says what the account looks like.
+jest.mock('../../utils/sessionState', () => ({ validateSession: jest.fn() }));
+const mockValidate = validateSession as jest.MockedFunction<typeof validateSession>;
+
+const TEST_PAYLOAD: AuthPayload & { sv: number } = { userId: 1, username: 'alice', role: 'admin', sv: 0 };
+
+/** Let requireAuth's account check settle. */
+const settle = () => new Promise((r) => setImmediate(r));
 
 // Minimal Express mock helpers
 function mockReq(authHeader?: string): Request {
@@ -69,15 +77,49 @@ describe('requireAuth', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('calls next and sets req.user for a valid token', () => {
+  it('calls next and sets req.user for a valid token on a current account', async () => {
+    mockValidate.mockImplementation(async (p) => p);
     const token = signToken(TEST_PAYLOAD);
     const req = mockReq(`Bearer ${token}`);
     const res = mockRes();
     const next = jest.fn() as unknown as NextFunction;
     requireAuth(req, res, next);
+    await settle();
     expect(next).toHaveBeenCalled();
     expect(req.user?.userId).toBe(TEST_PAYLOAD.userId);
     expect(req.user?.role).toBe('admin');
+  });
+
+  // P2-1: a validly signed token for a deleted account, an older session
+  // version or a logged-out session is refused.
+  it('refuses a signed token whose session has ended', async () => {
+    mockValidate.mockResolvedValue(null);
+    const req = mockReq(`Bearer ${signToken(TEST_PAYLOAD)}`);
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+    requireAuth(req, res, next);
+    await settle();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'session_ended' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('uses the role the account has now, not the one in the token', async () => {
+    mockValidate.mockImplementation(async (p) => ({ ...p, role: 'viewer' }));
+    const req = mockReq(`Bearer ${signToken(TEST_PAYLOAD)}`);
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+    requireAuth(req, res, next);
+    await settle();
+    expect(req.user?.role).toBe('viewer');
+  });
+
+  it('gives each session its own id and the session version it was issued with', () => {
+    const a = verifyToken(signToken(TEST_PAYLOAD));
+    const b = verifyToken(signToken({ ...TEST_PAYLOAD, sv: 3 }));
+    expect(a.jti).toBeTruthy();
+    expect(a.jti).not.toBe(b.jti);
+    expect(b.sv).toBe(3);
   });
 });
 
@@ -189,24 +231,66 @@ describe('non-session tokens', () => {
 // ── Default password must be changed first (P1-3) ───────────────────────────
 
 describe('must-change-password sessions', () => {
-  const restricted = () => signToken({ userId: 1, username: 'admin', role: 'admin', mustChangePassword: true });
+  // The flag comes from the account now; the account still has the default password.
+  beforeEach(() => mockValidate.mockImplementation(async (p) => ({ ...p, mustChangePassword: true })));
+  const restricted = () => signToken({ userId: 1, username: 'admin', role: 'admin', sv: 0 });
   const reqFor = (path: string) =>
     ({ headers: { authorization: `Bearer ${restricted()}` }, originalUrl: path } as unknown as Request);
 
-  it('can reach the password change endpoint', () => {
+  it('can reach the password change endpoint', async () => {
     const next = jest.fn() as unknown as NextFunction;
     const res = mockRes();
     requireAuth(reqFor('/api/auth/password'), res, next);
+    await settle();
     expect(next).toHaveBeenCalled();
   });
 
-  it('is refused everywhere else, even as an admin', () => {
+  it('is refused everywhere else, even as an admin', async () => {
     for (const path of ['/api/devices', '/api/settings/users', '/api/devices/8/reboot?x=1']) {
       const next = jest.fn() as unknown as NextFunction;
       const res = mockRes();
       requireAuth(reqFor(path), res, next);
+      await settle();
       expect(res.status).toHaveBeenCalledWith(403);
       expect(next).not.toHaveBeenCalled();
     }
+  });
+});
+
+// ── site-scoped accounts (P1-7) ─────────────────────────────────────────────
+
+describe('site-scoped sessions', () => {
+  const scoped = { ...TEST_PAYLOAD, userId: 11, siteRoles: { 3: 'admin' } };
+
+  async function run(url: string, siteId: number | number[] | undefined) {
+    mockValidate.mockResolvedValueOnce({ ...scoped, siteRoles: { ...scoped.siteRoles } });
+    const req = { headers: { authorization: `Bearer ${signToken(scoped)}` }, originalUrl: url, siteId } as unknown as Request;
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+    requireAuth(req, res, next);
+    await settle();
+    return { req, res, next };
+  }
+
+  it("refuses a site the account doesn't have", async () => {
+    const { res, next } = await run('/api/devices', 1);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'site_forbidden' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('uses the role held in the requested site', async () => {
+    const { req, next } = await run('/api/devices', 3);
+    expect(next).toHaveBeenCalled();
+    expect(req.user?.role).toBe('admin');
+  });
+
+  // A site left selected in the browser by another account must not lock this
+  // one out of /auth/me, which the interface uses to notice and drop it.
+  it.each(['/api/auth/me', '/api/auth/logout', '/api/auth/password'])('ignores a stale site on %s', async (url) => {
+    const { req, res, next } = await run(url, 1);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+    expect(req.siteId).toEqual([3]);
   });
 });

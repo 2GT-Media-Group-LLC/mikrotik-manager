@@ -9,6 +9,12 @@ export interface User {
   created_at?: string;
   /** Still on the default password: must change it before using the app. */
   must_change_password?: boolean;
+  /**
+   * Per-site roles for an account limited to particular sites (P1-7), by site
+   * id. Absent for a fleet-wide account. When set, `role` is the account's
+   * highest site role capped at operator, so fleet-admin controls stay hidden.
+   */
+  siteRoles?: Record<string, UserRole>;
 }
 
 export interface IpAddress {

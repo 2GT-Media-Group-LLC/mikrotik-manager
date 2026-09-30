@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
+import { resourceSiteAccess } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { resolveStpUpstreams } from '../utils/stpUpstream';
-import { activeSite } from '../middleware/site';
+import { activeSite, writableScope } from '../middleware/site';
 import { PollerService } from '../services/PollerService';
 import {
   buildTopology,
@@ -14,6 +15,20 @@ import {
 
 const router = Router();
 router.use(requireAuth);
+// Manual links join two devices; a site-scoped account needs both to be its own (P1-7).
+router.use(resourceSiteAccess(async (req) => {
+  if (req.method === 'POST' && req.path === '/manual-links') {
+    const b = req.body as { from_device_id?: number; to_device_id?: number };
+    return b?.from_device_id && b?.to_device_id ? [Number(b.from_device_id), Number(b.to_device_id)] : null;
+  }
+  const del = req.method === 'DELETE' ? /^\/manual-links\/(\d+)\/?$/.exec(req.path) : null;
+  if (del) {
+    const rows = await query<{ from_device_id: number; to_device_id: number }>(
+      `SELECT from_device_id, to_device_id FROM manual_topology_links WHERE id = $1`, [del[1]]);
+    return rows.length ? [rows[0].from_device_id, rows[0].to_device_id] : [];
+  }
+  return null;
+}, 'Link not found'));
 
 let pollerService: PollerService | null = null;
 export function setPollerService(p: PollerService): void {
@@ -109,8 +124,10 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/topology/discover
-router.post('/discover', requireWrite, async (_req: Request, res: Response) => {
-  const devices = await query<{ id: number }>(`SELECT id FROM devices WHERE status='online'`);
+router.post('/discover', requireWrite, async (req: Request, res: Response) => {
+  // Only the devices in view: a site-scoped account can't trigger polls of other sites (P1-7).
+  const scope = siteScopeDevices(writableScope(req));
+  const devices = await query<{ id: number }>(`SELECT id FROM devices WHERE status='online' ${scope ? `AND ${scope}` : ''}`);
   if (pollerService) {
     for (const d of devices) {
       await pollerService.scheduleDeviceSync(d.id, 'slow');

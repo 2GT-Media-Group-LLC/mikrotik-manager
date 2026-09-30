@@ -3,9 +3,11 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import SecurityBanners from '../SecurityBanners';
+import { useAccessRefresh } from '../../hooks/useAccessRefresh';
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useAccessRefresh();
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>

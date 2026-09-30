@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Network, KeyRound, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { authApi } from '../services/api';
+import { authApi, signOut } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useThemeStore } from '../store/themeStore';
 import CircuitBackground from '../components/CircuitBackground';
@@ -17,7 +17,6 @@ export default function ChangePasswordPage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const setAuth = useAuthStore((s) => s.setAuth);
-  const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
   const location = useLocation();
   const { theme } = useThemeStore();
@@ -117,7 +116,7 @@ export default function ChangePasswordPage() {
             <button type="submit" className="btn-primary w-full" disabled={saving || !current || !next || !confirm}>
               {saving ? 'Saving…' : 'Save and continue'}
             </button>
-            <button type="button" onClick={() => { logout(); navigate('/login', { replace: true }); }}
+            <button type="button" onClick={() => { void signOut().then(() => navigate('/login', { replace: true })); }}
                     className={`w-full text-sm ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>
               Sign out
             </button>

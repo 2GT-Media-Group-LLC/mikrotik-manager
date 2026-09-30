@@ -38,6 +38,8 @@ interface BulkJobPayload {
   siteId?: number | null;
   /** Role of the user who queued the job, so preset restrictions apply here too. */
   requestingUserRole?: string;
+  /** A site-scoped caller's sites (P1-7), so duplicates elsewhere aren't merged into. */
+  allowedSites?: number[] | null;
 }
 
 async function readMeta(jobId: string): Promise<Record<string, unknown>> {
@@ -73,7 +75,7 @@ async function appendResults(jobId: string, rows: BulkAddResultRow[]): Promise<v
 }
 
 async function processJob(job: Job<BulkJobPayload>): Promise<void> {
-  const { jobId, items, siteId, requestingUserRole } = job.data;
+  const { jobId, items, siteId, requestingUserRole, allowedSites } = job.data;
   await writeMeta(jobId, { status: 'active', processed: 0 });
   const poller = pollerService;
 
@@ -105,7 +107,7 @@ async function processJob(job: Job<BulkJobPayload>): Promise<void> {
       // Without the role, an operator could use an admin-only preset here, and
       // since the add connects to the address in the item, send that preset's
       // credentials to a host of their choosing.
-      { siteId: siteId ?? null, requestingUserRole }
+      { siteId: siteId ?? null, requestingUserRole, allowedSites: allowedSites ?? null }
     );
 
     let failMsg = 'Failed';
@@ -141,14 +143,15 @@ export async function enqueueBulkAddJob(
   jobId: string,
   items: CreateDeviceInput[],
   siteId: number | null = null,
-  requestingUserRole?: string
+  requestingUserRole?: string,
+  allowedSites: number[] | null = null,
 ): Promise<void> {
   if (!queue) {
     queue = new Queue(QUEUE_NAME, { connection: createRedisConnection() });
   }
   // Passwords are encrypted before they reach Redis, and a finished job is
   // removed at once: progress and results live in their own keys.
-  await queue.add('run', { jobId, items: sealItems(items), siteId, requestingUserRole } satisfies BulkJobPayload, {
+  await queue.add('run', { jobId, items: sealItems(items), siteId, requestingUserRole, allowedSites } satisfies BulkJobPayload, {
     attempts: 1,
     removeOnComplete: true,
     removeOnFail: { age: 86400 },

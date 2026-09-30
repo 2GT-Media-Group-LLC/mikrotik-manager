@@ -14,6 +14,7 @@ import { Client as SSHClient } from 'ssh2';
 import { queryOne } from '../config/database';
 import { decrypt } from '../utils/crypto';
 import { preferredAuth, type KeyStatus } from '../utils/sshKeys';
+import { sshHostCheck, explainSshError } from './sshHostCheck';
 
 export interface SshExecDevice {
   id: number;
@@ -118,13 +119,14 @@ export async function runSshCommand(
         stream.on('close', () => finish(() => resolve({ output: output.trim(), auth: kind })));
       });
     });
-    conn.on('error', (err) => finish(() => reject(err)));
+    conn.on('error', (err) => finish(() => reject(explainSshError(err, device.ip_address, device.ssh_port ?? 22))));
 
     conn.connect({
       host: device.ip_address,
       port: device.ssh_port ?? 22,
       username,
       readyTimeout: Math.min(timeoutMs, 20_000),
+      ...sshHostCheck(device.ip_address, device.ssh_port ?? 22),
       ...auth,
     });
   });

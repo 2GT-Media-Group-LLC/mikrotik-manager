@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import SiteSelector from './SiteSelector';
+import { useIsSiteScoped } from '../../hooks/useCanWrite';
 import { APP_VERSION } from '../../version';
 import { devicesApi } from '../../services/api';
 
@@ -168,6 +169,7 @@ function CollapsedGroupLink({
 }
 
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
+  const siteScoped = useIsSiteScoped();
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
 
@@ -258,7 +260,8 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
       <nav className="flex-1 px-[14px] py-3 space-y-[1px] overflow-y-auto">
         {/* ── Monitor ── */}
         <SectionLabel label="Monitor" isCollapsed={isCollapsed} />
-        {monitorItems.map(({ to, icon, label }) => (
+        {/* Traffic analytics is fleet-wide, so it isn't offered to site-limited accounts (P1-7). */}
+        {monitorItems.filter((i) => !(siteScoped && i.to === '/traffic')).map(({ to, icon, label }) => (
           <NavItem key={to} to={to} icon={icon} label={label} isCollapsed={isCollapsed} onClick={handleNavClick} />
         ))}
 

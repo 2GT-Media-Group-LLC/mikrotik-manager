@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
+import { resourceSiteAccess } from '../utils/siteAccess';
 import * as fs from 'fs';
 import * as path from 'path';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
-import { activeSite } from '../middleware/site';
+import { activeSite, writableScope } from '../middleware/site';
 import { BackupService, describeRestore } from '../services/BackupService';
 import { decrypt } from '../utils/crypto';
 
@@ -28,6 +29,19 @@ const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
 const MAX_BULK_DELETE = 200;
 
 // GET /api/backups — filter by device, type, date range and free text (#134)
+// A site-scoped account reaches only backups of devices in its sites (P1-7):
+// by backup id for /:id and /:fromId/diff/:toId, by deviceId when creating one.
+router.use(resourceSiteAccess(async (req) => {
+  const ids = req.path.match(/^\/(\d+)(?:\/diff\/(\d+))?(?:\/|$)/);
+  if (ids) {
+    const backupIds = [ids[1], ids[2]].filter(Boolean).map(Number);
+    const rows = await query<{ device_id: number }>(`SELECT device_id FROM backups WHERE id = ANY($1::int[])`, [backupIds]);
+    return rows.length === backupIds.length ? rows.map((r) => r.device_id) : [];
+  }
+  if (req.method === 'POST' && req.path === '/' && req.body?.deviceId != null) return [Number(req.body.deviceId)];
+  return null;
+}, 'Backup not found'));
+
 router.get('/', async (req: Request, res: Response) => {
   const { deviceId, type, from, to, search } = req.query as Record<string, string | undefined>;
 
@@ -100,7 +114,7 @@ router.post('/bulk-delete', requireWrite, async (req: Request, res: Response) =>
 
   // Only ever touch backups in the active site, so a bulk action cannot reach
   // across into another site's history.
-  const siteFilter = siteScopeByDevice(activeSite(req), 'device_id');
+  const siteFilter = siteScopeByDevice(writableScope(req), 'device_id');
   const allowed = await query<{ id: number }>(
     `SELECT id FROM backups WHERE id = ANY($1::int[]) ${siteFilter ? `AND ${siteFilter}` : ''}`,
     [clean]

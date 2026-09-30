@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
+import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
+import { devicePins, pendingIdentityChanges, trustNewIdentity } from '../services/identityPins';
+import { enableApiSsl, type ApiSslDevice } from '../services/apiSsl';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { randomUUID } from 'crypto';
 import { Client as SshClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
-import { requireAuth, requireWrite, requireAdmin } from '../middleware/auth';
+import { requireAuth, requireWrite, requireAdmin, requireSiteAdmin, isSiteScoped } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { encrypt, decrypt } from '../utils/crypto';
 import { RouterOSClient } from '../services/mikrotik/RouterOSClient';
@@ -31,7 +34,7 @@ import type { HealthIssue } from '../utils/deviceHealth';
 import { runHealthCheck } from '../services/healthCheck';
 import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
 import { siteScopeDevices, andSite } from '../utils/siteScope';
-import { activeSite } from '../middleware/site';
+import { activeSite, targetSite } from '../middleware/site';
 
 /** Postgres interval text to milliseconds, for the few windows we offer. */
 function intervalToMs(interval: string): number {
@@ -42,9 +45,12 @@ function intervalToMs(interval: string): number {
 import { parseBandList, uplinkAnchor, totalBandwidthMhz, type LteBandInfo } from '../utils/lte';
 import { fluxString } from '@influxdata/influxdb-client';
 import { upgradeDecision } from '../utils/firmwarePlan';
+import { sshHostCheck, explainSshError } from '../services/sshHostCheck';
 
 const router = Router();
 router.use(requireAuth);
+// A site-scoped account only reaches devices in its own sites, with its role there (P1-7).
+router.use(deviceSiteAccess(deviceIdParam));
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
 // WireGuard private keys, SNMP communities, hotspot passwords).
 router.use(maskSecretsForReadOnly);
@@ -262,10 +268,15 @@ router.get('/discovered', async (_req: Request, res: Response) => {
 
 // POST /api/devices
 router.post('/', requireWrite, async (req: Request, res: Response) => {
+  // A device added while viewing a site joins that site (issue #130); a
+  // site-scoped account can only add to its own sites (P1-7).
+  const target = targetSite(req);
+  if (!target.ok) return res.status(target.status).json({ error: target.error });
   const result = await createDeviceFromBody(req.body, pollerService, {
-    requestingUserRole: req.user?.role,
-    // A device added while viewing a site joins that site (issue #130).
-    siteId: activeSite(req),
+    // Admin-only credential presets are fleet objects: a site admin uses them as an operator would (P1-7).
+    requestingUserRole: isSiteScoped(req.user) ? 'operator' : req.user?.role,
+    siteId: target.siteId,
+    allowedSites: req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null,
   });
   return res.status(result.status).json(result.body);
 });
@@ -274,6 +285,8 @@ const BULK_ADD_META_TTL_SEC = 86400;
 
 // POST /api/devices/bulk-add/jobs — enqueue Try-All style adds (survives tab close)
 router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) => {
+  const bulkTarget = targetSite(req);
+  if (!bulkTarget.ok) return res.status(bulkTarget.status).json({ error: bulkTarget.error });
   const { items } = req.body as { items?: unknown };
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items must be a non-empty array' });
@@ -296,7 +309,8 @@ router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) 
     BULK_ADD_META_TTL_SEC
   );
   await redis.set(`device-bulk-add:${jobId}:results`, '[]', 'EX', BULK_ADD_META_TTL_SEC);
-  await enqueueBulkAddJob(jobId, items as CreateDeviceInput[], activeSite(req), req.user!.role);
+  await enqueueBulkAddJob(jobId, items as CreateDeviceInput[], bulkTarget.siteId, isSiteScoped(req.user) ? 'operator' : req.user!.role,
+    req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null);
   return res.status(202).json({ job_id: jobId, total: items.length });
 });
 
@@ -532,7 +546,8 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
   // admin password, which is exactly what encrypting it at rest is meant to
   // prevent. So a non-admin moving a device must supply the password; admins
   // already hold full control and may reuse the stored one.
-  if (ipChanged && !api_password && !presetReplacesApiCreds && req.user?.role !== 'admin') {
+  // Fleet admins only: this sends the saved password to the new address (P1-6, P1-7).
+  if (ipChanged && !api_password && !presetReplacesApiCreds && (req.user?.role !== 'admin' || isSiteScoped(req.user))) {
     return res.status(400).json({
       error: "Enter the device's API password to change its address. The saved password is only sent to the address it was saved for.",
       code: 'password_required_for_address_change',
@@ -1292,6 +1307,50 @@ router.put('/:id/services/:serviceId', requireWrite, async (req, res) => {
   );
 });
 
+// ─── Device identity (certificate and host key pinning, outside review P1-4) ──
+
+// GET /api/devices/identity/pending — devices whose certificate or host key
+// changed and wait for an admin, for the Security page.
+router.get('/identity/pending', async (req: Request, res: Response) => {
+  res.json(await pendingIdentityChanges(activeSite(req)));
+});
+
+// GET /api/devices/:id/identity — the pinned certificate and host key, and any change seen.
+router.get('/:id/identity', async (req: Request, res: Response) => {
+  res.json(await devicePins(parseInt(req.params.id, 10)));
+});
+
+// POST /api/devices/:id/identity/:kind/trust — accept the changed one. Admin
+// only: this is the decision that the device, not an impostor, changed.
+router.post('/:id/identity/:kind/trust', requireSiteAdmin, async (req: Request, res: Response) => {
+  const kind = req.params.kind;
+  if (kind !== 'api-tls' && kind !== 'ssh-host') return res.status(400).json({ error: 'kind must be api-tls or ssh-host' });
+  const trusted = await trustNewIdentity(parseInt(req.params.id, 10), kind);
+  if (!trusted) return res.status(404).json({ error: 'No changed certificate or host key is waiting for this device' });
+  return res.json({ message: kind === 'api-tls' ? 'New certificate trusted.' : 'New host key trusted.' });
+});
+
+// POST /api/devices/:id/api-ssl — turn on API-SSL on the device and move the
+// manager's connection to it once a login over it works (outside review P1-4).
+router.post('/:id/api-ssl', requireWrite, async (req: Request, res: Response) => {
+  const device = await queryOne<ApiSslDevice>(
+    `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`, [req.params.id]);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  try {
+    const result = await enableApiSsl(device);
+    return res.json(result);
+  } catch (err) {
+    // Connection failures get the usual safe wording; anything the device
+    // itself said, or a step that explains itself, is shown as it is.
+    const msg = (err as Error).message ?? String(err);
+    const connectionProblem = !!(err as NodeJS.ErrnoException).code
+      || /timeout|connection|invalid user name or password/i.test(msg);
+    return res.status(502).json({
+      error: `Could not enable API-SSL: ${connectionProblem ? safeConnectionError('api-ssl', err) : msg}`,
+    });
+  }
+});
+
 // GET /api/devices/:id/security-posture — computes a hardening checklist.
 // Heuristic, not standards-based: graduated weighting that won't saturate to 0,
 // de-duplicated services, and it never proposes disabling the management
@@ -1322,7 +1381,7 @@ router.get('/:id/security-posture', async (req, res) => {
     const services = Array.from(new Map(servicesRaw.map(s => [s['name'] ?? s['.id'], s])).values());
 
     type Sev = 'high' | 'medium' | 'low';
-    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string };
+    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string; fix?: 'api-ssl' };
     const checks: Check[] = [];
 
     for (const s of services) {
@@ -1345,9 +1404,11 @@ router.get('/:id/security-posture', async (req, res) => {
       } else if (name === mgmtService && name === 'api') {
         // The platform is connected through cleartext API — advise, but do NOT
         // offer to disable it (that would cut MikroTik Manager off the device).
-        checks.push({ id: 'mgmt-api-cleartext', severity: 'low',
-          title: 'MikroTik Manager connects over cleartext API',
-          detail: 'This device is managed via the unencrypted API (8728). Consider migrating the device and its credentials to API-SSL (8729) for encrypted management.' });
+        checks.push({ id: 'mgmt-api-cleartext', severity: 'medium', fix: 'api-ssl',
+          title: 'MikroTik Manager connects over the plain API',
+          detail: 'This device is managed over the unencrypted API (8728), which sends its login in the clear on every poll. ' +
+            'Switch to API-SSL: the manager enables it on the device (with a self-signed certificate if it has none) ' +
+            'and moves over only once it has logged in over it.' });
       }
     }
 
@@ -2999,13 +3060,14 @@ router.post('/:id/tools/capture', requireWrite, async (req: Request, res: Respon
           });
         });
       });
-      ssh.on('error', (e) => reject(new Error(`SSH connect failed: ${e.message}`)));
+      ssh.on('error', (e) => reject(new Error(`SSH connect failed: ${explainSshError(e, device.ip_address, device.ssh_port ?? 22).message}`)));
       ssh.connect({
         host: device.ip_address,
         port: device.ssh_port ?? 22,
         username: device.ssh_username!,
         password: decrypt(device.ssh_password_encrypted!),
         readyTimeout: 10_000,
+        ...sshHostCheck(device.ip_address, device.ssh_port ?? 22),
       });
     });
 

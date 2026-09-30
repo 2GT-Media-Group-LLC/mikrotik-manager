@@ -18,9 +18,14 @@ The address can be a LAN IP, a public IP, an IPv6 address, or a hostname (a loca
 a router's own `/ip cloud` DDNS name). Pasting a full URL like `https://203.0.113.5:8729/`
 works too — the port is pulled out into the API Port field automatically. The same goes for an
 address with a port sent through the API: it is used as the API port, and refused if a
-different port is also given. Reaching a device
-over the internet on the plaintext API port (8728) sends the login unencrypted, so the form
-warns and suggests api-ssl (port 8729) or a VPN instead.
+different port is also given.
+
+Leave **API Port** blank and the manager tries **API-SSL (8729) first**, falling back to the
+plain API (8728) if the device doesn't offer it. Both are tried at once, so a device without
+API-SSL isn't slower to add. A port you enter, or one in the credential preset, is used as
+given. The plain API sends the login unencrypted on every poll, so a device that ended up on
+8728 is listed on the [Security page](security.md#encrypted-management-api-ssl), where it
+can be switched over. Choosing 8728 for a public address still shows a warning.
 
 ### IPv6 addresses
 

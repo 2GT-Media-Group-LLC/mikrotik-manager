@@ -5,14 +5,14 @@ import { useThemeStore } from '../../store/themeStore';
 import GlobalSearch from './GlobalSearch';
 import { docsUrl } from '../../version';
 import { useQuery } from '@tanstack/react-query';
-import { settingsApi } from '../../services/api';
+import { settingsApi, signOut } from '../../services/api';
 
 interface TopBarProps {
   onMenuClick: () => void;
 }
 
 export default function TopBar({ onMenuClick }: TopBarProps) {
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const { data: appSettings } = useQuery({
     queryKey: ['app-settings'],
     queryFn: () => settingsApi.get().then((r) => r.data),
@@ -22,8 +22,8 @@ export default function TopBar({ onMenuClick }: TopBarProps) {
   const { theme, toggleTheme } = useThemeStore();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await signOut();
     navigate('/login');
   };
 

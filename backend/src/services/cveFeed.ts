@@ -1,6 +1,6 @@
 import { query, pool } from '../config/database';
 import { internetAllowed } from '../utils/darkSite';
-import { siteScopeDevices } from '../utils/siteScope';
+import { siteScopeDevices, type SiteScope } from '../utils/siteScope';
 import {
   parseNvdResponse, parseKevResponse, affects, fixedIn, severityRank, correctedAway, matchUncertainty,
   type ParsedCve, type VersionRange,
@@ -110,7 +110,7 @@ export interface FleetCveReport {
 }
 
 /** Every RouterOS version in the site, with the stored CVEs that list it. */
-export async function fleetCveReport(siteId: number | null | undefined): Promise<FleetCveReport> {
+export async function fleetCveReport(siteId: SiteScope | undefined): Promise<FleetCveReport> {
   const siteFilter = siteScopeDevices(siteId ?? null);
   const [devices, stored, settings, enabled] = await Promise.all([
     query<{ id: number; name: string; ros_version: string | null }>(

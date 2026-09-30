@@ -25,6 +25,7 @@ import SecurityTab from '../components/device-detail/SecurityTab';
 import clsx from 'clsx';
 import { displayState, STATE_LABEL } from '../utils/deviceState';
 import DeviceHealthCard from '../components/device-detail/DeviceHealthCard';
+import { DeviceIdentityBanner } from '../components/security/IdentityChange';
 
 type TabKey = 'overview' | 'ports' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
 
@@ -225,6 +226,9 @@ export default function DeviceDetailPage() {
           )}
         </div>
       </div>
+
+      {/* A changed certificate or host key stops the manager connecting (P1-4). */}
+      <DeviceIdentityBanner deviceId={deviceId} deviceName={device.name} />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-slate-700 overflow-x-auto">

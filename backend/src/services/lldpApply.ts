@@ -1,5 +1,5 @@
 import { query } from '../config/database';
-import { siteScopeDevices } from '../utils/siteScope';
+import { siteScopeDevices, type SiteScope } from '../utils/siteScope';
 import { DeviceCollector, type DeviceRow } from './mikrotik/DeviceCollector';
 import { type LldpDeviceType } from '../utils/lldpTargets';
 
@@ -17,7 +17,7 @@ export { LLDP_DEVICE_TYPES, parseDeviceTypes } from '../utils/lldpTargets';
  * to every site. Both directions are site-scoped now.
  */
 
-async function onlineDevices(types: LldpDeviceType[], siteId: number | null | undefined): Promise<DeviceRow[]> {
+async function onlineDevices(types: LldpDeviceType[], siteId: SiteScope | undefined): Promise<DeviceRow[]> {
   const siteFilter = siteScopeDevices(siteId ?? null);
   return query<DeviceRow>(
     `SELECT * FROM devices WHERE device_type::text = ANY($1::text[]) AND status = 'online'
@@ -26,7 +26,7 @@ async function onlineDevices(types: LldpDeviceType[], siteId: number | null | un
   );
 }
 
-export async function getLldpStatuses(types: LldpDeviceType[], siteId: number | null | undefined) {
+export async function getLldpStatuses(types: LldpDeviceType[], siteId: SiteScope | undefined) {
   const devices = await onlineDevices(types, siteId);
   const results = await Promise.allSettled(
     devices.map(async (d) => {
@@ -58,7 +58,7 @@ export async function getLldpStatuses(types: LldpDeviceType[], siteId: number | 
 export async function setLldpForTypes(
   types: LldpDeviceType[],
   enabled: boolean,
-  siteId: number | null | undefined
+  siteId: SiteScope | undefined
 ) {
   const devices = await onlineDevices(types, siteId);
   const results = await Promise.allSettled(

@@ -12,6 +12,8 @@ import type { Device } from '../types';
 import clsx from 'clsx';
 import CertificateList from '../components/CertificateList';
 import RouterOsCveCard from '../components/security/RouterOsCveCard';
+import ApiSslCard from '../components/security/ApiSslCard';
+import { PendingIdentityCard } from '../components/security/IdentityChange';
 
 interface DevicePosture {
   id: number; name: string; ip_address: string; device_type?: string;
@@ -142,6 +144,10 @@ export default function SecurityPage() {
         <Kpi icon={AlertTriangle} label="High severity" accent={highCount > 0 ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'}
           value={highCount} valueClass={highCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'} />
       </div>
+
+      <PendingIdentityCard />
+
+      <ApiSslCard />
 
       <RouterOsCveCard />
 

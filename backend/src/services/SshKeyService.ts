@@ -19,6 +19,7 @@ import {
 } from '../utils/sshKeys';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { resolveKeyCredentials } from '../utils/sshKeyCredentials';
+import { sshHostCheck, explainSshError } from './sshHostCheck';
 
 const CONNECT_TIMEOUT_MS = 20_000;
 
@@ -73,13 +74,14 @@ function withSsh<T>(
         .then((r) => { clearTimeout(timer); conn.end(); resolve(r); })
         .catch((e) => { clearTimeout(timer); conn.end(); reject(e); });
     });
-    conn.on('error', (err) => { clearTimeout(timer); reject(err); });
+    conn.on('error', (err) => { clearTimeout(timer); reject(explainSshError(err, target.ip_address, target.ssh_port ?? 22)); });
 
     conn.connect({
       host: target.ip_address,
       port: target.ssh_port ?? 22,
       username,
       readyTimeout: CONNECT_TIMEOUT_MS,
+      ...sshHostCheck(target.ip_address, target.ssh_port ?? 22),
       ...auth,
     });
   });

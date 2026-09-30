@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { requireAuth, requireWrite } from '../middleware/auth';
+import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
 import { query } from '../config/database';
 import { DARK_SITE_FEATURES, DARK_SITE_KEYS, internetAllowed } from '../utils/darkSite';
 import type { PollerService } from '../services/PollerService';
@@ -62,7 +62,7 @@ function isNewer(latest: number[], current: number[]): boolean {
  * 1.0 means the backlog grows every cycle and some devices will stop reporting
  * altogether (#114).
  */
-router.get('/poller', async (_req: Request, res: Response) => {
+router.get('/poller', fleetOnly, async (_req: Request, res: Response) => {
   try {
     if (!pollerService) return res.status(503).json({ error: 'Poller not started' });
     const health = await pollerService.getPollerHealth();
@@ -103,7 +103,7 @@ router.get('/poller', async (_req: Request, res: Response) => {
  * whatever is still due on its next tick, so the cost is at most one interval of
  * freshness.
  */
-router.post('/poller/drain', requireWrite, async (_req: Request, res: Response) => {
+router.post('/poller/drain', requireWrite, fleetOnly, async (_req: Request, res: Response) => {
   try {
     if (!pollerService) return res.status(503).json({ error: 'Poller not started' });
     const drained = await pollerService.drainQueues();

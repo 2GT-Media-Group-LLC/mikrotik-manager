@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { deviceSiteAccess, deviceIdQuery } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromQuery } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import { randomBytes } from 'crypto';
@@ -9,6 +10,8 @@ import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector
 
 const router = Router();
 router.use(requireAuth);
+// A site-scoped account only reaches devices in its own sites, with its role there (P1-7).
+router.use(deviceSiteAccess(deviceIdQuery));
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
 // WireGuard private keys, SNMP communities, hotspot passwords).
 router.use(maskSecretsForReadOnly);

@@ -3,7 +3,8 @@ import * as dgram from 'dgram';
 import { query } from '../config/database';
 import { logSafe } from '../utils/logSafe';
 import { requireAuth, requireAdmin, requireWrite } from '../middleware/auth';
-import { siteScopeByDevice } from '../utils/siteScope';
+import { siteScopeByDevice, siteScopeByNullableDevice } from '../utils/siteScope';
+import { fluxDeviceFilter } from '../utils/siteAccess';
 import { activeSite } from '../middleware/site';
 import { PollerService } from '../services/PollerService';
 import { getQueryApi, bucket } from '../config/influxdb';
@@ -24,6 +25,18 @@ function withCategory<T extends Record<string, unknown>>(row: T): T & { device_c
 
 const router = Router();
 router.use(requireAuth);
+
+// A site-scoped account reaches a client only if it has been seen on one of
+// its devices (P1-7). The per-client queries below are site-filtered as well.
+router.use(async (req: Request, res: Response, next) => {
+  const scoped = req.user?.siteRoles;
+  const m = /^\/([0-9A-Fa-f:.-]{12,17})(?:\/|$)/.exec(req.path);
+  if (!scoped || !m) return next();
+  const seen = siteScopeByDevice(Object.keys(scoped).map(Number), 'device_id');
+  const rows = await query(`SELECT 1 FROM clients WHERE LOWER(mac_address) = LOWER($1) AND ${seen} LIMIT 1`, [m[1]]).catch(() => []);
+  if (rows.length === 0) return res.status(404).json({ error: 'Client not found' });
+  return next();
+});
 
 let pollerService: PollerService | null = null;
 export function setPollerService(p: PollerService): void { pollerService = p; }
@@ -51,6 +64,7 @@ router.get('/:mac/roaming', async (req: Request, res: Response) => {
      LEFT JOIN devices d ON d.id = e.device_id
      WHERE e.event_time > NOW() - ($2 || ' hours')::interval
        AND (e.message ILIKE $1 || '@%' OR e.message ILIKE '%for ' || $1 || '%')
+       ${siteScopeByNullableDevice(activeSite(req), 'e.device_id') ? `AND ${siteScopeByNullableDevice(activeSite(req), 'e.device_id')}` : ''}
      ORDER BY e.event_time ASC
      LIMIT 5000`,
     [mac, String(hours)]
@@ -259,6 +273,7 @@ router.get('/:mac', async (req: Request, res: Response) => {
        LIMIT 1
      ) topo ON TRUE
      WHERE LOWER(c.mac_address) = $1
+       ${siteScopeByDevice(activeSite(req), 'c.device_id') ? `AND ${siteScopeByDevice(activeSite(req), 'c.device_id')}` : ''}
      ORDER BY (c.client_type = 'wireless') DESC, c.active DESC, c.last_seen DESC NULLS LAST
      LIMIT 1`,
     [mac]
@@ -279,6 +294,7 @@ router.get('/:mac/presence', async (req: Request, res: Response) => {
   const window = range === '7d' ? '30m' : '5m';
 
   const queryApi = getQueryApi();
+  const deviceFlux = await fluxDeviceFilter(activeSite(req));
   // Group by mac_address only (drop device_id) so that all devices reporting the
   // same client are merged into one series. fn:max means online=1 if any device
   // saw the client in that window; createEmpty+fill gives offline=0 for gaps.
@@ -288,6 +304,7 @@ router.get('/:mac/presence', async (req: Request, res: Response) => {
       |> filter(fn: (r) => r._measurement == "client_presence")
       |> filter(fn: (r) => r._field == "online")
       |> filter(fn: (r) => r.mac_address == ${fluxString(String(mac))})
+      ${deviceFlux}
       |> group(columns: ["_measurement", "_field", "mac_address"])
       |> aggregateWindow(every: ${window}, fn: max, createEmpty: true)
       |> fill(value: 0)
@@ -318,6 +335,7 @@ router.get('/:mac/traffic', async (req: Request, res: Response) => {
   const window = range === '7d' ? '30m' : '5m';
 
   const queryApi = getQueryApi();
+  const deviceFlux = await fluxDeviceFilter(activeSite(req));
   // Simple query: get the last cumulative byte counter value per time window.
   // Non-negative differences are computed in TypeScript below — avoids the
   // fragile non_negative_difference+pivot combination in Flux.
@@ -327,6 +345,7 @@ router.get('/:mac/traffic', async (req: Request, res: Response) => {
       |> filter(fn: (r) => r._measurement == "client_presence")
       |> filter(fn: (r) => r._field == "tx_bytes" or r._field == "rx_bytes")
       |> filter(fn: (r) => r.mac_address == ${fluxString(String(mac))})
+      ${deviceFlux}
       |> group(columns: ["_measurement", "_field", "mac_address"])
       |> aggregateWindow(every: ${window}, fn: last, createEmpty: false)
       |> yield(name: "traffic_raw")
@@ -383,12 +402,14 @@ router.get('/:mac/signal', async (req: Request, res: Response) => {
   const window = range === '7d' ? '30m' : '5m';
 
   const queryApi = getQueryApi();
+  const deviceFlux = await fluxDeviceFilter(activeSite(req));
   const fluxQuery = `
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_presence")
       |> filter(fn: (r) => r._field == "signal_strength")
       |> filter(fn: (r) => r.mac_address == ${fluxString(String(mac))})
+      ${deviceFlux}
       |> group(columns: ["_measurement", "_field", "mac_address"])
       |> aggregateWindow(every: ${window}, fn: mean, createEmpty: false)
       |> yield(name: "signal")

@@ -53,8 +53,18 @@ interface ResolvedSecrets {
   jwtVerifiers: string[];
   encCurrent: Buffer;
   encDecryptors: Buffer[];
+  /** The current key as configured, kept so a rotation can move it to history. */
+  encMaterial: string;
+  /**
+   * A key was generated this boot and is not saved yet: it is saved only once
+   * startup confirms no stored data needs a key that is missing (P2-29).
+   */
+  encPendingSave: boolean;
   info: SecretsInfo;
 }
+
+/** Set at startup when stored credentials exist that no known key decrypts. */
+let encryptionKeyLost = false;
 
 let resolved: ResolvedSecrets | null = null;
 
@@ -167,10 +177,16 @@ export function initSecrets(): SecretsInfo {
   }
   // Decryptors: current + prior keys + the known defaults, so any legacy
   // ciphertext still decrypts. Legacy defaults for decrypt-only are safe.
+  // ENCRYPTION_KEY_PREVIOUS carries the outgoing key when an operator changes
+  // ENCRYPTION_KEY in .env: an env key is never written to disk, so without it
+  // the old key was simply gone (outside review P2-29).
+  const envPrevious = (process.env.ENCRYPTION_KEY_PREVIOUS || '')
+    .split(',').map((k) => k.trim()).filter(Boolean);
   const encDecryptors = dedupeKeys([
     encMaterial,
     ...(persisted.encryptionKey ? [persisted.encryptionKey] : []),
     ...(history.prevEncryptionKeys || []),
+    ...envPrevious,
     ...KNOWN_DEFAULT_ENC,
   ]);
 
@@ -187,7 +203,10 @@ export function initSecrets(): SecretsInfo {
     const toSave: PersistedSecrets = {
       // Only store secrets we manage ourselves — never write an env-provided secret to disk.
       jwtSecret: jwtSource === 'env' ? persisted.jwtSecret : jwtCurrent,
-      encryptionKey: encSource === 'env' ? persisted.encryptionKey : encMaterial,
+      // A generated encryption key waits for confirmEncryptionKey(): saving it
+      // straight away made a lost key permanent, because new credentials were
+      // then written under a key the old data can never be read with.
+      encryptionKey: encSource === 'env' || generatedEnc ? persisted.encryptionKey : encMaterial,
       prevJwtSecrets: history.prevJwtSecrets,
       prevEncryptionKeys: history.prevEncryptionKeys,
     };
@@ -207,9 +226,104 @@ export function initSecrets(): SecretsInfo {
     jwtVerifiers,
     encCurrent: deriveKey(encMaterial),
     encDecryptors,
+    encMaterial,
+    encPendingSave: generatedEnc,
     info,
   };
   return info;
+}
+
+/**
+ * Called once the database is up. A key generated this boot is saved only if
+ * nothing stored needs a different key. If encrypted data exists that no
+ * known key opens, the key was lost (secrets.json deleted, app_data not moved
+ * with the database, ENCRYPTION_KEY changed without ENCRYPTION_KEY_PREVIOUS):
+ * the generated key is not saved, and saving new credentials is refused, so
+ * restoring the original key still recovers everything (P2-29).
+ */
+export function confirmEncryptionKey(unreadableStoredValues: number): { saved: boolean; lost: boolean } {
+  const r = ensure();
+  if (unreadableStoredValues > 0) {
+    encryptionKeyLost = true;
+    return { saved: false, lost: true };
+  }
+  encryptionKeyLost = false;
+  if (!r.encPendingSave) return { saved: false, lost: false };
+  const p = loadPersisted();
+  const ok = savePersisted({ ...p, encryptionKey: r.encMaterial });
+  if (ok) r.encPendingSave = false;
+  r.info.persisted = ok;
+  r.info.ephemeral = !ok;
+  return { saved: ok, lost: false };
+}
+
+/** True when stored credentials exist that no known key can decrypt. */
+export function encryptionKeyMissing(): boolean {
+  return encryptionKeyLost;
+}
+
+/** For the Settings page: where the key comes from and how many older keys are kept. */
+export function encryptionKeyInfo(): {
+  source: SecretsInfo['encSource']; keyId: string; savedPreviousKeys: number; envPreviousKeys: number;
+} {
+  const r = ensure();
+  const envPrevious = (process.env.ENCRYPTION_KEY_PREVIOUS || '').split(',').map((k) => k.trim()).filter(Boolean);
+  return {
+    source: r.info.encSource,
+    keyId: keyId(r.encCurrent),
+    savedPreviousKeys: (loadPersisted().prevEncryptionKeys || []).length,
+    envPreviousKeys: envPrevious.length,
+  };
+}
+
+/** A short, non-secret identifier for a key, to tell keys apart in the UI. */
+export function keyId(key: Buffer): string {
+  return crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
+}
+
+/**
+ * Switch to a newly generated key. The outgoing key is written to the history
+ * in secrets.json first, and nothing changes if that write fails, so no
+ * ciphertext is ever left without a key. Callers then re-encrypt stored data.
+ * Only for a key the manager manages; one set in .env is rotated there.
+ */
+export function rotateEncryptionKey(): { keyId: string } {
+  const r = ensure();
+  if (r.info.encSource === 'env') {
+    throw new Error('The encryption key is set by ENCRYPTION_KEY in .env. Rotate it there, with ENCRYPTION_KEY_PREVIOUS.');
+  }
+  if (encryptionKeyLost) throw new Error('The encryption key is missing; restore it before rotating.');
+  const next = crypto.randomBytes(16).toString('hex');
+  const p = loadPersisted();
+  const history = [...new Set([...(p.prevEncryptionKeys || []), r.encMaterial])];
+  if (!savePersisted({ ...p, encryptionKey: next, prevEncryptionKeys: history })) {
+    throw new Error('Could not write the new key to secrets.json, so the key was not changed.');
+  }
+  const newKey = deriveKey(next);
+  // The old current key stays a decryptor, behind the new one.
+  r.encDecryptors = [newKey, ...r.encDecryptors.filter((k) => !k.equals(newKey))];
+  r.encMaterial = next;
+  r.encCurrent = newKey;
+  r.encPendingSave = false;
+  r.info.encSource = 'persisted';
+  return { keyId: keyId(r.encCurrent) };
+}
+
+/**
+ * Forget every key but the current one. Callers must first confirm nothing
+ * stored still needs an older key; ENCRYPTION_KEY_PREVIOUS stays in use until
+ * it is removed from .env.
+ */
+export function retireOldEncryptionKeys(): number {
+  const r = ensure();
+  const p = loadPersisted();
+  const dropped = (p.prevEncryptionKeys || []).length;
+  if (dropped > 0 && !savePersisted({ ...p, prevEncryptionKeys: [] })) {
+    throw new Error('Could not update secrets.json.');
+  }
+  const envPrevious = (process.env.ENCRYPTION_KEY_PREVIOUS || '').split(',').map((k) => k.trim()).filter(Boolean);
+  r.encDecryptors = dedupeKeys([r.encMaterial, ...envPrevious]);
+  return dropped;
 }
 
 function ensure(): ResolvedSecrets {

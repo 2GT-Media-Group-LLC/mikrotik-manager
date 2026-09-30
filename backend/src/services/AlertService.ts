@@ -18,7 +18,8 @@ export type AlertEventType =
   | 'firmware_update_available'
   | 'config_drift'
   | 'device_degraded'
-  | 'device_health_restored';
+  | 'device_health_restored'
+  | 'device_identity_changed';
 
 export interface AlertContext {
   deviceId?: number;
@@ -60,6 +61,7 @@ const EVENT_LABELS: Record<string, string> = {
   config_drift:             'Configuration Changed',
   device_degraded:          'Device Degraded (Hardware)',
   device_health_restored:   'Device Hardware Healthy Again',
+  device_identity_changed:  'Device Certificate or Host Key Changed',
 };
 
 const EVENT_EMOJI: Record<string, string> = {
@@ -75,6 +77,7 @@ const EVENT_EMOJI: Record<string, string> = {
   config_drift:             '📝',
   device_degraded:          '🟠',
   device_health_restored:   '🟢',
+  device_identity_changed:  '🛑',
 };
 
 export class AlertService {
@@ -434,7 +437,7 @@ export class AlertService {
    * channel stays worth being woken by.
    */
   private ntfyPriority(eventType: string): number {
-    if (['device_offline', 'device_degraded', 'log_error', 'high_cpu', 'high_memory'].includes(eventType)) return 4;
+    if (['device_offline', 'device_degraded', 'device_identity_changed', 'log_error', 'high_cpu', 'high_memory'].includes(eventType)) return 4;
     if (['device_online', 'device_health_restored', 'device_discovered'].includes(eventType)) return 2;
     return 3;
   }

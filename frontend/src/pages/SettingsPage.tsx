@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound, ClipboardList, FileText, Zap, LogIn,
-  Activity, Moon} from 'lucide-react';
+  Activity, Moon, Globe } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
 import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
@@ -24,7 +24,10 @@ import TagRow from '../components/settings/TagRow';
 import DarkSiteCard from '../components/settings/DarkSiteCard';
 import FleetSshKeysCard from '../components/settings/FleetSshKeysCard';
 import AutomationSettings from '../components/settings/AutomationSettings';
+import EncryptionKeyCard from '../components/settings/EncryptionKeyCard';
 import OidcSettings from '../components/settings/OidcSettings';
+import { useIsSiteScoped } from '../hooks/useCanWrite';
+import SiteAccessDialog, { type UserSiteRole } from '../components/settings/SiteAccessDialog';
 
 const ROLE_META: Record<UserRole, { label: string; color: string; desc: string }> = {
   admin:    { label: 'Admin',    color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',    desc: 'Full access including user management' },
@@ -77,7 +80,8 @@ export default function SettingsPage() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; }
   }, []);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller' | 'darksite' | 'sshkeys'>('general');
+  const siteScoped = useIsSiteScoped();
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller' | 'darksite' | 'sshkeys'>(siteScoped ? 'security' : 'general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -98,12 +102,17 @@ export default function SettingsPage() {
   const { data: users = [] } = useQuery({
     queryKey: ['settings-users'],
     queryFn: () => settingsApi.getUsers().then((r) => r.data as User[]),
+    // Fleet admins only; the server refuses everyone else.
+    enabled: isAdmin && !siteScoped,
   });
 
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer' as UserRole });
   const [userError, setUserError] = useState('');
   const [userSuccess, setUserSuccess] = useState('');
   const [editUser, setEditUser] = useState<EditUserState | null>(null);
+  // Per-site access (P1-7): the users list returns each account's site roles.
+  const [accessUser, setAccessUser] = useState<User | null>(null);
+  const siteRolesOf = (u: User): UserSiteRole[] => (u as User & { site_roles?: UserSiteRole[] }).site_roles ?? [];
   const [editError, setEditError] = useState('');
 
   const createUserMutation = useMutation({
@@ -395,6 +404,7 @@ export default function SettingsPage() {
     cert_expiry: 'Certificate expiring soon',
     device_discovered: 'New device discovered',
     device_degraded: 'Device degraded (power supply, fan or temperature)',
+    device_identity_changed: 'Device certificate or SSH host key changed',
     device_health_restored: 'Device hardware healthy again',
   };
 
@@ -404,7 +414,9 @@ export default function SettingsPage() {
 
   // Tabs are grouped by audience: platform administration, the signed-in
   // user's own account, and fleet-facing operational configuration.
-  const tabGroups = [
+  // An account limited to particular sites only manages its own password here:
+  // everything else on this page is fleet-wide (P1-7).
+  const allTabGroups = [
     {
       label: 'Platform',
       tabs: [
@@ -440,6 +452,9 @@ export default function SettingsPage() {
       ],
     },
   ];
+  const tabGroups = siteScoped
+    ? allTabGroups.filter((g) => g.label === 'My Account')
+    : allTabGroups;
 
   return (
     <div className="space-y-4">
@@ -502,6 +517,7 @@ export default function SettingsPage() {
         // the app. Columns rather than a grid, so a short card such as
         // Appearance does not leave a hole the height of its taller neighbour.
         <div className="max-w-6xl xl:columns-2 xl:gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+          {isAdmin && <EncryptionKeyCard />}
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Appearance</h3>
             <div className="flex items-center justify-between">
@@ -1010,6 +1026,13 @@ export default function SettingsPage() {
 
       {activeTab === 'users' && (
         <div className="space-y-4">
+          {accessUser && (
+            <SiteAccessDialog
+              user={{ ...accessUser, site_roles: siteRolesOf(accessUser) }}
+              isSelf={accessUser.id === user?.id}
+              onClose={() => setAccessUser(null)}
+            />
+          )}
           {/* Role legend */}
           <div className="card p-4">
             <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">
@@ -1037,6 +1060,7 @@ export default function SettingsPage() {
                 <tr className="border-b border-gray-100 dark:border-slate-700">
                   <th className="table-header px-4 py-2.5 text-left">Username</th>
                   <th className="table-header px-4 py-2.5 text-left">Role</th>
+                  <th className="table-header px-4 py-2.5 text-left">Access</th>
                   <th className="table-header px-4 py-2.5 text-left">Created</th>
                   <th className="table-header px-4 py-2.5 w-20" />
                 </tr>
@@ -1059,7 +1083,13 @@ export default function SettingsPage() {
                       )}
                     </td>
                     <td className="px-4 py-2.5">
-                      <RoleBadge role={u.role} />
+                      {/* A site-limited account's roles are per site; its own role column doesn't apply (P1-7). */}
+                      {siteRolesOf(u).length > 0 ? <span className="text-xs text-gray-500 dark:text-slate-400">per site</span> : <RoleBadge role={u.role} />}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-600 dark:text-slate-300">
+                      {siteRolesOf(u).length > 0
+                        ? siteRolesOf(u).map((r) => `${r.site_name}: ${r.role}`).join(', ')
+                        : 'Whole fleet'}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-400 dark:text-slate-500">
                       {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
@@ -1083,6 +1113,13 @@ export default function SettingsPage() {
                             title="Edit user"
                           >
                             <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setAccessUser(u)}
+                            className="p-1 rounded text-gray-400 hover:text-blue-500 transition-colors"
+                            title="Site access"
+                          >
+                            <Globe className="w-3.5 h-3.5" />
                           </button>
                           {u.id !== user?.id && (
                             <button

@@ -30,10 +30,14 @@ import sshKeysRoutes from './routes/sshKeys';
 import commandTemplatesRoutes from './routes/commandTemplates';
 import { convertConfigTemplates } from './services/convertConfigTemplates';
 import { netflowCollector } from './services/netflow/NetflowCollector';
-import { verifyToken, type AuthPayload } from './middleware/auth';
+import { verifyToken, highestRole, type AuthPayload } from './middleware/auth';
+import { roleOnDevice } from './utils/siteAccess';
+import { validateSession } from './utils/sessionState';
+import { verifyDeviceIdentity } from './services/identityPins';
+import { RouterOSClient } from './services/mikrotik/RouterOSClient';
 import { rateLimitRedis } from './middleware/rateLimitRedis';
-import { initSecrets } from './utils/secrets';
-import { reencryptStaleCredentials } from './db/reencryptCredentials';
+import { initSecrets, confirmEncryptionKey } from './utils/secrets';
+import { countUnreadable, reencryptAll } from './services/encryptedData';
 import { reconcileStaleGuards } from './services/changeGuard/ChangeGuard';
 import { corsMiddlewareOptions, socketIoCorsOptions } from './utils/corsOrigins';
 
@@ -76,6 +80,7 @@ import cveRoutes from './routes/cves';
 import adoptionRoutes, { setPollerService as setAdoptionPoller } from './routes/adoption';
 import { siteContext } from './middleware/site';
 import { auditMiddleware } from './middleware/auditMiddleware';
+import { sshHostCheck, explainSshError } from './services/sshHostCheck';
 
 // ─── Secret hygiene ───────────────────────────────────────────────────────────
 // Self-healing: if JWT_SECRET / ENCRYPTION_KEY aren't set to strong values, we
@@ -104,6 +109,10 @@ function provisionSecrets(): void {
   }
 }
 
+// Every API-SSL connection checks the device's certificate against the one it
+// presented first, before sending the login (outside review P1-4).
+RouterOSClient.tlsVerifier = (host, port, fingerprint) => verifyDeviceIdentity('api-tls', host, port, fingerprint);
+
 const app = express();
 // nginx sits exactly one hop in front; trust its X-Forwarded-For so req.ip is the real client IP
 app.set('trust proxy', 1);
@@ -118,22 +127,48 @@ const io = new SocketServer(httpServer, {
 
 // The default namespace broadcasts fleet-activity events (device/client/event
 // updates); require a valid JWT so unauthenticated clients can't subscribe.
+/**
+ * A socket's session as the account stands now, or null. Checked when the
+ * socket connects and again every minute, so an expired, logged-out, demoted
+ * or deleted session is disconnected instead of streaming on (P2-1).
+ */
+async function socketSession(token: string | undefined): Promise<AuthPayload | null> {
+  if (!token) return null;
+  try {
+    const user = await validateSession(verifyToken(token));
+    // A site-scoped account's socket carries its highest site role; opening a
+    // shell then checks its role in that device's site (P1-7).
+    if (user?.siteRoles) user.role = highestRole(Object.values(user.siteRoles));
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+/** The live-update rooms an account belongs in: 'fleet', or one per site (P1-7). */
+function socketRooms(user: AuthPayload): string[] {
+  return user.siteRoles ? Object.keys(user.siteRoles).sort().map((id) => `site:${id}`) : ['fleet'];
+}
+
 io.use((socket, next) => {
   const token = (socket.handshake.auth as { token?: string })?.token;
-  if (!token) return next(new Error('No token'));
-  try {
-    const payload = verifyToken(token);
+  void socketSession(token).then((user) => {
+    if (!user) return next(new Error('Invalid or expired token'));
     // A session that must change the default password gets nothing else.
-    if (payload.mustChangePassword) return next(new Error('Change the default password first'));
-    socket.data.user = payload;
+    if (user.mustChangePassword) return next(new Error('Change the default password first'));
+    socket.data.user = user;
+    socket.data.token = token;
     next();
-  } catch {
-    next(new Error('Invalid or expired token'));
-  }
+  });
 });
 
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`);
+  // Device updates are sent to 'fleet' and to the device's site room only, so
+  // a site-scoped account hears nothing about other sites (P1-7).
+  const rooms = socketRooms(socket.data.user as AuthPayload);
+  socket.data.rooms = rooms.join(',');
+  void socket.join(rooms);
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`);
   });
@@ -175,19 +210,37 @@ function auditTerminal(user: AuthPayload, ip: string, summary: string, deviceId?
 
 terminalNs.use((socket, next) => {
   const token = (socket.handshake.auth as { token?: string })?.token;
-  if (!token) return next(new Error('No token'));
-  try {
-    const payload = verifyToken(token);
-    if (payload.mustChangePassword) return next(new Error('Change the default password first'));
-    if (!TERMINAL_ROLES.has(payload.role)) {
+  void socketSession(token).then((user) => {
+    if (!user) return next(new Error('Invalid or expired token'));
+    if (user.mustChangePassword) return next(new Error('Change the default password first'));
+    if (!TERMINAL_ROLES.has(user.role)) {
       return next(new Error('Console access denied for this role'));
     }
-    socket.data.user = payload;
+    socket.data.user = user;
+    socket.data.token = token;
     next();
-  } catch {
-    next(new Error('Invalid or expired token'));
-  }
+  });
 });
+
+// Re-check every open socket's session once a minute. Sockets used to keep the
+// payload they connected with, so a terminal stayed open after its session had
+// expired, been logged out or lost its role.
+const SOCKET_RECHECK_MS = 60_000;
+setInterval(() => {
+  const check = async (socket: import('socket.io').Socket, allowed?: Set<string>) => {
+    const user = await socketSession(socket.data.token as string | undefined);
+    // Site access changed: reconnecting puts the socket in the right rooms.
+    const roomsChanged = !allowed && !!user && socketRooms(user).join(',') !== socket.data.rooms;
+    if (!user || user.mustChangePassword || roomsChanged || (allowed && !allowed.has(user.role))) {
+      socket.emit('error', 'Your session has ended. Please sign in again.');
+      socket.disconnect(true);
+      return;
+    }
+    socket.data.user = user;
+  };
+  for (const s of io.sockets.sockets.values()) void check(s);
+  for (const s of terminalNs.sockets.values()) void check(s, TERMINAL_ROLES);
+}, SOCKET_RECHECK_MS).unref();
 
 terminalNs.on('connection', (socket) => {
   let sshClient: SshClient | null = null;
@@ -198,9 +251,11 @@ terminalNs.on('connection', (socket) => {
   socket.on('start', async (payload: { deviceId: number; cols?: number; rows?: number }) => {
     const { deviceId, cols = 80, rows = 24 } = payload;
     try {
-      // Defense in depth: re-check the connection's role at the sink, not just at handshake.
-      if (!user || !TERMINAL_ROLES.has(user.role)) {
-        socket.emit('error', 'Console access denied for this role');
+      // Re-check the session and role as they are now, right before opening a
+      // shell, not as they were when the socket connected (P2-1).
+      const current = await socketSession(socket.data.token as string | undefined);
+      if (!current || !TERMINAL_ROLES.has(current.role)) {
+        socket.emit('error', current ? 'Console access denied for this role' : 'Your session has ended. Please sign in again.');
         return;
       }
       if (!terminalStartAllowed(user.userId)) {
@@ -216,6 +271,11 @@ terminalNs.on('connection', (socket) => {
       );
 
       if (!device) { socket.emit('error', 'Device not found'); return; }
+      // Its role in this device's site, not just anywhere (P1-7); a device in
+      // another site is "not found".
+      const roleHere = await roleOnDevice(current, deviceId);
+      if (!roleHere) { socket.emit('error', 'Device not found'); return; }
+      if (!TERMINAL_ROLES.has(roleHere)) { socket.emit('error', 'Console access denied for this role'); return; }
 
       // Resolve credentials the same way every other SSH consumer does, so a
       // deployed key works here too. Doing this locally, and looking only at
@@ -256,7 +316,7 @@ terminalNs.on('connection', (socket) => {
       });
 
       sshClient.on('error', (err) => {
-        socket.emit('error', `SSH error: ${err.message}`);
+        socket.emit('error', `SSH error: ${explainSshError(err, device.ip_address, device.ssh_port ?? 22).message}`);
       });
 
       sshClient.connect({
@@ -264,6 +324,7 @@ terminalNs.on('connection', (socket) => {
         port: device.ssh_port ?? 22,
         username: auth.username,
         ...auth.auth,
+        ...sshHostCheck(device.ip_address, device.ssh_port ?? 22),
         readyTimeout: 10_000,
         algorithms: {
           kex: [
@@ -389,11 +450,24 @@ async function start(): Promise<void> {
   await ensureDefaultRules().catch((e) => console.warn('[startup] default alert rules:', (e as Error).message));
   await convertConfigTemplates().catch((e) => console.warn('[startup] config template conversion:', (e as Error).message));
 
-  // Migrate any credentials still encrypted under a legacy/default key forward
-  // to the current key (runs in the background; safe to skip on failure).
-  reencryptStaleCredentials().catch((e) =>
-    console.warn('[secrets] credential re-encryption sweep skipped:', (e as Error).message)
-  );
+  // Before anything new is encrypted: is there stored data no known key opens?
+  // Then the key was lost, and a freshly generated one must not be saved over
+  // the problem (outside review P2-29). Otherwise save any new key and move
+  // old ciphertext forward to the current key in the background.
+  try {
+    const unreadable = await countUnreadable();
+    const { lost } = confirmEncryptionKey(unreadable);
+    if (lost) {
+      console.error(
+        `[secrets] ${unreadable} stored credential(s) can't be decrypted with any known key. The encryption key ` +
+        'is missing: restore secrets.json to the app_data volume, or set ENCRYPTION_KEY (or ENCRYPTION_KEY_PREVIOUS) ' +
+        'to the original key, then restart. Saving new credentials is refused until then.');
+    } else {
+      reencryptAll().catch((e) => console.warn('[secrets] re-encryption sweep failed:', (e as Error).message));
+    }
+  } catch (e) {
+    console.warn('[secrets] could not check stored credentials:', (e as Error).message);
+  }
 
   // Guards left 'pending' belong to a manager that stopped mid-change; the device
   // has since restored itself, so settle those rows.

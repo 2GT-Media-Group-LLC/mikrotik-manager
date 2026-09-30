@@ -37,22 +37,45 @@ export function resolveSiteId(raw: unknown): number | null {
 }
 
 /**
+ * One site, several sites (a site-scoped account's own, P1-7), or null for the
+ * whole fleet.
+ */
+export type SiteScope = number | number[] | null;
+
+/**
+ * `= n` or `IN (a, b)` for a site scope, or null when unscoped. The ids are
+ * inlined, so each is checked to be a positive integer; an empty list matches
+ * nothing rather than everything.
+ */
+function siteMatch(scope: number | number[]): string {
+  const ids = (Array.isArray(scope) ? scope : [scope]).filter((n) => Number.isSafeInteger(n) && n > 0);
+  if (ids.length === 0) return 'IN (NULL)';
+  return ids.length === 1 ? `= ${ids[0]}` : `IN (${ids.join(', ')})`;
+}
+
+/** The scope as a list of sites, or null for the whole fleet. */
+export function siteList(scope: SiteScope): number[] | null {
+  if (scope === null) return null;
+  return Array.isArray(scope) ? scope : [scope];
+}
+
+/**
  * Predicate for a query that selects from `devices` itself.
  * Returns null when unscoped, so callers can skip pushing a filter.
  */
-export function siteScopeDevices(siteId: number | null, alias = ''): string | null {
+export function siteScopeDevices(siteId: SiteScope, alias = ''): string | null {
   if (siteId === null) return null;
   const col = alias ? `${alias}.site_id` : 'site_id';
-  return `${col} = ${siteId}`;
+  return `${col} ${siteMatch(siteId)}`;
 }
 
 /**
  * Predicate for a query on any table carrying a device_id.
  * `column` is the fully-qualified device id column, e.g. 'c.device_id'.
  */
-export function siteScopeByDevice(siteId: number | null, column = 'device_id'): string | null {
+export function siteScopeByDevice(siteId: SiteScope, column = 'device_id'): string | null {
   if (siteId === null) return null;
-  return `${column} IN (SELECT id FROM devices WHERE site_id = ${siteId})`;
+  return `${column} IN (SELECT id FROM devices WHERE site_id ${siteMatch(siteId)})`;
 }
 
 /**
@@ -61,9 +84,9 @@ export function siteScopeByDevice(siteId: number | null, column = 'device_id'): 
  * site is selected -- showing them in every site would misrepresent them as
  * that site's own.
  */
-export function siteScopeByNullableDevice(siteId: number | null, column = 'device_id'): string | null {
+export function siteScopeByNullableDevice(siteId: SiteScope, column = 'device_id'): string | null {
   if (siteId === null) return null;
-  return `(${column} IS NOT NULL AND ${column} IN (SELECT id FROM devices WHERE site_id = ${siteId}))`;
+  return `(${column} IS NOT NULL AND ${column} IN (SELECT id FROM devices WHERE site_id ${siteMatch(siteId)}))`;
 }
 
 /**

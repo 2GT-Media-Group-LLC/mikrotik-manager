@@ -15,6 +15,7 @@ const EVENT_LABEL: Record<string, string> = {
   device_discovered: 'Device discovered', firmware_update_available: 'Firmware update',
   config_drift: 'Config drift', rollout_completed: 'Rollout completed', rollout_failed: 'Rollout failed',
   device_degraded: 'Device degraded', device_health_restored: 'Hardware healthy again',
+  device_identity_changed: 'Certificate or host key changed',
 };
 
 // ─── API tokens ────────────────────────────────────────────────────────────────

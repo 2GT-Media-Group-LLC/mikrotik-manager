@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth, requireAdmin, isSiteScoped } from '../middleware/auth';
 import { encrypt } from '../utils/crypto';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
 
@@ -70,8 +70,9 @@ router.get('/', async (req: Request, res: Response) => {
   const rows = await query<CredentialPresetRow>(
     `SELECT * FROM credential_presets ORDER BY name ASC`
   );
+  // Admin-only presets are fleet objects: a site admin sees them as an operator would (P1-7).
   const filtered =
-    role === 'admin'
+    role === 'admin' && !isSiteScoped(req.user)
       ? rows
       : rows.filter((r) => (r as CredentialPresetRow).allow_operator_use !== false);
   res.json(filtered.map(toPublic));

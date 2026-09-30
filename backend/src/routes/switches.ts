@@ -3,7 +3,7 @@ import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { siteScopeDevices } from '../utils/siteScope';
-import { activeSite } from '../middleware/site';
+import { activeSite, writableScope } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { getLldpStatuses, setLldpForTypes } from '../services/lldpApply';
 import { applySnmpConfig, getSnmpStatuses, SnmpInputError, type SnmpConfigInput } from '../services/snmpApply';
@@ -48,7 +48,7 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ error: '"enabled" (boolean) is required' });
   }
-  return res.json(await setLldpForTypes(['switch'], enabled, activeSite(req)));
+  return res.json(await setLldpForTypes(['switch'], enabled, writableScope(req)));
 });
 
 // GET /api/switches/snmp — SNMP config/status for all managed switches
@@ -65,7 +65,7 @@ router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
   // See services/snmpApply.ts: per-device variables, blanks left alone, and
   // only the active site's devices.
   try {
-    return res.json(await applySnmpConfig({ all: true, deviceTypes: ['switch'] }, req.body as SnmpConfigInput, activeSite(req)));
+    return res.json(await applySnmpConfig({ all: true, deviceTypes: ['switch'] }, req.body as SnmpConfigInput, writableScope(req)));
   } catch (e) {
     if (e instanceof SnmpInputError) return res.status(400).json({ error: e.message });
     throw e;

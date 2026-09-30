@@ -41,6 +41,7 @@ export const WEBHOOK_EVENTS = [
   'firmware_update_available', 'config_drift',
   'rollout_completed', 'rollout_failed',
   'device_degraded', 'device_health_restored',
+  'device_identity_changed',
 ] as const;
 export type WebhookEvent = typeof WEBHOOK_EVENTS[number] | 'test';
 

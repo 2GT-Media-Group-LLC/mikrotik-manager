@@ -6,8 +6,9 @@
  * able to see what will happen first.
  */
 import { Router } from 'express';
+import { devicesDenied, type Role } from '../utils/siteAccess';
 import type { Request, Response } from 'express';
-import { requireAuth, requireWrite } from '../middleware/auth';
+import { requireAuth, requireWrite, isSiteScoped } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { query, queryOne } from '../config/database';
@@ -38,6 +39,27 @@ function assessCommand(command: string): { risky: boolean; reasons: string[] } {
  * Returns the devices, their wave assignment, and any reason the command looks
  * capable of severing management. Warnings only: the operator decides.
  */
+/**
+ * Site-scoped accounts (P1-7): every device named must be one the account can
+ * act on at `min`. Answers as "not found" so other sites' ids stay hidden.
+ */
+async function refuseForeignDevices(req: Request, res: Response, ids: number[], min: Role): Promise<boolean> {
+  if (!isSiteScoped(req.user)) return false;
+  const denied = await devicesDenied(req.user!, ids, min);
+  if (denied.length === 0) return false;
+  res.status(404).json({ error: `${denied.length} of the selected devices were not found.` });
+  return true;
+}
+
+/** A run is a site-scoped account's only if every device in it is. */
+async function refuseForeignRun(req: Request, res: Response, runId: string | number, min: Role): Promise<boolean> {
+  if (!isSiteScoped(req.user)) return false;
+  const rows = await query<{ device_id: number }>(`SELECT device_id FROM command_run_devices WHERE run_id = $1`, [runId]);
+  if (rows.length > 0 && (await devicesDenied(req.user!, rows.map((r) => r.device_id), min)).length === 0) return false;
+  res.status(404).json({ error: 'Run not found' });
+  return true;
+}
+
 router.post('/preview', async (req: Request, res: Response) => {
   const { command, device_ids, wave_size } = req.body as
     { command?: string; device_ids?: number[]; wave_size?: number };
@@ -46,6 +68,7 @@ router.post('/preview', async (req: Request, res: Response) => {
   if (!Array.isArray(device_ids) || device_ids.length === 0) {
     return res.status(400).json({ error: 'device_ids array is required' });
   }
+  if (await refuseForeignDevices(req, res, device_ids, 'viewer')) return;
 
   const size = Math.max(1, Math.min(50, Number(wave_size) || 1));
   const devices = await query<{ id: number; name: string; ip_address: string; status: string }>(
@@ -85,6 +108,7 @@ router.post('/runs', requireWrite, async (req: Request, res: Response) => {
   if (!Array.isArray(device_ids) || device_ids.length === 0) {
     return res.status(400).json({ error: 'device_ids array is required' });
   }
+  if (await refuseForeignDevices(req, res, device_ids, 'operator')) return;
 
   const size = Math.max(1, Math.min(50, Number(wave_size) || 1));
   const run = await queryOne<{ id: number }>(
@@ -127,6 +151,13 @@ router.post('/runs', requireWrite, async (req: Request, res: Response) => {
 router.get('/runs', async (req: Request, res: Response) => {
   // A run is shown when it touched at least one device in the active site.
   const memberFilter = siteScopeByDevice(activeSite(req), 'crd.device_id');
+  // A site-scoped account sees only runs entirely within its own sites (P1-7):
+  // a run that also touched another site's devices would show them.
+  const ownSites = isSiteScoped(req.user) ? siteScopeByDevice(Object.keys(req.user!.siteRoles!).map(Number), 'x.device_id') : null;
+  const conditions = [
+    memberFilter ? `EXISTS (SELECT 1 FROM command_run_devices crd WHERE crd.run_id = r.id AND ${memberFilter})` : null,
+    ownSites ? `NOT EXISTS (SELECT 1 FROM command_run_devices x WHERE x.run_id = r.id AND NOT (${ownSites}))` : null,
+  ].filter(Boolean);
   const runs = await query(
     `SELECT r.*,
             COUNT(d.*)::int AS total,
@@ -134,8 +165,7 @@ router.get('/runs', async (req: Request, res: Response) => {
             COUNT(*) FILTER (WHERE d.status IN ('failed','reverted'))::int AS failed
        FROM command_runs r
        LEFT JOIN command_run_devices d ON d.run_id = r.id
-      ${memberFilter ? `WHERE EXISTS (SELECT 1 FROM command_run_devices crd
-                                      WHERE crd.run_id = r.id AND ${memberFilter})` : ''}
+      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
       GROUP BY r.id ORDER BY r.id DESC LIMIT 25`
   );
   res.json(runs);
@@ -143,6 +173,7 @@ router.get('/runs', async (req: Request, res: Response) => {
 
 // GET /api/commands/runs/:id — one run with per-device output
 router.get('/runs/:id', async (req: Request, res: Response) => {
+  if (await refuseForeignRun(req, res, req.params.id, 'viewer')) return;
   const run = await queryOne(`SELECT * FROM command_runs WHERE id = $1`, [req.params.id]);
   if (!run) return res.status(404).json({ error: 'Run not found' });
   const devices = await query(
@@ -163,6 +194,7 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
  * multi-line device response survives the round trip intact.
  */
 router.get('/runs/:id/export', async (req: Request, res: Response) => {
+  if (await refuseForeignRun(req, res, req.params.id, 'viewer')) return;
   const run = await queryOne<{ id: number; name: string; command: string; status: string; created_at: string }>(
     `SELECT id, name, command, status, created_at FROM command_runs WHERE id = $1`, [req.params.id]
   );
@@ -207,6 +239,7 @@ router.get('/runs/:id/export', async (req: Request, res: Response) => {
 
 // POST /api/commands/runs/:id/start
 router.post('/runs/:id/start', requireWrite, async (req: Request, res: Response) => {
+  if (await refuseForeignRun(req, res, req.params.id, 'operator')) return;
   try {
     await commandRunner.start(Number(req.params.id));
     res.json({ message: 'Run started' });
@@ -217,6 +250,7 @@ router.post('/runs/:id/start', requireWrite, async (req: Request, res: Response)
 
 // POST /api/commands/runs/:id/cancel — stop before the next wave
 router.post('/runs/:id/cancel', requireWrite, async (req: Request, res: Response) => {
+  if (await refuseForeignRun(req, res, req.params.id, 'operator')) return;
   commandRunner.cancel(Number(req.params.id));
   // Devices already running finish; cancellation prevents the next wave, which
   // is the only point at which stopping is safe.

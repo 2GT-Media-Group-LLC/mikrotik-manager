@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { devicesDenied } from '../utils/siteAccess';
 import { query, queryOne, transaction } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 
@@ -37,7 +38,26 @@ function normaliseCoords(lat: unknown, lng: unknown): { lat: number | null; lng:
 }
 
 // GET /api/sites — list with device counts, for the selector and the all-sites table
-router.get('/', async (_req: Request, res: Response) => {
+/**
+ * Site-scoped accounts (P1-7): creating or deleting sites is for fleet-wide
+ * accounts, and changing a site needs admin of that site. Returns false after
+ * refusing.
+ */
+function refuseUnlessFleet(req: Request, res: Response): boolean {
+  if (!req.user?.siteRoles) return true;
+  res.status(403).json({ error: 'Only fleet-wide accounts can create or delete sites.' });
+  return false;
+}
+function refuseUnlessSiteAdmin(req: Request, res: Response, siteId: number): boolean {
+  if (!req.user?.siteRoles) return true;
+  if (req.user.siteRoles[siteId] === 'admin') return true;
+  res.status(req.user.siteRoles[siteId] ? 403 : 404).json({ error: req.user.siteRoles[siteId] ? 'You need admin access to that site.' : 'Site not found' });
+  return false;
+}
+
+router.get('/', async (req: Request, res: Response) => {
+  // A site-scoped account sees only its own sites (P1-7).
+  const own = req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null;
   const sites = await query<SiteRow & { device_count: string }>(
     `SELECT s.id, s.name, s.address,
             s.location_lat::float8 AS location_lat,
@@ -47,8 +67,10 @@ router.get('/', async (_req: Request, res: Response) => {
             COUNT(d.id) FILTER (WHERE d.status = 'online')::text AS online_count
      FROM sites s
      LEFT JOIN devices d ON d.site_id = s.id
+     ${own ? 'WHERE s.id = ANY($1::int[])' : ''}
      GROUP BY s.id
-     ORDER BY s.is_default DESC, LOWER(s.name) ASC`
+     ORDER BY s.is_default DESC, LOWER(s.name) ASC`,
+    own ? [own] : []
   );
   res.json(sites.map((s) => ({
     ...s,
@@ -59,6 +81,7 @@ router.get('/', async (_req: Request, res: Response) => {
 
 // POST /api/sites — create
 router.post('/', requireWrite, async (req: Request, res: Response) => {
+  if (!refuseUnlessFleet(req, res)) return;
   const { name, error } = normaliseName((req.body as { name?: string }).name);
   if (error) { res.status(400).json({ error }); return; }
 
@@ -85,6 +108,7 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
 
 // PUT /api/sites/:id — rename / set address / notes
 router.put('/:id', requireWrite, async (req: Request, res: Response) => {
+  if (!refuseUnlessSiteAdmin(req, res, parseInt(req.params.id, 10))) return;
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: 'Invalid site id' }); return; }
 
@@ -129,6 +153,7 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 
 // DELETE /api/sites/:id — refused while devices remain, and never for the last site
 router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
+  if (!refuseUnlessFleet(req, res)) return;
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: 'Invalid site id' }); return; }
 
@@ -181,6 +206,16 @@ router.post('/:id/devices', requireWrite, async (req: Request, res: Response) =>
 
   const site = await queryOne<{ id: number }>(`SELECT id FROM sites WHERE id = $1`, [id]);
   if (!site) { res.status(404).json({ error: 'Site not found' }); return; }
+
+  // Moving a device changes who can reach it, so a site-scoped account needs
+  // admin of the destination and of each device's current site (P1-7).
+  if (req.user?.siteRoles) {
+    if (!refuseUnlessSiteAdmin(req, res, id)) return;
+    if ((await devicesDenied(req.user, ids, 'admin')).length > 0) {
+      res.status(404).json({ error: 'Some of those devices were not found.' });
+      return;
+    }
+  }
 
   await query(`UPDATE devices SET site_id = $1 WHERE id = ANY($2::int[])`, [id, ids]);
   res.json({ ok: true, moved: ids.length });

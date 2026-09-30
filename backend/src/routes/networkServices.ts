@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { deviceSiteAccess, deviceIdQuery } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromQuery } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import type { PlannedChange } from '../services/changeGuard/analyzeChange';
@@ -6,7 +7,7 @@ import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { siteScopeDevices } from '../utils/siteScope';
-import { activeSite } from '../middleware/site';
+import { activeSite, writableScope } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { getLldpStatuses, setLldpForTypes, parseDeviceTypes, LLDP_DEVICE_TYPES } from '../services/lldpApply';
@@ -14,6 +15,8 @@ import { applySnmpConfig, getSnmpStatuses, getSnmpTemplates, SnmpInputError, typ
 
 const router = Router();
 router.use(requireAuth);
+// A site-scoped account only reaches devices in its own sites, with its role there (P1-7).
+router.use(deviceSiteAccess(deviceIdQuery));
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
 // WireGuard private keys, SNMP communities, hotspot passwords).
 router.use(maskSecretsForReadOnly);
@@ -68,7 +71,7 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
   }
   const types = parseDeviceTypes(device_types);
   if (!types) return res.status(400).json({ error: `device_types must be from: ${LLDP_DEVICE_TYPES.join(', ')}` });
-  return res.json(await setLldpForTypes(types, enabled, activeSite(req)));
+  return res.json(await setLldpForTypes(types, enabled, writableScope(req)));
 });
 
 // ─── SNMP, fleet-wide ──────────────────────────────────────────────────────────
@@ -101,7 +104,7 @@ router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'device_ids is required: a list of device ids, or "all"' });
   }
   try {
-    return res.json(await applySnmpConfig(target, config as SnmpConfigInput, activeSite(req)));
+    return res.json(await applySnmpConfig(target, config as SnmpConfigInput, writableScope(req)));
   } catch (e) {
     if (e instanceof SnmpInputError) return res.status(400).json({ error: e.message });
     throw e;

@@ -1,6 +1,6 @@
 import { Queue, Worker, Job } from 'bullmq';
 import { createRedisConnection } from '../config/redis';
-import { query } from '../config/database';
+import { query, queryOne } from '../config/database';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
 import { Server as SocketServer } from 'socket.io';
 import { getWriteApi } from '../config/influxdb';
@@ -152,6 +152,26 @@ export class PollerService {
         if (removed > 0) console.log(`[Poller] Trimmed ${removed} ${state} jobs from ${name}`);
       }
     }
+  }
+
+  /** Device id → site, for routing live updates; refreshed after a minute. */
+  private deviceSite = new Map<number, { site: number | null; at: number }>();
+
+  /**
+   * Send a device's live update only to accounts that can see it: fleet-wide
+   * ones ('fleet' room) and those with access to its site (P1-7).
+   */
+  private async emitForDevice(event: string, payload: Record<string, unknown>, deviceId: number): Promise<void> {
+    if (!this.io) return;
+    let hit = this.deviceSite.get(deviceId);
+    if (!hit || Date.now() - hit.at > 60_000) {
+      const row = await queryOne<{ site_id: number | null }>(`SELECT site_id FROM devices WHERE id = $1`, [deviceId]).catch(() => null);
+      hit = { site: row?.site_id ?? null, at: Date.now() };
+      this.deviceSite.set(deviceId, hit);
+    }
+    let target = this.io.to('fleet');
+    if (hit.site !== null) target = target.to(`site:${hit.site}`);
+    target.emit(event, payload);
   }
 
   setSocketServer(io: SocketServer): void {
@@ -949,7 +969,7 @@ export class PollerService {
         await this.checkHealth(collector, device);
       } else if (data.type === 'macscan') {
         await collector.runMacScan();
-        this.io?.emit('clients:updated', { deviceId: device.id });
+        void this.emitForDevice('clients:updated', { deviceId: device.id }, device.id);
         return;
       } else {
         await collector.collectFast();
@@ -983,8 +1003,8 @@ export class PollerService {
         }
       }
 
-      this.io?.emit('device:updated', { deviceId: device.id });
-      this.io?.emit('clients:updated', { deviceId: device.id });
+      void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
+      void this.emitForDevice('clients:updated', { deviceId: device.id }, device.id);
     } finally {
       // A failure is recorded by the worker's 'failed' listener, which also
       // sees timeouts. Recording it here as well counted every failure twice.
@@ -1165,7 +1185,7 @@ export class PollerService {
       const { findings } = await runConfigHealth(device as unknown as GuardDevice);
       const critical = findings.filter((f) => f.severity === 'critical').length;
       if (critical > 0) {
-        this.io?.emit('device:updated', { deviceId: device.id });
+        void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
       }
     } catch (err) {
       console.error(`[Poller] Config health audit failed for ${device.name}:`, (err as Error).message);
@@ -1266,7 +1286,7 @@ export class PollerService {
       // off entirely.
       if (modules.neighbors) await collector.collectNeighbors();
       await collector.collectStp();
-      this.io?.emit('device:updated', { deviceId: device.id });
+      void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
 
       // Fire device_discovered for any LLDP neighbors not matched to a managed device.
       // AlertService's per-cooldownKey cooldown prevents repeat alerts for the same neighbor.
@@ -1309,7 +1329,7 @@ export class PollerService {
     try {
       await collector.connect();
       await collector.collectLogs();
-      this.io?.emit('events:updated', { deviceId: device.id });
+      void this.emitForDevice('events:updated', { deviceId: device.id }, device.id);
 
       // Fire log_error / log_warning alerts if new entries appeared in the last 90s
       const recent = await query<{ severity: string; message: string }>(
@@ -1342,7 +1362,7 @@ export class PollerService {
   /** Hardware health (#168); the logic lives in services/healthCheck.ts. */
   private async checkHealth(collector: DeviceCollector, device: DeviceRow): Promise<void> {
     const changed = await runHealthCheck(collector, device);
-    if (changed) this.io?.emit('device:updated', { deviceId: device.id });
+    if (changed) void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
   }
 
   private async handleDeviceFailure(deviceId: number, message: string): Promise<void> {
@@ -1432,8 +1452,8 @@ export class PollerService {
       );
       await writeApi.flush().catch(() => {});
     }
-    this.io?.emit('device:status', { deviceId, status: 'offline', message });
-    this.io?.emit('clients:updated', { deviceId });
+    void this.emitForDevice('device:status', { deviceId, status: 'offline', message }, deviceId);
+    void this.emitForDevice('clients:updated', { deviceId }, deviceId);
   }
 
   private async checkAllDevicesFirmware(devices: DeviceRow[]): Promise<void> {
@@ -1474,7 +1494,7 @@ export class PollerService {
         );
 
         if (hasUpdate) {
-          this.io?.emit('device:updated', { deviceId: device.id });
+          void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
           // Alert only on first discovery (not on every daily check)
           if (!wasAvailable) {
             const msg = latestVersion
@@ -1489,7 +1509,7 @@ export class PollerService {
           }
         } else if (wasAvailable) {
           // Update was installed — clear the flag and notify the UI
-          this.io?.emit('device:updated', { deviceId: device.id });
+          void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
         }
 
         // RouterBOOT check — reuse the existing connection
@@ -1504,7 +1524,7 @@ export class PollerService {
           [rbInfo.upgradeAvailable, rbInfo.upgradeFirmware || null, device.id]
         );
         if (rbInfo.upgradeAvailable) {
-          this.io?.emit('device:updated', { deviceId: device.id });
+          void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
           if (!rbWasAvailable) {
             const rbMsg = rbInfo.upgradeFirmware
               ? `${device.name} has a RouterBOOT upgrade available: ${rbInfo.upgradeFirmware}`
@@ -1517,7 +1537,7 @@ export class PollerService {
             console.log(`[Poller] RouterBOOT upgrade detected for ${device.name}: ${rbInfo.currentFirmware} → ${rbInfo.upgradeFirmware}`);
           }
         } else if (rbWasAvailable) {
-          this.io?.emit('device:updated', { deviceId: device.id });
+          void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
         }
       } catch (err) {
         console.error(`[Poller] Firmware check failed for ${device.name}:`, (err as Error).message);

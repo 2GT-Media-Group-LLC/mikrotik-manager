@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
+import { resourceSiteAccess } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
 import { isUpdateChannel, UPDATE_CHANNELS } from '../utils/updateChannel';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
-import { activeSite } from '../middleware/site';
+import { activeSite, writableScope } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { firmwareOrchestrator } from '../services/FirmwareOrchestrator';
 import { clampConcurrency, MAX_WAVE_CONCURRENCY } from '../utils/concurrency';
@@ -15,6 +16,29 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/firmware/overview — fleet versions + latest rollout
+// A site-scoped account reaches only rollouts and devices in its own sites
+// (P1-7): a rollout by its id, or the devices named in the request.
+router.use(resourceSiteAccess(async (req) => {
+  const rollout = req.path.match(/^\/rollouts\/(\d+)(?:\/|$)/);
+  if (rollout) {
+    const rows = await query<{ device_id: number }>(`SELECT device_id FROM firmware_rollout_devices WHERE rollout_id = $1`, [rollout[1]]);
+    return rows.map((r) => r.device_id);
+  }
+  if (req.method === 'POST' && req.path === '/rollouts') {
+    const devices = (req.body as { devices?: { device_id: number }[] })?.devices;
+    return Array.isArray(devices) ? devices.map((d) => Number(d.device_id)) : null;
+  }
+  if (req.method === 'PUT' && req.path === '/channel') {
+    const ids = (req.body as { deviceIds?: unknown })?.deviceIds;
+    return Array.isArray(ids) ? ids.map(Number) : null;
+  }
+  if (req.path === '/rollouts/upstream-check') {
+    const ids = String(req.query.ids || '').split(',').map((v) => parseInt(v, 10)).filter(Number.isInteger);
+    return ids.length ? ids : null;
+  }
+  return null;
+}, 'Rollout not found'));
+
 router.get('/overview', async (req: Request, res: Response) => {
   const siteFilter = siteScopeDevices(activeSite(req));
   const [devices, latestRollout] = await Promise.all([
@@ -54,7 +78,7 @@ router.get('/overview', async (req: Request, res: Response) => {
 
 // POST /api/firmware/check-all — refresh update availability on all online devices
 router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
-  const siteFilter = siteScopeDevices(activeSite(req));
+  const siteFilter = siteScopeDevices(writableScope(req));
   const devices = await query<DeviceRow>(
     `SELECT * FROM devices WHERE status='online' ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
@@ -212,6 +236,12 @@ router.get('/rollouts/upstream-check', async (req: Request, res: Response) => {
 router.get('/rollouts', async (req: Request, res: Response) => {
   // A rollout is shown when it touched at least one device in the active site.
   const memberFilter = siteScopeByDevice(activeSite(req), 'frd.device_id');
+  // A site-scoped account sees only rollouts entirely within its sites (P1-7).
+  const ownSites = req.user?.siteRoles ? siteScopeByDevice(Object.keys(req.user.siteRoles).map(Number), 'x.device_id') : null;
+  const conditions = [
+    memberFilter ? `EXISTS (SELECT 1 FROM firmware_rollout_devices frd WHERE frd.rollout_id = r.id AND ${memberFilter})` : null,
+    ownSites ? `NOT EXISTS (SELECT 1 FROM firmware_rollout_devices x WHERE x.rollout_id = r.id AND NOT (${ownSites}))` : null,
+  ].filter(Boolean);
   const rows = await query(`
     SELECT r.*,
            COUNT(d.id)::int AS device_count,
@@ -219,8 +249,7 @@ router.get('/rollouts', async (req: Request, res: Response) => {
            COUNT(d.id) FILTER (WHERE d.status = 'failed')::int  AS failed_count
     FROM firmware_rollouts r
     LEFT JOIN firmware_rollout_devices d ON d.rollout_id = r.id
-    ${memberFilter ? `WHERE EXISTS (SELECT 1 FROM firmware_rollout_devices frd
-                                    WHERE frd.rollout_id = r.id AND ${memberFilter})` : ''}
+    ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
     GROUP BY r.id ORDER BY r.created_at DESC LIMIT 20`);
   res.json(rows);
 });

@@ -32,6 +32,27 @@ letter and a number); nothing else works until it is set. The login page shows t
 default credentials only until then. An existing install still using admin/admin gets
 the same prompt at its next login.
 
+## Sessions
+
+A sign-in lasts up to 24 hours, but every request checks the account as it is now, so a
+session ends straight away when:
+
+- the user **logs out** (that session only);
+- an admin **changes the user's role** or **resets their password** (all of that user's
+  sessions, in every browser);
+- the user **changes their own password** (all their other sessions; the browser they
+  changed it in stays signed in);
+- the account is **deleted**.
+
+The role in effect is always the account's current one. Open live-update and terminal
+connections are checked again every minute and closed when their session has ended, and a
+terminal re-checks the account before it opens a shell. Before 0.24.46 a session kept its
+original role and access for its full 24 hours, whatever happened to the account.
+
+An admin who resets their *own* password from **Settings → Users** is signed out and
+signs in again with the new one. API tokens are separate and unaffected: revoke those
+under **Settings → Automation → API Tokens**.
+
 ## Secret management (self-healing)
 
 `JWT_SECRET` and `ENCRYPTION_KEY` are managed automatically so that a fresh install is
@@ -58,16 +79,55 @@ simply log in again once.
 
 ### Key rotation
 
-Don't rotate `ENCRYPTION_KEY` for now, and **never delete `secrets.json`** from the
-`app_data` volume. The old key is kept for decryption only when the backend generated
-it itself. Replacing a key you set in `.env`, or deleting the file, throws the old key
-away, and every stored device password, SSH key and encrypted backup stops decrypting.
-A safe rotation procedure is being worked on.
+**Settings → General → Encryption key** shows where the key comes from, a short key ID (a
+fingerprint, not the key), and how many stored values are under the current key, under an
+older key, or under no key the manager has.
 
-!!! warning "Back up the key with the database"
-    Keep a copy of the `app_data` volume (or your own `ENCRYPTION_KEY`) wherever you keep
-    database backups, and store it separately from them. A database dump without the key
-    can't decrypt the credentials inside it.
+Everything the key protects is covered: device API and SSH passwords, credential presets, SSH
+private keys, the SSO client secret, and backups that contain secrets. On every start, anything
+still under an older key is re-encrypted with the current one.
+
+**A key the manager generated** (the default, kept in `app_data/secrets.json`):
+
+1. Click **Rotate key…** and confirm. A new key is written to `secrets.json` with the old one
+   kept beside it, and only then does the manager switch. Everything is re-encrypted straight
+   away.
+2. When the card shows nothing under an older key, click **Retire older keys**.
+
+**A key you set in `.env`:**
+
+1. Put the new key in `ENCRYPTION_KEY` and the old one in `ENCRYPTION_KEY_PREVIOUS`, then
+   restart (`docker compose up -d`). The manager re-encrypts everything with the new key as it
+   starts.
+2. When the card shows nothing under an older key, remove `ENCRYPTION_KEY_PREVIOUS` and
+   restart again.
+
+`ENCRYPTION_KEY_PREVIOUS` takes a comma-separated list if you have more than one old key.
+
+!!! danger "Changing `ENCRYPTION_KEY` without `ENCRYPTION_KEY_PREVIOUS`"
+    Before 0.24.46 this silently made every stored credential unreadable. Now the manager
+    notices at startup: it shows **Encryption key missing** to admins, logs it, and refuses to
+    save new credentials, so nothing is written under the wrong key. Put the original key back
+    (in `ENCRYPTION_KEY`, or in `ENCRYPTION_KEY_PREVIOUS`) and restart, and everything reads
+    again. Don't re-enter device passwords first.
+
+The same happens if the key is lost with the `app_data` volume, for example after moving the
+manager to a new host with only a database dump: restore `secrets.json` and restart.
+
+## Backing up the manager
+
+A complete backup is these four things. The first is useless without the second.
+
+| What | Where | Why |
+|---|---|---|
+| The database | `docker compose exec postgres pg_dump -U mikrotik mikrotik_manager` | Devices, settings, history, and the encrypted credentials |
+| The encryption key | `app_data` volume (`secrets.json`), or your `ENCRYPTION_KEY` | Without it the credentials in the dump can't be decrypted |
+| Device backups | `backups_data` volume | The configuration backups themselves; some are encrypted with the key |
+| TLS certificate | `certs_data` volume | Only if you installed your own certificate |
+
+Store the key **separately** from the database dump. Together they give anyone the admin
+passwords of every managed device; apart, neither does. To restore, bring back all four, with
+the key in place before the manager's first start.
 
 ## Settings stored in the database
 

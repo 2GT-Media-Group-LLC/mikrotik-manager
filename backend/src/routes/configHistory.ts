@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { BackupService, describeRestore } from '../services/BackupService';
@@ -6,6 +7,8 @@ import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector
 
 const router = Router();
 router.use(requireAuth);
+// Every route starts with the device id; a site-scoped account only reaches its own sites' devices (P1-7).
+router.use(deviceSiteAccess(deviceIdParam));
 
 const backupService = new BackupService();
 

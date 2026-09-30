@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query } from '../config/database';
-import { requireAuth, requireWrite } from '../middleware/auth';
+import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
 import { alertService } from '../services/AlertService';
 import { maskConfig, mergeConfig } from '../utils/alertChannelSecrets';
 
@@ -8,6 +8,8 @@ const router = Router();
 
 // All alert routes require authentication
 router.use(requireAuth);
+// Alert rules, channels and history cover the whole fleet (P1-7).
+router.use(fleetOnly);
 
 // ── Default rules seed ─────────────────────────────────────────────────────
 
@@ -26,6 +28,9 @@ const DEFAULT_RULES = [
   // someone wants to hear about, and it only fires on a change.
   { event_type: 'device_degraded',         enabled: true, threshold: null, cooldown_min: 60 },
   { event_type: 'device_health_restored',  enabled: true, threshold: null, cooldown_min: 60 },
+  // A changed certificate or host key could be someone posing as the device
+  // (outside review P1-4). On by default; it fires once per change.
+  { event_type: 'device_identity_changed', enabled: true, threshold: null, cooldown_min: 60 },
 ];
 
 /**

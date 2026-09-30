@@ -55,11 +55,30 @@ api.interceptors.response.use(
         && window.location.pathname !== '/change-password') {
       window.location.assign('/change-password');
     }
+    // The selected site isn't one this account has (P1-7), e.g. access was
+    // removed. Drop to the all-sites view, which the server narrows to the
+    // account's sites; changing the site refetches every query.
+    if (error.response?.status === 403 && code === 'site_forbidden'
+        && useSiteStore.getState().currentSiteId != null) {
+      useSiteStore.getState().setCurrentSite(null);
+    }
     return Promise.reject(error);
   }
 );
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
+/**
+ * Log out on the server as well as here. The server revokes this session's
+ * token; clearing only the browser's copy left it working for the rest of its
+ * 24 hours (outside review P2-1). The local session ends even if the call fails.
+ */
+export async function signOut(): Promise<void> {
+  try {
+    await api.post('/auth/logout', undefined, { timeout: 5000 });
+  } catch { /* already expired or unreachable: nothing more to revoke */ }
+  useAuthStore.getState().logout();
+}
+
 export const authApi = {
   login: (username: string, password: string) =>
     api.post<{ token?: string; user?: import('../types').User; requires_totp?: boolean; totp_token?: string }>(
@@ -186,12 +205,40 @@ export interface BulkAddJobStatus {
   [key: string]: unknown;
 }
 
+/** A pinned device certificate or SSH host key (outside review P1-4). */
+export interface IdentityPin {
+  kind: 'api-tls' | 'ssh-host';
+  label: string;
+  fingerprint: string;
+  display: string;
+  pinned_at: string;
+  /** Set when the device presented a different one; waits for an admin. */
+  seen_fingerprint: string | null;
+  seen_display: string | null;
+  mismatch_at: string | null;
+}
+
+export const identityApi = {
+  forDevice: (deviceId: number) => api.get<IdentityPin[]>(`/devices/${deviceId}/identity`),
+  pending: () => api.get<Array<IdentityPin & { device_id: number; device_name: string }>>('/devices/identity/pending'),
+  trust: (deviceId: number, kind: IdentityPin['kind']) =>
+    api.post<{ message: string }>(`/devices/${deviceId}/identity/${kind}/trust`),
+};
+
+export interface ApiSslResult {
+  switched: boolean;
+  steps: string[];
+  message: string;
+}
+
 export interface SecurityCheck {
   id: string;
   severity: 'high' | 'medium' | 'low' | 'ok';
   title: string;
   detail: string;
   serviceId?: string;
+  /** A one-click fix the manager can apply (outside review P1-4). */
+  fix?: 'api-ssl';
   /** Operator judged this inapplicable — still shown, but excluded from the score. */
   suppressed?: boolean;
   suppressed_scope?: 'device' | 'fleet';
@@ -681,6 +728,9 @@ export const devicesApi = {
     api.post('/devices/security/suppressions', { check_id, device_id, reason }),
   unsuppressSecurityCheck: (id: number) =>
     api.delete(`/devices/security/suppressions/${id}`),
+  /** Enable API-SSL on the device and move the manager's connection to it. Signing a certificate can take a minute. */
+  enableApiSsl: (id: number) =>
+    api.post<ApiSslResult>(`/devices/${id}/api-ssl`, undefined, { timeout: 240_000 }),
   getSecurityPosture: (id: number) =>
     api.get<{ score: number; checks: SecurityCheck[] }>(`/devices/${id}/security-posture`),
   // Config Health — cached findings load instantly; the scan re-reads the device.
@@ -1334,13 +1384,34 @@ export const alertsApi = {
 };
 
 // ─── Settings ────────────────────────────────────────────────────────────────
+/** Which key protects stored credentials, and how much is under each (outside review P2-29). */
+export interface EncryptionOverview {
+  source: 'env' | 'persisted';
+  key_id: string;
+  saved_previous_keys: number;
+  env_previous_keys: number;
+  key_missing: boolean;
+  locations: Array<{ location: string; current: number; old: number; unreadable: number }>;
+  totals: { current: number; old: number; unreadable: number };
+  can_rotate: boolean;
+  can_retire: boolean;
+}
+
+export const encryptionApi = {
+  overview: () => api.get<EncryptionOverview>('/settings/encryption'),
+  rotate: () => api.post<EncryptionOverview & { message: string }>('/settings/encryption/rotate', undefined, { timeout: 300_000 }),
+  reencrypt: () => api.post<EncryptionOverview & { message: string }>('/settings/encryption/reencrypt', undefined, { timeout: 300_000 }),
+  retire: () => api.post<EncryptionOverview & { message: string }>('/settings/encryption/retire'),
+};
+
 export const settingsApi = {
   get: () => api.get<Record<string, unknown>>('/settings'),
   update: (data: Record<string, unknown>) => api.put('/settings', data),
   getUsers: () => api.get('/settings/users'),
   createUser: (data: { username: string; password: string; role?: string }) =>
     api.post('/settings/users', data),
-  updateUser: (id: number, data: { role?: string; password?: string }) =>
+  /** `site_roles`: [] makes the account fleet-wide; a list limits it to those sites (P1-7). */
+  updateUser: (id: number, data: { role?: string; password?: string; site_roles?: Array<{ site_id: number; role: string }> }) =>
     api.put(`/settings/users/${id}`, data),
   deleteUser: (id: number) => api.delete(`/settings/users/${id}`),
 };

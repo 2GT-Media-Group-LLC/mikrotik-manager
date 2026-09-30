@@ -17,6 +17,7 @@ cooldown that prevents a flapping device from flooding your channels.
 | `device_discovered` | An unmanaged neighbour appeared via LLDP/CDP/MNDP |
 | `config_drift` | The device's configuration changed (off by default) |
 | `device_degraded` / `device_health_restored` | A power supply, fan or temperature problem appeared or cleared. See [Hardware health](devices.md#hardware-health) |
+| `device_identity_changed` | A device's API-SSL certificate or SSH host key changed, so the manager stopped connecting to it (on by default). See [Certificate and host key pinning](security.md#certificate-and-host-key-pinning) |
 
 Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
 Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
@@ -103,7 +104,7 @@ being woken by:
 
 | Events | Priority |
 |---|---|
-| Device offline, log errors, CPU/memory pressure | **4** — breaks through do-not-disturb |
+| Device offline or degraded, certificate or host key changed, log errors, CPU/memory pressure | **4** — breaks through do-not-disturb |
 | Certificate expiry, config drift, firmware available | 3 — default |
 | Device recovery, new device discovered | 2 — low |
 
@@ -126,15 +127,16 @@ The token is sent in the `X-Gotify-Key` header, not the URL, so it doesn't end u
 
 | Events | Priority |
 |---|---|
-| Device offline or degraded, log errors, CPU/memory pressure | **8** |
+| Device offline or degraded, certificate or host key changed, log errors, CPU/memory pressure | **8** |
 | Certificate expiry, config drift, firmware available | 5 |
 | Recovery, new device discovered | 2 |
 
 ## Outbound webhooks
 
-Subscribe any URL to twelve events: device up/down, log errors, high CPU, high memory,
-certificate expiry, device discovered, firmware update available, config drift, and
-firmware rollout completed/failed.
+Subscribe any URL to fifteen events: device up/down, log errors and warnings, high CPU, high
+memory, certificate expiry, device discovered, firmware update available, config drift,
+firmware rollout completed/failed, hardware degraded/healthy again, and a changed device
+certificate or host key.
 
 Deliveries are JSON `POST`s, **HMAC-SHA256 signed** in `X-MTM-Signature` when a secret is
 set. Last-delivery status is tracked per webhook and there is a Send-test button.

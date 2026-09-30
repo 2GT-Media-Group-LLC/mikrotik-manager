@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { sitesApi } from '../../services/api';
 import { useSiteStore, type Site } from '../../store/siteStore';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import { useIsSiteScoped } from '../../hooks/useCanWrite';
 
 interface Props {
   isCollapsed: boolean;
@@ -18,6 +19,8 @@ interface Props {
  * never have to learn what a site is.
  */
 export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
+  // An account limited to particular sites sees only those; "all" means all of its own (P1-7).
+  const allLabel = useIsSiteScoped() ? 'All my sites' : 'All sites';
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const { currentSiteId, setCurrentSite } = useSiteStore();
@@ -107,7 +110,7 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
   // real would rekey the QueryClient and remount the app on every page load.
   const soleSite = sites.length === 1 ? sites[0] : null;
   const shown = current ?? soleSite;
-  const label = shown?.name ?? 'All sites';
+  const label = shown?.name ?? allLabel;
 
   return (
     <div ref={wrapRef} className="relative px-[14px] pt-3">
@@ -195,7 +198,7 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
                     style={{ color: 'var(--ink)' }}
                   >
                     <Globe className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
-                    <span className="flex-1 text-left">All sites</span>
+                    <span className="flex-1 text-left">{allLabel}</span>
                     {currentSiteId == null && <Check className="w-3.5 h-3.5 text-blue-500" />}
                   </button>
                   <div className="my-1 h-px" style={{ background: 'var(--line)' }} />

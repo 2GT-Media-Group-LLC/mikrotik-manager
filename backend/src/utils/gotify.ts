@@ -24,7 +24,7 @@ export interface GotifyRequest {
  * that mean something is down or failing are high.
  */
 export function gotifyPriority(eventType: string): number {
-  if (['device_offline', 'device_degraded', 'log_error', 'high_cpu', 'high_memory'].includes(eventType)) return 8;
+  if (['device_offline', 'device_degraded', 'device_identity_changed', 'log_error', 'high_cpu', 'high_memory'].includes(eventType)) return 8;
   if (['device_online', 'device_health_restored', 'device_discovered'].includes(eventType)) return 2;
   return 5;
 }

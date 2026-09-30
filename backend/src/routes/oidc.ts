@@ -8,6 +8,7 @@
  * via the URL fragment, matching the existing localStorage/Bearer model.
  */
 import { Router, Request, Response } from 'express';
+import { currentSessionVersion } from '../utils/sessionState';
 import { Issuer } from 'openid-client';
 import { requireAuth, requireAdmin, signToken } from '../middleware/auth';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
@@ -65,7 +66,9 @@ router.get(
       const params = req.query as Record<string, string>;
       if (params.error) throw new Error(params.error_description || params.error);
       const { user, returnTo } = await completeLogin(params);
-      const token = signToken({ userId: user.id, username: user.username, role: user.role });
+      // Read after completeLogin, which may have ended older sessions by
+      // changing the role.
+      const token = signToken({ userId: user.id, username: user.username, role: user.role, sv: await currentSessionVersion(user.id) });
       const dest = safeReturnTo(returnTo);
       // Hand the token to the SPA via fragment (never sent to the server/logs).
       res.redirect(`/auth/callback#token=${encodeURIComponent(token)}&returnTo=${encodeURIComponent(dest)}`);

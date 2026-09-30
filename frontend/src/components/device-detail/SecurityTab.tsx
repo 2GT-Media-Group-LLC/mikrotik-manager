@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell } from 'lucide-react';
-import { devicesApi } from '../../services/api';
+import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell, KeyRound } from 'lucide-react';
+import { devicesApi, type ApiSslResult } from '../../services/api';
 import { activeChecks, mutedCount } from '../../utils/securityFindings';
 import type { SecurityCheck } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
@@ -92,6 +92,25 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
     },
   });
 
+  // Switch management to API-SSL (outside review P1-4). The result lists what
+  // was done on the device, and says plainly if the manager stayed on 8728.
+  const [sslResult, setSslResult] = useState<ApiSslResult | null>(null);
+  const [sslError, setSslError] = useState('');
+  const apiSsl = useMutation({
+    mutationFn: () => devicesApi.enableApiSsl(deviceId),
+    onSuccess: (res) => {
+      setSslResult(res.data);
+      setSslError('');
+      invalidate();
+      qc.invalidateQueries({ queryKey: ['device', deviceId] });
+      qc.invalidateQueries({ queryKey: ['devices'] });
+    },
+    onError: (err: unknown) => {
+      setSslResult(null);
+      setSslError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not enable API-SSL');
+    },
+  });
+
   const checks: SecurityCheck[] = posture?.checks ?? [];
 
   const activeCount = activeChecks(checks).length;
@@ -138,6 +157,35 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
             </div>
           </div>
 
+          {apiSsl.isPending && (
+            <div className="p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Enabling API-SSL on the device. Creating a certificate can take up to a minute on small devices…
+            </div>
+          )}
+          {sslError && (
+            <div className="p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400">{sslError}</div>
+          )}
+          {sslResult && (
+            <div className={clsx('p-3 rounded-lg border text-sm',
+              sslResult.switched
+                ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
+                : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300')}>
+              <div className="flex items-start gap-2">
+                {sslResult.switched ? <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />}
+                <div className="flex-1">
+                  <p>{sslResult.message}</p>
+                  {sslResult.steps.length > 0 && (
+                    <ul className="mt-1.5 text-xs list-disc list-inside opacity-90">
+                      {sslResult.steps.map((st, i) => <li key={i}>{st}</li>)}
+                    </ul>
+                  )}
+                </div>
+                <button onClick={() => setSslResult(null)} className="text-xs underline">Dismiss</button>
+              </div>
+            </div>
+          )}
+
           {/* Findings */}
           {checks.length > 0 && (
             <div className="space-y-2">
@@ -161,6 +209,13 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                       <p className="text-xs text-gray-600 dark:text-slate-400 mt-0.5">{c.detail}</p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {canWrite && c.fix === 'api-ssl' && !c.suppressed && (
+                        <button onClick={() => apiSsl.mutate()} disabled={apiSsl.isPending}
+                          className="btn-primary text-xs py-1 flex items-center gap-1.5">
+                          {apiSsl.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
+                          {apiSsl.isPending ? 'Switching…' : 'Switch to API-SSL'}
+                        </button>
+                      )}
                       {canWrite && c.serviceId && !c.suppressed && (
                         <button onClick={() => toggleSvc.mutate({ id: c.serviceId!, disabled: true })} disabled={toggleSvc.isPending}
                           className="btn-secondary text-xs py-1 flex items-center gap-1.5"><Lock className="w-3 h-3" /> Disable</button>

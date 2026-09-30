@@ -8,6 +8,8 @@ import { RouterOSClient } from './mikrotik/RouterOSClient';
 import type { PollerService } from './PollerService';
 import type { CredentialPresetRow } from '../routes/credentialPresets';
 import { DEVICE_BASE_COLUMNS } from './deviceColumns';
+import { connectPreferringSsl, API_SSL_PORT } from './mikrotik/apiConnect';
+import { pinIdentity } from './identityPins';
 
 export type CreateDeviceContext = {
   /** JWT role of the caller ('admin' | 'operator' | 'viewer'). Preset use may be restricted for operators. */
@@ -18,6 +20,12 @@ export type CreateDeviceContext = {
    * caller has no active site we fall back to the default site in SQL.
    */
   siteId?: number | null;
+  /**
+   * The sites the caller may touch, for a site-scoped account (P1-7); absent or
+   * null for a fleet-wide one. A device already managed in another site is
+   * neither revealed nor merged into.
+   */
+  allowedSites?: number[] | null;
 };
 
 export async function loadCredentialPreset(
@@ -180,11 +188,24 @@ async function createDevice(
   if (!portCheck.ok) return { ok: false, status: 400, body: { error: portCheck.reason } };
   if (portCheck.port) api_port = portCheck.port;
 
-  const testClient = new RouterOSClient(address, api_port, api_username, api_password, 10_000);
+  // No port chosen anywhere (form, preset, or written into the address): try
+  // API-SSL first and fall back to the plain API (outside review P1-4). A port
+  // that was chosen is used as given.
+  const portChosen = preset?.api_port != null || (input.api_port != null && input.api_port !== '') || !!portCheck.port;
+  let testClient: RouterOSClient | undefined;
+  let sslFallbackReason: string | undefined;
   let detectedSerial: string | null;
   let deviceIdentity: string | null;
   try {
-    await testClient.connect();
+    if (portChosen) {
+      testClient = new RouterOSClient(address, api_port, api_username, api_password, 10_000);
+      await testClient.connect();
+    } else {
+      const chosen = await connectPreferringSsl(address, api_username, api_password);
+      testClient = chosen.client;
+      api_port = chosen.port;
+      sslFallbackReason = chosen.sslError;
+    }
     const rb = await testClient.execute('/system/routerboard/print').catch(() => [] as Record<string, string>[]);
     detectedSerial = (rb[0]?.['serial-number'] || '').trim() || null;
     const identity = await testClient.execute('/system/identity/print').catch((e) => {
@@ -199,9 +220,15 @@ async function createDevice(
       body: { error: safeConnectionError('createDeviceFromBody', err) },
     };
   } finally {
-    testClient.disconnect();
+    // Unassigned only when connecting threw, and then there is nothing to close.
+    testClient?.disconnect();
   }
   const nameLocked = computeNameLocked(name, address, deviceIdentity);
+  // Reported with the new device so the UI can say which connection it got.
+  const connection = { api_ssl: api_port === API_SSL_PORT, port: api_port, ...(sslFallbackReason ? { ssl_unavailable: sslFallbackReason } : {}) };
+  // The certificate seen while adding is the one pinned, so there is no gap
+  // before the first poll in which a different one would be accepted (P1-4).
+  const tlsFingerprint = testClient?.tlsFingerprint ?? null;
 
   if (detectedSerial) {
     const existingBySerial = await queryOne<{
@@ -209,12 +236,21 @@ async function createDevice(
       name: string;
       ip_address: string;
       serial_number: string;
+      site_id: number | null;
     }>(
-      `SELECT id, name, ip_address, serial_number
+      `SELECT id, name, ip_address, serial_number, site_id
          FROM devices
         WHERE serial_number = $1`,
       [detectedSerial]
     );
+
+    if (existingBySerial && ctx?.allowedSites && !ctx.allowedSites.includes(existingBySerial.site_id ?? -1)) {
+      return {
+        ok: false,
+        status: 409,
+        body: { error: 'This device is already managed in a site you do not have access to.', code: 'duplicate_serial_elsewhere' },
+      };
+    }
 
     if (existingBySerial) {
       const shouldCombine =
@@ -226,7 +262,7 @@ async function createDevice(
           body: {
             error: 'duplicate_serial',
             code: 'duplicate_serial',
-            existing_device: existingBySerial,
+            existing_device: { id: existingBySerial.id, name: existingBySerial.name, ip_address: existingBySerial.ip_address, serial_number: existingBySerial.serial_number },
             candidate: {
               serial_number: detectedSerial,
               identity: name,
@@ -290,7 +326,7 @@ async function createDevice(
       return {
         ok: true,
         status: 200,
-        body: { ...updatedExisting, merged_from_duplicate: true },
+        body: { ...updatedExisting, merged_from_duplicate: true, connection },
       };
     }
   }
@@ -311,6 +347,7 @@ async function createDevice(
   );
 
   const newId = rows[0].id;
+  if (tlsFingerprint) await pinIdentity(newId, 'api-tls', tlsFingerprint).catch(() => {});
 
   if (pollerService) {
     await pollerService.scheduleDeviceSync(newId, 'full');
@@ -321,5 +358,5 @@ async function createDevice(
     [newId]
   );
 
-  return { ok: true, status: 201, body: device as Record<string, unknown> };
+  return { ok: true, status: 201, body: { ...(device as Record<string, unknown>), connection } };
 }

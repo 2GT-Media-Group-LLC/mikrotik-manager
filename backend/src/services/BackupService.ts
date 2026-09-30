@@ -8,6 +8,7 @@ import { randomBytes } from 'crypto';
 import { withSafeApply, type GuardDevice, type GuardOutcome } from './changeGuard/ChangeGuard';
 import { resolveAuth, type SshExecDevice } from './sshExec';
 import { parseImportOutput, type ImportResult } from '../utils/importResult';
+import { sshHostCheck, explainSshError } from './sshHostCheck';
 
 const BACKUPS_DIR = process.env.BACKUPS_DIR || '/app/backups';
 
@@ -219,10 +220,10 @@ export class BackupService {
 
       conn.on('error', (err) => {
         clearTimeout(timeout);
-        reject(err);
+        reject(explainSshError(err, host, port));
       });
 
-      conn.connect({ host, port, username, ...auth, readyTimeout: 10_000 });
+      conn.connect({ host, port, username, ...sshHostCheck(host, port), ...auth, readyTimeout: 10_000 });
     });
   }
 
@@ -278,8 +279,11 @@ export class BackupService {
         });
       });
 
-      conn.on('error', (err) => finish(() => reject(err)));
-      conn.connect({ host: device.ip_address, port: device.ssh_port || 22, username, ...auth, readyTimeout: 10_000 });
+      conn.on('error', (err) => finish(() => reject(explainSshError(err, device.ip_address, device.ssh_port || 22))));
+      conn.connect({
+        host: device.ip_address, port: device.ssh_port || 22, username,
+        ...sshHostCheck(device.ip_address, device.ssh_port || 22), ...auth, readyTimeout: 10_000,
+      });
     });
   }
 }

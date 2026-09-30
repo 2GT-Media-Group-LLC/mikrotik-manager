@@ -1,13 +1,19 @@
 import { Router, Request, Response } from 'express';
+import { deviceSiteAccess } from '../utils/siteAccess';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
-import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, clientSeriesTag } from '../utils/siteScope';
+import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, clientSeriesTag, siteList } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
 router.use(requireAuth);
+// Per-device metrics: a site-scoped account only reaches its own sites' devices (P1-7).
+router.use(deviceSiteAccess((req) => {
+  const m = /^\/(?:interface|device)\/(\d+)(?:\/|$)/.exec(req.path);
+  return m ? parseInt(m[1], 10) : null;
+}));
 
 function rangeToFlux(range: string): string {
   const allowed = ['1h', '3h', '6h', '12h', '24h', '7d', '30d'];
@@ -26,17 +32,21 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
   // the global series there is not a shortcut -- it keeps the chart's full
   // history, which the per-site series only accumulates from the upgrade
   // onward. That covers every single-site install.
-  const siteId = activeSite(req);
-  let seriesTag = '_global';
-  if (siteId !== null) {
+  const sites = siteList(activeSite(req));
+  // One tag normally; a site-scoped account covering several sites (P1-7) gets
+  // each site's series, summed below.
+  let seriesTags: string[] = ['_global'];
+  if (sites && sites.length === 1) {
     const counts = await query<{ in_site: number; total: number }>(
       `SELECT COUNT(*) FILTER (WHERE site_id = $1)::int AS in_site,
               COUNT(*)::int AS total
          FROM devices`,
-      [siteId]
+      [sites[0]]
     );
     const { in_site = 0, total = 0 } = counts[0] ?? {};
-    seriesTag = clientSeriesTag(siteId, in_site, total);
+    seriesTags = [clientSeriesTag(sites[0], in_site, total)];
+  } else if (sites) {
+    seriesTags = sites.map((id) => `_site_${id}`);
   }
 
   // Use the global deduplicated metric (_global tag) written by DeviceCollector.
@@ -46,8 +56,11 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_counts")
       |> filter(fn: (r) => r._field == "total_clients")
-      |> filter(fn: (r) => r.device_id == ${fluxString(String(seriesTag))})
+      |> filter(fn: (r) => ${seriesTags.map((t) => `r.device_id == ${fluxString(t)}`).join(' or ')})
       |> aggregateWindow(every: 5m, fn: last, createEmpty: false)
+      |> group(columns: ["_time"])
+      |> sum()
+      |> group()
       |> yield(name: "clients_over_time")
   `;
 
@@ -73,9 +86,9 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
     // it matters: without it the fleet-wide fallback would fold the per-site
     // totals back in and count everyone twice.
     let deviceFilter: string | null = `|> filter(fn: (r) => not (r.device_id =~ /^_/))`;
-    if (siteId !== null) {
+    if (sites !== null) {
       const ids = await query<{ id: number }>(
-        `SELECT id FROM devices WHERE site_id = $1`, [siteId]
+        `SELECT id FROM devices WHERE site_id = ANY($1::int[])`, [sites]
       );
       // An empty site has no series to fall back to, and must show an empty
       // chart rather than the fleet's (issue #130).

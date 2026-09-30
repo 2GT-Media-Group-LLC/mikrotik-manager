@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import { redis } from '../../config/redis';
 import { query, queryOne } from '../../config/database';
 import { loadOidcConfig, getClientSecret, type OidcConfig, type AppRole } from './oidcConfig';
+import { endAllSessions } from '../../utils/sessionState';
 import {
   extractGroups, mapGroupsToRole, deriveUsername, getEmail, isEmailVerified, emailDomainAllowed,
 } from './claimMapping';
@@ -140,6 +141,9 @@ async function resolveUser(claims: Record<string, unknown>, config: OidcConfig):
     const role = mappedRole ?? linked.role;
     if (role !== linked.role) {
       await query(`UPDATE users SET role = $1 WHERE id = $2`, [role, linked.id]);
+      // A role change from the identity provider ends older sessions, as it
+      // does when an admin changes it here (P2-1).
+      await endAllSessions(linked.id);
     }
     if (email) await query(`UPDATE users SET email = $1 WHERE id = $2`, [email, linked.id]).catch(() => {});
     return { id: linked.id, username: linked.username, role };

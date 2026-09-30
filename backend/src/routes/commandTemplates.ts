@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
-import { requireAuth, requireWrite } from '../middleware/auth';
+import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
 
 /**
  * Saved command templates (#163).
@@ -44,7 +44,7 @@ router.get('/', async (_req: Request, res: Response) => {
   ));
 });
 
-router.post('/', requireWrite, async (req: Request, res: Response) => {
+router.post('/', requireWrite, fleetOnly, async (req: Request, res: Response) => {
   const v = validate(req.body ?? {}, false);
   if (v.error) return res.status(400).json({ error: v.error });
   try {
@@ -60,7 +60,7 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/:id', requireWrite, fleetOnly, async (req: Request, res: Response) => {
   const v = validate(req.body ?? {}, true);
   if (v.error) return res.status(400).json({ error: v.error });
   const sets: string[] = [];
@@ -81,7 +81,7 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/:id', requireWrite, fleetOnly, async (req: Request, res: Response) => {
   const rows = await query(`DELETE FROM command_templates WHERE id = $1 RETURNING id`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'Template not found' });
   return res.json({ ok: true });

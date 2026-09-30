@@ -33,7 +33,8 @@ export default function AddDeviceModal({
   const [form, setForm] = useState({
     name: prefill?.name || '',
     ip_address: prefill?.ip_address || '',
-    api_port: '8728',
+    // Blank: the server tries API-SSL (8729) first, then the plain API (8728).
+    api_port: '',
     api_username: 'admin',
     api_password: '',
     ssh_port: '22',
@@ -77,10 +78,11 @@ export default function AddDeviceModal({
   const addressInvalid = addressTrimmed.length > 0 && !isValidDeviceAddress(addressTrimmed);
   // Plaintext RouterOS API (port 8728) sending credentials over the internet
   // is worth a nudge; a LAN address or an already-TLS port (8729) is not.
+  // Left blank, API-SSL is tried first, so only a chosen plain port is flagged.
   const showPlaintextWarning =
     addressTrimmed.length > 0 && !addressInvalid &&
     classifyAddress(addressTrimmed) !== 'private' &&
-    parsePort(form.api_port, 8728) !== 8729;
+    form.api_port.trim() !== '' && parsePort(form.api_port, 8728) !== 8729;
 
   const createPayload = (
     opts: { combineWithDeviceId?: number; forceReplace?: boolean } = {}
@@ -103,7 +105,7 @@ export default function AddDeviceModal({
     return {
       name: form.name,
       ip_address: form.ip_address,
-      api_port: parsePort(form.api_port, 8728),
+      api_port: form.api_port.trim() === '' ? undefined : parsePort(form.api_port, 8728),
       api_username: form.api_username,
       api_password: form.api_password,
       ssh_port: parsePort(form.ssh_port, 22),
@@ -290,8 +292,9 @@ export default function AddDeviceModal({
                       type="number"
                       value={form.api_port}
                       onChange={(e) => set('api_port', e.target.value)}
-                      placeholder="8728"
+                      placeholder="Auto"
                     />
+                    <p className="text-[11px] text-gray-400 mt-1">Blank tries API-SSL (8729), then 8728.</p>
                   </div>
                   <div className="col-span-2">
                     <label className="label">RouterOS Password *</label>

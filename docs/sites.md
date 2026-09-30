@@ -5,9 +5,9 @@
 A **site** is a named collection of devices whose data — clients, events, topology,
 backups, statistics — is viewed separately from every other site's.
 
-This is multi-*site*, not multi-tenancy. Sites separate what you **see**; they do not
-separate who you **are**. There is deliberately no per-site access control: the existing
-admin / manage / read-only roles are unchanged, and every user can see every site.
+By default sites only separate what you **see**: every account can see every site. To
+separate who can see and change what, give accounts [per-site access](#per-site-access), so
+that a customer's staff reach only their own sites.
 
 ## If you run one network, ignore this page
 
@@ -61,6 +61,55 @@ example another building. Clear it to go back to the site's address.
 Nothing is copied into the devices, so changing a site's address updates every device that
 uses it.
 
+## Per-site access
+
+An account can be limited to particular sites, with its own role in each: **admin**,
+**operator** or **viewer**. Everyone else keeps fleet-wide access under their normal role,
+which is every account until you change it, so upgrading changes nothing.
+
+Set it under **Settings → Users & Roles**: click the globe icon on a user, choose
+**Specific sites**, and pick a role for each site. **Whole fleet** undoes it. It applies on
+the account's next request; nobody has to sign in again. You can't limit your own account,
+so there is always a fleet administrator.
+
+What a site-limited account gets:
+
+- **Only its sites.** The site switcher lists only them, and "All my sites" covers all of
+  them. Devices, clients, events, backups, topology, search and the rest show nothing from
+  other sites. A device in another site answers "not found", so its existence doesn't leak.
+  Tags are shared across the fleet, but their device counts include only its sites.
+- **It lands in the right place.** An account with one site opens on that site; one with
+  several opens on "All my sites". A site left selected in the browser by someone else who
+  used it doesn't carry over, and if a site is taken away while the account is signed in,
+  the interface drops back to its remaining sites rather than showing an empty page.
+- **Its role, site by site.** An operator in one site and a viewer in another can change
+  devices in the first and only look at the second. Write controls follow the site selected.
+- **Site admins** can do everything an operator can in their sites, plus admin-level device
+  actions such as trusting a changed certificate. They can't manage users, SSO, alerting, API
+  tokens, encryption or other fleet settings, and admin-only credential presets are as closed
+  to them as to an operator.
+- **Bulk work within its sites.** Bulk commands and firmware rollouts are available only if
+  every device in them is in the account's sites. "Apply to all" actions (SNMP, LLDP, Backup
+  all) skip sites where it's only a viewer.
+- **Terminals and live updates** follow the same rules: a shell opens only on a device in a
+  site where the account is an operator or admin, and live-update events for other sites
+  never reach it.
+
+Not available to site-limited accounts, because each covers the whole fleet:
+
+- Traffic analytics. NetFlow data isn't recorded per site yet; until it is, showing it would
+  show other sites' traffic.
+- Alert rules, channels and history; Settings other than **My Password**.
+- Creating or deleting sites, editing shared command templates, poller health, and
+  dismissing insights.
+
+Moving a device between sites needs admin in both, since it changes who can reach the device.
+Adding a device that's already managed in a site the account can't see is refused, without
+saying which device or site it is.
+
+API tokens stay fleet-wide and only fleet admins can create them. Accounts from SSO are
+fleet-wide under their mapped role until an admin assigns them sites.
+
 ## What sites scope, and what they do not
 
 Scoped to the selected site:
@@ -107,7 +156,20 @@ curl -H "Authorization: Bearer $TOKEN" -H "X-Site-Id: 2" https://mtm.example.com
 ```
 
 **Omitting the header means unscoped**, returning the whole fleet exactly as the API did
-before sites existed. Existing scripts and API tokens keep working untouched.
+before sites existed. Existing scripts and API tokens keep working untouched. For a
+site-limited account, omitting it means all of its own sites, and naming a site it can't see
+returns `403` with `code: "site_forbidden"`. Fleet-wide features refuse such accounts with
+`403` and `code: "fleet_only"`.
+
+Per-site access is set on the user, as a list; an empty list makes the account fleet-wide:
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  https://mtm.example.com/api/settings/users/12 \
+  -d '{"site_roles":[{"site_id":2,"role":"operator"},{"site_id":5,"role":"viewer"}]}'
+```
+
+`GET /api/settings/users` returns each account's `site_roles`.
 
 | Method | Path | Purpose |
 |---|---|---|

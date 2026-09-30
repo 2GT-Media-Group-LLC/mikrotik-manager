@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
+import { revokeSessionToken, forgetSessionAccount } from '../utils/sessionState';
 import bcrypt from 'bcryptjs';
 import * as OTPAuth from 'otpauth';
 import * as qrcode from 'qrcode';
 import { query, queryOne } from '../config/database';
 import { signToken, signRawToken, verifyRawToken, requireAuth } from '../middleware/auth';
-import { getSecretsInfo } from '../utils/secrets';
+import { getSecretsInfo, encryptionKeyMissing } from '../utils/secrets';
 import { loginRateLimit, rateLimitRedis } from '../middleware/rateLimitRedis';
 import { validatePassword } from '../utils/passwordPolicy';
 
@@ -24,6 +25,8 @@ router.get(
     if (secrets.ephemeral) {
       warnings.push('secrets_not_persisted');
     }
+    // Stored credentials no known key decrypts: the key was lost (P2-29).
+    if (encryptionKeyMissing()) warnings.push('encryption_key_missing');
 
     const adminUser = await queryOne<{ password_hash: string }>(
       `SELECT password_hash FROM users WHERE username = 'admin' LIMIT 1`
@@ -40,15 +43,22 @@ router.get(
  * A session for a user who has passed every login step. An account still on the
  * default password gets a session that can only change it (see requireAuth).
  */
-function sessionResponse(user: { id: number; username: string; role: string; must_change_password?: boolean }) {
+async function sessionResponse(user: {
+  id: number; username: string; role: string; must_change_password?: boolean; session_version?: number;
+}) {
   const mustChange = !!user.must_change_password;
   const token = signToken({
-    userId: user.id, username: user.username, role: user.role,
+    userId: user.id, username: user.username, role: user.role, sv: user.session_version ?? 0,
     ...(mustChange ? { mustChangePassword: true } : {}),
   });
+  // Site roles with the session, so the interface is right from its first
+  // render rather than after it next asks (P1-7). Never put in the token.
+  const sites = await query<{ site_id: number; role: string }>(
+    `SELECT site_id, role FROM user_site_roles WHERE user_id = $1`, [user.id]).catch(() => []);
+  const siteRoles = sites.length ? Object.fromEntries(sites.map((r) => [r.site_id, r.role])) : undefined;
   return {
     token,
-    user: { id: user.id, username: user.username, role: user.role, must_change_password: mustChange },
+    user: { id: user.id, username: user.username, role: user.role, must_change_password: mustChange, ...(siteRoles ? { siteRoles } : {}) },
   };
 }
 
@@ -76,7 +86,7 @@ router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
     role: string;
     totp_enabled: boolean;
     must_change_password: boolean;
-  }>(`SELECT id, username, password_hash, role, totp_enabled, must_change_password FROM users WHERE username = $1`, [username]);
+  }>(`SELECT id, username, password_hash, role, totp_enabled, must_change_password, session_version FROM users WHERE username = $1`, [username]);
 
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ error: 'Invalid credentials' });
@@ -87,7 +97,7 @@ router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
     return res.json({ requires_totp: true, totp_token: totpToken });
   }
 
-  return res.json(sessionResponse(user));
+  return res.json(await sessionResponse(user));
 });
 
 // Exchange partial TOTP token + code for a full session token
@@ -107,7 +117,7 @@ router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: '
   }
 
   const user = await queryOne<{ id: number; username: string; role: string; totp_secret: string | null; totp_enabled: boolean; must_change_password: boolean }>(
-    `SELECT id, username, role, totp_secret, totp_enabled, must_change_password FROM users WHERE id = $1`,
+    `SELECT id, username, role, totp_secret, totp_enabled, must_change_password, session_version FROM users WHERE id = $1`,
     [payload.userId]
   );
   if (!user || !user.totp_enabled || !user.totp_secret) {
@@ -120,7 +130,7 @@ router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: '
     return res.status(401).json({ error: 'Invalid TOTP code' });
   }
 
-  return res.json(sessionResponse(user));
+  return res.json(await sessionResponse(user));
 });
 
 // Generate a new TOTP secret + QR code for the current user (does not enable yet).
@@ -205,8 +215,10 @@ router.get('/me', requireAuth, (req: Request, res: Response) => {
   res.json({ user: req.user });
 });
 
-router.post('/logout', requireAuth, (_req: Request, res: Response) => {
-  // JWT is stateless; client just discards token
+// Ends this session on the server too; before, only the browser's copy was
+// discarded and the token kept working for the rest of its 24 hours (P2-1).
+router.post('/logout', requireAuth, async (req: Request, res: Response) => {
+  await revokeSessionToken(req.user!);
   res.json({ message: 'Logged out' });
 });
 
@@ -233,13 +245,16 @@ router.put('/password', requireAuth, async (req: Request, res: Response) => {
   }
 
   const hash = await bcrypt.hash(newPassword, 12);
-  const updated = await queryOne<{ id: number; username: string; role: string; must_change_password: boolean }>(
-    `UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2
-     RETURNING id, username, role, must_change_password`,
+  // Changing the password ends every other session on the account, including
+  // one someone else may have started with the old password (P2-1). This
+  // request gets a fresh session under the new version.
+  const updated = await queryOne<{ id: number; username: string; role: string; must_change_password: boolean; session_version: number }>(
+    `UPDATE users SET password_hash = $1, must_change_password = FALSE, session_version = session_version + 1 WHERE id = $2
+     RETURNING id, username, role, must_change_password, session_version`,
     [hash, req.user!.userId]
   );
-  // A fresh session, so a forced change ends the restricted one straight away.
-  return res.json({ message: 'Password updated', ...(updated ? sessionResponse(updated) : {}) });
+  forgetSessionAccount(req.user!.userId);
+  return res.json({ message: 'Password updated', ...(updated ? await sessionResponse(updated) : {}) });
 });
 
 export default router;

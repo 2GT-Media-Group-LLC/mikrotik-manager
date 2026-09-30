@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
+import { roleAtLeast, roleOnDevice } from '../utils/siteAccess';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeByNullableDevice } from '../utils/siteScope';
-import { activeSite } from '../middleware/site';
+import { activeSite, writableScope } from '../middleware/site';
 
 const router = Router();
 router.use(requireAuth);
@@ -122,11 +123,18 @@ router.get('/', async (req: Request, res: Response) => {
 router.delete('/', requireWrite, async (req: Request, res: Response) => {
   const { deviceId } = req.query;
   if (deviceId) {
+    if (!roleAtLeast(await roleOnDevice(req.user!, Number(deviceId)), 'operator')) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
     await query(`DELETE FROM events WHERE device_id = $1`, [deviceId]);
   } else {
-    await query(`DELETE FROM events`);
+    // Only the events in view: clearing while a site is selected used to
+    // delete the whole fleet's, and a site-scoped account only clears sites it
+    // operates (P1-7).
+    const scope = siteScopeByNullableDevice(writableScope(req), 'device_id');
+    await query(`DELETE FROM events ${scope ? `WHERE ${scope}` : ''}`);
   }
-  res.json({ message: 'Events cleared' });
+  return res.json({ message: 'Events cleared' });
 });
 
 export default router;

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { requireAuth, requireWrite } from '../middleware/auth';
-import { activeSite } from '../middleware/site';
+import { roleAtLeast, roleOnDevice } from '../utils/siteAccess';
+import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
+import { activeSite, targetSite } from '../middleware/site';
 import { DeviceAdoptionService } from '../services/DeviceAdoptionService';
 import type { AddressPlan } from '../utils/adoption';
 import type { PollerService } from '../services/PollerService';
@@ -26,8 +27,16 @@ export function setPollerService(p: PollerService): void {
  * has to be borrowed to reach it. Their names are resolved here so the UI can
  * offer a jump host without a second round trip.
  */
-router.get('/candidates', async (_req: Request, res: Response) => {
-  const candidates = await service.listCandidates();
+router.get('/candidates', async (req: Request, res: Response) => {
+  let candidates = await service.listCandidates();
+  // A site-scoped account sees only what its own devices can see (P1-7).
+  if (req.user?.siteRoles) {
+    const own = new Set((await query<{ id: number }>(
+      `SELECT id FROM devices WHERE site_id = ANY($1::int[])`, [Object.keys(req.user.siteRoles).map(Number)])).map((r) => r.id));
+    candidates = candidates
+      .map((c) => ({ ...c, seenBy: c.seenBy.filter((id) => own.has(id)) }))
+      .filter((c) => c.seenBy.length > 0);
+  }
 
   const ids = [...new Set(candidates.flatMap((c) => c.seenBy))];
   const names = ids.length
@@ -74,6 +83,14 @@ router.post('/adopt', requireWrite, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'password is required — it is printed on the device' });
   }
 
+  // The new device joins one of the caller's sites, and the jump host it is
+  // adopted through must be a device the caller operates (P1-7).
+  const target = targetSite(req);
+  if (!target.ok) return res.status(target.status).json({ error: target.error });
+  if (!roleAtLeast(await roleOnDevice(req.user!, Number(jumpHostId)), 'operator')) {
+    return res.status(404).json({ error: 'Jump host device not found' });
+  }
+
   const result = await service.adopt({
     mac, jumpHostId, plan: plan as AddressPlan, password,
     username: typeof username === 'string' ? username : undefined,
@@ -83,7 +100,7 @@ router.post('/adopt', requireWrite, async (req: Request, res: Response) => {
     // Opt-in only. Defaulting this to true would defeat the guard that stops
     // adoption rewriting a switch that is already in service.
     force: force === true,
-    siteId: activeSite(req),
+    siteId: target.siteId,
   });
 
   return res.status(result.ok ? 201 : 400).json(result);
@@ -100,11 +117,14 @@ router.post('/check-address', requireWrite, async (req: Request, res: Response) 
   if (typeof address !== 'string' || typeof jumpHostId !== 'number') {
     return res.status(400).json({ error: 'address and jumpHostId are required' });
   }
+  if (!roleAtLeast(await roleOnDevice(req.user!, jumpHostId), 'operator')) {
+    return res.status(404).json({ error: 'Jump host device not found' });
+  }
   return res.json(await service.checkAddress(jumpHostId, address));
 });
 
 /** POST /api/adoption/cleanup — drop temporary addresses a failed run left behind. */
-router.post('/cleanup', requireWrite, async (_req: Request, res: Response) => {
+router.post('/cleanup', requireWrite, fleetOnly, async (_req: Request, res: Response) => {
   const removed = await service.cleanupOrphans();
   res.json({ removed });
 });

@@ -38,6 +38,8 @@ services:
       # (stored in the app_data volume). Set them to pin your own values.
       JWT_SECRET: ${JWT_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # The outgoing key while ENCRYPTION_KEY is changed; see docs/configuration.md#key-rotation.
+      ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost,http://localhost,https://127.0.0.1,http://127.0.0.1}
       PORT: 3001
       NETFLOW_BIND_PORT: 2055
