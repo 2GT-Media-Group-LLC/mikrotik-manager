@@ -578,6 +578,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#one-change-at-a-time-per-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      One change at a time per device
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-you-see-when-it-fires" class="md-nav__link">
     <span class="md-ellipsis">
       What you see when it fires
@@ -618,6 +627,15 @@
   
     <nav class="md-nav" aria-label="Lockout prediction">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#firewall-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Firewall rules
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#overriding-a-verdict" class="md-nav__link">
@@ -1190,6 +1208,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#one-change-at-a-time-per-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      One change at a time per device
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-you-see-when-it-fires" class="md-nav__link">
     <span class="md-ellipsis">
       What you see when it fires
@@ -1230,6 +1257,15 @@
   
     <nav class="md-nav" aria-label="Lockout prediction">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#firewall-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Firewall rules
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#overriding-a-verdict" class="md-nav__link">
@@ -1347,45 +1383,118 @@ a revert loop is impossible.</p>
 <p>Everything runs over the RouterOS API, so it works on devices with no SSH credentials
 configured.</p>
 <h3 id="covered-changes">Covered changes<a class="headerlink" href="#covered-changes" title="Permanent link">&para;</a></h3>
-<p>Twelve change types are guarded:</p>
+<p>Every write that can take a device off the network runs under Change Guard. Some are
+also simulated first, so a change predicted to cut management is stopped before it is
+applied; the rest are protected by auto-revert alone.</p>
 <table>
 <thead>
 <tr>
 <th>Area</th>
 <th>Operations</th>
+<th>Predicted?</th>
 </tr>
 </thead>
 <tbody>
 <tr>
+<td>Firewall filter</td>
+<td>add, edit, enable/disable, move, delete</td>
+<td>Yes, in rule order (see <a href="#firewall-rules">Firewall rules</a>)</td>
+</tr>
+<tr>
+<td>Firewall address lists</td>
+<td>add, edit, remove</td>
+<td>Yes</td>
+</tr>
+<tr>
 <td>Bridge</td>
 <td>VLAN filtering toggle</td>
+<td>Yes</td>
 </tr>
 <tr>
 <td>Ports</td>
 <td>PVID and tagged/untagged membership</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Ports</td>
+<td>enable/disable</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Ports</td>
+<td>MTU, FEC, flow control, speed, PoE</td>
+<td>Flagged when the port carries management</td>
 </tr>
 <tr>
 <td>Bridge VLANs</td>
-<td>add, update, delete</td>
+<td>add, update, delete, copy from another switch</td>
+<td>Yes</td>
 </tr>
 <tr>
 <td>Addressing</td>
 <td>IP address add, remove</td>
+<td>Yes</td>
 </tr>
 <tr>
 <td>Routing</td>
-<td>route add, remove</td>
+<td>static route add, remove</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Routing</td>
+<td>OSPF, BGP, routing tables, route filters</td>
+<td>No</td>
 </tr>
 <tr>
 <td>Bonding</td>
-<td>bond create, delete</td>
+<td>create, edit, delete</td>
+<td>Flagged when a member or the bond carries management</td>
 </tr>
 <tr>
 <td>Services</td>
 <td>management service enable/disable</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>NAT</td>
+<td>add, edit, move, delete</td>
+<td>No</td>
+</tr>
+<tr>
+<td>WireGuard</td>
+<td>interface enable/disable, delete</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>WireGuard</td>
+<td>interface edit, peers</td>
+<td>Flagged when the tunnel carries management</td>
+</tr>
+<tr>
+<td>Wireless</td>
+<td>interface edit, enable/disable, delete; security profile edit, delete</td>
+<td>Enable/disable and delete predicted; edits flagged when the interface carries management</td>
+</tr>
+<tr>
+<td>Guest Wi-Fi</td>
+<td>hotspot setup, server enable/disable, remove</td>
+<td>Setup flagged when the chosen interface carries management</td>
 </tr>
 </tbody>
 </table>
+<p>"Flagged" means the change can't be simulated, but because it touches something the
+manager's connection runs through, auto-revert becomes mandatory for it (see
+<a href="#when-protection-is-required">When protection is required</a>).</p>
+<p>Creating a bond also moves the member ports' VLAN membership onto the bond, and deleting
+it gives the ports their VLANs back. Before 0.24.44 a port tagged on a VLAN became a bond
+that wasn't, and that VLAN stopped crossing the link.</p>
+<p>Each guarded change takes a few seconds longer than an unguarded one: the device saves a
+restore point first, and the manager proves it can still connect before disarming.</p>
+<h3 id="one-change-at-a-time-per-device">One change at a time per device<a class="headerlink" href="#one-change-at-a-time-per-device" title="Permanent link">&para;</a></h3>
+<p>While a protected change is being applied or verified, other writes to the same device
+are refused with HTTP 409 and <code>code: "device_busy"</code>. A revert restores a backup taken
+before its change, so a write that slipped in between would be undone with it. Reads,
+diagnostics and the manager's own records (location, monitoring) are not affected.</p>
 <h3 id="what-you-see-when-it-fires">What you see when it fires<a class="headerlink" href="#what-you-see-when-it-fires" title="Permanent link">&para;</a></h3>
 <p>Verified end to end on a CRS running RouterOS 7.23.3 by deliberately deleting a switch's
 own management address:</p>
@@ -1511,6 +1620,23 @@ satisfied to violated.</p>
 Management arrives untagged on <code>sfp28-1</code> (PVID 1) — the gateway's MAC is learned there —
 but VLAN 1 has no bridge VLAN entry listing <code>bridge1</code> as an untagged member.</p>
 </blockquote>
+<h3 id="firewall-rules">Firewall rules<a class="headerlink" href="#firewall-rules" title="Permanent link">&para;</a></h3>
+<p>The input chain is evaluated the way RouterOS does it, first match wins, for the
+connection the manager actually opens: a new TCP connection from its address to the API
+port, arriving on the interface that holds the management address. Address lists,
+interface lists and jumps into custom chains are followed. Anything the check can't
+evaluate (tcp-flags, rate limits, marks, time) counts as "maybe", and a rule that maybe
+matches makes the answer "can't tell" rather than a guess.</p>
+<p>So enabling a staged drop rule with the toggle, moving a drop above the rule that
+accepts the manager, deleting that accept rule, or removing the manager from an accepted
+address list is caught before it is applied. RouterOS's default configuration is
+understood correctly: it lets LAN traffic reach the end of the chain, so appending a
+drop-all to it is predicted as a lockout.</p>
+<p>Only the IPv4 filter table is checked. Rules in the raw table are not, and a manager
+connecting over IPv6 isn't affected by the IPv4 filter at all. If the device has
+connection tracking switched off (RouterOS turns it on only once firewall rules exist),
+the manager's address isn't known, so rules scoped to a source address count as "can't
+tell".</p>
 <h3 id="overriding-a-verdict">Overriding a verdict<a class="headerlink" href="#overriding-a-verdict" title="Permanent link">&para;</a></h3>
 <p>Deliberately awkward. The API requires <code>confirm_lockout: true</code> in the request body, and
 the UI requires typing the device name. The change then runs under Change Guard regardless,
@@ -1520,8 +1646,12 @@ so an override is a decision to <em>rely on</em> auto-revert — not to bypass p
 <ul>
 <li>you confirmed past a lockout warning,</li>
 <li>the prediction flagged as a warning, or</li>
-<li>could not be analysed (the device's state couldn't be read).</li>
+<li>could not be analysed (the device's state couldn't be read), or</li>
+<li>depends on something the check couldn't evaluate.</li>
 </ul>
+<p>A failed read of any part of the device's state counts as "could not be analysed". Before
+0.24.44 a failed read was treated as an empty table, which could produce a confident
+"safe".</p>
 <p>If the device can't arm auto-revert for one of these (the API user can't save a backup or
 add a scheduler, the flash is full, or Change Guard is turned off), the change is <strong>refused
 before anything is applied</strong>, with HTTP 422 and <code>code: "guard_required"</code>. Until 0.24.36 it

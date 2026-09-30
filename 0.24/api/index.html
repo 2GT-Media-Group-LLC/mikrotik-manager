@@ -1317,6 +1317,13 @@ curl<span class="w"> </span>-sk<span class="w"> </span>-X<span class="w"> </span
 <p>A confirmed override requires auto-revert. If the device can't arm it, the request fails
 with <strong>422</strong> and <code>code: "guard_required"</code>, and nothing is applied. The same applies when
 the prediction flagged a warning or couldn't read the device.</p>
+<p>For a DELETE, which has no body, send <code>?confirm_lockout=true</code> instead.</p>
+<p>Writes to one device run one at a time. While another change to the same device is being
+applied or verified, a write returns <strong>409</strong> with <code>code: "device_busy"</code>; retry after a few
+seconds. It is told apart from a lockout by <code>code</code>, and a lockout always carries
+<code>lockout: true</code>.</p>
+<p>Firewall, NAT, address-list, routing and WireGuard writes return a short <code>message</code> and the
+<code>guard</code> block rather than the updated table; read the table again with the matching GET.</p>
 <p>A successful guarded change returns a <code>guard</code> block describing what happened:
 <code>confirmed</code>, <code>auto_reverting</code>, an <code>unprotected_reason</code> when a routine change ran without
 the safety net, or <code>revert_may_fire_at</code> when the change was kept but its revert couldn't be
