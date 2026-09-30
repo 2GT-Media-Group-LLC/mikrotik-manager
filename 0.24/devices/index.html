@@ -1380,9 +1380,13 @@ retyped per device.</p>
 a router's own <code>/ip cloud</code> DDNS name). Pasting a full URL like <code>https://203.0.113.5:8729/</code>
 works too — the port is pulled out into the API Port field automatically. The same goes for an
 address with a port sent through the API: it is used as the API port, and refused if a
-different port is also given. Reaching a device
-over the internet on the plaintext API port (8728) sends the login unencrypted, so the form
-warns and suggests api-ssl (port 8729) or a VPN instead.</p>
+different port is also given.</p>
+<p>Leave <strong>API Port</strong> blank and the manager tries <strong>API-SSL (8729) first</strong>, falling back to the
+plain API (8728) if the device doesn't offer it. Both are tried at once, so a device without
+API-SSL isn't slower to add. A port you enter, or one in the credential preset, is used as
+given. The plain API sends the login unencrypted on every poll, so a device that ended up on
+8728 is listed on the <a href="../security/#encrypted-management-api-ssl">Security page</a>, where it
+can be switched over. Choosing 8728 for a public address still shows a warning.</p>
 <h3 id="ipv6-addresses">IPv6 addresses<a class="headerlink" href="#ipv6-addresses" title="Permanent link">&para;</a></h3>
 <p>Enter an IPv6 address with or without brackets: <code>2001:db8::1</code> and <code>[2001:db8::1]</code> both work,
 and <code>[2001:db8::1]:8729</code> puts 8729 in the API Port field.</p>

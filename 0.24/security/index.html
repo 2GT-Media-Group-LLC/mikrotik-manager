@@ -580,6 +580,24 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#encrypted-management-api-ssl" class="md-nav__link">
+    <span class="md-ellipsis">
+      Encrypted management (API-SSL)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#certificate-and-host-key-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Certificate and host key pinning
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#routeros-vulnerabilities" class="md-nav__link">
     <span class="md-ellipsis">
       RouterOS vulnerabilities
@@ -1045,6 +1063,24 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#encrypted-management-api-ssl" class="md-nav__link">
+    <span class="md-ellipsis">
+      Encrypted management (API-SSL)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#certificate-and-host-key-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Certificate and host key pinning
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#routeros-vulnerabilities" class="md-nav__link">
     <span class="md-ellipsis">
       RouterOS vulnerabilities
@@ -1075,6 +1111,59 @@
 <p><a href="../">← Documentation index</a></p>
 <p>The Security page brings together the fleet's firewall posture, certificates, and known
 vulnerabilities in the RouterOS versions it runs.</p>
+<h2 id="encrypted-management-api-ssl">Encrypted management (API-SSL)<a class="headerlink" href="#encrypted-management-api-ssl" title="Permanent link">&para;</a></h2>
+<p>The manager talks to each device over the RouterOS API. On the plain API (port 8728) the
+device's username and password cross the network unencrypted on every poll, every 30
+seconds. API-SSL (port 8729) encrypts the whole session.</p>
+<p>While any device is still on the plain API, the Security page shows a notice listing them
+("N devices are managed over the unencrypted API"). Once every device is on API-SSL the
+notice goes away. <strong>Switch to API-SSL</strong> (per device, or <strong>Switch all online</strong> when more
+than one is online) does this on the device:</p>
+<ol>
+<li>Uses the certificate already assigned to the <code>api-ssl</code> service if it has a working one.
+   Otherwise it creates a self-signed certificate named <code>mtm-api-ssl</code> (valid 10 years) and
+   signs it on the device, which takes a few seconds, longer on small devices.</li>
+<li>Enables <code>api-ssl</code> on port 8729 with that certificate.</li>
+<li>Logs in over API-SSL on a new connection. Only if that works does the manager move its
+   connection for the device to 8729.</li>
+</ol>
+<p>If the login over API-SSL fails, the device stays on 8728 and the card says why. The usual
+cause is a firewall rule, or the <code>api-ssl</code> service's <em>Available From</em> list, that lets 8728 in
+but not 8729. The plain <code>api</code> service is left running either way; once a device is on
+API-SSL, its <strong>Security</strong> tab offers to turn the plain API off.</p>
+<p>The same switch is on each device's <strong>Security</strong> tab, next to the <em>MikroTik Manager connects
+over the plain API</em> finding.</p>
+<p>The certificate is self-signed, so there is no certificate authority to check it against.
+Instead the manager pins it, below.</p>
+<h2 id="certificate-and-host-key-pinning">Certificate and host key pinning<a class="headerlink" href="#certificate-and-host-key-pinning" title="Permanent link">&para;</a></h2>
+<p>The first time the manager connects to a device over API-SSL it remembers the device's
+certificate, and the first time over SSH its host key. Every later connection has to present
+the same one. If it doesn't, the manager stops <strong>before sending the device's login</strong>, so
+someone posing as the device on the network never receives the password.</p>
+<p>When that happens:</p>
+<ul>
+<li>the device shows as offline, and its page shows a red banner with the fingerprint the
+  manager trusts and the one the device now presents;</li>
+<li>the Security page lists it at the top;</li>
+<li>a critical event is logged and the <code>device_identity_changed</code> alert fires (on by default).</li>
+</ul>
+<p>A changed certificate or host key usually has an ordinary cause: the device was reset, its
+certificate was regenerated, or it was replaced. Check the new fingerprint on the device
+before trusting it:</p>
+<ul>
+<li><strong>Certificate:</strong> on the device, <strong>System → Certificates</strong>, open the certificate the
+  <code>api-ssl</code> service uses and compare its <strong>Fingerprint</strong>. The manager shows it in the same
+  form.</li>
+<li><strong>SSH host key:</strong> from a computer on a network you trust, run
+  <code>ssh-keyscan -p PORT ADDRESS | ssh-keygen -lf -</code> and compare the <code>SHA256:</code> value.</li>
+</ul>
+<p>An admin then clicks <strong>Trust new certificate</strong> (or <strong>Trust new host key</strong>) on the banner, and
+the manager reconnects. When the manager replaces a device's certificate itself, through
+<strong>Switch to API-SSL</strong>, it updates the pin on its own.</p>
+<p>Pinning starts silently on upgrade: devices already managed are pinned the next time the
+manager connects to them. Manage each device by its own address; two devices sharing an
+address (a VRRP address, for example) would look like one device whose certificate keeps
+changing.</p>
 <h2 id="routeros-vulnerabilities">RouterOS vulnerabilities<a class="headerlink" href="#routeros-vulnerabilities" title="Permanent link">&para;</a></h2>
 <p>Every RouterOS version in use in the current site is listed with the known vulnerabilities
 (CVEs) filed against it. Versions with the most serious problems come first, and a version

@@ -1254,6 +1254,10 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 <td><code>device_degraded</code> / <code>device_health_restored</code></td>
 <td>A power supply, fan or temperature problem appeared or cleared. See <a href="../devices/#hardware-health">Hardware health</a></td>
 </tr>
+<tr>
+<td><code>device_identity_changed</code></td>
+<td>A device's API-SSL certificate or SSH host key changed, so the manager stopped connecting to it (on by default). See <a href="../security/#certificate-and-host-key-pinning">Certificate and host key pinning</a></td>
+</tr>
 </tbody>
 </table>
 <p>Alerts are suppressed for devices inside an active <a href="#maintenance-windows">maintenance window</a>.
@@ -1380,7 +1384,7 @@ being woken by:</p>
 </thead>
 <tbody>
 <tr>
-<td>Device offline, log errors, CPU/memory pressure</td>
+<td>Device offline or degraded, certificate or host key changed, log errors, CPU/memory pressure</td>
 <td><strong>4</strong> — breaks through do-not-disturb</td>
 </tr>
 <tr>
@@ -1430,7 +1434,7 @@ wake only for the events you care about rather than needing a channel per event.
 </thead>
 <tbody>
 <tr>
-<td>Device offline or degraded, log errors, CPU/memory pressure</td>
+<td>Device offline or degraded, certificate or host key changed, log errors, CPU/memory pressure</td>
 <td><strong>8</strong></td>
 </tr>
 <tr>
@@ -1444,9 +1448,10 @@ wake only for the events you care about rather than needing a channel per event.
 </tbody>
 </table>
 <h2 id="outbound-webhooks">Outbound webhooks<a class="headerlink" href="#outbound-webhooks" title="Permanent link">&para;</a></h2>
-<p>Subscribe any URL to twelve events: device up/down, log errors, high CPU, high memory,
-certificate expiry, device discovered, firmware update available, config drift, and
-firmware rollout completed/failed.</p>
+<p>Subscribe any URL to fifteen events: device up/down, log errors and warnings, high CPU, high
+memory, certificate expiry, device discovered, firmware update available, config drift,
+firmware rollout completed/failed, hardware degraded/healthy again, and a changed device
+certificate or host key.</p>
 <p>Deliveries are JSON <code>POST</code>s, <strong>HMAC-SHA256 signed</strong> in <code>X-MTM-Signature</code> when a secret is
 set. Last-delivery status is tracked per webhook and there is a Send-test button.</p>
 <p>Webhooks fire through the same pipeline as other alerts, so they respect alert rules,
