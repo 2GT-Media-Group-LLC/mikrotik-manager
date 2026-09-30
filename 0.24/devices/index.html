@@ -443,6 +443,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#ipv6-addresses" class="md-nav__link">
+    <span class="md-ellipsis">
+      IPv6 addresses
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#importing-from-csv" class="md-nav__link">
     <span class="md-ellipsis">
       Importing from CSV
@@ -1193,6 +1202,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#ipv6-addresses" class="md-nav__link">
+    <span class="md-ellipsis">
+      IPv6 addresses
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#importing-from-csv" class="md-nav__link">
     <span class="md-ellipsis">
       Importing from CSV
@@ -1365,6 +1383,38 @@ address with a port sent through the API: it is used as the API port, and refuse
 different port is also given. Reaching a device
 over the internet on the plaintext API port (8728) sends the login unencrypted, so the form
 warns and suggests api-ssl (port 8729) or a VPN instead.</p>
+<h3 id="ipv6-addresses">IPv6 addresses<a class="headerlink" href="#ipv6-addresses" title="Permanent link">&para;</a></h3>
+<p>Enter an IPv6 address with or without brackets: <code>2001:db8::1</code> and <code>[2001:db8::1]</code> both work,
+and <code>[2001:db8::1]:8729</code> puts 8729 in the API Port field.</p>
+<p>Reaching IPv6 devices is <strong>off by default</strong>, because it changes how Docker sets up the
+host's networking. Turn it on only if you have devices you can reach only over IPv6.</p>
+<p><strong>Before you turn it on</strong>, check the host:</p>
+<ul>
+<li><strong>It has IPv6 itself.</strong> If <code>curl -6 https://ipv6.google.com</code> fails on the host, the
+  manager can't reach IPv6 devices either.</li>
+<li><strong>Docker 27 or later.</strong> Check with <code>docker version</code>.</li>
+<li><strong><code>accept_ra=2</code> on its network interface.</strong> Docker enables IPv6 forwarding when it creates
+  an IPv6 network, and most Linux distributions then stop accepting router advertisements.
+  A host that gets its IPv6 address and default route automatically can lose its own IPv6
+  connectivity. Setting <code>accept_ra</code> to 2 keeps it, for example for <code>eth0</code>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nb">echo</span><span class="w"> </span><span class="s1">'net.ipv6.conf.eth0.accept_ra = 2'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/sysctl.d/99-docker-ipv6.conf
+sudo<span class="w"> </span>sysctl<span class="w"> </span>--system
+</code></pre></div>
+<p>Hosts with a static IPv6 address and gateway don't need this.</p>
+<p><strong>To turn it on</strong>, add this line to <code>.env</code> next to your compose file:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">ENABLE_IPV6</span><span class="o">=</span><span class="nb">true</span>
+</code></pre></div>
+<p>then recreate the stack. Your data is kept, and the manager is down for about a minute:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>down
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<p>With the pre-built images, add <code>-f docker-compose.ghcr.yml</code> to both commands.</p>
+<p>To turn it off, remove the line and run the same two commands.</p>
+<p>Use <code>down</code> then <code>up</code> rather than just <code>up -d</code>. Docker has to rebuild the network when this
+setting changes. Recent Compose versions do that on a plain <code>up -d</code>, but older ones can keep
+the old network and not apply the change. <code>down</code> then <code>up</code> works on all of them.</p>
+<p>IPv4 devices work the same either way.</p>
 <div class="admonition note">
 <p class="admonition-title">Reachable over a VPN but not over its public IP?</p>
 <p>RouterOS's own <code>IP → Services</code> list restricts each service (<code>api</code>, <code>api-ssl</code>) by an
