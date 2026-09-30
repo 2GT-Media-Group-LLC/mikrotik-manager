@@ -218,8 +218,7 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
     }
 
     case 'firewall.set': {
-      const rule = s.firewallFilter.find((r) => r['.id'] === change.ruleId);
-      if (rule) mergeFields(rule, change.fields);
+      s.firewallFilter = s.firewallFilter.map((r) => (r['.id'] === change.ruleId ? mergeFields(r, change.fields) : r));
       break;
     }
 
@@ -246,7 +245,7 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
     case 'address-list.set': {
       const entry = (s.addressLists ?? []).find((e) => e['.id'] === change.entryId);
       if (entry) {
-        mergeFields(entry, change.fields);
+        s.addressLists = (s.addressLists ?? []).map((e) => (e === entry ? mergeFields(e, change.fields) : e));
       } else if (change.fields['list']) {
         // An entry we didn't read is moving into a list; that list can no
         // longer be vouched for.
@@ -273,12 +272,19 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
   return s;
 }
 
-/** Apply edited fields to a row; an empty value clears the property. */
-function mergeFields(row: RosRow, fields: Record<string, string>): void {
-  for (const [k, v] of Object.entries(fields)) {
-    if (v === '') Reflect.deleteProperty(row, k);
-    else Object.assign(row, { [k]: v });
-  }
+/** RouterOS property names; anything else in a request is ignored. */
+const ROS_PROPERTY = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/;
+
+/**
+ * A row with edited fields applied; an empty value clears the property.
+ * Builds a new row from RouterOS-shaped names only, so request-supplied keys
+ * never land on an existing object (CodeQL js/remote-property-injection).
+ */
+function mergeFields(row: RosRow, fields: Record<string, string>): RosRow {
+  const edits = new Map(Object.entries(fields).filter(([k]) => ROS_PROPERTY.test(k)));
+  const kept = Object.entries(row).filter(([k]) => !edits.has(k));
+  const set = [...edits].filter(([, v]) => v !== '');
+  return Object.fromEntries([...kept, ...set]);
 }
 
 /** Objects the management path runs through, by name. */
