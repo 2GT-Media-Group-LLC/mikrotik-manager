@@ -1,4 +1,7 @@
 import { Router, Request, Response } from 'express';
+import { deviceWriteLock, deviceIdFromQuery } from '../services/changeGuard/deviceLock';
+import { withGuardedChange } from '../services/changeGuard/guardedRoute';
+import type { PlannedChange } from '../services/changeGuard/analyzeChange';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
@@ -14,6 +17,8 @@ router.use(requireAuth);
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
 // WireGuard private keys, SNMP communities, hotspot passwords).
 router.use(maskSecretsForReadOnly);
+// One write at a time per device, so a Change Guard revert can't undo another write.
+router.use(deviceWriteLock(deviceIdFromQuery));
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -403,13 +408,15 @@ router.get('/wireguard', async (req: Request, res: Response) => {
   });
 });
 
-// POST /api/network-services/wireguard?deviceId=X — create interface
+// WireGuard writes run under Change Guard (outside review P2-8). Turning off or
+// deleting the tunnel the manager arrives through is predicted as a lockout;
+// the rest has no model, but is undone automatically if it cuts the manager off.
+
+// POST /api/network-services/wireguard?deviceId=X — add interface
 router.post('/wireguard', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withDevice(deviceId, res, async (collector) => {
-    const interfaces = await collector.addWireGuardInterface(req.body);
-    res.json(interfaces);
-  });
+  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.add', summary: 'Add WireGuard interface' },
+    async (c) => { await c.addWireGuardInterface(req.body); return { success: true }; });
 });
 
 // PUT /api/network-services/wireguard/toggle — enable/disable (must be before /:id)
@@ -418,58 +425,56 @@ router.put('/wireguard/toggle', requireWrite, async (req: Request, res: Response
   const { interfaceId, disabled } = req.body;
   if (!interfaceId) return res.status(400).json({ error: 'interfaceId is required' });
   if (typeof disabled !== 'boolean') return res.status(400).json({ error: 'disabled (boolean) is required' });
-  await withDevice(deviceId, res, async (collector) => {
-    await collector.setWireGuardInterfaceDisabled(interfaceId, disabled);
-    res.json({ success: true });
-  });
+  await withGuardedChange(deviceId, req, res,
+    { kind: 'wireguard.toggle', summary: `${disabled ? 'Disable' : 'Enable'} WireGuard interface`,
+      change: { kind: 'interface.disable', name: String(interfaceId), disabled } },
+    async (c) => { await c.setWireGuardInterfaceDisabled(interfaceId, disabled); return { success: true }; });
 });
 
 // PUT /api/network-services/wireguard/:id?deviceId=X — update interface
 router.put('/wireguard/:id', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withDevice(deviceId, res, async (collector) => {
-    await collector.updateWireGuardInterface(req.params.id, req.body);
-    const updated = await collector.getWireGuardInterfaces();
-    res.json(updated);
-  });
+  await withGuardedChange(deviceId, req, res,
+    { kind: 'wireguard.set', summary: 'Edit WireGuard interface',
+      change: { kind: 'path-object.change', name: String(req.body?.name ?? req.params.id), what: 'Changing this WireGuard interface' } },
+    async (c) => { await c.updateWireGuardInterface(req.params.id, req.body); return { success: true }; });
 });
 
 // DELETE /api/network-services/wireguard/:id?deviceId=X — delete interface
 router.delete('/wireguard/:id', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withDevice(deviceId, res, async (collector) => {
-    await collector.removeWireGuardInterface(req.params.id);
-    res.json({ success: true });
-  });
+  await withGuardedChange(deviceId, req, res,
+    // For reachability, a deleted tunnel is a disabled one.
+    { kind: 'wireguard.remove', summary: 'Delete WireGuard interface',
+      change: { kind: 'interface.disable', name: req.params.id, disabled: true } },
+    async (c) => { await c.removeWireGuardInterface(req.params.id); return { success: true }; });
 });
+
+// Peers change what the tunnel carries; a peer on the manager's tunnel is flagged.
+const peerChange = (req: Request): PlannedChange | undefined => {
+  const iface = (req.body as { interface?: string } | undefined)?.interface;
+  return iface ? { kind: 'path-object.change', name: String(iface), what: 'Changing a WireGuard peer' } : undefined;
+};
 
 // POST /api/network-services/wireguard/peer?deviceId=X — add peer
 router.post('/wireguard/peer', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withDevice(deviceId, res, async (collector) => {
-    await collector.addWireGuardPeer(req.body);
-    const peers = await collector.getWireGuardPeers();
-    res.json(peers);
-  });
+  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.add', summary: 'Add WireGuard peer', change: peerChange(req) },
+    async (c) => { await c.addWireGuardPeer(req.body); return { success: true }; });
 });
 
 // PUT /api/network-services/wireguard/peer/:id?deviceId=X — update peer
 router.put('/wireguard/peer/:id', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withDevice(deviceId, res, async (collector) => {
-    await collector.updateWireGuardPeer(req.params.id, req.body);
-    const peers = await collector.getWireGuardPeers();
-    res.json(peers);
-  });
+  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.set', summary: 'Edit WireGuard peer', change: peerChange(req) },
+    async (c) => { await c.updateWireGuardPeer(req.params.id, req.body); return { success: true }; });
 });
 
 // DELETE /api/network-services/wireguard/peer/:id?deviceId=X — delete peer
 router.delete('/wireguard/peer/:id', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withDevice(deviceId, res, async (collector) => {
-    await collector.removeWireGuardPeer(req.params.id);
-    res.json({ success: true });
-  });
+  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.remove', summary: 'Delete WireGuard peer' },
+    async (c) => { await c.removeWireGuardPeer(req.params.id); return { success: true }; });
 });
 
 // ─── Syslog ───────────────────────────────────────────────────────────────────

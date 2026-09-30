@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { randomUUID } from 'crypto';
 import { Client as SshClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
@@ -12,7 +13,6 @@ import { createDeviceFromBody, loadCredentialPreset, type CreateDeviceInput } fr
 import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
 import { normalizeDeviceAddress, reconcileAddressPort } from '../utils/deviceAddress';
-import { detectLockoutRisk } from '../utils/firewallSafety';
 import { withSafeApply, probeCapability, probeUndoCapability, GuardRequiredError, type GuardDevice } from '../services/changeGuard/ChangeGuard';
 import { captureSnapshot, resolveManagementPath } from '../services/changeGuard/pathModel';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
@@ -21,6 +21,7 @@ import { isMultiVlanSpec } from '../utils/vlan';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
 import { logSafe } from '../utils/logSafe';
+import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import { updateAvailable } from '../utils/rosVersion';
 import { DEVICE_BASE_COLUMNS } from '../services/deviceColumns';
 import { withEffectiveLocation } from '../services/deviceLocation';
@@ -47,6 +48,8 @@ router.use(requireAuth);
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
 // WireGuard private keys, SNMP communities, hotspot passwords).
 router.use(maskSecretsForReadOnly);
+// One write at a time per device, so a Change Guard revert can't undo another write.
+router.use(deviceWriteLock(deviceIdFromPath));
 
 let pollerService: PollerService | null = null;
 export function setPollerService(p: PollerService): void {
@@ -621,17 +624,26 @@ router.get('/:id/interfaces', async (req: Request, res: Response) => {
 });
 
 // PUT /api/devices/:id/interfaces/:name
+//
+// Anything that can take the link down (disabling it, MTU, FEC, flow control,
+// speed, PoE) runs under Change Guard: disabling is simulated, the rest counts as
+// an unsimulated change to whatever the management path runs through. Only a
+// comment edit skips the guard. These used to run unguarded even though the
+// analyser already modelled interface.disable (outside review P2-8).
 router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<{ id: number; ip_address: string; api_port: number; api_username: string; api_password_encrypted: string }>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const name = req.params.name;
+  const { disabled, comment, mtu, poe_out, fec_mode, tx_flow_control, rx_flow_control, auto_negotiation, speed } = req.body;
 
-  const collector = new DeviceCollector(deviceRow as unknown as DeviceRow);
-  try {
-    await collector.connect();
-    const { disabled, comment, mtu, poe_out, fec_mode, tx_flow_control, rx_flow_control, auto_negotiation, speed } = req.body;
+  const changes: PlannedChange[] = [];
+  if (typeof disabled === 'boolean') changes.push({ kind: 'interface.disable', name, disabled });
+  const linkChange = (what: string) => changes.push({ kind: 'path-object.change', name, what });
+  if (typeof mtu === 'number') linkChange('Changing the MTU');
+  if (fec_mode) linkChange('Changing FEC');
+  if (tx_flow_control !== undefined || rx_flow_control !== undefined) linkChange('Changing flow control');
+  if (typeof auto_negotiation === 'boolean') linkChange('Changing speed or auto-negotiation');
+  if (poe_out) linkChange('Changing PoE output');
+
+  const apply = async (collector: DeviceCollector) => {
     if (typeof disabled === 'boolean') {
       await collector.setInterfaceEnabled(req.params.name, !disabled);
     }
@@ -657,11 +669,24 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
     if (typeof auto_negotiation === 'boolean') {
       await collector.setAutoNegotiation(req.params.name, auto_negotiation, speed);
     }
-    await collector.collectInterfaces();
-    return res.json({ message: 'Interface updated' });
-  } finally {
-    collector.disconnect();
+    return { message: 'Interface updated' };
+  };
+
+  if (changes.length === 0) {
+    await withCollector(req.params.id, res, async (c) => {
+      const out = await apply(c);
+      await c.collectInterfaces();
+      return out;
+    });
+    return;
   }
+  const summary = typeof disabled === 'boolean' && changes.length === 1
+    ? `${disabled ? 'Disable' : 'Enable'} interface ${name}`
+    : `Change interface ${name}`;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'interface.set', summary, change: changes.length === 1 ? changes[0] : { kind: 'batch', changes } },
+    apply,
+    async (c) => { await c.collectInterfaces(); });
 });
 
 // PUT /api/devices/:id/ports/:name/vlan - configure VLAN for a switch port
@@ -887,67 +912,43 @@ function bodyToRosParams(body: Record<string, unknown>, keepEmpty = false): Reco
   return params;
 }
 
+// Firewall filter writes run under Change Guard with a simulated change, so the
+// lockout check sees the rule as it will be: a toggle that sends only
+// disabled=no, a move or a delete used to skip the check (outside review P2-8).
+// `force` is the older name for confirm_lockout and is still accepted.
+
 // POST /api/devices/:id/firewall
 router.post('/:id/firewall', requireWrite, async (req: Request, res: Response) => {
-  const { chain, action, force } = req.body;
+  const { chain, action } = req.body;
   if (!chain || !action) return res.status(400).json({ error: 'chain and action are required' });
   const params = bodyToRosParams(req.body);
-  // Safe-apply: refuse a self-lockout rule unless the operator confirms (force).
-  if (!force) {
-    const lock = detectLockoutRisk(params);
-    if (lock.risky) return res.status(409).json({ lockout: true, reason: lock.reason });
-  }
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addFirewallRule(params);
-    return res.status(201).json(await collector.getFirewallRules());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'firewall.add', summary: `Add ${chain} ${action} firewall rule`,
+      change: { kind: 'firewall.add', fields: params } },
+    async (c) => { await c.addFirewallRule(params); return { message: 'Rule added' }; });
 });
 
 // PUT /api/devices/:id/firewall/:ruleId
 router.put('/:id/firewall/:ruleId', requireWrite, async (req: Request, res: Response) => {
   const params = bodyToRosParams(req.body, true);
-  if (!req.body.force) {
-    const lock = detectLockoutRisk(params);
-    if (lock.risky) return res.status(409).json({ lockout: true, reason: lock.reason });
-  }
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.updateFirewallRule(req.params.ruleId, params);
-    return res.json(await collector.getFirewallRules());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  const ruleId = req.params.ruleId;
+  const summary = Object.keys(params).length === 1 && 'disabled' in params
+    ? `${params.disabled === 'yes' || params.disabled === 'true' ? 'Disable' : 'Enable'} firewall rule`
+    : 'Edit firewall rule';
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'firewall.set', summary, change: { kind: 'firewall.set', ruleId, fields: params } },
+    async (c) => { await c.updateFirewallRule(ruleId, params); return { message: 'Rule updated' }; });
 });
 
 // POST /api/devices/:id/firewall/move  { id, destination? }
 router.post('/:id/firewall/move', requireWrite, async (req: Request, res: Response) => {
   const { id, destination } = req.body;
   if (!id) return res.status(400).json({ error: 'id is required' });
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.moveFirewallRule(String(id), destination ? String(destination) : undefined);
-    return res.json(await collector.getFirewallRules());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  const ruleId = String(id);
+  const dest = destination ? String(destination) : undefined;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'firewall.move', summary: 'Move firewall rule', change: { kind: 'firewall.move', ruleId, destination: dest } },
+    async (c) => { await c.moveFirewallRule(ruleId, dest); return { message: 'Rule moved' }; });
 });
 
 // POST /api/devices/:id/firewall/reset-counters
@@ -966,20 +967,12 @@ router.post('/:id/firewall/reset-counters', requireWrite, async (req: Request, r
   }
 });
 
-// DELETE /api/devices/:id/firewall/:ruleId
+// DELETE /api/devices/:id/firewall/:ruleId  (?confirm_lockout=true to override a warning)
 router.delete('/:id/firewall/:ruleId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.deleteFirewallRule(req.params.ruleId);
-    return res.json({ message: 'Rule deleted' });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  const ruleId = req.params.ruleId;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'firewall.remove', summary: 'Delete firewall rule', change: { kind: 'firewall.remove', ruleId } },
+    async (c) => { await c.deleteFirewallRule(ruleId); return { message: 'Rule deleted' }; });
 });
 
 // ─── NAT Rules ────────────────────────────────────────────────────────────────
@@ -1018,184 +1011,43 @@ router.get('/:id/nat', async (req: Request, res: Response) => {
   }
 });
 
+// NAT writes run under Change Guard. There is no model of NAT, so nothing is
+// predicted, but a dst-nat or redirect that catches the manager's own traffic
+// is undone automatically instead of stranding the device (outside review P2-8).
+
 // POST /api/devices/:id/nat
 router.post('/:id/nat', requireWrite, async (req: Request, res: Response) => {
   const { chain, action } = req.body;
   if (!chain || !action) return res.status(400).json({ error: 'chain and action are required' });
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addNatRule(natBodyToRosParams(req.body));
-    return res.status(201).json(await collector.getNatRules());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  const params = natBodyToRosParams(req.body);
+  await withGuardedChange(req.params.id, req, res, { kind: 'nat.add', summary: `Add ${chain} ${action} NAT rule` },
+    async (c) => { await c.addNatRule(params); return { message: 'NAT rule added' }; });
 });
 
 // PUT /api/devices/:id/nat/:ruleId
 router.put('/:id/nat/:ruleId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.updateNatRule(req.params.ruleId, natBodyToRosParams(req.body, true));
-    return res.json(await collector.getNatRules());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  const params = natBodyToRosParams(req.body, true);
+  await withGuardedChange(req.params.id, req, res, { kind: 'nat.set', summary: 'Edit NAT rule' },
+    async (c) => { await c.updateNatRule(req.params.ruleId, params); return { message: 'NAT rule updated' }; });
 });
 
 // DELETE /api/devices/:id/nat/:ruleId
 router.delete('/:id/nat/:ruleId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.deleteNatRule(req.params.ruleId);
-    return res.json({ message: 'NAT rule deleted' });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(req.params.id, req, res, { kind: 'nat.remove', summary: 'Delete NAT rule' },
+    async (c) => { await c.deleteNatRule(req.params.ruleId); return { message: 'NAT rule deleted' }; });
 });
 
 // POST /api/devices/:id/nat/move  { id, destination? }
 router.post('/:id/nat/move', requireWrite, async (req: Request, res: Response) => {
   const { id, destination } = req.body;
   if (!id) return res.status(400).json({ error: 'id is required' });
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.moveNatRule(String(id), destination ? String(destination) : undefined);
-    return res.json(await collector.getNatRules());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  await withGuardedChange(req.params.id, req, res, { kind: 'nat.move', summary: 'Move NAT rule' },
+    async (c) => { await c.moveNatRule(String(id), destination ? String(destination) : undefined); return { message: 'NAT rule moved' }; });
 });
 
 // ─── Firewall Address Lists ─────────────────────────────────────────────────────
 // Shared helper for the security-feature routes below (DRYs the device fetch +
 // connect/disconnect lifecycle the rest of this file uses inline).
-/**
- * Run a device mutation under the Change Guard safety net (see
- * services/changeGuard/ChangeGuard.ts): the device saves a restore point and arms
- * a self-restore before the change, and disarms it only once we prove the device
- * is still reachable. Used for changes that can sever the manager's own path.
- *
- * The response always carries a `guard` block so the UI can say whether the change
- * was confirmed, is being auto-reverted, or ran unprotected.
- */
-async function withGuardedChange<T>(
-  id: string,
-  req: Request,
-  res: Response,
-  meta: { kind: string; summary: string; change?: PlannedChange },
-  fn: (c: DeviceCollector) => Promise<T>,
-  afterConfirmed?: (c: DeviceCollector) => Promise<void>
-): Promise<void> {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]);
-  if (!deviceRow) { res.status(404).json({ error: 'Device not found' }); return; }
-
-  // Pre-flight: simulate the change against live state and refuse a predicted
-  // lockout unless the user has explicitly accepted it.
-  //
-  // Whenever this is anything short of a clean "safe" (a warning, a lockout the
-  // user confirmed past, or an analysis that could not run), the change also
-  // requires auto-revert: if the device cannot arm it, the change is refused
-  // rather than applied with no way back. An analysis failure still does not
-  // block a change on its own; it just means the safety net is not optional.
-  const confirmedLockout = req.body?.confirm_lockout === true;
-  let requireProtection = confirmedLockout;
-  if (meta.change && !confirmedLockout) {
-    try {
-      const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);
-      const verdict = analyzeChange(snap, deviceRow as unknown as GuardDevice, meta.change);
-      if (verdict.severity !== 'safe') requireProtection = true;
-      if (verdict.severity === 'critical') {
-        res.status(409).json({
-          lockout: true,
-          reason: verdict.headline,
-          verdict: {
-            severity: verdict.severity,
-            headline: verdict.headline,
-            violations: verdict.violations,
-            warnings: verdict.warnings,
-            path: {
-              mgmt_interface: verdict.path.mgmtInterface,
-              bridge: verdict.path.bridge,
-              mgmt_vlan_id: verdict.path.mgmtVlanId,
-              tagged_management: verdict.path.taggedManagement,
-              ingress_port: verdict.path.ingressPort,
-              ingress_port_source: verdict.path.ingressPortSource,
-              hops: verdict.path.hops,
-            },
-          },
-        });
-        return;
-      }
-    } catch (err) {
-      requireProtection = true;
-      console.warn(`[preflight] analysis skipped for device ${logSafe(id)}: ${logSafe((err as Error).message)}`);
-    }
-  }
-
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    const outcome = await withSafeApply(
-      deviceRow as unknown as GuardDevice,
-      { ...meta, userId: req.user?.userId ?? null, requireProtection },
-      async () => {
-        await collector.connect();
-        return fn(collector);
-      }
-    );
-
-    // Only re-read the device once we know it's still reachable.
-    if (outcome.confirmed && afterConfirmed) {
-      await afterConfirmed(collector).catch(() => { /* best effort */ });
-    }
-
-    res.json({
-      ...(typeof outcome.result === 'object' && outcome.result !== null
-        ? outcome.result as Record<string, unknown>
-        : { result: outcome.result }),
-      // A change that severed the connection produces no result — the request never
-      // got a reply. Say what is happening rather than returning a bare guard block.
-      ...(outcome.result === undefined && outcome.autoReverting
-        ? { message: 'Contact with the device was lost while applying this change. It is restoring itself and should come back shortly.' }
-        : {}),
-      guard: {
-        protected: !outcome.unprotectedReason,
-        confirmed: outcome.confirmed,
-        auto_reverting: outcome.autoReverting,
-        unprotected_reason: outcome.unprotectedReason ?? null,
-        revert_may_fire_at: outcome.revertMayFireAt ?? null,
-      },
-    });
-  } catch (err) {
-    if (err instanceof GuardRequiredError) {
-      res.status(422).json({ error: err.message, code: err.code });
-      return;
-    }
-    res.status(500).json({ error: (err as Error).message });
-  } finally {
-    try { collector.disconnect(); } catch { /* device may be gone */ }
-  }
-}
-
 async function withCollector<T>(
   id: string,
   res: Response,
@@ -1320,24 +1172,35 @@ router.get('/:id/address-lists', async (req, res) => {
   await withCollector(req.params.id, res, (c) => c.getAddressLists());
 });
 
+// Address-list writes are guarded too: the manager may be accepted by a list,
+// and removing it from that list locks it out (P2-8).
 router.post('/:id/address-lists', requireWrite, async (req, res) => {
   const { list, address } = req.body;
   if (!list || !address) return res.status(400).json({ error: 'list and address are required' });
   const params: Record<string, string> = { list: String(list), address: String(address) };
   if (req.body.comment) params.comment = String(req.body.comment);
   if (req.body.timeout) params.timeout = String(req.body.timeout);
-  await withCollector(req.params.id, res, async (c) => { await c.addAddressListEntry(params); return c.getAddressLists(); });
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'address-list.add', summary: `Add ${params.address} to address list ${params.list}`,
+      change: { kind: 'address-list.add', fields: params } },
+    async (c) => { await c.addAddressListEntry(params); return { message: 'Entry added' }; });
 });
 
 router.put('/:id/address-lists/:entryId', requireWrite, async (req, res) => {
   const params: Record<string, string> = {};
   for (const k of ['list', 'address', 'comment'] as const) if (req.body[k] !== undefined) params[k] = String(req.body[k]);
   if (req.body.disabled !== undefined) params.disabled = req.body.disabled ? 'yes' : 'no';
-  await withCollector(req.params.id, res, async (c) => { await c.updateAddressListEntry(req.params.entryId, params); return c.getAddressLists(); });
+  const entryId = req.params.entryId;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'address-list.set', summary: 'Edit address list entry', change: { kind: 'address-list.set', entryId, fields: params } },
+    async (c) => { await c.updateAddressListEntry(entryId, params); return { message: 'Entry updated' }; });
 });
 
 router.delete('/:id/address-lists/:entryId', requireWrite, async (req, res) => {
-  await withCollector(req.params.id, res, async (c) => { await c.removeAddressListEntry(req.params.entryId); return { message: 'Entry removed' }; });
+  const entryId = req.params.entryId;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'address-list.remove', summary: 'Remove address list entry', change: { kind: 'address-list.remove', entryId } },
+    async (c) => { await c.removeAddressListEntry(entryId); return { message: 'Entry removed' }; });
 });
 
 // ─── Active Connections (read-only) ─────────────────────────────────────────────
@@ -2094,56 +1957,27 @@ router.get('/:id/routing/ospf', async (req: Request, res: Response) => {
   } finally { collector.disconnect(); }
 });
 
+// OSPF, BGP, routing tables and filters run under Change Guard. None of it is
+// simulated, but deleting the instance that carries the route back to the
+// manager is undone automatically instead of stranding the device (P2-8).
 router.post('/:id/routing/ospf/instance', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addOspfInstance(req.body);
-    return res.status(201).json(await collector.getOspfData());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.ospf.instance.post', summary: 'Add routing ospf instance' },
+    async (collector) => { await collector.addOspfInstance(req.body); return { success: true }; });
 });
 
 router.delete('/:id/routing/ospf/instance/:itemId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.removeOspfInstance(decodeURIComponent(req.params.itemId));
-    return res.json({ success: true });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.ospf.instance.delete', summary: 'Remove routing ospf instance' },
+    async (collector) => { await collector.removeOspfInstance(decodeURIComponent(req.params.itemId)); return { success: true }; });
 });
 
 router.post('/:id/routing/ospf/area', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addOspfArea(req.body);
-    return res.status(201).json(await collector.getOspfData());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.ospf.area.post', summary: 'Add routing ospf area' },
+    async (collector) => { await collector.addOspfArea(req.body); return { success: true }; });
 });
 
 router.delete('/:id/routing/ospf/area/:itemId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.removeOspfArea(decodeURIComponent(req.params.itemId));
-    return res.json({ success: true });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.ospf.area.delete', summary: 'Remove routing ospf area' },
+    async (collector) => { await collector.removeOspfArea(decodeURIComponent(req.params.itemId)); return { success: true }; });
 });
 
 // ─── BGP ──────────────────────────────────────────────────────────────────────
@@ -2158,29 +1992,13 @@ router.get('/:id/routing/bgp', async (req: Request, res: Response) => {
 });
 
 router.post('/:id/routing/bgp/connection', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addBgpConnection(req.body);
-    return res.status(201).json(await collector.getBgpData());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.bgp.connection.post', summary: 'Add routing bgp connection' },
+    async (collector) => { await collector.addBgpConnection(req.body); return { success: true }; });
 });
 
 router.delete('/:id/routing/bgp/connection/:itemId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.removeBgpConnection(decodeURIComponent(req.params.itemId));
-    return res.json({ success: true });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.bgp.connection.delete', summary: 'Remove routing bgp connection' },
+    async (collector) => { await collector.removeBgpConnection(decodeURIComponent(req.params.itemId)); return { success: true }; });
 });
 
 // ─── Routing Tables ───────────────────────────────────────────────────────────
@@ -2195,29 +2013,13 @@ router.get('/:id/routing/tables', async (req: Request, res: Response) => {
 });
 
 router.post('/:id/routing/tables', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addRoutingTable(req.body);
-    return res.status(201).json(await collector.getRoutingTablesData());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.tables.post', summary: 'Add routing tables' },
+    async (collector) => { await collector.addRoutingTable(req.body); return { success: true }; });
 });
 
 router.delete('/:id/routing/tables/:itemId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.removeRoutingTable(decodeURIComponent(req.params.itemId));
-    return res.json({ success: true });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.tables.delete', summary: 'Remove routing tables' },
+    async (collector) => { await collector.removeRoutingTable(decodeURIComponent(req.params.itemId)); return { success: true }; });
 });
 
 // ─── Route Filters ────────────────────────────────────────────────────────────
@@ -2232,42 +2034,18 @@ router.get('/:id/routing/filters', async (req: Request, res: Response) => {
 });
 
 router.post('/:id/routing/filters/rule', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.addFilterRule(req.body);
-    return res.status(201).json(await collector.getRouteFiltersData());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.filters.rule.post', summary: 'Add routing filters rule' },
+    async (collector) => { await collector.addFilterRule(req.body); return { success: true }; });
 });
 
 router.put('/:id/routing/filters/rule/:itemId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.updateFilterRule(decodeURIComponent(req.params.itemId), req.body);
-    return res.json(await collector.getRouteFiltersData());
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.filters.rule.put', summary: 'Edit routing filters rule' },
+    async (collector) => { await collector.updateFilterRule(decodeURIComponent(req.params.itemId), req.body); return { success: true }; });
 });
 
 router.delete('/:id/routing/filters/rule/:itemId', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.removeFilterRule(decodeURIComponent(req.params.itemId));
-    return res.json({ success: true });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally { collector.disconnect(); }
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.filters.rule.delete', summary: 'Remove routing filters rule' },
+    async (collector) => { await collector.removeFilterRule(decodeURIComponent(req.params.itemId)); return { success: true }; });
 });
 
 // ─── Router IDs ───────────────────────────────────────────────────────────────
@@ -2381,13 +2159,11 @@ router.delete('/:id/vlans/:vlanDbId', requireWrite, async (req: Request, res: Re
 });
 
 // POST /api/devices/:id/vlans/copy (bulk copy VLANs from another switch)
+//
+// Guarded, and simulated as the batch of VLAN writes it performs: copying can
+// overwrite the membership of the management VLAN, which the single-VLAN routes
+// already checked (outside review P2-8).
 router.post('/:id/vlans/copy', requireWrite, async (req: Request, res: Response) => {
-  const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
-    [req.params.id]
-  );
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-
   const { operations } = req.body as {
     operations: Array<{
       action: 'add' | 'update';
@@ -2402,31 +2178,33 @@ router.post('/:id/vlans/copy', requireWrite, async (req: Request, res: Response)
     return res.status(400).json({ error: 'operations array is required and must not be empty' });
   }
 
-  const collector = new DeviceCollector(deviceRow);
-  const results: Array<{ vlan_id: number; action: string; success: boolean; error?: string }> = [];
+  const changes: PlannedChange[] = operations.map((op) => ({
+    kind: op.action === 'add' ? 'vlan.add' : 'vlan.update',
+    bridge: op.bridge,
+    vlanId: op.vlan_id,
+    tagged: op.tagged_ports,
+    untagged: op.untagged_ports,
+  }));
 
-  try {
-    await collector.connect();
-
-    for (const op of operations) {
-      try {
-        if (op.action === 'add') {
-          await collector.addBridgeVlan(op.bridge, op.vlan_id, op.tagged_ports, op.untagged_ports);
-        } else {
-          await collector.updateBridgeVlan(op.bridge, op.vlan_id, op.tagged_ports, op.untagged_ports);
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'vlan.copy', summary: `Copy ${operations.length} VLAN(s)`, change: { kind: 'batch', changes } },
+    async (collector) => {
+      const results: Array<{ vlan_id: number; action: string; success: boolean; error?: string }> = [];
+      for (const op of operations) {
+        try {
+          if (op.action === 'add') {
+            await collector.addBridgeVlan(op.bridge, op.vlan_id, op.tagged_ports, op.untagged_ports);
+          } else {
+            await collector.updateBridgeVlan(op.bridge, op.vlan_id, op.tagged_ports, op.untagged_ports);
+          }
+          results.push({ vlan_id: op.vlan_id, action: op.action, success: true });
+        } catch (err) {
+          results.push({ vlan_id: op.vlan_id, action: op.action, success: false, error: err instanceof Error ? err.message : String(err) });
         }
-        results.push({ vlan_id: op.vlan_id, action: op.action, success: true });
-      } catch (err) {
-        results.push({ vlan_id: op.vlan_id, action: op.action, success: false, error: err instanceof Error ? err.message : String(err) });
       }
-    }
-
-    await collector.collectVlans();
-    const vlans = await query(`SELECT * FROM vlans WHERE device_id = $1 ORDER BY vlan_id ASC`, [req.params.id]);
-    return res.json({ results, vlans });
-  } finally {
-    collector.disconnect();
-  }
+      return { results };
+    },
+    async (c) => { await c.collectVlans(); });
 });
 
 // ─── Bond (LAG / LACP) routes ────────────────────────────────────────────────
@@ -2443,7 +2221,13 @@ router.post('/:id/bonds', requireWrite, async (req: Request, res: Response) => {
     req.params.id,
     req,
     res,
-    { kind: 'bond.create', summary: `Create bond '${name}' over ${slaves.join(', ')}` },
+    {
+      kind: 'bond.create',
+      summary: `Create bond '${name}' over ${slaves.join(', ')}`,
+      // Not simulated, but a member port the manager arrives on makes
+      // auto-revert mandatory rather than best-effort.
+      change: { kind: 'batch', changes: (slaves as string[]).map((sl) => ({ kind: 'path-object.change', name: sl, what: `Moving it into bond '${name}'` })) },
+    },
     async (c) => {
       await c.createBond(name, slaves, mode, {
         lacpRate: lacp_rate, hashPolicy: transmit_hash_policy, mtu, minLinks: min_links,
@@ -2455,26 +2239,27 @@ router.post('/:id/bonds', requireWrite, async (req: Request, res: Response) => {
 });
 
 // PUT /api/devices/:id/bonds/:bondName
+// Guarded like create and delete: changing an uplink bond's members or mode can
+// take the device off the network (outside review P2-8).
 router.put('/:id/bonds/:bondName', requireWrite, async (req: Request, res: Response) => {
   const { mode, slaves, lacp_rate, transmit_hash_policy, mtu, min_links } = req.body;
   if (!mode || !Array.isArray(slaves) || slaves.length < 1) {
     return res.status(400).json({ error: 'mode and slaves are required' });
   }
-  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
-  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const collector = new DeviceCollector(deviceRow);
-  try {
-    await collector.connect();
-    await collector.updateBond(req.params.bondName, slaves, mode, {
-      lacpRate: lacp_rate, hashPolicy: transmit_hash_policy, mtu, minLinks: min_links,
-    });
-    await collector.collectInterfaces();
-    return res.json({ message: 'Bond updated' });
-  } catch (err) {
-    return res.status(500).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  const bond = req.params.bondName;
+  await withGuardedChange(req.params.id, req, res,
+    {
+      kind: 'bond.update',
+      summary: `Change bond '${bond}'`,
+      change: { kind: 'path-object.change', name: bond, what: 'Changing its members or settings' },
+    },
+    async (c) => {
+      await c.updateBond(bond, slaves, mode, {
+        lacpRate: lacp_rate, hashPolicy: transmit_hash_policy, mtu, minLinks: min_links,
+      });
+      return { message: 'Bond updated' };
+    },
+    async (c) => { await c.collectInterfaces(); });
 });
 
 // DELETE /api/devices/:id/bonds/:bondName

@@ -410,7 +410,7 @@ export default function DeviceDetailPage() {
         />
       )}
       {activeTab === 'routing' && <RoutingTab deviceId={deviceId} deviceName={device.name} />}
-      {activeTab === 'firewall' && <FirewallTab deviceId={deviceId} />}
+      {activeTab === 'firewall' && <FirewallTab deviceId={deviceId} deviceName={device.name} />}
       {activeTab === 'security' && <SecurityTab deviceId={deviceId} deviceName={device.name} />}
       {activeTab === 'queues' && <QueuesTab deviceId={deviceId} />}
       {activeTab === 'connections' && <ConnectionsTab deviceId={deviceId} />}

@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { deviceWriteLock, deviceIdFromQuery } from '../services/changeGuard/deviceLock';
+import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import { randomBytes } from 'crypto';
 import { queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
@@ -10,9 +12,16 @@ router.use(requireAuth);
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
 // WireGuard private keys, SNMP communities, hotspot passwords).
 router.use(maskSecretsForReadOnly);
+// One write at a time per device, so a Change Guard revert can't undo another write.
+router.use(deviceWriteLock(deviceIdFromQuery));
 
 async function getDevice(id: number): Promise<DeviceRow | null> {
   return queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]);
+}
+
+/** ?deviceId= or body.deviceId, as a number; 0 when missing. */
+function requestDeviceId(req: Request): number {
+  return parseInt(String(req.query.deviceId ?? (req.body as { deviceId?: number })?.deviceId ?? ''), 10) || 0;
 }
 
 // Run fn against a connected collector for ?deviceId= / body.deviceId
@@ -75,15 +84,24 @@ router.post('/setup', requireWrite, async (req: Request, res: Response) => {
   if (!/^\d{1,3}(\.\d{1,3}){3}-\d{1,3}(\.\d{1,3}){3}$/.test(poolRange || '')) { res.status(400).json({ error: 'poolRange must look like 10.5.50.10-10.5.50.254' }); return; }
   if (rateLimit && !/^\d+[kMG]?\/\d+[kMG]?$/.test(rateLimit)) { res.status(400).json({ error: 'rateLimit must look like 10M/10M (rx/tx)' }); return; }
 
-  const result = await withDevice(req, res, (c) =>
-    c.setupGuestNetwork({
+  const deviceId = requestDeviceId(req);
+  if (!deviceId) { res.status(400).json({ error: 'deviceId is required' }); return; }
+  // Guarded (outside review P2-8): a hotspot on the interface the manager
+  // arrives on puts it behind the hotspot's own firewall rules. Setup is several
+  // steps, so the device gets longer before it would restore itself.
+  await withGuardedChange(deviceId, req, res,
+    {
+      kind: 'hotspot.setup',
+      summary: `Set up guest network '${name}'`,
+      timeoutSec: 300,
+      change: interfaceName ? { kind: 'path-object.change', name: interfaceName, what: 'Putting a hotspot on it' } : undefined,
+    },
+    (c) => c.setupGuestNetwork({
       name: name.toLowerCase(), gatewayCidr, poolRange, dnsName, rateLimit,
       interfaceName: interfaceName || undefined,
       ssid: ssid?.ssid ? { ssid: ssid.ssid, passphrase: ssid.passphrase || undefined } : undefined,
       vlanId, masquerade: masquerade !== false,
-    })
-  );
-  if (result !== undefined) res.status(201).json(result);
+    }));
 });
 
 // ─── Vouchers (hotspot users) ─────────────────────────────────────────────────
@@ -194,21 +212,21 @@ router.delete('/walled-garden/:id', requireWrite, async (req: Request, res: Resp
 
 // ─── Server enable/disable/remove ─────────────────────────────────────────────
 
+// Guarded: enabling a hotspot server changes how its interface filters traffic.
 router.put('/servers/:id', requireWrite, async (req: Request, res: Response) => {
   const { disabled } = req.body as { disabled?: boolean };
-  const result = await withDevice(req, res, async (c) => {
-    await c.setHotspotServerDisabled(req.params.id, !!disabled);
-    return { ok: true };
-  });
-  if (result !== undefined) res.json(result);
+  const deviceId = requestDeviceId(req);
+  if (!deviceId) { res.status(400).json({ error: 'deviceId is required' }); return; }
+  await withGuardedChange(deviceId, req, res,
+    { kind: 'hotspot.server.toggle', summary: `${disabled ? 'Disable' : 'Enable'} hotspot server` },
+    async (c) => { await c.setHotspotServerDisabled(req.params.id, !!disabled); return { ok: true }; });
 });
 
 router.delete('/servers/:id', requireWrite, async (req: Request, res: Response) => {
-  const result = await withDevice(req, res, async (c) => {
-    await c.removeHotspotServer(req.params.id);
-    return { ok: true };
-  });
-  if (result !== undefined) res.json(result);
+  const deviceId = requestDeviceId(req);
+  if (!deviceId) { res.status(400).json({ error: 'deviceId is required' }); return; }
+  await withGuardedChange(deviceId, req, res, { kind: 'hotspot.server.remove', summary: 'Remove hotspot server' },
+    async (c) => { await c.removeHotspotServer(req.params.id); return { ok: true }; });
 });
 
 export default router;

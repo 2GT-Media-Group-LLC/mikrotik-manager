@@ -31,7 +31,26 @@ export type PlannedChange =
   | { kind: 'interface.disable'; name: string; disabled: boolean }
   | { kind: 'bond.delete'; name: string }
   | { kind: 'route.remove'; routeId: string }
-  | { kind: 'service.toggle'; serviceId: string; disabled: boolean };
+  | { kind: 'service.toggle'; serviceId: string; disabled: boolean }
+  /**
+   * Firewall filter edits. `fields` use RouterOS names; in firewall.set an
+   * empty value clears the property, as DeviceCollector.setItem does.
+   */
+  | { kind: 'firewall.add'; fields: Record<string, string>; placeBefore?: string }
+  | { kind: 'firewall.set'; ruleId: string; fields: Record<string, string> }
+  | { kind: 'firewall.move'; ruleId: string; destination?: string }
+  | { kind: 'firewall.remove'; ruleId: string }
+  | { kind: 'address-list.add'; fields: Record<string, string> }
+  | { kind: 'address-list.set'; entryId: string; fields: Record<string, string> }
+  | { kind: 'address-list.remove'; entryId: string }
+  /**
+   * A change the model can't simulate on an object the management path uses
+   * (port speed, a bond's settings): not predicted to break, but reported as
+   * a warning so auto-revert is required.
+   */
+  | { kind: 'path-object.change'; name: string; what: string }
+  /** Several changes applied in order, e.g. a VLAN copy. */
+  | { kind: 'batch'; changes: PlannedChange[] };
 
 export type Severity = 'safe' | 'warning' | 'critical';
 
@@ -167,7 +186,8 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
     }
 
     case 'interface.disable': {
-      const iface = s.interfaces.find((i) => i['name'] === change.name);
+      // By name, or by RouterOS id for callers that only have that (WireGuard).
+      const iface = s.interfaces.find((i) => i['name'] === change.name || i['.id'] === change.name);
       if (iface) iface['disabled'] = change.disabled ? 'true' : 'false';
       break;
     }
@@ -188,10 +208,98 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
       if (svc) svc['disabled'] = change.disabled ? 'true' : 'false';
       break;
     }
+
+    // RouterOS appends a new rule to the end of the table unless told where.
+    case 'firewall.add': {
+      const row: RosRow = { '.id': '*simulated', ...change.fields };
+      const at = change.placeBefore ? s.firewallFilter.findIndex((r) => r['.id'] === change.placeBefore) : -1;
+      if (at >= 0) s.firewallFilter.splice(at, 0, row); else s.firewallFilter.push(row);
+      break;
+    }
+
+    case 'firewall.set': {
+      const rule = s.firewallFilter.find((r) => r['.id'] === change.ruleId);
+      if (rule) mergeFields(rule, change.fields);
+      break;
+    }
+
+    // `move` puts the rule before `destination`, or at the end without one.
+    case 'firewall.move': {
+      const from = s.firewallFilter.findIndex((r) => r['.id'] === change.ruleId);
+      if (from < 0) break;
+      const [rule] = s.firewallFilter.splice(from, 1);
+      const to = change.destination ? s.firewallFilter.findIndex((r) => r['.id'] === change.destination) : -1;
+      if (to >= 0) s.firewallFilter.splice(to, 0, rule); else s.firewallFilter.push(rule);
+      break;
+    }
+
+    case 'firewall.remove': {
+      s.firewallFilter = s.firewallFilter.filter((r) => r['.id'] !== change.ruleId);
+      break;
+    }
+
+    case 'address-list.add': {
+      s.addressLists = [...(s.addressLists ?? []), { '.id': '*simulated', ...change.fields }];
+      break;
+    }
+
+    case 'address-list.set': {
+      const entry = (s.addressLists ?? []).find((e) => e['.id'] === change.entryId);
+      if (entry) {
+        mergeFields(entry, change.fields);
+      } else if (change.fields['list']) {
+        // An entry we didn't read is moving into a list; that list can no
+        // longer be vouched for.
+        s.addressListsRead = (s.addressListsRead ?? []).filter((l) => l !== change.fields['list']);
+      }
+      break;
+    }
+
+    case 'address-list.remove': {
+      s.addressLists = (s.addressLists ?? []).filter((e) => e['.id'] !== change.entryId);
+      break;
+    }
+
+    case 'path-object.change':
+      break; // not simulated; see analyzeChange
+
+    case 'batch': {
+      let cur = s;
+      for (const c of change.changes) cur = simulate(cur, c);
+      return cur;
+    }
   }
 
   return s;
 }
+
+/** Apply edited fields to a row; an empty value clears the property. */
+function mergeFields(row: RosRow, fields: Record<string, string>): void {
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === '') Reflect.deleteProperty(row, k);
+    else Object.assign(row, { [k]: v });
+  }
+}
+
+/** Objects the management path runs through, by name. */
+function pathObjects(path: ManagementPath): Set<string> {
+  const names = path.hops.map((h) => h.name);
+  if (path.mgmtInterface) names.push(path.mgmtInterface);
+  if (path.ingressPort) names.push(path.ingressPort);
+  if (path.ingressBond) names.push(path.ingressBond);
+  if (path.bridge) names.push(path.bridge);
+  return new Set(names);
+}
+
+function pathObjectChanges(change: PlannedChange): { name: string; what: string }[] {
+  if (change.kind === 'path-object.change') return [{ name: change.name, what: change.what }];
+  if (change.kind === 'batch') return change.changes.flatMap(pathObjectChanges);
+  return [];
+}
+
+const touchesFirewall = (change: PlannedChange): boolean =>
+  change.kind.startsWith('firewall.') || change.kind.startsWith('address-list.')
+  || (change.kind === 'batch' && change.changes.some(touchesFirewall));
 
 /**
  * Compare invariants before and after. The management path is resolved once, on the
@@ -232,7 +340,33 @@ export function analyzeChange(
         detail: a.detail,
         severity: a.severity ?? 'critical',
       });
+    } else if (a?.ok && a.uncertain && (!b?.uncertain || touchesFirewall(change))) {
+      // Not predicted to break, but the check can't vouch for it either:
+      // either this change made it uncertain, or it edits the very rules the
+      // check couldn't fully evaluate.
+      violations.push({
+        id: inv.id,
+        title: inv.title,
+        before: true,
+        after: true,
+        detail: a.detail,
+        severity: 'warning',
+      });
     }
+  }
+
+  const onPath = pathObjects(path);
+  for (const p of pathObjectChanges(change)) {
+    if (!onPath.has(p.name)) continue;
+    violations.push({
+      id: 'path-object-change',
+      title: 'An object the management path uses is being changed',
+      before: true,
+      after: true,
+      detail: `${p.what} on ${p.name}, which the manager's connection runs through. ` +
+        `This can't be simulated, so it runs only with auto-revert.`,
+      severity: 'warning',
+    });
   }
 
   const warnings = [...path.warnings];

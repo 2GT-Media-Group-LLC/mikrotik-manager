@@ -26,6 +26,7 @@ import { RouterOSClient } from '../mikrotik/RouterOSClient';
 import { decrypt } from '../../utils/crypto';
 import { query, queryOne } from '../../config/database';
 import { redis } from '../../config/redis';
+import { heldLockToken, restoreHeldLock } from './deviceLock';
 
 export type GuardMode = 'binary' | 'script';
 
@@ -344,6 +345,9 @@ async function verifyReachable(device: GuardDevice, attempts = VERIFY_ATTEMPTS):
 }
 
 async function acquireLock(deviceId: number): Promise<boolean> {
+  // The request already holds this device's write lock (deviceLock.ts); the
+  // guarded change runs under it.
+  if (heldLockToken(deviceId)) return true;
   try {
     const res = await redis.set(`changeguard:lock:${deviceId}`, '1', 'EX', LOCK_TTL_SEC, 'NX');
     return res === 'OK';
@@ -353,6 +357,10 @@ async function acquireLock(deviceId: number): Promise<boolean> {
 }
 
 async function releaseLock(deviceId: number): Promise<void> {
+  // Hand the lock back to the request that holds it rather than dropping it;
+  // the request releases it when it finishes.
+  const token = heldLockToken(deviceId);
+  if (token) { await restoreHeldLock(deviceId, token); return; }
   await redis.del(`changeguard:lock:${deviceId}`).catch(() => {});
 }
 

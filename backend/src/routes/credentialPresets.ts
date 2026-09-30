@@ -185,33 +185,39 @@ router.put('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res
     if (clash) return res.status(409).json({ error: 'A preset with this name already exists' });
   }
 
-  const newApiPass = api_password ? encrypt(api_password) : existing.api_password_encrypted;
-  let newSshPass: string | null = existing.ssh_password_encrypted;
-  if (clear_ssh_password) newSshPass = null;
-  if (ssh_password) newSshPass = encrypt(ssh_password);
+  // Only what the request sends is written; everything else is left to the
+  // database. Writing back values read at the start of the request let a
+  // notes-only edit overwrite a password another admin had just changed
+  // (outside review S10).
+  const sent = (v: unknown): boolean => v !== undefined;
+  const newApiPass = api_password ? encrypt(api_password) : null;
+  const newSshPass = ssh_password ? encrypt(ssh_password) : null;
 
   await query(
     `UPDATE credential_presets SET
        name                   = COALESCE($1, name),
        api_username           = COALESCE($2, api_username),
-       api_password_encrypted = $3,
-       api_port               = $4,
-       ssh_username           = $5,
-       ssh_password_encrypted = $6,
-       ssh_port               = $7,
-       notes                  = $8,
-       allow_operator_use     = COALESCE($9, allow_operator_use),
+       api_password_encrypted = COALESCE($3, api_password_encrypted),
+       api_port               = CASE WHEN $4::boolean THEN $5::integer ELSE api_port END,
+       ssh_username           = CASE WHEN $6::boolean THEN $7::text ELSE ssh_username END,
+       ssh_password_encrypted = CASE WHEN $8::text IS NOT NULL THEN $8::text
+                                     WHEN $9::boolean THEN NULL
+                                     ELSE ssh_password_encrypted END,
+       ssh_port               = CASE WHEN $10::boolean THEN $11::integer ELSE ssh_port END,
+       notes                  = CASE WHEN $12::boolean THEN $13::text ELSE notes END,
+       allow_operator_use     = COALESCE($14, allow_operator_use),
        updated_at             = NOW()
-     WHERE id = $10`,
+     WHERE id = $15`,
     [
-      name ?? null,
-      api_username ?? null,
+      name || null,
+      api_username || null,
       newApiPass,
-      api_port === undefined ? existing.api_port : api_port,
-      ssh_username === undefined ? existing.ssh_username : (ssh_username || null),
+      sent(api_port), api_port ?? null,
+      sent(ssh_username), ssh_username || null,
       newSshPass,
-      ssh_port === undefined ? existing.ssh_port : ssh_port,
-      notes === undefined ? existing.notes : (notes || null),
+      clear_ssh_password === true,
+      sent(ssh_port), ssh_port ?? null,
+      sent(notes), notes || null,
       allow_operator_use === undefined ? null : allow_operator_use,
       id,
     ]

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query, queryOne } from '../config/database';
+import { query, queryOne, transaction } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 
 const router = Router();
@@ -150,13 +150,19 @@ router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
     return;
   }
 
-  const total = await queryOne<{ n: string }>(`SELECT COUNT(*)::text AS n FROM sites`);
-  if (parseInt(total?.n ?? '0', 10) <= 1) {
+  // Count and delete under one lock: two deletes at once each saw two sites
+  // and removed both (outside review S10).
+  const deleted = await transaction(async (client) => {
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('sites:delete'))`);
+    const total = await client.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM sites`);
+    if (parseInt(total.rows[0]?.n ?? '0', 10) <= 1) return false;
+    await client.query(`DELETE FROM sites WHERE id = $1`, [id]);
+    return true;
+  });
+  if (!deleted) {
     res.status(409).json({ error: 'Cannot delete the only site' });
     return;
   }
-
-  await query(`DELETE FROM sites WHERE id = $1`, [id]);
   res.json({ ok: true });
 });
 

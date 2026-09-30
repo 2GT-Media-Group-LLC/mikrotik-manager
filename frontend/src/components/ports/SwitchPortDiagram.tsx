@@ -643,14 +643,24 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     }
   }, [autoOpenBridge, data?.ports]);
 
+  // Link changes run under Change Guard now (outside review P2-8). A predicted
+  // lockout reruns the whole save with the warning confirmed, so the VLAN step
+  // that follows still happens.
   const updateInterfaceMutation = useMutation({
     mutationFn: ({ name, updates }: { name: string; updates: Record<string, unknown> }) =>
       devicesApi.updateInterface(deviceId, name, updates),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
       queryClient.invalidateQueries({ queryKey: ['interfaces', deviceId] });
+      const notice = guardOutcomeMessage((res?.data as { guard?: GuardResult } | undefined)?.guard);
+      if (notice?.tone === 'warn') setSaveNotice(notice.text);
     },
     onError: (err: unknown) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => { setLockout(null); void handleSave(true); } });
+        return;
+      }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setSaveError(msg || 'Failed to update interface');
     },
@@ -696,7 +706,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   });
 
   const updateBondMutation = useMutation({
-    mutationFn: ({ name, d }: { name: string; d: { mode: string; slaves: string[]; lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number } }) =>
+    mutationFn: ({ name, d }: { name: string; d: { mode: string; slaves: string[]; lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number; confirm_lockout?: boolean } }) =>
       devicesApi.updateBond(deviceId, name, d),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
@@ -704,7 +714,12 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
       setBondError('');
       setLockout(null);
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => updateBondMutation.mutate({ name: vars.name, d: { ...vars.d, confirm_lockout: true } }) });
+        return;
+      }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setBondError(msg || 'Failed to update bond');
     },
@@ -864,7 +879,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     });
   };
 
-  const handleSave = async () => {
+  const handleSave = async (confirmLockout = false) => {
     if (!editingPort) return;
     setSaveError('');
     setSaveNotice('');
@@ -887,7 +902,12 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
       }
     }
 
-    await updateInterfaceMutation.mutateAsync({ name: editingPort.name, updates: ifaceUpdates });
+    if (confirmLockout) ifaceUpdates.confirm_lockout = true;
+    try {
+      await updateInterfaceMutation.mutateAsync({ name: editingPort.name, updates: ifaceUpdates });
+    } catch {
+      return; // onError has shown the problem, or opened the lockout dialog
+    }
 
     if (editForm.vlan_mode !== 'none') {
       // parseVlanList understands ranges. The previous split-and-parseInt read
@@ -1639,7 +1659,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button onClick={() => setEditingPort(null)} className="btn-secondary">Cancel</button>
                 <button
-                  onClick={handleSave}
+                  onClick={() => { void handleSave(); }}
                   disabled={isPending}
                   className="btn-primary flex items-center gap-2"
                 >

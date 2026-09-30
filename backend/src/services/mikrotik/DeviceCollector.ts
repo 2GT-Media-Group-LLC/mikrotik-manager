@@ -6,7 +6,7 @@ import { Point } from '@influxdata/influxdb-client';
 import { decrypt } from '../../utils/crypto';
 import { lookupVendor } from '../../utils/oui';
 import { buildServerArpMap } from '../../utils/serverArp';
-import { aggregateBridgeVlans, portVlanMembership, expandVlanIds } from '../../utils/vlan';
+import { aggregateBridgeVlans, portVlanMembership, expandVlanIds, rosList } from '../../utils/vlan';
 import {
   classifyWifiRole, isCapsmanManaged, parseCapsmanStatus, parseCapStatus,
   normalizeRadios, macIndexKeys, parseRadioMonitor, resolveDatapath,
@@ -4033,6 +4033,36 @@ export class DeviceCollector {
     return out;
   }
 
+  /** Static VLAN rows on a bridge that list any of `members` as tagged or untagged. */
+  private async vlanRowsListing(bridge: string, members: string[]): Promise<Record<string, string>[]> {
+    const rows = await this.client.execute('/interface/bridge/vlan/print', {}, [`?bridge=${bridge}`]);
+    return rows.filter((r) => r['dynamic'] !== 'true' && r['.id']
+      && [...rosList(r['tagged']), ...rosList(r['untagged'])].some((m) => members.includes(m)));
+  }
+
+  /**
+   * Rewrite VLAN membership after ports were swapped for a bond or back
+   * (outside review P2-8). Without this a port tagged on VLAN 20 became a bond
+   * that wasn't, and VLAN 20 stopped forwarding across the link.
+   */
+  private async replaceVlanMembers(
+    rows: Record<string, string>[], replace: (list: string[]) => string[],
+  ): Promise<string[]> {
+    const failures: string[] = [];
+    for (const row of rows) {
+      const tagged = [...new Set(replace(rosList(row['tagged'])))];
+      const untagged = [...new Set(replace(rosList(row['untagged'])))];
+      try {
+        await this.client.execute('/interface/bridge/vlan/set', {
+          '.id': row['.id'], tagged: tagged.join(','), untagged: untagged.join(','),
+        });
+      } catch (err) {
+        failures.push(`VLAN ${row['vlan-ids']} (${(err as Error).message})`);
+      }
+    }
+    return failures;
+  }
+
   async createBond(name: string, slaves: string[], mode: string, opts: {
     lacpRate?: string; hashPolicy?: string; mtu?: number; minLinks?: number;
   }): Promise<void> {
@@ -4040,17 +4070,22 @@ export class DeviceCollector {
     // with its port settings so the bond can inherit them.
     let originalBridge: string | null = null;
     let carry: Record<string, string> = {};
+    const slavePorts: Record<string, string>[] = [];
     for (const slave of slaves) {
       const bridgePorts = await this.client.execute('/interface/bridge/port/print', {}, [`?interface=${slave}`]).catch(() => []);
       for (const bp of bridgePorts) {
-        if (bp['.id']) {
-          if (!originalBridge) {
-            originalBridge = bp['bridge'] ?? null;
-            carry = DeviceCollector.carryBridgePortAttrs(bp);
-          }
-          await this.client.execute('/interface/bridge/port/remove', { '.id': bp['.id'] });
+        if (!bp['.id']) continue;
+        if (!originalBridge) {
+          originalBridge = bp['bridge'] ?? null;
+          carry = DeviceCollector.carryBridgePortAttrs(bp);
         }
+        slavePorts.push(bp);
       }
+    }
+    // Read VLAN membership before the ports leave the bridge.
+    const vlanRows = originalBridge ? await this.vlanRowsListing(originalBridge, slaves) : [];
+    for (const bp of slavePorts) {
+      await this.client.execute('/interface/bridge/port/remove', { '.id': bp['.id'] });
     }
     const params: Record<string, string> = { name, slaves: slaves.join(','), mode };
     if (opts.lacpRate)   params['lacp-rate'] = this.mapLacpRate(opts.lacpRate);
@@ -4074,6 +4109,15 @@ export class DeviceCollector {
           `${(err as Error).message}. The member ports (${slaves.join(', ')}) are no longer bridged ` +
           `and may not forward traffic — check the device.`,
           { cause: err }
+        );
+      }
+      // The bond takes over the VLANs its members carried.
+      const failures = await this.replaceVlanMembers(vlanRows, (list) =>
+        list.some((m) => slaves.includes(m)) ? [...list.filter((m) => !slaves.includes(m)), name] : list);
+      if (failures.length > 0) {
+        throw new Error(
+          `Bond '${name}' was created and bridged, but moving VLAN membership onto it failed for: ` +
+          `${failures.join('; ')}. Those VLANs may not cross the bond — check the device.`
         );
       }
     }
@@ -4104,6 +4148,7 @@ export class DeviceCollector {
     const bondPort = bondBridgePorts[0];
     const bridgeName = bondPort?.['bridge'] ?? null;
     const carry = DeviceCollector.carryBridgePortAttrs(bondPort);
+    const vlanRows = bridgeName ? await this.vlanRowsListing(bridgeName, [name]) : [];
 
     if (bondPort?.['.id']) {
       await this.client.execute('/interface/bridge/port/remove', { '.id': bondPort['.id'] });
@@ -4129,9 +4174,15 @@ export class DeviceCollector {
         }
       }
     }
+    // Each freed port takes back the VLANs the bond carried.
+    if (bridgeName && slaves.length > 0) {
+      const vlanFailures = await this.replaceVlanMembers(vlanRows, (list) =>
+        list.includes(name) ? [...list.filter((m) => m !== name), ...slaves] : list);
+      failures.push(...vlanFailures);
+    }
     if (failures.length > 0) {
       throw new Error(
-        `Bond '${name}' was removed, but restoring bridge membership on '${bridgeName}' failed for: ` +
+        `Bond '${name}' was removed, but restoring bridge or VLAN membership on '${bridgeName}' failed for: ` +
         `${failures.join('; ')}. Those ports may not forward traffic — check the device.`
       );
     }

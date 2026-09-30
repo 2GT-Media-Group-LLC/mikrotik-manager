@@ -100,6 +100,16 @@ A confirmed override requires auto-revert. If the device can't arm it, the reque
 with **422** and `code: "guard_required"`, and nothing is applied. The same applies when
 the prediction flagged a warning or couldn't read the device.
 
+For a DELETE, which has no body, send `?confirm_lockout=true` instead.
+
+Writes to one device run one at a time. While another change to the same device is being
+applied or verified, a write returns **409** with `code: "device_busy"`; retry after a few
+seconds. It is told apart from a lockout by `code`, and a lockout always carries
+`lockout: true`.
+
+Firewall, NAT, address-list, routing and WireGuard writes return a short `message` and the
+`guard` block rather than the updated table; read the table again with the matching GET.
+
 A successful guarded change returns a `guard` block describing what happened:
 `confirmed`, `auto_reverting`, an `unprotected_reason` when a routine change ran without
 the safety net, or `revert_may_fire_at` when the change was kept but its revert couldn't be

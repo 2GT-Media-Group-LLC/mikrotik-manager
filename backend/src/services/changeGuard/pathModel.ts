@@ -23,6 +23,7 @@ import { RouterOSClient } from '../mikrotik/RouterOSClient';
 import { decrypt } from '../../utils/crypto';
 import { expandVlanIds } from '../../utils/vlan';
 import type { GuardDevice } from './ChangeGuard';
+import { referencedAddressLists } from './firewallPath';
 
 // Re-exported so the analysis modules keep importing VLAN handling from the path
 // model they reason about, while the collector shares the same implementation.
@@ -46,6 +47,15 @@ export interface DeviceSnapshot {
   firewallFilter: RosRow[];
   /** TCP connections to the management port; reveals the manager's apparent IP. */
   mgmtConnections: RosRow[];
+  /**
+   * Entries of the address lists the filter rules name. Optional so older
+   * fixtures and callers still type-check; absent means none were read.
+   */
+  addressLists?: RosRow[];
+  /** Lists whose entries were read in full. Any other list is treated as unknown. */
+  addressListsRead?: string[];
+  interfaceLists?: RosRow[];
+  interfaceListMembers?: RosRow[];
 }
 
 export type HopKind = 'address' | 'vlan-interface' | 'bridge' | 'bond' | 'port';
@@ -90,7 +100,17 @@ export interface ManagementPath {
 
 const empty = (): RosRow[] => [];
 
-/** Read everything the analysis needs in one pass. All over the API — no SSH. */
+/** Above this, an address list is treated as unknown rather than read. */
+const ADDRESS_LIST_READ_TIMEOUT_MS = 10_000;
+
+/**
+ * Read everything the analysis needs in one pass. All over the API — no SSH.
+ *
+ * A read that fails throws, so the analysis fails and the change then requires
+ * auto-revert. Treating a failed read as an empty table produced an empty model
+ * and a confident "safe" (outside review P2-7). Connection tracking is the one
+ * exception: it is often switched off, and the model copes without it.
+ */
 export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapshot> {
   const client = new RouterOSClient(
     device.ip_address,
@@ -102,12 +122,14 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
   );
   try {
     await client.connect();
-    const run = (cmd: string, params: Record<string, string> = {}) =>
+    const run = (cmd: string, params: Record<string, string> = {}) => client.execute(cmd, params);
+    const optional = (cmd: string, params: Record<string, string> = {}) =>
       client.execute(cmd, params).catch(empty);
 
     const [
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
       bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
+      interfaceLists, interfaceListMembers,
     ] = await Promise.all([
       run('/ip/address/print', { detail: '' }),
       run('/interface/print', { detail: '' }),
@@ -121,13 +143,33 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       run('/interface/bridge/host/print'),
       run('/ip/service/print'),
       run('/ip/firewall/filter/print', { detail: '' }),
-      // Connection tracking may be disabled; treated as optional.
-      run('/ip/firewall/connection/print', { detail: '' }),
+      optional('/ip/firewall/connection/print', { detail: '' }),
+      run('/interface/list/print'),
+      run('/interface/list/member/print'),
     ]);
+
+    // Only the lists the filter names, each on its own and time-boxed: a
+    // router can carry a blocklist of many thousands of entries, and one that
+    // can't be read in time is simply treated as unknown.
+    const addressLists: RosRow[] = [];
+    const addressListsRead: string[] = [];
+    for (const list of referencedAddressLists(firewallFilter)) {
+      try {
+        const rows = await client.execute(
+          '/ip/firewall/address-list/print',
+          { '.proplist': '.id,list,address,disabled' },
+          [`?list=${list}`],
+          { timeoutMs: ADDRESS_LIST_READ_TIMEOUT_MS },
+        );
+        addressLists.push(...rows);
+        addressListsRead.push(list);
+      } catch { /* left unread: rules using it evaluate as "maybe" */ }
+    }
 
     return {
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
       bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
+      addressLists, addressListsRead, interfaceLists, interfaceListMembers,
     };
   } finally {
     client.disconnect();

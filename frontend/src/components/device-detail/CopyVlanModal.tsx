@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, ChevronRight, Copy, AlertTriangle, Check, RefreshCw, Info } from 'lucide-react';
 import { devicesApi } from '../../services/api';
+import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
 import type { Device, Vlan, SwitchPort } from '../../types';
 import clsx from 'clsx';
 
@@ -148,6 +149,9 @@ export default function CopyVlanModal({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  // The copy runs under Change Guard and is checked as one batch; overwriting
+  // the management VLAN's membership comes back as a lockout to confirm.
+  const guard = useGuardedWrite();
 
   // ── Step state ──
   const [step, setStep] = useState<Step>(1);
@@ -303,7 +307,7 @@ export default function CopyVlanModal({
   // ── Mutation ───────────────────────────────────────────────────────────────
 
   const applyMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (confirm: boolean) =>
       devicesApi.copyVlans(
         deviceId,
         toApply.map((op) => ({
@@ -312,12 +316,18 @@ export default function CopyVlanModal({
           bridge: op.targetBridge,
           tagged_ports: op.effectiveTagged,
           untagged_ports: op.effectiveUntagged,
-        }))
+        })),
+        confirm,
       ),
     onSuccess: (res) => {
-      setApplyResults(res.data.results);
+      // No results when contact was lost and the device restored itself.
+      setApplyResults(res.data.results ?? []);
+      guard.onSuccess(res);
       queryClient.invalidateQueries({ queryKey: ['vlans', deviceId] });
     },
+  });
+  const apply = () => applyMutation.mutate(false, {
+    onError: guard.onError(() => applyMutation.mutate(true), () => { /* shown below */ }),
   });
 
   // ── Toggle helpers ─────────────────────────────────────────────────────────
@@ -782,12 +792,14 @@ export default function CopyVlanModal({
           })}
         </div>
 
-        {applyMutation.isError && (
+        {applyMutation.isError && !guard.lockout && (
           <div className="text-sm text-red-500">
             Failed to apply:{' '}
-            {(applyMutation.error as { message?: string })?.message ?? 'Unknown error'}
+            {(applyMutation.error as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
+              ?? (applyMutation.error as { message?: string })?.message ?? 'Unknown error'}
           </div>
         )}
+        <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={applyMutation.isPending} />
       </div>
     );
   };
@@ -851,7 +863,7 @@ export default function CopyVlanModal({
         <button
           className="btn-primary flex items-center gap-2 text-sm"
           disabled={toApply.length === 0 || applyMutation.isPending}
-          onClick={() => applyMutation.mutate()}
+          onClick={apply}
         >
           {applyMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
           {applyMutation.isPending

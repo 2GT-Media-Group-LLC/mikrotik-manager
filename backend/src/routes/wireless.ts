@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
+import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
@@ -14,6 +16,8 @@ router.use(requireAuth);
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,
 // WireGuard private keys, SNMP communities, hotspot passwords).
 router.use(maskSecretsForReadOnly);
+// One write at a time per device, so a Change Guard revert can't undo another write.
+router.use(deviceWriteLock(deviceIdFromPath));
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -406,28 +410,37 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
       : String(body.authentication_types);
   }
 
-  const collector = new DeviceCollector(ap);
-  try {
-    await collector.connect();
-    await collector.assertNotCapsmanManaged(ifaceName);
-    await collector.setWirelessInterface(ifaceName, params);
-    // Bridge port membership — only touched when 'bridge' key is present in the request
-    if (body.bridge !== undefined) {
-      const bridgeName = body.bridge ? String(body.bridge) : null;
-      const pvid = body.vlan_id ? Number(body.vlan_id) : undefined;
-      await collector.setInterfaceBridge(ifaceName, bridgeName, pvid);
-      // Ensure the VLAN ID is in the bridge VLAN table (untagged)
-      if (bridgeName && body.vlan_id) {
-        await collector.ensureVlanMembership(ifaceName, Number(body.vlan_id));
+  // Guarded (outside review P2-8): an AP managed over its own wireless link is
+  // cut off by a change to that interface, so it is flagged when it's on the
+  // management path, and undone automatically either way.
+  await withGuardedChange(ap.id, req, res,
+    {
+      kind: 'wireless.interface.set',
+      summary: `Change wireless interface ${ifaceName}`,
+      change: {
+        kind: 'batch',
+        changes: [
+          ...(body.disabled !== undefined ? [{ kind: 'interface.disable' as const, name: ifaceName, disabled: !!body.disabled }] : []),
+          { kind: 'path-object.change', name: ifaceName, what: 'Changing this wireless interface' },
+        ],
+      },
+    },
+    async (collector) => {
+      await collector.assertNotCapsmanManaged(ifaceName);
+      await collector.setWirelessInterface(ifaceName, params);
+      // Bridge port membership — only touched when 'bridge' key is present in the request
+      if (body.bridge !== undefined) {
+        const bridgeName = body.bridge ? String(body.bridge) : null;
+        const pvid = body.vlan_id ? Number(body.vlan_id) : undefined;
+        await collector.setInterfaceBridge(ifaceName, bridgeName, pvid);
+        // Ensure the VLAN ID is in the bridge VLAN table (untagged)
+        if (bridgeName && body.vlan_id) {
+          await collector.ensureVlanMembership(ifaceName, Number(body.vlan_id));
+        }
       }
-    }
-    await collector.collectWirelessInterfaces();
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(502).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+      return { ok: true };
+    },
+    async (c) => { await c.collectWirelessInterfaces(); });
 });
 
 // DELETE /api/wireless/:id/interfaces/:name
@@ -435,21 +448,21 @@ router.delete('/:id/interfaces/:name', requireWrite, async (req: Request, res: R
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
-  const collector = new DeviceCollector(ap);
-  try {
-    await collector.connect();
-    await collector.assertNotCapsmanManaged(req.params.name);
-    await collector.removeWirelessInterface(req.params.name);
-    await query(
-      `DELETE FROM wireless_interfaces WHERE device_id=$1 AND name=$2`,
-      [ap.id, req.params.name]
-    );
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(502).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  const ifaceName = req.params.name;
+  await withGuardedChange(ap.id, req, res,
+    {
+      kind: 'wireless.interface.remove',
+      summary: `Delete wireless interface ${ifaceName}`,
+      // For reachability, a deleted interface is a disabled one.
+      change: { kind: 'interface.disable', name: ifaceName, disabled: true },
+    },
+    async (collector) => {
+      await collector.assertNotCapsmanManaged(ifaceName);
+      await collector.removeWirelessInterface(ifaceName);
+      return { ok: true };
+    },
+    // Only forget it locally once the device is confirmed to have kept the change.
+    async () => { await query(`DELETE FROM wireless_interfaces WHERE device_id=$1 AND name=$2`, [ap.id, ifaceName]); });
 });
 
 // ─── Security Profiles ────────────────────────────────────────────────────────
@@ -552,17 +565,12 @@ router.put('/:id/security-profiles/:name', requireWrite, async (req: Request, re
       : String(body.group_ciphers);
   }
 
-  const collector = new DeviceCollector(ap);
-  try {
-    await collector.connect();
-    await collector.setSecurityProfile(profileName, params);
-    await collector.collectSecurityProfiles();
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(502).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  // Guarded: a profile change reaches every interface using it, including a
+  // wireless uplink the AP is managed through.
+  await withGuardedChange(ap.id, req, res,
+    { kind: 'wireless.security-profile.set', summary: `Change security profile ${profileName}` },
+    async (collector) => { await collector.setSecurityProfile(profileName, params); return { ok: true }; },
+    async (c) => { await c.collectSecurityProfiles(); });
 });
 
 // DELETE /api/wireless/:id/security-profiles/:name
@@ -570,20 +578,11 @@ router.delete('/:id/security-profiles/:name', requireWrite, async (req: Request,
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
-  const collector = new DeviceCollector(ap);
-  try {
-    await collector.connect();
-    await collector.removeSecurityProfile(req.params.name);
-    await query(
-      `DELETE FROM wireless_security_profiles WHERE device_id=$1 AND name=$2`,
-      [ap.id, req.params.name]
-    );
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(502).json({ error: (err as Error).message });
-  } finally {
-    collector.disconnect();
-  }
+  const profileName = req.params.name;
+  await withGuardedChange(ap.id, req, res,
+    { kind: 'wireless.security-profile.remove', summary: `Delete security profile ${profileName}` },
+    async (collector) => { await collector.removeSecurityProfile(profileName); return { ok: true }; },
+    async () => { await query(`DELETE FROM wireless_security_profiles WHERE device_id=$1 AND name=$2`, [ap.id, profileName]); });
 });
 
 // ─── Radio monitoring / diagnostics ──────────────────────────────────────────

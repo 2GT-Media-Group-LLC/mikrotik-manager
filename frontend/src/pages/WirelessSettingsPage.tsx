@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { wirelessApi, settingsApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { useGuardedWrite, GuardedWriteUi } from '../components/ChangeGuardDialog';
 import type { WirelessAP } from '../types';
 import clsx from 'clsx';
 
@@ -865,15 +866,29 @@ export default function WirelessSettingsPage() {
     enabled: !!selectedApId && selectedAp?.status === 'online',
   });
 
+  // Disabling or deleting the interface an AP is managed through is predicted
+  // as a lockout; confirming re-sends the change (outside review P2-8).
+  const guard = useGuardedWrite();
+  const [writeError, setWriteError] = useState('');
+  const failed = (e: unknown) =>
+    setWriteError((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Operation failed');
+  const done = (res: unknown) => { qc.invalidateQueries({ queryKey: ['wireless-ifaces', selectedApId] }); setWriteError(''); guard.onSuccess(res); };
+
   const deleteSsidMutation = useMutation({
-    mutationFn: (name: string) => wirelessApi.deleteInterface(selectedApId!, name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wireless-ifaces', selectedApId] }),
+    mutationFn: ({ name, confirm }: { name: string; confirm?: boolean }) => wirelessApi.deleteInterface(selectedApId!, name, confirm),
+    onSuccess: done,
   });
 
   const toggleSsidMutation = useMutation({
-    mutationFn: ({ name, disabled }: { name: string; disabled: boolean }) =>
-      wirelessApi.updateInterface(selectedApId!, name, { disabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wireless-ifaces', selectedApId] }),
+    mutationFn: ({ name, disabled, confirm }: { name: string; disabled: boolean; confirm?: boolean }) =>
+      wirelessApi.updateInterface(selectedApId!, name, { disabled, ...(confirm ? { confirm_lockout: true } : {}) }),
+    onSuccess: done,
+  });
+  const toggleSsid = (name: string, disabled: boolean) => toggleSsidMutation.mutate({ name, disabled }, {
+    onError: guard.onError(() => toggleSsidMutation.mutate({ name, disabled, confirm: true }, { onError: failed }), failed),
+  });
+  const deleteSsid = (name: string) => deleteSsidMutation.mutate({ name }, {
+    onError: guard.onError(() => deleteSsidMutation.mutate({ name, confirm: true }, { onError: failed }), failed),
   });
 
   // Detect new RouterOS 7 wifi package by interface naming (wifi1/wifi2 vs wlan1/wlan2).
@@ -919,6 +934,11 @@ export default function WirelessSettingsPage() {
         </div>
       )}
 
+      {writeError && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{writeError}</div>}
+      {selectedApId && (
+        <GuardedWriteUi state={guard} deviceId={selectedApId} deviceName={selectedAp?.name}
+          pending={toggleSsidMutation.isPending || deleteSsidMutation.isPending} />
+      )}
       {selectedAp && (
         <>
           {isOffline && (
@@ -1037,7 +1057,7 @@ export default function WirelessSettingsPage() {
                             {canWrite && (
                               <div className="flex items-center justify-end gap-1">
                                 <button
-                                  onClick={() => toggleSsidMutation.mutate({ name: iface.name, disabled: iface.disabled !== 'true' })}
+                                  onClick={() => toggleSsid(iface.name, iface.disabled !== 'true')}
                                   className="p-1.5 rounded-lg text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
                                   title={iface.disabled === 'true' ? 'Enable' : 'Disable'}
                                 >
@@ -1053,7 +1073,7 @@ export default function WirelessSettingsPage() {
                                 <button
                                   onClick={() => {
                                     if (confirm(`Delete SSID "${iface.name}"?`))
-                                      deleteSsidMutation.mutate(iface.name);
+                                      deleteSsid(iface.name);
                                   }}
                                   className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                                   title="Delete"

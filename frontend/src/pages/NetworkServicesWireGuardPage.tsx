@@ -7,6 +7,7 @@ import {
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { useGuardedWrite, GuardedWriteUi } from '../components/ChangeGuardDialog';
 
 type NS = Record<string, string>;
 
@@ -232,15 +233,29 @@ export default function NetworkServicesWireGuardPage() {
     enabled: deviceId > 0,
   });
 
+  // Turning off or deleting the tunnel the manager arrives through is predicted
+  // as a lockout; confirming re-sends the change (outside review P2-8).
+  const guard = useGuardedWrite();
+  const [writeError, setWriteError] = useState('');
+  const failed = (e: unknown) =>
+    setWriteError((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Operation failed');
+  const done = (res: unknown) => { qc.invalidateQueries({ queryKey: ['ns-wireguard', deviceId] }); setWriteError(''); guard.onSuccess(res); };
+
   const toggleIface = useMutation({
-    mutationFn: ({ interfaceId, disabled }: { interfaceId: string; disabled: boolean }) =>
-      networkServicesApi.toggleWireGuard(deviceId, interfaceId, disabled),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ns-wireguard', deviceId] }),
+    mutationFn: ({ interfaceId, disabled, confirm }: { interfaceId: string; disabled: boolean; confirm?: boolean }) =>
+      networkServicesApi.toggleWireGuard(deviceId, interfaceId, disabled, confirm),
+    onSuccess: done,
   });
 
   const deleteIface = useMutation({
-    mutationFn: (id: string) => networkServicesApi.deleteWireGuardInterface(deviceId, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ns-wireguard', deviceId] }),
+    mutationFn: ({ id, confirm }: { id: string; confirm?: boolean }) => networkServicesApi.deleteWireGuardInterface(deviceId, id, confirm),
+    onSuccess: done,
+  });
+  const toggle = (interfaceId: string, disabled: boolean) => toggleIface.mutate({ interfaceId, disabled }, {
+    onError: guard.onError(() => toggleIface.mutate({ interfaceId, disabled, confirm: true }, { onError: failed }), failed),
+  });
+  const removeIface = (id: string) => deleteIface.mutate({ id }, {
+    onError: guard.onError(() => deleteIface.mutate({ id, confirm: true }, { onError: failed }), failed),
   });
 
   const deletePeer = useMutation({
@@ -268,6 +283,10 @@ export default function NetworkServicesWireGuardPage() {
           onClose={() => setPeerForm(null)}
         />
       )}
+
+      {writeError && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{writeError}</div>}
+      <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={selectedDevice?.name}
+        pending={toggleIface.isPending || deleteIface.isPending} />
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -350,7 +369,7 @@ export default function NetworkServicesWireGuardPage() {
                 </span>
                 {canWrite && id && (
                   <>
-                    <button onClick={() => toggleIface.mutate({ interfaceId: id, disabled: !disabled })}
+                    <button onClick={() => toggle(id, !disabled)}
                       title={disabled ? 'Enable' : 'Disable'}
                       className={clsx('p-1.5 rounded-lg transition-colors',
                         disabled ? 'text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'
@@ -361,7 +380,7 @@ export default function NetworkServicesWireGuardPage() {
                       className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={() => { if (confirm(`Delete WireGuard interface "${name}" and all its peers?`)) deleteIface.mutate(id); }}
+                    <button onClick={() => { if (confirm(`Delete WireGuard interface "${name}" and all its peers?`)) removeIface(id); }}
                       title="Delete"
                       className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />

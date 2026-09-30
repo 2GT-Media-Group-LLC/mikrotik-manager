@@ -351,3 +351,69 @@ export function guardOutcomeMessage(guard?: GuardResult): { tone: 'ok' | 'warn';
   }
   return null;
 }
+
+// ─── Shared handling for guarded writes ───────────────────────────────────────
+
+export interface PendingLockout {
+  verdict: LockoutVerdict;
+  /** Re-sends the same change with the lockout warning confirmed. */
+  retry: () => void;
+}
+
+/**
+ * State and callbacks for a screen whose writes run under Change Guard: a
+ * predicted lockout opens the verdict dialog with a retry, and an outcome
+ * worth knowing about (auto-reverting, unprotected) becomes a notice.
+ * Pair with <GuardedWriteUi>.
+ */
+export function useGuardedWrite() {
+  const [lockout, setLockout] = useState<PendingLockout | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  /** onError for a mutation: a lockout opens the dialog, anything else goes to `fallback`. */
+  const onError = (retry: () => void, fallback: (e: unknown) => void) => (e: unknown) => {
+    const verdict = lockoutVerdictOf(e);
+    if (verdict) setLockout({ verdict, retry });
+    else fallback(e);
+  };
+
+  /** onSuccess for a mutation: shows the guard outcome when it needs attention. */
+  const onSuccess = (res: unknown) => {
+    setLockout(null);
+    const msg = guardOutcomeMessage((res as { data?: { guard?: GuardResult } } | undefined)?.data?.guard);
+    setNotice(msg?.tone === 'warn' ? msg.text : null);
+  };
+
+  return { lockout, setLockout, notice, setNotice, onError, onSuccess };
+}
+
+export function GuardedWriteUi({
+  state, deviceId, deviceName, pending,
+}: {
+  state: ReturnType<typeof useGuardedWrite>;
+  deviceId: number;
+  deviceName?: string;
+  pending?: boolean;
+}) {
+  return (
+    <>
+      {state.notice && (
+        <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span className="flex-1">{state.notice}</span>
+          <button onClick={() => state.setNotice(null)} className="text-xs underline">Dismiss</button>
+        </div>
+      )}
+      {state.lockout && (
+        <LockoutVerdictDialog
+          verdict={state.lockout.verdict}
+          confirmPhrase={deviceName || 'confirm'}
+          deviceId={deviceId}
+          pending={pending}
+          onConfirm={state.lockout.retry}
+          onCancel={() => state.setLockout(null)}
+        />
+      )}
+    </>
+  );
+}

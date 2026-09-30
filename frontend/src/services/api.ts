@@ -561,8 +561,8 @@ export const devicesApi = {
     api.post<Record<string, string>[]>(`/devices/${id}/firewall`, data),
   updateFirewallRule: (id: number, ruleId: string, data: Record<string, unknown>) =>
     api.put<Record<string, string>[]>(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`, data),
-  deleteFirewallRule: (id: number, ruleId: string) =>
-    api.delete(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`),
+  deleteFirewallRule: (id: number, ruleId: string, confirmLockout = false) =>
+    api.delete(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`, confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
   getResources: (id: number) => api.get<Record<string, string>>(`/devices/${id}/resources`),
   configurePortVlan: (id: number, name: string, data: PortVlanConfig & { confirm_lockout?: boolean }) =>
     api.put(`/devices/${id}/ports/${encodeURIComponent(name)}/vlan`, data),
@@ -614,8 +614,9 @@ export const devicesApi = {
     api.put(`/devices/${id}/vlans/${vlanDbId}`, data),
   deleteVlan: (id: number, vlanDbId: number, confirmLockout = false) =>
     api.delete(`/devices/${id}/vlans/${vlanDbId}`, confirmLockout ? { data: { confirm_lockout: true } } : undefined),
-  copyVlans: (id: number, operations: Array<{ action: 'add' | 'update'; vlan_id: number; bridge: string; tagged_ports: string[]; untagged_ports: string[] }>) =>
-    api.post<{ results: Array<{ vlan_id: number; action: string; success: boolean; error?: string }>; vlans: Vlan[] }>(`/devices/${id}/vlans/copy`, { operations }),
+  copyVlans: (id: number, operations: Array<{ action: 'add' | 'update'; vlan_id: number; bridge: string; tagged_ports: string[]; untagged_ports: string[] }>, confirmLockout = false) =>
+    api.post<{ results?: Array<{ vlan_id: number; action: string; success: boolean; error?: string }>; guard?: { protected: boolean; confirmed: boolean; auto_reverting: boolean; unprotected_reason: string | null; revert_may_fire_at?: string | null }; message?: string }>(
+      `/devices/${id}/vlans/copy`, { operations, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
   reboot: (id: number) => api.post<{ message: string }>(`/devices/${id}/reboot`),
   getPortMonitor: (id: number, name: string) =>
     api.get<PortMonitorData>(`/devices/${id}/ports/${encodeURIComponent(name)}/monitor`),
@@ -628,7 +629,7 @@ export const devicesApi = {
   }) => api.post(`/devices/${id}/bonds`, data),
   updateBond: (id: number, bondName: string, data: {
     mode: string; slaves: string[];
-    lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number;
+    lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number; confirm_lockout?: boolean;
   }) => api.put(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`, data),
   deleteBond: (id: number, bondName: string, confirmLockout = false) =>
     api.delete(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`,
@@ -644,20 +645,20 @@ export const devicesApi = {
   deleteNatRule: (id: number, ruleId: string) =>
     api.delete(`/devices/${id}/nat/${encodeURIComponent(ruleId)}`),
   // Firewall: reorder + counters (order is decisive in RouterOS)
-  moveFirewallRule: (id: number, ruleId: string, destination?: string) =>
-    api.post<Record<string, string>[]>(`/devices/${id}/firewall/move`, { id: ruleId, destination }),
+  moveFirewallRule: (id: number, ruleId: string, destination?: string, confirmLockout = false) =>
+    api.post(`/devices/${id}/firewall/move`, { id: ruleId, destination, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
   resetFirewallCounters: (id: number) =>
     api.post<Record<string, string>[]>(`/devices/${id}/firewall/reset-counters`),
   moveNatRule: (id: number, ruleId: string, destination?: string) =>
     api.post<Record<string, string>[]>(`/devices/${id}/nat/move`, { id: ruleId, destination }),
   // Firewall address lists (reusable address objects)
   getAddressLists: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/address-lists`),
-  addAddressListEntry: (id: number, data: { list: string; address: string; comment?: string; timeout?: string }) =>
-    api.post<Record<string, string>[]>(`/devices/${id}/address-lists`, data),
+  addAddressListEntry: (id: number, data: { list: string; address: string; comment?: string; timeout?: string; confirm_lockout?: boolean }) =>
+    api.post(`/devices/${id}/address-lists`, data),
   updateAddressListEntry: (id: number, entryId: string, data: Record<string, unknown>) =>
     api.put<Record<string, string>[]>(`/devices/${id}/address-lists/${encodeURIComponent(entryId)}`, data),
-  removeAddressListEntry: (id: number, entryId: string) =>
-    api.delete(`/devices/${id}/address-lists/${encodeURIComponent(entryId)}`),
+  removeAddressListEntry: (id: number, entryId: string, confirmLockout = false) =>
+    api.delete(`/devices/${id}/address-lists/${encodeURIComponent(entryId)}`, confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
   // Active connections (read-only)
   getConnections: (id: number, limit = 500) =>
     api.get<{ total: number; connections: Record<string, string>[]; tracking: Record<string, string> }>(`/devices/${id}/connections`, { params: { limit } }),
@@ -1463,8 +1464,8 @@ export const wirelessApi = {
     api.post(`/wireless/${apId}/interfaces`, data),
   updateInterface:  (apId: number, name: string, data: Record<string, unknown>) =>
     api.put(`/wireless/${apId}/interfaces/${encodeURIComponent(name)}`, data),
-  deleteInterface:  (apId: number, name: string) =>
-    api.delete(`/wireless/${apId}/interfaces/${encodeURIComponent(name)}`),
+  deleteInterface:  (apId: number, name: string, confirmLockout = false) =>
+    api.delete(`/wireless/${apId}/interfaces/${encodeURIComponent(name)}`, confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
 
   // Per-AP: security profiles
   getSecurityProfiles:    (apId: number) => api.get(`/wireless/${apId}/security-profiles`),
@@ -1637,10 +1638,10 @@ export const networkServicesApi = {
     api.post<NS[]>('/network-services/wireguard', body, { params: { deviceId } }),
   updateWireGuardInterface: (deviceId: number, id: string, body: NS) =>
     api.put<NS[]>(`/network-services/wireguard/${encodeURIComponent(id)}`, body, { params: { deviceId } }),
-  deleteWireGuardInterface: (deviceId: number, id: string) =>
-    api.delete(`/network-services/wireguard/${encodeURIComponent(id)}`, { params: { deviceId } }),
-  toggleWireGuard: (deviceId: number, interfaceId: string, disabled: boolean) =>
-    api.put('/network-services/wireguard/toggle', { interfaceId, disabled }, { params: { deviceId } }),
+  deleteWireGuardInterface: (deviceId: number, id: string, confirmLockout = false) =>
+    api.delete(`/network-services/wireguard/${encodeURIComponent(id)}`, { params: { deviceId, ...(confirmLockout ? { confirm_lockout: 'true' } : {}) } }),
+  toggleWireGuard: (deviceId: number, interfaceId: string, disabled: boolean, confirmLockout = false) =>
+    api.put('/network-services/wireguard/toggle', { interfaceId, disabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }, { params: { deviceId } }),
   addWireGuardPeer: (deviceId: number, body: NS) =>
     api.post<NS[]>('/network-services/wireguard/peer', body, { params: { deviceId } }),
   updateWireGuardPeer: (deviceId: number, id: string, body: NS) =>

@@ -189,13 +189,23 @@ export class FirmwareOrchestrator {
 
   async start(rolloutId: number): Promise<void> {
     if (this.activeRolloutId) throw new Error(`Rollout #${this.activeRolloutId} is already running`);
-    const rollout = await queryOne<RolloutRow>(`SELECT * FROM firmware_rollouts WHERE id = $1`, [rolloutId]);
-    if (!rollout) throw new Error('Rollout not found');
-    if (rollout.status !== 'pending') throw new Error(`Rollout is ${rollout.status} — only pending rollouts can start`);
-
+    // Reserve before the first await, and claim the row only if it is still
+    // pending: a manual start racing the scheduler ran the rollout twice
+    // (outside review S10).
     this.activeRolloutId = rolloutId;
+    let rollout: RolloutRow | null;
+    try {
+      rollout = await queryOne<RolloutRow>(
+        `UPDATE firmware_rollouts SET status='running', started_at=NOW() WHERE id=$1 AND status='pending' RETURNING *`, [rolloutId]);
+      if (!rollout) {
+        const cur = await queryOne<{ status: string }>(`SELECT status FROM firmware_rollouts WHERE id = $1`, [rolloutId]);
+        throw new Error(cur ? `Rollout is ${cur.status} — only pending rollouts can start` : 'Rollout not found');
+      }
+    } catch (e) {
+      this.activeRolloutId = null;
+      throw e;
+    }
     this.cancelRequested = false;
-    await query(`UPDATE firmware_rollouts SET status='running', started_at=NOW() WHERE id=$1`, [rolloutId]);
 
     // Fire-and-forget the run loop; callers poll status via the API.
     void this.run(rollout).catch(async (e) => {

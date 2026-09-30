@@ -30,17 +30,47 @@ configured.
 
 ### Covered changes
 
-Twelve change types are guarded:
+Every write that can take a device off the network runs under Change Guard. Some are
+also simulated first, so a change predicted to cut management is stopped before it is
+applied; the rest are protected by auto-revert alone.
 
-| Area | Operations |
-|---|---|
-| Bridge | VLAN filtering toggle |
-| Ports | PVID and tagged/untagged membership |
-| Bridge VLANs | add, update, delete |
-| Addressing | IP address add, remove |
-| Routing | route add, remove |
-| Bonding | bond create, delete |
-| Services | management service enable/disable |
+| Area | Operations | Predicted? |
+|---|---|---|
+| Firewall filter | add, edit, enable/disable, move, delete | Yes, in rule order (see [Firewall rules](#firewall-rules)) |
+| Firewall address lists | add, edit, remove | Yes |
+| Bridge | VLAN filtering toggle | Yes |
+| Ports | PVID and tagged/untagged membership | Yes |
+| Ports | enable/disable | Yes |
+| Ports | MTU, FEC, flow control, speed, PoE | Flagged when the port carries management |
+| Bridge VLANs | add, update, delete, copy from another switch | Yes |
+| Addressing | IP address add, remove | Yes |
+| Routing | static route add, remove | Yes |
+| Routing | OSPF, BGP, routing tables, route filters | No |
+| Bonding | create, edit, delete | Flagged when a member or the bond carries management |
+| Services | management service enable/disable | Yes |
+| NAT | add, edit, move, delete | No |
+| WireGuard | interface enable/disable, delete | Yes |
+| WireGuard | interface edit, peers | Flagged when the tunnel carries management |
+| Wireless | interface edit, enable/disable, delete; security profile edit, delete | Enable/disable and delete predicted; edits flagged when the interface carries management |
+| Guest Wi-Fi | hotspot setup, server enable/disable, remove | Setup flagged when the chosen interface carries management |
+
+"Flagged" means the change can't be simulated, but because it touches something the
+manager's connection runs through, auto-revert becomes mandatory for it (see
+[When protection is required](#when-protection-is-required)).
+
+Creating a bond also moves the member ports' VLAN membership onto the bond, and deleting
+it gives the ports their VLANs back. Before 0.24.44 a port tagged on a VLAN became a bond
+that wasn't, and that VLAN stopped crossing the link.
+
+Each guarded change takes a few seconds longer than an unguarded one: the device saves a
+restore point first, and the manager proves it can still connect before disarming.
+
+### One change at a time per device
+
+While a protected change is being applied or verified, other writes to the same device
+are refused with HTTP 409 and `code: "device_busy"`. A revert restores a backup taken
+before its change, so a write that slipped in between would be undone with it. Reads,
+diagnostics and the manager's own records (location, monitoring) are not affected.
 
 ### What you see when it fires
 
@@ -124,6 +154,27 @@ The resulting warning names the mechanism:
 > Management arrives untagged on `sfp28-1` (PVID 1) — the gateway's MAC is learned there —
 > but VLAN 1 has no bridge VLAN entry listing `bridge1` as an untagged member.
 
+### Firewall rules
+
+The input chain is evaluated the way RouterOS does it, first match wins, for the
+connection the manager actually opens: a new TCP connection from its address to the API
+port, arriving on the interface that holds the management address. Address lists,
+interface lists and jumps into custom chains are followed. Anything the check can't
+evaluate (tcp-flags, rate limits, marks, time) counts as "maybe", and a rule that maybe
+matches makes the answer "can't tell" rather than a guess.
+
+So enabling a staged drop rule with the toggle, moving a drop above the rule that
+accepts the manager, deleting that accept rule, or removing the manager from an accepted
+address list is caught before it is applied. RouterOS's default configuration is
+understood correctly: it lets LAN traffic reach the end of the chain, so appending a
+drop-all to it is predicted as a lockout.
+
+Only the IPv4 filter table is checked. Rules in the raw table are not, and a manager
+connecting over IPv6 isn't affected by the IPv4 filter at all. If the device has
+connection tracking switched off (RouterOS turns it on only once firewall rules exist),
+the manager's address isn't known, so rules scoped to a source address count as "can't
+tell".
+
 ### Overriding a verdict
 
 Deliberately awkward. The API requires `confirm_lockout: true` in the request body, and
@@ -136,7 +187,12 @@ Auto-revert is mandatory, not best effort, for a change that:
 
 - you confirmed past a lockout warning,
 - the prediction flagged as a warning, or
-- could not be analysed (the device's state couldn't be read).
+- could not be analysed (the device's state couldn't be read), or
+- depends on something the check couldn't evaluate.
+
+A failed read of any part of the device's state counts as "could not be analysed". Before
+0.24.44 a failed read was treated as an empty table, which could produce a confident
+"safe".
 
 If the device can't arm auto-revert for one of these (the API user can't save a backup or
 add a scheduler, the flash is full, or Change Guard is turned off), the change is **refused

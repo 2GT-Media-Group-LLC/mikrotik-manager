@@ -13,7 +13,7 @@
  * vlan-filtering is on, and PVID-derived untagged membership is added dynamically
  * (which is why effective `current-*` membership is what we test).
  */
-import { detectLockoutRisk } from '../../utils/firewallSafety';
+import { evaluateInputChain } from './firewallPath';
 import { vlanMembership, type DeviceSnapshot, type ManagementPath } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
 
@@ -27,6 +27,12 @@ export interface InvariantResult {
    * dynamically-added PVID entry that a later change could remove).
    */
   severity?: 'critical' | 'warning';
+  /**
+   * Satisfied as far as the check can tell, but it depends on something the
+   * model can't evaluate. A change that leaves an invariant uncertain is
+   * reported as a warning, which makes auto-revert mandatory for it.
+   */
+  uncertain?: boolean;
 }
 
 export interface Invariant {
@@ -295,15 +301,17 @@ export const INVARIANTS: Invariant[] = [
 
   {
     id: 'input-chain-permits',
-    title: 'No input-chain rule blocks the management port',
+    title: 'The input chain still lets the manager in',
     check(snap, path, device) {
-      for (const rule of snap.firewallFilter) {
-        const risk = detectLockoutRisk(rule, { mgmtPorts: [device.api_port] });
-        if (risk.risky) {
-          return { ok: false, detail: `A firewall rule would block management access: ${risk.reason}` };
-        }
-      }
-      return ok();
+      const verdict = evaluateInputChain(snap, {
+        srcIp: path.managerIp,
+        dstIp: device.ip_address,
+        dstPort: device.api_port,
+        inInterface: path.mgmtInterface,
+      });
+      if (verdict.outcome === 'dropped') return { ok: false, detail: verdict.reason };
+      if (verdict.outcome === 'unknown') return { ok: true, uncertain: true, detail: verdict.reason };
+      return ok(verdict.reason);
     },
   },
 

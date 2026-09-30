@@ -87,13 +87,23 @@ export class CommandRunner {
 
   async start(runId: number): Promise<void> {
     if (this.activeRunId) throw new Error(`Run #${this.activeRunId} is already in progress`);
-    const run = await queryOne<RunRow>(`SELECT * FROM command_runs WHERE id = $1`, [runId]);
-    if (!run) throw new Error('Run not found');
-    if (run.status !== 'pending') throw new Error(`Run is ${run.status} — only pending runs can start`);
-
+    // Reserve before the first await, and claim the row only if it is still
+    // pending: two starts at once each passed the checks and ran it twice
+    // (outside review S10).
     this.activeRunId = runId;
+    let run: RunRow | null;
+    try {
+      run = await queryOne<RunRow>(
+        `UPDATE command_runs SET status='running', started_at=NOW() WHERE id=$1 AND status='pending' RETURNING *`, [runId]);
+      if (!run) {
+        const cur = await queryOne<{ status: string }>(`SELECT status FROM command_runs WHERE id = $1`, [runId]);
+        throw new Error(cur ? `Run is ${cur.status} — only pending runs can start` : 'Run not found');
+      }
+    } catch (e) {
+      this.activeRunId = null;
+      throw e;
+    }
     this.cancelRequested = false;
-    await query(`UPDATE command_runs SET status='running', started_at=NOW() WHERE id=$1`, [runId]);
 
     // Fire and forget; callers poll. A bulk run outlives any HTTP request.
     void this.run(run)

@@ -15,6 +15,16 @@ const execFileAsync = promisify(execFile);
 const CERTS_DIR = '/certs';
 const CERT_PATH = path.join(CERTS_DIR, 'server.crt');
 const KEY_PATH  = path.join(CERTS_DIR, 'server.key');
+
+/** Certificate writes run one at a time so a cert and its key are always a pair. */
+let installChain: Promise<void> = Promise.resolve();
+function acquireInstallLock(): Promise<() => void> {
+  let release!: () => void;
+  const next = new Promise<void>((r) => { release = r; });
+  const ready = installChain.then(() => release);
+  installChain = installChain.then(() => next);
+  return ready;
+}
 const RELOAD_SIGNAL = path.join(CERTS_DIR, '.reload');
 
 function parseCertInfo(pem: string) {
@@ -60,6 +70,8 @@ router.get('/', async (_req: Request, res: Response) => {
 
 // POST /api/cert/regenerate — generate a fresh self-signed certificate
 router.post('/regenerate', requireAdmin, async (_req: Request, res: Response) => {
+  // Same lock as upload, so a regenerate can't interleave with an upload.
+  const release = await acquireInstallLock();
   try {
     await execFileAsync('openssl', [
       'req', '-x509', '-nodes', '-days', '3650',
@@ -78,6 +90,8 @@ router.post('/regenerate', requireAdmin, async (_req: Request, res: Response) =>
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: `Failed to generate certificate: ${msg}` });
+  } finally {
+    release();
   }
 });
 
@@ -128,9 +142,12 @@ router.post('/upload', requireAdmin, async (req: Request, res: Response) => {
     return res.status(400).json({ error: `Key/certificate validation failed: ${msg}` });
   }
 
-  // Write files atomically (write to temp, then rename)
+  // Write files atomically (write to temp, then rename). Installs run one at a
+  // time: two uploads sharing the '.tmp' files could put one upload's
+  // certificate next to the other's key (outside review S10).
   const tmpCert = CERT_PATH + '.tmp';
   const tmpKey  = KEY_PATH + '.tmp';
+  const release = await acquireInstallLock();
   try {
     await writeFile(tmpCert, certificate.trim() + '\n', { mode: 0o644 });
     await writeFile(tmpKey,  private_key.trim() + '\n', { mode: 0o600 });
@@ -150,6 +167,8 @@ router.post('/upload', requireAdmin, async (req: Request, res: Response) => {
     await unlink(tmpKey).catch(() => {});
     const msg = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: `Failed to write certificate: ${msg}` });
+  } finally {
+    release();
   }
 });
 
