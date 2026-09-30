@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isValidDeviceAddress, isValidIPv4, isValidIPv6, isValidHostname,
-  isPrivateIp, classifyAddress, splitAddressAndPort,
+  isPrivateIp, classifyAddress, splitAddressAndPort, addressFieldValue, stripIPv6Brackets,
 } from './deviceAddress';
 
 describe('isValidDeviceAddress', () => {
@@ -84,5 +84,41 @@ describe('splitAddressAndPort', () => {
 
   it('leaves a bare IPv6 address untouched (no ambiguous trailing port)', () => {
     expect(splitAddressAndPort('2001:db8::1')).toEqual({ address: '2001:db8::1' });
+  });
+});
+
+// #178: a bracketed IPv6 address without a port stayed in the field with its
+// brackets and failed validation.
+describe('addressFieldValue', () => {
+  it('unwraps a bracketed IPv6 address with no port', () => {
+    expect(addressFieldValue('[2001:db8::1]')).toEqual({ address: '2001:db8::1' });
+    expect(isValidDeviceAddress(addressFieldValue('[2001:db8::1]').address)).toBe(true);
+  });
+
+  it('unwraps a bracketed IPv6 address and moves its port', () => {
+    expect(addressFieldValue('[2001:db8::1]:8729')).toEqual({ address: '2001:db8::1', port: 8729 });
+  });
+
+  it('leaves a bare IPv6 address alone', () => {
+    expect(addressFieldValue('2001:db8::1')).toEqual({ address: '2001:db8::1' });
+  });
+
+  it('still splits a pasted host:port or URL', () => {
+    expect(addressFieldValue('192.168.88.1:8729')).toEqual({ address: '192.168.88.1', port: 8729 });
+    expect(addressFieldValue('https://router.lan:8729/')).toEqual({ address: 'router.lan', port: 8729 });
+  });
+
+  it('does not rewrite half-typed input', () => {
+    expect(addressFieldValue('[2001:db8::1')).toEqual({ address: '[2001:db8::1' });
+    expect(addressFieldValue('http://')).toEqual({ address: 'http://' });
+    expect(addressFieldValue('192.168.88.1')).toEqual({ address: '192.168.88.1' });
+  });
+});
+
+describe('stripIPv6Brackets', () => {
+  it('removes brackets and nothing else', () => {
+    expect(stripIPv6Brackets('[fd00::1]')).toBe('fd00::1');
+    expect(stripIPv6Brackets('fd00::1')).toBe('fd00::1');
+    expect(stripIPv6Brackets('10.0.0.1')).toBe('10.0.0.1');
   });
 });

@@ -22,6 +22,54 @@ different port is also given. Reaching a device
 over the internet on the plaintext API port (8728) sends the login unencrypted, so the form
 warns and suggests api-ssl (port 8729) or a VPN instead.
 
+### IPv6 addresses
+
+Enter an IPv6 address with or without brackets: `2001:db8::1` and `[2001:db8::1]` both work,
+and `[2001:db8::1]:8729` puts 8729 in the API Port field.
+
+Reaching IPv6 devices is **off by default**, because it changes how Docker sets up the
+host's networking. Turn it on only if you have devices you can reach only over IPv6.
+
+**Before you turn it on**, check the host:
+
+- **It has IPv6 itself.** If `curl -6 https://ipv6.google.com` fails on the host, the
+  manager can't reach IPv6 devices either.
+- **Docker 27 or later.** Check with `docker version`.
+- **`accept_ra=2` on its network interface.** Docker enables IPv6 forwarding when it creates
+  an IPv6 network, and most Linux distributions then stop accepting router advertisements.
+  A host that gets its IPv6 address and default route automatically can lose its own IPv6
+  connectivity. Setting `accept_ra` to 2 keeps it, for example for `eth0`:
+
+  ```bash
+  echo 'net.ipv6.conf.eth0.accept_ra = 2' | sudo tee /etc/sysctl.d/99-docker-ipv6.conf
+  sudo sysctl --system
+  ```
+
+  Hosts with a static IPv6 address and gateway don't need this.
+
+**To turn it on**, add this line to `.env` next to your compose file:
+
+```bash
+ENABLE_IPV6=true
+```
+
+then recreate the stack. Your data is kept, and the manager is down for about a minute:
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+With the pre-built images, add `-f docker-compose.ghcr.yml` to both commands.
+
+To turn it off, remove the line and run the same two commands.
+
+Use `down` then `up` rather than just `up -d`. Docker has to rebuild the network when this
+setting changes. Recent Compose versions do that on a plain `up -d`, but older ones can keep
+the old network and not apply the change. `down` then `up` works on all of them.
+
+IPv4 devices work the same either way.
+
 !!! note "Reachable over a VPN but not over its public IP?"
     RouterOS's own `IP → Services` list restricts each service (`api`, `api-ssl`) by an
     **"Available From"** address list. It accepts the TCP connection from anywhere, then

@@ -4,7 +4,7 @@ import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network, RotateCcw
 import { devicesApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
-import { isValidDeviceAddress, classifyAddress, splitAddressAndPort } from '../../utils/deviceAddress';
+import { isValidDeviceAddress, classifyAddress, addressFieldValue } from '../../utils/deviceAddress';
 import type { Device, DeviceType, IpAddress } from '../../types';
 
 interface Props {
@@ -71,14 +71,10 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   };
 
   // A pasted URL or "host:port" is split so the port lands in the API Port
-  // field instead of failing address validation.
+  // field instead of failing address validation; IPv6 brackets are dropped.
   const setAddress = (v: string) => {
-    const { address, port } = splitAddressAndPort(v);
-    if (port && address !== v) {
-      setForm((f) => ({ ...f, ip_address: address, api_port: String(port) }));
-    } else {
-      set('ip_address', v);
-    }
+    const { address, port } = addressFieldValue(v);
+    setForm((f) => ({ ...f, ip_address: address, ...(port ? { api_port: String(port) } : {}) }));
   };
 
   const addressTrimmed = form.ip_address.trim();

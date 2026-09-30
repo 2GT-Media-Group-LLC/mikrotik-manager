@@ -1,5 +1,5 @@
 import type { BulkAddDeviceItem, CredentialPreset } from '../services/api';
-import { isValidDeviceAddress } from './deviceAddress';
+import { isValidDeviceAddress, stripIPv6Brackets } from './deviceAddress';
 
 /**
  * Parsing a device list for bulk import (#160).
@@ -152,7 +152,7 @@ export function parseDeviceCsv(
     const line = i + 1;
     const errors: string[] = [];
     const warnings: string[] = [];
-    const addr = (f.ip_address || '').trim();
+    const addr = stripIPv6Brackets((f.ip_address || '').trim());
 
     if (!addr) errors.push('Missing address.');
     else if (!isValidDeviceAddress(addr)) errors.push(`"${addr}" is not a valid IP address or hostname.`);

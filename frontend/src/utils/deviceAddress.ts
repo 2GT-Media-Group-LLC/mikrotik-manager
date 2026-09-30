@@ -97,3 +97,26 @@ export function splitAddressAndPort(raw: string): { address: string; port?: numb
   }
   return { address: s };
 }
+
+/** "[2001:db8::1]" -> "2001:db8::1". Anything else is returned unchanged. */
+export function stripIPv6Brackets(v: string): string {
+  const m = /^\[([^\]]+)\]$/.exec(v.trim());
+  return m ? m[1] : v;
+}
+
+/**
+ * What the address field should hold after the user types or pastes `raw`,
+ * and a port to move into the API Port field if one came with it.
+ *
+ * A bracketed IPv6 address is unwrapped whether or not a port follows it.
+ * Only unwrapping it when a port followed (#178) left a plain "[2001:db8::1]"
+ * in the field, where validation rejected it. Other input is only rewritten
+ * when a port was split off, so a half-typed "http://" isn't mangled.
+ */
+export function addressFieldValue(raw: string): { address: string; port?: number } {
+  const split = splitAddressAndPort(raw);
+  const t = raw.trim();
+  if (t.startsWith('[') && t.includes(']') && isValidIPv6(split.address)) return split;
+  if (split.port && split.address !== raw) return split;
+  return { address: raw };
+}

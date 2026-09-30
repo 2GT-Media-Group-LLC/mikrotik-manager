@@ -10,6 +10,12 @@ describe('splitCsvLine', () => {
 });
 
 describe('parseDeviceCsv', () => {
+  it('accepts a bracketed IPv6 address and sends it without brackets (#178)', () => {
+    const r = parseDeviceCsv('name,ip,type,preset\nsw6,[2001:db8::2],switch,Default\n', presets);
+    expect(r.rows[0].errors).toEqual([]);
+    expect(r.rows[0].item).toMatchObject({ ip_address: '2001:db8::2' });
+  });
+
   it('turns a clean file into bulk-add items', () => {
     const r = parseDeviceCsv('name,ip,type,preset\nsw1,10.0.0.2,switch,Default\n', presets);
     expect(r.fileErrors).toEqual([]);

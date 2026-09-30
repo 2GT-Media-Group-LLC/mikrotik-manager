@@ -9,7 +9,7 @@ import {
 } from '../../services/api';
 import ConfirmDuplicateModal from './ConfirmDuplicateModal';
 import { parsePort } from '../../utils/parsePort';
-import { isValidDeviceAddress, classifyAddress, splitAddressAndPort } from '../../utils/deviceAddress';
+import { isValidDeviceAddress, classifyAddress, addressFieldValue } from '../../utils/deviceAddress';
 
 interface Props {
   onClose: () => void;
@@ -67,14 +67,10 @@ export default function AddDeviceModal({
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   // A pasted URL or "host:port" is split so the port lands in the API Port
-  // field instead of failing address validation.
+  // field instead of failing address validation; IPv6 brackets are dropped.
   const setAddress = (v: string) => {
-    const { address, port } = splitAddressAndPort(v);
-    if (port && address !== v) {
-      setForm((f) => ({ ...f, ip_address: address, api_port: String(port) }));
-    } else {
-      set('ip_address', v);
-    }
+    const { address, port } = addressFieldValue(v);
+    setForm((f) => ({ ...f, ip_address: address, ...(port ? { api_port: String(port) } : {}) }));
   };
 
   const addressTrimmed = form.ip_address.trim();

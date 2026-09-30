@@ -68,6 +68,7 @@ services:
     restart: unless-stopped
     networks:
       - app-network
+      - device-ipv6
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
       interval: 15s
@@ -154,3 +155,11 @@ volumes:
 networks:
   app-network:
     driver: bridge
+  # Lets the backend reach devices by IPv6 address (#178). Off unless
+  # ENABLE_IPV6=true is set in .env; see docs/devices.md for what the host needs
+  # (IPv6, Docker 27+, accept_ra=2) and how to switch it on or off.
+  # Only the backend joins it. app-network is deliberately left alone: changing
+  # it in place reattaches running containers without their service names.
+  device-ipv6:
+    driver: bridge
+    enable_ipv6: ${ENABLE_IPV6:-false}
