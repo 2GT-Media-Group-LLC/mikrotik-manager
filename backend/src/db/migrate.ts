@@ -1193,6 +1193,24 @@ CREATE TABLE IF NOT EXISTS user_site_roles (
   PRIMARY KEY (user_id, site_id)
 );
 CREATE INDEX IF NOT EXISTS idx_user_site_roles_site ON user_site_roles(site_id);
+
+-- Traffic per site (outside review J4, P2-23). A client's daily traffic is kept
+-- per site, the site of the exporter that saw it, so the same MAC or a reused
+-- address at two customers is never added together. 0 = no site could be
+-- determined (an unidentified exporter at a multi-site install) and rows from
+-- before this change.
+ALTER TABLE client_traffic_daily ADD COLUMN IF NOT EXISTS site_id INTEGER NOT NULL DEFAULT 0;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'client_traffic_daily'::regclass AND contype = 'p'
+       AND array_length(conkey, 1) = 2
+  ) THEN
+    ALTER TABLE client_traffic_daily DROP CONSTRAINT client_traffic_daily_pkey;
+    ALTER TABLE client_traffic_daily ADD PRIMARY KEY (mac_address, day, site_id);
+  END IF;
+END $$;
 `;
 
 const DEFAULT_SETTINGS = [
@@ -1227,7 +1245,9 @@ const DEFAULT_SETTINGS = [
   { key: 'netflow_active_timeout', value: '1m' },
   { key: 'netflow_inactive_timeout', value: '15s' },
   { key: 'netflow_topn_clients', value: 50 },
-  { key: 'netflow_accept_unknown', value: true },
+  // New installs only accept flows from managed devices (outside review P2-23).
+  // Existing installs keep the value they have; see docs/traffic.md.
+  { key: 'netflow_accept_unknown', value: false },
   { key: 'netflow_retention_days', value: 30 },
   { key: 'netflow_daily_retention_days', value: 365 },
   { key: 'change_guard_enabled', value: true },

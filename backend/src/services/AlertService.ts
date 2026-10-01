@@ -61,7 +61,7 @@ const EVENT_LABELS: Record<string, string> = {
   config_drift:             'Configuration Changed',
   device_degraded:          'Device Degraded (Hardware)',
   device_health_restored:   'Device Hardware Healthy Again',
-  device_identity_changed:  'Device Certificate or Host Key Changed',
+  device_identity_changed:  'Device Identity Changed (certificate, host key or serial)',
 };
 
 const EVENT_EMOJI: Record<string, string> = {

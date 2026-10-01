@@ -36,6 +36,19 @@ export class RouterOSError extends Error {
   }
 }
 
+/**
+ * The device answered and refused the command (a !trap): no such menu, no
+ * permission, bad argument. Unlike a timeout or a dropped connection, this is
+ * a real answer about the device, so callers can treat it as "not there"
+ * without mistaking a failed read for an empty one (outside review P2-21).
+ */
+export class RouterOSTrapError extends RouterOSError {
+  constructor(message: string, code?: string) {
+    super(message, code);
+    this.name = 'RouterOSTrapError';
+  }
+}
+
 export class RouterOSClient extends EventEmitter {
   private socket: net.Socket | null = null;
   private buffer: Buffer = Buffer.alloc(0);
@@ -251,7 +264,7 @@ export class RouterOSClient extends EventEmitter {
         // keep the stream in sync. See drainUntilDone() for why this has to
         // keep reading rather than assume exactly one more sentence.
         await this.drainUntilDone();
-        throw new RouterOSError(
+        throw new RouterOSTrapError(
           sentence.words['message'] || `Command failed: ${command}`,
           sentence.words['category']
         );
@@ -513,7 +526,12 @@ export class RouterOSClient extends EventEmitter {
     return null;
   }
 
-  private readNextSentence(timeoutMs = this.readTimeoutMs): Promise<RouterOSSentence> {
+  /**
+   * `poisonOnTimeout: false` is only for a wait whose timeout is expected and
+   * whose leftovers the caller drains itself: the streaming loop waiting out
+   * its deadline, which cancelStreaming() then resynchronises or poisons.
+   */
+  private readNextSentence(timeoutMs = this.readTimeoutMs, poisonOnTimeout = true): Promise<RouterOSSentence> {
     // Check queue first
     if (this.sentenceQueue.length > 0) {
       return Promise.resolve(this.sentenceQueue.shift()!);
@@ -534,7 +552,7 @@ export class RouterOSClient extends EventEmitter {
         // "Downloaded". A desynchronised connection can also make an unrelated
         // command look like it succeeded, so the only safe response is to stop
         // using it.
-        this.poison('Read timeout waiting for API response');
+        if (poisonOnTimeout) this.poison('Read timeout waiting for API response');
         reject(new RouterOSError('Read timeout waiting for API response'));
       }, timeoutMs);
 
@@ -648,7 +666,10 @@ export class RouterOSClient extends EventEmitter {
 
       let sentence: RouterOSSentence;
       try {
-        sentence = await this.readNextSentence(Math.min(remaining, this.readTimeoutMs));
+        // Reaching the deadline is how a streaming command normally ends, so
+        // it must not poison the connection: cancelStreaming() below drains
+        // what is still in flight, and drops the connection if it can't.
+        sentence = await this.readNextSentence(Math.min(remaining, this.readTimeoutMs), false);
       } catch {
         // Timeout or socket error — fall through to cancel
         break;
@@ -663,7 +684,7 @@ export class RouterOSClient extends EventEmitter {
         // See drainUntilDone(): a !trap's trailing !done isn't always the very
         // next sentence.
         await this.drainUntilDone(5_000);
-        throw new RouterOSError(
+        throw new RouterOSTrapError(
           sentence.words['message'] || `Command failed: ${command}`,
           sentence.words['category']
         );
@@ -673,18 +694,49 @@ export class RouterOSClient extends EventEmitter {
       }
     }
 
-    // Send /cancel and drain responses (RouterOS replies !trap + !done to cancel)
-    try {
-      await this.sendSentence(['/cancel', `=tag=${tag}`]);
-      // Drain up to 2 sentences (!trap and/or !done) with a short timeout each
-      for (let i = 0; i < 2; i++) {
-        const s = await this.readNextSentence(5_000).catch(() => null);
-        if (!s || s.type === '!done') break;
-      }
-    } catch {
-      // Ignore cancel errors
-    }
-
+    await this.cancelStreaming(tag);
     return results;
+  }
+
+  /**
+   * Stop a streaming command and consume everything it still has to say.
+   *
+   * RouterOS answers a cancel with the cancelled command's late rows, an
+   * "interrupted" !trap and a !done (all tagged with its tag), plus a !done
+   * for /cancel itself. The old drain stopped after two sentences and ignored
+   * tags, so a sentence was often left queued and the next command read it as
+   * its own (empty) reply (outside review P2-4).
+   *
+   * /cancel gets its own tag, and sentences are read until both !done replies
+   * have arrived. If they don't arrive in time, or the cancel can't be sent,
+   * the reply stream can't be trusted any more, and the connection is dropped
+   * rather than handed to the next command.
+   */
+  private async cancelStreaming(tag: string): Promise<void> {
+    if (this.poisoned || !this.socket) return; // already dropped; nothing to resync
+    const cancelTag = String(++this.tagCounter);
+    try {
+      await this.sendSentence(['/cancel', `=tag=${tag}`, `.tag=${cancelTag}`]);
+    } catch {
+      this.poison('could not send /cancel for a streaming command');
+      return;
+    }
+    let commandDone = false;
+    let cancelDone = false;
+    const until = Date.now() + 5_000;
+    // Bounded by time and count: a device streaming rows forever can't keep us here.
+    for (let i = 0; i < 10_000 && !(commandDone && cancelDone); i++) {
+      const left = until - Date.now();
+      if (left <= 0) break;
+      const s = await this.readNextSentence(left).catch(() => null);
+      if (!s) break;
+      if (s.type === '!fatal') break;
+      if (s.type !== '!done') continue; // late rows and the "interrupted" trap
+      if (s.tag === tag) commandDone = true;
+      else if (s.tag === cancelTag) cancelDone = true;
+    }
+    if (!(commandDone && cancelDone) && !this.poisoned) {
+      this.poison('a cancelled streaming command did not finish cleanly');
+    }
   }
 }

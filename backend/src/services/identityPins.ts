@@ -14,28 +14,79 @@
  * Pins are looked up by the address and port being connected to, which is how
  * every connection in the manager names its device, so no call site needs to
  * know about pinning.
+ *
+ * The serial number is pinned the same way (outside review P2-19), checked as
+ * soon as the manager has logged in and before it reads or writes anything.
+ * Polls used to accept whatever answered at the address, so two devices that
+ * swapped DHCP addresses, or a replacement at the same address, silently took
+ * over each other's records, and backups, restores and firmware went to the
+ * wrong device.
  */
 import { createHash } from 'crypto';
 import { query } from '../config/database';
 import { alertService } from './AlertService';
 import { siteScopeDevices, type SiteScope } from '../utils/siteScope';
 
-export type IdentityKind = 'api-tls' | 'ssh-host';
+export type IdentityKind = 'api-tls' | 'ssh-host' | 'serial';
+export const IDENTITY_KINDS: readonly IdentityKind[] = ['api-tls', 'ssh-host', 'serial'];
 
 const KIND_LABEL: Record<IdentityKind, string> = {
   'api-tls': 'API-SSL certificate',
   'ssh-host': 'SSH host key',
+  'serial': 'serial number',
 };
 
 export class IdentityMismatchError extends Error {
   readonly code = 'identity_changed';
   constructor(readonly kind: IdentityKind, deviceName: string) {
-    super(
-      `${deviceName}'s ${KIND_LABEL[kind]} has changed since the manager first connected, so the manager ` +
-      `stopped before sending its login. If the device was reset or its ${kind === 'api-tls' ? 'certificate' : 'host key'} ` +
-      `was replaced, check the new one and choose "Trust new ${kind === 'api-tls' ? 'certificate' : 'host key'}" on the device's page.`
+    super(kind === 'serial'
+      ? `A device with a different serial number is answering at ${deviceName}'s address, so the manager ` +
+        `stopped before reading or changing anything on it. If ${deviceName} was replaced, choose ` +
+        `"This is the new device" on the device's page; if two devices swapped addresses, correct the address instead.`
+      : `${deviceName}'s ${KIND_LABEL[kind]} has changed since the manager first connected, so the manager ` +
+        `stopped before sending its login. If the device was reset or its ${kind === 'api-tls' ? 'certificate' : 'host key'} ` +
+        `was replaced, check the new one and choose "Trust new ${kind === 'api-tls' ? 'certificate' : 'host key'}" on the device's page.`
     );
   }
+}
+
+/** Serial numbers compare trimmed and case-insensitively. */
+export function normalizeSerial(serial: string): string {
+  return serial.trim().toUpperCase();
+}
+
+/**
+ * Check the serial number a device reports after login against its pin (P2-19).
+ * The first serial pinned is the one already on record, so a device that was
+ * swapped before this check existed is still caught. Throws
+ * IdentityMismatchError when it differs.
+ */
+export async function verifyDeviceSerial(deviceId: number, deviceName: string, reported: string): Promise<void> {
+  const serial = normalizeSerial(reported);
+  if (!serial) return;
+  const rows = await query<{ serial_number: string | null; fingerprint: string | null; seen_fingerprint: string | null }>(
+    `SELECT d.serial_number, p.fingerprint, p.seen_fingerprint
+       FROM devices d
+       LEFT JOIN device_identity_pins p ON p.device_id = d.id AND p.kind = 'serial'
+      WHERE d.id = $1`,
+    [deviceId]);
+  const row = rows[0];
+  if (!row) return;
+  let pinned = row.fingerprint;
+  if (!pinned) {
+    pinned = row.serial_number ? normalizeSerial(row.serial_number) : serial;
+    await pin(deviceId, 'serial', pinned);
+  }
+  if (pinned === serial) {
+    if (row.seen_fingerprint) {
+      await query(
+        `UPDATE device_identity_pins SET seen_fingerprint = NULL, mismatch_at = NULL WHERE device_id = $1 AND kind = 'serial'`,
+        [deviceId]);
+    }
+    return;
+  }
+  await recordMismatch({ device_id: deviceId, name: deviceName, fingerprint: pinned, seen_fingerprint: row.seen_fingerprint }, 'serial', serial);
+  throw new IdentityMismatchError('serial', deviceName);
 }
 
 /** Lowercase hex, no separators: how RouterOS prints a certificate fingerprint. */
@@ -113,8 +164,11 @@ async function recordMismatch(row: PinRow, kind: IdentityKind, fp: string): Prom
   await query(
     `UPDATE device_identity_pins SET seen_fingerprint = $3, mismatch_at = NOW() WHERE device_id = $1 AND kind = $2`,
     [row.device_id, kind, fp]);
-  const message = `${row.name}'s ${KIND_LABEL[kind]} has changed. The manager has stopped connecting to it ` +
-    `over ${kind === 'api-tls' ? 'API-SSL' : 'SSH'} until an admin confirms the new one.`;
+  const message = kind === 'serial'
+    ? `A device with a different serial number is answering at ${row.name}'s address. The manager has stopped ` +
+      `polling it until an admin confirms it is the right device.`
+    : `${row.name}'s ${KIND_LABEL[kind]} has changed. The manager has stopped connecting to it ` +
+      `over ${kind === 'api-tls' ? 'API-SSL' : 'SSH'} until an admin confirms the new one.`;
   await query(
     `INSERT INTO events (device_id, event_time, severity, topic, message) VALUES ($1, NOW(), 'critical', 'manager,security', $2)`,
     [row.device_id, message]).catch(() => {});

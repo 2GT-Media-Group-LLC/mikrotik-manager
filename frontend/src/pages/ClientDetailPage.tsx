@@ -17,7 +17,6 @@ import { CATEGORY_META, SELECTABLE_CATEGORIES } from '../utils/clientCategories'
 import type { ClientDetail } from '../services/api';
 import type { SignalPoint } from '../services/api';
 import clsx from 'clsx';
-import { useIsSiteScoped } from '../hooks/useCanWrite';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -696,12 +695,9 @@ const APP_COLORS = [
 function AppTrafficCard({ mac }: { mac: string }) {
   const [range, setRange] = useState<'2h' | '24h' | '7d'>('24h');
 
-  // Per-client NetFlow is fleet-wide data, not offered to site-limited accounts (P1-7).
-  const siteScopedTraffic = useIsSiteScoped();
   const { data, isLoading } = useQuery({
     queryKey: ['client-app-traffic', mac, range],
     queryFn: () => trafficApi.client(mac, range).then(r => r.data),
-    enabled: !siteScopedTraffic,
     refetchInterval: 60_000,
   });
 

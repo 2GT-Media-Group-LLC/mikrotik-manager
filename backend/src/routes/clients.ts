@@ -3,14 +3,15 @@ import * as dgram from 'dgram';
 import { query } from '../config/database';
 import { logSafe } from '../utils/logSafe';
 import { requireAuth, requireAdmin, requireWrite } from '../middleware/auth';
-import { siteScopeByDevice, siteScopeByNullableDevice } from '../utils/siteScope';
+import { siteList, siteScopeByDevice, siteScopeByNullableDevice } from '../utils/siteScope';
 import { fluxDeviceFilter } from '../utils/siteAccess';
-import { activeSite } from '../middleware/site';
+import { activeSite, writableScope } from '../middleware/site';
 import { PollerService } from '../services/PollerService';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/clientFingerprint';
 import { parseRoamLine, buildSessions, flappingSessions } from '../utils/roaming';
 import { fluxString } from '@influxdata/influxdb-client';
+import { counterDeltas } from '../utils/counterDeltas';
 
 // Effective category: the user's override wins; otherwise the fingerprint.
 function withCategory<T extends Record<string, unknown>>(row: T): T & { device_category: string; auto_category: string } {
@@ -196,6 +197,8 @@ router.get('/', async (req: Request, res: Response) => {
   // at the cost of going stale whenever the rules change.
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  // Integers from the site scope, safe to inline.
+  const trafficSites = siteList(activeSite(req))?.filter((n) => Number.isSafeInteger(n)) ?? null;
   const outerWhere = outerFilters.length ? `WHERE ${outerFilters.join(' AND ')}` : '';
 
   // Deduplicate by MAC address across devices: prefer active rows, then most recently seen.
@@ -203,7 +206,7 @@ router.get('/', async (req: Request, res: Response) => {
   const sql = `
     SELECT deduped.*,
            -- float8 so node-pg returns a number (bigint would arrive as a string)
-           (COALESCE(ctd.upload_bytes, 0) + COALESCE(ctd.download_bytes, 0))::float8 AS traffic_today_bytes
+           COALESCE(ctd.bytes, 0)::float8 AS traffic_today_bytes
     FROM (
       SELECT DISTINCT ON (c.mac_address)
         c.*, d.name as device_name,
@@ -215,8 +218,13 @@ router.get('/', async (req: Request, res: Response) => {
       ${where}
       ORDER BY c.mac_address, (c.client_type = 'wireless') DESC, c.active DESC, c.last_seen DESC NULLS LAST
     ) deduped
-    LEFT JOIN client_traffic_daily ctd
-      ON ctd.mac_address = LOWER(deduped.mac_address) AND ctd.day = CURRENT_DATE
+    -- Today's traffic is kept per site (J4): add up the sites in view.
+    LEFT JOIN (
+      SELECT mac_address, SUM(upload_bytes + download_bytes) AS bytes
+        FROM client_traffic_daily
+       WHERE day = CURRENT_DATE ${trafficSites ? `AND site_id = ANY(ARRAY[${trafficSites.join(',')}]::int[])` : ''}
+       GROUP BY mac_address
+    ) ctd ON ctd.mac_address = LOWER(deduped.mac_address)
     ${outerWhere}
     ${orderBy}
     LIMIT $${idx++} OFFSET $${idx}
@@ -346,18 +354,22 @@ router.get('/:mac/traffic', async (req: Request, res: Response) => {
       |> filter(fn: (r) => r._field == "tx_bytes" or r._field == "rx_bytes")
       |> filter(fn: (r) => r.mac_address == ${fluxString(String(mac))})
       ${deviceFlux}
-      |> group(columns: ["_measurement", "_field", "mac_address"])
+      |> group(columns: ["_measurement", "_field", "mac_address", "device_id"])
       |> aggregateWindow(every: ${window}, fn: last, createEmpty: false)
       |> yield(name: "traffic_raw")
   `;
 
-  const raw: { time: string; field: string; value: number }[] = [];
+  // Each device keeps its own byte counter for a client, so deltas are taken
+  // per device and only then added up. Taking them across a merged series
+  // subtracted one access point's counter from another's (J4).
+  const raw: { time: string; field: string; device: string; value: number }[] = [];
   try {
     await queryApi.collectRows(fluxQuery, (row, tableMeta) => {
-      const time  = tableMeta.get(row, '_time')  as string;
-      const field = tableMeta.get(row, '_field') as string;
-      const value = tableMeta.get(row, '_value') as number;
-      if (time && field && value != null) raw.push({ time, field, value });
+      const time   = tableMeta.get(row, '_time')  as string;
+      const field  = tableMeta.get(row, '_field') as string;
+      const device = String(tableMeta.get(row, 'device_id') ?? '');
+      const value  = tableMeta.get(row, '_value') as number;
+      if (time && field && value != null) raw.push({ time, field, device, value });
     });
   } catch (err) {
     // Literal format string, value as an argument: with a template here, a mac
@@ -366,21 +378,8 @@ router.get('/:mac/traffic', async (req: Request, res: Response) => {
     console.error('[clients/traffic] Flux error for %s:', logSafe(mac), err);
   }
 
-  // Separate tx and rx series, sort by time, then compute non-negative deltas
-  const txSeries = raw.filter(p => p.field === 'tx_bytes').sort((a, b) => a.time.localeCompare(b.time));
-  const rxSeries = raw.filter(p => p.field === 'rx_bytes').sort((a, b) => a.time.localeCompare(b.time));
-
-  const txDeltas = new Map<string, number>();
-  for (let i = 1; i < txSeries.length; i++) {
-    const diff = txSeries[i].value - txSeries[i - 1].value;
-    if (diff >= 0) txDeltas.set(txSeries[i].time, diff);
-  }
-
-  const rxDeltas = new Map<string, number>();
-  for (let i = 1; i < rxSeries.length; i++) {
-    const diff = rxSeries[i].value - rxSeries[i - 1].value;
-    if (diff >= 0) rxDeltas.set(rxSeries[i].time, diff);
-  }
+  const txDeltas = counterDeltas(raw.filter(p => p.field === 'tx_bytes'));
+  const rxDeltas = counterDeltas(raw.filter(p => p.field === 'rx_bytes'));
 
   const allTimes = new Set([...txDeltas.keys(), ...rxDeltas.keys()]);
   const points = [...allTimes].sort().map(time => ({
@@ -440,6 +439,13 @@ router.post('/:mac/wol', requireWrite, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid MAC address' });
   }
 
+  // Only for a client the account can see (P1-7).
+  const scope = siteScopeByDevice(activeSite(req), 'device_id');
+  if (scope) {
+    const seen = await query(`SELECT 1 FROM clients WHERE REPLACE(REPLACE(LOWER(mac_address), ':', ''), '-', '') = $1 AND ${scope} LIMIT 1`, [hexMac.toLowerCase()]);
+    if (seen.length === 0) return res.status(404).json({ error: 'Client not found' });
+  }
+
   // Build magic packet: 6 bytes of 0xFF + MAC repeated 16 times
   const macBytes = Buffer.from(hexMac, 'hex');
   const magic = Buffer.alloc(102);
@@ -470,13 +476,24 @@ router.post('/:mac/wol', requireWrite, async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * Restricts a client edit to the records in the sites the account can write
+ * to (P1-7, J4). A MAC can be on record at several sites; an edit made in one
+ * must not rename or annotate another customer's record of it. '' when
+ * unscoped. Site ids are integers, safe to inline.
+ */
+function inScope(req: Request): string {
+  const pred = siteScopeByDevice(writableScope(req), 'device_id');
+  return pred ? `AND ${pred}` : '';
+}
+
 // PUT /api/clients/:mac/hostname  (writes to custom_name — user-set names persist across collector cycles)
 router.put('/:mac/hostname', requireWrite, async (req: Request, res: Response) => {
   const { hostname } = req.body as { hostname?: string };
   const mac = req.params.mac.toLowerCase();
 
   const result = await query(
-    `UPDATE clients SET custom_name = $1 WHERE LOWER(mac_address) = $2 RETURNING *`,
+    `UPDATE clients SET custom_name = $1 WHERE LOWER(mac_address) = $2 ${inScope(req)} RETURNING *`,
     [hostname || null, mac]
   );
   if (!result.length) return res.status(404).json({ error: 'Client not found' });
@@ -494,7 +511,7 @@ router.put('/:mac/category', requireWrite, async (req: Request, res: Response) =
   }
 
   const result = await query(
-    `UPDATE clients SET custom_category = $1 WHERE LOWER(mac_address) = $2 RETURNING *`,
+    `UPDATE clients SET custom_category = $1 WHERE LOWER(mac_address) = $2 ${inScope(req)} RETURNING *`,
     [clear ? null : category, mac]
   );
   if (!result.length) return res.status(404).json({ error: 'Client not found' });
@@ -507,7 +524,7 @@ router.put('/:mac/notes', requireWrite, async (req: Request, res: Response) => {
   const mac = req.params.mac.toLowerCase();
 
   const result = await query(
-    `UPDATE clients SET comment = $1 WHERE LOWER(mac_address) = $2 RETURNING *`,
+    `UPDATE clients SET comment = $1 WHERE LOWER(mac_address) = $2 ${inScope(req)} RETURNING *`,
     [notes ?? null, mac]
   );
   if (!result.length) return res.status(404).json({ error: 'Client not found' });

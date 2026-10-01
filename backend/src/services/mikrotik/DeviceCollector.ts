@@ -1,8 +1,10 @@
 import { createHash } from 'crypto';
-import { RouterOSClient } from './RouterOSClient';
+import { RouterOSClient, RouterOSTrapError } from './RouterOSClient';
 import { query, queryOne } from '../../config/database';
 import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
+import { verifyDeviceSerial, IdentityMismatchError } from '../identityPins';
+import { fit, normalizeMac } from '../../utils/fit';
 import { decrypt } from '../../utils/crypto';
 import { lookupVendor } from '../../utils/oui';
 import { buildServerArpMap } from '../../utils/serverArp';
@@ -145,6 +147,9 @@ function allEthernetNames(
     .filter((n): n is string => !!n && !bridgeNames.has(n) && !bondNames.has(n));
 }
 
+/** Longest log message kept; RouterOS's own are a few hundred characters at most. */
+const MAX_LOG_MESSAGE = 4096;
+
 export class DeviceCollector {
   private client: RouterOSClient;
 
@@ -165,6 +170,33 @@ export class DeviceCollector {
   async connect(): Promise<void> {
     if (this.aborted) throw new Error('Poll cancelled: it ran past its time limit');
     await this.client.connect();
+    await this.verifySerial();
+  }
+
+  /**
+   * Is this still the device the record is about (outside review P2-19)? A
+   * different serial number means another device answers at the address, so
+   * the connection is closed before anything is read from or written to it.
+   * A device with no serial (CHR, x86) or that won't say has nothing to
+   * compare, and a database hiccup here doesn't fail the poll.
+   */
+  private async verifySerial(): Promise<void> {
+    let serial: string | undefined;
+    try {
+      const rb = await this.client.execute('/system/routerboard/print');
+      serial = rb[0]?.['serial-number'];
+    } catch {
+      return;
+    }
+    if (!serial) return;
+    try {
+      await verifyDeviceSerial(this.device.id, this.device.name, serial);
+    } catch (err) {
+      if (err instanceof IdentityMismatchError) {
+        this.client.disconnect();
+        throw err;
+      }
+    }
   }
 
   disconnect(): void {
@@ -325,8 +357,10 @@ export class DeviceCollector {
           END,
           updated_at = NOW()
         WHERE id = $6`,
-        [identityName, model, serial, firmware, rosVersion, this.device.id,
-         clock[0]?.['time-zone-name'] || null, clock[0]?.['gmt-offset'] || null]
+        // Cut to the columns (P2-20): an identity over 100 characters failed
+        // this whole update, and the time zone was then never stored.
+        [fit(identityName, 100), fit(model, 100), fit(serial, 50), fit(firmware, 50), fit(rosVersion, 20), this.device.id,
+         fit(clock[0]?.['time-zone-name'] || null, 64), fit(clock[0]?.['gmt-offset'] || null, 16)]
       );
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect system info:`, err);
@@ -551,7 +585,9 @@ export class DeviceCollector {
     try {
       const rows = await this.client
         .execute('/ip/address/print', { detail: '' })
-        .catch(() => [] as Record<string, string>[]);
+        .catch(() => null);
+      // A failed read keeps the cache it had; an empty one wiped it (P2-21).
+      if (rows === null) return;
       const minimalist = rows
         .filter((r) => r['disabled'] !== 'true' && r['invalid'] !== 'true')
         .map((r) => ({
@@ -690,8 +726,6 @@ export class DeviceCollector {
 
   async updateClients(): Promise<void> {
     try {
-      await query(`UPDATE clients SET active = FALSE WHERE device_id = $1`, [this.device.id]);
-
       // Detect which wireless package is in use before the parallel fetch so we
       // query the correct registration table path (new wifi pkg vs legacy wireless pkg).
       const wifiPkg = await this.detectWifiPackage().catch(() => 'none' as const);
@@ -702,14 +736,23 @@ export class DeviceCollector {
       // Collect all data sources in parallel.
       // Note: { detail: '' } is omitted — the RouterOS binary API always returns all fields,
       // and passing =detail= causes a silent !trap on some RouterOS builds.
-      const [arpEntries, dhcpLeases, wirelessClients, bridgeHosts] = await Promise.all([
-        this.client.execute('/ip/arp/print').catch(() => []),
-        this.client.execute('/ip/dhcp-server/lease/print').catch(() => []),
+      //
+      // A read that fails is null, not "none": with an empty list in its place,
+      // a timeout made every client this device sees look gone (P2-21).
+      const failed = () => null;
+      const [arpRead, dhcpRead, wirelessRead, bridgeRead] = await Promise.all([
+        this.client.execute('/ip/arp/print').catch(failed),
+        this.client.execute('/ip/dhcp-server/lease/print').catch(failed),
         wifiPkg === 'none'
           ? Promise.resolve([] as Record<string, string>[])
-          : this.client.execute(regTableCmd).catch(() => [] as Record<string, string>[]),
-        this.client.execute('/interface/bridge/host/print').catch(() => []),
+          : this.client.execute(regTableCmd).catch(failed),
+        this.client.execute('/interface/bridge/host/print').catch(failed),
       ]);
+      const complete = arpRead !== null && dhcpRead !== null && wirelessRead !== null && bridgeRead !== null;
+      const arpEntries = arpRead ?? [];
+      const dhcpLeases = dhcpRead ?? [];
+      const wirelessClients = wirelessRead ?? [];
+      const bridgeHosts = bridgeRead ?? [];
 
       // DHCP hostname + IP lookup
       const dhcpHostnames: Record<string, string> = {};
@@ -798,8 +841,9 @@ export class DeviceCollector {
       ]);
 
       let totalClients = 0;
+      const seenMacs: string[] = [];
       for (const mac of allMacs) {
-        if (!mac) continue;
+        if (!normalizeMac(mac)) continue; // not a MAC address; nothing to key a client on
         const isWireless = mac in wifiSignal;
         const entry = bridgeHostMap[mac];
         const interfaceName = isWireless
@@ -807,35 +851,50 @@ export class DeviceCollector {
           : (entry?.port || arpInterfaces[mac] || null);
         const vlanId = entry?.vid ?? null;
 
+        // One bad row costs only itself (P2-20): it used to end the loop and
+        // leave every client after it stale.
+        try {
+          await query(
+            `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes, signal_strength, client_type, active, last_seen, first_seen)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,NOW(),NOW())
+             ON CONFLICT (device_id, mac_address) DO UPDATE SET
+               hostname=COALESCE($3, clients.hostname),
+               ip_address=COALESCE(NULLIF($4,''), clients.ip_address),
+               interface_name=COALESCE($5, clients.interface_name),
+               vlan_id=COALESCE($6, clients.vlan_id),
+               tx_bytes=$7,
+               rx_bytes=$8,
+               signal_strength=$9,
+               client_type=$10,
+               active=TRUE,
+               last_seen=NOW(),
+               first_seen=COALESCE(clients.first_seen, NOW())`,
+            [
+              this.device.id,
+              mac,
+              fit(dhcpHostnames[mac] || null, 255),
+              fit(dhcpIPs[mac] || arpIPs[mac] || null, 45),
+              fit(interfaceName, 50),
+              vlanId,
+              wifiTx[mac] || 0,
+              wifiRx[mac] || 0,
+              isWireless ? wifiSignal[mac] : null,
+              isWireless ? 'wireless' : 'wired',
+            ]
+          );
+          seenMacs.push(mac);
+          totalClients++;
+        } catch (err) {
+          console.error(`[${this.device.name}] Skipped client ${mac}:`, (err as Error).message);
+        }
+      }
+
+      // Clients this device no longer sees go inactive, but only when every
+      // read succeeded; after a failed read their absence means nothing (P2-21).
+      if (complete) {
         await query(
-          `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes, signal_strength, client_type, active, last_seen, first_seen)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,NOW(),NOW())
-           ON CONFLICT (device_id, mac_address) DO UPDATE SET
-             hostname=COALESCE($3, clients.hostname),
-             ip_address=COALESCE(NULLIF($4,''), clients.ip_address),
-             interface_name=COALESCE($5, clients.interface_name),
-             vlan_id=COALESCE($6, clients.vlan_id),
-             tx_bytes=$7,
-             rx_bytes=$8,
-             signal_strength=$9,
-             client_type=$10,
-             active=TRUE,
-             last_seen=NOW(),
-             first_seen=COALESCE(clients.first_seen, NOW())`,
-          [
-            this.device.id,
-            mac,
-            dhcpHostnames[mac] || null,
-            dhcpIPs[mac] || arpIPs[mac] || null,
-            interfaceName,
-            vlanId,
-            wifiTx[mac] || 0,
-            wifiRx[mac] || 0,
-            isWireless ? wifiSignal[mac] : null,
-            isWireless ? 'wireless' : 'wired',
-          ]
-        );
-        totalClients++;
+          `UPDATE clients SET active = FALSE WHERE device_id = $1 AND active AND NOT (mac_address = ANY($2::text[]))`,
+          [this.device.id, seenMacs]);
       }
 
       // OUI vendor lookup: fill in up to 10 clients that are missing vendor per cycle
@@ -991,8 +1050,11 @@ export class DeviceCollector {
       const pending: unknown[][] = [];
       for (const log of kept as RawLogLine[]) {
         const rawId = (log['.id'] || '') as string;
-        const topics = (log['topics'] as string) || '';
-        const message = (log['message'] as string) || '';
+        // Cut to a sane size before anything parses or stores them: a device
+        // can log anything, and later readers (roaming, log alerts) run
+        // patterns over these (outside review P2-17).
+        const topics = ((log['topics'] as string) || '').slice(0, 100); // events.topic is VARCHAR(100)
+        const message = ((log['message'] as string) || '').slice(0, MAX_LOG_MESSAGE);
         const time = this.parseLogTime(log['time'] || '');
         const severity = this.mapLogSeverity(topics);
         // Never store a null log_id: the unique index that stops re-insertion
@@ -1005,7 +1067,7 @@ export class DeviceCollector {
           severity,
           topics || null,
           message,
-          JSON.stringify(log),
+          JSON.stringify({ ...log, topics, message }),
           logId,
         ]);
       }
@@ -1109,14 +1171,19 @@ export class DeviceCollector {
 
       if (Object.keys(macIpMap).length === 0) return;
 
-      // Enrich client records across all devices: fill in missing IPs only,
-      // so DHCP-assigned addresses that already exist are not overwritten.
+      // Enrich client records seen by devices in this device's site: fill in
+      // missing IPs only, so DHCP-assigned addresses that already exist are not
+      // overwritten. Another site's record of the same MAC is another network,
+      // and this address means nothing there (outside review P2-19).
       for (const [mac, ip] of Object.entries(macIpMap)) {
         await query(
-          `UPDATE clients SET ip_address = $1
-           WHERE mac_address = $2
-             AND (ip_address IS NULL OR ip_address = '')`,
-          [ip, mac]
+          `UPDATE clients c SET ip_address = $1
+             FROM devices d
+            WHERE c.device_id = d.id
+              AND d.site_id IS NOT DISTINCT FROM (SELECT site_id FROM devices WHERE id = $3)
+              AND c.mac_address = $2
+              AND (c.ip_address IS NULL OR c.ip_address = '')`,
+          [ip, mac, this.device.id]
         );
       }
 
@@ -1130,12 +1197,18 @@ export class DeviceCollector {
 
   async collectNeighbors(): Promise<void> {
     try {
-      const [neighbors, arpEntries, dhcpLeases, serverArpMap] = await Promise.all([
-        this.client.execute('/ip/neighbor/print').catch(() => []),
+      const [neighborRead, arpEntries, dhcpLeases, serverArpMap] = await Promise.all([
+        this.client.execute('/ip/neighbor/print').catch(() => null),
         this.client.execute('/ip/arp/print').catch(() => []),
         this.client.execute('/ip/dhcp-server/lease/print').catch(() => []),
         buildServerArpMap(),
       ]);
+
+      // The neighbour list failed to read: keep the links there are rather
+      // than delete them all (P2-21). ARP and DHCP only fill in addresses, so
+      // those can be missing.
+      if (neighborRead === null) return;
+      const neighbors = neighborRead;
 
       // Build MAC → IPv4 lookup from ARP and DHCP as fallback for neighbors
       // whose MNDP advertisement only contains an IPv6 address.
@@ -1245,14 +1318,24 @@ export class DeviceCollector {
         );
       }
 
-      // Try to resolve neighbor_address to a known device
+      // Resolve neighbor_address to a known device, but only one in this
+      // device's own site, and only when exactly one device there has that
+      // address. Matching across the fleet joined two customers' networks
+      // whenever both used the same management address, such as RouterOS's
+      // default 192.168.88.1 (outside review P2-19).
       await query(
         `UPDATE topology_links tl
-         SET to_device_id = d.id
-         FROM devices d
+         SET to_device_id = m.id
+         FROM (
+           SELECT d.ip_address, MIN(d.id) AS id
+             FROM devices d
+            WHERE d.site_id IS NOT DISTINCT FROM (SELECT site_id FROM devices WHERE id = $1)
+            GROUP BY d.ip_address
+           HAVING COUNT(*) = 1
+         ) m
          WHERE tl.from_device_id = $1
-           AND d.ip_address = tl.neighbor_address
-           AND tl.to_device_id IS DISTINCT FROM d.id`,
+           AND m.ip_address = tl.neighbor_address
+           AND tl.to_device_id IS DISTINCT FROM m.id`,
         [this.device.id]
       );
     } catch (err) {
@@ -1269,9 +1352,12 @@ export class DeviceCollector {
       // nothing matched and the topology crowned whichever device sorted first.
       // The device already knows — `/interface/bridge/monitor` reports whether it
       // is the root and names the root it sees (#131).
-      const bridges = await this.client
+      const bridgeRead = await this.client
         .execute('/interface/bridge/print', { detail: '' })
-        .catch(() => [] as Record<string, string>[]);
+        .catch(() => null);
+      // Failed to read: keep what is known rather than report no bridges (P2-21).
+      if (bridgeRead === null) return;
+      const bridges = bridgeRead;
 
       const seen: string[] = [];
       for (const bridge of bridges) {
@@ -1358,7 +1444,11 @@ export class DeviceCollector {
     try {
       const rows = await this.client
         .execute('/certificate/print', { detail: '' })
-        .catch(() => [] as Record<string, string>[]);
+        .catch(() => null);
+      // A failed read (or no permission to read /certificate) keeps the
+      // inventory there is. Treated as "no certificates", it deleted them and
+      // expiry alerts stopped (P2-21).
+      if (rows === null) return;
 
       const seen: string[] = [];
       for (const r of rows) {
@@ -1813,6 +1903,8 @@ export class DeviceCollector {
 
 
   private wifiRoleCache: WifiRole | null = null;
+  /** Set when the last role check didn't get an answer from every read. */
+  private wifiRoleUncertain = false;
 
   /**
    * Is this device a CAPsMAN controller, a CAP, both, or neither?
@@ -1831,13 +1923,22 @@ export class DeviceCollector {
       return this.wifiRoleCache;
     }
 
+    // A refusal from the device (no such menu) means "not configured here"; a
+    // timeout says nothing. If either read didn't get an answer the role is
+    // a guess, and nothing may be deleted on the strength of it (P2-21).
+    const absentOrUnknown = (err: unknown): null => {
+      if (!(err instanceof RouterOSTrapError)) this.wifiRoleUncertain = true;
+      return null;
+    };
+    this.wifiRoleUncertain = false;
     const [capsman, cap, ifaces] = await Promise.all([
-      this.client.execute('/interface/wifi/capsman/print').catch(() => null),
-      this.client.execute('/interface/wifi/cap/print').catch(() => null),
-      this.client.execute('/interface/wifi/print').catch(() => [] as Record<string, string>[]),
+      this.client.execute('/interface/wifi/capsman/print').catch(absentOrUnknown),
+      this.client.execute('/interface/wifi/cap/print').catch(absentOrUnknown),
+      this.client.execute('/interface/wifi/print').catch(absentOrUnknown),
     ]);
-    this.wifiRoleCache = classifyWifiRole(capsman, cap, ifaces.length > 0);
-    return this.wifiRoleCache;
+    const role = classifyWifiRole(capsman, cap, (ifaces ?? []).length > 0);
+    if (!this.wifiRoleUncertain) this.wifiRoleCache = role;
+    return role;
   }
 
   /**
@@ -1853,6 +1954,8 @@ export class DeviceCollector {
     try {
       const role = await this.detectWifiRole();
       if (role !== 'controller' && role !== 'controller_cap') {
+        // Couldn't tell: keep the inventory rather than wipe it on a timeout.
+        if (this.wifiRoleUncertain) return;
         // Not a controller: clear any inventory left from when it was one.
         await query(`DELETE FROM capsman_radios WHERE controller_device_id = $1`, [this.device.id]);
         await query(`DELETE FROM capsman_configurations WHERE controller_device_id = $1`, [this.device.id]);
@@ -2071,10 +2174,13 @@ export class DeviceCollector {
       const role = await this.detectWifiRole();
       // The package is recorded alongside the role because TX-retry data only
       // exists on the legacy 'wireless' driver, and a panel that can never have
-      // data on this fleet should not occupy space (issue #96).
-      await query(`UPDATE devices SET wifi_role = $2, wifi_package = $3 WHERE id = $1`,
-                  [this.device.id, role, pkg])
-        .catch(() => { /* advisory; never fail collection over it */ });
+      // data on this fleet should not occupy space (issue #96). A role that is
+      // only a guess (a read timed out) isn't recorded.
+      if (!this.wifiRoleUncertain) {
+        await query(`UPDATE devices SET wifi_role = $2, wifi_package = $3 WHERE id = $1`,
+                    [this.device.id, role, pkg])
+          .catch(() => { /* advisory; never fail collection over it */ });
+      }
 
       // null = the fetch itself failed. Distinguished from an empty list (device
       // genuinely has no wireless interfaces) so a transient API error can never
@@ -2128,47 +2234,52 @@ export class DeviceCollector {
           || (!isNaN(statusFreq) && statusFreq > 0 ? bandPrefix(statusFreq) : null);
         const widthStr = wlan['channel-width'] || liveW || null;
 
-        await query(
-          `INSERT INTO wireless_interfaces
-            (device_id, name, ssid, mode, band, frequency, channel_width, tx_power,
-             tx_power_mode, antenna_gain, country, installation, disabled, running,
-             mac_address, security_profile, config_json, managed_by_capsman, radio_mac,
-             capsman_controller_mac, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW())
-           ON CONFLICT (device_id, name) DO UPDATE SET
-             ssid=$3, mode=$4, band=$5, frequency=$6, channel_width=$7, tx_power=$8,
-             tx_power_mode=$9, antenna_gain=$10, country=$11, installation=$12,
-             disabled=$13, running=$14, mac_address=$15, security_profile=$16,
-             config_json=$17, managed_by_capsman=$18, radio_mac=$19,
-             capsman_controller_mac=$20, updated_at=NOW()`,
-          [
-            this.device.id, name,
-            wlan['ssid'] || capsmanStatus?.ssid || null,
-            wlan['mode'] || capsmanStatus?.mode || null,
-            bandStr || null,
-            !isNaN(effFreq) && effFreq > 0 ? effFreq : null,
-            widthStr,
-            !isNaN(txPow) && txPow > 0 ? txPow : null,
-            wlan['tx-power-mode'] || null,
-            !isNaN(gain) ? gain : null,
-            wlan['country'] || null,
-            wlan['installation'] || 'indoor',
-            wlan['disabled'] === 'true',
-            wlan['running'] === 'true',
-            wlan['mac-address'] || null,
-            wlan['security-profile'] || null,
-            JSON.stringify(wlan),
-            managed,
-            (wlan['radio-mac'] || '').toUpperCase() || null,
-            capsmanStatus?.controllerMac ?? null,
-          ]
-        );
+        // Values cut to their columns, and one bad radio costs only itself (P2-20).
+        try {
+          await query(
+            `INSERT INTO wireless_interfaces
+              (device_id, name, ssid, mode, band, frequency, channel_width, tx_power,
+               tx_power_mode, antenna_gain, country, installation, disabled, running,
+               mac_address, security_profile, config_json, managed_by_capsman, radio_mac,
+               capsman_controller_mac, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW())
+             ON CONFLICT (device_id, name) DO UPDATE SET
+               ssid=$3, mode=$4, band=$5, frequency=$6, channel_width=$7, tx_power=$8,
+               tx_power_mode=$9, antenna_gain=$10, country=$11, installation=$12,
+               disabled=$13, running=$14, mac_address=$15, security_profile=$16,
+               config_json=$17, managed_by_capsman=$18, radio_mac=$19,
+               capsman_controller_mac=$20, updated_at=NOW()`,
+            [
+              this.device.id, fit(name, 50),
+              fit(wlan['ssid'] || capsmanStatus?.ssid || null, 100),
+              fit(wlan['mode'] || capsmanStatus?.mode || null, 30),
+              fit(bandStr || null, 50),
+              !isNaN(effFreq) && effFreq > 0 ? effFreq : null,
+              fit(widthStr, 30),
+              !isNaN(txPow) && txPow > 0 ? txPow : null,
+              fit(wlan['tx-power-mode'] || null, 30),
+              !isNaN(gain) ? gain : null,
+              fit(wlan['country'] || null, 50),
+              fit(wlan['installation'] || 'indoor', 20),
+              wlan['disabled'] === 'true',
+              wlan['running'] === 'true',
+              fit(wlan['mac-address'] || null, 17),
+              fit(wlan['security-profile'] || null, 100),
+              JSON.stringify(wlan),
+              managed,
+              fit((wlan['radio-mac'] || '').toUpperCase() || null, 17),
+              fit(capsmanStatus?.controllerMac ?? null, 17),
+            ]
+          );
+        } catch (err) {
+          console.error(`[${this.device.name}] Skipped wireless interface ${name}:`, (err as Error).message);
+        }
       }
 
       // Drop rows for interfaces that no longer exist on the device (e.g. a
       // virtual AP removed directly in WinBox/WebFig). Without this the upsert
       // above only ever adds, so deleted radios linger in the UI forever.
-      const present = wlans.map((w) => w['name']).filter(Boolean);
+      const present = wlans.map((w) => fit(w['name'], 50)).filter(Boolean);
       await query(
         `DELETE FROM wireless_interfaces WHERE device_id = $1 AND NOT (name = ANY($2::text[]))`,
         [this.device.id, present]

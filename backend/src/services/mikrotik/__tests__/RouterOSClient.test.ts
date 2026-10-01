@@ -296,3 +296,59 @@ describe('hostile replies', () => {
     }
   });
 });
+
+// ── Streaming cancel (outside review P2-4) ───────────────────────────────────
+
+describe('streaming cancel', () => {
+  const tagged = (type: string, tag: string, ...kv: string[]): Buffer =>
+    Buffer.concat([word(type), ...kv.map(p => word('=' + p)), word(`.tag=${tag}`), Buffer.from([0x00])]);
+
+  type Internals = {
+    buffer: Buffer; connected: boolean; poisoned: boolean; socket: unknown; processBuffer(): void;
+  };
+
+  /** A client whose fake socket answers /cancel with `onCancel(cmdTag, cancelTag)`. */
+  function streamingClient(onCancel: (cmdTag: string, cancelTag: string) => Buffer) {
+    const client = new RouterOSClient('127.0.0.1', 8728, 'x', 'x');
+    const internals = client as unknown as Internals;
+    internals.connected = true;
+    internals.socket = {
+      destroy() {},
+      write: (data: Buffer, cb: () => void) => {
+        cb();
+        const text = data.toString('latin1');
+        if (text.includes('/cancel')) {
+          const cmdTag = /=tag=(\d+)/.exec(text)![1];
+          const cancelTag = /\.tag=(\d+)/.exec(text)![1];
+          setImmediate(() => { internals.buffer = Buffer.concat([internals.buffer, onCancel(cmdTag, cancelTag)]); internals.processBuffer(); });
+        }
+      },
+    };
+    return { client, internals };
+  }
+
+  it("leaves nothing of the cancelled command for the next one's reply", async () => {
+    const { client, internals } = streamingClient((cmd, cancel) => Buffer.concat([
+      tagged('!re', cmd, 'mac-address=AA:BB:CC:00:00:02'), // a late row
+      tagged('!trap', cmd, 'category=2', 'message=interrupted'),
+      tagged('!done', cmd),
+      tagged('!done', cancel),
+    ]));
+    const rows = await client.executeStreaming('/tool/mac-scan', { interface: 'ether1' }, 20);
+    expect(rows).toEqual([]);
+    expect(internals.poisoned).toBe(false);
+
+    // The old drain stopped after two sentences, so this read the leftover
+    // !done and returned [] before the real reply.
+    internals.buffer = Buffer.concat([sentence('name=MikroTik'), done()]);
+    internals.processBuffer();
+    await expect(client.execute('/system/identity/print')).resolves.toEqual([{ name: 'MikroTik' }]);
+  });
+
+  it('drops the connection if the cancel never completes', async () => {
+    const { client, internals } = streamingClient((cmd) => tagged('!trap', cmd, 'message=interrupted'));
+    await client.executeStreaming('/tool/mac-scan', {}, 20);
+    // Waits out the drain window rather than trusting the stream.
+    expect(internals.poisoned).toBe(true);
+  }, 10_000);
+});

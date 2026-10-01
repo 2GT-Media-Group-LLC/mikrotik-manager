@@ -4,20 +4,25 @@ import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { fluxString } from '@influxdata/influxdb-client';
+import { activeSite } from '../middleware/site';
+import { siteList } from '../utils/siteScope';
 
 const router = Router();
 router.use(requireAuth);
-// NetFlow data isn't recorded per site yet: flows from every exporter are merged
-// and clients are matched by address across the fleet. Until it is, a
-// site-scoped account would see other sites' traffic here, so it is refused
-// (outside review P1-7, J4).
-router.use((req: Request, res: Response, next) => {
-  if (!req.user?.siteRoles) return next();
-  res.status(403).json({
-    code: 'fleet_only',
-    error: 'Traffic analytics covers the whole fleet, so it is not available to accounts limited to particular sites yet.',
-  });
-});
+
+/**
+ * A Flux filter for the selected site(s), or '' for the whole fleet. Traffic is
+ * stored with the site its exporter belongs to (outside review J4), so a site
+ * view, and a site-scoped account (P1-7), see only that site's traffic. Points
+ * from before 0.24.47 carry no site and appear only in the all-sites view.
+ */
+function siteFilter(req: Request): string {
+  const sites = siteList(activeSite(req));
+  if (!sites) return '';
+  if (sites.length === 0) return '|> filter(fn: (r) => false)';
+  // Site ids are integers, safe to inline as strings.
+  return `|> filter(fn: (r) => contains(value: r.site_id, set: [${sites.map((id) => `"${id}"`).join(', ')}]))`;
+}
 
 function rangeToFlux(range: string): string {
   const allowed = ['1h', '2h', '3h', '6h', '12h', '24h', '7d', '30d'];
@@ -43,8 +48,18 @@ function sanitizeMac(raw: string): string | null {
 }
 
 // GET /api/traffic/status — collector state for the config page
-router.get('/status', async (_req: Request, res: Response) => {
-  res.json(netflowCollector.getStats());
+router.get('/status', async (req: Request, res: Response) => {
+  const stats = netflowCollector.getStats();
+  if (!req.user?.siteRoles) { res.json(stats); return; }
+  // A site-scoped account sees its own exporters only: not other sites'
+  // device names, nor the sources the collector is refusing.
+  const own = new Set((await query<{ id: number }>(
+    `SELECT id FROM devices WHERE site_id = ANY($1::int[])`, [Object.keys(req.user.siteRoles).map(Number)])).map((d) => d.id));
+  res.json({
+    ...stats,
+    exporters: stats.exporters.filter((e) => own.has(e.deviceId)),
+    rejectedSources: [],
+  });
 });
 
 // GET /api/traffic/timeseries?range=24h — fleet-wide upload/download over time
@@ -52,11 +67,13 @@ router.get('/timeseries', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const every = windowForRange(range);
   const queryApi = getQueryApi();
+  const site = siteFilter(req);
 
   const fluxQuery = `
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_traffic")
+      ${site}
       |> filter(fn: (r) => r._field == "bytes" or r._field == "packets")
       |> group(columns: ["direction", "_field"])
       |> aggregateWindow(every: ${every}, fn: sum, createEmpty: false)
@@ -91,11 +108,13 @@ router.get('/top-clients', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const limit = Math.min(parseInt(String(req.query.limit || '10'), 10) || 10, 50);
   const queryApi = getQueryApi();
+  const site = siteFilter(req);
 
   const fluxQuery = `
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_traffic")
+      ${site}
       |> filter(fn: (r) => r._field == "bytes")
       |> group(columns: ["mac", "direction"])
       |> sum()
@@ -128,11 +147,15 @@ router.get('/top-clients', async (req: Request, res: Response) => {
   const realMacs = ranked.map((r) => r.mac).filter((m) => m !== 'unknown' && m !== 'other');
   const names = new Map<string, { hostname: string | null; custom_name: string | null; vendor: string | null; ip_address: string | null }>();
   if (realMacs.length > 0) {
+    // Names come from the clients in view, never another site's record of a MAC.
+    const sites = siteList(activeSite(req));
     const rows = await query<{ mac_address: string; hostname: string | null; custom_name: string | null; vendor: string | null; ip_address: string | null }>(
-      `SELECT DISTINCT ON (mac_address) mac_address, hostname, custom_name, vendor, ip_address
-       FROM clients WHERE LOWER(mac_address) = ANY($1)
-       ORDER BY mac_address, last_seen DESC NULLS LAST`,
-      [realMacs]
+      `SELECT DISTINCT ON (LOWER(c.mac_address)) c.mac_address, c.hostname, c.custom_name, c.vendor, c.ip_address
+       FROM clients c
+       ${sites ? 'JOIN devices d ON d.id = c.device_id AND d.site_id = ANY($2::int[])' : ''}
+       WHERE LOWER(c.mac_address) = ANY($1)
+       ORDER BY LOWER(c.mac_address), c.last_seen DESC NULLS LAST`,
+      sites ? [realMacs, sites] : [realMacs]
     );
     for (const row of rows) names.set(row.mac_address.toLowerCase(), row);
   }
@@ -156,6 +179,7 @@ router.get('/top-clients', async (req: Request, res: Response) => {
 router.get('/apps', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const queryApi = getQueryApi();
+  const site = siteFilter(req);
 
   let macFilter = '';
   if (req.query.mac) {
@@ -168,6 +192,7 @@ router.get('/apps', async (req: Request, res: Response) => {
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_traffic")
+      ${site}
       |> filter(fn: (r) => r._field == "bytes" or r._field == "packets")
       ${macFilter}
       |> group(columns: ["app", "_field"])
@@ -203,11 +228,13 @@ router.get('/client/:mac', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const every = windowForRange(range);
   const queryApi = getQueryApi();
+  const site = siteFilter(req);
 
   const seriesFlux = `
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_traffic")
+      ${site}
       |> filter(fn: (r) => r._field == "bytes")
       |> filter(fn: (r) => r.mac == ${fluxString(String(mac))})
       |> group(columns: ["direction"])
@@ -232,6 +259,7 @@ router.get('/client/:mac', async (req: Request, res: Response) => {
     from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "client_traffic")
+      ${site}
       |> filter(fn: (r) => r._field == "bytes" or r._field == "packets")
       |> filter(fn: (r) => r.mac == ${fluxString(String(mac))})
       |> group(columns: ["app", "_field"])

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
-import { devicePins, pendingIdentityChanges, trustNewIdentity } from '../services/identityPins';
+import { devicePins, pendingIdentityChanges, trustNewIdentity, IDENTITY_KINDS } from '../services/identityPins';
 import { enableApiSsl, type ApiSslDevice } from '../services/apiSsl';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { randomUUID } from 'crypto';
@@ -1323,11 +1323,13 @@ router.get('/:id/identity', async (req: Request, res: Response) => {
 // POST /api/devices/:id/identity/:kind/trust — accept the changed one. Admin
 // only: this is the decision that the device, not an impostor, changed.
 router.post('/:id/identity/:kind/trust', requireSiteAdmin, async (req: Request, res: Response) => {
-  const kind = req.params.kind;
-  if (kind !== 'api-tls' && kind !== 'ssh-host') return res.status(400).json({ error: 'kind must be api-tls or ssh-host' });
+  const kind = IDENTITY_KINDS.find((k) => k === req.params.kind);
+  if (!kind) return res.status(400).json({ error: 'kind must be api-tls, ssh-host or serial' });
   const trusted = await trustNewIdentity(parseInt(req.params.id, 10), kind);
-  if (!trusted) return res.status(404).json({ error: 'No changed certificate or host key is waiting for this device' });
-  return res.json({ message: kind === 'api-tls' ? 'New certificate trusted.' : 'New host key trusted.' });
+  if (!trusted) return res.status(404).json({ error: 'No changed certificate, host key or serial number is waiting for this device' });
+  const message = kind === 'serial' ? 'New device accepted. Polling resumes on the next cycle.'
+    : kind === 'api-tls' ? 'New certificate trusted.' : 'New host key trusted.';
+  return res.json({ message });
 });
 
 // POST /api/devices/:id/api-ssl — turn on API-SSL on the device and move the

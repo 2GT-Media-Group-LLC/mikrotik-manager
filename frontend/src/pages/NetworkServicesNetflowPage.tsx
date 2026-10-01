@@ -7,8 +7,7 @@ import {
 import clsx from 'clsx';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { networkServicesApi, settingsApi, trafficApi } from '../services/api';
-import { useCanWrite } from '../hooks/useCanWrite';
-import { useIsSiteScoped } from '../hooks/useCanWrite';
+import { useCanWrite, useIsFleetAdmin } from '../hooks/useCanWrite';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -40,6 +39,7 @@ export default function NetworkServicesNetflowPage() {
   const [address, setAddress] = useState('');
   const [port, setPort] = useState('2055');
   const [version, setVersion] = useState('9');
+  const [acceptUnknown, setAcceptUnknown] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
@@ -50,6 +50,7 @@ export default function NetworkServicesNetflowPage() {
       setAddress(String(settings['netflow_collector_address'] ?? ''));
       setPort(String(settings['netflow_collector_port'] ?? '2055'));
       setVersion(String(settings['netflow_version'] ?? '9'));
+      setAcceptUnknown(settings['netflow_accept_unknown'] === true);
       setLoaded(true);
     }
   }, [settings, loaded]);
@@ -81,12 +82,11 @@ export default function NetworkServicesNetflowPage() {
   }
 
   // ── Collector status (live) ───────────────────────────────────────────────
-  // The collector's statistics are fleet-wide (P1-7).
-  const siteScopedTraffic = useIsSiteScoped();
+  // A site-limited account gets its own exporters only (P1-7).
+  const isFleetAdmin = useIsFleetAdmin();
   const { data: status } = useQuery({
     queryKey: ['traffic-status'],
     queryFn: () => trafficApi.status().then(r => r.data),
-    enabled: !siteScopedTraffic,
     refetchInterval: 10_000,
   });
 
@@ -115,6 +115,12 @@ export default function NetworkServicesNetflowPage() {
   const addressMissing = !address.trim();
   const devices = fleet?.devices ?? [];
   const unidentified = (status?.exporters ?? []).filter(e => e.deviceId < 0);
+  const rejected = status?.rejectedSources ?? [];
+
+  async function handleAcceptUnknown(value: boolean) {
+    setAcceptUnknown(value);
+    await saveCollectorSettings({ netflow_accept_unknown: value });
+  }
 
   function deviceBadge(d: (typeof devices)[number]) {
     if (d.error) {
@@ -203,6 +209,21 @@ export default function NetworkServicesNetflowPage() {
             </div>
           </div>
 
+          {isFleetAdmin && (
+            <div className="flex items-start gap-3">
+              <Toggle checked={acceptUnknown} onChange={(v) => { void handleAcceptUnknown(v); }} disabled={saving} />
+              <div>
+                <div className="text-sm font-medium text-gray-700 dark:text-slate-200">Accept flows from unidentified exporters</div>
+                <p className="text-xs text-gray-400 dark:text-slate-500">
+                  Only turn this on if NAT sits between your routers and this server, so their flows arrive from a
+                  gateway address instead of the router&apos;s own (common with Docker Desktop). NetFlow has no
+                  authentication, so this lets any device on your network send traffic figures. Public addresses are
+                  always refused. Clients are matched only where their address belongs to one site.
+                </p>
+              </div>
+            </div>
+          )}
+
           {addressMissing && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5" />Set the collector address before enabling devices below.
@@ -226,9 +247,29 @@ export default function NetworkServicesNetflowPage() {
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <div>
                 Receiving flows from unidentified source{unidentified.length > 1 ? 's' : ''}{' '}
-                <span className="font-mono">{unidentified.map(e => e.deviceName.replace(/^Unidentified \((.+)\)$/, '$1')).join(', ')}</span>.
-                This usually means NAT sits between your routers and the collector. Flows are still
-                processed and attributed to clients, but can&apos;t be tied to a specific exporting device.
+                <span className="font-mono">{unidentified.map(e => e.deviceName.replace(/^(?:Unidentified|Shared address) \((.+)\)$/, '$1')).join(', ')}</span>.
+                This usually means NAT sits between your routers and the collector, or devices in different
+                sites share an address. Flows are still processed, but can&apos;t be tied to one exporting device,
+                so clients are matched only where their address belongs to a single site.
+              </div>
+            </div>
+          )}
+
+          {rejected.length > 0 && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div>Refusing flows from sources that aren&apos;t managed devices:</div>
+                <ul className="space-y-0.5">
+                  {rejected.map((r) => (
+                    <li key={r.address}>
+                      <span className="font-mono">{r.address}</span> ({r.packets.toLocaleString()} packets):{' '}
+                      {r.reason === 'public_address'
+                        ? 'a public address, refused even with unidentified exporters accepted. If you see this, the collector is reachable from outside your network.'
+                        : 'if this is a NAT gateway in front of your routers, turn on "Accept flows from unidentified exporters".'}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}

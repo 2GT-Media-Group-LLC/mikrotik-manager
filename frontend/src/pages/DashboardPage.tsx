@@ -21,7 +21,6 @@ import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
 import { fleetStatus } from '../utils/fleetStatus';
 import { escapeHtml } from '../utils/escapeHtml';
-import { useIsSiteScoped } from '../hooks/useCanWrite';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -1192,13 +1191,10 @@ export default function DashboardPage() {
   // Top talkers: prefer NetFlow data (same source as the Traffic page) so the
   // numbers match everywhere; fall back to the device-reported per-connection
   // counters when the collector has no data (e.g. NetFlow disabled).
-  // NetFlow is fleet-wide, so a site-limited account uses the per-site counters instead (P1-7).
-  const siteScoped = useIsSiteScoped();
   const { data: netflowTopClients = [], isLoading: netflowTopLoading } = useQuery({
     queryKey: ['traffic-top-clients', '24h', 8],
     queryFn: () => trafficApi.topClients('24h', 8).then(r => r.data),
     refetchInterval: 60_000,
-    enabled: !siteScoped,
   });
   const usingNetflowTop = netflowTopClients.length > 0;
   const { data: counterTopClients = [] } = useQuery({

@@ -7,15 +7,40 @@ Per-client and per-application traffic, from a NetFlow collector built into the 
 The platform listens for **NetFlow v9 and IPFIX on UDP 2055**. There is no external collector
 to run. Point a device's exporter at the platform's address and flows start arriving.
 
-Two behaviours worth knowing:
+How flows are counted:
 
 - **Deduplication.** A flow crossing two managed routers is exported twice. It is counted once.
-- **NAT-tolerant ingest.** Exporters behind NAT or reaching the platform over a VPN arrive with
-  a rewritten source address. Flows are matched to devices by exporter identity rather than by
-  source IP, so this does not silently attribute traffic to the wrong device or drop it.
+- **Exporters are identified by source address.** A flow is taken as coming from the managed
+  device that owns its source address (its management address or any address on it).
+- **Clients are matched within the exporter's site.** A flow's addresses are matched to
+  clients seen in the same site as the exporting device, and the traffic is stored with that
+  site. Two customers both using 192.168.88.0/24 never have their traffic mixed.
 
-**Network Services → NetFlow** configures the exporters; **Settings** holds collector options,
-including whether to accept flows from exporters that do not match a known device.
+### Flows from unidentified exporters
+
+If NAT sits between your routers and the platform (common with Docker Desktop, or a router
+exporting through a firewall), flows arrive from the NAT gateway's address instead of the
+router's, and match no device. NetFlow has no authentication, so taking flows from addresses
+that aren't managed devices lets anything that can reach UDP 2055 send traffic figures.
+
+That is controlled by **Accept flows from unidentified exporters** on **Network Services →
+NetFlow** (fleet admins only):
+
+- **Off** (the default for new installs): such flows are refused, and the page lists the
+  addresses being refused so missing traffic isn't a mystery.
+- **On**: they are accepted, but only from private, CGNAT, link-local or loopback addresses,
+  which is where a NAT gateway in front of the platform would be. Flows from a public address
+  are always refused, and the page says so; seeing one means the collector is reachable from
+  outside your network (see [Network exposure](configuration.md#network-exposure)).
+
+An unidentified exporter can't say which site it belongs to, so its flows are matched to a
+client only when the address exists in exactly one site. With a single site that is always
+the case. If the same addresses are in use at more than one site, those flows are counted in
+the all-sites view only.
+
+Installs from before 0.24.47 keep the setting they had, which was on.
+
+**Network Services → NetFlow** configures the exporters and the collector.
 
 ## What it shows
 
@@ -29,6 +54,10 @@ including whether to accept flows from exporters that do not match a known devic
 Top talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a client opens
 its detail page — see [Clients](clients.md).
 
+With a site selected, every view shows that site's traffic only, and accounts limited to
+particular sites see only theirs. Traffic recorded before 0.24.47 has no site, so it appears
+in the all-sites view only.
+
 Application classification is by port and protocol. It identifies what a flow *looks* like, not
 what it is: anything on 443 reads as HTTPS whether or not it is a browser.
 
@@ -38,7 +67,7 @@ Two settings, both in **Settings**:
 
 | Setting | Default | Covers |
 |---|---|---|
-| `netflow_retention_days` | 7 | Full per-flow detail |
+| `netflow_retention_days` | 30 | Per-client time series (one-minute detail) |
 | `netflow_daily_retention_days` | 365 | Daily per-client rollups |
 
 Flow records are the bulky ones; the daily rollups are small and are what the longer ranges are
@@ -67,5 +96,5 @@ lines.
 2. Is UDP 2055 reachable from the device? The platform must be reachable *from* the router,
    which is not the same direction as the API connection.
 3. Does the exporter match a known device? If flows arrive from an address the platform cannot
-   match, they are rejected unless `netflow_accept_unknown` is on. The NetFlow page lists
-   unidentified exporters so this is visible rather than silent.
+   match, they are refused unless **Accept flows from unidentified exporters** is on, and
+   always from a public address. The NetFlow page lists refused sources and why.

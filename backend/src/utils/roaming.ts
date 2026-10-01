@@ -49,14 +49,22 @@ const MAC = '[0-9A-Fa-f:]{17}';
 
 // Lazy SSID capture with a required suffix: correct even for an SSID containing
 // a bracket, because the match must still end at the literal that follows.
+//
+// The interface name is [^\\s(]+ rather than \\S+?: with both lazy, the engine
+// tried every split between interface and SSID, which is quadratic, and a
+// device's log line is attacker-controlled (outside review P2-17). Lines are
+// also cut to MAX_LINE before matching; a real one is well under 200
+// characters (an SSID is at most 32 bytes).
+const IFACE = '[^\\s(]+';
+const MAX_LINE = 512;
 const RE_ROAMED = new RegExp(
-  `^(${MAC})@(\\S+?)\\((.*?)\\) roamed to (${MAC})@(\\S+?)\\((.*?)\\), signal strength (-?\\d+)`
+  `^(${MAC})@(${IFACE})\\((.*?)\\) roamed to (${MAC})@(${IFACE})\\((.*?)\\), signal strength (-?\\d+)`
 );
 const RE_CONNECTED = new RegExp(
-  `^(${MAC})@(\\S+?)\\((.*?)\\) connected, signal strength (-?\\d+)`
+  `^(${MAC})@(${IFACE})\\((.*?)\\) connected, signal strength (-?\\d+)`
 );
 const RE_DISCONNECTED = new RegExp(
-  `^(${MAC})@(\\S+?)\\((.*?)\\) disconnected, (.+?), signal strength (-?\\d+)`
+  `^(${MAC})@(${IFACE})\\((.*?)\\) disconnected, (.+?), signal strength (-?\\d+)`
 );
 const RE_DHCP = new RegExp(
   `^(\\S+) (assigned|deassigned) (\\S+) for (${MAC})(?:\\s+(.*))?$`
@@ -85,6 +93,7 @@ export function parseRoamLine(
   at: string,
   deviceName: string | null = null
 ): RoamEvent | null {
+  if (message.length > MAX_LINE) return null;
   const roamed = RE_ROAMED.exec(message);
   if (roamed) {
     return {

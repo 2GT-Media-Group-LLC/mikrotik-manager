@@ -18,6 +18,8 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `INFLUXDB_ADMIN_PASSWORD` | `admin_password_123` | InfluxDB admin UI password |
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
+| `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
+| `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
 
 > Never commit `.env`. It is already listed in `.gitignore`.
 
@@ -141,6 +143,55 @@ These are edited in the Settings UI and take effect without a restart:
 | Config snapshots | `config_snapshot_enabled`, `config_snapshot_interval_min`, `config_snapshot_retention` | Settings → Config History |
 | NetFlow | collector address and port, version, retention, top-N clients | Settings → NetFlow |
 | Alerting | rules, thresholds, cooldowns, channels | [Alerting](alerting.md) |
+
+## Network exposure
+
+The manager holds the admin credentials for every device it manages, so keep it off the
+internet: reach it over your LAN or a VPN.
+
+By default Docker publishes the web UI (80, 443) and the NetFlow collector (UDP 2055) on
+**every** host interface. **A host firewall such as ufw or firewalld does not close
+them**: Docker adds its own rules for published ports, and traffic to them never reaches
+the chains those tools manage. On a host with a public or DMZ interface, the manager is
+reachable from the internet even though ufw says the port is closed.
+
+Pick one of these:
+
+- **Publish on one address.** Set `BIND_ADDRESS` (and `NETFLOW_BIND_ADDRESS`) in `.env` to
+  the host's LAN or VPN address, then `docker compose up -d`:
+
+  ```
+  BIND_ADDRESS=192.168.1.10
+  NETFLOW_BIND_ADDRESS=192.168.1.10
+  ```
+
+  Only that address listens. To reach it over IPv6 as well, leave it unset and use the
+  next option instead.
+
+- **Filter in the `DOCKER-USER` chain.** Docker checks this chain before its own rules, so
+  it does apply to published ports. For example, to allow the UI only from 192.168.1.0/24
+  and NetFlow only from your routers' management subnet, where `eth0` is the public
+  interface:
+
+  ```
+  iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 443 ! -s 192.168.1.0/24 -j DROP
+  iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 80 ! -s 192.168.1.0/24 -j DROP
+  iptables -I DOCKER-USER -i eth0 -p udp -m conntrack --ctorigdstport 2055 ! -s 10.10.0.0/24 -j DROP
+  ```
+
+  These rules don't survive a reboot by themselves; save them the way your distribution
+  does (for example `netfilter-persistent save`).
+
+- **Put the host behind a firewall it doesn't control**, such as the router in front of it
+  or a cloud security group.
+
+NetFlow has no authentication of its own, so whatever can reach UDP 2055 can send flows.
+The collector only accepts flows from managed devices unless you turn on **Accept flows
+from unknown exporters** (see [Traffic](traffic.md)), but limiting who can reach the port
+is still the real protection.
+
+Before 0.24.47 there was no bind setting, and the ports were always published on every
+interface.
 
 ## TLS
 

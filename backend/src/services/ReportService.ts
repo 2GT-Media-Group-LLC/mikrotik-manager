@@ -110,12 +110,23 @@ export class ReportService {
                 COUNT(*) FILTER (WHERE severity='warning')::text AS warnings
          FROM events WHERE event_time > NOW() - ($1 || ' days')::interval`, [days]),
       query<{ name: string; bytes: string }>(
-        `SELECT COALESCE(NULLIF(c.custom_name,''), NULLIF(c.hostname,''), ctd.mac_address) AS name,
-                SUM(ctd.upload_bytes + ctd.download_bytes)::text AS bytes
-         FROM client_traffic_daily ctd
-         LEFT JOIN clients c ON LOWER(c.mac_address) = ctd.mac_address
-         WHERE ctd.day > CURRENT_DATE - $1::int
-         GROUP BY 1 ORDER BY SUM(ctd.upload_bytes + ctd.download_bytes) DESC LIMIT 5`, [days]),
+        // One name per MAC: joining every client row multiplied a MAC's bytes
+        // by the number of devices that had seen it.
+        `SELECT COALESCE(NULLIF(n.custom_name,''), NULLIF(n.hostname,''), t.mac_address) AS name,
+                t.bytes::text AS bytes
+         FROM (
+           SELECT mac_address, SUM(upload_bytes + download_bytes) AS bytes
+             FROM client_traffic_daily
+            WHERE day > CURRENT_DATE - $1::int
+              AND mac_address NOT IN ('unknown', 'other')
+            GROUP BY mac_address
+         ) t
+         LEFT JOIN LATERAL (
+           SELECT custom_name, hostname FROM clients c
+            WHERE LOWER(c.mac_address) = t.mac_address
+            ORDER BY last_seen DESC NULLS LAST LIMIT 1
+         ) n ON TRUE
+         ORDER BY t.bytes DESC LIMIT 5`, [days]),
       query<{ n: string }>(
         `SELECT COUNT(*)::text AS n FROM backups WHERE created_at > NOW() - ($1 || ' days')::interval`, [days]),
     ]);

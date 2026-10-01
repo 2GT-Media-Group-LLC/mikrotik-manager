@@ -207,7 +207,7 @@ export interface BulkAddJobStatus {
 
 /** A pinned device certificate or SSH host key (outside review P1-4). */
 export interface IdentityPin {
-  kind: 'api-tls' | 'ssh-host';
+  kind: 'api-tls' | 'ssh-host' | 'serial';
   label: string;
   fingerprint: string;
   display: string;
@@ -1772,6 +1772,10 @@ export interface TrafficCollectorStats {
   packetsFromUnknownExporter: number;
   recordsWithoutTemplate: number;
   exporters: { deviceId: number; deviceName: string; packets: number; flows: number; lastSeen: string | null }[];
+  /** Whether flows from sources that aren't managed devices are taken (outside review P2-23). */
+  acceptUnknown?: boolean;
+  /** Sources whose flows are being refused, and why. Empty for site-limited accounts. */
+  rejectedSources?: { address: string; reason: 'unknown_exporter' | 'public_address'; packets: number; lastSeen: string }[];
 }
 
 export const trafficApi = {

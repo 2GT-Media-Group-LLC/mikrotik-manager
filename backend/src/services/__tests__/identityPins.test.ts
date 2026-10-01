@@ -1,5 +1,5 @@
 import {
-  verifyDeviceIdentity, IdentityMismatchError, normalizeFingerprint, sshFingerprintDisplay, trustNewIdentity,
+  verifyDeviceIdentity, verifyDeviceSerial, IdentityMismatchError, normalizeFingerprint, sshFingerprintDisplay, trustNewIdentity,
 } from '../identityPins';
 import { query } from '../../config/database';
 import { alertService } from '../AlertService';
@@ -97,5 +97,35 @@ describe('trustNewIdentity', () => {
   it('reports when nothing is waiting', async () => {
     mockQuery.mockReset().mockResolvedValueOnce([] as never);
     expect(await trustNewIdentity(7, 'ssh-host')).toBe(false);
+  });
+});
+
+// Outside review P2-19: a different device answering at a device's address.
+describe('verifyDeviceSerial', () => {
+  it('pins the serial already on record, so a swap from before the check is still caught', async () => {
+    lookupReturns([{ serial_number: 'HFE0912ABCD', fingerprint: null, seen_fingerprint: null }]);
+    await expect(verifyDeviceSerial(7, 'sw', 'HG10XYZ9876')).rejects.toBeInstanceOf(IdentityMismatchError);
+    expect(mockQuery.mock.calls[1][1]).toEqual([7, 'serial', 'HFE0912ABCD']); // the pin
+    expect(sqlCalls()[2]).toMatch(/^UPDATE device_identity_pins SET seen_fingerprint/);
+    expect(mockQuery.mock.calls[2][1]).toEqual([7, 'serial', 'HG10XYZ9876']);
+    expect(mockDispatch).toHaveBeenCalledWith('device_identity_changed', expect.stringMatching(/different serial number/), expect.anything());
+  });
+
+  it('pins the first serial seen when none is on record', async () => {
+    lookupReturns([{ serial_number: null, fingerprint: null, seen_fingerprint: null }]);
+    await verifyDeviceSerial(7, 'sw', 'hfe0912abcd ');
+    expect(mockQuery.mock.calls[1][1]).toEqual([7, 'serial', 'HFE0912ABCD']);
+  });
+
+  it('accepts the pinned serial, ignoring case and spaces, and clears a stale mismatch', async () => {
+    lookupReturns([{ serial_number: 'HFE0912ABCD', fingerprint: 'HFE0912ABCD', seen_fingerprint: 'OTHER' }]);
+    await expect(verifyDeviceSerial(7, 'sw', ' hfe0912abcd')).resolves.toBeUndefined();
+    expect(sqlCalls()[1]).toMatch(/SET seen_fingerprint = NULL/);
+    expect(mockDispatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the serial as reported, letters and all', async () => {
+    lookupReturns([{ serial_number: null, fingerprint: 'HFE0912ABCD', seen_fingerprint: null }]);
+    await expect(verifyDeviceSerial(7, 'sw', 'HFE0912ABCE')).rejects.toThrow(/different serial number/);
   });
 });

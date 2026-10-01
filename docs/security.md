@@ -34,7 +34,7 @@ over the plain API* finding.
 The certificate is self-signed, so there is no certificate authority to check it against.
 Instead the manager pins it, below.
 
-## Certificate and host key pinning
+## Certificate, host key and serial number pinning
 
 The first time the manager connects to a device over API-SSL it remembers the device's
 certificate, and the first time over SSH its host key. Every later connection has to present
@@ -61,6 +61,24 @@ before trusting it:
 An admin then clicks **Trust new certificate** (or **Trust new host key**) on the banner, and
 the manager reconnects. When the manager replaces a device's certificate itself, through
 **Switch to API-SSL**, it updates the pin on its own.
+
+### Serial numbers
+
+The manager also remembers each device's serial number, and checks it right after logging in,
+before it reads or changes anything. If a device with a different serial answers at the
+address, the manager stops there: nothing is collected into the old device's record, and
+backups, restores, firmware and commands meant for it don't run on the other device. The
+device page shows **A different device is answering at this address**, with both serials.
+
+Two things cause this:
+
+- **The device was replaced** (an RMA, or new hardware at the same address). Check the serial
+  on the label or in **System → RouterBOARD**, then click **This is the new device**.
+- **Two devices swapped addresses**, usually through DHCP. Don't accept it; correct the
+  address in **Edit Device** instead, or give the devices static addresses.
+
+Devices without a serial number (CHR, x86) aren't checked. The serial already on record is
+the first one pinned, so a swap that happened before upgrading is caught too.
 
 Pinning starts silently on upgrade: devices already managed are pinned the next time the
 manager connects to them. Manage each device by its own address; two devices sharing an

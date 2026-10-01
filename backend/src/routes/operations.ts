@@ -32,8 +32,20 @@ interface AttentionItem {
  * unreachable" should stay dismissed if the copy changes, but must NOT swallow a
  * different device's outage.
  */
-function fingerprintOf(item: AttentionItem): string {
-  return `${item.category}|${item.path}|${item.title}`.slice(0, 160);
+function fingerprintOf(item: AttentionItem, scope: SiteScope): string {
+  return `${scopeKey(scope)}|${item.category}|${item.path}|${item.title}`.slice(0, 160);
+}
+
+/**
+ * The view an insight was dismissed in (J4). Without it, "2 devices offline"
+ * dismissed at one site hid the same finding at another. A dismissal now
+ * applies to the view it was made in: all sites, one site, or a site-scoped
+ * account's set of sites.
+ */
+export function scopeKey(scope: SiteScope): string {
+  if (scope === null) return 'all';
+  const ids = (Array.isArray(scope) ? [...scope] : [scope]).sort((a, b) => a - b);
+  return `s${ids.join(',')}`;
 }
 
 // Latest value per device for a set of device_resources fields.
@@ -462,7 +474,7 @@ router.get('/insights', async (req: Request, res: Response) => {
       .catch(() => [])).map((r) => r.fingerprint)
   );
 
-  for (const item of attention) item.fingerprint = fingerprintOf(item);
+  for (const item of attention) item.fingerprint = fingerprintOf(item, siteId);
   const visible = attention.filter((i) => !dismissed.has(i.fingerprint!));
 
   // Severity ordering: error → warn → info
@@ -500,8 +512,16 @@ router.post('/insights/dismiss', requireWrite, fleetOnly, async (req: Request, r
 });
 
 /** GET /api/operations/insights/dismissed — what is currently hidden, and until when. */
-router.get('/insights/dismissed', async (_req: Request, res: Response) => {
+router.get('/insights/dismissed', async (req: Request, res: Response) => {
   await query(`DELETE FROM insight_dismissals WHERE expires_at < NOW()`).catch(() => []);
+  // A site-scoped account sees only dismissals made in its own view, not other
+  // sites' findings by title.
+  if (req.user?.siteRoles) {
+    res.json(await query(
+      `SELECT * FROM insight_dismissals WHERE fingerprint LIKE $1 ORDER BY expires_at ASC`,
+      [`${scopeKey(activeSite(req))}|%`]));
+    return;
+  }
   res.json(await query(`SELECT * FROM insight_dismissals ORDER BY expires_at ASC`));
 });
 

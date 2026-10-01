@@ -548,17 +548,20 @@ export class PollerService {
     const results = await Promise.allSettled(
       clients.map(async (c) => {
         const names = await reverse(c.ip_address);
-        return { mac: c.mac_address, hostname: names[0] };
+        return { mac: c.mac_address, ip: c.ip_address, hostname: names[0] };
       })
     );
 
     let updated = 0;
     for (const r of results) {
       if (r.status === 'fulfilled') {
+        // Only the records holding the address that was looked up. The name
+        // comes from the manager's own resolver; written to every record of the
+        // MAC it landed on other sites' clients too (outside review P2-19).
         await query(
           `UPDATE clients SET hostname = $1
-           WHERE mac_address = $2 AND (hostname IS NULL OR hostname = '')`,
-          [r.value.hostname, r.value.mac]
+           WHERE mac_address = $2 AND ip_address = $3 AND (hostname IS NULL OR hostname = '')`,
+          [r.value.hostname, r.value.mac, r.value.ip]
         );
         updated++;
       }
@@ -1303,7 +1306,8 @@ export class PollerService {
           `Unmanaged device discovered: ${nb.neighbor_identity || nb.neighbor_address} (${nb.neighbor_address})`,
           {
             details: nb.neighbor_identity || undefined,
-            cooldownKey: `device_discovered:${nb.neighbor_address}`,
+            // Per site: the same address at two customers is two devices (P2-19).
+            cooldownKey: `device_discovered:${(device as { site_id?: number | null }).site_id ?? 0}:${nb.neighbor_address}`,
           }
         ).catch(() => {});
       }

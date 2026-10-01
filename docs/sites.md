@@ -78,6 +78,9 @@ What a site-limited account gets:
   them. Devices, clients, events, backups, topology, search and the rest show nothing from
   other sites. A device in another site answers "not found", so its existence doesn't leak.
   Tags are shared across the fleet, but their device counts include only its sites.
+  Traffic analytics shows only its sites' traffic (see [Traffic](traffic.md)).
+- **Edits stay in its sites.** Renaming a client, setting its category or editing its notes
+  changes the records in its sites only, even if the same MAC is on record elsewhere.
 - **It lands in the right place.** An account with one site opens on that site; one with
   several opens on "All my sites". A site left selected in the browser by someone else who
   used it doesn't carry over, and if a site is taken away while the account is signed in,
@@ -97,8 +100,6 @@ What a site-limited account gets:
 
 Not available to site-limited accounts, because each covers the whole fleet:
 
-- Traffic analytics. NetFlow data isn't recorded per site yet; until it is, showing it would
-  show other sites' traffic.
 - Alert rules, channels and history; Settings other than **My Password**.
 - Creating or deleting sites, editing shared command templates, poller health, and
   dismissing insights.
@@ -120,7 +121,16 @@ Scoped to the selected site:
 - Backups, Firmware, Bulk commands
 
 Also scoped: the Operations feed (Things to Handle, Recent Activity, capacity), Config
-Health findings, anomaly detection, and the Connected Clients chart.
+Health findings, anomaly detection, the Connected Clients chart, and traffic analytics.
+
+Dismissing an insight hides it in the view it was dismissed in: one site, or all sites. A
+finding with the same wording at another site still shows. (Dismissals made before 0.24.47
+apply nowhere and simply reappear.)
+
+Collection keeps sites apart as well. Topology links a neighbour to a managed device only in
+the same site, a MAC scan fills in client addresses only in its own site, and NetFlow matches
+client addresses within the exporter's site, so overlapping address plans (two customers on
+the RouterOS default 192.168.88.0/24) don't join two networks.
 
 Deliberately **not** scoped:
 
@@ -130,7 +140,8 @@ Deliberately **not** scoped:
 - **The audit log**, in Recent Activity. Audit rows record who changed the install; they
   carry no device and so belong to no site. Repeating "admin changed a setting" into every
   site would misattribute it, so the audit feed appears only in the all-sites view.
-- **NetFlow collector health**, which is one service for the install.
+- **NetFlow collector health**, which is one service for the install. Site-limited accounts
+  see only their own exporters in it.
 - **Rogue AP detection.** The scans are site-scoped, but the "these access points are
   ours" set stays fleet-wide. An AP of yours in another site is still yours, and scoping
   that set would report your own hardware as a rogue.

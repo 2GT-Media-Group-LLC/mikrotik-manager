@@ -173,6 +173,29 @@ export function parseBandSpec(raw: string | undefined | null): LteBandInfo | nul
  * value. Splitting before each `B<n>@` recovers the second case without
  * disturbing the first.
  */
+/**
+ * Real band values are a few dozen characters per carrier. A device can report
+ * anything, so a field is cut to this length before it is parsed.
+ */
+const MAX_FIELD_CHARS = 4096;
+
+/**
+ * Split a band value at each `B<n>@` carrier marker. This replaced
+ * split(/\s*(?=B\d+@)/), which is quadratic on a long run of spaces: a 40 KB
+ * value blocked the event loop for seconds on every poll (outside review
+ * P2-17). One pass to find the markers, then plain slicing.
+ */
+export function splitCarriers(value: string): string[] {
+  const starts: number[] = [];
+  const marker = /B\d+@/g;
+  for (let m = marker.exec(value); m; m = marker.exec(value)) starts.push(m.index);
+  if (starts.length === 0) return [value.trim()];
+  const parts: string[] = [];
+  if (starts[0] > 0) parts.push(value.slice(0, starts[0]).trim());
+  starts.forEach((start, i) => parts.push(value.slice(start, starts.at(i + 1) ?? value.length).trim()));
+  return parts.filter((p) => p.length > 0);
+}
+
 export function parseBandSpecs(
   row: Record<string, string>,
   key: string,
@@ -194,7 +217,7 @@ export function parseBandSpecs(
   const seen = new Set<string>();
   for (const value of values) {
     // `B1@20Mhz earfcn: 500 B3@20Mhz earfcn: 1800` → one entry per carrier.
-    for (const part of String(value).split(/\s*(?=B\d+@)/)) {
+    for (const part of splitCarriers(String(value).slice(0, MAX_FIELD_CHARS))) {
       const parsed = parseBandSpec(part);
       if (!parsed) continue;
       const dedupe = `${parsed.band}:${parsed.earfcn ?? ''}:${parsed.phyCellId ?? ''}`;
