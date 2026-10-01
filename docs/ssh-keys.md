@@ -25,6 +25,11 @@ On a shared fleet this is a change to announce, not to discover.
 
 ## How deployment works
 
+First the manager logs in to the device over the API. If it can't, nothing is installed: the
+API is how it removes a key again (see [Recovery](#recovery)), so a key on a device it can't
+reach over the API could lock it out of SSH for good. Fix the API login, then deploy. (Before
+0.24.49 this wasn't checked.)
+
 1. A unique keypair is generated on the manager — one per device, never a
    fleet key. A shared key would make any single compromise fleet-wide and would make
    rotating one device impossible without touching all of them. It is **Ed25519** on

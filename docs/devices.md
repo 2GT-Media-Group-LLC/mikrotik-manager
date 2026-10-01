@@ -281,6 +281,16 @@ the device sits.
 | Packet capture | 5–60s sniff, downloaded as `.pcap`. Requires SSH |
 | Bandwidth test | Between two managed devices; the target's test server is enabled and disabled for you |
 
+### Terminal
+
+The terminal opens an SSH shell on the device, for operators and admins in the device's site.
+The audit log records each session's start, who opened it, from which address, and when it
+was refused (for example by the rate limit). **What is typed in the shell is not recorded.**
+If you need a record of commands, turn on logging on the device itself (`/system logging`), or
+use bulk commands, whose commands and output are kept.
+
+Before 0.24.49 the address recorded was the manager's own proxy, not the user's.
+
 ## Syncing and polling
 
 Devices are polled on three cadences — see [Polling and scaling](scaling.md) for the model and

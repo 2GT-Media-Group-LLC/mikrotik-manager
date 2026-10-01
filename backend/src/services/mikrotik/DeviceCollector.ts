@@ -5,6 +5,7 @@ import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { verifyDeviceSerial, IdentityMismatchError } from '../identityPins';
 import { fit, normalizeMac } from '../../utils/fit';
+import { guestSsidTag, legacyAuthTypes, legacyProfileName, legacyProfileParams } from './legacySecurity';
 import { decrypt } from '../../utils/crypto';
 import { lookupVendor } from '../../utils/oui';
 import { buildServerArpMap } from '../../utils/serverArp';
@@ -147,6 +148,9 @@ function allEthernetNames(
     .filter((n): n is string => !!n && !bridgeNames.has(n) && !bondNames.has(n));
 }
 
+/** A log line this poll stored. */
+export interface NewLogEvent { id: number; event_time: Date; severity: string; message: string }
+
 /** Longest log message kept; RouterOS's own are a few hundred characters at most. */
 const MAX_LOG_MESSAGE = 4096;
 
@@ -273,8 +277,9 @@ export class DeviceCollector {
 
   // ─── Log poll (every 60s) ─────────────────────────────────────────────────
 
-  async collectLogs(): Promise<void> {
-    await this.collectEvents();
+  /** Collect new log lines; returns the ones actually stored, for log alerts. */
+  async collectLogs(): Promise<NewLogEvent[]> {
+    return this.collectEvents();
   }
 
   // ─── Full initial collection ───────────────────────────────────────────────
@@ -996,12 +1001,13 @@ export class DeviceCollector {
 
   // ─── Events/Logs ─────────────────────────────────────────────────────────
 
-  async collectEvents(): Promise<void> {
+  async collectEvents(): Promise<NewLogEvent[]> {
+    const stored: NewLogEvent[] = [];
     try {
       const logs = await this.client.execute(
         '/log/print', {}, [], { timeoutMs: LOG_READ_TIMEOUT_MS }
       );
-      if (!logs.length) return;
+      if (!logs.length) return stored;
 
       // The highest id we hold, taken across recent rows rather than from the
       // single most recently inserted one. Those are usually the same, but when
@@ -1082,14 +1088,15 @@ export class DeviceCollector {
           .join(',');
         // RETURNING reports only the rows actually written; ON CONFLICT rows are
         // silently dropped, which is exactly the count we want.
-        const inserted = await query<{ id: number }>(
+        const inserted = await query<NewLogEvent>(
           `INSERT INTO events (device_id, event_time, severity, topic, message, raw_json, log_id)
            VALUES ${values}
            ON CONFLICT (device_id, log_id) DO NOTHING
-           RETURNING id`,
+           RETURNING id, event_time, severity, message`,
           chunk.flat()
         );
         newCount += inserted.length;
+        stored.push(...inserted);
       }
 
       // Proxy access logs from containers: parse into their own table. Failure here
@@ -1107,16 +1114,13 @@ export class DeviceCollector {
         console.error(`[${this.device.name}] Failed to store proxy connections:`, err);
       }
 
-      if (newCount > 0) {
-        await query(
-          `DELETE FROM events WHERE device_id = $1 AND event_time < NOW() - INTERVAL '30 days'`,
-          [this.device.id]
-        );
-        console.log(`[${this.device.name}] Collected ${newCount} new log entries`);
-      }
+      // Old events are pruned by the scheduled sweep, which follows the
+      // retention setting. A hard 30-day delete here ignored it (P2-18).
+      if (newCount > 0) console.log(`[${this.device.name}] Collected ${newCount} new log entries`);
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect events:`, err);
     }
+    return stored;
   }
 
   /**
@@ -2649,11 +2653,45 @@ export class DeviceCollector {
     if (pkg === 'wifi') {
       await this.client.execute('/interface/wifi/set', { '.id': name, ...this.translateToWifiParams(params) });
     } else {
-      // Legacy wireless: drop inline security params — not supported directly on the interface
-      const { passphrase, 'authentication-types': _at, ...legacyParams } = params;
-      void passphrase; void _at;
+      // Legacy wireless: security lives in a security profile (P2-12). A new
+      // passphrase goes into this interface's own profile, which the interface
+      // is then pointed at; a shared profile is never changed.
+      const { passphrase, 'authentication-types': authTypes, ...legacyParams } = params;
+      if (passphrase) {
+        legacyParams['security-profile'] = await this.ensureLegacyProfile(name, passphrase, authTypes);
+      } else if (authTypes) {
+        // A new security type without a passphrase: only possible on the
+        // manager's own profile, which already holds the key.
+        const iface = (await this.client.execute('/interface/wireless/print', {}, [`?name=${name}`]))[0];
+        if (iface?.['security-profile'] === legacyProfileName(name)) {
+          const profile = (await this.client.execute('/interface/wireless/security-profiles/print', {}, [`?name=${legacyProfileName(name)}`]))[0];
+          if (profile?.['.id']) {
+            await this.client.execute('/interface/wireless/security-profiles/set', {
+              '.id': profile['.id'], 'authentication-types': legacyAuthTypes(authTypes),
+            });
+          }
+        }
+      }
       await this.client.execute('/interface/wireless/set', { '.id': name, ...legacyParams });
     }
+  }
+
+  /**
+   * Create or update the manager's own security profile for a legacy
+   * interface and return its name (P2-12). Any failure throws, so the caller
+   * never goes on to create or change the SSID without its security.
+   */
+  private async ensureLegacyProfile(iface: string, passphrase: string, authTypes: string | undefined): Promise<string> {
+    if (!iface) throw new Error('An interface name is needed to secure it');
+    const name = legacyProfileName(iface);
+    const params = legacyProfileParams(passphrase, legacyAuthTypes(authTypes));
+    const existing = (await this.client.execute('/interface/wireless/security-profiles/print', {}, [`?name=${name}`]))[0];
+    if (existing?.['.id']) {
+      await this.client.execute('/interface/wireless/security-profiles/set', { '.id': existing['.id'], ...params });
+    } else {
+      await this.client.execute('/interface/wireless/security-profiles/add', { name, ...params });
+    }
+    return name;
   }
 
   async addWirelessInterface(params: Record<string, string>): Promise<void> {
@@ -2661,10 +2699,25 @@ export class DeviceCollector {
     if (pkg === 'wifi') {
       await this.client.execute('/interface/wifi/add', this.translateToWifiParams(params));
     } else {
-      // Legacy wireless: drop inline security params — not supported directly on the interface
-      const { passphrase, 'authentication-types': _at, ...legacyParams } = params;
-      void passphrase; void _at;
-      await this.client.execute('/interface/wireless/add', legacyParams);
+      // Legacy wireless (P2-12): the SSID is created already pointing at its
+      // security profile, which is made first. If that fails, nothing goes on
+      // the air. It used to be created open, with a warning afterwards.
+      const { passphrase, 'authentication-types': authTypes, ...legacyParams } = params;
+      if (passphrase) {
+        legacyParams['security-profile'] = await this.ensureLegacyProfile(params['name'] ?? '', passphrase, authTypes);
+      } else if (authTypes && authTypes.split(',').some((t) => t.trim())) {
+        throw new Error('A passphrase is needed for a secured network.');
+      }
+      try {
+        await this.client.execute('/interface/wireless/add', legacyParams);
+      } catch (err) {
+        // Don't leave the profile behind for an SSID that was never created.
+        if (passphrase) {
+          const orphan = (await this.client.execute('/interface/wireless/security-profiles/print', {}, [`?name=${legacyProfileName(params['name'] ?? '')}`]).catch(() => []))[0];
+          if (orphan?.['.id']) await this.client.execute('/interface/wireless/security-profiles/remove', { '.id': orphan['.id'] }).catch(() => {});
+        }
+        throw err;
+      }
     }
   }
 
@@ -3078,11 +3131,28 @@ export class DeviceCollector {
         );
       }
 
-      const existingBySsid = raw.filter(r =>
+      // Rerunning the setup reuses the SSIDs it created before, known by the
+      // tag it put on them. Another SSID that merely has the same name is
+      // somebody else's network: it used to be adopted and moved into the
+      // guest bridge or VLAN (P2-12). Now the setup stops instead.
+      const tag = guestSsidTag(name);
+      const sameName = raw.filter(r =>
         (r['ssid'] || r['configuration.ssid'] || '') === ssid.ssid && r['master-interface']);
-      if (existingBySsid.length > 0) {
-        // Idempotency: SSID already exists — reuse it
-        for (const e of existingBySsid) ssidInterfaces.push(e['name']);
+      const foreign = sameName.filter(r => (r['comment'] || '') !== tag);
+      if (foreign.length > 0) {
+        throw new Error(
+          `An SSID named "${ssid.ssid}" already exists on ${foreign.map(r => r['name']).join(', ')} and wasn't created `
+          + `by this guest setup, so it won't be taken over. Choose another SSID, or remove or rename that one first.`
+        );
+      }
+      if (sameName.length > 0) {
+        for (const e of sameName) {
+          ssidInterfaces.push(e['name']);
+          if (ssid.passphrase) {
+            await this.setWirelessInterface(e['name'], { passphrase: ssid.passphrase, 'authentication-types': 'wpa2-psk' });
+          }
+        }
+        if (!ssid.passphrase) warnings.push(`Reused the existing guest SSID; its security was left as it was.`);
       } else {
         for (const radio of physicals) {
           const ifaceName = await this.getNextInterfaceName();
@@ -3091,6 +3161,7 @@ export class DeviceCollector {
             'master-interface': radio['name'],
             ssid: ssid.ssid,
             disabled: 'no',
+            comment: tag,
           };
           if (pkg !== 'wifi') params['mode'] = 'ap-bridge';
           if (ssid.passphrase) {
@@ -3099,9 +3170,6 @@ export class DeviceCollector {
           }
           await this.addWirelessInterface(params);
           ssidInterfaces.push(ifaceName);
-        }
-        if (pkg !== 'wifi' && ssid.passphrase) {
-          warnings.push('Legacy wireless package: passphrase requires a security profile — the guest SSID was created OPEN. Assign a security profile manually if you need WPA2.');
         }
       }
 

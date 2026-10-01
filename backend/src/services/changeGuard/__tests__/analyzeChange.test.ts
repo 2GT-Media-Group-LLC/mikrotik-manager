@@ -348,3 +348,113 @@ describe('analyzeChange — other management-path cuts', () => {
       .toBe('safe');
   });
 });
+
+// ── Outside review P2-7: management setups the model used to get wrong ──────
+
+describe('P2-7 management paths', () => {
+  it('catches removing a specific route to an off-subnet manager', () => {
+    // The manager (10.9.9.5) is reached through 192.168.0.254 on a static
+    // route, not the default route. Removing that route used to pass as safe.
+    const snap = baseSnapshot({
+      routes: [
+        { '.id': '*A', 'dst-address': '10.9.0.0/16', gateway: '192.168.0.254', active: 'true' },
+        { '.id': '*B', 'dst-address': '192.168.0.0/24', gateway: 'bridge', active: 'true' },
+      ],
+      arp: [{ address: '192.168.0.254', 'mac-address': 'AA:AA:AA:AA:AA:01', interface: 'bridge' }],
+      bridgeHosts: [{ 'mac-address': 'AA:AA:AA:AA:AA:01', 'on-interface': 'sfp28-1', local: 'false' }],
+      mgmtConnections: [{ protocol: 'tcp', 'src-address': '10.9.9.5:51000', 'dst-address': '192.168.0.40:8728' }],
+    });
+    expect(resolveManagementPath(snap, device).managerGateway).toBe('192.168.0.254');
+    expect(analyzeChange(snap, device, { kind: 'route.remove', routeId: '*A' }).severity).toBe('critical');
+  });
+
+  it("doesn't take a monitoring tool's connection for the manager's", () => {
+    const snap = baseSnapshot({
+      mgmtConnections: [
+        { protocol: 'tcp', 'src-address': '192.168.0.77:40000', 'dst-address': '192.168.0.40:8728' }, // a poller that connected first
+        { protocol: 'tcp', 'src-address': '172.24.1.15:51234', 'dst-address': '192.168.0.40:8728' },
+      ],
+    });
+    const path = resolveManagementPath(snap, device);
+    expect(path.managerIp).toBeNull();
+    expect(path.warnings.join(' ')).toMatch(/Several hosts are connected/);
+    // With its own source port known, the manager's session is picked out.
+    expect(resolveManagementPath({ ...snap, managerLocalPort: 51234 }, device).managerIp).toBe('172.24.1.15');
+  });
+
+  it('catches disabling the port under a management VLAN interface', () => {
+    const snap = baseSnapshot({
+      addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'vlan50', disabled: 'false' }],
+      vlanInterfaces: [{ name: 'vlan50', 'vlan-id': '50', interface: 'ether1' }],
+      interfaces: [
+        { name: 'bridge', type: 'bridge', disabled: 'false' },
+        { name: 'vlan50', type: 'vlan', disabled: 'false' },
+        { name: 'ether1', type: 'ether', disabled: 'false' },
+      ],
+      bridgePorts: [], bridgeVlans: [], bridgeHosts: [],
+      arp: [{ address: '192.168.0.1', 'mac-address': 'B4:FB:E4:0B:0B:8A', interface: 'vlan50' }],
+    });
+    expect(resolveManagementPath(snap, device).mgmtParent).toBe('ether1');
+    expect(analyzeChange(snap, device, { kind: 'interface.disable', name: 'ether1', disabled: true }).severity).toBe('critical');
+  });
+
+  it('treats a bond holding the management address as carrying management', () => {
+    const snap = baseSnapshot({
+      addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'bond1', disabled: 'false' }],
+      interfaces: [
+        { name: 'bond1', type: 'bond', disabled: 'false', slaves: 'ether1,ether2' },
+        { name: 'ether1', type: 'ether', disabled: 'false' },
+      ],
+      bridges: [], bridgePorts: [], bridgeVlans: [], bridgeHosts: [],
+      arp: [{ address: '192.168.0.1', 'mac-address': 'B4:FB:E4:0B:0B:8A', interface: 'bond1' }],
+    });
+    expect(resolveManagementPath(snap, device).ingressBond).toBe('bond1');
+  });
+
+  describe('a tagged VLAN interface reached through an access port', () => {
+    // vlan99 on the bridge holds the address; the manager arrives on ether1,
+    // an access port with PVID 99. Tagged at the CPU, untagged on the wire.
+    const accessMgmt = () => baseSnapshot({
+      addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'vlan99', disabled: 'false' }],
+      vlanInterfaces: [{ name: 'vlan99', 'vlan-id': '99', interface: 'bridge' }],
+      interfaces: [
+        { name: 'bridge', type: 'bridge', disabled: 'false' },
+        { name: 'vlan99', type: 'vlan', disabled: 'false' },
+        { name: 'ether1', type: 'ether', disabled: 'false' },
+      ],
+      bridgePorts: [{ interface: 'ether1', bridge: 'bridge', pvid: '99', disabled: 'false' }],
+      bridgeVlans: [{ '.id': '*3', bridge: 'bridge', 'vlan-ids': '99', tagged: 'bridge', untagged: 'ether1' }],
+      bridgeHosts: [{ 'mac-address': 'B4:FB:E4:0B:0B:8A', 'on-interface': 'ether1', local: 'false' }],
+    });
+
+    it('sees management as untagged on that port', () => {
+      const path = resolveManagementPath(accessMgmt(), device);
+      expect(path.taggedManagement).toBe(true);
+      expect(path.ingressTagged).toBe(false);
+    });
+
+    it('is quiet for a harmless change, so real breakage is not masked', () => {
+      expect(analyzeChange(accessMgmt(), device, { kind: 'vlan.add', bridge: 'bridge', vlanId: 200, tagged: ['bridge'], untagged: [] }).severity).toBe('safe');
+    });
+
+    it('catches moving that port off the management VLAN', () => {
+      const change: PlannedChange = { kind: 'port.vlan', port: 'ether1', pvid: 1, tagged: [], untagged: [1], mode: 'access' };
+      expect(analyzeChange(accessMgmt(), device, change).severity).toBe('critical');
+    });
+  });
+
+  describe('port VLAN simulation matches the writer', () => {
+    it('leaves a VLAN listed as both tagged and untagged untagged, as the writer does', () => {
+      const change: PlannedChange = { kind: 'port.vlan', port: 'ether1', pvid: 10, tagged: [10], untagged: [10] };
+      const row = simulate(baseSnapshot(), change).bridgeVlans.find((r) => r['vlan-ids'] === '10')!;
+      expect(row['tagged']).toBe('sfp28-1');
+      expect(row['untagged']).toBe('ether1');
+    });
+
+    it('adds a row for a VLAN that has none, as the writer does', () => {
+      const change: PlannedChange = { kind: 'port.vlan', port: 'ether1', pvid: 1, tagged: [30], untagged: [] };
+      const row = simulate(baseSnapshot(), change).bridgeVlans.find((r) => r['vlan-ids'] === '30');
+      expect(row?.['tagged']).toBe('ether1');
+    });
+  });
+});

@@ -7,6 +7,7 @@
  * before and violated after is a predicted lockout, and the invariant explains
  * itself, so the warning names the actual mechanism instead of being generic.
  */
+import { planVlanWrite } from '../../utils/bridgeVlanPlan';
 import { evaluate, INVARIANTS, type InvariantStatus } from './invariants';
 import { resolveManagementPath, expandVlanIds, type DeviceSnapshot, type ManagementPath, type RosRow } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
@@ -120,23 +121,23 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
       const bridge = port?.['bridge'];
       if (!bridge) break;
 
-      // setPortVlanConfig only rewrites rows for the VLANs actually listed in the
-      // request, and silently skips VLANs that have no row. Crucially it does NOT
-      // strip the port from VLANs the caller didn't mention — modelling it as a
-      // full replacement would invent violations that the real change never causes.
-      for (const row of s.bridgeVlans) {
-        if (row['bridge'] !== bridge) continue;
-        const vids = expandVlanIds(row['vlan-ids']);
-        const wantTagged = vids.some((v) => change.tagged.includes(v));
-        const wantUntagged = vids.some((v) => change.untagged.includes(v));
-        if (!wantTagged && !wantUntagged) continue;
-
-        const tagged = csv(row['current-tagged'] ?? row['tagged']).filter((p) => p !== change.port);
-        const untagged = csv(row['current-untagged'] ?? row['untagged']).filter((p) => p !== change.port);
-        if (wantTagged) tagged.push(change.port);
-        if (wantUntagged) untagged.push(change.port);
-        setMembership(row, tagged, untagged);
-      }
+      // Exactly what setPortVlanConfig does, using its own planner (P2-7):
+      // the tagged VLANs first, then the untagged ones, each moving the port
+      // between the lists, so a VLAN in both ends up untagged. Each VLAN's
+      // row is the one whose vlan-ids is exactly that VLAN (the device query
+      // the writer makes); with none, or only a dynamic one, a new static row
+      // is added. VLANs not mentioned are left alone.
+      const applyVlan = (vid: number, role: 'tagged' | 'untagged'): void => {
+        const row = s.bridgeVlans.find((r) => r['bridge'] === bridge && (r['vlan-ids'] || '').trim() === String(vid));
+        const plan = planVlanWrite(row ? { ...row, '.id': row['.id'] || 'sim' } : undefined, change.port, role);
+        if (plan.action === 'noop') return;
+        if (plan.action === 'set' && row) { setMembership(row, csv(plan.tagged), csv(plan.untagged)); return; }
+        const added: RosRow = { bridge, 'vlan-ids': String(vid), dynamic: 'false' };
+        setMembership(added, csv(plan.tagged), csv(plan.untagged));
+        s.bridgeVlans.push(added);
+      };
+      for (const vid of change.tagged) applyVlan(vid, 'tagged');
+      for (const vid of change.untagged) applyVlan(vid, 'untagged');
 
       // The removal half, when requested. Mirrors planTaggedRemovals: static
       // rows only, whole rows only — a range row that still covers a kept VLAN

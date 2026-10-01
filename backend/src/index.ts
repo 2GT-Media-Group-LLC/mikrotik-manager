@@ -1,4 +1,5 @@
 import 'express-async-errors';
+import { clientIpBehindProxy } from './utils/clientIp';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -246,7 +247,8 @@ terminalNs.on('connection', (socket) => {
   let sshClient: SshClient | null = null;
   let shellStream: ClientChannel | null = null;
   const user = socket.data.user as AuthPayload;
-  const clientIp = (socket.handshake.address ?? '').replace(/^::ffff:/, '');
+  // The user's address, not nginx's (P2-33).
+  const clientIp = clientIpBehindProxy(socket.handshake.headers['x-forwarded-for'], socket.handshake.address);
 
   socket.on('start', async (payload: { deviceId: number; cols?: number; rows?: number }) => {
     const { deviceId, cols = 80, rows = 24 } = payload;

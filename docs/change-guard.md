@@ -144,9 +144,29 @@ satisfied to violated.
 Two details make the result precise rather than merely cautious:
 
 - The **manager's own address**, as the device sees it, is read from the device's
-  connection tracking — rather than being treated as unknowable behind NAT.
+  connection tracking — rather than being treated as unknowable behind NAT. When other
+  hosts (a monitoring tool, WinBox) are connected to the API port too, the manager picks
+  out its own session by its source port; if it can't, it says so and works from the
+  default gateway instead of guessing.
 - The **ingress port** is taken from the bridge forwarding table, so it is the port the
   traffic actually arrives on, not a guess from topology.
+
+What the model follows:
+
+- the address, the interface holding it, and a VLAN interface's parent port, so
+  disabling `ether1` under `vlan10` is caught;
+- the bridge and its VLAN table, including a VLAN interface reached through an access
+  port whose PVID is that VLAN (tagged at the CPU, untagged on the wire);
+- a bond holding the address, under its VLAN interface, or as the ingress port;
+- the route back to an off-subnet manager, whether that is the default route or a more
+  specific one;
+- the API service and the input firewall chain.
+
+A failed read during the check is never taken as "nothing there": the check fails, and the
+change then requires auto-revert. VLAN edits are simulated with the same planning code the
+device write uses, so the prediction and the write can't disagree about which rows change.
+(Before 0.24.49 a port listed as both tagged and untagged for a VLAN was simulated as both;
+the write leaves it untagged.)
 
 The resulting warning names the mechanism:
 

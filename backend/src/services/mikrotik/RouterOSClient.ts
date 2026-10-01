@@ -96,6 +96,15 @@ export class RouterOSClient extends EventEmitter {
   /** SHA-256 fingerprint of the certificate seen on the last TLS connect, lowercase hex. */
   tlsFingerprint: string | null = null;
 
+  /**
+   * This connection's local TCP port. NAT in front of the manager usually
+   * keeps it, so it identifies the manager's own session in the device's
+   * connection table (Change Guard, outside review P2-7).
+   */
+  get localPort(): number | null {
+    return this.socket?.localPort ?? null;
+  }
+
   async connect(): Promise<void> {
     if (this.connected) return;
     // A fresh connection starts trusted, so a client that was abandoned earlier

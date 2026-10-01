@@ -178,7 +178,41 @@ export class SshKeyService {
    * the new key, and a deployment that fails verification removes the key it
    * just installed rather than leaving the device in that state.
    */
+  /**
+   * Refuse to install a key unless the manager can log in over the API now
+   * (outside review P2-31). Once a key is imported RouterOS refuses password
+   * SSH for that user, and the API is the only way the manager can take the
+   * key off again, for instance if the stored private key were ever lost or
+   * stopped working. A device the manager can't reach over the API would be
+   * left with no way back in over SSH through the manager.
+   */
+  private async assertApiLogin(target: SshTarget): Promise<void> {
+    if (!target.api_username || !target.api_password_encrypted) {
+      throw new Error(
+        'This device has no API login, so a key installed now could never be removed by the manager if its ' +
+        'private key were lost. Add an API login to the device first.'
+      );
+    }
+    const client = new RouterOSClient(
+      target.ip_address, target.api_port ?? 8728,
+      target.api_username, decrypt(target.api_password_encrypted),
+    );
+    try {
+      await client.connect();
+      await client.execute('/system/identity/print');
+    } catch (e) {
+      throw new Error(
+        `The manager can't log in to this device over the API right now (${(e as Error).message}), and the API is ` +
+        `how it would remove the key again if it had to. Fix the API login, then deploy the key.`,
+        { cause: e }
+      );
+    } finally {
+      client.disconnect();
+    }
+  }
+
   async deploy(target: SshTarget, opts: { rotate?: boolean } = {}): Promise<DeviceKeyRow> {
+    await this.assertApiLogin(target);
     const existing = await this.getKey(target.id);
     const canUseExistingKey = !!existing && existing.status === 'verified';
 

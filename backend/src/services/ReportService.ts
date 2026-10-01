@@ -2,6 +2,7 @@
 // top clients, updates, backups) delivered over the SMTP settings of the first
 // enabled email alert channel. An hourly scheduler sends whatever is due.
 
+import { outageOverlapsSql, outageSecondsSql } from '../utils/outageWindow';
 import nodemailer from 'nodemailer';
 import { query, queryOne } from '../config/database';
 
@@ -103,8 +104,9 @@ export class ReportService {
                 COUNT(*) FILTER (WHERE firmware_update_available)::text AS updates
          FROM devices`),
       query<{ n: string; secs: string }>(
-        `SELECT COUNT(*)::text AS n, COALESCE(SUM(COALESCE(duration_seconds,0)),0)::text AS secs
-         FROM device_availability WHERE went_offline_at > NOW() - ($1 || ' days')::interval`, [days]),
+        // Every outage overlapping the period, clipped to it (P2-25).
+        `SELECT COUNT(*)::text AS n, COALESCE(SUM(${outageSecondsSql(`($1 || ' days')::interval`)}),0)::bigint::text AS secs
+         FROM device_availability WHERE ${outageOverlapsSql(`($1 || ' days')::interval`)}`, [days]),
       query<{ errors: string; warnings: string }>(
         `SELECT COUNT(*) FILTER (WHERE severity='error')::text AS errors,
                 COUNT(*) FILTER (WHERE severity='warning')::text AS warnings

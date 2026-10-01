@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { outageLengthSeconds, outageOverlapsSql, outageSecondsInWindow, outageSecondsSql } from '../utils/outageWindow';
 import { deviceSiteAccess } from '../utils/siteAccess';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { query } from '../config/database';
@@ -338,21 +339,22 @@ router.get('/device/:deviceId/availability', async (req: Request, res: Response)
     came_back_online_at: string | null;
     duration_seconds: number | null;
   }>(
+    // Every outage overlapping the window, including one that began before
+    // it or is still going (P2-25).
     `SELECT id, went_offline_at, came_back_online_at, duration_seconds
      FROM device_availability
      WHERE device_id = $1
-       AND went_offline_at > NOW() - ($2::text || '')::interval
+       AND ${outageOverlapsSql(`($2::text)::interval`)}
      ORDER BY went_offline_at DESC`,
     [deviceId, intervalStr]
   );
 
   const rangeSeconds = parseInt(intervalStr, 10) * 86400;
-  const totalOutageSec = outages.reduce((sum, o) => {
-    const dur = o.duration_seconds ?? (o.came_back_online_at == null ? Math.round((Date.now() / 1000) - new Date(o.went_offline_at).getTime() / 1000) : 0);
-    return sum + dur;
-  }, 0);
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - rangeSeconds * 1000);
+  const totalOutageSec = outages.reduce((sum, o) => sum + outageSecondsInWindow(o, windowStart, now), 0);
   const uptimePct = Math.max(0, Math.min(100, parseFloat(((1 - totalOutageSec / rangeSeconds) * 100).toFixed(2))));
-  const longestOutage = outages.reduce((max, o) => Math.max(max, o.duration_seconds ?? 0), 0);
+  const longestOutage = outages.reduce((max, o) => Math.max(max, outageLengthSeconds(o, now)), 0);
 
   res.json({
     uptimePct,
@@ -395,9 +397,10 @@ router.get('/summary', async (req: Request, res: Response) => {
          ${evtFilter ? `AND ${evtFilter}` : ''}`
     ),
     query<{ total_outage_sec: string }>(
-      `SELECT COALESCE(SUM(COALESCE(duration_seconds, 0)), 0)::text AS total_outage_sec
+      // Clipped to the 30 days, ongoing outages included (P2-25).
+      `SELECT COALESCE(SUM(${outageSecondsSql(`INTERVAL '30 days'`)}), 0)::bigint::text AS total_outage_sec
        FROM device_availability
-       WHERE went_offline_at > NOW() - INTERVAL '30 days'
+       WHERE ${outageOverlapsSql(`INTERVAL '30 days'`)}
          ${cliFilter ? `AND ${cliFilter}` : ''}`
     ),
   ]);

@@ -98,3 +98,35 @@ describe('parseDeviceLogTime — the reported bug', () => {
     expect(parseDeviceLogTime('not a time', LA, NOW)).toBeNull();
   });
 });
+
+// Outside review P2-18: "today" is the device's date, not the manager's UTC date.
+describe('device-local dates for short stamps', () => {
+  const iso = (d: Date | null) => d?.toISOString();
+
+  it("dates a New York evening line on New York's day, not tomorrow", () => {
+    // 01:00 UTC on Oct 2 is 21:00 on Oct 1 in New York.
+    const now = new Date('2026-10-02T01:00:00Z');
+    expect(iso(parseDeviceLogTime('20:30:00', { timeZoneName: 'America/New_York' }, now))).toBe('2026-10-02T00:30:00.000Z');
+  });
+
+  it("dates a Sydney morning line on Sydney's day, not yesterday", () => {
+    // 22:00 UTC on Oct 1 is 08:00 on Oct 2 in Sydney (AEST, before DST starts).
+    const now = new Date('2026-10-01T22:00:00Z');
+    expect(iso(parseDeviceLogTime('07:45:00', { timeZoneName: 'Australia/Sydney' }, now))).toBe('2026-10-01T21:45:00.000Z');
+  });
+
+  it('puts a line from just before midnight on the previous day', () => {
+    const now = new Date('2026-10-02T00:00:30Z');
+    expect(iso(parseDeviceLogTime('23:59:50', { timeZoneName: 'UTC' }, now))).toBe('2026-10-01T23:59:50.000Z');
+  });
+
+  it("reads December's year-less lines in January as last year's", () => {
+    const now = new Date('2027-01-02T12:00:00Z');
+    expect(iso(parseDeviceLogTime('dec/31 23:00:00', { timeZoneName: 'UTC' }, now))).toBe('2026-12-31T23:00:00.000Z');
+  });
+
+  it('uses the numeric offset when there is no zone name', () => {
+    const now = new Date('2026-10-02T01:00:00Z'); // 21:00 Oct 1 at -04:00
+    expect(iso(parseDeviceLogTime('20:30:00', { gmtOffset: '-04:00' }, now))).toBe('2026-10-02T00:30:00.000Z');
+  });
+});

@@ -58,8 +58,44 @@ export function wallClockToUtc(
 /** Wall-clock fields pulled out of a log timestamp, before any zone is applied. */
 interface WallClock { y: number; mo: number; d: number; h: number; mi: number; s: number }
 
+/**
+ * The device's own current wall-clock time, from its zone or offset (outside
+ * review P2-18). "Today" in a time-only stamp, and the year in a year-less
+ * one, are the device's, not the manager's UTC date: with the manager's, a
+ * New York device's evening lines were dated a day ahead and a Sydney
+ * device's morning lines a day behind.
+ */
+export function deviceWallClockNow(clock: DeviceClock, now = new Date()): WallClock | null {
+  if (clock.timeZoneName) {
+    try {
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-US', {
+          timeZone: clock.timeZoneName, hour12: false,
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+        }).formatToParts(now).map((p) => [p.type, p.value])
+      );
+      return { y: +parts.year, mo: +parts.month, d: +parts.day, h: +parts.hour % 24, mi: +parts.minute, s: +parts.second };
+    } catch { /* unusable zone name: try the offset */ }
+  }
+  const offsetMs = parseGmtOffsetMs(clock.gmtOffset);
+  if (offsetMs == null) return null;
+  const t = new Date(now.getTime() + offsetMs);
+  return { y: t.getUTCFullYear(), mo: t.getUTCMonth() + 1, d: t.getUTCDate(), h: t.getUTCHours(), mi: t.getUTCMinutes(), s: t.getUTCSeconds() };
+}
+
+/** Five minutes of clock skew allowed before a stamp counts as "in the future". */
+const FUTURE_SLACK_S = 5 * 60;
+
+const secondsOfDay = (w: { h: number; mi: number; s: number }): number => w.h * 3600 + w.mi * 60 + w.s;
+
 /** Split a RouterOS timestamp into wall-clock fields. Null when unrecognised. */
-export function parseWallClock(timeStr: string, now: Date): WallClock | null {
+export function parseWallClock(timeStr: string, now: Date, deviceNow?: WallClock | null): WallClock | null {
+  // The device's date when it is known; the manager's UTC date otherwise.
+  const today = deviceNow ?? {
+    y: now.getUTCFullYear(), mo: now.getUTCMonth() + 1, d: now.getUTCDate(),
+    h: now.getUTCHours(), mi: now.getUTCMinutes(), s: now.getUTCSeconds(),
+  };
   const t = (timeStr || '').trim();
   if (!t) return null;
 
@@ -74,20 +110,24 @@ export function parseWallClock(timeStr: string, now: Date): WallClock | null {
   if (m) {
     const mo = MONTHS[m[1].toLowerCase()];
     if (!mo) return null;
-    return {
-      // Without a year RouterOS means the current one on the device.
-      y: m[3] ? +m[3] : now.getUTCFullYear(),
-      mo, d: +m[2], h: +m[4], mi: +m[5], s: +m[6],
-    };
+    let y = m[3] ? +m[3] : today.y;
+    // Without a year RouterOS means the current one on the device, so a date
+    // after today (December's lines read in January) is last year's.
+    if (!m[3] && (mo > today.mo || (mo === today.mo && +m[2] > today.d))) y -= 1;
+    return { y, mo, d: +m[2], h: +m[4], mi: +m[5], s: +m[6] };
   }
 
   // 08:37:38 — today, on the device.
   m = t.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
   if (m) {
-    return {
-      y: now.getUTCFullYear(), mo: now.getUTCMonth() + 1, d: now.getUTCDate(),
-      h: +m[1], mi: +m[2], s: +m[3],
-    };
+    const wall = { h: +m[1], mi: +m[2], s: +m[3] };
+    // A time later than the device's clock is yesterday's: a line logged at
+    // 23:59 and read just after midnight.
+    if (secondsOfDay(wall) > secondsOfDay(today) + FUTURE_SLACK_S) {
+      const prev = new Date(Date.UTC(today.y, today.mo - 1, today.d - 1));
+      return { y: prev.getUTCFullYear(), mo: prev.getUTCMonth() + 1, d: prev.getUTCDate(), ...wall };
+    }
+    return { y: today.y, mo: today.mo, d: today.d, ...wall };
   }
   return null;
 }
@@ -123,7 +163,7 @@ export function parseGmtOffsetMs(raw: string | null | undefined): number | null 
 export function parseDeviceLogTime(
   timeStr: string, clock: DeviceClock, now = new Date(),
 ): Date | null {
-  const wall = parseWallClock(timeStr, now);
+  const wall = parseWallClock(timeStr, now, deviceWallClockNow(clock, now));
   if (!wall) return null;
 
   if (clock.timeZoneName) {

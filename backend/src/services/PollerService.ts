@@ -6,6 +6,7 @@ import { Server as SocketServer } from 'socket.io';
 import { getWriteApi } from '../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { alertService } from './AlertService';
+import { logAlertCandidates } from '../utils/logAlerts';
 import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 import { cronMatches } from '../utils/cron';
@@ -1332,17 +1333,14 @@ export class PollerService {
     const collector = new DeviceCollector(device);
     try {
       await collector.connect();
-      await collector.collectLogs();
+      const stored = await collector.collectLogs();
       void this.emitForDevice('events:updated', { deviceId: device.id }, device.id);
 
-      // Fire log_error / log_warning alerts if new entries appeared in the last 90s
-      const recent = await query<{ severity: string; message: string }>(
-        `SELECT severity, message FROM events
-         WHERE device_id = $1
-           AND event_time > NOW() - INTERVAL '90 seconds'
-         ORDER BY event_time DESC LIMIT 1`,
-        [device.id]
-      );
+      // Alert on the lines this poll actually stored, not on whatever looks
+      // recent by timestamp: a line dated a day ahead re-alerted every cycle,
+      // and one dated behind never alerted (P2-18). The newest error and the
+      // newest warning each raise one alert; the alert cooldown does the rest.
+      const recent = logAlertCandidates(stored);
       for (const ev of recent) {
         if (ev.severity === 'error') {
           alertService.dispatch('log_error', ev.message, {

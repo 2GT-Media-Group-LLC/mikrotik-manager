@@ -269,3 +269,83 @@ describe('setFlowControl', () => {
     expect(calls).toEqual([{ cmd: '/interface/ethernet/set', params: { numbers: 'ether1', 'rx-flow-control': 'on' } }]);
   });
 });
+
+// ── Legacy wireless security (outside review P2-12) ─────────────────────────
+
+describe('legacy wireless security', () => {
+  const legacy = (responses: Record<string, Record<string, string>[]>, failures: Record<string, Error> = {}) => {
+    const fail = new Map(Object.entries(failures));
+    const { collector, calls } = collectorOn(responses);
+    (collector as unknown as { wifiPackageCache: string }).wifiPackageCache = 'wireless';
+    const exec = (collector as unknown as { client: { execute: jest.Mock } }).client.execute;
+    const base = exec.getMockImplementation()!;
+    exec.mockImplementation(async (cmd: string, params?: Record<string, string>) => {
+      const err = fail.get(cmd);
+      if (err) { calls.push({ cmd, params: params ?? {} }); throw err; }
+      return base(cmd, params);
+    });
+    return { collector, calls };
+  };
+  const cmds = (calls: { cmd: string }[]) => calls.map((c) => c.cmd);
+
+  it('creates the security profile first, then the SSID already pointing at it', async () => {
+    const { collector, calls } = legacy({});
+    await collector.addWirelessInterface({ name: 'wlan2', ssid: 'Office', passphrase: 'correct-horse', 'authentication-types': 'wpa2-psk' });
+    const add = calls.find((c) => c.cmd === '/interface/wireless/security-profiles/add')!;
+    expect(add.params).toMatchObject({ name: 'mtm-wlan2', mode: 'dynamic-keys', 'authentication-types': 'wpa2-psk', 'wpa2-pre-shared-key': 'correct-horse' });
+    const iface = calls.find((c) => c.cmd === '/interface/wireless/add')!;
+    expect(iface.params).toEqual({ name: 'wlan2', ssid: 'Office', 'security-profile': 'mtm-wlan2' });
+    expect(cmds(calls).indexOf('/interface/wireless/security-profiles/add')).toBeLessThan(cmds(calls).indexOf('/interface/wireless/add'));
+  });
+
+  it('creates nothing when the network cannot be secured', async () => {
+    const { collector, calls } = legacy({}, { '/interface/wireless/security-profiles/add': new Error('failure: not allowed') });
+    await expect(collector.addWirelessInterface({ name: 'wlan2', ssid: 'Office', passphrase: 'correct-horse' })).rejects.toThrow('not allowed');
+    expect(cmds(calls)).not.toContain('/interface/wireless/add');
+  });
+
+  it('refuses WPA3 rather than quietly downgrading it', async () => {
+    const { collector, calls } = legacy({});
+    await expect(collector.addWirelessInterface({ name: 'wlan2', ssid: 'Office', passphrase: 'correct-horse', 'authentication-types': 'wpa3-psk' }))
+      .rejects.toThrow(/only wpa-psk and wpa2-psk/);
+    expect(cmds(calls)).not.toContain('/interface/wireless/add');
+  });
+
+  it('removes the profile again if the SSID itself is refused', async () => {
+    const { collector, calls } = legacy(
+      { '/interface/wireless/security-profiles/print': [{ '.id': '*9', name: 'mtm-wlan2' }] },
+      { '/interface/wireless/add': new Error('failure: bad master') });
+    await expect(collector.addWirelessInterface({ name: 'wlan2', ssid: 'Office', passphrase: 'correct-horse' })).rejects.toThrow('bad master');
+    expect(calls).toContainEqual({ cmd: '/interface/wireless/security-profiles/remove', params: { '.id': '*9' } });
+  });
+
+  it('applies a new passphrase through the interface\'s own profile, never a shared one', async () => {
+    const { collector, calls } = legacy({});
+    await collector.setWirelessInterface('wlan1', { passphrase: 'new-passphrase' });
+    expect(calls.find((c) => c.cmd === '/interface/wireless/security-profiles/add')?.params.name).toBe('mtm-wlan1');
+    expect(calls).toContainEqual({ cmd: '/interface/wireless/set', params: { '.id': 'wlan1', 'security-profile': 'mtm-wlan1' } });
+    expect(cmds(calls)).not.toContain('/interface/wireless/security-profiles/set');
+  });
+
+  it("won't take over another SSID that only shares the guest network's name", async () => {
+    const { collector, calls } = legacy({
+      '/interface/wireless/print': [
+        { name: 'wlan1' },
+        { name: 'wlan3', 'master-interface': 'wlan1', ssid: 'Guest' }, // someone else's
+      ],
+    });
+    await expect(collector.setupGuestNetwork({
+      name: 'guest', gatewayCidr: '10.5.50.1/24', poolRange: '10.5.50.10-10.5.50.254', ssid: { ssid: 'Guest', passphrase: 'correct-horse' },
+    })).rejects.toThrow(/already exists on wlan3/);
+    expect(cmds(calls).some((c) => c.endsWith('/add') || c.endsWith('/set'))).toBe(false);
+  });
+
+  it('tags the SSIDs it creates so a rerun knows them', async () => {
+    const { collector, calls } = legacy({ '/interface/wireless/print': [{ name: 'wlan1' }] });
+    await collector.setupGuestNetwork({
+      name: 'guest', gatewayCidr: '10.5.50.1/24', poolRange: '10.5.50.10-10.5.50.254', ssid: { ssid: 'Guest', passphrase: 'correct-horse' },
+    }).catch(() => { /* the hotspot steps after it don't matter here */ });
+    const iface = calls.find((c) => c.cmd === '/interface/wireless/add')!;
+    expect(iface.params).toMatchObject({ ssid: 'Guest', comment: 'mtm-guest:guest', 'security-profile': iface.params.name ? `mtm-${iface.params.name}` : '' });
+  });
+});

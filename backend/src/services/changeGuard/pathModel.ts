@@ -56,6 +56,8 @@ export interface DeviceSnapshot {
   addressListsRead?: string[];
   interfaceLists?: RosRow[];
   interfaceListMembers?: RosRow[];
+  /** The capture connection's own local port, to pick the manager out of conntrack. */
+  managerLocalPort?: number | null;
 }
 
 export type HopKind = 'address' | 'vlan-interface' | 'bridge' | 'bond' | 'port';
@@ -93,6 +95,21 @@ export interface ManagementPath {
   managerIp: string | null;
   /** Bond backing the ingress port, if any. */
   ingressBond: string | null;
+  /**
+   * Physical parent of a management VLAN interface that isn't on a bridge
+   * (e.g. ether1 under vlan10). Disabling it cuts management as surely as
+   * disabling the VLAN interface.
+   */
+  mgmtParent: string | null;
+  /**
+   * Whether management frames arrive tagged on the ingress port. Usually the
+   * same as taggedManagement, but a VLAN interface on the bridge can be reached
+   * through an access port whose PVID is that VLAN: tagged at the CPU,
+   * untagged on the wire (outside review P2-7).
+   */
+  ingressTagged: boolean;
+  /** Gateway the device uses to reach the manager, when the manager is off-subnet. */
+  managerGateway: string | null;
   hops: PathHop[];
   /** Things we could not determine; callers should degrade to conservative checks. */
   warnings: string[];
@@ -170,6 +187,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
       bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
       addressLists, addressListsRead, interfaceLists, interfaceListMembers,
+      managerLocalPort: client.localPort,
     };
   } finally {
     client.disconnect();
@@ -263,15 +281,31 @@ function inNetwork(ip: string, net: string, prefixLen: number): boolean {
  * the management port. Returns null when conntrack is unavailable.
  */
 export function managerIpFromConntrack(snap: DeviceSnapshot, apiPort: number): string | null {
+  const sources = apiConnectionSources(snap, apiPort);
+  // The manager's own session, by its source port, when NAT kept it.
+  if (snap.managerLocalPort) {
+    const own = sources.find((c) => c.port === snap.managerLocalPort);
+    if (own) return own.ip;
+  }
+  // Otherwise only when every connection comes from one address. Taking the
+  // first one let a monitoring tool that connected first stand in for the
+  // manager, and the whole path was then worked out for the wrong host (P2-7).
+  const ips = new Set(sources.map((c) => c.ip));
+  return ips.size === 1 ? [...ips][0] : null;
+}
+
+/** Source address and port of every TCP connection to the API port. */
+export function apiConnectionSources(snap: DeviceSnapshot, apiPort: number): { ip: string; port: number }[] {
+  const out: { ip: string; port: number }[] = [];
   for (const c of snap.mgmtConnections) {
     if ((c['protocol'] || '').toLowerCase() !== 'tcp') continue;
     const dst = c['dst-address'] || '';
     const port = dst.includes(':') ? parseInt(dst.split(':').pop() || '', 10) : NaN;
     if (port !== apiPort) continue;
-    const src = (c['src-address'] || '').split(':')[0];
-    if (src) return src;
+    const [ip, srcPort] = (c['src-address'] || '').split(':');
+    if (ip) out.push({ ip, port: parseInt(srcPort || '', 10) });
   }
-  return null;
+  return out;
 }
 
 // ─── resolution ───────────────────────────────────────────────────────────────
@@ -309,6 +343,7 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
   let bridge: string | null = null;
   let mgmtVlanId: number | null = null;
   let taggedManagement = false;
+  let mgmtParent: string | null = null;
 
   if (mgmtInterface) {
     const vlanIface =
@@ -328,6 +363,7 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
       });
       if (parent && snap.bridges.some((b) => b['name'] === parent)) bridge = parent;
       else if (parent) {
+        mgmtParent = parent;
         hops.push({ kind: 'port', name: parent, reason: `${parent} is the physical parent of ${mgmtInterface}.` });
       }
     } else if (snap.bridges.some((b) => b['name'] === mgmtInterface)) {
@@ -355,6 +391,12 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
 
   // 3. Where does the manager's traffic physically enter?
   const managerIp = managerIpFromConntrack(snap, device.api_port);
+  if (!managerIp && new Set(apiConnectionSources(snap, device.api_port).map((c) => c.ip)).size > 1) {
+    warnings.push(
+      `Several hosts are connected to the API port, and the manager's own session couldn't be told apart, so the path is worked out from the default gateway instead.`
+    );
+  }
+  let managerGateway: string | null = null;
 
   // Which next-hop MAC carries the management conversation?
   //  - manager observed and on-subnet  → the manager's own address
@@ -367,13 +409,15 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
   if (managerIp) {
     const route = routeFor(snap, managerIp);
     const gw = route?.['gateway'] ? route['gateway'].split('%')[0].trim() : null;
-    lookupIp = snap.arp.some((a) => a['address'] === managerIp) ? managerIp : gw;
+    const onLink = snap.arp.some((a) => a['address'] === managerIp);
+    lookupIp = onLink ? managerIp : gw;
+    if (!onLink && gw && ipToInt(gw) !== null) managerGateway = gw;
   } else {
     const defaultRoute = snap.routes.find(
       (r) => (r['dst-address'] || '') === '0.0.0.0/0' && r['active'] !== 'false' && !isTrue(r['disabled'])
     );
     const gw = defaultRoute?.['gateway'] ? defaultRoute['gateway'].split('%')[0].trim() : null;
-    if (gw && ipToInt(gw) !== null) { lookupIp = gw; viaDefaultGw = true; }
+    if (gw && ipToInt(gw) !== null) { lookupIp = gw; viaDefaultGw = true; managerGateway = gw; }
   }
 
   let ingressPort: string | null = null;
@@ -424,18 +468,30 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
     mgmtVlanId = isNaN(pvid) ? null : pvid;
   }
 
-  // 4. Is the ingress port actually a bond?
+  // Tagged at the CPU doesn't mean tagged on the wire: an access port whose
+  // PVID is the management VLAN carries it untagged (P2-7).
+  let ingressTagged = taggedManagement;
+  if (taggedManagement && bridge && ingressPort && mgmtVlanId != null) {
+    const portRow = snap.bridgePorts.find((p) => p['interface'] === ingressPort && p['bridge'] === bridge);
+    const pvid = parseInt(portRow?.['pvid'] || '', 10);
+    const m = vlanMembership(snap, bridge, mgmtVlanId);
+    if (pvid === mgmtVlanId && m.untagged.includes(ingressPort) && !m.tagged.includes(ingressPort)) ingressTagged = false;
+  }
+
+  // 4. Is management carried by a bond: the ingress port, the interface holding
+  //    the address, or the parent of its VLAN interface?
   let ingressBond: string | null = null;
-  if (ingressPort) {
-    const asBond = snap.interfaces.find((i) => i['name'] === ingressPort && i['type'] === 'bond');
-    if (asBond) {
-      ingressBond = ingressPort;
-      hops.push({
-        kind: 'bond',
-        name: ingressPort,
-        reason: `${ingressPort} is a bond; management depends on it keeping at least one running member.`,
-      });
-    }
+  const isBond = (name: string | null): boolean =>
+    !!name && snap.interfaces.some((i) => i['name'] === name && i['type'] === 'bond');
+  for (const candidate of [ingressPort, mgmtParent, mgmtInterface]) {
+    if (isBond(candidate)) { ingressBond = candidate; break; }
+  }
+  if (ingressBond) {
+    hops.push({
+      kind: 'bond',
+      name: ingressBond,
+      reason: `${ingressBond} is a bond; management depends on it keeping at least one running member.`,
+    });
   }
 
   return {
@@ -449,6 +505,9 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
     ingressPortSource,
     managerIp,
     ingressBond,
+    mgmtParent,
+    ingressTagged,
+    managerGateway,
     hops,
     warnings,
   };

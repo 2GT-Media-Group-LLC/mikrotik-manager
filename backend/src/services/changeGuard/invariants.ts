@@ -45,6 +45,23 @@ const isTrue = (v: string | undefined): boolean => v === 'true' || v === 'yes';
 const stripCidr = (a: string): string => (a || '').split('/')[0].trim();
 const ok = (detail = ''): InvariantResult => ({ ok: true, detail });
 
+/** Does the route destination (e.g. 10.0.0.0/8, 0.0.0.0/0) include `ip`? */
+function routeCovers(dst: string, ip: string): boolean {
+  const toInt = (a: string): number | null => {
+    const p = a.split('.').map(Number);
+    return p.length === 4 && p.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)
+      ? ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3] : null;
+  };
+  const [net, lenStr] = dst.split('/');
+  const len = parseInt(lenStr ?? '32', 10);
+  const a = toInt(ip);
+  const b = toInt(net);
+  if (a === null || b === null || isNaN(len)) return false;
+  if (len <= 0) return true;
+  const mask = len >= 32 ? 0xffffffff : ((0xffffffff << (32 - len)) >>> 0);
+  return ((a & mask) >>> 0) === ((b & mask) >>> 0);
+}
+
 /**
  * Read vlan-filtering from the snapshot being evaluated, never from the resolved
  * path. The path is frozen at the pre-change state, so keying off it would make
@@ -78,6 +95,23 @@ export const INVARIANTS: Invariant[] = [
       }
       return isTrue(row['disabled'])
         ? { ok: false, detail: `Interface ${path.mgmtInterface} holds the management address and would be disabled.` }
+        : ok();
+    },
+  },
+
+  {
+    id: 'mgmt-parent-up',
+    title: 'The port under the management VLAN interface is enabled',
+    check(snap, path) {
+      // A VLAN interface on a plain port (not a bridge) rides that port. It was
+      // never checked, so disabling ether1 under vlan10 passed as safe (P2-7).
+      if (!path.mgmtParent) return ok();
+      const row = snap.interfaces.find((i) => i['name'] === path.mgmtParent);
+      if (!row) {
+        return { ok: false, detail: `${path.mgmtParent}, the port under the management VLAN interface ${path.mgmtInterface}, would no longer exist.` };
+      }
+      return isTrue(row['disabled'])
+        ? { ok: false, detail: `${path.mgmtParent} carries the management VLAN interface ${path.mgmtInterface} and would be disabled.` }
         : ok();
     },
   },
@@ -169,7 +203,9 @@ export const INVARIANTS: Invariant[] = [
     id: 'ingress-port-pvid',
     title: 'The ingress port still stamps the management VLAN',
     check(snap, path) {
-      if (path.taggedManagement || !path.bridge || !filteringOn(snap, path.bridge)) return ok();
+      // Whenever management arrives untagged on the port, including an access
+      // port feeding a tagged VLAN interface (P2-7).
+      if (path.ingressTagged || !path.bridge || !filteringOn(snap, path.bridge)) return ok();
       if (!path.ingressPort || path.mgmtVlanId == null) return ok();
       const port = snap.bridgePorts.find(
         (p) => p['interface'] === path.ingressPort && p['bridge'] === path.bridge
@@ -197,6 +233,18 @@ export const INVARIANTS: Invariant[] = [
       if (!path.ingressPort || path.mgmtVlanId == null) return ok();
       const m = vlanMembership(snap, path.bridge, path.mgmtVlanId);
       if (!m.found) return ok(); // covered by vlan-iface-tagged
+      // An access port carries the VLAN untagged; requiring "tagged" there was
+      // false before any change, so it could never flip and real breakage on
+      // that port went unreported (P2-7).
+      if (!path.ingressTagged) {
+        return m.untagged.includes(path.ingressPort) || m.tagged.includes(path.ingressPort)
+          ? ok()
+          : {
+              ok: false,
+              severity: 'critical',
+              detail: `${path.ingressPort} — the access port management arrives on — would no longer be a member of VLAN ${path.mgmtVlanId}.`,
+            };
+      }
       return m.tagged.includes(path.ingressPort)
         ? ok()
         : {
@@ -227,14 +275,14 @@ export const INVARIANTS: Invariant[] = [
       const frames = (port['frame-types'] || '').trim();
       if (!frames || frames === 'admit-all') return ok();
 
-      if (!path.taggedManagement && frames === 'admit-only-vlan-tagged') {
+      if (!path.ingressTagged && frames === 'admit-only-vlan-tagged') {
         return {
           ok: false,
           severity: 'critical',
           detail: `${path.ingressPort} would accept only VLAN-tagged frames, but management arrives untagged on it. Those frames would be dropped at ingress even though the VLAN table still lists the port.`,
         };
       }
-      if (path.taggedManagement && frames === 'admit-only-untagged-and-priority-tagged') {
+      if (path.ingressTagged && frames === 'admit-only-untagged-and-priority-tagged') {
         return {
           ok: false,
           severity: 'critical',
@@ -319,15 +367,22 @@ export const INVARIANTS: Invariant[] = [
     id: 'route-to-manager',
     title: 'A route back toward the manager still exists',
     check(snap, path) {
-      // Only meaningful when the manager is reached via a gateway rather than
-      // being on the same subnet.
-      if (path.ingressPortSource !== 'fdb-default-gw') return ok();
-      const hasDefault = snap.routes.some(
-        (r) => (r['dst-address'] || '') === '0.0.0.0/0' && r['active'] !== 'false' && !isTrue(r['disabled'])
-      );
-      return hasDefault
+      // Only meaningful when the manager is reached through a gateway rather
+      // than being on the same subnet. It used to be checked only when the
+      // path had been inferred from the default gateway, so removing a
+      // specific route to the manager passed as safe (P2-7).
+      if (!path.managerGateway) return ok();
+      const live = (r: Record<string, string>) => r['active'] !== 'false' && !isTrue(r['disabled']);
+      if (!path.managerIp) {
+        const hasDefault = snap.routes.some((r) => (r['dst-address'] || '') === '0.0.0.0/0' && live(r));
+        return hasDefault
+          ? ok()
+          : { ok: false, detail: 'The default route would be removed, and the manager reaches this device through the default gateway.' };
+      }
+      const covered = snap.routes.some((r) => live(r) && routeCovers(r['dst-address'] || '', path.managerIp!));
+      return covered
         ? ok()
-        : { ok: false, detail: 'The default route would be removed, and the manager reaches this device through the default gateway.' };
+        : { ok: false, detail: `No route toward the manager (${path.managerIp}) would remain; it is reached through ${path.managerGateway}.` };
     },
   },
 ];

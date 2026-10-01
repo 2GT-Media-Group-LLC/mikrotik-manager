@@ -13,7 +13,7 @@ cooldown that prevents a flapping device from flooding your channels.
 | `high_cpu` / `high_memory` | Configurable threshold |
 | `cert_expiry` | Certificate approaching expiry |
 | `firmware_update_available` | A newer RouterOS release exists for the device |
-| `log_error` / `log_warning` | Matched from the device's own log |
+| `log_error` / `log_warning` | An error or warning line newly read from the device's own log, from the last 15 minutes (one alert per poll for each; an older backlog read from a newly added device doesn't alert) |
 | `device_discovered` | An unmanaged neighbour appeared via LLDP/CDP/MNDP |
 | `config_drift` | The device's configuration changed (off by default) |
 | `device_degraded` / `device_health_restored` | A power supply, fan or temperature problem appeared or cleared. See [Hardware health](devices.md#hardware-health) |
