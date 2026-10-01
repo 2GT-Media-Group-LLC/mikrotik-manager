@@ -2,6 +2,7 @@
 // signature so receivers can verify authenticity. Fired from the alert
 // pipeline (all alert event types) and the firmware orchestrator.
 
+import { unseal } from '../utils/sealed';
 import { createHmac } from 'crypto';
 import * as https from 'https';
 import * as http from 'http';
@@ -119,8 +120,10 @@ export class WebhookService {
 
   private async deliver(hook: WebhookRow, body: string): Promise<number> {
     const headers: Record<string, string> = { 'User-Agent': 'MikroTik-Manager-Webhook' };
+    // The signing secret is stored encrypted (S7). One that can't be opened
+    // (lost key) fails the delivery rather than signing with ciphertext.
     if (hook.secret) {
-      headers['X-MTM-Signature'] = 'sha256=' + createHmac('sha256', hook.secret).update(body).digest('hex');
+      headers['X-MTM-Signature'] = 'sha256=' + createHmac('sha256', unseal(hook.secret)).update(body).digest('hex');
     }
     let status: number;
     try {

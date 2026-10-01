@@ -1,4 +1,4 @@
-import { isOwnApiSession, stripOwnSessionNoise } from '../logNoise';
+import { isOwnApiSession, stripOwnSessionNoise, managerAddressFromActive } from '../logNoise';
 
 /**
  * Messages are verbatim from the events table of the reference fleet, where
@@ -87,5 +87,31 @@ describe('stripOwnSessionNoise', () => {
   it('keeps everything when the filter cannot identify us', () => {
     const lines = [OWN_IN, OWN_OUT];
     expect(stripOwnSessionNoise(lines, undefined).dropped).toBe(0);
+  });
+});
+
+// Outside review S9: same account, someone else's address.
+describe('own session by address', () => {
+  const mine = new Set(['172.24.1.7']);
+
+  it("drops the manager's own login from its address", () => {
+    expect(isOwnApiSession(OWN_IN, 'admin', mine)).toBe(true);
+  });
+
+  it('keeps an API login with the same account from another address', () => {
+    expect(isOwnApiSession(
+      { topics: 'system,info,account', message: 'user admin logged in from 203.0.113.50 via api' }, 'admin', mine,
+    )).toBe(false);
+  });
+
+  it('keeps everything while the manager address is unknown', () => {
+    expect(isOwnApiSession(OWN_IN, 'admin', new Set())).toBe(false);
+  });
+
+  it('learns the address only when all the account\'s API sessions share it', () => {
+    const row = (name: string, address: string, via = 'api') => ({ name, address, via });
+    expect(managerAddressFromActive([row('admin', '172.24.1.7'), row('admin', '172.24.1.7'), row('rich', '10.0.0.5', 'winbox')], 'admin')).toBe('172.24.1.7');
+    expect(managerAddressFromActive([row('admin', '172.24.1.7'), row('admin', '203.0.113.50')], 'admin')).toBeNull();
+    expect(managerAddressFromActive([row('admin', '172.24.1.7', 'winbox')], 'admin')).toBeNull();
   });
 });

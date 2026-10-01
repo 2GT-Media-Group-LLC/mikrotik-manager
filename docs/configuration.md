@@ -29,8 +29,10 @@ Both secrets generate themselves safely — see below.
 ## First login
 
 A new install has one account, **admin** with the password **admin**. Signing in with it
-goes straight to a page that asks for a new password (at least 10 characters, with a
-letter and a number); nothing else works until it is set. The login page shows the
+goes straight to a page that asks for a new password (at least 10 characters and at most
+72 bytes, with a letter and a number); nothing else works until it is set. The 72-byte limit
+is bcrypt's: it ignores anything longer, so a longer password changed only at the end would
+still accept the old one. The login page shows the
 default credentials only until then. An existing install still using admin/admin gets
 the same prompt at its next login.
 
@@ -79,6 +81,17 @@ sweep. Nothing needs to be re-entered.
 Rotating the JWT secret off a public default invalidates sessions signed with it. Users
 simply log in again once.
 
+### Changing JWT_SECRET
+
+Setting `JWT_SECRET` in `.env` (or changing it) is treated as a rotation. The secret the
+manager was using before, and any older ones, keep working for 24 hours from the first start
+with the new value, so signed-in users aren't cut off mid-session, and then stop. They are also
+removed from `secrets.json`, so unsetting `JWT_SECRET` later never brings a retired secret back
+(the manager generates a fresh one instead). This is the step to take if `secrets.json` may
+have leaked; before 0.24.50 the leaked secret stayed valid. If the old secret must stop
+working at once rather than after 24 hours, also delete the `retiringJwtSecrets` entry from
+`secrets.json` in the `app_data` volume and restart the backend; everyone then signs in again.
+
 ### Key rotation
 
 **Settings → General → Encryption key** shows where the key comes from, a short key ID (a
@@ -86,7 +99,9 @@ fingerprint, not the key), and how many stored values are under the current key,
 older key, or under no key the manager has.
 
 Everything the key protects is covered: device API and SSH passwords, credential presets, SSH
-private keys, the SSO client secret, and backups that contain secrets. On every start, anything
+private keys, the SSO client secret, alert channel secrets (SMTP password, Telegram bot token,
+ntfy and Gotify tokens, Slack and Discord webhook URLs), webhook signing secrets, and backups
+that contain secrets. On every start, anything
 still under an older key is re-encrypted with the current one.
 
 **A key the manager generated** (the default, kept in `app_data/secrets.json`):

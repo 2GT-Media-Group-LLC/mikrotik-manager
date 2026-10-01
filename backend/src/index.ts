@@ -38,7 +38,7 @@ import { verifyDeviceIdentity } from './services/identityPins';
 import { RouterOSClient } from './services/mikrotik/RouterOSClient';
 import { rateLimitRedis } from './middleware/rateLimitRedis';
 import { initSecrets, confirmEncryptionKey } from './utils/secrets';
-import { countUnreadable, reencryptAll } from './services/encryptedData';
+import { countUnreadable, reencryptAll, sealPlaintextSecrets } from './services/encryptedData';
 import { reconcileStaleGuards } from './services/changeGuard/ChangeGuard';
 import { corsMiddlewareOptions, socketIoCorsOptions } from './utils/corsOrigins';
 
@@ -465,7 +465,11 @@ async function start(): Promise<void> {
         'is missing: restore secrets.json to the app_data volume, or set ENCRYPTION_KEY (or ENCRYPTION_KEY_PREVIOUS) ' +
         'to the original key, then restart. Saving new credentials is refused until then.');
     } else {
-      reencryptAll().catch((e) => console.warn('[secrets] re-encryption sweep failed:', (e as Error).message));
+      // Seal any alert channel / webhook secret still in plaintext (S7), then
+      // move everything to the current key.
+      sealPlaintextSecrets()
+        .then(() => reencryptAll())
+        .catch((e) => console.warn('[secrets] re-encryption sweep failed:', (e as Error).message));
     }
   } catch (e) {
     console.warn('[secrets] could not check stored credentials:', (e as Error).message);

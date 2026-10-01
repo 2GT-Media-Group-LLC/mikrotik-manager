@@ -36,7 +36,16 @@ interface PersistedSecrets {
   encryptionKey?: string;
   prevJwtSecrets?: string[];
   prevEncryptionKeys?: string[];
+  /**
+   * Secrets superseded by a JWT_SECRET set in the environment, accepted only
+   * until `until` so sessions signed with them run out instead of being cut
+   * off (outside review S8).
+   */
+  retiringJwtSecrets?: { secret: string; until: string }[];
 }
+
+/** How long a superseded JWT secret keeps verifying: the session lifetime. */
+const JWT_RETIRE_MS = 24 * 3600 * 1000;
 
 export interface SecretsInfo {
   jwtSource: 'env' | 'persisted' | 'generated';
@@ -51,6 +60,8 @@ export interface SecretsInfo {
 interface ResolvedSecrets {
   jwtCurrent: string;
   jwtVerifiers: string[];
+  /** Superseded secrets and when they stop verifying (S8). */
+  jwtRetiring: { secret: string; until: number }[];
   encCurrent: Buffer;
   encDecryptors: Buffer[];
   /** The current key as configured, kept so a rotation can move it to history. */
@@ -153,11 +164,37 @@ export function initSecrets(): SecretsInfo {
     generatedJwt = true;
   }
   // Verifiers: current + any prior *strong* secrets (never the public defaults).
-  const jwtVerifiers = [
-    jwtCurrent,
-    ...(persisted.jwtSecret ? [persisted.jwtSecret] : []),
-    ...(history.prevJwtSecrets || []),
-  ].filter((v, i, a) => isStrongJwt(v) && a.indexOf(v) === i);
+  //
+  // A JWT_SECRET set in the environment is a rotation (outside review S8).
+  // Setting one after secrets.json leaked used to leave the leaked secret a
+  // verifier for good, so tokens forged with it kept working. Now every older
+  // secret is retiring: accepted for one session lifetime from the moment the
+  // new secret was first seen, then dropped, and removed from the file so that
+  // unsetting JWT_SECRET later can't bring it back.
+  const now = Date.now();
+  let jwtVerifiers: string[];
+  let jwtRetiring: { secret: string; until: number }[] = [];
+  let jwtFileChanged = false;
+  if (jwtSource === 'env') {
+    const retiring = new Map<string, number>();
+    for (const r of persisted.retiringJwtSecrets || []) {
+      const until = Date.parse(r.until);
+      if (r.secret !== jwtCurrent && isStrongJwt(r.secret) && until > now) retiring.set(r.secret, until);
+    }
+    for (const old of [persisted.jwtSecret, ...(history.prevJwtSecrets || [])]) {
+      if (old && old !== jwtCurrent && isStrongJwt(old) && !retiring.has(old)) retiring.set(old, now + JWT_RETIRE_MS);
+    }
+    jwtRetiring = [...retiring].map(([secret, until]) => ({ secret, until }));
+    jwtVerifiers = [jwtCurrent];
+    jwtFileChanged = !!persisted.jwtSecret || (history.prevJwtSecrets || []).length > 0
+      || (persisted.retiringJwtSecrets || []).length !== jwtRetiring.length;
+  } else {
+    jwtVerifiers = [
+      jwtCurrent,
+      ...(persisted.jwtSecret ? [persisted.jwtSecret] : []),
+      ...(history.prevJwtSecrets || []),
+    ].filter((v, i, a) => isStrongJwt(v) && a.indexOf(v) === i);
+  }
 
   // ── Encryption key ──────────────────────────────────────────────────────────
   const envEnc = process.env.ENCRYPTION_KEY;
@@ -192,6 +229,16 @@ export function initSecrets(): SecretsInfo {
 
   // ── Persist auto-managed secrets so they're stable across restarts ───────────
   let persistedOk = true;
+  if (jwtFileChanged && !generatedEnc) {
+    // The env secret took over: drop the old JWT secrets from the file and
+    // keep only the retiring list (S8). The env secret itself is never written.
+    persistedOk = savePersisted({
+      ...persisted,
+      jwtSecret: undefined,
+      prevJwtSecrets: [],
+      retiringJwtSecrets: jwtRetiring.map((r) => ({ secret: r.secret, until: new Date(r.until).toISOString() })),
+    });
+  }
   if (generatedJwt || generatedEnc) {
     // Record any superseded auto-managed secret in history for continuity.
     if (persisted.jwtSecret && persisted.jwtSecret !== jwtCurrent && isStrongJwt(persisted.jwtSecret)) {
@@ -201,14 +248,18 @@ export function initSecrets(): SecretsInfo {
       history.prevEncryptionKeys = [...new Set([...(history.prevEncryptionKeys || []), persisted.encryptionKey])];
     }
     const toSave: PersistedSecrets = {
-      // Only store secrets we manage ourselves — never write an env-provided secret to disk.
-      jwtSecret: jwtSource === 'env' ? persisted.jwtSecret : jwtCurrent,
+      // Only store secrets we manage ourselves — never write an env-provided
+      // secret to disk. Under an env secret, older ones are only retiring (S8).
+      jwtSecret: jwtSource === 'env' ? undefined : jwtCurrent,
       // A generated encryption key waits for confirmEncryptionKey(): saving it
       // straight away made a lost key permanent, because new credentials were
       // then written under a key the old data can never be read with.
       encryptionKey: encSource === 'env' || generatedEnc ? persisted.encryptionKey : encMaterial,
-      prevJwtSecrets: history.prevJwtSecrets,
+      prevJwtSecrets: jwtSource === 'env' ? [] : history.prevJwtSecrets,
       prevEncryptionKeys: history.prevEncryptionKeys,
+      retiringJwtSecrets: jwtSource === 'env'
+        ? jwtRetiring.map((r) => ({ secret: r.secret, until: new Date(r.until).toISOString() }))
+        : persisted.retiringJwtSecrets,
     };
     persistedOk = savePersisted(toSave);
   }
@@ -224,6 +275,7 @@ export function initSecrets(): SecretsInfo {
   resolved = {
     jwtCurrent,
     jwtVerifiers,
+    jwtRetiring,
     encCurrent: deriveKey(encMaterial),
     encDecryptors,
     encMaterial,
@@ -338,7 +390,10 @@ export function jwtSigningSecret(): string {
 
 /** Secrets a JWT may be verified against (current + prior strong secrets). */
 export function jwtVerifierSecrets(): string[] {
-  return ensure().jwtVerifiers;
+  const r = ensure();
+  // Retiring secrets stop verifying at their deadline, restart or not (S8).
+  const now = Date.now();
+  return [...r.jwtVerifiers, ...r.jwtRetiring.filter((x) => x.until > now).map((x) => x.secret)];
 }
 
 /** Current key used to ENCRYPT new data. */

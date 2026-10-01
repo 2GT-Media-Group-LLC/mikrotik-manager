@@ -1,4 +1,5 @@
-import { maskConfig, mergeConfig } from '../alertChannelSecrets';
+jest.mock('../crypto', () => ({ encrypt: (v: string) => `C:${v}`, decrypt: (v: string) => v.slice(2) }));
+import { maskConfig, mergeConfig, sealConfig, openConfig } from '../alertChannelSecrets';
 
 const MASK = '••••••••';
 
@@ -24,5 +25,25 @@ describe('alert channel secrets', () => {
   it('accepts a new server when the token is typed again', () => {
     const r = mergeConfig('ntfy', { server_url: 'https://ntfy.sh', token: 'old' }, { server_url: 'https://ntfy.lan', token: 'new' });
     expect(r).toEqual({ merged: { server_url: 'https://ntfy.lan', token: 'new' } });
+  });
+});
+
+// Outside review S7.
+describe('alert channel secrets at rest', () => {
+  it('encrypts only the secret fields, once', () => {
+    const sealed = sealConfig('ntfy', { server_url: 'https://ntfy.sh', topic: 't', token: 'tk_123' });
+    expect(sealed).toEqual({ server_url: 'https://ntfy.sh', topic: 't', token: 'enc:C:tk_123' });
+    expect(sealConfig('ntfy', sealed)).toEqual(sealed);
+  });
+
+  it('opens them for sending', () => {
+    expect(openConfig('telegram', { chat_id: '1', bot_token: 'enc:C:abc' })).toEqual({ chat_id: '1', bot_token: 'abc' });
+  });
+
+  it('still masks a sealed value and keeps it when the mask is sent back', () => {
+    const stored = { smtp_host: 'mail', smtp_pass: 'enc:C:pw' };
+    expect(maskConfig('email', stored).smtp_pass).toBe(MASK);
+    const merged = mergeConfig('email', stored, { smtp_pass: MASK, smtp_user: 'me' });
+    expect('merged' in merged && merged.merged.smtp_pass).toBe('enc:C:pw');
   });
 });

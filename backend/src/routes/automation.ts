@@ -1,3 +1,4 @@
+import { seal } from '../utils/sealed';
 import { Router, Request, Response } from 'express';
 import { randomBytes, createHash } from 'crypto';
 import { query, queryOne } from '../config/database';
@@ -71,7 +72,8 @@ router.post('/webhooks', requireWrite, async (req: Request, res: Response) => {
 
   const row = await queryOne<{ id: number }>(
     `INSERT INTO webhooks (name, url, secret, events) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [name.trim().slice(0, 100), url.trim(), secret?.trim() || null, evts]);
+    // The signing secret is stored encrypted (S7).
+    [name.trim().slice(0, 100), url.trim(), secret?.trim() ? seal(secret.trim()) : null, evts]);
   res.status(201).json({ id: row!.id });
 });
 
@@ -97,7 +99,8 @@ router.put('/webhooks/:id', requireWrite, async (req: Request, res: Response) =>
        events  = COALESCE($5, events),
        enabled = COALESCE($6, enabled)
      WHERE id = $1`,
-    [id, name?.trim().slice(0, 100) ?? null, url?.trim() ?? null, secret ?? null, evts ?? null, enabled ?? null]);
+    [id, name?.trim().slice(0, 100) ?? null, url?.trim() ?? null,
+     secret == null ? null : (secret.trim() ? seal(secret.trim()) : ''), evts ?? null, enabled ?? null]);
   res.json({ ok: true });
 });
 

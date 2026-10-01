@@ -1,7 +1,9 @@
 /**
- * Secrets in alert channel settings: which fields are masked in responses, and
- * how an update that sends the mask back keeps the saved value.
+ * Secrets in alert channel settings: which fields are masked in responses, how
+ * an update that sends the mask back keeps the saved value, and (outside
+ * review S7) how they are stored encrypted and opened only to send.
  */
+import { isSealed, seal, unseal } from './sealed';
 
 export const SENSITIVE_KEYS: Record<string, string[]> = {
   email:    ['smtp_pass'],
@@ -59,3 +61,38 @@ export function mergeConfig(
   return { merged };
 }
 
+
+const SENSITIVE = new Map(Object.entries(SENSITIVE_KEYS));
+
+/** The secret field names for a channel type. */
+export function sensitiveKeys(type: string): Set<string> {
+  return new Set(SENSITIVE.get(type) ?? []);
+}
+
+/** Encrypt the secret fields of a channel's settings for storage (S7). */
+export function sealConfig(type: string, config: Record<string, unknown>): Record<string, unknown> {
+  const keys = sensitiveKeys(type);
+  return Object.fromEntries(Object.entries(config).map(([k, v]) =>
+    [k, keys.has(k) && typeof v === 'string' && v && !isSealed(v) ? seal(v) : v]));
+}
+
+/**
+ * The settings with their secrets decrypted, for sending only. A secret that
+ * can't be decrypted (lost key) is left out, so the send fails on its own
+ * rather than with ciphertext as the password.
+ */
+export function openConfig(type: string, config: Record<string, unknown>): Record<string, unknown> {
+  const keys = sensitiveKeys(type);
+  const out: Array<[string, unknown]> = [];
+  for (const [k, v] of Object.entries(config)) {
+    if (!keys.has(k) || !isSealed(v)) { out.push([k, v]); continue; }
+    try { out.push([k, unseal(v)]); } catch { /* left out */ }
+  }
+  return Object.fromEntries(out);
+}
+
+/** True when a channel's settings still hold a plaintext secret. */
+export function hasPlaintextSecret(type: string, config: Record<string, unknown>): boolean {
+  const keys = sensitiveKeys(type);
+  return Object.entries(config).some(([k, v]) => keys.has(k) && typeof v === 'string' && !!v && !isSealed(v));
+}

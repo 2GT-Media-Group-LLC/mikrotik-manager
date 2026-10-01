@@ -3,6 +3,7 @@
 // enabled email alert channel. An hourly scheduler sends whatever is due.
 
 import { outageOverlapsSql, outageSecondsSql } from '../utils/outageWindow';
+import { openConfig } from '../utils/alertChannelSecrets';
 import nodemailer from 'nodemailer';
 import { query, queryOne } from '../config/database';
 
@@ -82,7 +83,8 @@ export class ReportService {
   private async smtpConfig(): Promise<{ host: string; port: number; secure: boolean; user?: string; pass?: string; from: string }> {
     const ch = await queryOne<{ config: Record<string, unknown> }>(
       `SELECT config FROM alert_channels WHERE type = 'email' AND enabled = TRUE ORDER BY id LIMIT 1`);
-    const cfg = ch?.config;
+    // The SMTP password is stored encrypted (S7).
+    const cfg = ch?.config ? openConfig('email', ch.config) : undefined;
     const host = cfg?.smtp_host as string | undefined;
     if (!host) throw new Error('No enabled email alert channel — configure one under Settings → Alerting to send reports');
     return {

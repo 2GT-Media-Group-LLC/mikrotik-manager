@@ -25,6 +25,9 @@ import type {
   UserRole,
 } from '../types';
 
+/** Backups and restores of large configurations run for minutes, not seconds. */
+const LONG_DEVICE_OP_MS = 11 * 60_000;
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
@@ -104,6 +107,9 @@ export const authApi = {
     api.get<{ warnings: string[] }>('/auth/security-status'),
   oidcStatus: () =>
     api.get<{ enabled: boolean; button_label: string }>('/auth/oidc/status'),
+  /** Exchange the single-use SSO code for a session (outside review S4). */
+  oidcExchange: (code: string) =>
+    api.post<{ token: string; user: import('../types').User }>('/auth/oidc/exchange', { code }),
 };
 
 export interface OidcConfigView {
@@ -1158,14 +1164,16 @@ export const backupsApi = {
     return api.get<Backup[]>('/backups', { params });
   },
   types: () => api.get<{ type: string; count: number }[]>('/backups/types'),
+  // A large configuration can take minutes to export; the default 30 seconds
+  // gave up first and showed a bare "Backup failed" (Discussion #85).
   create: (deviceId: number, notes?: string) =>
-    api.post<Backup>('/backups', { deviceId, notes }),
+    api.post<Backup>('/backups', { deviceId, notes }, { timeout: LONG_DEVICE_OP_MS }),
   download: (id: number) =>
     api.get(`/backups/${id}/download`, { responseType: 'blob' }),
   content: (id: number) => api.get<BackupContent>(`/backups/${id}/content`),
   diff: (fromId: number, toId: number) =>
     api.get<{ from: BackupDiffSide; to: BackupDiffSide }>(`/backups/${fromId}/diff/${toId}`),
-  restore: (id: number) => api.post<{ status: string; message: string }>(`/backups/${id}/restore`),
+  restore: (id: number) => api.post<{ status: string; message: string }>(`/backups/${id}/restore`, undefined, { timeout: LONG_DEVICE_OP_MS }),
   delete: (id: number) => api.delete(`/backups/${id}`),
   bulkDeletePreview: (ids: number[]) =>
     api.get<{ backups: number; snapshots: number; devices: { name: string; count: number }[] }>(

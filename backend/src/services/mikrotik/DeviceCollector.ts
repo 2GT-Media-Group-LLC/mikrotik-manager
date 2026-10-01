@@ -49,7 +49,7 @@ export interface DownloadResult {
 }
 import { alertService } from '../AlertService';
 import { readRevocation } from '../../utils/certRecord';
-import { stripOwnSessionNoise } from '../../utils/logNoise';
+import { managerAddressFromActive, stripOwnSessionNoise } from '../../utils/logNoise';
 import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
 import { planVlanWrite, frameTypesFor, planTaggedRemovals } from '../../utils/bridgeVlanPlan';
 import { normalizeHealth, evaluateHealth, type HealthVerdict, type HealthIssue } from '../../utils/deviceHealth';
@@ -1045,9 +1045,12 @@ export class DeviceCollector {
       // Drop the login/logout pair this poll itself just caused. Without this
       // the manager stores its own connection noise once per poll per device:
       // 99.8% of the events table on the reference fleet (see utils/logNoise).
+      // Only lines from the manager's own address (S9): someone else using
+      // the same account is kept.
       const { kept, dropped } = stripOwnSessionNoise(
         fresh as { topics?: string; message?: string }[],
-        this.device.api_username
+        this.device.api_username,
+        await this.learnManagerAddresses(),
       );
       if (dropped > 0) {
         console.log(`[${this.device.name}] skipped ${dropped} of our own API session log lines`);
@@ -1122,6 +1125,26 @@ export class DeviceCollector {
     }
     return stored;
   }
+
+  /**
+   * The addresses this manager is known to log in from, as this device sees
+   * them (S9). Learned from /user/active during the manager's own session and
+   * remembered per device, so log lines from earlier polls still match. A few
+   * are kept, for a manager that reaches the device over more than one path.
+   */
+  private async learnManagerAddresses(): Promise<ReadonlySet<string>> {
+    let known = DeviceCollector.managerAddresses.get(this.device.id);
+    if (!known) { known = new Set(); DeviceCollector.managerAddresses.set(this.device.id, known); }
+    const active = await this.client.execute('/user/active/print').catch(() => null);
+    const addr = active ? managerAddressFromActive(active, this.device.api_username) : null;
+    if (addr && !known.has(addr)) {
+      known.add(addr);
+      while (known.size > 4) known.delete(known.values().next().value as string);
+    }
+    return known;
+  }
+
+  private static managerAddresses = new Map<number, Set<string>>();
 
   /**
    * A log timestamp as a real instant, using the device's own clock.

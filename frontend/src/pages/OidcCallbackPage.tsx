@@ -2,12 +2,14 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import type { User, UserRole } from '../types';
 
 /**
- * Landing route for the OIDC redirect. The backend hands us the session JWT in
- * the URL fragment (never sent to the server); we hydrate the auth store and go
- * to the dashboard.
+ * Landing route for the SSO redirect. The backend hands over a single-use code
+ * in the URL fragment, which is exchanged here, from this browser, for the
+ * session (outside review S4). The session token used to be in the fragment
+ * itself, where it stayed in browser history for its whole life, and a token
+ * from anyone's login was accepted. A code from a login this browser didn't
+ * start is refused by the server.
  */
 export default function OidcCallbackPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -19,28 +21,29 @@ export default function OidcCallbackPage() {
     ran.current = true;
 
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const token = hash.get('token');
+    const code = hash.get('code');
     // Same-site relative paths only (reject absolute / protocol-relative).
     const rawReturn = hash.get('returnTo') || '/dashboard';
     const returnTo = /^\/(?!\/)[^\\]*$/.test(rawReturn) ? rawReturn : '/dashboard';
+    // Take the code out of the address bar and history straight away.
+    window.history.replaceState(null, '', window.location.pathname);
 
-    if (!token) {
-      navigate('/login?error=sso&reason=' + encodeURIComponent('No token returned'), { replace: true });
+    const fail = (reason: string) =>
+      navigate('/login?error=sso&reason=' + encodeURIComponent(reason), { replace: true });
+
+    if (!code) {
+      fail('No sign-in code returned');
       return;
     }
 
-    // Persist the token first so the /me request is authenticated.
-    setAuth(token, { id: 0, username: '', role: 'viewer' });
-    authApi.me()
+    authApi.oidcExchange(code)
       .then((r) => {
-        const u = (r.data as { user: { userId?: number; id?: number; username: string; role: UserRole } }).user;
-        const user: User = { id: u.id ?? u.userId ?? 0, username: u.username, role: u.role };
-        setAuth(token, user);
-        navigate(returnTo.startsWith('/') ? returnTo : '/dashboard', { replace: true });
+        setAuth(r.data.token, r.data.user);
+        navigate(returnTo, { replace: true });
       })
-      .catch(() => {
+      .catch((err) => {
         useAuthStore.getState().logout();
-        navigate('/login?error=sso&reason=' + encodeURIComponent('Could not load your account'), { replace: true });
+        fail((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not complete sign-in');
       });
   }, [navigate, setAuth]);
 

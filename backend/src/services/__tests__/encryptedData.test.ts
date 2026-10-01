@@ -70,3 +70,37 @@ describe('reencryptAll', () => {
     expect(byName['Credential preset API passwords']).toBeUndefined(); // nothing stored there
   });
 });
+
+// Outside review S7: alert channel and webhook secrets.
+describe('alert channel and webhook secrets', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQuery.mockImplementation((async (sql: string) => {
+      if (/FROM alert_channels/.test(sql)) return [
+        { id: 1, type: 'telegram', config: { chat_id: '42', bot_token: 'plain-token' } },
+        { id: 2, type: 'email', config: { smtp_host: 'mail', smtp_pass: 'enc:O:old-pass' } },
+      ];
+      if (/FROM webhooks/.test(sql)) return [{ id: 7, secret: 'plain-hmac' }, { id: 8, secret: 'enc:C:hmac' }];
+      return [];
+    }) as never);
+  });
+  const updates = () => mockQuery.mock.calls.filter((c) => /^UPDATE/.test(String(c[0])));
+
+  it('seals secrets saved in plaintext, and leaves sealed ones alone', async () => {
+    const { sealPlaintextSecrets } = await import('../encryptedData');
+    expect(await sealPlaintextSecrets()).toBe(2);
+    expect(updates()).toEqual(expect.arrayContaining([
+      [expect.stringMatching(/UPDATE alert_channels/), [JSON.stringify({ chat_id: '42', bot_token: 'enc:C:plain-token' }), 1]],
+      [expect.stringMatching(/UPDATE webhooks/), ['enc:C:plain-hmac', 7]],
+    ]));
+    expect(updates()).toHaveLength(2); // channel 2 and webhook 8 were already sealed
+  });
+
+  it('moves sealed secrets under an older key to the current one', async () => {
+    const r = await reencryptAll();
+    expect(r.rewritten).toBeGreaterThanOrEqual(1);
+    expect(updates()).toEqual(expect.arrayContaining([
+      [expect.stringMatching(/UPDATE alert_channels/), [JSON.stringify({ smtp_host: 'mail', smtp_pass: 'enc:C:old-pass' }), 2]],
+    ]));
+  });
+});

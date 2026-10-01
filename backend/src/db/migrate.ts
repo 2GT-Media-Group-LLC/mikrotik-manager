@@ -1194,6 +1194,10 @@ CREATE TABLE IF NOT EXISTS user_site_roles (
 );
 CREATE INDEX IF NOT EXISTS idx_user_site_roles_site ON user_site_roles(site_id);
 
+-- TOTP setup in progress (outside review S1): the new secret waits here until a
+-- code from it is confirmed, so the active one keeps working meanwhile.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_pending_secret VARCHAR(64);
+
 -- Traffic per site (outside review J4, P2-23). A client's daily traffic is kept
 -- per site, the site of the exporter that saw it, so the same MAC or a reused
 -- address at two customers is never added together. 0 = no site could be

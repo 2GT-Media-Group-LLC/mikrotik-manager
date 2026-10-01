@@ -82,7 +82,9 @@ certificate.
 
 Email, Slack, Discord, Telegram, **ntfy** and **Gotify**. Channels are configured under
 **Settings → Alerts → Channels**; secrets are masked on read and preserved when you save
-a channel without retyping them.
+a channel without retyping them. They are stored encrypted with the same key as device
+passwords (SMTP password, bot and app tokens, Slack and Discord webhook URLs), and decrypted
+only to send. Channels saved before 0.24.50 are encrypted at the next start.
 
 ### ntfy
 
@@ -139,7 +141,7 @@ firmware rollout completed/failed, hardware degraded/healthy again, and a change
 certificate or host key.
 
 Deliveries are JSON `POST`s, **HMAC-SHA256 signed** in `X-MTM-Signature` when a secret is
-set. Last-delivery status is tracked per webhook and there is a Send-test button.
+set. The secret is stored encrypted. Last-delivery status is tracked per webhook and there is a Send-test button.
 
 Webhooks fire through the same pipeline as other alerts, so they respect alert rules,
 cooldowns and maintenance windows rather than bypassing them.

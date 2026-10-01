@@ -38,6 +38,10 @@ The UI authenticates with a JWT obtained from `/api/auth/login`, optionally foll
 sent in the same `Authorization` header. The short-lived token `/login` returns while waiting
 for the two-factor code only works for `/api/auth/totp/verify`; it isn't a session.
 
+Setting up two-factor again (`/api/auth/totp/setup`) doesn't touch the authenticator in use:
+the new secret replaces it only when `/api/auth/totp/confirm` accepts a code from it. Before
+0.24.50 starting setup and abandoning it locked the user out.
+
 For scripting, prefer an API token — it is scoped, revocable, and unaffected by password
 or 2FA changes.
 

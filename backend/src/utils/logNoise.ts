@@ -19,8 +19,14 @@
  * What is *not* discarded matters as much. A human logging in over Winbox, SSH
  * or the web is a security-relevant event and is kept. So is an API login by
  * any other account. Only sessions matching this device's own configured API
- * username, over the API transport, are dropped — which is exactly the set this
- * manager creates.
+ * username, over the API transport, **from the manager's own address** are
+ * dropped — which is exactly the set this manager creates.
+ *
+ * The address matters (outside review S9): matching the username alone also
+ * discarded the logins of anyone else using that account, another operator or
+ * an attacker with the manager's credentials, as if they were the manager.
+ * The manager's address, as the device sees it, is learned from the device's
+ * own list of active sessions (see learnManagerAddresses).
  */
 
 /**
@@ -32,7 +38,7 @@
  * The transport suffix is the discriminator. `via winbox`, `via ssh`,
  * `via telnet` and `via web` are all kept.
  */
-const ACCOUNT_LINE = /^user\s+(\S+)\s+logged\s+(?:in|out)\b.*\bvia\s+api\b/i;
+const ACCOUNT_LINE = /^user\s+(\S+)\s+logged\s+(?:in|out)\s+from\s+(\S+)\s+via\s+api\b/i;
 
 export interface LogLineLike {
   topics?: string;
@@ -45,7 +51,11 @@ export interface LogLineLike {
  * Requires both the account topic and a username match, so a differently-named
  * automation account on the same device still gets recorded.
  */
-export function isOwnApiSession(line: LogLineLike, apiUsername: string | null | undefined): boolean {
+export function isOwnApiSession(
+  line: LogLineLike,
+  apiUsername: string | null | undefined,
+  managerAddresses?: ReadonlySet<string>,
+): boolean {
   const user = (apiUsername || '').trim();
   if (!user) return false;
 
@@ -57,7 +67,30 @@ export function isOwnApiSession(line: LogLineLike, apiUsername: string | null | 
 
   // Case-sensitive: RouterOS usernames are, and "Admin" is a different account
   // from "admin" as far as the device is concerned.
-  return m[1] === user;
+  if (m[1] !== user) return false;
+  // From the manager's own address only. An empty set (not learned yet, or
+  // ambiguous) keeps the line: noise is better than hiding someone.
+  if (managerAddresses) return managerAddresses.has(m[2]);
+  return true;
+}
+
+/**
+ * The manager's address as this device sees it, from /user/active rows: the
+ * address of the API sessions of the manager's account, but only when they all
+ * come from one address. The manager's own poll is one of them; if another
+ * host is using the same account at that moment there's no telling which is
+ * the manager, and nothing is learned.
+ */
+export function managerAddressFromActive(rows: Record<string, string>[], apiUsername: string | null | undefined): string | null {
+  const user = (apiUsername || '').trim();
+  if (!user) return null;
+  const addrs = new Set(
+    rows
+      .filter((r) => r['name'] === user && (r['via'] || '').toLowerCase().startsWith('api'))
+      .map((r) => (r['address'] || '').trim())
+      .filter(Boolean),
+  );
+  return addrs.size === 1 ? [...addrs][0] : null;
 }
 
 /**
@@ -68,8 +101,9 @@ export function isOwnApiSession(line: LogLineLike, apiUsername: string | null | 
  */
 export function stripOwnSessionNoise<T extends LogLineLike>(
   lines: T[],
-  apiUsername: string | null | undefined
+  apiUsername: string | null | undefined,
+  managerAddresses?: ReadonlySet<string>,
 ): { kept: T[]; dropped: number } {
-  const kept = lines.filter((l) => !isOwnApiSession(l, apiUsername));
+  const kept = lines.filter((l) => !isOwnApiSession(l, apiUsername, managerAddresses));
   return { kept, dropped: lines.length - kept.length };
 }

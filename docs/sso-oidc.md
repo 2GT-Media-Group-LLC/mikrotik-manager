@@ -58,9 +58,26 @@ links to an existing local account when `email_verified` matches — no duplicat
 SSO users have no local password and are labelled with an **SSO** badge under
 Users & Roles.
 
-**Roles are resolved server-side** from your group mapping on every login. Existing users
-are never silently demoted when a login carries no matching group, so a temporary IdP
-misconfiguration cannot strip your admins.
+**Roles are resolved server-side** at every sign-in. With a group mapping configured, the
+identity provider decides: a user's role is the one their groups map to, or the default role
+if none do, so removing someone from the admin group takes effect at their next sign-in.
+The one exception is the last admin account, which is never demoted, so a provider
+misconfiguration can't leave the install with no admin. With no group mapping configured,
+roles are managed here under Users & Roles and SSO never changes them. (Before 0.24.50 a
+user kept a mapped role after leaving the group.)
+
+**Allowed email domains need a verified email.** A new user is admitted by domain only when
+the provider says the address is verified (`email_verified: true`). An unverified address is
+whatever the user typed in, so it can't vouch for a domain. Some providers, Microsoft Entra
+ID among them, don't send `email_verified`; there, admit users with a group mapping instead
+of a domain list. Users already linked to their SSO identity aren't affected.
+
+**Sign-in is tied to your browser.** Starting a sign-in sets a short-lived cookie that only
+the SSO endpoints receive, and the sign-in can only be finished in the browser holding it.
+The provider's redirect brings back a one-time code, not a session; the app exchanges it for
+the session straight away and removes it from the address bar. So a sign-in link can't be
+used to log someone else in to your account, and no session token is left in browser
+history. A sign-in started before an admin turns SSO off is refused when it comes back.
 
 **Break-glass.** Local username and password login stays available. The seeded local admin
 can always get in, even if the IdP is misconfigured, expired, or unreachable. Do not delete

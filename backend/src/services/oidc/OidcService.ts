@@ -31,6 +31,13 @@ interface Transaction {
   code_verifier: string;
   redirectUri: string;
   returnTo: string;
+  /** SHA-256 of the browser-binding value held in the starting browser's cookie (S2). */
+  bindHash?: string;
+}
+
+/** Hash of a browser-binding value, as stored server-side. */
+export function bindingHash(binding: string): string {
+  return createHash('sha256').update(binding).digest('hex');
 }
 
 // Cache the discovered client; rebuild when the relevant config or redirect URI changes.
@@ -66,7 +73,14 @@ export function resetOidcClientCache(): void {
   clientCache = null;
 }
 
-export async function beginLogin(redirectUri: string, returnTo: string): Promise<string> {
+/**
+ * Start a login. `binding` is a random value the route also puts in an
+ * HttpOnly cookie on this browser; only its hash is stored, and the callback
+ * must come from a browser holding the value (outside review S2). Without it,
+ * someone could send a victim the callback link of a login they started and
+ * sign the victim in to the attacker's account.
+ */
+export async function beginLogin(redirectUri: string, returnTo: string, binding: string): Promise<string> {
   const config = await loadOidcConfig();
   if (!config.enabled) throw new Error('OIDC login is not enabled');
   const client = await getClient(config, redirectUri);
@@ -76,7 +90,7 @@ export async function beginLogin(redirectUri: string, returnTo: string): Promise
   const code_verifier = generators.codeVerifier();
   const code_challenge = generators.codeChallenge(code_verifier);
 
-  const tx: Transaction = { nonce, code_verifier, redirectUri, returnTo };
+  const tx: Transaction = { nonce, code_verifier, redirectUri, returnTo, bindHash: bindingHash(binding) };
   await redis.set(txKey(state), JSON.stringify(tx), 'EX', TX_TTL_SECONDS);
 
   return client.authorizationUrl({
@@ -88,7 +102,9 @@ export async function beginLogin(redirectUri: string, returnTo: string): Promise
   });
 }
 
-export async function completeLogin(params: Record<string, string>): Promise<{ user: ResolvedUser; returnTo: string }> {
+export async function completeLogin(
+  params: Record<string, string>, binding: string | null,
+): Promise<{ user: ResolvedUser; returnTo: string; bindHash: string }> {
   const state = params.state;
   if (!state) throw new Error('Missing state');
 
@@ -97,7 +113,14 @@ export async function completeLogin(params: Record<string, string>): Promise<{ u
   await redis.del(txKey(state)); // single use
   const tx: Transaction = JSON.parse(raw);
 
+  // Only the browser that started this login may finish it (S2).
+  if (!tx.bindHash || !binding || bindingHash(binding) !== tx.bindHash) {
+    throw new Error('This sign-in was started in a different browser or has expired. Start it again from the login page.');
+  }
+
+  // An admin may have turned SSO off since the login began (S2).
   const config = await loadOidcConfig();
+  if (!config.enabled) throw new Error('SSO sign-in has been turned off');
   const client = await getClient(config, tx.redirectUri);
 
   const tokenSet: TokenSet = await client.callback(tx.redirectUri, params, {
@@ -116,7 +139,7 @@ export async function completeLogin(params: Record<string, string>): Promise<{ u
   }
 
   const user = await resolveUser(claims, config);
-  return { user, returnTo: tx.returnTo };
+  return { user, returnTo: tx.returnTo, bindHash: tx.bindHash };
 }
 
 async function resolveUser(claims: Record<string, unknown>, config: OidcConfig): Promise<ResolvedUser> {
@@ -126,19 +149,39 @@ async function resolveUser(claims: Record<string, unknown>, config: OidcConfig):
 
   const email = getEmail(claims, config);
   const mappedRole = mapGroupsToRole(extractGroups(claims, config.groups_claim), config.group_role_map);
+  // With group mappings configured, the identity provider decides the role at
+  // every sign-in: a user whose mapped group was removed falls back to the
+  // default role instead of keeping it (outside review S3). Without mappings,
+  // roles are managed here and left alone.
+  const groupsDecide = Object.keys(config.group_role_map || {}).length > 0;
+  const roleFor = async (current: AppRole, userId: number | null): Promise<AppRole> => {
+    if (!groupsDecide) return mappedRole ?? current;
+    const next = mappedRole ?? config.default_role;
+    if (current === 'admin' && next !== 'admin' && userId !== null && await isLastAdmin(userId)) {
+      console.warn(`[OIDC] kept admin for user ${userId}: no other admin account would remain`);
+      return current;
+    }
+    return next;
+  };
 
-  if (!emailDomainAllowed(email, config.allowed_email_domains)) {
-    throw new Error('Your email domain is not permitted to sign in');
-  }
-
-  // 1. Already-linked user → authenticate, sync role only when a group maps
-  //    (never auto-demote to the default when no group matches).
+  // The domain allow-list only admits an address the identity provider has
+  // verified (S3). An unverified one is whatever the user typed in.
   const linked = await queryOne<{ id: number; username: string; role: AppRole }>(
     `SELECT id, username, role FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2`,
     [issuer, sub]
   );
+  if (config.allowed_email_domains?.length && !linked) {
+    if (!email || !isEmailVerified(claims)) {
+      throw new Error('Your identity provider did not confirm your email address is verified, so its domain cannot be checked');
+    }
+  }
+  if (!emailDomainAllowed(email, config.allowed_email_domains)) {
+    throw new Error('Your email domain is not permitted to sign in');
+  }
+
+  // 1. Already-linked user → authenticate and sync the role (see roleFor).
   if (linked) {
-    const role = mappedRole ?? linked.role;
+    const role = await roleFor(linked.role, linked.id);
     if (role !== linked.role) {
       await query(`UPDATE users SET role = $1 WHERE id = $2`, [role, linked.id]);
       // A role change from the identity provider ends older sessions, as it
@@ -156,7 +199,7 @@ async function resolveUser(claims: Record<string, unknown>, config: OidcConfig):
       [email]
     );
     if (byEmail) {
-      const role = mappedRole ?? byEmail.role; // preserve existing role if no group maps
+      const role = await roleFor(byEmail.role, byEmail.id);
       await query(
         `UPDATE users SET oidc_issuer = $1, oidc_subject = $2, auth_provider = 'oidc', role = $3 WHERE id = $4`,
         [issuer, sub, role, byEmail.id]
@@ -181,6 +224,14 @@ async function resolveUser(claims: Record<string, unknown>, config: OidcConfig):
 
   // 4. No account and provisioning disabled
   throw new Error('No account exists for this identity, and automatic provisioning is disabled');
+}
+
+/** True if `userId` is the only admin account. */
+async function isLastAdmin(userId: number): Promise<boolean> {
+  const row = await queryOne<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM users WHERE role = 'admin' AND id <> $1
+       AND NOT EXISTS (SELECT 1 FROM user_site_roles r WHERE r.user_id = users.id)`, [userId]);
+  return Number(row?.n ?? 0) === 0;
 }
 
 async function uniqueUsername(base: string): Promise<string> {

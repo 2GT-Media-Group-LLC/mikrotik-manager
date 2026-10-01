@@ -24,3 +24,22 @@ export function createRedisConnection(): Redis {
     lazyConnect: true,
   });
 }
+
+/**
+ * Connection for the rate limiters (outside review S5). It never queues: while
+ * Redis is unreachable a command fails at once and the limiter uses its
+ * in-memory fallback. On the shared connection a command that had timed out
+ * stayed queued and ran when Redis came back, long after the request.
+ */
+let limiterConnection: Redis | null = null;
+export function limiterRedis(): Redis {
+  if (!limiterConnection) {
+    limiterConnection = new Redis(redisUrl, {
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 1,
+      enableReadyCheck: false,
+    });
+    limiterConnection.on('error', () => { /* reported by the main connection */ });
+  }
+  return limiterConnection;
+}

@@ -18,6 +18,20 @@ and comparing them is possible at all.
 It also means a backup does **not** capture things `/export` omits: user passwords,
 certificates and files on disk. A `.rsc` restores a configuration, not a device.
 
+### Large configurations
+
+A big configuration takes a while to export: tens of thousands of address-list entries can
+take a minute or more on a busy router. A backup only fails if the export goes **60 seconds
+without sending anything**, or is still running after 10 minutes, so a slow export that is
+making progress finishes. The Backups page waits as long, and if a backup does fail it says
+why. Before 0.24.50 an export was cut off after 30 seconds in total, and the page showed
+only "Backup failed".
+
+When the device has an SSH key from the manager, backups use it. The password is tried only
+if the device refuses the key at login. Before 0.24.50 a key backup that timed out also fell
+back to the password, which RouterOS refuses once a key is installed, so the device logged a
+"login failure" and the real reason was lost.
+
 ## Passwords and keys
 
 By default RouterOS v7 also leaves out Wi-Fi keys, VPN and PPP secrets, WireGuard private

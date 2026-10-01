@@ -4,20 +4,48 @@
  * Public:  GET /status, GET /login, GET /callback (the browser-facing flow).
  * Admin:   GET/PUT /config, POST /test (provider configuration).
  *
- * The callback mints the platform's normal session JWT and hands it to the SPA
- * via the URL fragment, matching the existing localStorage/Bearer model.
+ * The login is bound to the browser that starts it by an HttpOnly cookie, and
+ * the callback hands the SPA a single-use code, not the session itself; the SPA
+ * exchanges the code (same browser, same cookie) for the normal session JWT.
+ * The token used to travel in the URL fragment, where it stayed in history for
+ * its whole life, and any token there was accepted (outside review S2, S4).
  */
 import { Router, Request, Response } from 'express';
-import { currentSessionVersion } from '../utils/sessionState';
+import { randomBytes, createHash } from 'crypto';
+import { redis } from '../config/redis';
+import { queryOne } from '../config/database';
+import { sessionResponse } from '../utils/sessionResponse';
 import { Issuer } from 'openid-client';
-import { requireAuth, requireAdmin, signToken } from '../middleware/auth';
+import { requireAuth, requireAdmin } from '../middleware/auth';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
 import {
   loadOidcConfig, saveOidcConfig, maskedConfig, APP_ROLES, type AppRole, type OidcConfig,
 } from '../services/oidc/oidcConfig';
-import { beginLogin, completeLogin, resetOidcClientCache } from '../services/oidc/OidcService';
+import { beginLogin, completeLogin, resetOidcClientCache, bindingHash } from '../services/oidc/OidcService';
 
 const router = Router();
+
+// ─── Browser binding and the single-use code (S2, S4) ───────────────────────────
+const BIND_COOKIE = 'mtm_oidc';
+const BIND_TTL_S = 600;          // as long as a login may take at the provider
+const CODE_TTL_S = 60;           // the SPA exchanges the code straight away
+const codeKey = (code: string): string => `oidc:code:${createHash('sha256').update(code).digest('hex')}`;
+
+function bindingCookie(req: Request): string | null {
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === BIND_COOKIE) return decodeURIComponent(v.join('='));
+  }
+  return null;
+}
+
+function setBindingCookie(req: Request, res: Response, value: string, maxAgeS: number): void {
+  // Only the SSO endpoints receive it. Lax, because the provider's redirect
+  // back is a top-level navigation from another site.
+  const attrs = [`${BIND_COOKIE}=${encodeURIComponent(value)}`, 'Path=/api/auth/oidc', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAgeS}`];
+  if (req.secure) attrs.push('Secure');
+  res.append('Set-Cookie', attrs.join('; '));
+}
 
 function redirectUriFor(req: Request, config: OidcConfig): string {
   const base = config.public_base_url
@@ -49,7 +77,9 @@ router.get(
     try {
       const config = await loadOidcConfig();
       const returnTo = safeReturnTo(req.query.returnTo);
-      const url = await beginLogin(redirectUriFor(req, config), returnTo);
+      const binding = randomBytes(24).toString('base64url');
+      const url = await beginLogin(redirectUriFor(req, config), returnTo, binding);
+      setBindingCookie(req, res, binding, BIND_TTL_S);
       res.redirect(url);
     } catch (e) {
       res.redirect(`/login?error=sso&reason=${encodeURIComponent((e as Error).message)}`);
@@ -65,16 +95,38 @@ router.get(
     try {
       const params = req.query as Record<string, string>;
       if (params.error) throw new Error(params.error_description || params.error);
-      const { user, returnTo } = await completeLogin(params);
-      // Read after completeLogin, which may have ended older sessions by
-      // changing the role.
-      const token = signToken({ userId: user.id, username: user.username, role: user.role, sv: await currentSessionVersion(user.id) });
+      const { user, returnTo, bindHash } = await completeLogin(params, bindingCookie(req));
+      // A single-use code, good for a minute and only in this browser. The
+      // session itself is issued when the SPA exchanges it.
+      const code = randomBytes(32).toString('base64url');
+      await redis.set(codeKey(code), JSON.stringify({ userId: user.id, bindHash }), 'EX', CODE_TTL_S);
       const dest = safeReturnTo(returnTo);
-      // Hand the token to the SPA via fragment (never sent to the server/logs).
-      res.redirect(`/auth/callback#token=${encodeURIComponent(token)}&returnTo=${encodeURIComponent(dest)}`);
+      res.redirect(`/auth/callback#code=${encodeURIComponent(code)}&returnTo=${encodeURIComponent(dest)}`);
     } catch (e) {
       res.redirect(`/login?error=sso&reason=${encodeURIComponent((e as Error).message)}`);
     }
+  }
+);
+
+// ─── Public: exchange the single-use code for a session (S4) ────────────────────
+router.post(
+  '/exchange',
+  rateLimitRedis({ windowSec: 60, max: 30, keyPrefix: 'oidc-exchange', allMethods: true }),
+  async (req: Request, res: Response) => {
+    const code = typeof req.body?.code === 'string' ? req.body.code : '';
+    const binding = bindingCookie(req);
+    setBindingCookie(req, res, '', 0); // done with it either way
+    const raw = code ? await redis.getdel(codeKey(code)) : null;
+    const rec = raw ? JSON.parse(raw) as { userId: number; bindHash: string } : null;
+    // A code from a login this browser didn't start is refused: that is the
+    // login-CSRF the fragment token allowed.
+    if (!rec || !binding || bindingHash(binding) !== rec.bindHash) {
+      return res.status(400).json({ error: 'This sign-in link has expired or belongs to another browser. Sign in again.' });
+    }
+    const user = await queryOne<{ id: number; username: string; role: string; must_change_password: boolean; session_version: number }>(
+      `SELECT id, username, role, must_change_password, session_version FROM users WHERE id = $1`, [rec.userId]);
+    if (!user) return res.status(400).json({ error: 'Account not found' });
+    return res.json(await sessionResponse(user));
   }
 );
 

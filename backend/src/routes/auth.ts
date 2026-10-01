@@ -4,10 +4,11 @@ import bcrypt from 'bcryptjs';
 import * as OTPAuth from 'otpauth';
 import * as qrcode from 'qrcode';
 import { query, queryOne } from '../config/database';
-import { signToken, signRawToken, verifyRawToken, requireAuth } from '../middleware/auth';
+import { signRawToken, verifyRawToken, requireAuth } from '../middleware/auth';
 import { getSecretsInfo, encryptionKeyMissing } from '../utils/secrets';
 import { loginRateLimit, rateLimitRedis } from '../middleware/rateLimitRedis';
 import { validatePassword } from '../utils/passwordPolicy';
+import { sessionResponse } from '../utils/sessionResponse';
 
 const router = Router();
 
@@ -43,25 +44,6 @@ router.get(
  * A session for a user who has passed every login step. An account still on the
  * default password gets a session that can only change it (see requireAuth).
  */
-async function sessionResponse(user: {
-  id: number; username: string; role: string; must_change_password?: boolean; session_version?: number;
-}) {
-  const mustChange = !!user.must_change_password;
-  const token = signToken({
-    userId: user.id, username: user.username, role: user.role, sv: user.session_version ?? 0,
-    ...(mustChange ? { mustChangePassword: true } : {}),
-  });
-  // Site roles with the session, so the interface is right from its first
-  // render rather than after it next asks (P1-7). Never put in the token.
-  const sites = await query<{ site_id: number; role: string }>(
-    `SELECT site_id, role FROM user_site_roles WHERE user_id = $1`, [user.id]).catch(() => []);
-  const siteRoles = sites.length ? Object.fromEntries(sites.map((r) => [r.site_id, r.role])) : undefined;
-  return {
-    token,
-    user: { id: user.id, username: user.username, role: user.role, must_change_password: mustChange, ...(siteRoles ? { siteRoles } : {}) },
-  };
-}
-
 // GET /api/auth/login-hints — public. Whether the login page should still show
 // the default admin/admin credentials: only until that password is changed.
 router.get('/login-hints', async (_req: Request, res: Response) => {
@@ -161,8 +143,10 @@ router.post('/totp/setup', requireAuth, async (req: Request, res: Response) => {
   });
   const uri = totp.toString();
   const qrDataUrl = await qrcode.toDataURL(uri);
-  // Store the pending secret temporarily on the user row (not yet enabled)
-  await query(`UPDATE users SET totp_secret = $1 WHERE id = $2`, [secret.base32, req.user!.userId]);
+  // Held as pending until a code from it is confirmed (outside review S1).
+  // Writing it over totp_secret replaced a working authenticator the moment
+  // setup was started, so an abandoned re-setup locked the user out.
+  await query(`UPDATE users SET totp_pending_secret = $1 WHERE id = $2`, [secret.base32, req.user!.userId]);
   return res.json({ secret: secret.base32, uri, qr: qrDataUrl });
 });
 
@@ -171,17 +155,20 @@ router.post('/totp/confirm', requireAuth, async (req: Request, res: Response) =>
   const { code } = req.body as { code?: string };
   if (!code) return res.status(400).json({ error: 'code is required' });
 
-  const user = await queryOne<{ totp_secret: string | null }>(
-    `SELECT totp_secret FROM users WHERE id = $1`,
+  const user = await queryOne<{ totp_pending_secret: string | null }>(
+    `SELECT totp_pending_secret FROM users WHERE id = $1`,
     [req.user!.userId]
   );
-  if (!user?.totp_secret) return res.status(400).json({ error: 'Run /totp/setup first' });
+  if (!user?.totp_pending_secret) return res.status(400).json({ error: 'Run /totp/setup first' });
 
-  const totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(user.totp_secret), digits: 6, period: 30 });
+  const totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(user.totp_pending_secret), digits: 6, period: 30 });
   const delta = totp.validate({ token: code.replace(/\s/g, ''), window: 1 });
   if (delta === null) return res.status(401).json({ error: 'Invalid code' });
 
-  await query(`UPDATE users SET totp_enabled = true WHERE id = $1`, [req.user!.userId]);
+  // Only now does the new authenticator replace the old one.
+  await query(
+    `UPDATE users SET totp_secret = totp_pending_secret, totp_pending_secret = NULL, totp_enabled = true WHERE id = $1`,
+    [req.user!.userId]);
   return res.json({ ok: true });
 });
 
@@ -198,7 +185,7 @@ router.post('/totp/disable', requireAuth, async (req: Request, res: Response) =>
     return res.status(401).json({ error: 'Incorrect password' });
   }
 
-  await query(`UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE id = $1`, [req.user!.userId]);
+  await query(`UPDATE users SET totp_enabled = false, totp_secret = NULL, totp_pending_secret = NULL WHERE id = $1`, [req.user!.userId]);
   return res.json({ ok: true });
 });
 

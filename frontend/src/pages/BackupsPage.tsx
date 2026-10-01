@@ -114,7 +114,11 @@ export default function BackupsPage() {
       setError('');
     },
     onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      const e = err as { response?: { status?: number; data?: { error?: string } }; code?: string };
+      const msg = e?.response?.data?.error
+        ?? (e?.code === 'ECONNABORTED' ? 'Backup failed: no answer from the manager in time. A very large configuration may still be exporting; check the list in a few minutes.'
+          : e?.response?.status === 504 ? 'Backup failed: the request timed out on the way to the manager.'
+          : undefined);
       setError(msg || 'Backup failed');
     },
   });

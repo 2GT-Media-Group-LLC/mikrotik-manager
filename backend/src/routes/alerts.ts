@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
 import { alertService } from '../services/AlertService';
-import { maskConfig, mergeConfig } from '../utils/alertChannelSecrets';
+import { maskConfig, mergeConfig, sealConfig } from '../utils/alertChannelSecrets';
 
 const router = Router();
 
@@ -104,7 +104,8 @@ router.post('/channels', requireWrite, async (req, res) => {
   const rows = await query(
     `INSERT INTO alert_channels (name, type, enabled, config)
      VALUES ($1, $2, $3, $4) RETURNING *`,
-    [name, type, Boolean(enabled), JSON.stringify(config)]
+    // Secrets are stored encrypted (outside review S7).
+    [name, type, Boolean(enabled), JSON.stringify(sealConfig(type, config))]
   );
   const ch = rows[0] as Record<string, unknown>;
   res.status(201).json({
@@ -140,7 +141,7 @@ router.put('/channels/:id', requireWrite, async (req, res) => {
          config = $4,
          updated_at = NOW()
      WHERE id = $1 RETURNING *`,
-    [id, name ?? null, enabled !== undefined ? Boolean(enabled) : null, JSON.stringify(mergedConfig)]
+    [id, name ?? null, enabled !== undefined ? Boolean(enabled) : null, JSON.stringify(sealConfig(type, mergedConfig))]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Channel not found' });
 

@@ -3,6 +3,7 @@ import * as https from 'https';
 import * as http from 'http';
 import { query } from '../config/database';
 import { buildGotifyRequest } from '../utils/gotify';
+import { openConfig } from '../utils/alertChannelSecrets';
 import { resolveAlertTarget } from '../utils/alertTarget';
 import { isDeviceInMaintenance } from '../routes/maintenanceWindows';
 
@@ -206,13 +207,15 @@ export class AlertService {
     message: string,
     ctx: AlertContext
   ): Promise<void> {
+    // Secrets are stored encrypted and opened only here, to send (S7).
+    const config = openConfig(ch.type, ch.config as Record<string, unknown>) as typeof ch.config;
     switch (ch.type) {
-      case 'email':    await this.sendEmail(ch.config, eventType, message, ctx); break;
-      case 'slack':    await this.sendSlack(ch.config, eventType, message, ctx); break;
-      case 'discord':  await this.sendDiscord(ch.config, eventType, message, ctx); break;
-      case 'telegram': await this.sendTelegram(ch.config, eventType, message, ctx); break;
-      case 'ntfy':     await this.sendNtfy(ch.config, eventType, message, ctx); break;
-      case 'gotify':   await this.sendGotify(ch.config, eventType, message, ctx); break;
+      case 'email':    await this.sendEmail(config, eventType, message, ctx); break;
+      case 'slack':    await this.sendSlack(config, eventType, message, ctx); break;
+      case 'discord':  await this.sendDiscord(config, eventType, message, ctx); break;
+      case 'telegram': await this.sendTelegram(config, eventType, message, ctx); break;
+      case 'ntfy':     await this.sendNtfy(config, eventType, message, ctx); break;
+      case 'gotify':   await this.sendGotify(config, eventType, message, ctx); break;
     }
   }
 

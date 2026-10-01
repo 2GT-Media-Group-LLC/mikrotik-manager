@@ -23,6 +23,21 @@ export interface BackupDevice {
   api_password_encrypted: string;
 }
 
+/** No output for this long fails an export. */
+const EXPORT_IDLE_MS = 60_000;
+/** An export still running after this long fails anyway. */
+const EXPORT_MAX_MS = 10 * 60_000;
+
+/** True when the device refused the credentials at login (not a timeout or a later failure). */
+export function isAuthRejection(err: unknown): boolean {
+  let e: unknown = err;
+  for (let i = 0; i < 3 && e; i++) {
+    if ((e as { level?: string }).level === 'client-authentication') return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 export class BackupService {
   constructor() {
     // Ensure backups directory exists
@@ -64,7 +79,20 @@ export class BackupService {
       try {
         return await run(key.ssh_username || sshUser, { privateKey: decrypt(key.private_key_encrypted) });
       } catch (e) {
-        console.warn(`[Backup] ${device.name}: key auth failed, falling back to password: ${(e as Error).message}`);
+        // Only a key the device refused is a reason to try the password. A
+        // timeout or a failure during the export used to fall back too: the
+        // password is refused once a key is installed, so the backup failed
+        // with "login failure" on the device and the real reason was lost.
+        if (!isAuthRejection(e)) throw e;
+        console.warn(`[Backup] ${device.name}: the device refused the SSH key, trying the password: ${(e as Error).message}`);
+        const sshPass = device.ssh_password_encrypted
+          ? decrypt(device.ssh_password_encrypted)
+          : decrypt(device.api_password_encrypted);
+        try {
+          return await run(sshUser, { password: sshPass });
+        } catch (pwErr) {
+          throw new Error(`the device refused the SSH key (${(e as Error).message}), and the password too (${(pwErr as Error).message})`, { cause: pwErr });
+        }
       }
     }
 
@@ -186,24 +214,39 @@ export class BackupService {
     auth: { password: string } | { privateKey: string },
     command = '/export compact'
   ): Promise<string> {
+    // Timed by silence, not by total length. A fixed 30 seconds failed
+    // large configurations that were exporting fine: tens of thousands of
+    // address-list entries take a while on a busy router. The export fails
+    // only after EXPORT_IDLE_MS with no output, or EXPORT_MAX_MS overall.
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
-      let output = '';
-      const timeout = setTimeout(() => {
-        conn.end();
-        reject(new Error('SSH timeout during backup'));
-      }, 30_000);
+      const chunks: Buffer[] = [];
+      let settled = false;
+      const fail = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(idle);
+        clearTimeout(overall);
+        try { conn.end(); } catch { /* closing */ }
+        reject(err);
+      };
+      let idle = setTimeout(() => fail(new Error('SSH connection timed out before the export started')), EXPORT_IDLE_MS);
+      const overall = setTimeout(
+        () => fail(new Error(`the export was still running after ${EXPORT_MAX_MS / 60_000} minutes`)), EXPORT_MAX_MS);
+      const stillAlive = () => {
+        clearTimeout(idle);
+        idle = setTimeout(
+          () => fail(new Error(`the export stopped sending data for ${EXPORT_IDLE_MS / 1000} seconds`)), EXPORT_IDLE_MS);
+      };
 
       conn.on('ready', () => {
+        stillAlive();
         conn.exec(command, (err, stream) => {
-          if (err) {
-            clearTimeout(timeout);
-            conn.end();
-            return reject(err);
-          }
+          if (err) return fail(err);
 
           stream.on('data', (data: Buffer) => {
-            output += data.toString();
+            chunks.push(data);
+            stillAlive();
           });
 
           stream.stderr.on('data', (data: Buffer) => {
@@ -211,17 +254,17 @@ export class BackupService {
           });
 
           stream.on('close', () => {
-            clearTimeout(timeout);
+            if (settled) return;
+            settled = true;
+            clearTimeout(idle);
+            clearTimeout(overall);
             conn.end();
-            resolve(output);
+            resolve(Buffer.concat(chunks).toString());
           });
         });
       });
 
-      conn.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(explainSshError(err, host, port));
-      });
+      conn.on('error', (err) => fail(explainSshError(err, host, port)));
 
       conn.connect({ host, port, username, ...sshHostCheck(host, port), ...auth, readyTimeout: 10_000 });
     });
