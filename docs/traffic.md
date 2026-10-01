@@ -55,8 +55,10 @@ Top talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a 
 its detail page — see [Clients](clients.md).
 
 With a site selected, every view shows that site's traffic only, and accounts limited to
-particular sites see only theirs. Traffic recorded before 0.24.47 has no site, so it appears
-in the all-sites view only.
+particular sites see only theirs. Traffic recorded before 0.24.47 has no site, so on a
+multi-site install it appears in the all-sites view only. On a single-site install, or any
+selection that includes every device, nothing is filtered and all of it shows (0.24.48;
+0.24.47 hid it, and its site filter also made long ranges slow enough to time out).
 
 Application classification is by port and protocol. It identifies what a flow *looks* like, not
 what it is: anything on 443 reads as HTTPS whether or not it is a browser.

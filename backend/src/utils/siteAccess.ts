@@ -119,5 +119,7 @@ export async function fluxDeviceFilter(scope: number | number[] | null): Promise
   const rows = await query<{ id: number }>(`SELECT id FROM devices WHERE site_id = ANY($1::int[])`, [sites]);
   if (rows.length === 0) return '|> filter(fn: (r) => false)';
   // Ids are integers from the database, so they are safe to inline as strings.
-  return `|> filter(fn: (r) => contains(value: r.device_id, set: [${rows.map((r) => `"${r.id}"`).join(', ')}]))`;
+  // `==` joined by `or` rather than contains(), which InfluxDB can't push down
+  // to storage (see the Traffic site filter, PR #179).
+  return `|> filter(fn: (r) => ${rows.map((r) => `r.device_id == "${r.id}"`).join(' or ')})`;
 }

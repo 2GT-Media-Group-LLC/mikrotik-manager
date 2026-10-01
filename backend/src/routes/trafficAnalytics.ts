@@ -13,13 +13,23 @@ router.use(requireAuth);
 /**
  * A Flux filter for the selected site(s), or '' for the whole fleet. Traffic is
  * stored with the site its exporter belongs to (outside review J4), so a site
- * view, and a site-scoped account (P1-7), see only that site's traffic. Points
- * from before 0.24.47 carry no site and appear only in the all-sites view.
+ * view, and a site-scoped account (P1-7), see only that site's traffic.
+ *
+ * A selection that contains every device is the whole fleet, so no filter is
+ * applied. That is always the case on a single-site install, where the one site
+ * is always selected: filtering there hid all traffic recorded before 0.24.47,
+ * which carries no site, and cost a filter on every query for nothing.
  */
-function siteFilter(req: Request): string {
+async function siteFilter(req: Request): Promise<string> {
   const sites = siteList(activeSite(req));
   if (!sites) return '';
   if (sites.length === 0) return '|> filter(fn: (r) => false)';
+  try {
+    const rows = await query<{ outside: number }>(
+      `SELECT COUNT(*)::int AS outside FROM devices WHERE site_id IS NULL OR NOT (site_id = ANY($1::int[]))`,
+      [sites]);
+    if (rows[0]?.outside === 0) return '';
+  } catch { /* can't tell: filter, which is the safe side */ }
   // Site ids are integers, safe to inline as strings. Written as `==` joined by
   // `or`, not contains(): InfluxDB pushes the former down to storage, while
   // contains() is evaluated in Flux after reading every point in the range, and
@@ -70,7 +80,7 @@ router.get('/timeseries', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const every = windowForRange(range);
   const queryApi = getQueryApi();
-  const site = siteFilter(req);
+  const site = await siteFilter(req);
 
   const fluxQuery = `
     from(bucket: "${bucket}")
@@ -111,7 +121,7 @@ router.get('/top-clients', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const limit = Math.min(parseInt(String(req.query.limit || '10'), 10) || 10, 50);
   const queryApi = getQueryApi();
-  const site = siteFilter(req);
+  const site = await siteFilter(req);
 
   const fluxQuery = `
     from(bucket: "${bucket}")
@@ -182,7 +192,7 @@ router.get('/top-clients', async (req: Request, res: Response) => {
 router.get('/apps', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const queryApi = getQueryApi();
-  const site = siteFilter(req);
+  const site = await siteFilter(req);
 
   let macFilter = '';
   if (req.query.mac) {
@@ -231,7 +241,7 @@ router.get('/client/:mac', async (req: Request, res: Response) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const every = windowForRange(range);
   const queryApi = getQueryApi();
-  const site = siteFilter(req);
+  const site = await siteFilter(req);
 
   const seriesFlux = `
     from(bucket: "${bucket}")
