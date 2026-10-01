@@ -589,11 +589,26 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#certificate-and-host-key-pinning" class="md-nav__link">
+  <a href="#certificate-host-key-and-serial-number-pinning" class="md-nav__link">
     <span class="md-ellipsis">
-      Certificate and host key pinning
+      Certificate, host key and serial number pinning
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Certificate, host key and serial number pinning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#serial-numbers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Serial numbers
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1072,11 +1087,26 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#certificate-and-host-key-pinning" class="md-nav__link">
+  <a href="#certificate-host-key-and-serial-number-pinning" class="md-nav__link">
     <span class="md-ellipsis">
-      Certificate and host key pinning
+      Certificate, host key and serial number pinning
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Certificate, host key and serial number pinning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#serial-numbers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Serial numbers
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1135,7 +1165,7 @@ API-SSL, its <strong>Security</strong> tab offers to turn the plain API off.</p>
 over the plain API</em> finding.</p>
 <p>The certificate is self-signed, so there is no certificate authority to check it against.
 Instead the manager pins it, below.</p>
-<h2 id="certificate-and-host-key-pinning">Certificate and host key pinning<a class="headerlink" href="#certificate-and-host-key-pinning" title="Permanent link">&para;</a></h2>
+<h2 id="certificate-host-key-and-serial-number-pinning">Certificate, host key and serial number pinning<a class="headerlink" href="#certificate-host-key-and-serial-number-pinning" title="Permanent link">&para;</a></h2>
 <p>The first time the manager connects to a device over API-SSL it remembers the device's
 certificate, and the first time over SSH its host key. Every later connection has to present
 the same one. If it doesn't, the manager stops <strong>before sending the device's login</strong>, so
@@ -1160,6 +1190,21 @@ before trusting it:</p>
 <p>An admin then clicks <strong>Trust new certificate</strong> (or <strong>Trust new host key</strong>) on the banner, and
 the manager reconnects. When the manager replaces a device's certificate itself, through
 <strong>Switch to API-SSL</strong>, it updates the pin on its own.</p>
+<h3 id="serial-numbers">Serial numbers<a class="headerlink" href="#serial-numbers" title="Permanent link">&para;</a></h3>
+<p>The manager also remembers each device's serial number, and checks it right after logging in,
+before it reads or changes anything. If a device with a different serial answers at the
+address, the manager stops there: nothing is collected into the old device's record, and
+backups, restores, firmware and commands meant for it don't run on the other device. The
+device page shows <strong>A different device is answering at this address</strong>, with both serials.</p>
+<p>Two things cause this:</p>
+<ul>
+<li><strong>The device was replaced</strong> (an RMA, or new hardware at the same address). Check the serial
+  on the label or in <strong>System → RouterBOARD</strong>, then click <strong>This is the new device</strong>.</li>
+<li><strong>Two devices swapped addresses</strong>, usually through DHCP. Don't accept it; correct the
+  address in <strong>Edit Device</strong> instead, or give the devices static addresses.</li>
+</ul>
+<p>Devices without a serial number (CHR, x86) aren't checked. The serial already on record is
+the first one pinned, so a swap that happened before upgrading is caught too.</p>
 <p>Pinning starts silently on upgrade: devices already managed are pinned the next time the
 manager connects to them. Manage each device by its own address; two devices sharing an
 address (a VRRP address, for example) would look like one device whose certificate keeps

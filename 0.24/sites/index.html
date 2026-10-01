@@ -1307,7 +1307,10 @@ so there is always a fleet administrator.</p>
 <li><strong>Only its sites.</strong> The site switcher lists only them, and "All my sites" covers all of
   them. Devices, clients, events, backups, topology, search and the rest show nothing from
   other sites. A device in another site answers "not found", so its existence doesn't leak.
-  Tags are shared across the fleet, but their device counts include only its sites.</li>
+  Tags are shared across the fleet, but their device counts include only its sites.
+  Traffic analytics shows only its sites' traffic (see <a href="../traffic/">Traffic</a>).</li>
+<li><strong>Edits stay in its sites.</strong> Renaming a client, setting its category or editing its notes
+  changes the records in its sites only, even if the same MAC is on record elsewhere.</li>
 <li><strong>It lands in the right place.</strong> An account with one site opens on that site; one with
   several opens on "All my sites". A site left selected in the browser by someone else who
   used it doesn't carry over, and if a site is taken away while the account is signed in,
@@ -1327,8 +1330,6 @@ so there is always a fleet administrator.</p>
 </ul>
 <p>Not available to site-limited accounts, because each covers the whole fleet:</p>
 <ul>
-<li>Traffic analytics. NetFlow data isn't recorded per site yet; until it is, showing it would
-  show other sites' traffic.</li>
 <li>Alert rules, channels and history; Settings other than <strong>My Password</strong>.</li>
 <li>Creating or deleting sites, editing shared command templates, poller health, and
   dismissing insights.</li>
@@ -1347,7 +1348,14 @@ fleet-wide under their mapped role until an admin assigns them sites.</p>
 <li>Backups, Firmware, Bulk commands</li>
 </ul>
 <p>Also scoped: the Operations feed (Things to Handle, Recent Activity, capacity), Config
-Health findings, anomaly detection, and the Connected Clients chart.</p>
+Health findings, anomaly detection, the Connected Clients chart, and traffic analytics.</p>
+<p>Dismissing an insight hides it in the view it was dismissed in: one site, or all sites. A
+finding with the same wording at another site still shows. (Dismissals made before 0.24.47
+apply nowhere and simply reappear.)</p>
+<p>Collection keeps sites apart as well. Topology links a neighbour to a managed device only in
+the same site, a MAC scan fills in client addresses only in its own site, and NetFlow matches
+client addresses within the exporter's site, so overlapping address plans (two customers on
+the RouterOS default 192.168.88.0/24) don't join two networks.</p>
 <p>Deliberately <strong>not</strong> scoped:</p>
 <ul>
 <li><strong>Polling.</strong> Collection always runs across the whole fleet. Sites are a view over data
@@ -1356,7 +1364,8 @@ Health findings, anomaly detection, and the Connected Clients chart.</p>
 <li><strong>The audit log</strong>, in Recent Activity. Audit rows record who changed the install; they
   carry no device and so belong to no site. Repeating "admin changed a setting" into every
   site would misattribute it, so the audit feed appears only in the all-sites view.</li>
-<li><strong>NetFlow collector health</strong>, which is one service for the install.</li>
+<li><strong>NetFlow collector health</strong>, which is one service for the install. Site-limited accounts
+  see only their own exporters in it.</li>
 <li><strong>Rogue AP detection.</strong> The scans are site-scoped, but the "these access points are
   ours" set stays fleet-wide. An AP of yours in another site is still yours, and scoping
   that set would report your own hardware as a rogue.</li>

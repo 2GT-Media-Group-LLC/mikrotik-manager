@@ -544,6 +544,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The collector">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flows-from-unidentified-exporters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Flows from unidentified exporters
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1087,6 +1102,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The collector">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flows-from-unidentified-exporters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Flows from unidentified exporters
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1148,15 +1178,36 @@
 <h2 id="the-collector">The collector<a class="headerlink" href="#the-collector" title="Permanent link">&para;</a></h2>
 <p>The platform listens for <strong>NetFlow v9 and IPFIX on UDP 2055</strong>. There is no external collector
 to run. Point a device's exporter at the platform's address and flows start arriving.</p>
-<p>Two behaviours worth knowing:</p>
+<p>How flows are counted:</p>
 <ul>
 <li><strong>Deduplication.</strong> A flow crossing two managed routers is exported twice. It is counted once.</li>
-<li><strong>NAT-tolerant ingest.</strong> Exporters behind NAT or reaching the platform over a VPN arrive with
-  a rewritten source address. Flows are matched to devices by exporter identity rather than by
-  source IP, so this does not silently attribute traffic to the wrong device or drop it.</li>
+<li><strong>Exporters are identified by source address.</strong> A flow is taken as coming from the managed
+  device that owns its source address (its management address or any address on it).</li>
+<li><strong>Clients are matched within the exporter's site.</strong> A flow's addresses are matched to
+  clients seen in the same site as the exporting device, and the traffic is stored with that
+  site. Two customers both using 192.168.88.0/24 never have their traffic mixed.</li>
 </ul>
-<p><strong>Network Services → NetFlow</strong> configures the exporters; <strong>Settings</strong> holds collector options,
-including whether to accept flows from exporters that do not match a known device.</p>
+<h3 id="flows-from-unidentified-exporters">Flows from unidentified exporters<a class="headerlink" href="#flows-from-unidentified-exporters" title="Permanent link">&para;</a></h3>
+<p>If NAT sits between your routers and the platform (common with Docker Desktop, or a router
+exporting through a firewall), flows arrive from the NAT gateway's address instead of the
+router's, and match no device. NetFlow has no authentication, so taking flows from addresses
+that aren't managed devices lets anything that can reach UDP 2055 send traffic figures.</p>
+<p>That is controlled by <strong>Accept flows from unidentified exporters</strong> on <strong>Network Services →
+NetFlow</strong> (fleet admins only):</p>
+<ul>
+<li><strong>Off</strong> (the default for new installs): such flows are refused, and the page lists the
+  addresses being refused so missing traffic isn't a mystery.</li>
+<li><strong>On</strong>: they are accepted, but only from private, CGNAT, link-local or loopback addresses,
+  which is where a NAT gateway in front of the platform would be. Flows from a public address
+  are always refused, and the page says so; seeing one means the collector is reachable from
+  outside your network (see <a href="../configuration/#network-exposure">Network exposure</a>).</li>
+</ul>
+<p>An unidentified exporter can't say which site it belongs to, so its flows are matched to a
+client only when the address exists in exactly one site. With a single site that is always
+the case. If the same addresses are in use at more than one site, those flows are counted in
+the all-sites view only.</p>
+<p>Installs from before 0.24.47 keep the setting they had, which was on.</p>
+<p><strong>Network Services → NetFlow</strong> configures the exporters and the collector.</p>
 <h2 id="what-it-shows">What it shows<a class="headerlink" href="#what-it-shows" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1186,6 +1237,9 @@ including whether to accept flows from exporters that do not match a known devic
 </table>
 <p>Top talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a client opens
 its detail page — see <a href="../clients/">Clients</a>.</p>
+<p>With a site selected, every view shows that site's traffic only, and accounts limited to
+particular sites see only theirs. Traffic recorded before 0.24.47 has no site, so it appears
+in the all-sites view only.</p>
 <p>Application classification is by port and protocol. It identifies what a flow <em>looks</em> like, not
 what it is: anything on 443 reads as HTTPS whether or not it is a browser.</p>
 <h2 id="retention">Retention<a class="headerlink" href="#retention" title="Permanent link">&para;</a></h2>
@@ -1201,8 +1255,8 @@ what it is: anything on 443 reads as HTTPS whether or not it is a browser.</p>
 <tbody>
 <tr>
 <td><code>netflow_retention_days</code></td>
-<td>7</td>
-<td>Full per-flow detail</td>
+<td>30</td>
+<td>Per-client time series (one-minute detail)</td>
 </tr>
 <tr>
 <td><code>netflow_daily_retention_days</code></td>
@@ -1232,8 +1286,8 @@ lines.</p>
 <li>Is UDP 2055 reachable from the device? The platform must be reachable <em>from</em> the router,
    which is not the same direction as the API connection.</li>
 <li>Does the exporter match a known device? If flows arrive from an address the platform cannot
-   match, they are rejected unless <code>netflow_accept_unknown</code> is on. The NetFlow page lists
-   unidentified exporters so this is visible rather than silent.</li>
+   match, they are refused unless <strong>Accept flows from unidentified exporters</strong> is on, and
+   always from a public address. The NetFlow page lists refused sources and why.</li>
 </ol>
 
 

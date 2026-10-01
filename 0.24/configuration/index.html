@@ -443,6 +443,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#network-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network exposure
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tls" class="md-nav__link">
     <span class="md-ellipsis">
       TLS
@@ -1219,6 +1228,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#network-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network exposure
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tls" class="md-nav__link">
     <span class="md-ellipsis">
       TLS
@@ -1325,6 +1343,16 @@
 <td><code>HTTPS_PORT</code></td>
 <td><code>443</code></td>
 <td>Host port for HTTPS</td>
+</tr>
+<tr>
+<td><code>BIND_ADDRESS</code></td>
+<td><em>every interface</em></td>
+<td>Host address the web UI is published on. See <a href="#network-exposure">Network exposure</a>.</td>
+</tr>
+<tr>
+<td><code>NETFLOW_BIND_ADDRESS</code></td>
+<td><em>every interface</em></td>
+<td>Host address the NetFlow collector (UDP 2055) is published on.</td>
 </tr>
 </tbody>
 </table>
@@ -1488,6 +1516,46 @@ the key in place before the manager's first start.</p>
 </tr>
 </tbody>
 </table>
+<h2 id="network-exposure">Network exposure<a class="headerlink" href="#network-exposure" title="Permanent link">&para;</a></h2>
+<p>The manager holds the admin credentials for every device it manages, so keep it off the
+internet: reach it over your LAN or a VPN.</p>
+<p>By default Docker publishes the web UI (80, 443) and the NetFlow collector (UDP 2055) on
+<strong>every</strong> host interface. <strong>A host firewall such as ufw or firewalld does not close
+them</strong>: Docker adds its own rules for published ports, and traffic to them never reaches
+the chains those tools manage. On a host with a public or DMZ interface, the manager is
+reachable from the internet even though ufw says the port is closed.</p>
+<p>Pick one of these:</p>
+<ul>
+<li><strong>Publish on one address.</strong> Set <code>BIND_ADDRESS</code> (and <code>NETFLOW_BIND_ADDRESS</code>) in <code>.env</code> to
+  the host's LAN or VPN address, then <code>docker compose up -d</code>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>BIND_ADDRESS=192.168.1.10
+NETFLOW_BIND_ADDRESS=192.168.1.10
+</code></pre></div>
+<p>Only that address listens. To reach it over IPv6 as well, leave it unset and use the
+  next option instead.</p>
+<ul>
+<li><strong>Filter in the <code>DOCKER-USER</code> chain.</strong> Docker checks this chain before its own rules, so
+  it does apply to published ports. For example, to allow the UI only from 192.168.1.0/24
+  and NetFlow only from your routers' management subnet, where <code>eth0</code> is the public
+  interface:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 443 ! -s 192.168.1.0/24 -j DROP
+iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 80 ! -s 192.168.1.0/24 -j DROP
+iptables -I DOCKER-USER -i eth0 -p udp -m conntrack --ctorigdstport 2055 ! -s 10.10.0.0/24 -j DROP
+</code></pre></div>
+<p>These rules don't survive a reboot by themselves; save them the way your distribution
+  does (for example <code>netfilter-persistent save</code>).</p>
+<ul>
+<li><strong>Put the host behind a firewall it doesn't control</strong>, such as the router in front of it
+  or a cloud security group.</li>
+</ul>
+<p>NetFlow has no authentication of its own, so whatever can reach UDP 2055 can send flows.
+The collector only accepts flows from managed devices unless you turn on <strong>Accept flows
+from unknown exporters</strong> (see <a href="../traffic/">Traffic</a>), but limiting who can reach the port
+is still the real protection.</p>
+<p>Before 0.24.47 there was no bind setting, and the ports were always published on every
+interface.</p>
 <h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
 <p>A self-signed certificate is generated on first run. Replace it under
 <strong>Settings → TLS Certificate</strong> by uploading a certificate and private key, or regenerate the
