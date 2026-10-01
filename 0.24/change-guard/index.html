@@ -1610,10 +1610,29 @@ satisfied to violated.</p>
 <p>Two details make the result precise rather than merely cautious:</p>
 <ul>
 <li>The <strong>manager's own address</strong>, as the device sees it, is read from the device's
-  connection tracking — rather than being treated as unknowable behind NAT.</li>
+  connection tracking — rather than being treated as unknowable behind NAT. When other
+  hosts (a monitoring tool, WinBox) are connected to the API port too, the manager picks
+  out its own session by its source port; if it can't, it says so and works from the
+  default gateway instead of guessing.</li>
 <li>The <strong>ingress port</strong> is taken from the bridge forwarding table, so it is the port the
   traffic actually arrives on, not a guess from topology.</li>
 </ul>
+<p>What the model follows:</p>
+<ul>
+<li>the address, the interface holding it, and a VLAN interface's parent port, so
+  disabling <code>ether1</code> under <code>vlan10</code> is caught;</li>
+<li>the bridge and its VLAN table, including a VLAN interface reached through an access
+  port whose PVID is that VLAN (tagged at the CPU, untagged on the wire);</li>
+<li>a bond holding the address, under its VLAN interface, or as the ingress port;</li>
+<li>the route back to an off-subnet manager, whether that is the default route or a more
+  specific one;</li>
+<li>the API service and the input firewall chain.</li>
+</ul>
+<p>A failed read during the check is never taken as "nothing there": the check fails, and the
+change then requires auto-revert. VLAN edits are simulated with the same planning code the
+device write uses, so the prediction and the write can't disagree about which rows change.
+(Before 0.24.49 a port listed as both tagged and untagged for a VLAN was simulated as both;
+the write leaves it untagged.)</p>
 <p>The resulting warning names the mechanism:</p>
 <blockquote>
 <p><strong>This change is predicted to cut management access to 2GT-NW-100G.</strong>

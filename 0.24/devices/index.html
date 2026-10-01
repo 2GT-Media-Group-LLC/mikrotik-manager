@@ -577,6 +577,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#terminal" class="md-nav__link">
+    <span class="md-ellipsis">
+      Terminal
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1336,6 +1351,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#terminal" class="md-nav__link">
+    <span class="md-ellipsis">
+      Terminal
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1723,6 +1753,13 @@ the device sits.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="terminal">Terminal<a class="headerlink" href="#terminal" title="Permanent link">&para;</a></h3>
+<p>The terminal opens an SSH shell on the device, for operators and admins in the device's site.
+The audit log records each session's start, who opened it, from which address, and when it
+was refused (for example by the rate limit). <strong>What is typed in the shell is not recorded.</strong>
+If you need a record of commands, turn on logging on the device itself (<code>/system logging</code>), or
+use bulk commands, whose commands and output are kept.</p>
+<p>Before 0.24.49 the address recorded was the manager's own proxy, not the user's.</p>
 <h2 id="syncing-and-polling">Syncing and polling<a class="headerlink" href="#syncing-and-polling" title="Permanent link">&para;</a></h2>
 <p>Devices are polled on three cadences — see <a href="../scaling/">Polling and scaling</a> for the model and
 for switching individual collectors off.</p>

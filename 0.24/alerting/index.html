@@ -1240,7 +1240,7 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 </tr>
 <tr>
 <td><code>log_error</code> / <code>log_warning</code></td>
-<td>Matched from the device's own log</td>
+<td>An error or warning line newly read from the device's own log, from the last 15 minutes (one alert per poll for each; an older backlog read from a newly added device doesn't alert)</td>
 </tr>
 <tr>
 <td><code>device_discovered</code></td>
