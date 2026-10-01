@@ -20,8 +20,11 @@ function siteFilter(req: Request): string {
   const sites = siteList(activeSite(req));
   if (!sites) return '';
   if (sites.length === 0) return '|> filter(fn: (r) => false)';
-  // Site ids are integers, safe to inline as strings.
-  return `|> filter(fn: (r) => contains(value: r.site_id, set: [${sites.map((id) => `"${id}"`).join(', ')}]))`;
+  // Site ids are integers, safe to inline as strings. Written as `==` joined by
+  // `or`, not contains(): InfluxDB pushes the former down to storage, while
+  // contains() is evaluated in Flux after reading every point in the range, and
+  // also stops the filters after it from being pushed down.
+  return `|> filter(fn: (r) => ${sites.map((id) => `r.site_id == "${id}"`).join(' or ')})`;
 }
 
 function rangeToFlux(range: string): string {
