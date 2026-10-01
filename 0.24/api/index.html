@@ -1232,6 +1232,9 @@ real values, because the edit forms need them.</p>
 <code>/api/auth/totp/verify</code> when two-factor is enabled. Tokens are bearer credentials and are
 sent in the same <code>Authorization</code> header. The short-lived token <code>/login</code> returns while waiting
 for the two-factor code only works for <code>/api/auth/totp/verify</code>; it isn't a session.</p>
+<p>Setting up two-factor again (<code>/api/auth/totp/setup</code>) doesn't touch the authenticator in use:
+the new secret replaces it only when <code>/api/auth/totp/confirm</code> accepts a code from it. Before
+0.24.50 starting setup and abandoning it locked the user out.</p>
 <p>For scripting, prefer an API token — it is scoped, revocable, and unaffected by password
 or 2FA changes.</p>
 <h2 id="endpoints-worth-knowing">Endpoints worth knowing<a class="headerlink" href="#endpoints-worth-knowing" title="Permanent link">&para;</a></h2>

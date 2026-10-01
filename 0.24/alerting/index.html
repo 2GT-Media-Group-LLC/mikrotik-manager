@@ -1338,7 +1338,9 @@ server log line begins <code>[Certs]</code>.</p>
 <h2 id="delivery-channels">Delivery channels<a class="headerlink" href="#delivery-channels" title="Permanent link">&para;</a></h2>
 <p>Email, Slack, Discord, Telegram, <strong>ntfy</strong> and <strong>Gotify</strong>. Channels are configured under
 <strong>Settings → Alerts → Channels</strong>; secrets are masked on read and preserved when you save
-a channel without retyping them.</p>
+a channel without retyping them. They are stored encrypted with the same key as device
+passwords (SMTP password, bot and app tokens, Slack and Discord webhook URLs), and decrypted
+only to send. Channels saved before 0.24.50 are encrypted at the next start.</p>
 <h3 id="ntfy">ntfy<a class="headerlink" href="#ntfy" title="Permanent link">&para;</a></h3>
 <p>Works with the public <code>ntfy.sh</code> or your own instance.</p>
 <table>
@@ -1453,7 +1455,7 @@ memory, certificate expiry, device discovered, firmware update available, config
 firmware rollout completed/failed, hardware degraded/healthy again, and a changed device
 certificate or host key.</p>
 <p>Deliveries are JSON <code>POST</code>s, <strong>HMAC-SHA256 signed</strong> in <code>X-MTM-Signature</code> when a secret is
-set. Last-delivery status is tracked per webhook and there is a Send-test button.</p>
+set. The secret is stored encrypted. Last-delivery status is tracked per webhook and there is a Send-test button.</p>
 <p>Webhooks fire through the same pipeline as other alerts, so they respect alert rules,
 cooldowns and maintenance windows rather than bypassing them.</p>
 <h2 id="scheduled-email-reports">Scheduled email reports<a class="headerlink" href="#scheduled-email-reports" title="Permanent link">&para;</a></h2>

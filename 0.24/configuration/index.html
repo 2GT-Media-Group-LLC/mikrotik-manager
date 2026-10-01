@@ -411,6 +411,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#changing-jwt_secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      Changing JWT_SECRET
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#key-rotation" class="md-nav__link">
     <span class="md-ellipsis">
       Key rotation
@@ -1196,6 +1205,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#changing-jwt_secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      Changing JWT_SECRET
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#key-rotation" class="md-nav__link">
     <span class="md-ellipsis">
       Key rotation
@@ -1363,8 +1381,10 @@
 Both secrets generate themselves safely — see below.</p>
 <h2 id="first-login">First login<a class="headerlink" href="#first-login" title="Permanent link">&para;</a></h2>
 <p>A new install has one account, <strong>admin</strong> with the password <strong>admin</strong>. Signing in with it
-goes straight to a page that asks for a new password (at least 10 characters, with a
-letter and a number); nothing else works until it is set. The login page shows the
+goes straight to a page that asks for a new password (at least 10 characters and at most
+72 bytes, with a letter and a number); nothing else works until it is set. The 72-byte limit
+is bcrypt's: it ignores anything longer, so a longer password changed only at the end would
+still accept the old one. The login page shows the
 default credentials only until then. An existing install still using admin/admin gets
 the same prompt at its next login.</p>
 <h2 id="sessions">Sessions<a class="headerlink" href="#sessions" title="Permanent link">&para;</a></h2>
@@ -1404,12 +1424,23 @@ shipped defaults — and transparently re-encrypted under the current key by a b
 sweep. Nothing needs to be re-entered.</p>
 <p>Rotating the JWT secret off a public default invalidates sessions signed with it. Users
 simply log in again once.</p>
+<h3 id="changing-jwt_secret">Changing JWT_SECRET<a class="headerlink" href="#changing-jwt_secret" title="Permanent link">&para;</a></h3>
+<p>Setting <code>JWT_SECRET</code> in <code>.env</code> (or changing it) is treated as a rotation. The secret the
+manager was using before, and any older ones, keep working for 24 hours from the first start
+with the new value, so signed-in users aren't cut off mid-session, and then stop. They are also
+removed from <code>secrets.json</code>, so unsetting <code>JWT_SECRET</code> later never brings a retired secret back
+(the manager generates a fresh one instead). This is the step to take if <code>secrets.json</code> may
+have leaked; before 0.24.50 the leaked secret stayed valid. If the old secret must stop
+working at once rather than after 24 hours, also delete the <code>retiringJwtSecrets</code> entry from
+<code>secrets.json</code> in the <code>app_data</code> volume and restart the backend; everyone then signs in again.</p>
 <h3 id="key-rotation">Key rotation<a class="headerlink" href="#key-rotation" title="Permanent link">&para;</a></h3>
 <p><strong>Settings → General → Encryption key</strong> shows where the key comes from, a short key ID (a
 fingerprint, not the key), and how many stored values are under the current key, under an
 older key, or under no key the manager has.</p>
 <p>Everything the key protects is covered: device API and SSH passwords, credential presets, SSH
-private keys, the SSO client secret, and backups that contain secrets. On every start, anything
+private keys, the SSO client secret, alert channel secrets (SMTP password, Telegram bot token,
+ntfy and Gotify tokens, Slack and Discord webhook URLs), webhook signing secrets, and backups
+that contain secrets. On every start, anything
 still under an older key is re-encrypted with the current one.</p>
 <p><strong>A key the manager generated</strong> (the default, kept in <code>app_data/secrets.json</code>):</p>
 <ol>

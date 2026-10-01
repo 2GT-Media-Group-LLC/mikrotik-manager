@@ -712,6 +712,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What a backup actually is">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#large-configurations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Large configurations
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1105,6 +1120,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What a backup actually is">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#large-configurations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Large configurations
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1192,6 +1222,17 @@ same device. It also means a backup is human-readable text, which is why preview
 and comparing them is possible at all.</p>
 <p>It also means a backup does <strong>not</strong> capture things <code>/export</code> omits: user passwords,
 certificates and files on disk. A <code>.rsc</code> restores a configuration, not a device.</p>
+<h3 id="large-configurations">Large configurations<a class="headerlink" href="#large-configurations" title="Permanent link">&para;</a></h3>
+<p>A big configuration takes a while to export: tens of thousands of address-list entries can
+take a minute or more on a busy router. A backup only fails if the export goes <strong>60 seconds
+without sending anything</strong>, or is still running after 10 minutes, so a slow export that is
+making progress finishes. The Backups page waits as long, and if a backup does fail it says
+why. Before 0.24.50 an export was cut off after 30 seconds in total, and the page showed
+only "Backup failed".</p>
+<p>When the device has an SSH key from the manager, backups use it. The password is tried only
+if the device refuses the key at login. Before 0.24.50 a key backup that timed out also fell
+back to the password, which RouterOS refuses once a key is installed, so the device logged a
+"login failure" and the real reason was lost.</p>
 <h2 id="passwords-and-keys">Passwords and keys<a class="headerlink" href="#passwords-and-keys" title="Permanent link">&para;</a></h2>
 <p>By default RouterOS v7 also leaves out Wi-Fi keys, VPN and PPP secrets, WireGuard private
 keys and SNMP communities, so a restore brings back the configuration without them.</p>
