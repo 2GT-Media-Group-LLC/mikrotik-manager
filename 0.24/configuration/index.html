@@ -1667,11 +1667,13 @@ interface.</p>
 <li><strong>backend</strong>: every Linux capability dropped except <code>NET_RAW</code> (server-side ARP discovery), a
   read-only root filesystem, and a non-root user that owns only its data directories. It can
   write its volumes and <code>/tmp</code>, and nothing else.</li>
-<li><strong>nginx</strong>: only the capabilities it uses, no privilege escalation, and a read-only root
-  filesystem.</li>
-<li><strong>Postgres, Redis, InfluxDB</strong>: no privilege escalation, on the internal network only.</li>
+<li><strong>nginx</strong>: only the capabilities it uses, and a read-only root filesystem.</li>
+<li><strong>Postgres, Redis, InfluxDB</strong>: on the internal network only.</li>
 <li><strong>Logs</strong> from every container rotate at 10 MB, five files each.</li>
 </ul>
+<p>The containers don't set <code>no-new-privileges</code>. On Ubuntu with AppArmor it stops them starting at
+all: the first command in the container fails with "operation not permitted". 0.24.51 set it,
+and on such hosts the update left the databases restarting; 0.24.52 removes it.</p>
 <h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
 <p>A self-signed certificate is generated on first run. Replace it under
 <strong>Settings → TLS Certificate</strong> by uploading a certificate and private key, or regenerate the
