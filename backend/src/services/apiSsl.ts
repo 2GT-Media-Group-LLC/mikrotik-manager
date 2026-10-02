@@ -22,6 +22,7 @@ import { decrypt } from '../utils/crypto';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { API_SSL_PORT } from './mikrotik/apiConnect';
 import { forgetIdentity } from './identityPins';
+import { configuredServices, allowedFrom, allowedFromKey } from '../utils/ipServices';
 
 export const MTM_CERT_NAME = 'mtm-api-ssl';
 
@@ -122,8 +123,12 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
     device.ip_address, device.api_port, device.api_username, decrypt(device.api_password_encrypted), 15_000, 30_000);
   try {
     await client.connect();
-    const svc = (await client.execute('/ip/service/print', { detail: '' }, ['?name=api-ssl']))[0];
+    // Configured rows only: a live api-ssl session is printed as another
+    // "api-ssl" row (#192).
+    const services = configuredServices(await client.execute('/ip/service/print', { detail: '' }));
+    const svc = services.find((r) => r['name'] === 'api-ssl');
     if (!svc?.['.id']) throw new Error('This device has no api-ssl service.');
+    const plainApi = services.find((r) => r['name'] === 'api');
 
     // Keep a certificate that is already assigned and usable; otherwise make one.
     const assigned = svc['certificate'] && svc['certificate'] !== 'none' ? svc['certificate'] : null;
@@ -144,11 +149,22 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
     }
     if (isTrue(svc['disabled'])) changes['disabled'] = 'no';
     if (svc['port'] !== String(API_SSL_PORT)) changes['port'] = String(API_SSL_PORT);
+    // api-ssl takes over api's job, so it gets api's allowed addresses too
+    // (#192). Left alone, a device whose api was limited to a management
+    // subnet ended up with api-ssl open to any address. A list already set
+    // on api-ssl is the operator's own choice and is kept.
+    const apiList = plainApi ? allowedFrom(plainApi) : [];
+    if (apiList.length > 0 && allowedFrom(svc).length === 0) {
+      changes[allowedFromKey(svc)] = apiList.join(',');
+    }
     if (Object.keys(changes).length > 0) {
       await client.execute('/ip/service/set', { '.id': svc['.id'], ...changes });
       if (changes['disabled']) steps.push('Enabled the api-ssl service');
       if (changes['certificate']) steps.push(`Assigned "${certName}" to the api-ssl service`);
       if (changes['port']) steps.push(`Moved api-ssl to port ${API_SSL_PORT} (it was on ${svc['port']})`);
+      if (changes[allowedFromKey(svc)] !== undefined) {
+        steps.push(`Limited api-ssl to the addresses api allows: ${apiList.join(', ')}`);
+      }
     } else {
       steps.push(`api-ssl was already enabled on port ${API_SSL_PORT}`);
     }

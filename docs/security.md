@@ -13,13 +13,16 @@ seconds. API-SSL (port 8729) encrypts the whole session.
 
 While any device is still on the plain API, the Security page shows a notice listing them
 ("N devices are managed over the unencrypted API"). Once every device is on API-SSL the
-notice goes away. **Switch to API-SSL** (per device, or **Switch all online** when more
+notice goes away. Muting the *MikroTik Manager connects over the plain API* check hides it
+too: muted fleet-wide, the notice goes; muted on a device, that device isn't counted. **Switch to API-SSL** (per device, or **Switch all online** when more
 than one is online) does this on the device:
 
 1. Uses the certificate already assigned to the `api-ssl` service if it has a working one.
    Otherwise it creates a self-signed certificate named `mtm-api-ssl` (valid 10 years) and
    signs it on the device, which takes a few seconds, longer on small devices.
-2. Enables `api-ssl` on port 8729 with that certificate.
+2. Enables `api-ssl` on port 8729 with that certificate. If the plain `api` service only
+   accepts connections from certain addresses (its *Available From* list) and `api-ssl`
+   accepts any, `api-ssl` gets the same list. A list already set on `api-ssl` is kept.
 3. Logs in over API-SSL on a new connection. Only if that works does the manager move its
    connection for the device to 8729.
 
@@ -30,6 +33,19 @@ API-SSL, its **Security** tab offers to turn the plain API off.
 
 The same switch is on each device's **Security** tab, next to the *MikroTik Manager connects
 over the plain API* finding.
+
+### Which addresses a service accepts
+
+The **Management Services** table on a device's **Security** tab shows each service's
+*Allowed From* list (RouterOS's *Available From*; empty means any address). **edit** changes
+it: enter addresses or prefixes separated by commas, or leave it empty for any. On the
+service the manager connects through, a list that leaves out the address the device sees the
+manager connecting from is refused, since saving it would cut the manager off. The change
+also runs under [Change Guard](change-guard.md), which undoes it if the manager loses the
+device anyway.
+
+Before 0.25.0 the column showed *any* for every service on current RouterOS 7, which renamed
+the field, and a service with an open session could be listed as that session instead.
 
 The certificate is self-signed, so there is no certificate authority to check it against.
 Instead the manager pins it, below.

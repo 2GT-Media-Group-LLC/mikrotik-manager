@@ -3,9 +3,10 @@ import { docsUrl, APP_VERSION } from './version';
 
 describe('docsUrl', () => {
   it('points at the series this build belongs to, not latest', () => {
-    // mike publishes per series, so a 0.24.x install should read 0.24 docs
-    // rather than whatever has shipped since.
-    expect(docsUrl()).toContain('/0.24/');
+    // mike publishes per series, so a 0.25.x install reads 0.25 docs rather
+    // than whatever has shipped since.
+    expect(docsUrl()).toMatch(/\/\d+\.\d+\/$/);
+    expect(docsUrl()).not.toContain('/latest/');
   });
 
   it('matches the running version', () => {
@@ -14,7 +15,8 @@ describe('docsUrl', () => {
   });
 
   it('appends a page path without doubling the slash', () => {
-    expect(docsUrl('adoption/')).toMatch(/\/0\.24\/adoption\/$/);
-    expect(docsUrl('/adoption/')).toMatch(/\/0\.24\/adoption\/$/);
+    const series = /v?(\d+\.\d+)/.exec(APP_VERSION)?.[1];
+    expect(docsUrl('adoption/')).toMatch(new RegExp(`/${series}/adoption/$`));
+    expect(docsUrl('/adoption/')).toMatch(new RegExp(`/${series}/adoption/$`));
   });
 });

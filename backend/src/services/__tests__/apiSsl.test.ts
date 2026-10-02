@@ -115,6 +115,44 @@ describe('enableApiSsl', () => {
     expect(calls.some((c) => c.cmd === '/ip/service/set')).toBe(false);
   });
 
+  it("gives api-ssl the plain api's allowed addresses, skipping live-session rows (#192)", async () => {
+    const calls = clients({
+      8728: {
+        exec: async (cmd) => {
+          if (cmd === '/ip/service/print') return <Record<string, string>[]>[
+            { '.id': '*A', name: 'api', port: '8728', 'available-from': '10.0.0.0/8,192.168.0.0/24', disabled: 'false', dynamic: 'false' },
+            { '.id': '*S', name: 'api-ssl', port: '8729', 'available-from': '', disabled: 'false', certificate: 'mycert', dynamic: 'false' },
+            { '.id': '*2CA', name: 'api-ssl', port: '8729', remote: '10.0.0.5:5000', dynamic: 'true', disabled: 'false' },
+          ];
+          if (cmd === '/certificate/print') return [{ '.id': '*M', name: 'mycert', 'private-key': 'true' }];
+          return [];
+        },
+      },
+    });
+    const r = await enableApiSsl(device);
+    expect(r.switched).toBe(true);
+    const set = calls.find((c) => c.cmd === '/ip/service/set');
+    expect(set?.params).toEqual({ '.id': '*S', 'available-from': '10.0.0.0/8,192.168.0.0/24' });
+    expect(r.steps.join(' ')).toMatch(/Limited api-ssl/);
+  });
+
+  it("keeps an allowed-addresses list already set on api-ssl", async () => {
+    const calls = clients({
+      8728: {
+        exec: async (cmd) => {
+          if (cmd === '/ip/service/print') return <Record<string, string>[]>[
+            { '.id': '*A', name: 'api', port: '8728', address: '10.0.0.0/8', disabled: 'false' },
+            { '.id': '*S', name: 'api-ssl', port: '8729', address: '172.16.0.0/12', disabled: 'false', certificate: 'mycert' },
+          ];
+          if (cmd === '/certificate/print') return [{ '.id': '*M', name: 'mycert', 'private-key': 'true' }];
+          return [];
+        },
+      },
+    });
+    await enableApiSsl(device);
+    expect(calls.some((c) => c.cmd === '/ip/service/set')).toBe(false);
+  });
+
   it('stays on the plain API when the TLS login fails, and says why', async () => {
     clients({
       8728: {

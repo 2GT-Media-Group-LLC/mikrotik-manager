@@ -729,6 +729,10 @@ export const devicesApi = {
   setServiceDisabled: (id: number, serviceId: string, disabled: boolean, confirmLockout = false) =>
     api.put<Record<string, string>[]>(`/devices/${id}/services/${encodeURIComponent(serviceId)}`,
       { disabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
+  // Which addresses a service accepts connections from; empty = any (#192).
+  setServiceAllowedFrom: (id: number, serviceId: string, allowedFrom: string, confirmLockout = false) =>
+    api.put<{ services: Record<string, string>[] }>(`/devices/${id}/services/${encodeURIComponent(serviceId)}`,
+      { allowed_from: allowedFrom, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
   listSecuritySuppressions: () =>
     api.get<SecuritySuppression[]>('/devices/security/suppressions'),
   suppressSecurityCheck: (check_id: string, device_id: number | null, reason?: string) =>

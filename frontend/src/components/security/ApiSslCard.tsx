@@ -5,6 +5,7 @@ import { devicesApi, type ApiSslResult } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import type { Device } from '../../types';
 import clsx from 'clsx';
+import { unmutedForApiSslNotice } from '../../utils/apiSslNotice';
 
 const API_SSL_PORT = 8729;
 
@@ -27,7 +28,14 @@ export default function ApiSslCard() {
     queryFn: () => devicesApi.list().then((r) => r.data),
     staleTime: 60_000,
   });
-  const all = devices as Device[];
+  // The card is the same advice as the "connects over the plain API" check,
+  // so it honours that check's mutes (#194): muted fleet-wide, the card goes;
+  // muted on a device, that device isn't counted.
+  const { data: suppressions = [] } = useQuery({
+    queryKey: ['security-suppressions'],
+    queryFn: () => devicesApi.listSecuritySuppressions().then((r) => r.data),
+  });
+  const { mutedFleetWide, devices: all } = unmutedForApiSslNotice(devices as Device[], suppressions);
   const plain = all.filter((d) => d.api_port !== API_SSL_PORT);
 
   const switchOne = async (d: Device): Promise<void> => {
@@ -64,8 +72,9 @@ export default function ApiSslCard() {
   const shown = all.filter((d) => d.api_port !== API_SSL_PORT || outcomes[d.id]);
   const [expanded, setExpanded] = useState(false);
 
-  // Only a prompt to act: nothing is shown while every device is on API-SSL.
-  if (shown.length === 0) return null;
+  // Only a prompt to act: nothing is shown while every device is on API-SSL,
+  // or once the advice has been muted for the whole fleet.
+  if (shown.length === 0 || mutedFleetWide) return null;
 
   const PREVIEW = 5;
   const visible = expanded ? shown : shown.slice(0, PREVIEW);

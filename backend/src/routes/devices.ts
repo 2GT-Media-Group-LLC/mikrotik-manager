@@ -47,6 +47,7 @@ import { parseBandList, uplinkAnchor, totalBandwidthMhz, type LteBandInfo } from
 import { fluxString } from '@influxdata/influxdb-client';
 import { upgradeDecision } from '../utils/firmwarePlan';
 import { sshHostCheck, explainSshError } from '../services/sshHostCheck';
+import { parseAllowedList, configuredServices, allowedFromKey, managerPeer, addressAllowed } from '../utils/ipServices';
 
 const router = Router();
 router.use(requireAuth);
@@ -1276,6 +1277,7 @@ router.get('/:id/services', async (req, res) => {
 });
 
 router.put('/:id/services/:serviceId', requireWrite, async (req, res) => {
+  if (req.body.allowed_from !== undefined) return setServiceAllowedFrom(req, res);
   if (typeof req.body.disabled !== 'boolean') return res.status(400).json({ error: 'disabled (boolean) is required' });
 
   const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
@@ -1314,6 +1316,63 @@ router.put('/:id/services/:serviceId', requireWrite, async (req, res) => {
     }
   );
 });
+
+/**
+ * Change which addresses a service accepts connections from (#192). On the
+ * service the manager connects through, a list that leaves out the manager's
+ * own address is refused: it would cut the manager off at once. Change Guard
+ * still undoes the change if the manager loses the device anyway.
+ */
+async function setServiceAllowedFrom(req: Request, res: Response) {
+  const parsed = parseAllowedList(req.body.allowed_from);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const mgmtService = deviceRow.api_port === 8729 ? 'api-ssl' : 'api';
+
+  let key: 'available-from' | 'address';
+  const collector = new DeviceCollector(deviceRow);
+  try {
+    await collector.connect();
+    const rows = await collector.getServicesWithConnections();
+    const target = configuredServices(rows).find((s) => s['.id'] === req.params.serviceId);
+    if (!target) return res.status(404).json({ error: 'Service not found on the device' });
+    key = allowedFromKey(target);
+    if (target['name'] === mgmtService && parsed.list.length > 0) {
+      const peer = managerPeer(rows, mgmtService, collector.apiLocalPort());
+      if (!peer) {
+        return res.status(409).json({
+          lockout: true,
+          reason: `'${mgmtService}' is the service MikroTik Manager uses to reach this device, and the manager ` +
+            `couldn't tell which address the device sees it connecting from, so it can't check this list keeps it in.`,
+        });
+      }
+      if (!addressAllowed(peer, parsed.list)) {
+        return res.status(409).json({
+          lockout: true,
+          reason: `The device sees MikroTik Manager connecting from ${peer}, which this list leaves out. ` +
+            `'${mgmtService}' is the service the manager uses, so saving it would cut the manager off. Add ${peer} or its subnet.`,
+        });
+      }
+    }
+  } catch (err) {
+    return res.status(502).json({ error: (err as Error).message });
+  } finally {
+    collector.disconnect();
+  }
+
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    { kind: 'service.allowed-from', summary: `Set allowed addresses on IP service to ${parsed.list.join(', ') || 'any'}` },
+    async (c) => {
+      await c.setServiceAllowedFrom(req.params.serviceId, key, parsed.list);
+      return { services: await c.getServices() };
+    }
+  );
+}
 
 // ─── Device identity (certificate and host key pinning, outside review P1-4) ──
 

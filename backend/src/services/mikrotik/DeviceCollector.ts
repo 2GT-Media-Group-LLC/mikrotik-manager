@@ -58,6 +58,7 @@ import { registerPollSession } from '../../utils/pollJobContext';
 import { translateToWifiParams } from './wifiParams';
 import { toV7FilterRule } from './routeFilter';
 import { usesRemoteLogFormat, toSyslogActionParams } from './syslogAction';
+import { configuredServices } from '../../utils/ipServices';
 import { planNtpWrites, isLegacyClient, legacyServerList, type NtpForm } from './ntpSettings';
 
 /** A RouterOS property name: lower-case words joined by '-' or '.', never '.id'. */
@@ -3414,8 +3415,24 @@ export class DeviceCollector {
 
   // ─── IP Services (for security-posture audit + hardening) ───────────────────
 
+  /** The configured services, without the live-connection rows RouterOS also prints (#192). */
   async getServices(): Promise<Record<string, string>[]> {
+    return configuredServices(await this.getServicesWithConnections());
+  }
+
+  /** Every /ip/service row, live connections included. */
+  async getServicesWithConnections(): Promise<Record<string, string>[]> {
     return this.client.execute('/ip/service/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+  }
+
+  /** The local TCP port of this collector's own API connection. */
+  apiLocalPort(): number | undefined {
+    return this.client.localPort ?? undefined;
+  }
+
+  /** Set a service's allowed addresses (empty = any), under this version's property name. */
+  async setServiceAllowedFrom(id: string, key: 'available-from' | 'address', list: string[]): Promise<void> {
+    await this.client.execute('/ip/service/set', { '.id': id, [key]: list.join(',') });
   }
 
   async setServiceDisabled(id: string, disabled: boolean): Promise<void> {

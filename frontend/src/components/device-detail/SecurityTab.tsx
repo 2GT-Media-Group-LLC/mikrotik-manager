@@ -39,8 +39,9 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
     queryKey: ['services', deviceId],
     queryFn: () => devicesApi.getServices(deviceId).then(r => r.data as Row[]),
   });
-  // Some devices report duplicate /ip/service rows (e.g. api twice) — show one per name.
-  const services = Array.from(new Map(servicesRaw.map(s => [s.name ?? s['.id'], s])).values());
+  // The backend drops the live-connection rows RouterOS also prints (#192);
+  // one row per name is a guard against anything left.
+  const services = Array.from(new Map(servicesRaw.filter(s => s.dynamic !== 'true').map(s => [s.name ?? s['.id'], s])).values());
   // The RouterOS service the platform connects through — never let it be
   // disabled from here, or MikroTik Manager loses control of the device.
   const { data: device } = useQuery({
@@ -72,6 +73,27 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
   const suppressionFor = (checkId: string) =>
     suppressions.find(s => s.check_id === checkId && s.device_id === deviceId)
     ?? suppressions.find(s => s.check_id === checkId && s.device_id === null);
+
+  // Editing a service's allowed addresses (#192). RouterOS 7.24 calls the
+  // field available-from; older versions call it address.
+  const [editingSvc, setEditingSvc] = useState<{ id: string; value: string } | null>(null);
+  const allowedFromOf = (s: Row) => ((s['available-from'] ?? s.address ?? '') as string)
+    .split(',').map(x => x.trim()).filter(Boolean);
+  const setAllowed = useMutation({
+    meta: { inlineError: true },
+    mutationFn: ({ id, value, confirm = false }: { id: string; value: string; confirm?: boolean }) =>
+      devicesApi.setServiceAllowedFrom(deviceId, id, value, confirm),
+    onSuccess: () => { invalidate(); setLockout(null); setEditingSvc(null); setServiceError(''); },
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => setAllowed.mutate({ ...vars, confirm: true }) });
+        return;
+      }
+      const r = (err as { response?: { data?: { reason?: string; error?: string } } })?.response?.data;
+      setServiceError(r?.reason || r?.error || 'Failed to update the allowed addresses');
+    },
+  });
 
   const toggleSvc = useMutation({
     mutationFn: ({ id, disabled, confirm = false }: { id: string; disabled: boolean; confirm?: boolean }) =>
@@ -271,7 +293,27 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                         {s.name}{isMgmt && <span className="ml-1.5 text-[10px] font-normal text-blue-500" title="MikroTik Manager connects through this service">(managed via)</span>}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{s.port || '—'}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{s.address || 'any'}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">
+                        {editingSvc?.id === s['.id'] ? (
+                          <form className="flex items-center gap-1.5"
+                            onSubmit={(e) => { e.preventDefault(); setAllowed.mutate({ id: s['.id'], value: editingSvc.value }); }}>
+                            <input autoFocus className="input py-1 text-xs font-mono w-56" value={editingSvc.value}
+                              placeholder="any address (e.g. 10.0.0.0/8, 192.168.1.0/24)"
+                              onChange={(e) => setEditingSvc({ id: s['.id'], value: e.target.value })} />
+                            <button type="submit" disabled={setAllowed.isPending} className="btn-primary text-xs px-2 py-1">Save</button>
+                            <button type="button" onClick={() => setEditingSvc(null)} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-slate-300">Cancel</button>
+                          </form>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5">
+                            {allowedFromOf(s).join(', ') || 'any'}
+                            {canWrite && (
+                              <button type="button" title="Change which addresses may connect"
+                                onClick={() => { setServiceError(''); setEditingSvc({ id: s['.id'], value: allowedFromOf(s).join(', ') }); }}
+                                className="text-blue-600 dark:text-blue-400 hover:underline font-sans">edit</button>
+                            )}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">
                         <span className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
                           enabled ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400')}>
@@ -287,7 +329,10 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                             </span>
                           ) : (
                             <button onClick={() => toggleSvc.mutate({ id: s['.id'], disabled: enabled })} disabled={toggleSvc.isPending}
-                              className="text-xs text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 ml-auto">
+                              className={clsx('text-xs font-medium flex items-center gap-1 ml-auto px-2 py-1 rounded border transition-colors disabled:opacity-50',
+                                enabled
+                                  ? 'border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20'
+                                  : 'border-green-300 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/20')}>
                               {enabled ? <><Lock className="w-3 h-3" />Disable</> : <><Check className="w-3 h-3" />Enable</>}
                             </button>
                           )}
