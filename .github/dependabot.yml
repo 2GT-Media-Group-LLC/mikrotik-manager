@@ -36,6 +36,17 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    # Digest and minor/patch updates only for the databases. A major version
+    # can't be taken by bumping the tag: Postgres 18 can't open a 15 data
+    # directory without pg_upgrade (and moved its data path), and Redis and
+    # InfluxDB majors change behaviour. Those are planned upgrades, not PRs.
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "redis"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "influxdb"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions workflow dependencies (pinned by commit SHA)
   - package-ecosystem: "github-actions"
