@@ -208,6 +208,7 @@ export default function FirmwarePage() {
   });
 
   const createRollout = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => firmwareApi.createRollout({
       name: rolloutName.trim() || `RouterOS upgrade ${new Date().toISOString().slice(0, 10)}`,
       halt_on_failure: haltOnFailure,
@@ -520,7 +521,11 @@ export default function FirmwarePage() {
             )}
             <div className="flex items-center gap-3">
               <button className="btn-primary flex items-center gap-2" disabled={createRollout.isPending}
-                onClick={() => createRollout.mutate()}>
+                onClick={() => {
+                  // Upgrades and reboots devices, so it asks first (U10).
+                  if (!scheduleAt && !confirm(`Start upgrading ${selectedCount} device${selectedCount !== 1 ? 's' : ''} now? Each one reboots.`)) return;
+                  createRollout.mutate();
+                }}>
                 {createRollout.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
                 {scheduleAt ? 'Schedule rollout' : 'Start rollout now'} ({selectedCount} device{selectedCount !== 1 ? 's' : ''})
               </button>

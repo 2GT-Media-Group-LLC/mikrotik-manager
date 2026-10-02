@@ -105,5 +105,5 @@ ON CONFLICT (controller_device_id, ros_id) DO NOTHING;
 COMMIT;
 
 SELECT 'seeded' AS status,
-       (SELECT count(*) FROM devices WHERE name LIKE 'fixture-%') AS devices,
+       (SELECT count(*) FROM devices WHERE name LIKE 'fixture-%' AND name NOT LIKE 'fixture-lte-%') AS devices,
        (SELECT count(*) FROM capsman_radios) AS radios;

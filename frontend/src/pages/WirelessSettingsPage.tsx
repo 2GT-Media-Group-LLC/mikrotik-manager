@@ -5,7 +5,7 @@ import {
   Eye, EyeOff, CheckCircle, XCircle, Power, ScanLine, Radio,
 } from 'lucide-react';
 import { wirelessApi, settingsApi } from '../services/api';
-import { useCanWrite } from '../hooks/useCanWrite';
+import { useCanWrite, useIsFleetAdmin } from '../hooks/useCanWrite';
 import { useGuardedWrite, GuardedWriteUi } from '../components/ChangeGuardDialog';
 import type { WirelessAP } from '../types';
 import clsx from 'clsx';
@@ -842,6 +842,7 @@ function APScanSettings({ canWrite }: { canWrite: boolean }) {
 
 export default function WirelessSettingsPage() {
   const canWrite = useCanWrite();
+  const isFleetAdmin = useIsFleetAdmin();
   const qc = useQueryClient();
   const [selectedApId, setSelectedApId] = useState<number | null>(null);
 
@@ -1094,10 +1095,11 @@ export default function WirelessSettingsPage() {
       )}
 
       {/* ── Spectral Scan Schedule ───────────────────────────────────── */}
-      <SpectralScanSettings canWrite={canWrite} />
+      {/* The schedule is a platform setting: admins only on the server (U10). */}
+      <SpectralScanSettings canWrite={isFleetAdmin} />
 
       {/* ── AP Scan Schedule ─────────────────────────────────────────── */}
-      <APScanSettings canWrite={canWrite} />
+      <APScanSettings canWrite={isFleetAdmin} />
 
       {/* Modals */}
       {ssidModal.open && selectedApId && (

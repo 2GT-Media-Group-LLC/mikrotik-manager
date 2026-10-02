@@ -73,8 +73,30 @@ async function runArpScan(): Promise<Record<string, string>> {
 export async function buildServerArpMap(): Promise<Record<string, string>> {
   const [passive, active] = await Promise.all([
     readKernelArpCache(),
-    runArpScan(),
+    sharedArpScan(),
   ]);
   // Passive cache takes precedence over scan (it's live kernel state)
   return { ...active, ...passive };
+}
+
+/**
+ * One arp-scan shared by every device's neighbour poll for a few minutes
+ * (outside review J13). Each slow poll of each device used to start its own,
+ * so a large fleet ran several 12-second scans a second over the same subnet,
+ * for a result that doesn't change between them. Concurrent callers share the
+ * scan in progress.
+ */
+const ARP_SCAN_TTL_MS = 5 * 60_000;
+let arpScanCache: { at: number; result: Promise<Record<string, string>> } | null = null;
+
+function sharedArpScan(now = Date.now()): Promise<Record<string, string>> {
+  if (!arpScanCache || now - arpScanCache.at > ARP_SCAN_TTL_MS) {
+    arpScanCache = { at: now, result: runArpScan() };
+  }
+  return arpScanCache.result;
+}
+
+/** For tests. */
+export function _resetArpScanCache(): void {
+  arpScanCache = null;
 }

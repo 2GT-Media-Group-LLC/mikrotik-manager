@@ -1,3 +1,4 @@
+import { useCanWrite } from '../hooks/useCanWrite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -532,6 +533,8 @@ function buildGraph(
 export default function TopologyPage() {
   const theme = useThemeStore((s) => s.theme);
   const queryClient = useQueryClient();
+  // Discover and manual links need write access on the server (U10).
+  const canWrite = useCanWrite();
   const [connectMode, setConnectMode] = useState(false);
   const pendingEdgeRef = useRef<{ from_device_id: number; to_device_id: number } | null>(null);
 
@@ -565,7 +568,8 @@ export default function TopologyPage() {
   const deleteManualLinkMutate = deleteManualLinkMutation.mutate;
   const handleDeleteManual = useCallback((edgeId: string) => {
     const id = parseInt(edgeId);
-    if (!isNaN(id)) deleteManualLinkMutate(id);
+    // Confirmed first: a manual link can't be rebuilt from discovery (U10).
+    if (!isNaN(id) && window.confirm('Delete this manually drawn link?')) deleteManualLinkMutate(id);
   }, [deleteManualLinkMutate]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -634,7 +638,7 @@ export default function TopologyPage() {
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Network Topology</h1>
-        <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
+        {canWrite && <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
           <button
             onClick={() => setConnectMode((v) => !v)}
             className={clsx(
@@ -656,7 +660,7 @@ export default function TopologyPage() {
             <RefreshCw className={clsx('w-4 h-4', discoverMutation.isPending && 'animate-spin')} />
             Discover
           </button>
-        </div>
+        </div>}
       </div>
 
       {/* Connect mode hint */}
@@ -699,7 +703,7 @@ export default function TopologyPage() {
               edges={edges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
-              onConnect={connectMode ? onConnect : undefined}
+              onConnect={connectMode && canWrite ? onConnect : undefined}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView

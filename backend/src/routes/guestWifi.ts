@@ -141,6 +141,21 @@ router.post('/vouchers', requireWrite, async (req: Request, res: Response) => {
   };
   const n = Math.min(Math.max(parseInt(String(count ?? 1), 10) || 1, 1), 100);
 
+  // Fractional limits are honoured, not floored (outside review C7): 1.5 h is
+  // 90 minutes and 0.5 MB is 512 KiB, where they used to become 1 h and 0.
+  const limit = (v: unknown): number | null | 'bad' => {
+    if (v === undefined || v === null || v === '' || v === 0) return null;
+    const x = Number(v);
+    return Number.isFinite(x) && x > 0 ? x : 'bad';
+  };
+  const hours = limit(durationHours);
+  const megabytes = limit(dataCapMB);
+  if (hours === 'bad' || megabytes === 'bad') {
+    return res.status(400).json({ error: 'Duration and data cap must be positive numbers, or left empty for no limit.' });
+  }
+  const uptimeSec = hours === null ? null : Math.max(1, Math.round(hours * 3600));
+  const capBytes = megabytes === null ? null : Math.max(1, Math.round(megabytes * 1024 * 1024));
+
   const result = await withDevice(req, res, async (c) => {
     const existing = new Set((await c.getHotspotUsers()).map(u => u['name']));
     const batch = new Date().toISOString().slice(0, 16).replace('T', ' ');
@@ -152,8 +167,8 @@ router.post('/vouchers', requireWrite, async (req: Request, res: Response) => {
       existing.add(code);
       const params: Record<string, string> = { name: code, comment: `voucher ${batch}` };
       if (userProfile) params['profile'] = userProfile;
-      if (durationHours && durationHours > 0) params['limit-uptime'] = `${Math.floor(durationHours)}h`;
-      if (dataCapMB && dataCapMB > 0) params['limit-bytes-total'] = String(Math.floor(dataCapMB) * 1024 * 1024);
+      if (uptimeSec !== null) params['limit-uptime'] = `${uptimeSec}s`;
+      if (capBytes !== null) params['limit-bytes-total'] = String(capBytes);
       await c.addHotspotUser(params);
       codes.push(code);
     }

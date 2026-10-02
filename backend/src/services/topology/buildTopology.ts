@@ -191,6 +191,17 @@ export function buildTopology(
   manualLinks: ManualLinkRow[],
   deviceMacs: { device_id: number; mac_address: string }[] = []
 ): TopologyGraph {
+  // Only devices in view (a site, or a site-limited account) may be drawn.
+  // A link to a device outside the view becomes an external neighbour rather
+  // than an edge to a node that isn't on the map; a link reported by a device
+  // outside the view is dropped (outside review J6).
+  const inView = new Set(devices.map((d) => d.id));
+  allLinks = allLinks
+    .filter((l) => l.from_device_id == null || inView.has(l.from_device_id))
+    .map((l) => (l.to_device_id != null && !inView.has(l.to_device_id)
+      ? { ...l, to_device_id: null, to_device_name: null, neighbor_identity: l.neighbor_identity ?? l.to_device_name }
+      : l));
+
   const amb = findAmbiguousIdentifiers(devices, allLinks);
   const neighborKey = makeNeighborKey();
 
@@ -227,7 +238,8 @@ export function buildTopology(
     if (!link.from_device_id) continue;
     const nk = neighborKey(link);
     if (!nk) continue;
-    const key = `${link.from_device_id}::${nk}`;
+    // Per port as well (J6): one neighbour seen on two ports is two cables.
+    const key = `${link.from_device_id}::${link.from_interface ?? ''}::${nk}`;
     const existing = bestByPair.get(key);
     if (!existing || protoRank(link.link_type) < protoRank(existing.link_type)) {
       bestByPair.set(key, link);
@@ -276,7 +288,19 @@ export function buildTopology(
     }
   }
 
+  // Coverage only silences sightings on ports that see several neighbours,
+  // where CDP and MNDP flooded across bridges are the likely source. A port
+  // that sees exactly one neighbour is a cable, and dropping it because some
+  // other device has LLDP to that neighbour hid real links (J6).
+  const neighboursOnPort = new Map<string, number>();
+  for (const l of links) {
+    if (l.link_type === 'lldp' || !l.from_device_id) continue;
+    const pk = `${l.from_device_id}::${l.from_interface ?? ''}`;
+    neighboursOnPort.set(pk, (neighboursOnPort.get(pk) ?? 0) + 1);
+  }
+
   const isLldpCovered = (link: LinkRow): boolean => {
+    if ((neighboursOnPort.get(`${link.from_device_id}::${link.from_interface ?? ''}`) ?? 0) < 2) return false;
     if (link.to_device_id && lldpCoveredDeviceIds.has(link.to_device_id)) return true;
     if (link.neighbor_mac && lldpCoveredMacs.has(link.neighbor_mac.toLowerCase())) return true;
     if (link.neighbor_address && lldpCoveredAddresses.has(normIp(link.neighbor_address))) return true;
@@ -286,32 +310,35 @@ export function buildTopology(
   links = links.filter((l) => l.link_type === 'lldp' || !isLldpCovered(l));
 
   // ── Step 4: Merge bidirectional LLDP pairs ─────────────────────────────────
+  // Per physical link, not per device pair (J6): two cables between the same
+  // switches are two links, and filling one cable's missing port from the
+  // other's report paired ports that aren't connected. A reverse report
+  // matches only if its ports agree with the forward one.
   const canonicalLldp: LinkRow[] = [];
-  const mergedPairs = new Set<string>();
+  const used = new Set<LinkRow>();
+  // LLDP gives the far end's port as "bridge/sfp28-2" or plain "sfp28-2";
+  // the port is what is compared.
+  const portOf = (v: string) => v.slice(v.lastIndexOf('/') + 1);
+  const agrees = (a: string | null, b: string | null) => !a || !b || portOf(a) === portOf(b);
 
   for (const link of links) {
+    if (used.has(link)) continue;
     if (link.link_type !== 'lldp' || !link.to_device_id) {
       canonicalLldp.push(link);
       continue;
     }
-    const lo = Math.min(link.from_device_id!, link.to_device_id);
-    const hi = Math.max(link.from_device_id!, link.to_device_id);
-    const pairKey = `${lo}:${hi}`;
+    used.add(link);
+    const reverse = links.find((r) => !used.has(r) && r.link_type === 'lldp'
+      && r.from_device_id === link.to_device_id && r.to_device_id === link.from_device_id
+      && agrees(r.from_interface, link.to_interface) && agrees(r.to_interface, link.from_interface));
+    if (reverse) used.add(reverse);
 
-    if (mergedPairs.has(pairKey)) continue;
-    mergedPairs.add(pairKey);
-
-    const forward = link.from_device_id === lo ? link : links.find(
-      (r) => r.link_type === 'lldp' && r.from_device_id === lo && r.to_device_id === hi
-    );
-    const reverse = links.find(
-      (r) => r.link_type === 'lldp' && r.from_device_id === hi && r.to_device_id === lo
-    );
-
-    const canonical = forward ?? link;
-    if (!canonical.to_interface && reverse?.from_interface) canonical.to_interface = reverse.from_interface;
-    if (!canonical.from_interface && reverse?.to_interface) canonical.from_interface = reverse.to_interface;
-
+    // The lower device id is the canonical "from", as before.
+    const forward = reverse && reverse.from_device_id! < link.from_device_id! ? reverse : link;
+    const other = forward === link ? reverse : link;
+    const canonical = { ...forward };
+    if (!canonical.to_interface && other?.from_interface) canonical.to_interface = other.from_interface;
+    if (!canonical.from_interface && other?.to_interface) canonical.from_interface = other.to_interface;
     canonicalLldp.push(canonical);
   }
 
@@ -389,24 +416,31 @@ export function buildTopology(
 
   for (const [root, pks] of segGroups) {
     const segId = `seg-${root.replace(/[^a-z0-9]/gi, '')}`;
-    const srcDevPorts = new Map<string, string>();
+    // Every port into the segment, and every managed device behind it (J6):
+    // a map keyed by device kept one port per device, and managed devices
+    // reached through the segment were counted but never connected to it.
+    const srcDevPorts: Array<[string, string]> = [];
     const allDevIds = new Set<string>();
+    const destinations = new Map<string, string>();
     const extKeys = new Set<string>();
 
     for (const pk of pks) {
       const colonIdx = pk.indexOf('::');
       const devId = pk.slice(0, colonIdx);
       const port = pk.slice(colonIdx + 2);
-      srcDevPorts.set(devId, port);
+      srcDevPorts.push([devId, port]);
       allDevIds.add(devId);
       for (const link of portGroupMap.get(pk)!) {
-        if (link.to_device_id) allDevIds.add(String(link.to_device_id));
-        else {
+        if (link.to_device_id) {
+          allDevIds.add(String(link.to_device_id));
+          if (!destinations.has(String(link.to_device_id))) destinations.set(String(link.to_device_id), link.to_interface ?? '');
+        } else {
           const k = neighborKey(link);
           if (k) extKeys.add(k);
         }
       }
     }
+    const sourceIds = new Set(srcDevPorts.map(([d]) => d));
 
     segNodes.push({
       id: segId,
@@ -418,6 +452,9 @@ export function buildTopology(
     });
 
     for (const [devId, port] of srcDevPorts) segConns.push({ src: devId, dst: segId, port });
+    for (const [devId, port] of destinations) {
+      if (!sourceIds.has(devId)) segConns.push({ src: devId, dst: segId, port });
+    }
     // Direct key lookup — Step 5 keys the map by the same function, so no
     // reconstruct-and-compare guesswork.
     for (const k of extKeys) {

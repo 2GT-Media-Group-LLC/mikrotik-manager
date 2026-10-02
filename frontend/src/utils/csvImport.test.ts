@@ -172,3 +172,25 @@ describe('parseDeviceCsv', () => {
     expect(detectDelimiter('ip')).toBe(',');
   });
 });
+
+// Outside review U9.
+describe('CSV import edge cases', () => {
+  it('keeps a quoted multi-line note in one row', () => {
+    const r = parseDeviceCsv('ip,username,password,notes\n10.0.0.1,admin,secret1,"rack 3\nshelf 2"\n10.0.0.2,admin,secret2,ok\n', []);
+    expect(r.rows).toHaveLength(2);
+    expect(r.rows[0].item?.notes).toBe('rack 3\nshelf 2');
+    expect(r.rows[1].line).toBe(4); // the second record starts on line 4
+  });
+
+  it('keeps spaces that are part of a password', () => {
+    const r = parseDeviceCsv('ip,username,password\n10.0.0.1, admin , pass word \n', []);
+    expect(r.rows[0].item?.api_username).toBe('admin');
+    expect(r.rows[0].item?.api_password).toBe(' pass word ');
+  });
+
+  it('refuses two columns that mean the same field', () => {
+    const r = parseDeviceCsv('ip,address,username,password\n10.0.0.1,10.0.0.9,admin,x\n', []);
+    expect(r.rows).toHaveLength(0);
+    expect(r.fileErrors.join(' ')).toMatch(/"ip" and "address" mean the same thing/);
+  });
+});

@@ -6,13 +6,18 @@ import {
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { apiErrorMessage } from '../utils/apiError';
 
 type NS = Record<string, string>;
 
 // ─── DNS record types ─────────────────────────────────────────────────────────
 
-const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'PTR', 'TXT', 'SRV'] as const;
+// RouterOS's static record types (it has no PTR). Each keeps its target in
+// its own property (outside review C7): MX in mx-exchange, NS in ns, SRV in
+// srv-target, FWD in forward-to.
+const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SRV', 'FWD'] as const;
 type RecordType = typeof RECORD_TYPES[number];
+const TARGET_PROP: Partial<Record<RecordType, string>> = { MX: 'mx-exchange', NS: 'ns', SRV: 'srv-target', FWD: 'forward-to' };
 
 // ─── Static record form modal ─────────────────────────────────────────────────
 
@@ -25,20 +30,32 @@ interface RecordFormProps {
 function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
   const qc = useQueryClient();
   const [name, setName] = useState(existing?.['name'] || '');
-  const [type, setType] = useState<RecordType>((existing?.['type'] as RecordType) || 'A');
-  const [address, setAddress] = useState(existing?.['address'] || '');
+  const initialType = (existing?.['type'] as RecordType) || 'A';
+  const [address, setAddress] = useState(existing?.[TARGET_PROP[initialType] ?? 'address'] || '');
+  const [mxPreference, setMxPreference] = useState(existing?.['mx-preference'] || '10');
+  const [srvPort, setSrvPort] = useState(existing?.['srv-port'] || '');
+  const [srvPriority, setSrvPriority] = useState(existing?.['srv-priority'] || '0');
+  const [srvWeight, setSrvWeight] = useState(existing?.['srv-weight'] || '0');
   const [cname, setCname] = useState(existing?.['cname'] || '');
+  const [type, setType] = useState<RecordType>(initialType);
   const [text, setText] = useState(existing?.['text'] || '');
   const [ttl, setTtl] = useState(existing?.['ttl'] || '');
   const [disabled, setDisabled] = useState(existing?.['disabled'] === 'true');
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => {
       const body: NS = { name, type };
       if (type === 'A' || type === 'AAAA') body['address'] = address;
       else if (type === 'CNAME') body['cname'] = cname;
       else if (type === 'TXT') body['text'] = text;
-      else body['address'] = address; // MX, NS, PTR, SRV share address field
+      else body[TARGET_PROP[type] ?? 'address'] = address;
+      if (type === 'MX') body['mx-preference'] = mxPreference || '10';
+      if (type === 'SRV') {
+        body['srv-port'] = srvPort;
+        body['srv-priority'] = srvPriority || '0';
+        body['srv-weight'] = srvWeight || '0';
+      }
       if (ttl) body['ttl'] = ttl;
       else if (existing) body['ttl'] = '';   // back to the default TTL on the device
       body['disabled'] = disabled ? 'yes' : 'no';
@@ -50,15 +67,18 @@ function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ns-dns', deviceId] }); onClose(); },
   });
 
-  const valueLabel = type === 'CNAME' ? 'CNAME Target' : type === 'TXT' ? 'Text' : 'Address / Target';
+  const valueLabel = type === 'CNAME' ? 'CNAME Target' : type === 'TXT' ? 'Text'
+    : type === 'MX' ? 'Mail server' : type === 'NS' ? 'Name server' : type === 'SRV' ? 'Target host'
+    : type === 'FWD' ? 'Forward to (DNS server)' : 'Address';
   const valuePlaceholder =
     type === 'A' ? '192.168.1.10' :
     type === 'AAAA' ? '2001:db8::1' :
     type === 'CNAME' ? 'alias.example.com' :
     type === 'TXT' ? '"v=spf1 include:example.com ~all"' :
-    type === 'MX' || type === 'NS' ? 'mail.example.com' :
-    type === 'PTR' ? 'hostname.example.com' :
-    '_sip._tcp.example.com';
+    type === 'MX' ? 'mail.example.com' :
+    type === 'NS' ? 'ns1.example.com' :
+    type === 'FWD' ? '10.0.0.53' :
+    'sip.example.com';
 
   const valueField = type === 'TXT'
     ? <textarea className="input w-full h-20 resize-y" value={text} onChange={e => setText(e.target.value)} placeholder={valuePlaceholder} />
@@ -92,6 +112,28 @@ function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
             <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">{valueLabel} *</label>
             {valueField}
           </div>
+          {type === 'MX' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Preference</label>
+              <input className="input w-full" type="number" min={0} max={65535} value={mxPreference} onChange={e => setMxPreference(e.target.value)} />
+            </div>
+          )}
+          {type === 'SRV' && (
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Port *</label>
+                <input className="input w-full" type="number" min={0} max={65535} value={srvPort} onChange={e => setSrvPort(e.target.value)} placeholder="5060" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Priority</label>
+                <input className="input w-full" type="number" min={0} max={65535} value={srvPriority} onChange={e => setSrvPriority(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Weight</label>
+                <input className="input w-full" type="number" min={0} max={65535} value={srvWeight} onChange={e => setSrvWeight(e.target.value)} />
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">TTL</label>
@@ -108,13 +150,13 @@ function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
           </div>
         </div>
         <div className="px-5 pb-4 flex items-center gap-3">
-          <button onClick={() => save.mutate()} disabled={!name || save.isPending}
+          <button onClick={() => save.mutate()} disabled={!name || (type === 'SRV' && !srvPort) || save.isPending}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
             <Check className="w-3.5 h-3.5" />
             {save.isPending ? 'Saving…' : 'Save'}
           </button>
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
-          {save.isError && <span className="text-xs text-red-500">{(save.error as Error).message}</span>}
+          {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
       </div>
     </div>
@@ -179,6 +221,7 @@ export default function NetworkServicesDNSPage() {
   });
 
   const saveSettings = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => networkServicesApi.setDns(deviceId, {
       servers: serversInput, allow_remote_requests: allowRemote,
       max_udp_packet_size: maxUdpSize, cache_size: cacheSize, cache_max_ttl: cacheMaxTtl,
@@ -333,7 +376,7 @@ export default function NetworkServicesDNSPage() {
                     setMaxUdpSize(s['max-udp-packet-size'] || ''); setCacheSize(s['cache-size'] || '');
                     setCacheMaxTtl(s['cache-max-ttl'] || ''); setSettingsDirty(false);
                   }} className="text-sm text-gray-500 hover:text-gray-700">Discard</button>
-                  {saveSettings.isError && <span className="text-xs text-red-500">{(saveSettings.error as Error).message}</span>}
+                  {saveSettings.isError && <span className="text-xs text-red-500">{apiErrorMessage(saveSettings.error)}</span>}
                 </div>
               )}
               {canWrite && saveSettings.isSuccess && !settingsDirty && (
@@ -373,7 +416,7 @@ export default function NetworkServicesDNSPage() {
                   <tbody>
                     {statics.map((r, i) => {
                       const isDisabled = r['disabled'] === 'true';
-                      const value = r['address'] || r['cname'] || r['text'] || '—';
+                      const value = r['address'] || r['cname'] || r['text'] || r['mx-exchange'] || r['ns'] || r['srv-target'] || r['forward-to'] || '—';
                       return (
                         <tr key={r['.id'] || i} className={clsx('border-b border-gray-100 dark:border-slate-800 transition-colors hover:bg-blue-50 dark:hover:bg-slate-700/40', i % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-gray-50 dark:bg-slate-800/40')}>
                           <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{r['name'] || '—'}</td>

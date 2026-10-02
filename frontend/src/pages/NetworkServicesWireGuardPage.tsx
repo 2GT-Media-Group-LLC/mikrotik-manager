@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useGuardedWrite, GuardedWriteUi } from '../components/ChangeGuardDialog';
+import { apiErrorMessage } from '../utils/apiError';
 
 type NS = Record<string, string>;
 
@@ -56,6 +57,7 @@ function IfaceForm({ deviceId, existing, onClose }: IfaceFormProps) {
   const [disabled, setDisabled]     = useState(existing?.['disabled'] === 'true');
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => {
       const body: NS = { name, 'listen-port': listenPort, mtu, disabled: disabled ? 'yes' : 'no' };
       return existing?.['.id']
@@ -104,7 +106,7 @@ function IfaceForm({ deviceId, existing, onClose }: IfaceFormProps) {
             <Check className="w-3.5 h-3.5" />{save.isPending ? 'Saving…' : 'Save'}
           </button>
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
-          {save.isError && <span className="text-xs text-red-500">{(save.error as Error).message}</span>}
+          {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
       </div>
     </div>
@@ -130,6 +132,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
   const [presharedKey, setPresharedKey] = useState('');
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => {
       const body: NS = {
         interface: ifaceName,
@@ -201,7 +204,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
             <Check className="w-3.5 h-3.5" />{save.isPending ? 'Saving…' : 'Save Peer'}
           </button>
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
-          {save.isError && <span className="text-xs text-red-500">{(save.error as Error).message}</span>}
+          {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
       </div>
     </div>

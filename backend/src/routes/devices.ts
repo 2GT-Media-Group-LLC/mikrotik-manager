@@ -1,3 +1,4 @@
+import { resolveAuth } from '../services/sshExec';
 import { Router, Request, Response } from 'express';
 import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
 import { devicePins, pendingIdentityChanges, trustNewIdentity, IDENTITY_KINDS } from '../services/identityPins';
@@ -423,30 +424,26 @@ router.patch('/:id/monitoring', requireWrite, async (req: Request, res: Response
 
 // PATCH /api/devices/:id/location — save physical location & rack info
 router.patch('/:id/location', requireWrite, async (req: Request, res: Response) => {
-  const { location_address, location_lat, location_lng, rack_name, rack_slot, notes } = req.body;
   const existing = await queryOne(`SELECT id FROM devices WHERE id = $1`, [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Device not found' });
 
-  await query(
-    `UPDATE devices SET
-       location_address = $1,
-       location_lat     = $2,
-       location_lng     = $3,
-       rack_name        = $4,
-       rack_slot        = $5,
-       notes            = $6,
-       updated_at       = NOW()
-     WHERE id = $7`,
-    [
-      location_address ?? null,
-      location_lat     ?? null,
-      location_lng     ?? null,
-      rack_name        ?? null,
-      rack_slot        ?? null,
-      notes            ?? null,
-      req.params.id,
-    ]
-  );
+  // Only the fields sent are changed (outside review C2). Every omitted field
+  // used to be set to null, so saving just the rack erased the coordinates
+  // and notes. Sending a field as null still clears it.
+  const fields = ['location_address', 'location_lat', 'location_lng', 'rack_name', 'rack_slot', 'notes'] as const;
+  const body = req.body as Record<string, unknown>;
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  for (const f of fields) {
+    if (!Object.prototype.hasOwnProperty.call(body, f)) continue;
+    params.push(new Map(Object.entries(body)).get(f) ?? null);
+    sets.push(`${f} = $${params.length}`);
+  }
+  if (sets.length > 0) {
+    params.push(req.params.id);
+    // Column names come from the fixed list above.
+    await query(`UPDATE devices SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`, params);
+  }
 
   const updated = await queryOne(
     `SELECT ${DEVICE_BASE_COLUMNS},
@@ -532,6 +529,12 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
   const ssh_username = preset ? preset.ssh_username : req.body.ssh_username;
   const ssh_password = preset ? preset.ssh_password : req.body.ssh_password;
 
+  // An empty username was stored as given and broke every later login, while
+  // the save reported success (outside review C1).
+  if (typeof api_username === 'string' && api_username.trim() === '') {
+    return res.status(400).json({ error: 'The API username cannot be empty.' });
+  }
+
   // If the user is changing the IP (or port / username / password), verify the
   // RouterOS API is still reachable with the new values before persisting —
   // otherwise we could silently brick the device record.
@@ -572,6 +575,10 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 
   const encPass = api_password ? encrypt(api_password) : existing.api_password_encrypted;
   const encSshPass = ssh_password ? encrypt(ssh_password) : null;
+  // Applying a preset replaces the SSH login wholesale, including clearing it
+  // when the preset has none (C1). Merging kept the old password with a new
+  // username, a pair that matches no account.
+  const replaceSsh = !!preset;
 
   await query(
     `UPDATE devices SET
@@ -579,12 +586,13 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
        ip_address=COALESCE($3,ip_address),
        api_port=COALESCE($4,api_port),
        api_username=COALESCE($5,api_username), api_password_encrypted=$6,
-       ssh_port=COALESCE($7,ssh_port), ssh_username=COALESCE($8,ssh_username),
-       ssh_password_encrypted=COALESCE($9,ssh_password_encrypted),
+       ssh_port=COALESCE($7,ssh_port),
+       ssh_username=CASE WHEN $13 THEN $8 ELSE COALESCE($8,ssh_username) END,
+       ssh_password_encrypted=CASE WHEN $13 THEN $9 ELSE COALESCE($9,ssh_password_encrypted) END,
        device_type=COALESCE($10,device_type), notes=COALESCE($11,notes),
        updated_at=NOW()
      WHERE id = $12`,
-    [name, nameLockedUpdate, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id]
+    [name, nameLockedUpdate, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id, replaceSsh]
   );
 
   // Unlocking asks to follow the router's identity again — resync promptly
@@ -1572,6 +1580,13 @@ router.get('/:id/ip-addresses', async (req: Request, res: Response) => {
   try {
     await collector.connect();
     const addresses = await collector.getIpAddresses();
+    // ?include=ipv6 adds the IPv6 addresses, for the Edit form's address
+    // picker (#178). Not by default: this list also backs the IPv4 address
+    // tab, whose add and remove act on /ip/address.
+    if (req.query.include === 'ipv6') {
+      const v6 = await collector.getIpv6Addresses();
+      return res.json([...addresses, ...v6.map((a) => ({ ...a, family: 'ipv6' }))]);
+    }
     return res.json(addresses);
   } finally {
     collector.disconnect();
@@ -2139,8 +2154,9 @@ function multiVlanRefusal(vlan: { vlan_id: number; bridge: string; vlan_ids: str
 // itself) may carry the management VLAN.
 router.post('/:id/vlans', requireWrite, async (req: Request, res: Response) => {
   const { bridge, vlan_id, tagged_ports = [], untagged_ports = [] } = req.body;
-  if (!bridge || !vlan_id || vlan_id < 1 || vlan_id > 4094) {
-    return res.status(400).json({ error: 'bridge and vlan_id (1-4094) are required' });
+  // A whole number: 10.5 used to pass and become VLAN 10 on the device (U14).
+  if (!bridge || !Number.isInteger(vlan_id) || vlan_id < 1 || vlan_id > 4094) {
+    return res.status(400).json({ error: 'bridge and vlan_id (a whole number, 1-4094) are required' });
   }
 
   await withGuardedChange(
@@ -2585,7 +2601,7 @@ router.post('/:id/lte/data-cap/:iface/send', requireWrite, async (req: Request, 
 
 // GET /api/devices/:id/lte/history — handovers, re-registrations and band changes
 router.get('/:id/lte/history', async (req: Request, res: Response) => {
-  const { range = '24h', limit = '200' } = req.query as { range?: string; limit?: string };
+  const { range = '24h', limit = '200', iface } = req.query as { range?: string; limit?: string; iface?: string };
   const windows: Record<string, string> = {
     '1h': '1 hour', '24h': '24 hours', '7d': '7 days', '30d': '30 days',
   };
@@ -2597,8 +2613,10 @@ router.get('/:id/lte/history', async (req: Request, res: Response) => {
       `SELECT interface_name, at, kind, detail, cell_id, enb_id, bands, rsrp, sinr
          FROM lte_cell_history
         WHERE device_id = $1 AND at > NOW() - $2::interval
+          AND ($4::text IS NULL OR interface_name = $4)
         ORDER BY at DESC LIMIT $3`,
-      [req.params.id, window, cap],
+      // One modem's history on a device with several (outside review U14).
+      [req.params.id, window, cap, iface ?? null],
     );
     res.json({ events });
   } catch (error) {
@@ -2636,15 +2654,17 @@ router.get('/:id/lte/dwell', async (req: Request, res: Response) => {
     // The state in force when the window opened. Without it, a link that changed
     // once yesterday would report a few minutes of dwell across seven days,
     // having silently dropped everything before the first change in range.
-    const prior = await queryOne<{
+    // Per modem (outside review J7): one modem's last state, not whichever
+    // modem's change came last.
+    const priors = await query<{
       interface_name: string; at: string; cell_id: string | null;
       enb_id: string | null; bands: string | null;
     }>(
-      `SELECT interface_name, at, cell_id, enb_id, bands
+      `SELECT DISTINCT ON (interface_name) interface_name, at, cell_id, enb_id, bands
          FROM lte_cell_history
         WHERE device_id = $1 AND at <= NOW() - $2::interval
           AND ($3::text IS NULL OR interface_name = $3)
-        ORDER BY at DESC LIMIT 1`,
+        ORDER BY interface_name, at DESC`,
       [req.params.id, window, iface ?? null]
     );
 
@@ -2658,9 +2678,13 @@ router.get('/:id/lte/dwell', async (req: Request, res: Response) => {
     const toEvent = (r: { at: string; cell_id: string | null; enb_id: string | null; bands: string | null }) =>
       ({ at: new Date(r.at), cellId: r.cell_id, enbId: r.enb_id, bands: r.bands });
 
-    const segments = buildSegments(
-      rows.map(toEvent), now, windowStart, prior ? toEvent(prior) : null
-    );
+    // Segments are built per modem: interleaving two modems' changes into one
+    // timeline cut each modem's stretches at the other's changes (J7).
+    const modems = new Set([...rows.map((r) => r.interface_name), ...priors.map((p) => p.interface_name)]);
+    const segments = [...modems].flatMap((m) => {
+      const prior = priors.find((p) => p.interface_name === m);
+      return buildSegments(rows.filter((r) => r.interface_name === m).map(toEvent), now, windowStart, prior ? toEvent(prior) : null);
+    });
     const measuredSeconds = segments.reduce((n, s) => n + s.seconds, 0);
 
     res.json({
@@ -2834,6 +2858,9 @@ router.post('/:id/test', requireWrite, async (req: Request, res: Response) => {
 // ─── Network Tools ─────────────────────────────────────────────────────────
 // Tools use a long read-timeout (120s) since ping/traceroute/ip-scan can take time.
 
+/** Devices with a packet capture in progress (C4). */
+const capturesRunning = new Set<number>();
+
 async function getToolDevice(id: string) {
   return queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]);
 }
@@ -2993,9 +3020,23 @@ router.post('/:id/tools/capture', requireWrite, async (req: Request, res: Respon
 
   const device = await getToolDevice(req.params.id);
   if (!device) return res.status(404).json({ error: 'Device not found' });
-  if (!device.ssh_username || !device.ssh_password_encrypted) {
-    return res.status(400).json({ error: 'SSH credentials required for packet capture. Add SSH username/password in device settings.' });
+
+  // The file comes back over SFTP with the device's SSH key when it has one,
+  // otherwise its password (outside review C4). It used to need the password,
+  // which a keyed device no longer accepts.
+  let sshLogin: Awaited<ReturnType<typeof resolveAuth>>;
+  try {
+    sshLogin = await resolveAuth(device);
+  } catch {
+    return res.status(400).json({ error: 'SSH credentials required for packet capture. Add an SSH login or deploy an SSH key.' });
   }
+
+  // One capture per device: the sniffer is a single shared tool on the device,
+  // so a second capture reconfigured and stopped the first (C4).
+  if (capturesRunning.has(device.id)) {
+    return res.status(409).json({ error: 'A packet capture is already running on this device. Try again when it finishes.' });
+  }
+  capturesRunning.add(device.id);
 
   const fileName = `cap-${Date.now()}`;
   const client = makeToolClient(device);
@@ -3008,6 +3049,12 @@ router.post('/:id/tools/capture', requireWrite, async (req: Request, res: Respon
     const setParams: Record<string, string> = { 'file-name': fileName, 'file-limit': '10240' };
     if (iface) setParams['filter-interface'] = iface;
     if (filter_ip) setParams['filter-ip-address'] = filter_ip;
+    // Filters not given this time are cleared: the sniffer keeps its settings,
+    // so a capture meant to be unfiltered inherited the last one's (C4). The
+    // sniffer menu has no `unset`; an empty value is how it clears one.
+    for (const name of ['filter-interface', 'filter-ip-address'] as const) {
+      if (!setParams[name]) setParams[name] = '';
+    }
     await client.execute('/tool/sniffer/set', setParams);
     console.log(`[capture] starting ${captureSec}s capture`);
     await client.execute('/tool/sniffer/start');
@@ -3066,8 +3113,8 @@ router.post('/:id/tools/capture', requireWrite, async (req: Request, res: Respon
       ssh.connect({
         host: device.ip_address,
         port: device.ssh_port ?? 22,
-        username: device.ssh_username!,
-        password: decrypt(device.ssh_password_encrypted!),
+        username: sshLogin.username,
+        ...sshLogin.auth,
         readyTimeout: 10_000,
         ...sshHostCheck(device.ip_address, device.ssh_port ?? 22),
       });
@@ -3080,6 +3127,8 @@ router.post('/:id/tools/capture', requireWrite, async (req: Request, res: Respon
     client.disconnect();
     console.error('[capture]', (err as Error).message);
     return res.status(500).json({ error: (err as Error).message });
+  } finally {
+    capturesRunning.delete(device.id);
   }
 });
 
@@ -3122,12 +3171,23 @@ router.post('/:id/tools/btest', requireWrite, async (req: Request, res: Response
     (testSec + 15) * 1000
   );
 
+  let serverPrior: { enabled: string; authenticate: string } | null = null;
   try {
-    // Enable bandwidth-test server on target device before running test
+    // Enable bandwidth-test server on target device before running test. Its
+    // prior state is recorded first and put back afterwards (outside review
+    // C5): a server the operator had enabled used to be switched off.
     if (serverClient) {
-      await serverClient.connect();
-      await serverClient.execute('/tool/bandwidth-server/set', { enabled: 'yes', authenticate: 'yes' });
-      serverClient.disconnect();
+      try {
+        await serverClient.connect();
+        const [prior] = await serverClient.execute('/tool/bandwidth-server/print');
+        serverPrior = {
+          enabled: prior?.['enabled'] === 'true' || prior?.['enabled'] === 'yes' ? 'yes' : 'no',
+          authenticate: prior?.['authenticate'] === 'false' || prior?.['authenticate'] === 'no' ? 'no' : 'yes',
+        };
+        await serverClient.execute('/tool/bandwidth-server/set', { enabled: 'yes', authenticate: 'yes' });
+      } finally {
+        serverClient.disconnect();
+      }
     }
 
     await client.connect();
@@ -3160,14 +3220,16 @@ router.post('/:id/tools/btest', requireWrite, async (req: Request, res: Response
     return res.status(500).json({ error: (err as Error).message });
   } finally {
     client.disconnect();
-    // Always disable btest server on target when done (success or failure)
-    if (serverClient) {
+    // Put the target's btest server back as it was (success or failure).
+    // Nothing to restore if its state was never read: nothing was changed.
+    if (serverClient && serverPrior) {
       try {
         await serverClient.connect();
-        await serverClient.execute('/tool/bandwidth-server/set', { enabled: 'no' });
-        serverClient.disconnect();
+        await serverClient.execute('/tool/bandwidth-server/set', serverPrior);
       } catch {
         // Best-effort — don't mask the original error
+      } finally {
+        serverClient.disconnect();
       }
     }
   }

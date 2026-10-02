@@ -330,11 +330,14 @@ export class AlertService {
     const chatId   = cfg.chat_id   as string;
     if (!botToken || !chatId) throw new Error('Telegram channel missing bot_token or chat_id');
 
+    // Telegram's HTML mode rejects the whole message on a stray < or &, and
+    // device names, log lines and details come from devices (J5).
+    const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const label  = EVENT_LABELS[eventType] ?? eventType;
-    const device = ctx.deviceName ? `\n📡 <b>Device:</b> ${ctx.deviceName}` : '';
-    const detail = ctx.details    ? `\n<pre>${ctx.details}</pre>` : '';
+    const device = ctx.deviceName ? `\n📡 <b>Device:</b> ${esc(ctx.deviceName)}` : '';
+    const detail = ctx.details    ? `\n<pre>${esc(String(ctx.details))}</pre>` : '';
 
-    const text = `${EVENT_EMOJI[eventType] ?? '🔔'} <b>${label}</b>\n${message}${device}${detail}`;
+    const text = `${EVENT_EMOJI[eventType] ?? '🔔'} <b>${esc(label)}</b>\n${esc(message)}${device}${detail}`;
 
     const url  = `https://api.telegram.org/bot${botToken}/sendMessage`;
     const body = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });

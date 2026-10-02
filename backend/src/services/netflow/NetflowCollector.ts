@@ -98,6 +98,8 @@ export class NetflowCollector {
   private unknownExporterIds = new Map<string, number>();
   private nextPseudoId = -1;
   private rejected = new Map<string, RejectedSource>();
+  /** Daily rollups that failed to write, retried at the next flush (J5). */
+  private pendingRollups: Array<{ day: string; mac: string; siteId: number; upload: number; download: number; apps: Record<string, number> }> = [];
 
   private rateLimiter = new PacketRateLimiter(RATE_LIMIT);
   private packetsDropped = 0;
@@ -142,9 +144,12 @@ export class NetflowCollector {
   // interval and directly by the settings route when netflow_* keys change.
   async reconcile(): Promise<void> {
     const next = await this.readSettings();
+    // Also when it should be listening and isn't: a port busy at start, or a
+    // socket error, used to stop the collector until a restart (J5).
     const needsRebind =
       next.enabled !== this.settings.enabled ||
-      (next.enabled && next.port !== this.settings.port);
+      (next.enabled && next.port !== this.settings.port) ||
+      (next.enabled && !this.socket);
     this.settings = next;
     if (!needsRebind) return;
 
@@ -387,7 +392,7 @@ export class NetflowCollector {
 
   private async flush(): Promise<void> {
     const rows = this.aggregator.drain(this.settings.topN);
-    if (rows.length === 0) return;
+    if (rows.length === 0 && this.pendingRollups.length === 0) return;
 
     const writeApi = getWriteApi();
     const now = new Date();
@@ -420,29 +425,45 @@ export class NetflowCollector {
       entry.apps.set(row.app, (entry.apps.get(row.app) || 0) + row.bytes);
     }
 
-    for (const entry of perClient.values()) {
+    // The day is fixed here, so a rollup retried after midnight still lands
+    // on the day its traffic happened.
+    const today = (await query<{ d: string }>(`SELECT CURRENT_DATE::text AS d`).catch(() => []))[0]?.d
+      ?? new Date().toISOString().slice(0, 10);
+    const batch = [
+      ...this.pendingRollups.splice(0),
+      ...[...perClient.values()].map((e) => ({
+        day: today, mac: e.mac, siteId: e.siteId, upload: e.upload, download: e.download, apps: Object.fromEntries(e.apps),
+      })),
+    ];
+    for (const entry of batch) {
       try {
-        await query(
-          `INSERT INTO client_traffic_daily (mac_address, day, site_id, upload_bytes, download_bytes, app_breakdown)
-           VALUES ($1, CURRENT_DATE, $5, $2, $3, $4::jsonb)
-           ON CONFLICT (mac_address, day, site_id) DO UPDATE SET
-             upload_bytes   = client_traffic_daily.upload_bytes + EXCLUDED.upload_bytes,
-             download_bytes = client_traffic_daily.download_bytes + EXCLUDED.download_bytes,
-             app_breakdown  = (
-               SELECT COALESCE(jsonb_object_agg(k, v), '{}'::jsonb)
-               FROM (
-                 SELECT COALESCE(a.key, b.key) AS k,
-                        to_jsonb(COALESCE((a.value)::bigint, 0) + COALESCE((b.value)::bigint, 0)) AS v
-                 FROM jsonb_each_text(client_traffic_daily.app_breakdown) a
-                 FULL OUTER JOIN jsonb_each_text(EXCLUDED.app_breakdown) b ON a.key = b.key
-               ) merged
-             )`,
-          [entry.mac, entry.upload, entry.download, JSON.stringify(Object.fromEntries(entry.apps)), entry.siteId]
-        );
+        await this.writeRollup(entry);
       } catch (e) {
-        console.error('[NetFlow] Daily rollup error:', e);
+        // Kept for the next flush rather than lost (J5), within a bound.
+        if (this.pendingRollups.length < 20_000) this.pendingRollups.push(entry);
+        console.error('[NetFlow] Daily rollup error (will retry):', (e as Error).message);
       }
     }
+  }
+
+  private async writeRollup(entry: { day: string; mac: string; siteId: number; upload: number; download: number; apps: Record<string, number> }): Promise<void> {
+    await query(
+      `INSERT INTO client_traffic_daily (mac_address, day, site_id, upload_bytes, download_bytes, app_breakdown)
+       VALUES ($1, $6::date, $5, $2, $3, $4::jsonb)
+       ON CONFLICT (mac_address, day, site_id) DO UPDATE SET
+         upload_bytes   = client_traffic_daily.upload_bytes + EXCLUDED.upload_bytes,
+         download_bytes = client_traffic_daily.download_bytes + EXCLUDED.download_bytes,
+         app_breakdown  = (
+           SELECT COALESCE(jsonb_object_agg(k, v), '{}'::jsonb)
+           FROM (
+             SELECT COALESCE(a.key, b.key) AS k,
+                    to_jsonb(COALESCE((a.value)::bigint, 0) + COALESCE((b.value)::bigint, 0)) AS v
+             FROM jsonb_each_text(client_traffic_daily.app_breakdown) a
+             FULL OUTER JOIN jsonb_each_text(EXCLUDED.app_breakdown) b ON a.key = b.key
+           ) merged
+         )`,
+      [entry.mac, entry.upload, entry.download, JSON.stringify(entry.apps), entry.siteId, entry.day]
+    );
   }
 }
 

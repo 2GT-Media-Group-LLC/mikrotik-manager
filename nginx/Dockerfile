@@ -1,18 +1,19 @@
 # Stage 1: Build the React frontend
-FROM node:26-alpine AS frontend-builder
+# Base images pinned by digest (outside review O2); Dependabot updates them.
+FROM node:26-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 AS frontend-builder
 
 WORKDIR /frontend
 
 # Copy package files and install dependencies
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 
 # Copy source and build
 COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Serve with nginx
-FROM nginx:alpine
+FROM nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
 
 # Install openssl for self-signed certificate generation
 RUN apk add --no-cache openssl

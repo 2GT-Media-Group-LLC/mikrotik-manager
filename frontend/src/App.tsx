@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
@@ -40,6 +41,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Remount a detail page when its route parameter changes (outside review U2).
+ * React Router reuses the component when only the id changes, so a form or a
+ * Change Guard "Apply anyway" dialog opened for device A stayed open on device
+ * B, and saving it wrote A's settings to B.
+ */
+function KeyedByParam({ param, children }: { param: string; children: React.ReactElement }) {
+  const params = useParams();
+  return <React.Fragment key={new Map(Object.entries(params)).get(param) ?? ''}>{children}</React.Fragment>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -58,9 +70,9 @@ export default function App() {
           <Route index element={<SiteLanding />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="devices" element={<DevicesPage />} />
-          <Route path="devices/:id" element={<DeviceDetailPage />} />
+          <Route path="devices/:id" element={<KeyedByParam param="id"><DeviceDetailPage /></KeyedByParam>} />
           <Route path="clients" element={<ClientsPage />} />
-          <Route path="clients/:mac" element={<ClientDetailPage />} />
+          <Route path="clients/:mac" element={<KeyedByParam param="mac"><ClientDetailPage /></KeyedByParam>} />
           <Route path="events" element={<EventsPage />} />
           <Route path="topology" element={<TopologyPage />} />
           <Route path="backups" element={<BackupsPage />} />

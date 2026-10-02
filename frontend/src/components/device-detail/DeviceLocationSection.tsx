@@ -71,7 +71,9 @@ export default function DeviceLocationSection({ device }: Props) {
     queryFn: () => settingsApi.get().then(r => r.data),
     staleTime: 300_000,
   });
-  const mapsEnabled = settings?.['maps_enabled'] !== false;
+  // Off until settings have loaded (outside review U6): unknown used to count as on,
+  // so a Dark Site install fetched map tiles and geocoding before, or without, the setting.
+  const mapsEnabled = settings !== undefined && settings['maps_enabled'] !== false;
 
   // Which site this device belongs to (issue #130). Shown only when more than
   // one site exists — on a single-network install it is noise.

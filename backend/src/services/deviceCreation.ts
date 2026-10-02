@@ -164,6 +164,10 @@ async function createDevice(
   const ssh_username: string | null = preset ? preset.ssh_username : (input.ssh_username ?? null);
   const ssh_password: string | null = preset ? preset.ssh_password : (input.ssh_password ?? null);
   const ssh_port: number = preset?.ssh_port ?? parsePort(input.ssh_port, 22);
+  // Whether a port was actually given: a merge with an existing record keeps
+  // its SSH port otherwise, instead of resetting it to 22 (outside review C2).
+  const sshPortGiven: number | null = preset?.ssh_port
+    ?? (input.ssh_port != null && input.ssh_port !== '' ? parsePort(input.ssh_port, 22) : null);
   const combineWithDeviceId =
     typeof input.combine_with_device_id === 'number' ? input.combine_with_device_id : null;
   const forceReplaceBySerial = input.force_replace_existing_by_serial === true;
@@ -282,7 +286,7 @@ async function createDevice(
            api_port=$4,
            api_username=$5,
            api_password_encrypted=$6,
-           ssh_port=$7,
+           ssh_port=COALESCE($7,ssh_port),
            ssh_username=COALESCE($8,ssh_username),
            ssh_password_encrypted=COALESCE($9,ssh_password_encrypted),
            device_type=COALESCE($10,device_type),
@@ -296,7 +300,7 @@ async function createDevice(
           api_port,
           api_username,
           encryptedPass,
-          ssh_port,
+          sshPortGiven,
           ssh_username,
           encryptedSshPass,
           device_type,
@@ -334,17 +338,33 @@ async function createDevice(
   const encryptedPass = encrypt(api_password);
   const encryptedSshPass = ssh_password ? encrypt(ssh_password) : null;
 
-  const rows = await query<{ id: number }>(
-    `INSERT INTO devices (name, name_locked, ip_address, api_port, api_username, api_password_encrypted,
-                          ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status,
-                          site_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'unknown',
-             COALESCE($12::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)))
-     RETURNING id`,
-    [name, nameLocked, address, api_port, api_username, encryptedPass,
-     ssh_port, ssh_username || null, encryptedSshPass, device_type, notes || null,
-     ctx?.siteId ?? null]
-  );
+  // The detected serial is stored with the new record (outside review C3).
+  // It used to wait for the first poll, so adding the same device twice before
+  // then, or twice in one batch, made two records. A unique index refuses the
+  // second, including two adds racing each other.
+  let rows: { id: number }[];
+  try {
+    rows = await query<{ id: number }>(
+      `INSERT INTO devices (name, name_locked, ip_address, api_port, api_username, api_password_encrypted,
+                            ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status,
+                            site_id, serial_number)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'unknown',
+               COALESCE($12::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)), $13)
+       RETURNING id`,
+      [name, nameLocked, address, api_port, api_username, encryptedPass,
+       ssh_port, ssh_username || null, encryptedSshPass, device_type, notes || null,
+       ctx?.siteId ?? null, detectedSerial]
+    );
+  } catch (err) {
+    if ((err as { code?: string }).code === '23505' && /serial/i.test(String((err as { constraint?: string }).constraint ?? ''))) {
+      return {
+        ok: false,
+        status: 409,
+        body: { error: 'A device with this serial number was added at the same moment. Refresh the device list.', code: 'duplicate_serial' },
+      };
+    }
+    throw err;
+  }
 
   const newId = rows[0].id;
   if (tlsFingerprint) await pinIdentity(newId, 'api-tls', tlsFingerprint).catch(() => {});

@@ -223,3 +223,28 @@ describe('buildSessions — sub-second jitter within one logged second', () => {
     expect(sessions.filter(s => s.durationSec === 0)).toHaveLength(0);
   });
 });
+
+// Outside review J7: moving between two APs.
+describe('buildSessions across access points', () => {
+  const MAC = 'D6:E0:17:43:FF:14';
+  const T0 = Date.parse('2026-10-01T10:00:00Z');
+  const ev = (m: string, s: number, ap: string) => parseRoamLine(m, new Date(T0 + s * 1000).toISOString(), ap)!;
+
+  it("doesn't let the old AP's late disconnect end the session on the new AP", () => {
+    const sessions = buildSessions([
+      ev(`${MAC}@wlan1(Office) connected, signal strength -60`, 0, 'ap1'),
+      ev(`${MAC}@wlan1(Office) connected, signal strength -55`, 600, 'ap2'),
+      ev(`${MAC}@wlan1(Office) disconnected, connection lost, signal strength -80`, 602, 'ap1'),
+    ]);
+    expect(sessions).toHaveLength(2);
+    expect(sessions[1].endedAt).toBeNull(); // still connected to ap2
+  });
+
+  it('still ends the session when the current AP reports the disconnect', () => {
+    const sessions = buildSessions([
+      ev(`${MAC}@wlan1(Office) connected, signal strength -55`, 0, 'ap2'),
+      ev(`${MAC}@wlan1(Office) disconnected, connection lost, signal strength -80`, 60, 'ap2'),
+    ]);
+    expect(sessions[0].endedAt).not.toBeNull();
+  });
+});

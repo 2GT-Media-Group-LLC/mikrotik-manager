@@ -22,14 +22,25 @@ function formatBytes(raw: string | number | undefined): string {
 
 // ─── Voucher print sheet ─────────────────────────────────────────────────────
 
+/** HTML-escape a value for the print sheet. */
+function esc(v: unknown): string {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/**
+ * The network name and codes come from the router, so every value is escaped
+ * and the sheet can't reach back into the manager (outside review U4). Before,
+ * a hotspot or voucher named with markup could redirect the manager's tab, or
+ * without the CSP run script in it.
+ */
 function printVouchers(codes: string[], opts: { network: string; durationHours?: number; dataCapMB?: number }) {
   const cards = codes.map(code => `
     <div class="card">
-      <div class="net">📶 ${opts.network}</div>
-      <div class="code">${code}</div>
+      <div class="net">📶 ${esc(opts.network)}</div>
+      <div class="code">${esc(code)}</div>
       <div class="meta">
-        ${opts.durationHours ? `Valid ${opts.durationHours}h` : 'No time limit'}
-        ${opts.dataCapMB ? ` · ${opts.dataCapMB >= 1024 ? (opts.dataCapMB / 1024).toFixed(0) + ' GB' : opts.dataCapMB + ' MB'}` : ''}
+        ${opts.durationHours ? `Valid ${esc(opts.durationHours)}h` : 'No time limit'}
+        ${opts.dataCapMB ? ` · ${esc(opts.dataCapMB >= 1024 ? Number((opts.dataCapMB / 1024).toFixed(2)) + ' GB' : opts.dataCapMB + ' MB')}` : ''}
       </div>
       <div class="hint">Connect to WiFi, enter this code as username.<br/>Leave password blank.</div>
     </div>`).join('');
@@ -42,9 +53,14 @@ function printVouchers(codes: string[], opts: { network: string; durationHours?:
     .meta { font-size: 11px; color: #64748b; margin-top: 6px; }
     .hint { font-size: 9.5px; color: #94a3b8; margin-top: 8px; line-height: 1.4; }
     @media print { body { margin: 8px; } }
-  </style></head><body><div class="grid">${cards}</div><script>window.print()</script></body></html>`;
+  </style></head><body><div class="grid">${cards}</div></body></html>`;
   const w = window.open('', '_blank', 'width=900,height=700');
-  if (w) { w.document.write(html); w.document.close(); }
+  if (!w) return;
+  w.opener = null; // the sheet can't navigate or touch the manager's tab
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  w.print();
 }
 
 // ─── Setup wizard ─────────────────────────────────────────────────────────────
@@ -72,6 +88,7 @@ function SetupWizard({ deviceId, interfaces, isAP, onDone }: {
   const [warnings, setWarnings] = useState<string[]>([]);
 
   const mutation = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => guestWifiApi.setup(deviceId, {
       name: form.name,
       gatewayCidr: form.gatewayCidr,
@@ -238,6 +255,7 @@ function VoucherGenerator({ deviceId, userProfiles, networkName, onCreated }: {
   const [result, setResult] = useState<string[] | null>(null);
 
   const mutation = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => guestWifiApi.createVouchers(deviceId, {
       count,
       durationHours: durationHours > 0 ? durationHours : undefined,
@@ -260,12 +278,12 @@ function VoucherGenerator({ deviceId, userProfiles, networkName, onCreated }: {
         </div>
         <div>
           <label className="label">Valid for (hours)</label>
-          <input type="number" min={0} className="input" value={durationHours} onChange={e => setDurationHours(parseInt(e.target.value) || 0)} />
+          <input type="number" min={0} className="input" step="any" value={durationHours} onChange={e => setDurationHours(parseFloat(e.target.value) || 0)} />
           <p className="text-[10px] text-gray-400 mt-0.5">0 = unlimited</p>
         </div>
         <div>
           <label className="label">Data cap (MB)</label>
-          <input type="number" min={0} className="input" value={dataCapMB} onChange={e => setDataCapMB(parseInt(e.target.value) || 0)} />
+          <input type="number" min={0} className="input" step="any" value={dataCapMB} onChange={e => setDataCapMB(parseFloat(e.target.value) || 0)} />
           <p className="text-[10px] text-gray-400 mt-0.5">0 = unlimited</p>
         </div>
         <div>

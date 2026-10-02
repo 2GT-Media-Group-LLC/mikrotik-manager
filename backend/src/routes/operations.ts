@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from '../utils/concurrency';
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { getQueryApi } from '../config/influxdb';
@@ -11,6 +12,17 @@ import { BackupService, BackupDevice } from '../services/BackupService';
 import { fluxString } from '@influxdata/influxdb-client';
 
 const router = Router();
+
+/** Devices a fleet-wide action works on at once (J10). */
+const FLEET_ACTION_CONCURRENCY = 8;
+
+/** Promise.allSettled, but at most `limit` at a time. */
+async function settleWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  return mapWithConcurrency(items, limit, async (item) => {
+    try { return { status: 'fulfilled', value: await fn(item) } as const; }
+    catch (reason) { return { status: 'rejected', reason } as const; }
+  });
+}
 router.use(requireAuth);
 
 const backupService = new BackupService();
@@ -320,27 +332,15 @@ router.get('/insights', async (req: Request, res: Response) => {
 
   // Rogue APs — evil twins broadcasting our SSIDs from foreign hardware
   try {
-    const { classifyScans } = await import('../utils/rogueAp');
-    const [scans, radios, ifaceMacs] = await Promise.all([
-      query<{ device_id: number; device_name: string; scanned_at: string; data: unknown }>(`
-        SELECT DISTINCT ON (a.device_id) a.device_id, d.name AS device_name, a.scanned_at, a.data
-        FROM ap_scan_data a JOIN devices d ON d.id = a.device_id
-        ${siteScopeByDevice(siteId, 'a.device_id') ? `WHERE ${siteScopeByDevice(siteId, 'a.device_id')}` : ''}
-        ORDER BY a.device_id, a.scanned_at DESC`),
-      query<{ ssid: string | null; mac_address: string | null }>(`SELECT ssid, mac_address FROM wireless_interfaces`),
-      query<{ mac_address: string }>(`SELECT mac_address FROM interfaces WHERE mac_address IS NOT NULL`),
-    ]);
-    const ownSsids = new Set(radios.map(r => r.ssid || '').filter(Boolean));
-    const ownBssids = new Set([
-      ...radios.map(r => (r.mac_address || '').toLowerCase()).filter(Boolean),
-      ...ifaceMacs.map(r => r.mac_address.toLowerCase()),
-    ]);
-    const { rogues } = classifyScans(
-      scans.map(s => ({ deviceName: s.device_name, scannedAt: String(s.scanned_at), networks: Array.isArray(s.data) ? s.data as import('../utils/rogueAp').ScannedNetwork[] : [] })),
-      ownSsids, ownBssids
-    );
+    const { classifyLatestScans } = await import('../services/rogueScan');
+    const { rogues } = await classifyLatestScans(siteId);
     for (const r of rogues) {
-      attention.push({
+      attention.push(r.reason === 'bssid' ? {
+        sev: 'error', category: 'security',
+        title: `Our access point address ${r.bssid} heard on the wrong channel`,
+        body: `${r.bssid} is one of our radios, but ${r.seenBy} heard it at ${r.signal} dBm on a channel that radio isn't using — possibly a spoofed copy of our AP.`,
+        action: 'Open Wireless', path: '/wireless',
+      } : {
         sev: 'error', category: 'security',
         title: `Rogue AP broadcasting "${r.ssid}"`,
         body: `Foreign BSSID ${r.bssid}${r.vendor ? ` (${r.vendor})` : ''} at ${r.signal} dBm, seen by ${r.seenBy} — possible evil twin.`,
@@ -701,7 +701,9 @@ router.post('/backup-all', requireWrite, async (req: Request, res: Response) => 
     `SELECT * FROM devices WHERE status = 'online'
        ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
-  const settled = await Promise.allSettled(devices.map(d => {
+  // A few devices at a time, not every device at once: each holds an SSH
+  // session and database connections (outside review J10).
+  const settled = await settleWithConcurrency(devices, FLEET_ACTION_CONCURRENCY, (d) => {
     const dev: BackupDevice = {
       id: d.id, name: d.name, ip_address: d.ip_address,
       ssh_port: d.ssh_port ?? 22, ssh_username: d.ssh_username,
@@ -709,7 +711,7 @@ router.post('/backup-all', requireWrite, async (req: Request, res: Response) => 
       api_username: d.api_username, api_password_encrypted: d.api_password_encrypted,
     };
     return backupService.createBackup(dev, 'Operations: backup all');
-  }));
+  });
   res.json({
     total: devices.length,
     results: settled.map((s, i) => ({
@@ -729,11 +731,13 @@ router.post('/sync-all', requireWrite, async (req: Request, res: Response) => {
     `SELECT * FROM devices WHERE status = 'online'
        ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
-  const settled = await Promise.allSettled(devices.map(async (d) => {
+  // Bounded like backup-all (J10): sync-all used to open a session to every
+  // device at once through a 20-connection database pool.
+  const settled = await settleWithConcurrency(devices, FLEET_ACTION_CONCURRENCY, async (d) => {
     const c = new DeviceCollector(d);
     try { await c.connect(); await c.collectAll(); }
     finally { c.disconnect(); }
-  }));
+  });
   res.json({
     total: devices.length,
     results: settled.map((s, i) => ({

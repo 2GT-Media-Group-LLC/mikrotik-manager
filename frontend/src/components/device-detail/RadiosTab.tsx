@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Wifi, Activity, Users, Radio, RefreshCw, Pencil, ChevronDown, ChevronRight,
@@ -390,6 +390,14 @@ function SpectrumAnalyzer({ deviceId, ifaces }: { deviceId: number; ifaces: Wire
   const [scanTime, setScanTime]           = useState<string | null>(null);
   const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
   const [showWarning, setShowWarning]     = useState(false);
+  // The chart belongs to one radio (outside review U14): switching radios
+  // clears it, and a scan that finishes after a switch isn't shown under the
+  // radio that is selected now.
+  const ifaceRef = useRef(selectedIface);
+  useEffect(() => {
+    ifaceRef.current = selectedIface;
+    setChartData([]); setScanTime(null); setSelectedHistoryId(null); setScanError(null);
+  }, [selectedIface]);
 
   const { data: history = [], refetch: refetchHistory } = useQuery({
     queryKey: ['spectral-history', deviceId, selectedIface],
@@ -415,11 +423,13 @@ function SpectrumAnalyzer({ deviceId, ifaces }: { deviceId: number; ifaces: Wire
   }
 
   async function handleScanNow() {
+    const iface = selectedIface;
     setScanning(true);
     setScanError(null);
     try {
-      const result = await wirelessApi.runSpectralScan(deviceId, selectedIface);
+      const result = await wirelessApi.runSpectralScan(deviceId, iface);
       const scan = result.data as { id: number; scanned_at: string; data: Record<string, string>[] };
+      if (ifaceRef.current !== iface) return; // the user moved to another radio meanwhile
       setChartData(parseSpectralRows(scan.data));
       setScanTime(scan.scanned_at);
       setSelectedHistoryId(scan.id);

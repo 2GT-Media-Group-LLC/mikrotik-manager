@@ -25,6 +25,26 @@ import { beginLogin, completeLogin, resetOidcClientCache, bindingHash } from '..
 
 const router = Router();
 
+/**
+ * The reason a sign-in failed, as a fixed code for the login page (outside
+ * review U8). The page used to print the message from the URL, which the
+ * provider (or anyone crafting a link) controlled; now it shows its own
+ * wording for each code and ignores anything else.
+ */
+export function ssoErrorCode(message: string, fromProvider = false): string {
+  if (fromProvider) return 'provider';
+  const rules: Array<[RegExp, string]> = [
+    [/different browser|expired or invalid|has expired/i, 'expired'],
+    [/turned off|not enabled/i, 'disabled'],
+    [/not verified|did not confirm/i, 'unverified'],
+    [/domain is not permitted/i, 'domain'],
+    [/no account exists/i, 'no_account'],
+    [/not fully configured/i, 'not_configured'],
+  ];
+  for (const [re, code] of rules) if (re.test(message)) return code;
+  return 'failed';
+}
+
 // ─── Browser binding and the single-use code (S2, S4) ───────────────────────────
 const BIND_COOKIE = 'mtm_oidc';
 const BIND_TTL_S = 600;          // as long as a login may take at the provider
@@ -82,7 +102,8 @@ router.get(
       setBindingCookie(req, res, binding, BIND_TTL_S);
       res.redirect(url);
     } catch (e) {
-      res.redirect(`/login?error=sso&reason=${encodeURIComponent((e as Error).message)}`);
+      console.warn('[OIDC] login could not start:', (e as Error).message);
+      res.redirect(`/login?error=sso&code=${ssoErrorCode((e as Error).message)}`);
     }
   }
 );
@@ -94,7 +115,11 @@ router.get(
   async (req: Request, res: Response) => {
     try {
       const params = req.query as Record<string, string>;
-      if (params.error) throw new Error(params.error_description || params.error);
+      if (params.error) {
+        console.warn('[OIDC] the provider returned an error:', String(params.error), String(params.error_description || ''));
+        res.redirect('/login?error=sso&code=provider');
+        return;
+      }
       const { user, returnTo, bindHash } = await completeLogin(params, bindingCookie(req));
       // A single-use code, good for a minute and only in this browser. The
       // session itself is issued when the SPA exchanges it.
@@ -103,7 +128,8 @@ router.get(
       const dest = safeReturnTo(returnTo);
       res.redirect(`/auth/callback#code=${encodeURIComponent(code)}&returnTo=${encodeURIComponent(dest)}`);
     } catch (e) {
-      res.redirect(`/login?error=sso&reason=${encodeURIComponent((e as Error).message)}`);
+      console.warn('[OIDC] sign-in failed:', (e as Error).message);
+      res.redirect(`/login?error=sso&code=${ssoErrorCode((e as Error).message)}`);
     }
   }
 );

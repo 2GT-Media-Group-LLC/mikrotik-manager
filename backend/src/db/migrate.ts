@@ -1198,6 +1198,28 @@ CREATE INDEX IF NOT EXISTS idx_user_site_roles_site ON user_site_roles(site_id);
 -- code from it is confirmed, so the active one keeps working meanwhile.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_pending_secret VARCHAR(64);
 
+-- One record per serial number (outside review C3). Skipped, with a notice,
+-- if duplicates already exist, so startup never fails on old data; the
+-- duplicate-serial check on add still applies either way.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM devices WHERE serial_number IS NOT NULL AND serial_number <> ''
+     GROUP BY serial_number HAVING COUNT(*) > 1
+  ) THEN
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_serial_unique ON devices(serial_number)
+      WHERE serial_number IS NOT NULL AND serial_number <> '';
+  ELSE
+    RAISE NOTICE 'devices has duplicate serial numbers; idx_devices_serial_unique not created';
+  END IF;
+END $$;
+
+-- Hot per-device paths (outside review J11): topology_links lost its only
+-- index on from_device_id with an old constraint, and per-device event reads
+-- by id had none.
+CREATE INDEX IF NOT EXISTS idx_topology_links_from_device ON topology_links(from_device_id);
+CREATE INDEX IF NOT EXISTS idx_events_device_id_id ON events(device_id, id DESC);
+
 -- Traffic per site (outside review J4, P2-23). A client's daily traffic is kept
 -- per site, the site of the exporter that saw it, so the same MAC or a reused
 -- address at two customers is never added together. 0 = no site could be
@@ -1233,6 +1255,12 @@ const DEFAULT_SETTINGS = [
   { key: 'mac_scan_interval', value: 300 },
   { key: 'reverse_dns_enabled', value: false },
   { key: 'retention_clients_days', value: 7 },
+  // History tables that used to grow without limit (outside review J11).
+  { key: 'retention_scan_days', value: 30 },
+  { key: 'retention_lte_history_days', value: 90 },
+  { key: 'retention_alert_history_days', value: 180 },
+  { key: 'retention_audit_days', value: 365 },
+  { key: 'retention_availability_days', value: 400 },
   { key: 'spectral_scan_enabled', value: false },
   { key: 'spectral_scan_interval_hours', value: 24 },
   { key: 'ap_scan_enabled', value: false },

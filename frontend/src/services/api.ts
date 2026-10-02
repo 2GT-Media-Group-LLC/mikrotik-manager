@@ -380,10 +380,10 @@ export interface LteDwell {
 export const lteApi = {
   state: (deviceId: number) =>
     api.get<{ interfaces: LteInterface[] }>(`/devices/${deviceId}/lte`),
-  dwell: (deviceId: number, range = '7d') =>
-    api.get<LteDwell>(`/devices/${deviceId}/lte/dwell`, { params: { range } }),
-  history: (deviceId: number, range = '24h') =>
-    api.get<{ events: LteHistoryEvent[] }>(`/devices/${deviceId}/lte/history`, { params: { range } }),
+  dwell: (deviceId: number, range = '7d', iface?: string) =>
+    api.get<LteDwell>(`/devices/${deviceId}/lte/dwell`, { params: { range, iface } }),
+  history: (deviceId: number, range = '24h', iface?: string) =>
+    api.get<{ events: LteHistoryEvent[] }>(`/devices/${deviceId}/lte/history`, { params: { range, iface } }),
   metrics: (deviceId: number, range = '6h', iface?: string) =>
     api.get<{ metrics: LteMetricPoint[] }>(`/devices/${deviceId}/lte/metrics`, {
       params: { range, ...(iface ? { iface } : {}) },
@@ -628,7 +628,8 @@ export const devicesApi = {
     dns_servers: string;
     dns_allow_remote: boolean;
   }>) => api.put(`/devices/${id}/system-config`, data),
-  getIpAddresses: (id: number) => api.get<IpAddress[]>(`/devices/${id}/ip-addresses`),
+  getIpAddresses: (id: number, opts: { includeIpv6?: boolean } = {}) =>
+    api.get<IpAddress[]>(`/devices/${id}/ip-addresses`, { params: opts.includeIpv6 ? { include: 'ipv6' } : undefined }),
   addIpAddress: (id: number, data: { address: string; interface: string; confirm_lockout?: boolean }) =>
     api.post<IpAddress[]>(`/devices/${id}/ip-addresses`, data),
   removeIpAddress: (id: number, addrId: string, confirmLockout = false) =>
@@ -879,7 +880,7 @@ export const clientsApi = {
     sort?: string;
     dir?: 'asc' | 'desc';
   }) =>
-    api.get<{ clients: Client[]; total: number }>('/clients', { params }),
+    api.get<{ clients: Client[]; total: number; vlans?: number[] }>('/clients', { params }),
   get: (mac: string) => api.get<ClientDetail>(`/clients/${encodeURIComponent(mac)}`),
   getRoaming: (mac: string, range = '24h') =>
     api.get<RoamingHistory>(`/clients/${encodeURIComponent(mac)}/roaming`, { params: { range } }),
@@ -1565,8 +1566,9 @@ export const wirelessApi = {
   getRegistrationTable: (apId: number) => api.get(`/wireless/${apId}/registration-table`),
   getMonitor:           (apId: number, iface: string) =>
     api.get(`/wireless/${apId}/monitor/${encodeURIComponent(iface)}`),
+  // POST: a scan disturbs the radio, so a link or a page load can't start one (U13).
   scan:                 (apId: number, iface: string) =>
-    api.get(`/wireless/${apId}/scan/${encodeURIComponent(iface)}`),
+    api.post(`/wireless/${apId}/scan/${encodeURIComponent(iface)}`, undefined, { timeout: 60_000 }),
 
   // Cached wireless data (for device detail Radios tab)
   getCachedInterfaces: (deviceId: number) => api.get(`/devices/${deviceId}/wireless`),

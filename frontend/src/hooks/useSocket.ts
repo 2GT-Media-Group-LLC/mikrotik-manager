@@ -4,6 +4,15 @@ import { useAuthStore } from '../store/authStore';
 
 let globalSocket: Socket | null = null;
 
+// A new token (password change, another sign-in) reconnects the socket with it
+// straight away; the server re-checks the session on connect (U8). Logout is
+// handled below, where the socket is dropped.
+useAuthStore.subscribe((state, prev) => {
+  if (state.token && prev.token && state.token !== prev.token && globalSocket) {
+    globalSocket.disconnect().connect();
+  }
+});
+
 export function getSocket(): Socket | null {
   return globalSocket;
 }
@@ -28,7 +37,10 @@ export function useSocket(
     if (!globalSocket) {
       globalSocket = io('/', {
         path: '/socket.io',
-        auth: { token: useAuthStore.getState().token },
+        // Read at every (re)connect, never frozen (outside review U8): a token
+        // reissued by a password change, or a new sign-in, is what the socket
+        // presents next time, instead of the old one that the server refuses.
+        auth: (cb) => cb({ token: useAuthStore.getState().token }),
         transports: ['websocket'],
         reconnection: true,
         reconnectionDelay: 2000,

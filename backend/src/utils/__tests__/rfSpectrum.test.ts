@@ -1,5 +1,5 @@
 import {
-  spectrumFor, classifyPair, overlapMhz, analyzeSpectrum, summarize, freeSpans,
+  channelCenter, spectrumFor, classifyPair, overlapMhz, analyzeSpectrum, summarize, freeSpans,
   widthMhz, channelForFreq, bandForFreq, parseChannelSpec,
 } from '../rfSpectrum';
 
@@ -57,10 +57,30 @@ describe('spectrumFor', () => {
     expect(s.channel).toBe(1);
   });
 
-  it('widens the range for a bonded channel', () => {
+  it('widens the range for a bonded channel, around the block centre', () => {
+    // Channel 36 at 80 MHz is the 36-48 block, 5170-5250. Centring on the
+    // control frequency (5140-5220) was wrong (outside review J7).
     const s = spectrumFor(5180, '80mhz');
-    expect(s.lowMhz).toBe(5140);
-    expect(s.highMhz).toBe(5220);
+    expect(s.lowMhz).toBe(5170);
+    expect(s.highMhz).toBe(5250);
+  });
+
+  it('places the block by the channel plan whichever sub-channel is control', () => {
+    expect(channelCenter(5240, '80mhz')).toBe(5210); // channel 48, same 36-48 block
+    expect(channelCenter(5745, '80mhz')).toBe(5775); // channel 149, the 149-161 block
+    expect(channelCenter(5200, '20/40mhz')).toBe(5190); // channel 40 pairs with 36: centre is channel 38
+  });
+
+  it('uses the position RouterOS gives in a legacy width string', () => {
+    expect(channelCenter(5180, '20/40/80mhz-Ceee')).toBe(5210);
+    expect(channelCenter(5200, '20/40/80mhz-eCee')).toBe(5210);
+    expect(channelCenter(5220, '20/40/80mhz-eeCe')).toBe(5210);
+    expect(channelCenter(2412, '20/40mhz-Ce')).toBe(2422);
+  });
+
+  it('keeps a 20 MHz channel and 2.4 GHz without a position as they are', () => {
+    expect(channelCenter(5180, '20mhz')).toBe(5180);
+    expect(channelCenter(2437, '20/40mhz')).toBe(2437);
   });
 });
 

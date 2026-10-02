@@ -28,11 +28,11 @@ export default function OidcCallbackPage() {
     // Take the code out of the address bar and history straight away.
     window.history.replaceState(null, '', window.location.pathname);
 
-    const fail = (reason: string) =>
-      navigate('/login?error=sso&reason=' + encodeURIComponent(reason), { replace: true });
+    const fail = (reason: 'expired' | 'failed') =>
+      navigate(`/login?error=sso&code=${reason}`, { replace: true });
 
     if (!code) {
-      fail('No sign-in code returned');
+      fail('failed');
       return;
     }
 
@@ -43,7 +43,7 @@ export default function OidcCallbackPage() {
       })
       .catch((err) => {
         useAuthStore.getState().logout();
-        fail((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not complete sign-in');
+        fail((err as { response?: { status?: number } })?.response?.status === 400 ? 'expired' : 'failed');
       });
   }, [navigate, setAuth]);
 

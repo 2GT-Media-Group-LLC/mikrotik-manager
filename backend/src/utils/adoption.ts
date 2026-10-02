@@ -124,15 +124,60 @@ export function pickTempAddress(
   taken: string[],
   prefix = 24
 ): string | null {
-  if (!isIpv4(targetAddress)) return null;
+  return tempAddressCandidates(targetAddress, taken, prefix)[0] ?? null;
+}
+
+/**
+ * Every temporary address worth trying, best first. The jump host doesn't
+ * know who else is on the target's segment, so each is checked for occupancy
+ * on the wire before it's used (outside review C9).
+ */
+export function tempAddressCandidates(targetAddress: string, taken: string[], prefix = 24): string[] {
+  if (!isIpv4(targetAddress)) return [];
   const used = new Set([targetAddress, ...taken.map(stripPrefix)]);
   const base = targetAddress.split('.').slice(0, 3).join('.');
-
+  const out: string[] = [];
   for (let host = 250; host >= 200; host--) {
     const candidate = `${base}.${host}`;
-    if (!used.has(candidate)) return `${candidate}/${prefix}`;
+    if (!used.has(candidate)) out.push(`${candidate}/${prefix}`);
   }
-  return null;
+  return out;
+}
+
+/**
+ * The interface on the jump host that faces the target: the bridge when the
+ * port it was seen on is a bridge member, the port itself otherwise. Null
+ * when that can't be told, so the caller refuses rather than guess "bridge".
+ */
+export function jumpInterface(
+  seenOn: string[],
+  bridgePorts: { interface?: string; bridge?: string }[],
+  interfaces: { name?: string }[],
+): string | null {
+  const names = new Set(interfaces.map((i) => i.name).filter(Boolean));
+  const found = new Set<string>();
+  for (const raw of seenOn) {
+    // LLDP can report "bridge/ether2": the bridge, then the port.
+    const [first, port] = raw.includes('/') ? [raw.slice(0, raw.indexOf('/')), raw.slice(raw.lastIndexOf('/') + 1)] : [null, raw];
+    const member = bridgePorts.find((p) => p.interface === port)?.bridge;
+    const iface = member ?? (first && names.has(first) ? first : port);
+    if (names.has(iface)) found.add(iface);
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
+
+/** The device type to register an adopted device under, from what it reports. */
+export function detectDeviceType(boardName: string | undefined, interfaces: { type?: string; name?: string }[]): 'router' | 'switch' | 'wireless_ap' {
+  const wireless = interfaces.some((i) => /^(wlan|wifi)/i.test(i.type || '') || /^(wlan|wifi)\d/i.test(i.name || ''));
+  if (wireless) return 'wireless_ap';
+  if (/^(CRS|CSS)/i.test((boardName || '').trim())) return 'switch';
+  return 'router';
+}
+
+/** Does any of the device's interfaces carry this MAC? */
+export function hasMac(interfaces: { 'mac-address'?: string }[], mac: string): boolean {
+  const want = mac.toUpperCase().replace(/-/g, ':');
+  return interfaces.some((i) => (i['mac-address'] || '').toUpperCase() === want);
 }
 
 export interface AddressVerdict {
@@ -157,9 +202,9 @@ export function validateTargetAddress(
   const bare = stripPrefix(address);
   if (!isIpv4(bare)) return { ok: false, reason: `${address} is not a valid IPv4 address` };
 
-  const host = Number(bare.split('.')[3]);
-  if (host === 0) return { ok: false, reason: 'that is a network address, not a host address' };
-  if (prefix === 24 && host === 255) return { ok: false, reason: 'that is the broadcast address' };
+  const role = hostRole(bare, prefix);
+  if (role === 'network') return { ok: false, reason: 'that is a network address, not a host address' };
+  if (role === 'broadcast') return { ok: false, reason: 'that is the broadcast address' };
 
   if (!sameSubnet(bare, managerSubnetPeer, prefix)) {
     return {
@@ -249,6 +294,16 @@ export function sameSubnet(a: string, b: string, prefix = 24): boolean {
   if (!isIpv4(x) || !isIpv4(y)) return false;
   const mask = prefix >= 32 ? -1 : ~((1 << (32 - prefix)) - 1);
   return (ipToInt(x) & mask) === (ipToInt(y) & mask);
+}
+
+/** Whether an address is the network or broadcast address of its subnet. */
+export function hostRole(ip: string, prefix: number): 'network' | 'broadcast' | 'host' {
+  if (prefix >= 31) return 'host';
+  const hostBits = 32 - prefix;
+  const hostPart = ipToInt(ip) % 2 ** hostBits;
+  if (hostPart === 0) return 'network';
+  if (hostPart === 2 ** hostBits - 1) return 'broadcast';
+  return 'host';
 }
 
 export function ipToInt(ip: string): number {
@@ -444,9 +499,11 @@ export function validatePlan(plan: AddressPlan): AddressVerdict {
         reason: `gateway ${plan.gateway} is not reachable from ${plan.address}/${plan.prefix}`,
       };
     }
-    const host = Number(stripPrefix(plan.address).split('.')[3]);
-    if (host === 0) return { ok: false, reason: 'that is a network address' };
-    if (plan.prefix === 24 && host === 255) return { ok: false, reason: 'that is a broadcast address' };
+    // With the real prefix (outside review C9): 10.0.1.0 is a host on a /16
+    // and 10.0.0.127 is the broadcast of a /25.
+    const role = hostRole(plan.address, plan.prefix);
+    if (role === 'network') return { ok: false, reason: `that is the network address of its /${plan.prefix}` };
+    if (role === 'broadcast') return { ok: false, reason: `that is the broadcast address of its /${plan.prefix}` };
   }
   return { ok: true };
 }

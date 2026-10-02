@@ -170,6 +170,9 @@ router.get('/', async (req: Request, res: Response) => {
     idx++;
   }
 
+  // The sighting filters alone, for the VLAN choices below.
+  const preParams = [...filterParams];
+
   // ── After deduplication: must match the row on screen ──
   if (client_type) {
     outerFilters.push(`deduped.client_type = $${idx++}`);
@@ -216,7 +219,7 @@ router.get('/', async (req: Request, res: Response) => {
       LEFT JOIN wireless_interfaces wi
         ON wi.device_id = c.device_id AND wi.name = c.interface_name
       ${where}
-      ORDER BY c.mac_address, (c.client_type = 'wireless') DESC, c.active DESC, c.last_seen DESC NULLS LAST
+      ORDER BY c.mac_address, c.active DESC, (c.client_type = 'wireless') DESC, c.last_seen DESC NULLS LAST
     ) deduped
     -- Today's traffic is kept per site (J4): add up the sites in view.
     LEFT JOIN (
@@ -236,15 +239,31 @@ router.get('/', async (req: Request, res: Response) => {
        SELECT DISTINCT ON (c.mac_address) c.client_type, c.vlan_id, c.signal_strength
        FROM clients c
        ${where}
-       ORDER BY c.mac_address, (c.client_type = 'wireless') DESC, c.active DESC, c.last_seen DESC NULLS LAST
+       ORDER BY c.mac_address, c.active DESC, (c.client_type = 'wireless') DESC, c.last_seen DESC NULLS LAST
      ) deduped
      ${outerWhere}`,
     filterParams
   );
 
+  // Every VLAN among the clients in view, not just this page's, so the filter
+  // offers all of them (outside review U14). The VLAN filter itself isn't
+  // applied, or choosing one would hide the others.
+  const vlanRows = await query<{ vlan_id: number }>(
+    `SELECT DISTINCT deduped.vlan_id FROM (
+       SELECT DISTINCT ON (c.mac_address) c.vlan_id
+       FROM clients c
+       ${where}
+       ORDER BY c.mac_address, c.active DESC, (c.client_type = 'wireless') DESC, c.last_seen DESC NULLS LAST
+     ) deduped
+     WHERE deduped.vlan_id IS NOT NULL
+     ORDER BY 1`,
+    preParams
+  ).catch(() => []);
+
   res.json({
     clients: (clients as Record<string, unknown>[]).map(withCategory),
     total: parseInt(countResult[0]?.total || '0', 10),
+    vlans: vlanRows.map((v) => v.vlan_id),
   });
 });
 
@@ -252,8 +271,9 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:mac', async (req: Request, res: Response) => {
   const mac = req.params.mac.toLowerCase();
 
-  // Order: wireless records before wired (AP knows the client best), then active,
-  // then most recently seen. Use LATERAL for topology so we never multiply rows.
+  // Order: active records first, then wireless before wired (the AP knows the
+  // client best), then most recently seen. Wireless first regardless let a
+  // stale wireless sighting outrank a live wired one (outside review J7). Use LATERAL for topology so we never multiply rows.
   const rows = await query<Record<string, unknown>>(
     `SELECT c.*, d.name as device_name, d.device_type,
             wi.ssid as ssid,
@@ -278,11 +298,14 @@ router.get('/:mac', async (req: Request, res: Response) => {
        FROM topology_links tl
        JOIN devices ud ON ud.id = tl.to_device_id
        WHERE tl.from_device_id = c.device_id
+       -- The device's way up: its spanning-tree root port when it has one,
+       -- rather than whichever link the database returned first (J7).
+       ORDER BY (tl.stp_role = 'root') DESC NULLS LAST, tl.id
        LIMIT 1
      ) topo ON TRUE
      WHERE LOWER(c.mac_address) = $1
        ${siteScopeByDevice(activeSite(req), 'c.device_id') ? `AND ${siteScopeByDevice(activeSite(req), 'c.device_id')}` : ''}
-     ORDER BY (c.client_type = 'wireless') DESC, c.active DESC, c.last_seen DESC NULLS LAST
+     ORDER BY c.active DESC, (c.client_type = 'wireless') DESC, c.last_seen DESC NULLS LAST
      LIMIT 1`,
     [mac]
   );

@@ -259,12 +259,29 @@ export class PollerService {
   }
 
   private startScheduler(): void {
-    this.schedulerInterval = setInterval(async () => {
-      await this.schedulePollCycle();
-    }, POLL_INTERVAL_MS);
+    this.schedulerInterval = setInterval(() => { void this.guardedCycle(); }, POLL_INTERVAL_MS);
 
     // Also run immediately
-    setTimeout(() => this.schedulePollCycle(), 5000);
+    setTimeout(() => { void this.guardedCycle(); }, 5000);
+  }
+
+  /** True while a scheduling cycle is running (J10). */
+  private cycleRunning = false;
+
+  /**
+   * One cycle at a time. During a Redis outage each cycle blocks on its queue
+   * calls; without this, every tick started another, and when Redis came back
+   * dozens of stacked cycles fired at once (outside review J10). A tick that
+   * finds the previous cycle still running is skipped.
+   */
+  private async guardedCycle(): Promise<void> {
+    if (this.cycleRunning) return;
+    this.cycleRunning = true;
+    try {
+      await this.schedulePollCycle();
+    } finally {
+      this.cycleRunning = false;
+    }
   }
 
   private async schedulePollCycle(): Promise<void> {
@@ -479,6 +496,9 @@ export class PollerService {
         this.pruneProxyConnections(appSettings).catch((e) =>
           console.error('[Poller] Proxy prune error:', e)
         );
+        this.pruneHistoryTables(appSettings).catch((e) =>
+          console.error('[Poller] History prune error:', e)
+        );
       }
 
       // Scheduled backups — fire when the cron expression matches the current minute/hour.
@@ -647,6 +667,43 @@ export class PollerService {
     }
     if (total > 0) {
       console.log(`[Poller] Pruned ${total} events older than ${days} days`);
+    }
+  }
+
+  /**
+   * Retention for history tables that used to grow without limit (outside
+   * review J11): scan results, LTE cell history, alert history, the audit log
+   * and ended outages. Batched like the event prune. An outage still in
+   * progress is never deleted.
+   */
+  private async pruneHistoryTables(settings: Record<string, unknown>): Promise<void> {
+    const tables: Array<{ table: string; where: string; setting: string; fallback: number }> = [
+      { table: 'spectral_scan_data', where: 'scanned_at < $1', setting: 'retention_scan_days', fallback: 30 },
+      { table: 'ap_scan_data', where: 'scanned_at < $1', setting: 'retention_scan_days', fallback: 30 },
+      { table: 'lte_cell_history', where: 'at < $1', setting: 'retention_lte_history_days', fallback: 90 },
+      { table: 'alert_history', where: 'sent_at < $1', setting: 'retention_alert_history_days', fallback: 180 },
+      { table: 'audit_log', where: 'created_at < $1', setting: 'retention_audit_days', fallback: 365 },
+      { table: 'device_availability', where: 'came_back_online_at IS NOT NULL AND came_back_online_at < $1', setting: 'retention_availability_days', fallback: 400 },
+    ];
+    const BATCH = 20_000;
+    const settingMap = new Map(Object.entries(settings));
+    for (const t of tables) {
+      const days = Number(settingMap.get(t.setting) ?? t.fallback);
+      if (!Number.isFinite(days) || days <= 0) continue;
+      const cutoff = new Date(Date.now() - days * 86_400_000);
+      let total = 0;
+      for (let i = 0; i < 50; i++) {
+        // Table names and conditions come from the fixed list above.
+        const deleted = await query<{ n: number }>(
+          `WITH gone AS (
+             DELETE FROM ${t.table} WHERE ctid IN (SELECT ctid FROM ${t.table} WHERE ${t.where} LIMIT ${BATCH})
+             RETURNING 1
+           ) SELECT COUNT(*)::int AS n FROM gone`, [cutoff]);
+        const n = deleted[0]?.n ?? 0;
+        total += n;
+        if (n < BATCH) break;
+      }
+      if (total > 0) console.log(`[Poller] Pruned ${total} ${t.table} row(s) older than ${days} days`);
     }
   }
 
@@ -919,15 +976,19 @@ export class PollerService {
     const run = (kind: string, fn: (data: PollJob) => Promise<void>) =>
       async (job: Job<PollJob>) => {
         const started = Date.now();
+        // Full syncs and MAC scans ride the fast queue; each keeps its own stats
+        // row so a slow full sync doesn't overwrite the fast poll's (J1).
+        const type = (job.data as { type?: string }).type;
+        const statKind = type === 'full' || type === 'macscan' ? type : kind;
         try {
           const { promise, abortJob } = runPollJob(() => fn(job.data));
           // A cancelled job's own rejection arrives after the timeout's; it has
           // nowhere to go, so it is handled here rather than left unhandled.
           promise.catch(() => {});
           await withTimeout(promise, JOB_TIMEOUT_MS, `${kind} poll`, abortJob);
-          await this.recordPollOutcome(job.data.deviceId, kind, Date.now() - started, null);
+          await this.recordPollOutcome(job.data.deviceId, statKind, Date.now() - started, null);
         } catch (err) {
-          await this.recordPollOutcome(job.data.deviceId, kind, Date.now() - started, (err as Error).message);
+          await this.recordPollOutcome(job.data.deviceId, statKind, Date.now() - started, (err as Error).message);
           throw err;
         }
       };
@@ -1318,6 +1379,9 @@ export class PollerService {
       // offline here would raise a false outage on every large, slow device.
       if (pollJobAborted()) return;
       await this.handleDeviceFailure(device.id, (err as Error).message);
+      // Rethrown so the job is recorded as failed, not as a successful poll
+      // (outside review J1).
+      throw err;
     } finally {
       collector.disconnect();
     }
@@ -1356,6 +1420,7 @@ export class PollerService {
       }
     } catch (err) {
       console.error(`[PollerService] Log collection failed for device ${device.id} (${device.name}):`, (err as Error).message);
+      throw err; // recorded as a failed log poll (J1)
     } finally {
       collector.disconnect();
     }

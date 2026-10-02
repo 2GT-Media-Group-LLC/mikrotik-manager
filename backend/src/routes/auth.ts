@@ -130,7 +130,7 @@ router.post('/totp/setup', requireAuth, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'This account has no local password (SSO). Set a password before enabling 2FA.' });
   }
   if (!(await bcrypt.compare(password, account.password_hash))) {
-    return res.status(401).json({ error: 'Incorrect password' });
+    return res.status(400).json({ error: 'Incorrect password', code: 'credential_rejected' });
   }
 
   const secret = new OTPAuth.Secret({ size: 20 });
@@ -150,6 +150,10 @@ router.post('/totp/setup', requireAuth, async (req: Request, res: Response) => {
   return res.json({ secret: secret.base32, uri, qr: qrDataUrl });
 });
 
+// Credential re-checks inside a signed-in session answer 400, not 401: the
+// client treats 401 as "session over" and signed the user out over a typo
+// (outside review U8).
+
 // Confirm the TOTP setup by validating a code — enables TOTP
 router.post('/totp/confirm', requireAuth, async (req: Request, res: Response) => {
   const { code } = req.body as { code?: string };
@@ -163,7 +167,7 @@ router.post('/totp/confirm', requireAuth, async (req: Request, res: Response) =>
 
   const totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(user.totp_pending_secret), digits: 6, period: 30 });
   const delta = totp.validate({ token: code.replace(/\s/g, ''), window: 1 });
-  if (delta === null) return res.status(401).json({ error: 'Invalid code' });
+  if (delta === null) return res.status(400).json({ error: 'Invalid code', code: 'credential_rejected' });
 
   // Only now does the new authenticator replace the old one.
   await query(
@@ -182,7 +186,7 @@ router.post('/totp/disable', requireAuth, async (req: Request, res: Response) =>
     [req.user!.userId]
   );
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-    return res.status(401).json({ error: 'Incorrect password' });
+    return res.status(400).json({ error: 'Incorrect password', code: 'credential_rejected' });
   }
 
   await query(`UPDATE users SET totp_enabled = false, totp_secret = NULL, totp_pending_secret = NULL WHERE id = $1`, [req.user!.userId]);
@@ -225,7 +229,7 @@ router.put('/password', requireAuth, async (req: Request, res: Response) => {
   );
 
   if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
-    return res.status(401).json({ error: 'Current password is incorrect' });
+    return res.status(400).json({ error: 'Current password is incorrect', code: 'credential_rejected' });
   }
   if (newPassword === currentPassword) {
     return res.status(400).json({ error: 'The new password must be different from the current one' });

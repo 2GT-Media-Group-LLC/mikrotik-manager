@@ -459,7 +459,7 @@ export default function NetworkServicesDiscoveryPage() {
             <button
               disabled={setLldpMutation.isPending || lldpLoading || lldpStatuses.length === 0}
               className="btn-primary flex items-center gap-1.5 text-sm"
-              onClick={() => { setLldpApplyResult(null); setLldpMutation.mutate(true); }}
+              onClick={() => { if (!confirm(`Enable LLDP on all ${lldpStatuses.length} devices in view?`)) return; setLldpApplyResult(null); setLldpMutation.mutate(true); }}
             >
               {setLldpMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
               Enable LLDP on All
@@ -467,7 +467,7 @@ export default function NetworkServicesDiscoveryPage() {
             <button
               disabled={setLldpMutation.isPending || lldpLoading || lldpStatuses.length === 0}
               className="btn-secondary flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
-              onClick={() => { setLldpApplyResult(null); setLldpMutation.mutate(false); }}
+              onClick={() => { if (!confirm(`Disable LLDP on all ${lldpStatuses.length} devices in view? Topology discovery relies on it.`)) return; setLldpApplyResult(null); setLldpMutation.mutate(false); }}
             >
               {setLldpMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
               Disable LLDP on All

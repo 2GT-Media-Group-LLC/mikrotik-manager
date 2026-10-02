@@ -1,6 +1,6 @@
 import {
   parseRosId, highestStoredId, isLogReset, selectNewLogLines,
-  surrogateLogId, isSurrogateLogId, type RawLogLine,
+  surrogateLogId, isSurrogateLogId, storedLogId, type RawLogLine,
 } from '../logDedup';
 
 // Fixed clock so timestamp comparisons are deterministic.
@@ -136,5 +136,22 @@ describe('surrogateLogId', () => {
     const id = surrogateLogId(...line);
     expect(parseRosId(id)).toBe(0);
     expect(highestStoredId([id, '*10'])).toBe(0x10);
+  });
+});
+
+// Outside review J9: RouterOS restarts log ids after a reboot.
+describe('storedLogId', () => {
+  it('gives a reused id with different content a different stored id', () => {
+    const before = storedLogId('*5', '10:00:00', 'system,info', 'router rebooted');
+    const after = storedLogId('*5', '10:05:00', 'system,error', 'kernel failure');
+    expect(before).not.toBe(after);
+  });
+  it('gives the same line the same id, so polling it twice stores it once', () => {
+    expect(storedLogId('*5', 't', 'x', 'm')).toBe(storedLogId('*5', 't', 'x', 'm'));
+  });
+  it('fits the column and still parses as the RouterOS id', () => {
+    const id = storedLogId('*FFFFFFFF', 't', 'x', 'm');
+    expect(id.length).toBeLessThanOrEqual(20);
+    expect(parseRosId(id)).toBe(0xffffffff);
   });
 });

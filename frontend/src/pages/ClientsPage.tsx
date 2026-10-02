@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import LoadError from '../components/common/LoadError';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -101,6 +102,7 @@ function ClientModal({
   const [name, setName] = useState(client.custom_name || '');
 
   const mutation = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => clientsApi.updateHostname(client.mac_address, name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
@@ -259,7 +261,7 @@ export default function ClientsPage() {
     setPage(0);
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['clients', { search, showAll, typeFilter, vlanFilter, signalMin, signalMax, page, pageSize, sortCol, sortDir }],
     queryFn: () =>
       clientsApi
@@ -281,12 +283,22 @@ export default function ClientsPage() {
 
   // Offer only VLANs the fleet actually uses, so the list never presents a
   // choice that would return nothing.
+  // From the server's list of VLANs across all matching clients, not just the
+  // rows on this page (outside review U14).
   const vlanOptions = useMemo(() => {
-    const seen = new Set<number>();
+    const seen = new Set<number>(data?.vlans ?? []);
     for (const c of (data?.clients ?? [])) if (c.vlan_id != null) seen.add(c.vlan_id);
     if (vlanFilter != null) seen.add(vlanFilter);   // keep the active choice selectable
     return [...seen].sort((a, b) => a - b);
   }, [data, vlanFilter]);
+
+  // A page past the end (rows purged, or a filter shrank the list) used to
+  // leave an empty table with no way back but the pager (U14).
+  useEffect(() => {
+    if (!data || page === 0) return;
+    const last = Math.max(0, Math.ceil((data.total ?? 0) / pageSize) - 1);
+    if (page > last) setPage(last);
+  }, [data, page, pageSize]);
 
   const [purgeResult, setPurgeResult] = useState('');
   const purgeMutation = useMutation({
@@ -452,6 +464,8 @@ export default function ClientsPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center h-48 text-gray-400">Loading...</div>
+      ) : isError && clients.length === 0 ? (
+        <div className="card"><LoadError what="clients" error={error} /></div>
       ) : clients.length === 0 ? (
         <div className="card p-12 flex flex-col items-center gap-3 text-center">
           <Users className="w-12 h-12 text-gray-300 dark:text-slate-600" />

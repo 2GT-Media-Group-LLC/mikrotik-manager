@@ -647,6 +647,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   // lockout reruns the whole save with the warning confirmed, so the VLAN step
   // that follows still happens.
   const updateInterfaceMutation = useMutation({
+    meta: { inlineError: true },
     mutationFn: ({ name, updates }: { name: string; updates: Record<string, unknown> }) =>
       devicesApi.updateInterface(deviceId, name, updates),
     onSuccess: (res) => {
@@ -667,6 +668,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   });
 
   const updateVlanMutation = useMutation({
+    meta: { inlineError: true },
     mutationFn: ({ name, data, confirm }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk'; replace_tagged?: boolean }; confirm?: boolean }) =>
       devicesApi.configurePortVlan(deviceId, name, confirm ? { ...data, confirm_lockout: true } : data),
     onSuccess: () => {

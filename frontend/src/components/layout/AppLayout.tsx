@@ -1,3 +1,4 @@
+import ActionErrorNotice from '../common/ActionErrorNotice';
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
@@ -26,6 +27,7 @@ export default function AppLayout() {
         <SecurityBanners />
         <main className="flex-1 overflow-auto" style={{ padding: '22px 28px' }}>
           <Outlet />
+          <ActionErrorNotice />
         </main>
       </div>
     </div>

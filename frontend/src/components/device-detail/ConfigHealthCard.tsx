@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import LoadError from '../common/LoadError';
 import {
   Activity, AlertTriangle, ChevronDown, ChevronRight, CircleCheck,
   ExternalLink, RefreshCw, ShieldAlert, Wrench,
@@ -106,7 +107,7 @@ export default function ConfigHealthCard({ deviceId }: { deviceId: number }) {
   const canWrite = useCanWrite();
   const [scanError, setScanError] = useState('');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['config-health', deviceId],
     queryFn: () => devicesApi.getConfigHealth(deviceId).then((r) => r.data),
   });
@@ -169,7 +170,9 @@ export default function ConfigHealthCard({ deviceId }: { deviceId: number }) {
         </div>
       )}
 
-      {isLoading ? (
+      {isError ? (
+        <LoadError what="configuration findings" error={error} />
+      ) : isLoading ? (
         <div className="text-center py-6 text-gray-400 text-sm">
           <RefreshCw className="w-4 h-4 animate-spin inline mr-2" />Loading findings…
         </div>

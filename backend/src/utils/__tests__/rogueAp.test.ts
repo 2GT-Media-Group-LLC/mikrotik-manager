@@ -52,3 +52,30 @@ describe('classifyScans', () => {
     expect(neighbors[1].ssid).toBe('(hidden)');
   });
 });
+
+// Outside review J7.
+describe('classifyScans per site and spoofed BSSIDs', () => {
+  const scan = (siteId: number, ssid: string, bssid: string, freq = 5180) => ({
+    deviceName: `ap-${siteId}`, siteId, scannedAt: '2026-10-01T00:00:00Z',
+    networks: [{ ssid, entries: [{ bssid, signal: -60, freq }] }],
+  });
+
+  it("doesn't call a neighbour a rogue because another site uses the same SSID", () => {
+    const bySite = new Map([[1, new Set(['Guest'])], [2, new Set(['Office'])]]);
+    const { rogues, neighbors } = classifyScans([scan(2, 'Guest', 'aa:aa:aa:00:00:01')], bySite, new Set());
+    expect(rogues).toHaveLength(0);
+    expect(neighbors).toHaveLength(1);
+  });
+
+  it('still flags a foreign BSSID broadcasting this site’s SSID', () => {
+    const bySite = new Map([[1, new Set(['Guest'])]]);
+    expect(classifyScans([scan(1, 'Guest', 'aa:aa:aa:00:00:01')], bySite, new Set()).rogues[0].reason).toBe('ssid');
+  });
+
+  it('flags our own BSSID heard on a channel that radio is not on', () => {
+    const ours = new Set(['bb:bb:bb:00:00:01']);
+    const freqs = new Map([['bb:bb:bb:00:00:01', 5180]]);
+    expect(classifyScans([scan(1, 'Office', 'BB:BB:BB:00:00:01', 5500)], new Set(['Office']), ours, freqs).rogues[0].reason).toBe('bssid');
+    expect(classifyScans([scan(1, 'Office', 'bb:bb:bb:00:00:01', 5180)], new Set(['Office']), ours, freqs).rogues).toHaveLength(0);
+  });
+});

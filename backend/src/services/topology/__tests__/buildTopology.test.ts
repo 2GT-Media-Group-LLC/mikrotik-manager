@@ -161,16 +161,28 @@ describe('buildTopology — behaviour preserved for unambiguous fleets', () => {
     expect(graph.links[0].link_type).toBe('lldp');
   });
 
-  it('suppresses a CDP link to a neighbour LLDP already describes', () => {
-    // Coverage is per-neighbour: sw2 is described precisely by LLDP from sw1, so
-    // sw3's noisier CDP sighting of sw2 adds nothing and is dropped.
+  it('suppresses a flooded CDP sighting of a neighbour LLDP already describes', () => {
+    // sw3's port e2 sees several neighbours, so its CDP view of sw2 is flooding
+    // across a bridge; sw2 is described precisely by LLDP from sw1.
+    const four = [...flat, dev(3, 'sw3', '192.168.0.3'), dev(4, 'sw4', '192.168.0.4')];
+    const graph = buildTopology(four, [
+      link({ from_device_id: 1, from_interface: 'e1', to_device_id: 2, link_type: 'lldp' }),
+      link({ from_device_id: 3, from_interface: 'e2', to_device_id: 2, link_type: 'cdp' }),
+      link({ from_device_id: 3, from_interface: 'e2', to_device_id: 4, link_type: 'cdp' }),
+    ], []);
+    const cdpToSw2 = [...graph.links, ...graph.segConns.map((c) => ({ from: c.src }))]
+      .filter((l) => 'to_device_id' in l && (l as { link_type?: string; to_device_id?: number }).link_type === 'cdp' && (l as { to_device_id?: number }).to_device_id === 2);
+    expect(cdpToSw2).toHaveLength(0);
+  });
+
+  it('keeps a single-neighbour port even when LLDP elsewhere describes that neighbour (J6)', () => {
+    // A port that sees exactly one neighbour is a cable: sw3-sw2 is real.
     const three = [...flat, dev(3, 'sw3', '192.168.0.3')];
     const graph = buildTopology(three, [
       link({ from_device_id: 1, from_interface: 'e1', to_device_id: 2, link_type: 'lldp' }),
       link({ from_device_id: 3, from_interface: 'e2', to_device_id: 2, link_type: 'cdp' }),
     ], []);
-    expect(graph.links).toHaveLength(1);
-    expect(graph.links[0].link_type).toBe('lldp');
+    expect(graph.links).toHaveLength(2);
   });
 
   it('keeps a CDP link when LLDP does not describe that neighbour at all', () => {
@@ -275,5 +287,59 @@ describe('buildTopology — neighbours identified only by MAC (#95)', () => {
   it('works without a MAC index, as before', () => {
     const graph = buildTopology(devices, trunkLinks(), []);
     expect(graph.links.every((l) => l.to_device_id === null)).toBe(true);
+  });
+});
+
+
+// Outside review J6.
+describe('buildTopology physical links and views', () => {
+  const pair = [dev(1, 'sw1', '192.168.0.1'), dev(2, 'sw2', '192.168.0.2')];
+
+  it('keeps two parallel cables between the same switches as two links', () => {
+    const graph = buildTopology(pair, [
+      link({ from_device_id: 1, from_interface: 'sfp1', to_device_id: 2, to_interface: 'sfp1', link_type: 'lldp' }),
+      link({ from_device_id: 1, from_interface: 'sfp2', to_device_id: 2, to_interface: 'sfp2', link_type: 'lldp' }),
+      link({ from_device_id: 2, from_interface: 'sfp1', to_device_id: 1, to_interface: 'sfp1', link_type: 'lldp' }),
+      link({ from_device_id: 2, from_interface: 'sfp2', to_device_id: 1, to_interface: 'sfp2', link_type: 'lldp' }),
+    ], []);
+    expect(graph.links.map((l) => `${l.from_interface}-${l.to_interface}`).sort()).toEqual(['sfp1-sfp1', 'sfp2-sfp2']);
+  });
+
+  it("doesn't fill one cable's missing port from another cable's report", () => {
+    const graph = buildTopology(pair, [
+      link({ from_device_id: 1, from_interface: 'sfp1', to_device_id: 2, to_interface: 'sfp1', link_type: 'lldp' }),
+      link({ from_device_id: 2, from_interface: 'sfp9', to_device_id: 1, to_interface: 'sfp9', link_type: 'lldp' }),
+    ], []);
+    expect(graph.links).toHaveLength(2);
+  });
+
+  it('turns a link to a device outside the view into an external neighbour', () => {
+    const graph = buildTopology([pair[0]], [
+      link({ from_device_id: 1, from_interface: 'e1', to_device_id: 2, to_device_name: 'sw2', link_type: 'lldp' }),
+      link({ from_device_id: 2, from_interface: 'e1', to_device_id: 1, link_type: 'lldp' }),
+    ], []);
+    expect(graph.links.every((l) => l.to_device_id !== 2 && l.from_device_id !== 2)).toBe(true);
+    expect(graph.externalNodes.some((n) => n.name === 'sw2')).toBe(true);
+  });
+
+  it('connects managed devices behind a shared segment to it', () => {
+    const four = [...pair, dev(3, 'sw3', '192.168.0.3'), dev(4, 'sw4', '192.168.0.4')];
+    const graph = buildTopology(four, [
+      link({ from_device_id: 1, from_interface: 'e1', to_device_id: 3, link_type: 'mndp' }),
+      link({ from_device_id: 1, from_interface: 'e1', to_device_id: 4, link_type: 'mndp' }),
+    ], []);
+    const seg = graph.externalNodes.find((n) => n.caps === 'segment')!;
+    const into = graph.segConns.filter((c) => c.dst === seg.id).map((c) => c.src).sort();
+    expect(into).toEqual(['1', '3', '4']);
+  });
+});
+
+describe('buildTopology LLDP port names', () => {
+  it('merges a pair whose far-end port is reported as bridge/port', () => {
+    const graph = buildTopology([dev(1, 'a', '10.0.0.1'), dev(7, 'b', '10.0.0.7')], [
+      link({ from_device_id: 1, from_interface: 'sfp28-2', to_device_id: 7, to_interface: 'bridge/sfp28-2', link_type: 'lldp' }),
+      link({ from_device_id: 7, from_interface: 'sfp28-2', to_device_id: 1, to_interface: 'bridge/sfp28-2', link_type: 'lldp' }),
+    ], []);
+    expect(graph.links).toHaveLength(1);
   });
 });

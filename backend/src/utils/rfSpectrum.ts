@@ -84,14 +84,53 @@ export interface RadioSpectrum {
   channel: number | null;
 }
 
+// 5 GHz bonded channels sit at fixed places in the channel plan; these are the
+// lower edges of each 40/80/160 MHz block.
+const FIVE_GHZ_BLOCKS: Record<number, number[]> = {
+  40: [5170, 5210, 5250, 5290, 5490, 5530, 5570, 5610, 5650, 5690, 5735, 5775, 5815, 5855],
+  80: [5170, 5250, 5490, 5570, 5650, 5735, 5815],
+  160: [5170, 5490, 5735],
+};
+
+/**
+ * The centre of a bonded channel (outside review J7). RouterOS reports the
+ * control frequency, which for 40/80/160 MHz sits off-centre, and treating it
+ * as the centre shifted the occupied range by up to 70 MHz, so overlaps were
+ * reported that don't exist and real ones missed.
+ *
+ * A legacy width string says where the control channel sits ("Ceee": lowest
+ * of four 20 MHz sub-channels, "eeCe": third). Otherwise, 5 GHz and 6 GHz
+ * blocks are fixed by the channel plan. 2.4 GHz has no plan to go by, so its
+ * control frequency is kept.
+ */
+export function channelCenter(freq: number, width?: string | null): number {
+  const w = widthMhz(width);
+  if (w <= 20) return freq;
+  const pos = /-([Ce]{2,8})\s*$/.exec(width ?? '')?.[1];
+  if (pos && pos.includes('C') && pos.length * 20 === w) {
+    return freq + (pos.length - 1) * 10 - pos.indexOf('C') * 20;
+  }
+  const band = bandForFreq(freq);
+  if (band === '5') {
+    const lower = (FIVE_GHZ_BLOCKS[w] ?? []).find((edge) => freq > edge && freq < edge + w);
+    if (lower !== undefined) return lower + w / 2;
+  }
+  if (band === '6') {
+    const lower = 5945 + Math.floor((freq - 5945) / w) * w;
+    return lower + w / 2;
+  }
+  return freq;
+}
+
 /** The slice of spectrum a radio actually occupies. */
 export function spectrumFor(freq: number, width?: string | null): RadioSpectrum {
   const w = widthMhz(width);
+  const center = channelCenter(freq, width);
   return {
-    centerMhz: freq,
+    centerMhz: center,
     widthMhz: w,
-    lowMhz: freq - w / 2,
-    highMhz: freq + w / 2,
+    lowMhz: center - w / 2,
+    highMhz: center + w / 2,
     band: bandForFreq(freq),
     channel: channelForFreq(freq),
   };

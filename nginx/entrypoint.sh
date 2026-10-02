@@ -33,6 +33,19 @@ chmod 700 /certs
 chmod 600 "$KEY"
 chmod 644 "$CERT"
 
+# The HTTPS port the browser is redirected to (outside review O5). Only
+# digits are accepted, so nothing else can reach the nginx config.
+HTTPS_PORT="${HTTPS_PORT:-443}"
+case "$HTTPS_PORT" in
+    ''|*[!0-9]*) echo "[entrypoint] warning: HTTPS_PORT '$HTTPS_PORT' isn't a port number; redirecting to 443"; HTTPS_PORT=443 ;;
+esac
+mkdir -p /var/cache/nginx
+if [ "$HTTPS_PORT" = "443" ]; then
+    echo 'set $https_port_suffix "";' > /var/cache/nginx/https-port.conf
+else
+    echo "set \$https_port_suffix \":$HTTPS_PORT\";" > /var/cache/nginx/https-port.conf
+fi
+
 # Background watcher: reload nginx when backend writes a .reload signal file
 (while true; do
     if [ -f "$RELOAD_SIGNAL" ]; then

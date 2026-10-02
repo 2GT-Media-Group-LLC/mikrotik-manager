@@ -111,10 +111,16 @@ async function _load(allowDownload: boolean): Promise<void> {
     if (map.size > 10_000) {
       db = map;
       console.log(`OUI database downloaded: ${db.size} entries`);
-      // Persist cache
-      const obj: Record<string, string> = {};
-      for (const [k, v] of map) obj[k] = v;
-      if (CACHE_FILE) fs.writeFileSync(CACHE_FILE, JSON.stringify(obj));
+      // Persist cache. A failed write (disk full, read-only volume) keeps the
+      // download in memory; it used to fall into the catch below and replace
+      // the fresh list with a stale or empty one (outside review J14).
+      try {
+        const obj: Record<string, string> = {};
+        for (const [k, v] of map) obj[k] = v;
+        if (CACHE_FILE) fs.writeFileSync(CACHE_FILE, JSON.stringify(obj));
+      } catch (writeErr) {
+        console.warn(`OUI: could not save the cache (${(writeErr as Error).message}); using the downloaded copy for now`);
+      }
     } else {
       console.warn('OUI: Downloaded file too small, ignoring');
       db = new Map();

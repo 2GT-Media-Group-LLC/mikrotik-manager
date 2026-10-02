@@ -1,3 +1,4 @@
+import { useCanWrite } from '../hooks/useCanWrite';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -48,6 +49,7 @@ export default function CommandsPage() {
   const [haltOnFailure, setHaltOnFailure] = useState(true);
   const [useGuard, setUseGuard] = useState(true);
   const [acknowledged, setAcknowledged] = useState(false);
+  const canWrite = useCanWrite();
   const [openRun, setOpenRun] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
@@ -69,17 +71,20 @@ export default function CommandsPage() {
     refetchInterval: 3_000,
   });
 
-  const { data: preview } = useQuery({
+  const { data: preview, isFetching: previewLoading } = useQuery({
     queryKey: ['command-preview', command, selected, waveSize],
     queryFn: () => commandsApi.preview(command, selected, waveSize).then(r => r.data),
     enabled: command.trim().length > 0 && selected.length > 0,
   });
 
   const startRun = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => commandsApi.createRun({
       name: command.slice(0, 60), command, device_ids: selected,
       wave_size: waveSize, halt_on_failure: haltOnFailure,
       use_change_guard: useGuard, start: true,
+      // The server checks this too (U3).
+      acknowledge_risk: acknowledged,
     }),
     onSuccess: (r) => {
       setOpenRun(r.data.id);
@@ -95,7 +100,11 @@ export default function CommandsPage() {
   // Guards off on a command that can sever management is the one combination
   // worth insisting the operator states out loud.
   const needsAck = risky && !useGuard;
-  const canRun = command.trim() && selected.length > 0 && (!needsAck || acknowledged) && !startRun.isPending;
+  // Not until the preview for exactly this command is in: running ahead of it
+  // skipped the risk check and its acknowledgement (outside review U3).
+  const previewCurrent = !!preview && !previewLoading && preview.command === command;
+  // Running needs write access on the server (U10).
+  const canRun = canWrite && command.trim() && selected.length > 0 && previewCurrent && (!needsAck || acknowledged) && !startRun.isPending;
 
   return (
     <div className="space-y-6">

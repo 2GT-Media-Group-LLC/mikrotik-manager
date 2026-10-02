@@ -1,3 +1,4 @@
+import { loadBondMembers } from '../services/topology/bondMembers';
 import { Router, Request, Response } from 'express';
 import { resourceSiteAccess } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
@@ -226,7 +227,7 @@ router.get('/rollouts/upstream-check', async (req: Request, res: Response) => {
   );
   const nameById = new Map(names.map((n) => [n.id, n.name]));
 
-  const upstream = findUpstreamWithinSelection(ids, links, bridges).map((id) => ({
+  const upstream = findUpstreamWithinSelection(ids, links, bridges, await loadBondMembers()).map((id) => ({
     id, name: nameById.get(id) ?? `Device ${id}`,
   }));
   return res.json({ upstream, maxConcurrency: MAX_WAVE_CONCURRENCY });

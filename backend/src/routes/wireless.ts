@@ -647,8 +647,10 @@ router.get('/:id/monitor/:iface', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/wireless/:id/scan/:iface — scan for nearby APs (5 s)
-router.get('/:id/scan/:iface', requireWrite, async (req: Request, res: Response) => {
+// POST /api/wireless/:id/scan/:iface — scan for nearby APs (5 s)
+// POST, not GET: a scan takes the radio off-channel, so it must not be
+// something a crafted link or a page load can trigger (outside review U13).
+router.post('/:id/scan/:iface', requireWrite, async (req: Request, res: Response) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -1081,10 +1083,13 @@ router.get('/rf/tx-quality', async (req: Request, res: Response) => {
 // Classification of wireless/DHCP log lines into the connectivity funnel. These
 // are best-effort regexes over RouterOS log messages; the panel is explicitly
 // labelled as log-derived and approximate.
-const RE_ASSOC_OK   = /connected|associated/i;
+// Whole words (outside review J7): "disconnected" and "deassigned" contain
+// "connected" and "assigned", so a disconnect counted as a successful
+// association and a released lease as a DHCP success.
+export const RE_ASSOC_OK   = /\b(connected|associated)\b/i;
 const RE_ASSOC_FAIL = /reject|deauth|disassoc|connection lost|connect failed/i;
 const RE_AUTH_FAIL  = /key exchange|handshake|authentication failed|auth failed|eap|radius.*(timeout|fail)/i;
-const RE_DHCP_OK    = /assigned|bound|leased|offering/i;
+export const RE_DHCP_OK    = /\b(assigned|bound|leased|offering)\b/i;
 const RE_DHCP_FAIL  = /no.*address|declined|nak|offer.*fail|pool.*exhaust/i;
 
 // GET /api/wireless/rf/connectivity?range=24h — Association/Auth/DHCP success funnel
@@ -1137,38 +1142,9 @@ router.get('/rf/connectivity', async (req: Request, res: Response) => {
 
 // GET /api/wireless/rf/rogue — classify latest AP scans against our own SSIDs/BSSIDs
 router.get('/rf/rogue', async (req: Request, res: Response) => {
-  const { classifyScans } = await import('../utils/rogueAp');
-
-  // Only the scans are site-scoped. The "these are ours" SSID and BSSID sets stay
-  // fleet-wide on purpose: an AP of yours in another site is still yours, and
-  // scoping those sets would report your own hardware as a rogue (issue #130).
-  const scanFilter = siteScopeByDevice(activeSite(req), 'a.device_id');
-
-  const [scans, radios, ifaceMacs] = await Promise.all([
-    query<{ device_id: number; device_name: string; scanned_at: string; data: unknown }>(`
-      SELECT DISTINCT ON (a.device_id) a.device_id, d.name AS device_name, a.scanned_at, a.data
-      FROM ap_scan_data a JOIN devices d ON d.id = a.device_id
-      ${scanFilter ? `WHERE ${scanFilter}` : ''}
-      ORDER BY a.device_id, a.scanned_at DESC`),
-    query<{ ssid: string | null; mac_address: string | null }>(
-      `SELECT ssid, mac_address FROM wireless_interfaces`),
-    query<{ mac_address: string }>(
-      `SELECT mac_address FROM interfaces WHERE mac_address IS NOT NULL`),
-  ]);
-
-  const ownSsids = new Set(radios.map(r => r.ssid || '').filter(Boolean));
-  const ownBssids = new Set([
-    ...radios.map(r => (r.mac_address || '').toLowerCase()).filter(Boolean),
-    ...ifaceMacs.map(r => r.mac_address.toLowerCase()),
-  ]);
-
-  const records = scans.map(s => ({
-    deviceName: s.device_name,
-    scannedAt: String(s.scanned_at),
-    networks: Array.isArray(s.data) ? s.data as import('../utils/rogueAp').ScannedNetwork[] : [],
-  }));
-
-  const { rogues, neighbors } = classifyScans(records, ownSsids, ownBssids);
+  // Our hardware is matched fleet-wide, our SSIDs per site (J7).
+  const { classifyLatestScans } = await import('../services/rogueScan');
+  const { rogues, neighbors, scans } = await classifyLatestScans(activeSite(req));
   res.json({
     rogues, neighbors,
     lastScanAt: scans.length ? scans.map(s => String(s.scanned_at)).sort().pop() : null,

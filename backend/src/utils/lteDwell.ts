@@ -124,7 +124,9 @@ export function summarise(
 /** Each individual band, so an aggregated pair counts toward both. */
 export function expandBands(bands: string | null): string[] {
   if (!bands) return [];
-  return bands.split(',').map((b) => b.trim()).filter(Boolean);
+  // Each band once: two carriers on B3 (intra-band aggregation) are still
+  // one stretch of time on B3, not two (outside review J7).
+  return [...new Set(bands.split(',').map((b) => b.trim()).filter(Boolean))];
 }
 
 /**

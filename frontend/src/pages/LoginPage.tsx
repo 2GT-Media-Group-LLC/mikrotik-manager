@@ -6,6 +6,17 @@ import { useAuthStore } from '../store/authStore';
 import { useThemeStore } from '../store/themeStore';
 import CircuitBackground from '../components/CircuitBackground';
 
+const SSO_ERRORS = new Map<string, string>([
+  ['expired', 'That sign-in expired or was started in a different browser. Please sign in again.'],
+  ['disabled', 'Single sign-on is turned off. Sign in with your username and password.'],
+  ['unverified', 'Your identity provider did not confirm your email address, so your domain could not be checked.'],
+  ['domain', 'Your email domain is not allowed to sign in here.'],
+  ['no_account', 'There is no account for you here, and new accounts are not created automatically. Ask an administrator.'],
+  ['not_configured', 'Single sign-on is not fully set up yet. Ask an administrator.'],
+  ['provider', 'Your identity provider refused the sign-in. Please try again, or ask an administrator.'],
+  ['failed', 'Single sign-on failed. Please try again.'],
+]);
+
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -27,10 +38,11 @@ export default function LoginPage() {
   useEffect(() => {
     authApi.oidcStatus().then((r) => setSso(r.data)).catch(() => {});
     authApi.loginHints().then((r) => setShowDefaultHint(r.data.default_credentials)).catch(() => {});
-    // Surface an SSO error passed back on the redirect (?error=sso&reason=...).
+    // An SSO failure comes back as a fixed code. Only our own wording is shown:
+    // text taken from the URL could be anyone's (outside review U8).
     const params = new URLSearchParams(window.location.search);
     if (params.get('error') === 'sso') {
-      setError(params.get('reason') || 'Single sign-on failed. Please try again.');
+      setError(SSO_ERRORS.get(params.get('code') ?? '') ?? SSO_ERRORS.get('failed')!);
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);

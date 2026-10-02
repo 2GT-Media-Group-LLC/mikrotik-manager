@@ -29,7 +29,15 @@ updates:
       interval: "weekly"
       day: "monday"
 
-  # GitHub Actions workflow dependencies
+  # Images in docker-compose.yml, pinned by digest (outside review O2).
+  # Regenerate docker-compose.ghcr.yml in the same PR: npm run compose:generate.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+
+  # GitHub Actions workflow dependencies (pinned by commit SHA)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

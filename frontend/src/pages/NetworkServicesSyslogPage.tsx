@@ -35,6 +35,16 @@ const SYSLOG_SEVERITIES = [
 
 const ACTION_TYPES = ['remote', 'memory', 'disk', 'echo'];
 
+/**
+ * BSD-style syslog, in either schema: older RouterOS has bsd-syslog=yes;
+ * current RouterOS 7 has remote-log-format=syslog with
+ * syslog-time-format=bsd-syslog (the backend translates on write).
+ */
+function isBsdSyslog(a: Record<string, string>): boolean {
+  if ('remote-log-format' in a) return a['syslog-time-format'] === 'bsd-syslog';
+  return a['bsd-syslog'] === 'yes' || a['bsd-syslog'] === 'true';
+}
+
 const COMMON_TOPICS = 'account, caps, bridge, ddns, dhcp, dns, error, firewall, hotspot, info, interface, ipsec, ntp, ospf, ppp, radius, rip, route, script, snmp, system, warning, wireless';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -125,13 +135,15 @@ function ActionForm({ existing, allDevices, targetName, onSave, onClose, isPendi
   const isBuiltin = existing ? BUILTIN_ACTION_NAMES.includes(existing['name'] ?? '') : false;
 
   const [name, setName]         = useState(existing?.['name'] ?? '');
-  const [type, setType]         = useState(existing?.['type'] ?? 'remote');
+  // RouterOS calls the action's kind `target`, not `type` (outside review C7):
+  // sending `type` failed every new action with "bad parameter type".
+  const [type, setType]         = useState(existing?.['target'] ?? 'remote');
   const [remote, setRemote]     = useState(existing?.['remote'] ?? '');
   const [port, setPort]         = useState(existing?.['remote-port'] ?? '514');
   const [srcAddr, setSrcAddr]   = useState(existing?.['src-address'] ?? '');
   const [facility, setFacility] = useState(existing?.['syslog-facility'] ?? 'daemon');
   const [severity, setSeverity] = useState(existing?.['syslog-severity'] ?? 'auto');
-  const [bsd, setBsd]           = useState((existing?.['bsd-syslog'] ?? 'no') === 'yes');
+  const [bsd, setBsd]           = useState(existing ? isBsdSyslog(existing) : false);
 
   const canSave = name.trim() !== '' && (type !== 'remote' || remote.trim() !== '');
 
@@ -142,9 +154,14 @@ function ActionForm({ existing, allDevices, targetName, onSave, onClose, isPendi
       : allDevices ? 'Add Logging Action — All Devices' : 'Add Logging Action';
 
   function handleSubmit() {
-    const data: NS = { name: name.trim(), type };
+    // An edit sends name and type only when they change, and never for the
+    // built-in actions, whose name and type RouterOS won't let you set
+    // (outside review C7).
+    const data: NS = {};
+    if (!existing || (!isBuiltin && name.trim() !== existing['name'])) data['name'] = name.trim();
+    if (!existing || (!isBuiltin && type !== existing['target'])) data['target'] = type;
     if (srcAddr.trim()) data['src-address'] = srcAddr.trim();
-    else if (existing) data['src-address'] = '';   // cleared on the device
+    else if (existing) data['src-address'] = '0.0.0.0';   // RouterOS's "none"; it rejects an empty value
     if (type === 'remote') {
       data['remote'] = remote.trim();
       data['remote-port'] = port || '514';
@@ -295,7 +312,7 @@ function RuleForm({ existing, actions, allDevices, targetName, onSave, onClose, 
               </>
             ) : (
               <select className="input w-full" value={action} onChange={e => setAction(e.target.value)}>
-                {actions.map(a => <option key={a['.id']} value={a['name']}>{a['name']} ({a['type']})</option>)}
+                {actions.map(a => <option key={a['.id']} value={a['name']}>{a['name']} ({a['target']})</option>)}
               </select>
             )}
           </div>
@@ -594,19 +611,19 @@ export default function NetworkServicesSyslogPage() {
                             </td>
                             <td className="px-4 py-3">
                               <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-                                sample['type'] === 'remote'
+                                sample['target'] === 'remote'
                                   ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                                   : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400')}>
-                                {sample['type']}
+                                {sample['target']}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-gray-700 dark:text-slate-300">
-                              {sample['type'] === 'remote' ? (
+                              {sample['target'] === 'remote' ? (
                                 <div>
                                   <span className="font-mono text-xs">{sample['remote'] || '—'}:{sample['remote-port'] || '514'}</span>
                                   <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
                                     {sample['syslog-facility'] || 'daemon'} / {sample['syslog-severity'] || 'auto'}
-                                    {sample['bsd-syslog'] === 'yes' && ' · BSD'}
+                                    {isBsdSyslog(sample) && ' · BSD'}
                                   </div>
                                 </div>
                               ) : '—'}

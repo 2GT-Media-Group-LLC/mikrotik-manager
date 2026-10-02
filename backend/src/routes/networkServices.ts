@@ -146,7 +146,9 @@ router.get('/overview', async (req: Request, res: Response) => {
           dns: dnsRow ? { allow_remote: dnsRow['allow-remote-requests'] === 'yes', servers: dnsRow['servers'] || '' } : null,
           ntp: ntpRow ? { server_enabled: ntpRow.server['enabled'] === 'yes', client_enabled: ntpRow.client['enabled'] === 'yes' } : null,
           wireguard: { total: wgIfaces.length, running: wgIfaces.filter(i => i['running'] === 'true').length },
-          syslog: { remote_count: syslogActs.filter(a => a['type'] === 'remote').length },
+          // RouterOS calls it `target`; the built-in `remote` action points at
+          // 0.0.0.0 until configured, so it isn't a destination (C7).
+          syslog: { remote_count: syslogActs.filter(a => a['target'] === 'remote' && !!a['remote'] && a['remote'] !== '0.0.0.0').length },
         };
       } catch (err) {
         return { id: device.id, name: device.name, ip_address: device.ip_address,
@@ -282,6 +284,9 @@ router.post('/dhcp/static-lease', requireWrite, async (req: Request, res: Respon
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { protocol, ...params } = req.body;
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol required' });
+  if (protocol === 'ipv6' && params['mac-address'] !== undefined) {
+    return res.status(400).json({ error: 'An IPv6 binding is matched by the client DUID, not a MAC address.' });
+  }
   await withDevice(deviceId, res, async (collector) => {
     await collector.addStaticDhcpLease(params, protocol as 'ipv4' | 'ipv6');
     res.json({ success: true });

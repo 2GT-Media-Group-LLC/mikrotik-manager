@@ -1,3 +1,4 @@
+import { useIsFleetAdmin } from '../../hooks/useCanWrite';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Radio, Loader2 } from 'lucide-react';
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export default function UpdateChannelCard({ devices, canWrite }: Props) {
+  const isFleetAdmin = useIsFleetAdmin();
   const qc = useQueryClient();
   const [target, setTarget] = useState('');
   const [channel, setChannel] = useState<string>('stable');
@@ -107,7 +109,8 @@ export default function UpdateChannelCard({ devices, canWrite }: Props) {
           <select
             className="input mt-1"
             value={fleet}
-            disabled={!canWrite || saveFleet.isPending}
+            // The fleet default is a platform setting, admin-only on the server (U10).
+            disabled={!isFleetAdmin || saveFleet.isPending}
             onChange={(e) => saveFleet.mutate(e.target.value)}
           >
             <option value="">Leave each device on its own channel</option>

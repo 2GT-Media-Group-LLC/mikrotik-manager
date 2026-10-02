@@ -7,6 +7,7 @@ import {
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { apiErrorMessage } from '../utils/apiError';
 
 type NS = Record<string, string>;
 
@@ -69,6 +70,7 @@ function ServerForm({ protocol, existing, pools, interfaces, deviceId, onClose, 
   }
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => {
       const body: NS & { protocol: 'ipv4' | 'ipv6' } = {
         protocol, name, interface: iface, 'address-pool': pool, 'lease-time': leaseTime,
@@ -165,7 +167,7 @@ function ServerForm({ protocol, existing, pools, interfaces, deviceId, onClose, 
             {save.isPending ? 'Saving…' : 'Save'}
           </button>
           <button onClick={onClose} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700">Cancel</button>
-          {save.isError && <span className="text-xs text-red-500">{(save.error as Error).message}</span>}
+          {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
       </div>
     </div>
@@ -187,6 +189,7 @@ function PoolForm({ protocol, deviceId, onClose }: PoolFormProps) {
   const [prefix, setPrefix] = useState('');
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => {
       const params: NS & { protocol: 'ipv4' | 'ipv6' } = { protocol, name };
       if (protocol === 'ipv4') params['ranges'] = ranges;
@@ -232,7 +235,7 @@ function PoolForm({ protocol, deviceId, onClose }: PoolFormProps) {
             {save.isPending ? 'Adding…' : 'Add Pool'}
           </button>
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
-          {save.isError && <span className="text-xs text-red-500">{(save.error as Error).message}</span>}
+          {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
       </div>
     </div>
@@ -256,10 +259,12 @@ function StaticLeaseForm({ protocol, servers, deviceId, onClose }: StaticLeaseFo
   const [comment, setComment] = useState('');
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => {
       const body: NS & { protocol: 'ipv4' | 'ipv6' } = {
-        protocol, 'mac-address': mac, address, comment,
-        ...(protocol === 'ipv4' ? { server } : { server }),
+        // An IPv6 binding is keyed by the client's DUID; RouterOS has no
+        // mac-address on it (outside review C7).
+        protocol, [protocol === 'ipv4' ? 'mac-address' : 'duid']: mac, address, comment, server,
       };
       return networkServicesApi.addStaticLease(deviceId, body);
     },
@@ -275,12 +280,12 @@ function StaticLeaseForm({ protocol, servers, deviceId, onClose }: StaticLeaseFo
         </div>
         <div className="p-5 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">MAC Address *</label>
-            <input className="input w-full font-mono" value={mac} onChange={e => setMac(e.target.value)} placeholder="AA:BB:CC:DD:EE:FF" />
+            <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">{protocol === 'ipv4' ? 'MAC Address' : 'Client DUID'} *</label>
+            <input className="input w-full font-mono" value={mac} onChange={e => setMac(e.target.value)} placeholder={protocol === 'ipv4' ? 'AA:BB:CC:DD:EE:FF' : '0x000100012a3b4c5d001122334455'} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">IP Address *</label>
-            <input className="input w-full font-mono" value={address} onChange={e => setAddress(e.target.value)} placeholder={protocol === 'ipv4' ? '192.168.1.50' : '2001:db8::50'} />
+            <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">{protocol === 'ipv4' ? 'IP Address' : 'Prefix'} *</label>
+            <input className="input w-full font-mono" value={address} onChange={e => setAddress(e.target.value)} placeholder={protocol === 'ipv4' ? '192.168.1.50' : '2001:db8:1::/64'} />
           </div>
           {servers.length > 0 && (
             <div>
@@ -305,7 +310,7 @@ function StaticLeaseForm({ protocol, servers, deviceId, onClose }: StaticLeaseFo
             {save.isPending ? 'Adding…' : 'Add Lease'}
           </button>
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
-          {save.isError && <span className="text-xs text-red-500">{(save.error as Error).message}</span>}
+          {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
       </div>
     </div>

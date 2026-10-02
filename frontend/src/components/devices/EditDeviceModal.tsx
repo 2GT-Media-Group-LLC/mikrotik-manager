@@ -4,7 +4,7 @@ import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network, RotateCcw
 import { devicesApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
-import { isValidDeviceAddress, classifyAddress, addressFieldValue } from '../../utils/deviceAddress';
+import { isValidDeviceAddress, classifyAddress, addressFieldValue, sameAddress } from '../../utils/deviceAddress';
 import type { Device, DeviceType, IpAddress } from '../../types';
 
 interface Props {
@@ -92,7 +92,8 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   // management IP to something the device actually owns instead of guessing.
   const { data: ipRows, isLoading: ipsLoading, error: ipsError } = useQuery({
     queryKey: ['device-ips', device.id],
-    queryFn: () => devicesApi.getIpAddresses(device.id).then((r) => r.data),
+    // IPv6 too, so an IPv6 management address is recognised (#178).
+    queryFn: () => devicesApi.getIpAddresses(device.id, { includeIpv6: true }).then((r) => r.data),
     enabled: device.status === 'online',
     staleTime: 30_000,
   });
@@ -108,13 +109,13 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
       out.push({ address: bare, cidr: row.address, iface: row.interface });
     }
     // Always include the current IP so it can be reselected
-    if (device.ip_address && !seen.has(device.ip_address)) {
+    if (device.ip_address && !out.some((c) => sameAddress(c.address, device.ip_address))) {
       out.unshift({ address: device.ip_address, cidr: device.ip_address, iface: '(current)' });
     }
     return out;
   }, [ipRows, device.ip_address]);
 
-  const ipWasDetected = candidateIps.some((c) => c.address === form.ip_address);
+  const ipWasDetected = candidateIps.some((c) => sameAddress(c.address, form.ip_address));
 
   useEffect(() => { setError(''); }, [form.ip_address, form.api_port, form.api_username, form.api_password]);
 
@@ -247,7 +248,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                   ) : (
                     <ul className="max-h-40 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700">
                       {candidateIps.map((c) => {
-                        const selected = form.ip_address === c.address;
+                        const selected = sameAddress(form.ip_address, c.address);
                         return (
                           <li key={`${c.address}-${c.iface}`}>
                             <button

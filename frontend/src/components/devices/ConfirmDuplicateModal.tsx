@@ -22,6 +22,10 @@ export default function ConfirmDuplicateModal({
   loading,
 }: Props) {
   const [confirmCombineStep, setConfirmCombineStep] = useState(false);
+  // Replace moves the existing record (history, backups, snapshots) to the new
+  // address, on the strength of a serial the new device merely reports. Two
+  // steps, never the default button (outside review U7).
+  const [confirmReplaceStep, setConfirmReplaceStep] = useState(false);
   const existingSerial = (duplicate.existing_device.serial_number || '').trim().toUpperCase();
   const candidateSerial = (duplicate.candidate.serial_number || '').trim().toUpperCase();
   const serialsMatch = Boolean(existingSerial && candidateSerial && existingSerial === candidateSerial);
@@ -62,6 +66,20 @@ export default function ConfirmDuplicateModal({
               )}
             </div>
           )}
+          {confirmReplaceStep && (
+            <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-3 text-xs text-red-800 dark:text-red-300 space-y-1">
+              <p className="text-sm font-medium">Confirm replace</p>
+              <p>
+                <span className="font-medium">{duplicate.existing_device.name}</span>&apos;s record, with its history, backups
+                and config snapshots, will move from <span className="font-mono">{duplicate.existing_device.ip_address}</span> to{' '}
+                <span className="font-mono">{pendingIp}</span>.
+              </p>
+              <p>
+                The serial is only what the new device reports. Continue only if you know the device at {pendingIp} is that
+                device (moved or re-addressed). A copied or misconfigured device can report any serial.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3">
               <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">Existing managed device</p>
@@ -100,10 +118,18 @@ export default function ConfirmDuplicateModal({
                 Continue to combine check
               </button>
             )}
-            <button type="button" onClick={onReplace} disabled={loading} className="btn-primary inline-flex items-center gap-2">
-              <RefreshCcw className="w-4 h-4" />
-              Replace existing details
-            </button>
+            {confirmReplaceStep ? (
+              <button type="button" onClick={onReplace} disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50">
+                <RefreshCcw className="w-4 h-4" />
+                Yes, move the record
+              </button>
+            ) : (
+              <button type="button" onClick={() => setConfirmReplaceStep(true)} disabled={loading} className="btn-secondary inline-flex items-center gap-2">
+                <RefreshCcw className="w-4 h-4" />
+                Replace existing details…
+              </button>
+            )}
           </div>
         </div>
       </div>

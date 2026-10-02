@@ -70,15 +70,18 @@ host. Adoption stops rather than handing a switch an address something else is u
 
 ## What it does
 
-1. Borrows the chosen neighbour and gives it a temporary address in the target's subnet
+1. Borrows the chosen neighbour and gives it a temporary address in the target's subnet, on
+   the interface it sees the device on. The temporary address is first checked to be unused
 2. Confirms the device answers, and authenticates with the password you supplied
-3. Confirms the device really is factory-default
-4. Checks the address you chose is free
-5. Adds the address, the default route, and the identity — adding only, never replacing
-6. Returns the neighbour to exactly how it was found
-7. Confirms the manager can now reach the device directly
-8. Removes the factory `192.168.88.1` address, if you left that ticked
-9. Registers the device and starts polling it
+3. Confirms the device answering is the one you picked, by its MAC address
+4. Confirms the device really is factory-default. If it can't read enough to tell, it stops
+5. Checks the address you chose is free
+6. Adds the address, the default route, and the identity — adding only, never replacing
+7. Returns the neighbour to exactly how it was found
+8. Confirms the manager can now reach the device directly
+9. Removes the factory `192.168.88.1` address, if you left that ticked
+10. Registers the device as a router, switch or access point, by what it reports, and starts
+    polling it
 
 Every step is reported as it happens, so a failure says which one and why.
 
@@ -106,7 +109,8 @@ chassis and known to anyone with physical access.
 | Symptom | Cause |
 |---|---|
 | "Could not authenticate" | Wrong password. It is on the sticker, not blank |
-| "does not look factory-default" | The device is in service. Add it normally with its credentials |
+| "does not look factory-default" | The device is in service. Add it normally with its credentials. Confirming it is factory-default in the dialog overrides only the guess made before connecting, not this check |
+| "is not *MAC*" | A different device answered on that address, often a second unadopted unit on `192.168.88.1`. Adopt one at a time |
 | "is not free" | Something already answers at that address |
 | "no lease arrived" | DHCP chosen with no server on that segment |
 | "not answering the API from the manager" | Configured, but unreachable — usually a wrong gateway or a VLAN the uplink does not carry. The factory address is still in place |

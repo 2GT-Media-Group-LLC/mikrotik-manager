@@ -5,8 +5,9 @@ import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { createDeviceFromBody } from './deviceCreation';
 import type { PollerService } from './PollerService';
 import {
-  collectCandidates, pickTempAddress, validateTargetAddress, buildAdoptionOps,
+  collectCandidates, tempAddressCandidates, validateTargetAddress,
   fetchAuthHeader, needsJumpHost, stripPrefix, TEMP_COMMENT,
+  jumpInterface, detectDeviceType, hasMac,
   recommendMode, assessFactoryState, validatePlan, buildPlanOps, planInterface,
   leasedAddress, judgeConflict, arpRowResolved,
   type AdoptionCandidate, type NeighborRow, type RestOp, type ModeRecommendation,
@@ -42,10 +43,10 @@ export interface AdoptionRequest {
   /** Remove the factory 192.168.88.1 once the new address is proven. */
   removeFactoryAddress?: boolean;
   /**
-   * Proceed even though the device does not look factory-default.
-   *
-   * Requires a deliberate choice, because the check exists to stop this flow
-   * rewriting the addressing of a switch that is already in service.
+   * Proceed even though neighbour discovery suggests the device is already
+   * configured. Overrides that pre-connection guess only: the check made
+   * after logging in still stops adoption if the device isn't factory-default
+   * (outside review C9), as the dialog and docs say.
    */
   force?: boolean;
   siteId?: number | null;
@@ -184,6 +185,22 @@ export class DeviceAdoptionService {
     const planVerdict = validatePlan(req.plan);
     if (!planVerdict.ok) return { ok: false, steps, error: planVerdict.reason };
 
+    if (candidate.recommendation.mode !== 'adopt' && !req.force) {
+      return {
+        ok: false, steps,
+        error: 'This device looks already configured (' + candidate.recommendation.reasons.join('; ') +
+               '). Add it normally with its credentials, or confirm it is factory-default to continue.',
+      };
+    }
+
+    // Where the jump host sees the target, so the temporary address goes on
+    // that segment rather than on a guessed "bridge" (outside review C9).
+    const seenOn = (await query<{ from_interface: string }>(
+      `SELECT DISTINCT from_interface FROM topology_links
+        WHERE from_device_id = $1 AND UPPER(neighbor_mac) = $2 AND from_interface IS NOT NULL`,
+      [req.jumpHostId, candidate.mac]
+    )).map((r) => r.from_interface);
+
     // A static address on the manager's own subnet is additionally checked for
     // reachability, since that is the case where a typo strands the device.
     // Addresses on a management VLAN are deliberately not second-guessed: the
@@ -196,25 +213,42 @@ export class DeviceAdoptionService {
     }
 
     let client: RouterOSClient | null = null;
-    let tempId: string | null = null;
+    // Set before the add is sent, so cleanup runs even if the add's reply or
+    // the read-back is lost (outside review C9).
+    let temp: string | null = null;
     let learnedIp: string | null = null;
+    let deviceType: 'router' | 'switch' | 'wireless_ap' | undefined;
 
     try {
       client = await this.connect(jump);
       note(`connected to jump host ${jump.name}`, true);
 
-      const existing = (await client.execute('/ip/address/print', { detail: '' })).map((a) => a.address);
-      const temp = pickTempAddress(candidate.address, existing);
-      if (!temp) return { ok: false, steps, error: 'No free temporary address in the target subnet' };
+      const [addrRows, bridgePorts, ifaces] = await Promise.all([
+        client.execute('/ip/address/print', { detail: '' }),
+        client.execute('/interface/bridge/port/print'),
+        client.execute('/interface/print'),
+      ]);
+      const iface = jumpInterface(seenOn, bridgePorts, ifaces);
+      if (!iface) {
+        return {
+          ok: false, steps,
+          error: `Couldn't tell which interface on ${jump.name} faces ${candidate.mac}. Nothing was changed.`,
+        };
+      }
 
-      await client.execute('/ip/address/add', {
-        address: temp, interface: 'bridge', comment: TEMP_COMMENT,
-      });
+      // A temporary address nobody on the segment is using (outside review
+      // C9): the jump host's own list says nothing about other hosts.
+      for (const option of tempAddressCandidates(candidate.address, addrRows.map((a) => a.address)).slice(0, 5)) {
+        const check = await this.checkAddressFree(client, option, iface);
+        if (check.free) { temp = option; break; }
+        note(`temporary address ${option} is in use`, false, check.reason);
+      }
+      if (!temp) return { ok: false, steps, error: 'No free temporary address in the target subnet. Nothing was changed.' };
+
+      const tempAddress = temp;
+      await client.execute('/ip/address/add', { address: tempAddress, interface: iface, comment: TEMP_COMMENT });
       await sleep(2500);
-      const added = (await client.execute('/ip/address/print', { detail: '' }))
-        .find((a) => stripPrefix(a.address || '') === stripPrefix(temp));
-      tempId = added?.['.id'] ?? null;
-      note(`temporary address ${temp} on ${jump.name}`, true);
+      note(`temporary address ${tempAddress} on ${jump.name} ${iface}`, true);
 
       const ping = await client.execute('/ping', { address: candidate.address, count: '3' }, [], { timeoutMs: 20000 });
       const recv = Number((ping[ping.length - 1] || {}).received || 0);
@@ -235,18 +269,44 @@ export class DeviceAdoptionService {
       }
       note('authenticated to target', true);
 
+      // The device answering on that address must be the one that was chosen
+      // (outside review C9): two factory devices both sit on 192.168.88.1.
+      const targetIfaces = await this.readMany(rest, 'interface');
+      if (targetIfaces === null || !hasMac(targetIfaces, candidate.mac)) {
+        note(`confirmed ${candidate.address} is ${candidate.mac}`, false);
+        return {
+          ok: false, steps,
+          error: targetIfaces === null
+            ? `Couldn't read the interfaces of the device at ${candidate.address} to confirm it is ${candidate.mac}. Nothing was changed.`
+            : `The device answering at ${candidate.address} is not ${candidate.mac}. Nothing was changed. ` +
+              'Another unadopted device may be on the same address; adopt one at a time.',
+        };
+      }
+      note(`confirmed ${candidate.address} is ${candidate.mac}`, true);
+      deviceType = detectDeviceType(this.parse(probe.data)?.['board-name'], targetIfaces);
+
       // Last harmless moment. Neighbour discovery exposes only an address and
       // an identity, which is enough to *suggest* a flow but not enough to bet
       // someone's production switch on. Now that we are authenticated we can
       // look properly, and decline if this turns out to be a device already in
       // service rather than one out of its box.
-      const assessment = assessFactoryState({
-        identity: await this.readOne(rest, 'system/identity').then((d) => d?.name),
-        addresses: await this.readMany(rest, 'ip/address'),
-        users: await this.readMany(rest, 'user'),
-      });
+      // A read that fails is not evidence of a clean device (outside review
+      // C9): unread, the check refuses.
+      const identity = await this.readOne(rest, 'system/identity');
+      const addresses = await this.readMany(rest, 'ip/address');
+      const users = await this.readMany(rest, 'user');
+      if (!identity || addresses === null || users === null) {
+        note('confirmed factory-default', false, 'could not read identity, addresses and users');
+        return {
+          ok: false, steps,
+          error: "Couldn't read the device's identity, addresses and users to confirm it is factory-default. Nothing was changed.",
+        };
+      }
+      const assessment = assessFactoryState({ identity: identity.name, addresses, users });
 
-      if (!assessment.isFactory && !req.force) {
+      // Authoritative, force or not: force only overrides the guess made
+      // from neighbour data before connecting.
+      if (!assessment.isFactory) {
         note('confirmed factory-default', false, assessment.warnings.join('; '));
         return {
           ok: false,
@@ -254,17 +314,10 @@ export class DeviceAdoptionService {
           error:
             'This device does not look factory-default, so it was not modified: ' +
             assessment.warnings.join('; ') +
-            '. If it really is new, re-run with force. Otherwise add it normally with its credentials — ' +
-            'adoption would overwrite configuration it is already using.',
+            '. Add it normally with its credentials — adoption would overwrite configuration it is already using.',
         };
       }
-      note(
-        req.force && !assessment.isFactory
-          ? 'factory check overridden by request'
-          : 'confirmed factory-default',
-        true,
-        assessment.signals.join(', ') || undefined
-      );
+      note('confirmed factory-default', true, assessment.signals.join(', ') || undefined);
 
       // Conflict check, from the jump host's own view of the segment. This is
       // the check whose absence would have let the flow assign an address that
@@ -294,7 +347,7 @@ export class DeviceAdoptionService {
         // instant; a few polls beat one optimistic read.
         for (let attempt = 0; attempt < 6 && !learnedIp; attempt++) {
           await sleep(3000);
-          learnedIp = leasedAddress(await this.readMany(rest, 'ip/dhcp-client'));
+          learnedIp = leasedAddress((await this.readMany(rest, 'ip/dhcp-client')) ?? []);
         }
         if (!learnedIp) {
           return {
@@ -309,16 +362,11 @@ export class DeviceAdoptionService {
       return { ok: false, steps, error: err instanceof Error ? err.message : String(err) };
     } finally {
       // Runs on every path, including the early returns above.
-      if (client && tempId) {
-        try {
-          await client.execute('/ip/address/remove', { '.id': tempId });
-          note('removed temporary address from jump host', true);
-        } catch (e) {
-          note('removed temporary address from jump host', false,
-            e instanceof Error ? e.message : String(e));
-        }
-      }
       client?.disconnect();
+      if (temp) {
+        const removed = await this.removeTempAddress(jump, temp);
+        note('removed temporary address from jump host', removed.ok, removed.detail);
+      }
     }
 
     // From here the manager talks to the device directly; the jump host is done.
@@ -340,7 +388,7 @@ export class DeviceAdoptionService {
         ip_address: ip,
         api_username: req.username || 'admin',
         api_password: req.password,
-        device_type: 'switch',
+        device_type: deviceType ?? 'router',
       },
       this.poller,
       { siteId: req.siteId ?? null }
@@ -363,15 +411,26 @@ export class DeviceAdoptionService {
    * an inconvenience, a duplicated one is an outage.
    */
   private async checkAddressFree(
-    client: RouterOSClient, address: string
+    client: RouterOSClient, address: string, iface?: string
   ): Promise<{ free: boolean; reason?: string }> {
     try {
-      const arp = await client.execute('/ip/arp/print', { detail: '' });
-      const arpResolved = arp.some(
-        (a) => stripPrefix(a.address || '') === stripPrefix(address) && arpRowResolved(a)
-      );
+      // Ping first, then read ARP (outside review C9): the ping is what makes
+      // a quiet host resolve, so ARP read before it misses that host.
       const ping = await client.execute('/ping', { address: stripPrefix(address), count: '3' }, [], { timeoutMs: 20000 });
       const replies = Number((ping[ping.length - 1] || {}).received || 0);
+      const arp = await client.execute('/ip/arp/print', { detail: '' });
+      let arpResolved = arp.some(
+        (a) => stripPrefix(a.address || '') === stripPrefix(address) && arpRowResolved(a)
+      );
+      if (iface && !arpResolved) {
+        // An address outside the jump host's own subnets isn't reachable by
+        // ICMP or in its ARP table; an ARP request sent out the interface
+        // still gets an answer from a host holding it.
+        const arping = await client.execute('/ping', {
+          address: stripPrefix(address), 'arp-ping': 'yes', interface: iface, count: '2',
+        }, [], { timeoutMs: 15000 });
+        arpResolved = Number((arping[arping.length - 1] || {}).received || 0) > 0;
+      }
       return judgeConflict({ arpResolved, pingReplies: replies });
     } catch (e) {
       return {
@@ -379,6 +438,32 @@ export class DeviceAdoptionService {
         reason: `could not verify the address is free (${e instanceof Error ? e.message : String(e)})`,
       };
     }
+  }
+
+  /**
+   * Remove the temporary address from the jump host, found by its address and
+   * comment on a fresh connection, so it goes even when the add's reply was
+   * lost or the adoption connection died. If this fails too, the comment lets
+   * cleanupOrphans() find it.
+   */
+  private async removeTempAddress(jump: DeviceRow, temp: string): Promise<{ ok: boolean; detail?: string }> {
+    let c: RouterOSClient | null = null;
+    try {
+      c = await this.connect(jump);
+      const rows = (await c.execute('/ip/address/print', { detail: '' }))
+        .filter((a) => stripPrefix(a.address || '') === stripPrefix(temp) && (a.comment || '').includes(TEMP_COMMENT));
+      for (const r of rows) await c.execute('/ip/address/remove', { '.id': r['.id'] });
+      return { ok: true, detail: rows.length ? undefined : 'not present' };
+    } catch (e) {
+      return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+    } finally {
+      c?.disconnect();
+    }
+  }
+
+  private parse(data: string | undefined): Record<string, string> | null {
+    if (!data) return null;
+    try { return JSON.parse(data) as Record<string, string>; } catch { return null; }
   }
 
   /** Read a single-object REST menu (`system/identity`), or null if unreadable. */
@@ -391,17 +476,17 @@ export class DeviceAdoptionService {
     try { return JSON.parse(r.data) as Record<string, string>; } catch { return null; }
   }
 
-  /** Read a list REST menu (`ip/address`). An unreadable menu yields []. */
+  /** Read a list REST menu (`ip/address`). Null when unreadable, never [] (C9). */
   private async readMany(
     rest: (op: RestOp) => Promise<{ ok: boolean; data?: string }>,
     path: string
-  ): Promise<Record<string, string>[]> {
+  ): Promise<Record<string, string>[] | null> {
     const r = await rest({ method: 'get', path, describe: `read ${path}` });
-    if (!r.ok || !r.data) return [];
+    if (!r.ok || !r.data) return null;
     try {
       const parsed = JSON.parse(r.data);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch { return []; }
+      return Array.isArray(parsed) ? parsed : null;
+    } catch { return null; }
   }
 
   /** One REST call to the target, tunnelled through the jump host's `/tool/fetch`. */

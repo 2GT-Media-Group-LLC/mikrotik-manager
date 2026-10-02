@@ -322,10 +322,14 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
   const add = () => addMut.mutate(false, { onError: guard.onError(() => addMut.mutate(true, { onError: fail }), fail) });
   const remove = (id: string) => delMut.mutate({ id }, { onError: guard.onError(() => delMut.mutate({ id, confirm: true }, { onError: fail }), fail) });
 
-  const grouped = entries.reduce<Record<string, Row[]>>((acc, e) => {
-    const k = e.list ?? '(none)'; (acc[k] ??= []).push(e); return acc;
-  }, {});
-  const listNames = Object.keys(grouped).sort();
+  // A Map, not an object: a list named "constructor" or "__proto__" (names
+  // come from the device) found Object.prototype and crashed the tab (U12).
+  const grouped = new Map<string, Row[]>();
+  for (const e of entries) {
+    const k = e.list ?? '(none)';
+    grouped.set(k, [...(grouped.get(k) ?? []), e]);
+  }
+  const listNames = [...grouped.keys()].sort();
 
   return (
     <div className="card overflow-hidden">
@@ -350,7 +354,7 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
             <div key={name} className="border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
               <div className="px-3 py-1.5 bg-gray-50 dark:bg-slate-800 text-xs font-semibold text-gray-700 dark:text-slate-200 font-mono">{name}</div>
               <div className="divide-y divide-gray-100 dark:divide-slate-700/50">
-                {grouped[name].map(e => (
+                {(grouped.get(name) ?? []).map(e => (
                   <div key={e['.id']} className="flex items-center gap-2 px-3 py-1.5 text-xs">
                     <span className="font-mono text-gray-700 dark:text-slate-300">{e.address}</span>
                     {e.comment && <span className="text-gray-400 italic truncate">{e.comment}</span>}

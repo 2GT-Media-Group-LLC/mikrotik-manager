@@ -58,12 +58,13 @@ export interface TopologyEdge {
 export function findUpstreamWithinSelection(
   selectedIds: number[],
   links: TopologyEdge[],
-  bridges: StpBridge[] = []
+  bridges: StpBridge[] = [],
+  bondMembers: Map<string, string[]> = new Map(),
 ): number[] {
   const selected = new Set(selectedIds);
   if (selected.size < 2) return [];
 
-  const upstreams = upstreamByDevice(resolveStpUpstreams(bridges, links), bridges);
+  const upstreams = upstreamByDevice(resolveStpUpstreams(bridges, links, bondMembers), bridges);
 
   const flagged = new Set<number>();
   for (const [deviceId, upstreamId] of upstreams) {

@@ -284,7 +284,8 @@ function OspfSubTab({ deviceId }: { deviceId: number }) {
   });
 
   const addAreaMutation = useMutation({
-    mutationFn: () => dApi.addOspfArea(deviceId, areaForm),
+    // RouterOS names the property area-id (outside review C7).
+    mutationFn: () => dApi.addOspfArea(deviceId, { name: areaForm.name, 'area-id': areaForm.area, ...(areaForm.instance ? { instance: areaForm.instance } : {}) }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['routing-ospf', deviceId] }); setShowAddArea(false); setAreaForm({ name: '', area: '0.0.0.0', instance: '' }); setError(''); },
     onError: (err: unknown) => setError(errMsg(err)),
   });
@@ -598,7 +599,7 @@ function RouteFiltersSubTab({ deviceId }: { deviceId: number }) {
               <th className="table-header px-4 py-2.5 text-left">#</th>
               <th className="table-header px-4 py-2.5 text-left">Chain</th>
               <th className="table-header px-4 py-2.5 text-left">Action</th>
-              <th className="table-header px-4 py-2.5 text-left">Prefix</th>
+              <th className="table-header px-4 py-2.5 text-left">Prefix / rule</th>
               <th className="table-header px-4 py-2.5 text-left">Comment</th>
               {canWrite && <th className="w-10" />}
             </tr></thead>
@@ -612,7 +613,7 @@ function RouteFiltersSubTab({ deviceId }: { deviceId: number }) {
                       {r['action'] || '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400">{r['prefix'] || r['dst-address'] || '—'}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400">{r['rule'] || r['prefix'] || r['dst-address'] || '—'}</td>
                   <td className="px-4 py-2.5 text-xs text-gray-400 dark:text-slate-500">{r['comment'] || ''}</td>
                   {canWrite && <td className="px-4 py-2.5">
                     {r['.id'] && <button onClick={() => { if (confirm('Remove filter rule?')) removeMutation.mutate(r['.id']); }} className="p-1 text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>}

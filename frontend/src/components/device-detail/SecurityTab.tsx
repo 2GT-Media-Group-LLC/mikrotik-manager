@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import LoadError from '../common/LoadError';
 import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell, KeyRound } from 'lucide-react';
 import { devicesApi, type ApiSslResult } from '../../services/api';
 import { activeChecks, mutedCount } from '../../utils/securityFindings';
@@ -30,7 +31,7 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
   const [serviceError, setServiceError] = useState('');
   const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
-  const { data: posture, isLoading, refetch, isFetching } = useQuery({
+  const { data: posture, isLoading, refetch, isFetching, isError: postureError, error: postureErr } = useQuery({
     queryKey: ['security-posture', deviceId],
     queryFn: () => devicesApi.getSecurityPosture(deviceId).then(r => r.data),
   });
@@ -116,7 +117,8 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
   const activeCount = activeChecks(checks).length;
 
   const muted = mutedCount(checks);
-  const score = posture?.score ?? 100;
+  // No score when the audit couldn't run. It used to fall back to 100 (U5).
+  const score = posture?.score ?? null;
 
   return (
     <div className="space-y-4">
@@ -132,6 +134,8 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
 
       {isLoading ? (
         <div className="text-center py-8 text-gray-400"><RefreshCw className="w-4 h-4 animate-spin inline mr-2" />Auditing device…</div>
+      ) : postureError || score === null ? (
+        <div className="card"><LoadError what="this device's security audit" error={postureErr} /></div>
       ) : (
         <>
           {/* Score + summary */}

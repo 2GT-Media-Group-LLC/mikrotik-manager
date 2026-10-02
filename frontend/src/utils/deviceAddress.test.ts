@@ -122,3 +122,19 @@ describe('stripIPv6Brackets', () => {
     expect(stripIPv6Brackets('10.0.0.1')).toBe('10.0.0.1');
   });
 });
+
+describe('sameAddress (#178)', () => {
+  it('matches differently written forms of one IPv6 address', async () => {
+    const { sameAddress } = await import('./deviceAddress');
+    expect(sameAddress('2001:db8::1', '2001:0DB8:0:0:0:0:0:1')).toBe(true);
+    expect(sameAddress('[2001:db8::1]', '2001:db8::1')).toBe(true);
+    expect(sameAddress('2001:db8::1', '2001:db8::2')).toBe(false);
+    expect(sameAddress('fe80::1%bridge', 'fe80::1')).toBe(true);
+  });
+  it('compares IPv4 and names as text', async () => {
+    const { sameAddress } = await import('./deviceAddress');
+    expect(sameAddress('192.168.0.1', '192.168.0.1')).toBe(true);
+    expect(sameAddress('192.168.0.1', '2001:db8::1')).toBe(false);
+    expect(sameAddress('Router.local', 'router.local')).toBe(true);
+  });
+});

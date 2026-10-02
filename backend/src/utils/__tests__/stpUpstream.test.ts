@@ -176,3 +176,33 @@ describe('upstreamByDevice', () => {
     expect(upstreamByDevice(resolveStpUpstreams(bs, ls), bs).get(2)).toBe(1);
   });
 });
+
+// Outside review J6.
+describe('STP upstream: bonds and unmanaged roots', () => {
+  const ROOT_EXT = '0x2000.70:A7:41:EF:8F:FB'; // a root bridge nobody here manages
+
+  it('finds a managed upstream on the way to an unmanaged root', () => {
+    const bs: StpBridge[] = [
+      { device_id: 10, bridge_name: 'bridge', bridge_id: '0x8000.AA:00:00:00:00:10', root_bridge: false, root_bridge_id: ROOT_EXT, root_port: 'ether1', root_path_cost: 200 },
+      { device_id: 11, bridge_name: 'bridge', bridge_id: '0x8000.AA:00:00:00:00:11', root_bridge: false, root_bridge_id: ROOT_EXT, root_port: 'sfp1', root_path_cost: 100 },
+    ];
+    const ls: StpLink[] = [{ from_device_id: 10, from_interface: 'ether1', to_device_id: 11 }];
+    const v = verdictFor(resolveStpUpstreams(bs, ls), 10);
+    expect(v.confidence).toBe('resolved');
+    expect(v.upstreamDeviceId).toBe(11);
+    // The one at the edge of what we manage is still reported as external.
+    expect(verdictFor(resolveStpUpstreams(bs, ls), 11).confidence).toBe('external-root');
+  });
+
+  it('looks through a bonded root port to its member ports', () => {
+    const ROOT = '0x8000.BB:00:00:00:00:20';
+    const bs: StpBridge[] = [
+      { device_id: 20, bridge_name: 'bridge', bridge_id: ROOT, root_bridge: true, root_bridge_id: ROOT, root_port: 'none', root_path_cost: 0 },
+      { device_id: 21, bridge_name: 'bridge', bridge_id: '0x8000.BB:00:00:00:00:21', root_bridge: false, root_bridge_id: ROOT, root_port: 'bond1', root_path_cost: 10 },
+    ];
+    const ls: StpLink[] = [{ from_device_id: 21, from_interface: 'sfp2', to_device_id: 20 }];
+    expect(verdictFor(resolveStpUpstreams(bs, ls), 21).confidence).toBe('ambiguous'); // the bond alone matches nothing
+    const v = verdictFor(resolveStpUpstreams(bs, ls, new Map([['21 bond1', ['sfp1', 'sfp2']]])), 21);
+    expect(v.upstreamDeviceId).toBe(20);
+  });
+});

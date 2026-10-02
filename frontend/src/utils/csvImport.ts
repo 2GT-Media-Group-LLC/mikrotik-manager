@@ -94,6 +94,42 @@ export function detectDelimiter(headerLine: string): string {
   return n > 0 ? best : ',';
 }
 
+/**
+ * Split a whole file into records per RFC 4180 (outside review U9): a quoted
+ * cell may contain the delimiter, doubled quotes and line breaks, so a note
+ * with a newline stays one cell instead of splitting into a broken row. Cells
+ * come back exactly as written; the caller decides what to trim. `line` is
+ * where each record starts, for error messages.
+ */
+export function parseCsvRecords(text: string, delimiter = ','): { line: number; cells: string[] }[] {
+  const records: { line: number; cells: string[] }[] = [];
+  let cells: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  let line = 1;
+  let start = 1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charAt(i);
+    if (inQuotes) {
+      if (ch === '"' && text.charAt(i + 1) === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else { if (ch === '\n') line++; cur += ch; }
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === delimiter) { cells.push(cur); cur = ''; }
+    else if (ch === '\r' && text.charAt(i + 1) === '\n') { /* the \n ends the record */ }
+    else if (ch === '\n') {
+      cells.push(cur);
+      records.push({ line: start, cells });
+      cells = []; cur = ''; line++; start = line;
+    } else cur += ch;
+  }
+  if (cur !== '' || cells.length > 0) { cells.push(cur); records.push({ line: start, cells }); }
+  return records;
+}
+
+/** Fields whose value is used exactly as written: never trimmed (U9). */
+const VERBATIM: ReadonlySet<keyof RowFields> = new Set(['api_password', 'ssh_password']);
+
 /** Split one CSV line, honouring quotes and doubled quotes inside them. */
 export function splitCsvLine(line: string, delimiter = ','): string[] {
   const out: string[] = [];
@@ -121,35 +157,52 @@ export function parseDeviceCsv(
 ): ParseResult {
   const tagByName = new Map(tags.map((t) => [t.name.trim().toLowerCase(), t.id]));
   const fileErrors: string[] = [];
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+  const body = text.replace(/^\uFEFF/, '');
 
-  // First non-blank, non-comment line is the header.
-  const headerIdx = lines.findIndex((l) => l.trim() && !l.trim().startsWith('#'));
-  if (headerIdx === -1) return { rows: [], fileErrors: ['The file is empty.'], ignoredColumns: [] };
+  // The separator, from the first non-blank, non-comment line.
+  const firstLine = body.split(/\r?\n/).find((l) => l.trim() && !l.trim().startsWith('#'));
+  if (firstLine === undefined) return { rows: [], fileErrors: ['The file is empty.'], ignoredColumns: [] };
+  const delimiter = detectDelimiter(firstLine);
 
-  const delimiter = detectDelimiter(lines[headerIdx]);
-  const header = splitCsvLine(lines[headerIdx], delimiter).map((h) => h.toLowerCase().replace(/\s+/g, '_'));
-  const mapping = header.map((h) => COLUMNS[h]);
+  const isBlankOrComment = (cells: string[]) =>
+    cells.every((c) => !c.trim()) || (cells[0] ?? '').trim().startsWith('#');
+  const records = parseCsvRecords(body, delimiter).filter((rec) => !isBlankOrComment(rec.cells));
+  const headerRec = records.shift();
+  if (!headerRec) return { rows: [], fileErrors: ['The file is empty.'], ignoredColumns: [] };
+
+  const header = headerRec.cells.map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
+  const columnMap = new Map(Object.entries(COLUMNS));
+  const mapping = header.map((h) => columnMap.get(h));
   const ignoredColumns = header.filter((h, i) => h && !mapping[i]);
   if (!mapping.includes('ip_address')) {
     fileErrors.push('No address column. Add a header row with at least "ip_address" (or "ip", "address", "host").');
     return { rows: [], fileErrors, ignoredColumns };
   }
+  // Two columns meaning the same thing (ip and address, say) used to let the
+  // later one silently win. Refuse instead (U9).
+  const byField = new Map<string, string[]>();
+  header.forEach((h, i) => { const k = mapping[i]; if (k) byField.set(k, [...(byField.get(k) ?? []), h]); });
+  for (const cols of byField.values()) {
+    if (cols.length > 1) fileErrors.push(`Columns ${cols.map((c) => `"${c}"`).join(' and ')} mean the same thing. Keep only one.`);
+  }
+  if (fileErrors.length > 0) return { rows: [], fileErrors, ignoredColumns };
 
   const presetByName = new Map(presets.map((p) => [p.name.trim().toLowerCase(), p.id]));
   const existing = new Set(existingAddresses.map((a) => a.trim().toLowerCase()));
   const seen = new Map<string, number>();
   const rows: ParsedRow[] = [];
 
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const raw = lines[i];
-    if (!raw.trim() || raw.trim().startsWith('#')) continue;
-
-    const cells = splitCsvLine(raw, delimiter);
+  for (const rec of records) {
     const f: RowFields = {};
-    mapping.forEach((key, c) => { if (key && cells[c] !== undefined && cells[c] !== '') f[key] = cells[c]; });
+    mapping.forEach((key, c) => {
+      const raw = rec.cells[c];
+      if (!key || raw === undefined) return;
+      // Passwords exactly as written: a significant space is part of them (U9).
+      const v = VERBATIM.has(key) ? raw : raw.trim();
+      if (v !== '') f[key] = v;
+    });
 
-    const line = i + 1;
+    const line = rec.line;
     const errors: string[] = [];
     const warnings: string[] = [];
     const addr = stripIPv6Brackets((f.ip_address || '').trim());

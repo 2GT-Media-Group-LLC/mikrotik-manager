@@ -120,3 +120,33 @@ export function addressFieldValue(raw: string): { address: string; port?: number
   if (split.port && split.address !== raw) return split;
   return { address: raw };
 }
+
+/**
+ * IPv6 written out in full, lowercase ("2001:db8::1" ->
+ * "2001:0db8:0000:0000:0000:0000:0000:0001"), so differently written forms of
+ * one address compare equal. Null when it isn't IPv6.
+ */
+function expandIPv6(v: string): string | null {
+  const bare = stripIPv6Brackets(v).trim().toLowerCase().split('%')[0];
+  if (!isValidIPv6(bare)) return null;
+  const halves = bare.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  const groups = [...head, ...Array<string>(Math.max(fill, 0)).fill('0'), ...tail];
+  if (groups.length !== 8 || groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return null;
+  return groups.map((g) => g.padStart(4, '0')).join(':');
+}
+
+/**
+ * Do two device addresses name the same host? IPv6 is compared in full, so
+ * "[2001:DB8::1]" matches "2001:db8:0:0::1" (#178: an IPv6 management
+ * address was flagged as not on the router).
+ */
+export function sameAddress(a: string, b: string): boolean {
+  const x = expandIPv6(a);
+  const y = expandIPv6(b);
+  if (x || y) return x === y;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}

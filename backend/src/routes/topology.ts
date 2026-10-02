@@ -1,3 +1,4 @@
+import { loadBondMembers } from '../services/topology/bondMembers';
 import { Router, Request, Response } from 'express';
 import { resourceSiteAccess } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
@@ -105,7 +106,7 @@ router.get('/', async (req: Request, res: Response) => {
   // cannot: which neighbour on an ambiguous port is actually upstream, how deep
   // each device sits, and which trees are separate. Resolved server-side so the
   // rollout warning and the diagram agree on one answer (#131 follow-on).
-  const upstreams = resolveStpUpstreams(bridges, allLinks);
+  const upstreams = resolveStpUpstreams(bridges, allLinks, await loadBondMembers());
 
   res.json({
     devices,

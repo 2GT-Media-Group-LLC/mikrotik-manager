@@ -4,10 +4,13 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.16.x (current beta) | Yes |
-| Earlier versions | No |
+| The latest release (0.24.x beta) | Yes |
+| Anything older | No |
 
-MikroTik Manager is currently in beta. Security fixes will be applied to the latest release only.
+MikroTik Manager is in beta, and security fixes go into the latest release only. Every commit to
+`main` is a release: its version is in `backend/package.json`, shown in the app's sidebar and
+tagged on the published images. Updating (`git pull` and `docker compose up -d --build`, or
+`docker compose pull` with the published images) is how a fix is applied.
 
 ## Reporting a Vulnerability
 
@@ -38,11 +41,12 @@ We ask that you give us reasonable time to address the issue before any public d
 MikroTik Manager is designed to be run on your local network. A few things to keep in mind:
 
 - **Do not expose this application directly to the public internet.** It is intended for LAN or VPN-only access.
-- The `.env` file contains sensitive credentials (JWT secret, encryption key, database passwords). Protect this file and never commit it to version control.
-- Device credentials stored in the database are encrypted at rest using AES-256.
-- HTTPS is enforced by default. The included nginx configuration redirects all HTTP traffic to HTTPS.
-- Default credentials should be changed immediately after first login.
-- The built-in role-based access control (Admin / Operator / Viewer) should be used to limit user privileges.
+- The `.env` file holds the internal database passwords, and the JWT secret and encryption key if you set them yourself. Left unset, those two are generated on first start and kept in the `app_data` volume, which then needs the same protection. Never commit `.env` to version control.
+- The internal database passwords default to publicly known values. Set your own; see [Internal service passwords](docs/configuration.md#internal-service-passwords).
+- Device passwords are encrypted at rest with AES-256-GCM, and so are backups that contain secrets. Anyone holding both the database and the encryption key can decrypt them, so back up and protect them separately.
+- The included nginx configuration redirects HTTP to HTTPS. Its certificate is self-signed until you upload your own.
+- The first sign-in as `admin`/`admin` must set a new password before anything else works.
+- Use the roles (admin, operator, viewer, fleet-wide or per site) to give people only the access they need.
 
 ## AI-Assisted Security Infrastructure
 

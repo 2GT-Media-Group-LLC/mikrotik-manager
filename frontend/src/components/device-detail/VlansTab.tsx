@@ -58,7 +58,12 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
   // ── Delete error ──
   const [deleteError, setDeleteError] = useState('');
 
-  const bridgeOptions = [...new Set((vlans as Vlan[]).map((v) => v.bridge).filter(Boolean))];
+  // Every bridge on the device, not just those that already have VLANs: a bridge
+  // with none could never get its first one (outside review U14).
+  const bridgeOptions = [...new Set([
+    ...ports.filter((p) => p.type === 'bridge').map((p) => p.name),
+    ...(vlans as Vlan[]).map((v) => v.bridge),
+  ].filter(Boolean))];
 
   // ── Mutations ──
   const addMutation = useMutation({
@@ -276,7 +281,16 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
           )}
           <div className="flex gap-2">
             <button
-              onClick={() => addMutation.mutate(false)}
+              onClick={() => {
+                // A whole number from 1 to 4094; parseInt read "10.5" as VLAN 10 (U14).
+                const id = addForm.vlan_id.trim();
+                if (!/^\d+$/.test(id) || Number(id) < 1 || Number(id) > 4094) {
+                  setAddError('VLAN ID must be a whole number from 1 to 4094.');
+                  return;
+                }
+                if (!addForm.bridge) { setAddError('Choose a bridge.'); return; }
+                addMutation.mutate(false);
+              }}
               disabled={!addForm.vlan_id || !addForm.bridge || addMutation.isPending}
               className="btn-primary flex items-center gap-2 text-sm"
             >

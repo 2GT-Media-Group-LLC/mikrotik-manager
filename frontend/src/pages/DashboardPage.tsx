@@ -285,10 +285,12 @@ function SummaryView(props: Record<string, any>) {
     queryFn: () => settingsApi.get().then(r => r.data),
     staleTime: 300_000,
   });
-  const mapsEnabled = appSettings?.['maps_enabled'] !== false;
+  // Off until settings have loaded (outside review U6): unknown used to count as on,
+  // so a Dark Site install fetched map tiles and geocoding before, or without, the setting.
+  const mapsEnabled = appSettings !== undefined && appSettings['maps_enabled'] !== false;
 
   const { summary, devices, wirelessCount, clientSparkline, clientsOverTime,
-    chartRange, setChartRange, topClients, usingNetflowTop, recentEvents, severities, toggleSeverity, navigate } = props;
+    chartRange, setChartRange, topClients, topClientsError, usingNetflowTop, recentEvents, severities, toggleSeverity, navigate } = props;
   const formatBytes = (bytes: number) => {
     if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
     if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
@@ -510,8 +512,9 @@ function SummaryView(props: Record<string, any>) {
               })}
             </div>
           ) : (
-            <div className="flex items-center justify-center text-[12px]" style={{ height: 80, color: 'var(--ink-4)' }}>
-              No active clients
+            <div className="flex items-center justify-center text-[12px]" style={{ height: 80, color: topClientsError ? 'var(--warn, #d97706)' : 'var(--ink-4)' }}>
+              {/* An unreadable list isn't an empty one (U5). */}
+              {topClientsError ? 'Couldn’t load clients' : 'No active clients'}
             </div>
           )}
         </div>
@@ -701,22 +704,26 @@ function OperationsView({
     } finally { setBusy(null); }
   }
 
-  const actions = [
+  // Every quick action needs write access on the server, so viewers aren't
+  // offered them (U10). Backup all and Sync touch every device in view, so
+  // they ask first.
+  const fleetConfirm = (what: string) => window.confirm(`${what} for all ${onlineDevices.length} online device${onlineDevices.length === 1 ? '' : 's'} in view?`);
+  const actions = !canWrite ? [] : [
     { key: 'discovery', label: 'Run discovery', sub: 'Scan ARP / CDP / MNDP', icon: Wifi, color: 'var(--accent)',
       run: () => runAction('discovery', async () => {
         const r = await topologyApi.discover();
         return (r.data as { message?: string })?.message || 'Discovery triggered';
       }) },
     { key: 'backup', label: 'Backup all', sub: `${onlineDevices.length} online`, icon: HardDrive, color: 'var(--info)',
-      run: () => runAction('backup', async () => {
+      run: () => fleetConfirm('Back up') && runAction('backup', async () => {
         const r = await operationsApi.backupAll();
         const ok = r.data.results.filter(x => x.ok).length;
         return `Backed up ${ok}/${r.data.total} device${r.data.total !== 1 ? 's' : ''}`;
       }) },
-    ...(canWrite ? [{ key: 'terminal', label: 'Open terminal', sub: 'Pick a device', icon: Terminal, color: 'var(--violet)',
-      run: () => { setActionMsg(null); setPickTerminal(true); } }] : []),
+    { key: 'terminal', label: 'Open terminal', sub: 'Pick a device', icon: Terminal, color: 'var(--violet)',
+      run: () => { setActionMsg(null); setPickTerminal(true); } },
     { key: 'sync', label: 'Sync config', sub: 'Pull latest /export', icon: RefreshCw, color: 'var(--ink-2)',
-      run: () => runAction('sync', async () => {
+      run: () => fleetConfirm('Pull the configuration') && runAction('sync', async () => {
         const r = await operationsApi.syncAll();
         const ok = r.data.results.filter(x => x.ok).length;
         qc.invalidateQueries({ queryKey: ['ops-insights'] });
@@ -1197,7 +1204,7 @@ export default function DashboardPage() {
     refetchInterval: 60_000,
   });
   const usingNetflowTop = netflowTopClients.length > 0;
-  const { data: counterTopClients = [] } = useQuery({
+  const { data: counterTopClients = [], isError: counterTopError } = useQuery({
     queryKey: ['top-clients'],
     queryFn: () => metricsApi.topClients(8).then(r => r.data),
     refetchInterval: 60_000,
@@ -1378,6 +1385,7 @@ export default function DashboardPage() {
           chartRange={chartRange}
           setChartRange={setChartRange}
           topClients={topClients}
+          topClientsError={!usingNetflowTop && counterTopError}
           usingNetflowTop={usingNetflowTop}
           recentEvents={recentEvents}
           severities={severities}

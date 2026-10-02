@@ -8,6 +8,14 @@
 # Pre-built image deployment — no source code or build toolchain required.
 # For development or building from source, use docker-compose.yml instead.
 # ─────────────────────────────────────────────────────────────────────────────
+# Every service's logs rotate (outside review O4): json-file logs otherwise
+# grow until the disk fills.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   nginx:
     image: ghcr.io/2gt-media-group-llc/mikrotik-manager-nginx:latest
@@ -18,12 +26,36 @@ services:
       # close them; see docs/configuration.md#network-exposure.
       - "${BIND_ADDRESS:+${BIND_ADDRESS}:}${HTTP_PORT:-80}:80"
       - "${BIND_ADDRESS:+${BIND_ADDRESS}:}${HTTPS_PORT:-443}:443"
+    environment:
+      # The redirect from HTTP keeps a non-default HTTPS port (outside review O5).
+      HTTPS_PORT: ${HTTPS_PORT:-443}
     volumes:
       - certs_data:/certs
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
+    # Hardening (outside review O4): only the capabilities nginx and its
+    # entrypoint use (binding 80/443, dropping to the worker user, handing
+    # /certs to the backend user), no privilege gain, and a read-only root
+    # filesystem with scratch space in memory.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
     networks:
       - app-network
 
@@ -32,8 +64,12 @@ services:
     environment:
       NODE_ENV: production
       TZ: ${TZ:-UTC}
-      DATABASE_URL: postgresql://mikrotik:${DB_PASSWORD:-mikrotik_secure_pw}@postgres:5432/mikrotik_manager
+      # The password is passed on its own, so any characters work in it (O3).
+      DATABASE_URL: postgresql://mikrotik@postgres:5432/mikrotik_manager
+      DB_PASSWORD: ${DB_PASSWORD:-mikrotik_secure_pw}
       REDIS_URL: redis://redis:6379
+      # Optional. Set it in .env and Redis requires it; see docs/configuration.md.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       INFLUXDB_URL: http://influxdb:8086
       INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-mytoken123456789}
       INFLUXDB_ORG: ${INFLUXDB_ORG:-mikrotik-manager}
@@ -70,11 +106,23 @@ services:
       - backups_data:/app/backups
       - certs_data:/certs
       - app_data:/app/data
+    # Hardening (outside review O4): every capability dropped but NET_RAW,
+    # which arp-scan needs, and a read-only root filesystem: the process can
+    # write only its volumes and /tmp, so it can't rewrite its own code.
+    # no-new-privileges is deliberately not set here: it would stop arp-scan
+    # receiving its file capability, and with it server-side ARP discovery.
+    cap_drop:
+      - ALL
     cap_add:
       - NET_RAW
+    read_only: true
+    tmpfs:
+      - /tmp
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - app-network
+      - data-network
       - device-ipv6
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
@@ -84,7 +132,7 @@ services:
       start_period: 30s
 
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
     environment:
       TZ: ${TZ:-UTC}
       POSTGRES_DB: mikrotik_manager
@@ -93,8 +141,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
     networks:
-      - app-network
+      - data-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mikrotik -d mikrotik_manager"]
       interval: 10s
@@ -103,7 +154,7 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     # A memory ceiling so a runaway producer can never take the host down, with
     # eviction disabled.
     #
@@ -119,19 +170,23 @@ services:
       redis-server --appendonly yes
       --maxmemory ${REDIS_MAXMEMORY:-512mb}
       --maxmemory-policy noeviction
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
     networks:
-      - app-network
+      - data-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning ${REDIS_PASSWORD:+-a ${REDIS_PASSWORD}} ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   influxdb:
-    image: influxdb:2.7
+    image: influxdb:2.7@sha256:b8d940ca9376f85118260f5b6bd236b8a00b1749c3350c5578d4cde8e27f31f2
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
       DOCKER_INFLUXDB_INIT_USERNAME: admin
@@ -142,8 +197,11 @@ services:
     volumes:
       - influxdb_data:/var/lib/influxdb2
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
     networks:
-      - app-network
+      - data-network
     healthcheck:
       test: ["CMD", "influx", "ping"]
       interval: 15s
@@ -162,6 +220,11 @@ volumes:
 networks:
   app-network:
     driver: bridge
+  # The databases, with no route out and nothing but the backend on it
+  # (outside review O3). nginx, on app-network, can't reach them.
+  data-network:
+    driver: bridge
+    internal: true
   # Lets the backend reach devices by IPv6 address (#178). Off unless
   # ENABLE_IPV6=true is set in .env; see docs/devices.md for what the host needs
   # (IPv6, Docker 27+, accept_ra=2) and how to switch it on or off.

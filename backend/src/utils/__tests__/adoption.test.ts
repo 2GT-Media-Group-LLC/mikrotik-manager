@@ -1,3 +1,4 @@
+import { hostRole, tempAddressCandidates, jumpInterface, detectDeviceType, hasMac, validatePlan as vp } from '../adoption';
 import {
   collectCandidates, needsJumpHost, pickTempAddress, validateTargetAddress,
   buildAdoptionOps, fetchAuthHeader, sameSubnet, FACTORY_ADDRESS,
@@ -438,5 +439,45 @@ describe('arpRowResolved', () => {
 
   it('does not count an entry with no MAC at all', () => {
     expect(arpRowResolved({ status: 'incomplete' })).toBe(false);
+  });
+});
+
+// ── Outside review C9 ───────────────────────────────────────────────────────
+
+describe('C9 adoption edge cases', () => {
+  it('judges network and broadcast addresses by the real prefix', () => {
+    expect(hostRole('10.0.1.0', 16)).toBe('host');
+    expect(hostRole('10.0.0.127', 25)).toBe('broadcast');
+    expect(hostRole('10.0.0.128', 25)).toBe('network');
+    expect(hostRole('10.0.0.255', 23)).toBe('host');
+    expect(vp({ mode: 'static', address: '10.0.0.127', prefix: 25, gateway: '10.0.0.1' }).ok).toBe(false);
+    expect(vp({ mode: 'static', address: '10.0.1.0', prefix: 16, gateway: '10.0.0.1' }).ok).toBe(true);
+  });
+
+  it('offers several temporary addresses, skipping held ones', () => {
+    const c = tempAddressCandidates('192.168.88.1', ['192.168.88.250/24']);
+    expect(c[0]).toBe('192.168.88.249/24');
+    expect(c.length).toBeGreaterThan(5);
+  });
+
+  it('puts the temporary address on the bridge a port belongs to, or refuses', () => {
+    const ifaces = [{ name: 'bridge' }, { name: 'ether2' }, { name: 'ether5' }, { name: 'br-lab' }];
+    const ports = [{ interface: 'ether2', bridge: 'bridge' }, { interface: 'ether5', bridge: 'br-lab' }];
+    expect(jumpInterface(['ether2'], ports, ifaces)).toBe('bridge');
+    expect(jumpInterface(['bridge/ether2'], ports, ifaces)).toBe('bridge');
+    expect(jumpInterface(['ether5'], ports, ifaces)).toBe('br-lab');
+    expect(jumpInterface(['ether2', 'ether5'], ports, ifaces)).toBeNull(); // two segments: ambiguous
+    expect(jumpInterface([], ports, ifaces)).toBeNull();
+  });
+
+  it('detects the device type instead of filing everything as a switch', () => {
+    expect(detectDeviceType('CRS310-8G+2S+', [{ type: 'ether', name: 'ether1' }])).toBe('switch');
+    expect(detectDeviceType('wAPG-5HaxD2HaxD', [{ type: 'wifi', name: 'wifi1' }])).toBe('wireless_ap');
+    expect(detectDeviceType('RB5009UG+S+', [{ type: 'ether', name: 'ether1' }])).toBe('router');
+  });
+
+  it('matches the target by MAC', () => {
+    expect(hasMac([{ 'mac-address': 'd4:01:c3:00:00:01' }], 'D4:01:C3:00:00:01')).toBe(true);
+    expect(hasMac([{ 'mac-address': 'D4:01:C3:00:00:02' }], 'D4:01:C3:00:00:01')).toBe(false);
   });
 });

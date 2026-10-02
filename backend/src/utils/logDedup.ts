@@ -19,7 +19,8 @@ export interface RawLogLine {
 
 /** RouterOS log ids are hex strings like "*1A2F"; 0 means "no usable id". */
 export function parseRosId(id: string | undefined): number {
-  const hex = (id || '').replace(/^\*/, '');
+  // Stored ids carry a content suffix ("*5~1a2b3c4d", see storedLogId).
+  const hex = (id || '').replace(/^\*/, '').split('~')[0];
   if (!hex || !/^[0-9a-fA-F]+$/.test(hex)) return 0;
   const n = parseInt(hex, 16);
   return Number.isSafeInteger(n) && n > 0 ? n : 0;
@@ -109,6 +110,20 @@ export function surrogateLogId(time: string, topics: string, message: string): s
     .digest('hex')
     .slice(0, 16);
   return `#${hash}`;           // 17 chars, inside the column's VARCHAR(20)
+}
+
+/**
+ * The id a log line is stored under: RouterOS's own id plus a short hash of
+ * the line (outside review J9). RouterOS numbers log lines from *1 again
+ * after a reboot, so after a second reboot new lines reused the ids of lines
+ * already stored, and the unique index silently dropped them, losing exactly
+ * the post-crash lines someone would want. The same line polled twice still
+ * gets the same id, so de-duplication holds. At most 18 characters, inside
+ * the column's VARCHAR(20).
+ */
+export function storedLogId(rosId: string, time: string, topics: string, message: string): string {
+  const hash = createHash('sha256').update(`${time}\u0000${topics}\u0000${message}`).digest('hex').slice(0, 8);
+  return `${rosId.slice(0, 9)}~${hash}`;
 }
 
 /** True for the ids this module synthesised, as opposed to RouterOS's own. */

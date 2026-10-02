@@ -144,7 +144,10 @@ Deliberately **not** scoped:
   see only their own exporters in it.
 - **Rogue AP detection.** The scans are site-scoped, but the "these access points are
   ours" set stays fleet-wide. An AP of yours in another site is still yours, and scoping
-  that set would report your own hardware as a rogue.
+  that set would report your own hardware as a rogue. Your SSIDs, on the other hand, are
+  matched per site: a neighbour at one site broadcasting "Guest" isn't flagged because a
+  managed AP at another site is also called "Guest". One of your own AP addresses heard on
+  a channel that radio isn't using is flagged as a likely spoof.
 - **Install-wide configuration**: users, alert rules, webhooks, config templates,
   credential presets, tags, maintenance windows and settings.
 

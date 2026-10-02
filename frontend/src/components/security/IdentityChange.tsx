@@ -19,6 +19,7 @@ function ChangeDetails({ pin, deviceId, deviceName }: { pin: IdentityPin; device
   const noun = isCert ? 'certificate' : 'host key';
 
   const trust = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => identityApi.trust(deviceId, pin.kind),
     onSuccess: () => {
       setConfirming(false);

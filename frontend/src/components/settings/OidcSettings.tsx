@@ -36,6 +36,7 @@ function OidcForm({ initial }: { initial: OidcConfigView }) {
   const [saved, setSaved] = useState(false);
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => {
       const group_role_map: Record<string, UserRole> = {};
       for (const r of groupRows) if (r.group.trim()) group_role_map[r.group.trim()] = r.role;

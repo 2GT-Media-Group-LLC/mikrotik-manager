@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import LoadError from '../components/common/LoadError';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -63,19 +64,19 @@ export default function TrafficAnalyticsPage() {
   const [topLimit, setTopLimit] = useState(10);
   const navigate = useNavigate();
 
-  const { data: series = [], isLoading: seriesLoading } = useQuery({
+  const { data: series = [], isLoading: seriesLoading, isError: seriesError, error: seriesErr } = useQuery({
     queryKey: ['traffic-timeseries', range],
     queryFn: () => trafficApi.timeseries(range).then(r => r.data),
     refetchInterval: 60_000,
   });
 
-  const { data: topClients = [], isLoading: clientsLoading } = useQuery({
+  const { data: topClients = [], isLoading: clientsLoading, isError: clientsError } = useQuery({
     queryKey: ['traffic-top-clients', range, topLimit],
     queryFn: () => trafficApi.topClients(range, topLimit).then(r => r.data),
     refetchInterval: 60_000,
   });
 
-  const { data: apps = [], isLoading: appsLoading } = useQuery({
+  const { data: apps = [], isLoading: appsLoading, isError: appsError } = useQuery({
     queryKey: ['traffic-apps', range],
     queryFn: () => trafficApi.apps(range).then(r => r.data),
     refetchInterval: 60_000,
@@ -147,7 +148,12 @@ export default function TrafficAnalyticsPage() {
       </div>
 
       {/* Empty state */}
-      {!isLoading && !hasData && (
+      {/* A failed read is an error, not "set up NetFlow" (outside review J3). */}
+      {(seriesError || clientsError || appsError) && (
+        <div className="card"><LoadError what="traffic data" error={seriesErr} /></div>
+      )}
+
+      {!isLoading && !hasData && !(seriesError || clientsError || appsError) && (
         <div className="card p-12 text-center space-y-3">
           <Activity className="w-10 h-10 mx-auto text-gray-300 dark:text-slate-600" />
           <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">No traffic data yet</h2>

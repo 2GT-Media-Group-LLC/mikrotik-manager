@@ -14,6 +14,8 @@ Servers, address pools and leases, per device.
   dynamic lease can be converted to static in place, which is the usual way to pin an address
   to a device you care about.
 - **Pools** and **servers** can be created, edited and removed.
+- A static **IPv6 binding** is matched by the client's DUID, not its MAC address, and assigns
+  a prefix. Before 0.24.51 the form asked for a MAC address, which RouterOS refused.
 
 A DHCP server bound to an interface that later changes VLAN is a common way to hand out
 addresses on the wrong segment; the lease list is the quickest way to notice.
@@ -22,7 +24,11 @@ addresses on the wrong segment; the lease list is the quickest way to notice.
 
 The resolver configuration on each device, plus static entries.
 
-- **Static DNS** entries are managed per device, including regexp entries.
+- **Static DNS** entries are managed per device, including regexp entries. The record types
+  are RouterOS's own: A, AAAA, CNAME, MX (with a preference), NS, TXT, SRV (with port,
+  priority and weight) and FWD (forward that name to another DNS server). RouterOS has no
+  static PTR record. Before 0.24.51 MX, NS and SRV targets went into the wrong field and the
+  record wasn't created.
 - **Flush cache** clears the resolver cache on a device, which is worth doing after changing
   an upstream server or a static entry.
 
@@ -35,6 +41,11 @@ the wrong time.
 
 [Configuration templates](devices.md) can push the same NTP servers to many devices at once.
 
+On RouterOS 6 the NTP server comes with the optional ntp package, so a stock device shows the
+client only. Its client takes up to two IP addresses plus any number of names, and its mode
+follows from the servers: unicast when some are set, broadcast when none are. Before 0.24.51
+saving NTP settings on such a device failed with an error 500.
+
 ## WireGuard
 
 Interfaces and peers per device: create, edit, enable, disable and remove. Peer public keys and
@@ -45,6 +56,12 @@ platform.
 
 Where each device sends its logs — remote actions and the rules that select which topics go to
 them. Rules can be toggled without deleting them.
+
+On current RouterOS 7, a remote action with a facility and severity is sent in syslog format
+(`remote-log-format=syslog`), and **BSD syslog** picks the BSD timestamp style over ISO 8601.
+Older RouterOS takes the same settings in its own form. The built-in actions (memory, disk,
+echo, remote) can be edited but not renamed or changed to another kind. Before 0.24.51 adding
+an action failed on every device.
 
 This is separate from the events the platform collects itself. The platform reads
 `/log/print` on its own cadence regardless of whether you forward logs anywhere.

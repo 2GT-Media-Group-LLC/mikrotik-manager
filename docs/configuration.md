@@ -16,6 +16,7 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `INFLUXDB_ORG` | `mikrotik-manager` | InfluxDB organization |
 | `INFLUXDB_BUCKET` | `metrics` | InfluxDB bucket for time-series data |
 | `INFLUXDB_ADMIN_PASSWORD` | `admin_password_123` | InfluxDB admin UI password |
+| `REDIS_PASSWORD` | *none* | Makes Redis require a password. Can be set or changed at any time |
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
@@ -25,6 +26,49 @@ Set in `.env` at the project root. Changing any of these requires a container re
 
 For a production deployment the only variable you genuinely must set is `CORS_ORIGIN`.
 Both secrets generate themselves safely — see below.
+
+## Internal service passwords
+
+`DB_PASSWORD`, `INFLUXDB_TOKEN`, `INFLUXDB_ADMIN_PASSWORD` and `REDIS_PASSWORD` protect the
+databases. Their defaults are public, so set your own. Postgres, InfluxDB and Redis sit on a
+network of their own that only the backend joins, with no route out, so nothing else can reach
+them. The passwords are a second layer.
+
+**On a new install**, set them in `.env` before the first `docker compose up -d`. Hex values
+are the easiest, since they need no quoting anywhere:
+
+```
+openssl rand -hex 24
+```
+
+**On an existing install**, Postgres and InfluxDB keep the password they were first started
+with: they read these variables only when their data volume is empty. Changing `.env` alone
+then leaves the backend unable to log in. Change the password inside the database first, then
+in `.env`:
+
+- **Postgres**:
+
+  ```
+  docker compose exec postgres psql -U mikrotik -d mikrotik_manager \
+    -c "ALTER USER mikrotik WITH PASSWORD 'new-password'"
+  ```
+
+  Then set `DB_PASSWORD=new-password` in `.env` and run `docker compose up -d`.
+
+- **InfluxDB token**: create a new all-access token, put it in `INFLUXDB_TOKEN`, run
+  `docker compose up -d`, then delete the old token:
+
+  ```
+  docker compose exec influxdb influx auth create --all-access --org mikrotik-manager
+  ```
+
+  `influx auth list` shows the old token's ID, and `influx auth delete --id <id>` removes it.
+
+- **Redis** stores no password, so `REDIS_PASSWORD` can be set or changed at any time; run
+  `docker compose up -d` afterwards.
+
+Before 0.24.51 the database password was part of a connection URL, so a password containing
+`/`, `@` or `:` stopped the backend from starting. It is now passed on its own.
 
 ## First login
 
@@ -208,6 +252,18 @@ is still the real protection.
 Before 0.24.47 there was no bind setting, and the ports were always published on every
 interface.
 
+## Container hardening
+
+From 0.24.51 the containers run with less:
+
+- **backend**: every Linux capability dropped except `NET_RAW` (server-side ARP discovery), a
+  read-only root filesystem, and a non-root user that owns only its data directories. It can
+  write its volumes and `/tmp`, and nothing else.
+- **nginx**: only the capabilities it uses, no privilege escalation, and a read-only root
+  filesystem.
+- **Postgres, Redis, InfluxDB**: no privilege escalation, on the internal network only.
+- **Logs** from every container rotate at 10 MB, five files each.
+
 ## TLS
 
 A self-signed certificate is generated on first run. Replace it under
@@ -225,6 +281,19 @@ Images are published to GHCR only after CI has passed on that commit:
 `ghcr.io/2gt-media-group-llc/mikrotik-manager-backend` and `…-nginx`. Each is tagged
 `latest`, its version (for example `0.24.37-beta`) and `sha-<commit>`. To stay on a
 version, replace `latest` with the version tag in `docker-compose.ghcr.yml`.
+
+From 0.24.51 each image carries an SBOM and build provenance, and is signed with
+[cosign](https://docs.sigstore.dev/) by the workflow that built it. To check an image before
+running it:
+
+```
+cosign verify ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:latest \
+  --certificate-identity-regexp 'https://github.com/2GT-Media-Group-LLC/mikrotik-manager/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Base images and the database images are pinned by digest, so a tag moved upstream can't change
+what's built or run until an update is reviewed.
 
 
 ## Dark Site Mode

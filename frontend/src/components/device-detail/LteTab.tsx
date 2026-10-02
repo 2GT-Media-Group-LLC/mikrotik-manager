@@ -221,22 +221,31 @@ export default function LteTab({ deviceId }: Props) {
     refetchInterval: 30_000,
   });
 
+  // Graphs, dwell and history are for one modem at a time (outside review U14):
+  // with two modems their points used to be drawn as one zig-zagging line.
+  const [modem, setModem] = useState<string | null>(null);
+  const modemNames = (state?.interfaces ?? []).map(i => i.interface_name);
+  const activeModem = modem && modemNames.includes(modem) ? modem : modemNames[0];
+
   const { data: metrics } = useQuery({
-    queryKey: ['lte-metrics', deviceId, range],
-    queryFn: () => lteApi.metrics(deviceId, range).then(r => r.data),
+    queryKey: ['lte-metrics', deviceId, range, activeModem],
+    queryFn: () => lteApi.metrics(deviceId, range, activeModem).then(r => r.data),
+    enabled: !!activeModem,
     refetchInterval: 60_000,
   });
 
   const { data: dwell } = useQuery({
-    queryKey: ['lte-dwell', deviceId, dwellRange],
-    queryFn: () => lteApi.dwell(deviceId, dwellRange).then(r => r.data),
+    queryKey: ['lte-dwell', deviceId, dwellRange, activeModem],
+    queryFn: () => lteApi.dwell(deviceId, dwellRange, activeModem).then(r => r.data),
+    enabled: !!activeModem,
     refetchInterval: 120_000,
   });
 
   const { data: history } = useQuery({
-    queryKey: ['lte-history', deviceId, range],
-    queryFn: () => lteApi.history(deviceId, range === '1h' || range === '6h' ? '24h' : range)
+    queryKey: ['lte-history', deviceId, range, activeModem],
+    queryFn: () => lteApi.history(deviceId, range === '1h' || range === '6h' ? '24h' : range, activeModem)
       .then(r => r.data),
+    enabled: !!activeModem,
     refetchInterval: 60_000,
   });
 
@@ -388,6 +397,15 @@ export default function LteTab({ deviceId }: Props) {
       {interfaces.map(iface => (
         <DataCapCard key={`cap-${iface.interface_name}`} deviceId={deviceId} interfaceName={iface.interface_name} />
       ))}
+
+      {modemNames.length > 1 && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-gray-500 dark:text-slate-400">Graphs and history for</span>
+          <select className="input py-1 text-sm w-auto" value={activeModem} onChange={(e) => setModem(e.target.value)}>
+            {modemNames.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+      )}
 
       {/* Signal over time */}
       <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">

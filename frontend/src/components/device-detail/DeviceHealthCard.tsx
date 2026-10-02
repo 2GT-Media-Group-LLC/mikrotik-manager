@@ -24,6 +24,7 @@ export default function DeviceHealthCard({ device }: { device: Device }) {
   const hours = hoursDraft ?? String(Math.round((device.intermittent_alert_after_min ?? 1440) / 60));
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: (data: Parameters<typeof devicesApi.patchMonitoring>[1]) => devicesApi.patchMonitoring(device.id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['device', device.id] });

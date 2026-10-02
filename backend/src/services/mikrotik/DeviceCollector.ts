@@ -34,7 +34,7 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
  * learned to abandon a timed-out connection, desynchronised the session (#137).
  */
 const LOG_READ_TIMEOUT_MS = 120_000;
-import { selectNewLogLines, highestStoredId, surrogateLogId, type RawLogLine } from '../../utils/logDedup';
+import { selectNewLogLines, highestStoredId, surrogateLogId, storedLogId, type RawLogLine } from '../../utils/logDedup';
 import {
   parseUpdateStatus, latestFromStream, peakPercent, type UpdateStatus,
 } from '../../utils/updateStatus';
@@ -55,6 +55,10 @@ import { planVlanWrite, frameTypesFor, planTaggedRemovals } from '../../utils/br
 import { normalizeHealth, evaluateHealth, type HealthVerdict, type HealthIssue } from '../../utils/deviceHealth';
 import { resolveChannel } from '../../utils/updateChannel';
 import { registerPollSession } from '../../utils/pollJobContext';
+import { translateToWifiParams } from './wifiParams';
+import { toV7FilterRule } from './routeFilter';
+import { usesRemoteLogFormat, toSyslogActionParams } from './syslogAction';
+import { planNtpWrites, isLegacyClient, legacyServerList, type NtpForm } from './ntpSettings';
 
 /** A RouterOS property name: lower-case words joined by '-' or '.', never '.id'. */
 const ROS_PROPERTY = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/;
@@ -239,7 +243,17 @@ export class DeviceCollector {
       await this.collectLte();
     }
     if (this.aborted) throw new Error('Poll cancelled: it ran past its time limit');
+    this.assertStillConnected();
     await this.updateDeviceStatus('online');
+  }
+
+  /**
+   * The individual collectors log and swallow their own errors, so a poll
+   * whose connection dropped halfway still reached "online" with a fresh
+   * last_seen (outside review J1). A lost connection fails the poll instead.
+   */
+  private assertStillConnected(): void {
+    if (!this.client.isConnected()) throw new Error('The connection to the device was lost during the poll');
   }
 
   // ─── Slow poll (every 5 min) ───────────────────────────────────────────────
@@ -311,6 +325,7 @@ export class DeviceCollector {
       await this.collectCapsman();
     }
     await this.saveFullConfig();
+    this.assertStillConnected();
     await this.updateDeviceStatus('online');
   }
 
@@ -345,7 +360,11 @@ export class DeviceCollector {
         `UPDATE devices SET
           name = COALESCE($1, name),
           model = COALESCE($2, model),
-          serial_number = COALESCE($3, serial_number),
+          -- Not a serial another record holds (the unique index would fail the
+          -- whole update); the duplicate is the add dialog's to resolve (C3).
+          serial_number = COALESCE(
+            (SELECT $3::text WHERE NOT EXISTS (SELECT 1 FROM devices o WHERE o.serial_number = $3::text AND o.id <> $6)),
+            serial_number),
           firmware_version = COALESCE($4, firmware_version),
           ros_version = COALESCE($5, ros_version),
           time_zone_name = COALESCE($7, time_zone_name),
@@ -520,9 +539,12 @@ export class DeviceCollector {
 
         // For bridge interfaces, merge bridge-specific properties (vlan-filtering, etc.)
         // /interface/print lacks bridge-only fields; /interface/bridge/print has them.
+        // Bonds carry their member list too, so spanning-tree analysis can see
+        // that a bonded root port is reached through its members (J6).
+        const bondRow = resolvedType === 'bond' ? bonds.find((b) => b['name'] === name) : undefined;
         const enrichedIface = resolvedType === 'bridge' && bridgeDataMap.has(name)
           ? { ...iface, ...bridgeDataMap.get(name)! }
-          : iface;
+          : bondRow ? { ...iface, slaves: bondRow['slaves'] ?? '', mode: bondRow['mode'] ?? '' } : iface;
 
         // RouterOS bridges may report mtu as 'auto' or '...' (inherited); use actual-mtu as fallback
         const rawMtu = parseInt(enrichedIface['actual-mtu'] || enrichedIface['mtu'] || '0', 10);
@@ -1069,7 +1091,9 @@ export class DeviceCollector {
         // Never store a null log_id: the unique index that stops re-insertion
         // does not constrain nulls, so a device whose lines carry no `.id`
         // would accumulate the same entries for ever (#137).
-        const logId = rawId || surrogateLogId(log['time'] || '', topics, message);
+        // Bound to the line's content as well as RouterOS's id, which restarts
+        // after a reboot (J9).
+        const logId = rawId ? storedLogId(rawId, log['time'] || '', topics, message) : surrogateLogId(log['time'] || '', topics, message);
         pending.push([
           this.device.id,
           time.toISOString(),
@@ -1750,7 +1774,15 @@ export class DeviceCollector {
    * restorable, and fires a `config_drift` alert when the config changed.
    * Returns true when a new snapshot row was created, false on dedup/failure.
    */
-  async snapshotConfig(reason = 'sync'): Promise<boolean> {
+  /**
+   * Take a config snapshot. 'unchanged' means the config matched the last
+   * snapshot (and that snapshot has its restorable backup); 'repaired' that it
+   * matched, but the backup missing from it was made now; 'failed' carries why
+   * (outside review C10: a failure used to read as "no changes").
+   */
+  async snapshotConfig(reason = 'sync'): Promise<
+    { status: 'created' | 'unchanged' | 'repaired' } | { status: 'failed'; reason: string }
+  > {
     try {
       const backupService = new BackupService();
       const device = this.device as unknown as import('../BackupService').BackupDevice;
@@ -1764,25 +1796,38 @@ export class DeviceCollector {
         ({ text: rsc, containsSecrets: rscHasSecrets } = await backupService.exportConfig(device));
       } catch (e) {
         console.warn(`[${this.device.name}] config snapshot skipped — /export failed: ${(e as Error).message}`);
-        return false;
+        return { status: 'failed', reason: `the configuration export failed: ${(e as Error).message}` };
       }
       // Only when the version is unknown (not read yet); the next poll knows it.
       if (rscHasSecrets) {
         console.warn(`[${this.device.name}] config snapshot skipped — RouterOS version not known yet, so the export may hold secrets`);
-        return false;
+        return { status: 'failed', reason: "the RouterOS version isn't known yet, so the export could contain secrets. Try again after the next poll" };
       }
 
       const text = DeviceCollector.normalizeRsc(rsc);
       const hash = createHash('sha256').update(text).digest('hex');
 
-      const latest = await queryOne<{ config_hash: string | null; config_text: string | null }>(
-        `SELECT config_hash, config_text FROM device_configs
+      const latest = await queryOne<{ id: number; config_hash: string | null; config_text: string | null; backup_id: number | null }>(
+        `SELECT id, config_hash, config_text, backup_id FROM device_configs
          WHERE device_id = $1 ORDER BY collected_at DESC LIMIT 1`,
         [this.device.id]
       );
 
-      // No change since the last snapshot — nothing to store.
-      if (latest && latest.config_hash === hash) return false;
+      // No change since the last snapshot. If that snapshot's backup failed
+      // to save, it has nothing to roll back to; this export is the same
+      // config, so it becomes that backup now (outside review C10).
+      if (latest && latest.config_hash === hash) {
+        if (latest.backup_id) return { status: 'unchanged' };
+        const repaired = await backupService.createBackupFromContent(
+          device, rsc, `Config snapshot (${reason})`, 'config-snapshot', rscHasSecrets
+        ).catch((e: Error) => {
+          console.warn(`[${this.device.name}] snapshot backup still unavailable: ${e.message}`);
+          return null;
+        });
+        if (!repaired) return { status: 'failed', reason: "the configuration hasn't changed, but its restorable backup couldn't be saved" };
+        await query(`UPDATE device_configs SET backup_id = $2 WHERE id = $1 AND backup_id IS NULL`, [latest.id, repaired]);
+        return { status: 'repaired' };
+      }
 
       const isFirst = !latest;
       const summary = isFirst
@@ -1820,10 +1865,11 @@ export class DeviceCollector {
           details: summary,
         }).catch(() => { /* alerting is best-effort */ });
       }
-      return true;
+      if (backupId === null) return { status: 'failed', reason: "the snapshot was stored, but its restorable backup couldn't be saved. The next snapshot retries it" };
+      return { status: 'created' };
     } catch (err) {
       console.error(`[${this.device.name}] Failed to save config:`, err);
-      return false;
+      return { status: 'failed', reason: (err as Error).message };
     }
   }
 
@@ -2441,6 +2487,7 @@ export class DeviceCollector {
                 'authentication-types': r['security.authentication-types'] || '',
                 passphrase:             r['security.passphrase'] || '',
                 encryption:             r['security.encryption'] || '',
+                inline:                 'true',
               },
             }));
         }
@@ -2505,42 +2552,9 @@ export class DeviceCollector {
 
   // ─── Wireless live-query helpers (for routes) ──────────────────────────────
 
-  // Field map for translating old wireless-style flat keys → new wifi dot-notation
-  private static readonly WIFI_FIELD_MAP: Record<string, string> = {
-    'ssid':                   'configuration.ssid',
-    'mode':                   'configuration.mode',
-    'band':                   'channel.band',
-    'frequency':              'channel.frequency',
-    'channel-width':          'channel.width',
-    'passphrase':             'security.passphrase',
-    'wpa2-pre-shared-key':    'security.passphrase',
-    'authentication-types':   'security.authentication-types',
-    'encryption':             'security.encryption',
-    'security-profile':       'security',   // old pkg "security-profile" → new pkg "security"
-    'disabled':               'disabled',
-    'master-interface':       'master-interface',
-    'name':                   'name',
-  };
-
-  // Params valid only in the legacy wireless package — silently dropped for new wifi package
-  private static readonly WIFI_UNSUPPORTED_PARAMS = new Set([
-    'tx-power-mode', 'tx-power', 'antenna-gain',
-    'country', 'installation',
-    'wpa-pre-shared-key', 'unicast-ciphers', 'group-ciphers', 'management-protection',
-  ]);
 
   private translateToWifiParams(params: Record<string, string>): Record<string, string> {
-    const out: Record<string, string> = {};
-    // Virtual APs (master-interface set) inherit mode from their master — RouterOS rejects
-    // configuration.mode if it is sent explicitly for a virtual interface.
-    const isVirtualAp = !!params['master-interface'];
-    for (const [k, v] of Object.entries(params)) {
-      if (DeviceCollector.WIFI_UNSUPPORTED_PARAMS.has(k)) continue;
-      if (k === 'mode' && isVirtualAp) continue;
-      const mapped = DeviceCollector.WIFI_FIELD_MAP[k];
-      out[mapped ?? k] = v;
-    }
-    return out;
+    return translateToWifiParams(params);
   }
 
   // ─── Bridge helpers ───────────────────────────────────────────────────────
@@ -2750,6 +2764,18 @@ export class DeviceCollector {
     await this.client.execute(cmd, { '.id': name });
   }
 
+  /**
+   * True when `name` is not a /interface/wifi/security profile but an
+   * interface with inline security.* settings, which getSecurityProfilesLive
+   * lists as a profile of the same name.
+   */
+  private async isInlineWifiSecurity(name: string): Promise<boolean> {
+    const named = await this.client.execute('/interface/wifi/security/print');
+    if (named.some((p) => p['name'] === name)) return false;
+    const ifaces = await this.client.execute('/interface/wifi/print');
+    return ifaces.some((r) => r['name'] === name && !!(r['security.authentication-types'] || r['security.passphrase']));
+  }
+
   async getSecurityProfilesLive(): Promise<Record<string, string>[]> {
     const pkg = await this.detectWifiPackage();
     if (pkg === 'wifi') {
@@ -2778,6 +2804,8 @@ export class DeviceCollector {
           'encryption':           r['security.encryption'] || '',
           'ft':                   r['security.ft'] || 'false',
           'ft-over-ds':           r['security.ft-over-ds'] || 'false',
+          // Not a profile: the interface's own security settings (C6).
+          'inline':               'true',
         }));
     }
     return this.client.execute('/interface/wireless/security-profiles/print').catch(() => []);
@@ -2807,12 +2835,19 @@ export class DeviceCollector {
   async setSecurityProfile(name: string, params: Record<string, string>): Promise<void> {
     const pkg = await this.detectWifiPackage();
     if (pkg === 'wifi') {
-      const secParams: Record<string, string> = { '.id': name };
-      if (params['mode'])                 secParams['mode']                 = params['mode'];
+      // The wifi security menu has no legacy `mode` (C6); it's never sent.
+      const secParams: Record<string, string> = {};
       if (params['authentication-types']) secParams['authentication-types'] = params['authentication-types'];
       if (params['passphrase'])           secParams['passphrase']           = params['passphrase'];
       if (params['encryption'])           secParams['encryption']           = params['encryption'];
-      await this.client.execute('/interface/wifi/security/set', secParams);
+      if (await this.isInlineWifiSecurity(name)) {
+        // A "profile" synthesized from an interface's inline security is
+        // edited on that interface, where it lives (C6).
+        const inline = Object.fromEntries(Object.entries(secParams).map(([k, v]) => [`security.${k}`, v]));
+        await this.client.execute('/interface/wifi/set', { '.id': name, ...inline });
+      } else {
+        await this.client.execute('/interface/wifi/security/set', { '.id': name, ...secParams });
+      }
     } else {
       const legacyParams: Record<string, string> = { ...params };
       if (params['passphrase']) {
@@ -2826,6 +2861,12 @@ export class DeviceCollector {
 
   async removeSecurityProfile(name: string): Promise<void> {
     const pkg = await this.detectWifiPackage();
+    if (pkg === 'wifi' && await this.isInlineWifiSecurity(name)) {
+      throw new Error(
+        `"${name}" is the security set directly on interface ${name}, not a security profile, so there is nothing to delete. ` +
+        'Edit it instead, or change the security on the SSID.'
+      );
+    }
     const cmd = pkg === 'wifi'
       ? '/interface/wifi/security/remove'
       : '/interface/wireless/security-profiles/remove';
@@ -3695,7 +3736,11 @@ export class DeviceCollector {
       }
 
       const now = new Date();
-      const key = periodKey(now, rule.reset_hour, rule.reset_minute, rule.timezone);
+      // A period only moves forwards. In the repeated hour of a daylight-saving
+      // fall-back the local clock goes back past the reset time, and the key
+      // flipped back and forth, resetting usage each time (outside review J12).
+      const rawKey = periodKey(now, rule.reset_hour, rule.reset_minute, rule.timezone);
+      const key = rule.period_key && rawKey < rule.period_key ? rule.period_key : rawKey;
 
       // A new period starts fresh, but the counter baseline carries over —
       // otherwise the first sample after midnight would be discarded and the
@@ -3756,6 +3801,9 @@ export class DeviceCollector {
           console.log(
             `[DataCap] ${this.device.name}/${interfaceName}: another poll already sent the reset SMS; standing down`
           );
+          // And writes nothing: its usage and send time are stale, and saving
+          // them overwrote the winning poll's reset (J12).
+          return;
         } else {
           try {
             await this.sendSms(interfaceName, rule.phone_number, rule.message);
@@ -4079,6 +4127,11 @@ export class DeviceCollector {
 
   async getIpAddresses(): Promise<Record<string, string>[]> {
     return this.client.execute('/ip/address/print', { detail: '' }).catch(() => []);
+  }
+
+  /** IPv6 addresses; empty when the device has IPv6 off or the menu is unreadable. */
+  async getIpv6Addresses(): Promise<Record<string, string>[]> {
+    return this.client.execute('/ipv6/address/print', { detail: '' }).catch(() => []);
   }
 
   async addIpAddress(address: string, interfaceName: string): Promise<void> {
@@ -4621,7 +4674,10 @@ export class DeviceCollector {
   }
 
   async addOspfArea(params: Record<string, string>): Promise<void> {
-    await this.client.execute('/routing/ospf/area/add', params);
+    // RouterOS calls it area-id; `area` was rejected (outside review C7).
+    const { area, ...rest } = params;
+    if (area !== undefined && rest['area-id'] === undefined) rest['area-id'] = area;
+    await this.client.execute('/routing/ospf/area/add', rest);
   }
 
   async removeOspfArea(id: string): Promise<void> {
@@ -4678,9 +4734,23 @@ export class DeviceCollector {
     return { rules, chains };
   }
 
+  /** RouterOS 7 replaced /routing/filter with scripted /routing/filter/rule. */
+  private async hasV7RouteFilters(): Promise<boolean> {
+    const major = parseInt(this.device.ros_version ?? '', 10);
+    if (major) return major >= 7;
+    return this.client.execute('/routing/filter/rule/print', { '.proplist': '.id' }).then(() => true, () => false);
+  }
+
   async addFilterRule(params: Record<string, string>): Promise<void> {
-    await this.client.execute('/routing/filter/rule/add', params)
-      .catch(() => this.client.execute('/routing/filter/add', params));
+    // One menu per version, with that version's schema (outside review C7).
+    // RouterOS 7 has no chain/prefix/action properties: the match and action
+    // are one `rule` script. Trying v7 then falling back to v6 also hid the
+    // real error behind "no such command".
+    if (await this.hasV7RouteFilters()) {
+      await this.client.execute('/routing/filter/rule/add', toV7FilterRule(params));
+    } else {
+      await this.client.execute('/routing/filter/add', params);
+    }
   }
 
   async updateFilterRule(id: string, params: Record<string, string>): Promise<void> {
@@ -4838,35 +4908,21 @@ export class DeviceCollector {
       this.client.execute('/system/ntp/server/print', {}).then(r => normalizeBools(r[0] ?? {})),
       this.client.execute('/system/ntp/client/print', {}).then(r => normalizeBools(r[0] ?? {})),
     ]);
+    const clientRow = client.status === 'fulfilled' ? client.value : {};
+    // RouterOS 6 keeps servers in primary/secondary/server-dns-names; the page
+    // shows and edits them as one list (#180).
+    if (isLegacyClient(clientRow) && !('servers' in clientRow)) clientRow['servers'] = legacyServerList(clientRow);
     return {
       server: server.status === 'fulfilled' ? server.value : {},
-      client: client.status === 'fulfilled' ? client.value : {},
+      client: clientRow,
     };
   }
 
-  async setNtpSettings(settings: {
-    server_enabled?: boolean;
-    server_broadcast?: boolean;
-    server_manycast?: boolean;
-    client_enabled?: boolean;
-    client_mode?: string;
-    client_servers?: string;
-  }): Promise<void> {
-    const serverParams: Record<string, string> = {};
-    if (settings.server_enabled !== undefined) serverParams['enabled'] = settings.server_enabled ? 'yes' : 'no';
-    if (settings.server_broadcast !== undefined) serverParams['broadcast'] = settings.server_broadcast ? 'yes' : 'no';
-    if (settings.server_manycast !== undefined) serverParams['manycast'] = settings.server_manycast ? 'yes' : 'no';
-    if (Object.keys(serverParams).length > 0) {
-      await this.client.execute('/system/ntp/server/set', serverParams);
-    }
-
-    const clientParams: Record<string, string> = {};
-    if (settings.client_enabled !== undefined) clientParams['enabled'] = settings.client_enabled ? 'yes' : 'no';
-    if (settings.client_mode) clientParams['mode'] = settings.client_mode;
-    if (settings.client_servers !== undefined) clientParams['servers'] = settings.client_servers;
-    if (Object.keys(clientParams).length > 0) {
-      await this.client.execute('/system/ntp/client/set', clientParams);
-    }
+  async setNtpSettings(settings: NtpForm): Promise<void> {
+    // Only what changed, in this RouterOS version's terms (#180).
+    const writes = planNtpWrites(settings, await this.getNtpSettings());
+    if (writes.server) await this.client.execute('/system/ntp/server/set', writes.server);
+    if (writes.client) await this.client.execute('/system/ntp/client/set', writes.client);
   }
 
   // Syslog (logging actions + rules) ───────────────────────────────────────────
@@ -4876,11 +4932,13 @@ export class DeviceCollector {
   }
 
   async addSyslogAction(params: Record<string, string>): Promise<void> {
-    await this.client.execute('/system/logging/action/add', params);
+    const modern = usesRemoteLogFormat(await this.getSyslogActions());
+    await this.client.execute('/system/logging/action/add', toSyslogActionParams(params, modern));
   }
 
   async updateSyslogAction(id: string, params: Record<string, string>): Promise<void> {
-    await this.setItem('/system/logging/action', id, params);
+    const modern = usesRemoteLogFormat(await this.getSyslogActions());
+    await this.setItem('/system/logging/action', id, toSyslogActionParams(params, modern));
   }
 
   async removeSyslogAction(id: string): Promise<void> {

@@ -313,6 +313,7 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
   const [nameValue, setNameValue] = useState(client.custom_name || '');
 
   const nameMutation = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => clientsApi.updateHostname(client.mac_address, nameValue),
     onSuccess: () => {
       // Invalidate everywhere names are shown
@@ -324,6 +325,7 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
   });
 
   const notesMutation = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => clientsApi.updateNotes(client.mac_address, notes),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['client-detail', client.mac_address] });
@@ -950,7 +952,11 @@ function SignalCard({ mac }: { mac: string }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ClientDetailPage() {
-  const { mac } = useParams<{ mac: string }>();
+  const { mac: rawMac } = useParams<{ mac: string }>();
+  // Only a MAC address is used from the URL (outside review U13): anything
+  // else, such as an encoded path, never reaches an API call.
+  const macParts = (rawMac ?? '').split(/[:-]/);
+  const mac = macParts.length === 6 && macParts.every((p) => /^[0-9A-Fa-f]{2}$/.test(p)) ? rawMac : undefined;
   const navigate = useNavigate();
   const canWrite = useCanWrite();
 

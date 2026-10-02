@@ -85,7 +85,9 @@ export default function SitesPage() {
     queryFn: () => settingsApi.get().then((r) => r.data),
     staleTime: 300_000,
   });
-  const mapsEnabled = settings?.['maps_enabled'] !== false;
+  // Off until settings have loaded (outside review U6): unknown used to count as on,
+  // so a Dark Site install fetched map tiles and geocoding before, or without, the setting.
+  const mapsEnabled = settings !== undefined && settings['maps_enabled'] !== false;
 
   function openSite(id: number) {
     // Navigate before switching: setting the site remounts the tree (see

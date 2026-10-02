@@ -1,3 +1,4 @@
+import NumberSetting from '../components/settings/NumberSetting';
 import { Link } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -557,13 +558,10 @@ export default function SettingsPage() {
                     <div className="text-sm font-medium text-gray-700 dark:text-slate-300">{label}</div>
                     <div className="text-xs text-gray-400">{unit}</div>
                   </div>
-                  <input
-                    type="number"
+                  <NumberSetting
                     className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
                     value={settings[key] as number ?? ''}
-                    onChange={(e) =>
-                      updateSettingsMutation.mutate({ [key]: parseInt(e.target.value) })
-                    }
+                    onCommit={(v) => updateSettingsMutation.mutate({ [key]: v })}
                     min="10"
                     step="10"
                     disabled={!isAdmin}
@@ -589,13 +587,10 @@ export default function SettingsPage() {
                     <div className="text-sm font-medium text-gray-700 dark:text-slate-300">{label}</div>
                     <div className="text-xs text-gray-400">{unit}</div>
                   </div>
-                  <input
-                    type="number"
+                  <NumberSetting
                     className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
                     value={settings[key] as number ?? ''}
-                    onChange={(e) =>
-                      updateSettingsMutation.mutate({ [key]: parseInt(e.target.value) })
-                    }
+                    onCommit={(v) => updateSettingsMutation.mutate({ [key]: v })}
                     min="1"
                     step="1"
                     disabled={!isAdmin}
@@ -636,13 +631,10 @@ export default function SettingsPage() {
                   <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Scan interval</div>
                   <div className="text-xs text-gray-400">seconds</div>
                 </div>
-                <input
-                  type="number"
+                <NumberSetting
                   className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
                   value={settings['mac_scan_interval'] as number ?? 300}
-                  onChange={(e) =>
-                    updateSettingsMutation.mutate({ mac_scan_interval: parseInt(e.target.value) })
-                  }
+                  onCommit={(v) => updateSettingsMutation.mutate({ mac_scan_interval: v })}
                   min="60"
                   step="30"
                   disabled={!isAdmin || !settings['mac_scan_enabled']}
@@ -681,11 +673,10 @@ export default function SettingsPage() {
                   <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Snapshot interval</div>
                   <div className="text-xs text-gray-400">minutes</div>
                 </div>
-                <input
-                  type="number"
+                <NumberSetting
                   className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
                   value={settings['config_snapshot_interval_min'] as number ?? 60}
-                  onChange={(e) => updateSettingsMutation.mutate({ config_snapshot_interval_min: parseInt(e.target.value) })}
+                  onCommit={(v) => updateSettingsMutation.mutate({ config_snapshot_interval_min: v })}
                   min="15"
                   step="15"
                   disabled={!isAdmin || settings['config_snapshot_enabled'] === false}
@@ -696,11 +687,10 @@ export default function SettingsPage() {
                   <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Retention</div>
                   <div className="text-xs text-gray-400">snapshots kept per device</div>
                 </div>
-                <input
-                  type="number"
+                <NumberSetting
                   className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
                   value={settings['config_snapshot_retention'] as number ?? 30}
-                  onChange={(e) => updateSettingsMutation.mutate({ config_snapshot_retention: parseInt(e.target.value) })}
+                  onCommit={(v) => updateSettingsMutation.mutate({ config_snapshot_retention: v })}
                   min="1"
                   step="1"
                   disabled={!isAdmin || settings['config_snapshot_enabled'] === false}
@@ -784,6 +774,11 @@ export default function SettingsPage() {
                 { key: 'retention_events_days', label: 'Events retention', desc: 'Auto-delete event log entries older than this many days' },
                 { key: 'retention_proxy_days', label: 'Proxy log retention', desc: 'Auto-delete parsed proxy connection records older than this many days' },
                 { key: 'retention_clients_days', label: 'Client retention', desc: 'Auto-delete inactive client records not seen within this many days' },
+                { key: 'retention_scan_days', label: 'Scan retention', desc: 'Auto-delete spectral and nearby-AP scan results older than this many days' },
+                { key: 'retention_lte_history_days', label: 'LTE history retention', desc: 'Auto-delete LTE cell and band change history older than this many days' },
+                { key: 'retention_alert_history_days', label: 'Alert history retention', desc: 'Auto-delete the record of sent alerts older than this many days' },
+                { key: 'retention_audit_days', label: 'Audit log retention', desc: 'Auto-delete audit log entries older than this many days' },
+                { key: 'retention_availability_days', label: 'Outage history retention', desc: 'Auto-delete ended outages older than this many days (uptime reports look back up to 90)' },
                 { key: 'netflow_retention_days', label: 'Traffic detail retention', desc: 'Auto-delete per-client NetFlow time-series data older than this many days' },
                 { key: 'netflow_daily_retention_days', label: 'Traffic daily rollup retention', desc: 'Auto-delete per-client daily traffic totals older than this many days' },
               ].map(({ key, label, desc }) => (
@@ -792,15 +787,12 @@ export default function SettingsPage() {
                     <div className="text-sm font-medium text-gray-700 dark:text-slate-300">{label}</div>
                     <div className="text-xs text-gray-400">{desc}</div>
                   </div>
-                  <input
-                    type="number"
+                  <NumberSetting
                     className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
                     value={settings[key] as number ?? ''}
-                    onChange={(e) =>
-                      updateSettingsMutation.mutate({ [key]: parseInt(e.target.value) })
-                    }
+                    onCommit={(v) => updateSettingsMutation.mutate({ [key]: v })}
                     min="1"
-                    max="365"
+                    max="3650"
                     disabled={!isAdmin}
                   />
                 </div>
@@ -1681,7 +1673,8 @@ export default function SettingsPage() {
 
       {/* ── Alerting ── */}
       {activeTab === 'alerting' && (
-        <div className="space-y-4">
+        // Read-only for viewers: every change here needs write access (U10).
+        <fieldset disabled={!canWrite} className="space-y-4 min-w-0">
 
           {/* Hardware health limit (#168) */}
           <div className="card p-5">
@@ -1748,11 +1741,10 @@ export default function SettingsPage() {
                       </td>
                       <td className="py-2.5 pr-4 text-center">
                         {['high_cpu', 'high_memory', 'cert_expiry'].includes(rule.event_type) ? (
-                          <input
-                            type="number"
+                          <NumberSetting
                             className="input w-20 text-center py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                             value={rule.threshold ?? ''}
-                            onChange={(e) => updateRuleMutation.mutate({ type: rule.event_type, data: { enabled: rule.enabled, threshold: parseInt(e.target.value) || null, cooldown_min: rule.cooldown_min } })}
+                            onCommit={(v) => updateRuleMutation.mutate({ type: rule.event_type, data: { enabled: rule.enabled, threshold: v, cooldown_min: rule.cooldown_min } })}
                             min="1"
                             disabled={!canWrite}
                           />
@@ -1761,11 +1753,10 @@ export default function SettingsPage() {
                         )}
                       </td>
                       <td className="py-2.5 text-center">
-                        <input
-                          type="number"
+                        <NumberSetting
                           className="input w-20 text-center py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                           value={rule.cooldown_min}
-                          onChange={(e) => updateRuleMutation.mutate({ type: rule.event_type, data: { enabled: rule.enabled, threshold: rule.threshold, cooldown_min: parseInt(e.target.value) || 15 } })}
+                          onCommit={(v) => updateRuleMutation.mutate({ type: rule.event_type, data: { enabled: rule.enabled, threshold: rule.threshold, cooldown_min: v } })}
                           min="1"
                           disabled={!canWrite}
                         />
@@ -1905,7 +1896,7 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
-        </div>
+        </fieldset>
       )}
 
       {/* ── Channel Modal ── */}
@@ -2173,7 +2164,7 @@ export default function SettingsPage() {
                   key={tag.id}
                   tag={tag}
                   canEdit={isAdmin}
-                  onDelete={(id) => deleteTagMutation.mutate(id)}
+                  onDelete={(id) => { if (confirm('Delete this tag? It is removed from every device that has it.')) deleteTagMutation.mutate(id); }}
                 />
               ))}
               {tags.length === 0 && (

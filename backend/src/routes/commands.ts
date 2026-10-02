@@ -17,21 +17,8 @@ import { commandRunner } from '../services/CommandRunner';
 const router = Router();
 router.use(requireAuth);
 
-/** Commands that change how a device is reached, and so deserve a warning. */
-const RISKY_PATTERNS: { pattern: RegExp; why: string }[] = [
-  { pattern: /\/ip\/?\s*address\s+(remove|set)/i, why: 'changes IP addressing, which can remove the management address' },
-  { pattern: /\/ip\/?\s*route\s+(remove|set)/i, why: 'changes routing, which can cut the path back to this server' },
-  { pattern: /\/ip\/?\s*firewall/i, why: 'edits firewall rules, which can block management access' },
-  { pattern: /\/interface\/?\s*\w*\s*(disable|remove)/i, why: 'disables or removes an interface, possibly the one in use' },
-  { pattern: /\/system\/?\s*(reboot|shutdown|reset-configuration)/i, why: 'reboots, shuts down or resets the device' },
-  { pattern: /\/user\s+(remove|set|disable)/i, why: 'changes user accounts, which can revoke this server’s access' },
-  { pattern: /\/ip\/?\s*service\s+(disable|set|remove)/i, why: 'changes management services such as the API or SSH' },
-];
-
-function assessCommand(command: string): { risky: boolean; reasons: string[] } {
-  const reasons = RISKY_PATTERNS.filter((r) => r.pattern.test(command)).map((r) => r.why);
-  return { risky: reasons.length > 0, reasons };
-}
+import { assessCommand } from '../utils/commandRisk';
+import { spreadsheetSafe } from '../utils/csvSafe';
 
 /**
  * POST /api/commands/preview — what would happen, without doing it.
@@ -98,10 +85,10 @@ router.post('/preview', async (req: Request, res: Response) => {
 // POST /api/commands/runs — create a run, optionally starting it immediately
 router.post('/runs', requireWrite, async (req: Request, res: Response) => {
   const {
-    name, command, device_ids, wave_size, halt_on_failure, use_change_guard, start,
+    name, command, device_ids, wave_size, halt_on_failure, use_change_guard, start, acknowledge_risk,
   } = req.body as {
     name?: string; command?: string; device_ids?: number[]; wave_size?: number;
-    halt_on_failure?: boolean; use_change_guard?: boolean; start?: boolean;
+    halt_on_failure?: boolean; use_change_guard?: boolean; start?: boolean; acknowledge_risk?: boolean;
   };
 
   if (!command?.trim()) return res.status(400).json({ error: 'command is required' });
@@ -109,6 +96,18 @@ router.post('/runs', requireWrite, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'device_ids array is required' });
   }
   if (await refuseForeignDevices(req, res, device_ids, 'operator')) return;
+
+  // Change Guard off on a command that can cut management needs an explicit
+  // acknowledgement, enforced here (outside review U3). It used to be checked
+  // only in the page, and skipped while the preview was still loading.
+  const risk = assessCommand(command);
+  if (use_change_guard === false && risk.risky && acknowledge_risk !== true) {
+    return res.status(400).json({
+      code: 'risk_not_acknowledged',
+      error: `This command ${risk.reasons.join('; ')}. With Change Guard off nothing would undo it, so confirm the risk to run it.`,
+      reasons: risk.reasons,
+    });
+  }
 
   const size = Math.max(1, Math.min(50, Number(wave_size) || 1));
   const run = await queryOne<{ id: number }>(
@@ -216,7 +215,9 @@ router.get('/runs/:id/export', async (req: Request, res: Response) => {
   // ("Thu Sep 03 2026 15:45:29 GMT+0000 (Coordinated Universal Time)") no
   // spreadsheet will parse. ISO is both sortable and machine-readable.
   const esc = (v: unknown) => {
-    const t = v == null ? '' : v instanceof Date ? v.toISOString() : String(v);
+    // Text is made formula-safe; numbers and dates are left as they are (U9).
+    const t = v == null ? '' : v instanceof Date ? v.toISOString()
+      : typeof v === 'string' ? spreadsheetSafe(v) : String(v);
     // Always quote: output routinely contains commas, quotes and newlines, and
     // a record that cannot be reopened is not an archive.
     return `"${t.replace(/"/g, '""')}"`;

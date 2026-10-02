@@ -106,7 +106,12 @@ router.post('/:deviceId/capture', requireWrite, async (req: Request, res: Respon
   const collector = new DeviceCollector(device);
   try {
     await collector.connect();
-    const created = await collector.snapshotConfig('manual');
+    const outcome = await collector.snapshotConfig('manual');
+    // A failed capture is a failure, not "no changes" (outside review C10).
+    if (outcome.status === 'failed') {
+      return res.status(502).json({ error: `Capture failed: ${outcome.reason}` });
+    }
+    const created = outcome.status === 'created';
     const latest = await queryOne(
       `SELECT id, config_hash, change_summary, backup_id, collected_at,
               (backup_id IS NOT NULL) AS has_backup
@@ -117,7 +122,9 @@ router.post('/:deviceId/capture', requireWrite, async (req: Request, res: Respon
       created,
       message: created
         ? 'Snapshot captured'
-        : 'No configuration changes since the last snapshot',
+        : outcome.status === 'repaired'
+          ? 'No configuration changes; the restorable backup the last snapshot was missing has been saved'
+          : 'No configuration changes since the last snapshot',
       snapshot: latest,
     });
   } catch (err) {

@@ -73,7 +73,8 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
       rawPoints.push({ time, value: Math.round(value) });
     });
   } catch {
-    // InfluxDB might not have data yet
+    // An Influx failure is not an empty series (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
   // If no deduplicated series exists yet (first run, or a site whose history
@@ -174,7 +175,8 @@ router.get('/interface/:deviceId/:interface', async (req: Request, res: Response
       });
     });
   } catch {
-    // No data yet
+    // An Influx failure is not an empty series (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
   // Pivot rx/tx into single objects per timestamp
@@ -218,7 +220,8 @@ router.get('/interface/:deviceId/:interface/packets', async (req: Request, res: 
       });
     });
   } catch {
-    // No data yet
+    // An Influx failure is not an empty series (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
   const pivoted: Record<string, { time: string; rx: number; tx: number }> = {};
@@ -258,7 +261,8 @@ router.get('/device/:deviceId/resources', async (req: Request, res: Response) =>
       });
     });
   } catch {
-    // No data yet
+    // An Influx failure is not an empty series (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
   const pivoted: Record<string, Record<string, unknown>> = {};

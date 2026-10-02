@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import LoadError from '../components/common/LoadError';
 import { useNavigate } from 'react-router-dom';
 import {
   Shield, ShieldCheck, ShieldAlert, RefreshCw, ChevronDown, ChevronRight,
@@ -56,7 +57,7 @@ export default function SecurityPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
 
-  const { data: certData, isLoading: certLoading } = useQuery({
+  const { data: certData, isLoading: certLoading, isError: certError, error: certErr } = useQuery({
     queryKey: ['fleet-certificates'],
     queryFn: () => certificatesApi.list().then((r) => r.data),
     staleTime: 60_000,
@@ -74,7 +75,7 @@ export default function SecurityPage() {
   const online = (devices as Device[]).filter(d => d.status === 'online');
   const onlineKey = online.map(d => d.id).join(',');
 
-  const { data: fleet = [], isLoading, refetch, isFetching } = useQuery({
+  const { data: fleet = [], isLoading, refetch, isFetching, isError: fleetError, error: fleetErr } = useQuery({
     queryKey: ['security-fleet', onlineKey],
     queryFn: async (): Promise<DevicePosture[]> => {
       const results = await Promise.allSettled(
@@ -238,6 +239,7 @@ export default function SecurityPage() {
           <div className="p-2">
             {certLoading
               ? <p className="p-6 text-center text-sm text-gray-400">Loading…</p>
+              : certError ? <LoadError what="certificates" error={certErr} />
               : <CertificateList
                   certificates={certData?.certificates ?? []}
                   showDevice
@@ -253,9 +255,15 @@ export default function SecurityPage() {
             <ListChecks className="w-4 h-4 text-indigo-500" />
             <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Common Findings</h2>
           </div>
-          {commonFindings.length === 0 ? (
+          {fleetError ? (
+            <LoadError what="the fleet's security checks" error={fleetErr} />
+          ) : commonFindings.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">
-              {isLoading ? 'Scanning…' : <span className="inline-flex items-center gap-1.5 text-green-600 dark:text-green-400"><ShieldCheck className="w-4 h-4" /> No issues across the fleet</span>}
+              {/* "No issues" only when every online device was actually checked (U5). */}
+              {isLoading ? 'Scanning…'
+                : scored.length < online.length
+                  ? <span className="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400"><ShieldCheck className="w-4 h-4" /> No common issues among the {scored.length} device{scored.length === 1 ? '' : 's'} checked; {online.length - scored.length} could not be checked</span>
+                  : <span className="inline-flex items-center gap-1.5 text-green-600 dark:text-green-400"><ShieldCheck className="w-4 h-4" /> No issues across the fleet</span>}
             </div>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-slate-700">

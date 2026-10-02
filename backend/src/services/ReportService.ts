@@ -17,7 +17,9 @@ const PERIOD_DAYS: Record<string, number> = { daily: 1, weekly: 7, monthly: 30 }
 export function computeNextRun(frequency: string, from: Date): Date {
   const next = new Date(from);
   if (frequency === 'daily') next.setDate(next.getDate() + 1);
-  else if (frequency === 'monthly') next.setMonth(next.getMonth() + 1);
+  // Monthly reports go out on the 1st. setMonth(+1) from the 31st overflowed
+  // past short months (31 January became 3 March), skipping February (J5).
+  else if (frequency === 'monthly') return new Date(from.getFullYear(), from.getMonth() + 1, 1, from.getHours(), from.getMinutes(), from.getSeconds());
   else next.setDate(next.getDate() + 7);
   return next;
 }

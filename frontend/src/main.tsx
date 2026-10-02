@@ -1,8 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { actionErrorMessage, useActionErrorStore } from './store/actionErrorStore';
 import App from './App';
 import { useSiteStore } from './store/siteStore';
+import { useAuthStore } from './store/authStore';
 import './index.css';
 
 // Initialize theme from storage immediately
@@ -24,6 +26,15 @@ if (storedTheme === 'dark') {
 
 function makeQueryClient() {
   return new QueryClient({
+    // A failed action with no error handling of its own is reported, never
+    // silent (outside review U5). Mutations that show their error inline mark
+    // themselves with meta.inlineError.
+    mutationCache: new MutationCache({
+      onError: (error, _vars, _ctx, mutation) => {
+        if (mutation.options.onError || mutation.meta?.inlineError) return;
+        useActionErrorStore.getState().report(actionErrorMessage(error));
+      },
+    }),
     defaultOptions: {
       queries: {
         staleTime: 30_000,
@@ -53,7 +64,11 @@ function makeQueryClient() {
  */
 function SiteScopedQueryProvider({ children }: { children: React.ReactNode }) {
   const siteId = useSiteStore((s) => s.currentSiteId);
-  const key = siteId == null ? 'all' : String(siteId);
+  // The signed-in user is part of the key too (outside review U1): logging
+  // out, or someone else signing in on the same tab, starts an empty cache, so
+  // nothing the previous user loaded (users, secret-bearing backups) can show.
+  const userId = useAuthStore((s) => (s.isAuthenticated ? s.user?.id ?? 'session' : 'anon'));
+  const key = `${userId}:${siteId == null ? 'all' : String(siteId)}`;
   // A new cache per site; `key` is the dependency on purpose.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const client = React.useMemo(() => makeQueryClient(), [key]);

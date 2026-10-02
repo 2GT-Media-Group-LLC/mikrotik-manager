@@ -79,8 +79,15 @@ export default function TerminalModal({ deviceId, deviceName, onClose }: Props) 
     socket.on('close',        ()           => { setConnState('closed'); xtermRef.current?.write('\r\n\x1b[33m[Session closed]\x1b[0m\r\n'); });
     socket.on('error',        (msg: string)=> { setConnState('error'); setErrorMsg(msg); });
     socket.on('connect_error',(err)        => { setConnState('error'); setErrorMsg(err.message); });
-    socket.on('disconnect',   ()           => { if (connState === 'ready') setConnState('closed'); });
-  }, [deviceId, token]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Functional update: the handler is created once, so reading connState here
+    // saw its value at connect time and a dropped session stayed "Connected" (U8).
+    socket.on('disconnect',   ()           => {
+      setConnState((s) => {
+        if (s === 'ready') xtermRef.current?.write('\r\n\x1b[33m[Connection lost]\x1b[0m\r\n');
+        return s === 'ready' ? 'closed' : s;
+      });
+    });
+  }, [deviceId, token]);
 
   // ─── Terminal init (once) ─────────────────────────────────────────────────
   useEffect(() => {
@@ -101,6 +108,18 @@ export default function TerminalModal({ deviceId, deviceName, onClose }: Props) 
         brightCyan: '#22d3ee', brightWhite: '#ffffff',
       },
       allowProposedApi: false,
+      // Links a device prints (OSC 8) can show any label over any target (U12).
+      // Only web links open, and only after showing the real address.
+      linkHandler: {
+        activate: (_e, uri) => {
+          let url: URL;
+          try { url = new URL(uri); } catch { return; }
+          if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+          if (window.confirm(`The device output links to:\n\n${url.href}\n\nOpen it in a new tab?`)) {
+            window.open(url.href, '_blank', 'noopener,noreferrer');
+          }
+        },
+      },
     });
 
     const fit = new FitAddon();

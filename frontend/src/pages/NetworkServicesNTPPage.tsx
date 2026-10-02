@@ -4,6 +4,7 @@ import { Clock, RefreshCw, AlertTriangle, Save } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { apiErrorMessage } from '../utils/apiError';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -91,6 +92,7 @@ export default function NetworkServicesNTPPage() {
   }, [ntp]);
 
   const save = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => networkServicesApi.setNtp(deviceId, {
       server_enabled: serverEnabled, server_broadcast: serverBroadcast, server_manycast: serverManycast,
       client_enabled: clientEnabled, client_mode: clientMode, client_servers: clientServers,
@@ -171,7 +173,7 @@ export default function NetworkServicesNTPPage() {
             </div>
             <div className="p-5 space-y-4">
               {!serverHasData ? (
-                <p className="text-sm text-gray-400 dark:text-slate-500">NTP server settings not available (requires RouterOS 7).</p>
+                <p className="text-sm text-gray-400 dark:text-slate-500">This device has no NTP server. On RouterOS 6 it comes with the optional ntp package; the client below works without it.</p>
               ) : (
                 <>
                   <SettingRow label="Enable NTP Server" description="Allow other devices on the network to sync their clocks to this device.">
@@ -279,7 +281,7 @@ export default function NetworkServicesNTPPage() {
                   setDirty(false);
                 }
               }} className="text-sm text-gray-500 hover:text-gray-700">Discard</button>
-              {save.isError && <span className="text-sm text-red-500">{(save.error as Error).message}</span>}
+              {save.isError && <span className="text-sm text-red-500">{apiErrorMessage(save.error)}</span>}
               {save.isSuccess && <span className="text-sm text-green-600 dark:text-green-400">Saved</span>}
             </div>
           )}

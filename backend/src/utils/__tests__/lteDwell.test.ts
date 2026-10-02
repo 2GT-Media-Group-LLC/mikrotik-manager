@@ -151,3 +151,10 @@ describe('formatDuration', () => {
     expect(formatDuration(187200)).toBe('2d 4h');
   });
 });
+
+// Outside review J7.
+describe('expandBands with intra-band aggregation', () => {
+  it('counts a band aggregated with itself once', () => {
+    expect(expandBands('3,3,7')).toEqual(['3', '7']);
+  });
+});

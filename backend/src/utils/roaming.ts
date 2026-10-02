@@ -206,6 +206,11 @@ export function buildSessions(events: RoamEvent[]): RoamSession[] {
   });
   const sessions: RoamSession[] = [];
   let current: RoamSession | null = null;
+  // Where the open session is now, by device and interface (outside review
+  // J7). Moving from AP1 to AP2, AP2 logs "connected" and AP1's "disconnected"
+  // can arrive after it; that late disconnect used to close the new session.
+  let where: string | null = null;
+  const at = (device: string | null, iface: string | null | undefined) => `${device ?? ''}|${iface ?? ''}`;
 
   const open = (e: RoamEvent, iface: string | null): RoamSession => ({
     startedAt: e.at, endedAt: null, durationSec: null,
@@ -229,6 +234,7 @@ export function buildSessions(events: RoamEvent[]): RoamSession[] {
       case 'connected':
         if (current) { current.endedAt = e.at; sessions.push(current); }
         current = open(e, e.interfaceName);
+        where = at(e.deviceName, e.interfaceName);
         note(current, e);
         break;
 
@@ -237,6 +243,7 @@ export function buildSessions(events: RoamEvent[]): RoamSession[] {
         note(current, e);
         const prev = current.path[current.path.length - 1] ?? e.interfaceName;
         if (e.toInterface) {
+          where = at(e.deviceName, e.toInterface);
           current.path.push(e.toInterface);
           current.hops.push({
             at: e.at, from: prev, to: e.toInterface,
@@ -248,12 +255,19 @@ export function buildSessions(events: RoamEvent[]): RoamSession[] {
       }
 
       case 'disconnected':
+        // From somewhere the client has already left: a late message from the
+        // previous AP, not the end of the session it is in now.
+        if (current && where !== null && where !== at(e.deviceName, e.interfaceName)) {
+          note(current, e);
+          break;
+        }
         if (!current) current = open(e, e.interfaceName);
         note(current, e);
         current.disconnectReason = e.reason;
         current.endedAt = e.at;
         sessions.push(current);
         current = null;
+        where = null;
         break;
 
       case 'dhcp-assigned':

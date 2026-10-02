@@ -110,7 +110,8 @@ router.get('/timeseries', async (req: Request, res: Response) => {
       }
     });
   } catch {
-    // No data yet
+    // An Influx failure is not "no traffic" (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
   res.json(Object.values(pivoted).sort((a, b) => a.time.localeCompare(b.time)));
@@ -148,7 +149,8 @@ router.get('/top-clients', async (req: Request, res: Response) => {
       else entry.download += value;
     });
   } catch {
-    // No data yet
+    // An Influx failure is not "no traffic" (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
   const ranked = Array.from(perMac.entries())
@@ -227,7 +229,8 @@ router.get('/apps', async (req: Request, res: Response) => {
       else entry.bytes += value;
     });
   } catch {
-    // No data yet
+    // An Influx failure is not "no traffic" (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
   const apps = Array.from(byApp.entries()).map(([app, e]) => ({ app, bytes: e.bytes, packets: e.packets }));
@@ -265,7 +268,8 @@ router.get('/client/:mac', async (req: Request, res: Response) => {
       else if (direction === 'download') pivoted[time].download += value;
     });
   } catch {
-    // No data yet
+    // An Influx failure is not "no traffic" (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
   const appsFlux = `
@@ -294,7 +298,8 @@ router.get('/client/:mac', async (req: Request, res: Response) => {
       else entry.bytes += value;
     });
   } catch {
-    // No data yet
+    // An Influx failure is not "no traffic" (outside review J3).
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
   const apps = Array.from(byApp.entries()).map(([app, e]) => ({ app, bytes: e.bytes, packets: e.packets }));
 

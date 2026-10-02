@@ -148,7 +148,7 @@ cooldowns and maintenance windows rather than bypassing them.
 
 ## Scheduled email reports
 
-Daily, weekly or monthly HTML fleet summaries to any recipient list, using the same SMTP
+Daily, weekly or monthly (sent on the 1st) HTML fleet summaries to any recipient list, using the same SMTP
 settings as email alerts. Each report covers devices online, outages and total downtime,
 error and warning counts, updates pending, backups taken, and top clients by traffic.
 Send-now is available for an immediate copy.
