@@ -185,7 +185,7 @@ services:
       retries: 5
 
   influxdb:
-    image: influxdb:2.7@sha256:b8d940ca9376f85118260f5b6bd236b8a00b1749c3350c5578d4cde8e27f31f2
+    image: influxdb:2.8@sha256:af89d51080c9b4cf92b85e3899503089bc1f24c186e2a72a06dd8203a80ea33d
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
       DOCKER_INFLUXDB_INIT_USERNAME: admin
