@@ -1289,15 +1289,18 @@ is left exactly as reachable as it was — still adoptable, not stranded.</p>
 </div>
 <h2 id="what-it-does">What it does<a class="headerlink" href="#what-it-does" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Borrows the chosen neighbour and gives it a temporary address in the target's subnet</li>
+<li>Borrows the chosen neighbour and gives it a temporary address in the target's subnet, on
+   the interface it sees the device on. The temporary address is first checked to be unused</li>
 <li>Confirms the device answers, and authenticates with the password you supplied</li>
-<li>Confirms the device really is factory-default</li>
+<li>Confirms the device answering is the one you picked, by its MAC address</li>
+<li>Confirms the device really is factory-default. If it can't read enough to tell, it stops</li>
 <li>Checks the address you chose is free</li>
 <li>Adds the address, the default route, and the identity — adding only, never replacing</li>
 <li>Returns the neighbour to exactly how it was found</li>
 <li>Confirms the manager can now reach the device directly</li>
 <li>Removes the factory <code>192.168.88.1</code> address, if you left that ticked</li>
-<li>Registers the device and starts polling it</li>
+<li>Registers the device as a router, switch or access point, by what it reports, and starts
+    polling it</li>
 </ol>
 <p>Every step is reported as it happens, so a failure says which one and why.</p>
 <p>Removing the factory address is recommended and on by default: two un-adopted devices both
@@ -1328,7 +1331,11 @@ chassis and known to anyone with physical access.</p>
 </tr>
 <tr>
 <td>"does not look factory-default"</td>
-<td>The device is in service. Add it normally with its credentials</td>
+<td>The device is in service. Add it normally with its credentials. Confirming it is factory-default in the dialog overrides only the guess made before connecting, not this check</td>
+</tr>
+<tr>
+<td>"is not <em>MAC</em>"</td>
+<td>A different device answered on that address, often a second unadopted unit on <code>192.168.88.1</code>. Adopt one at a time</td>
 </tr>
 <tr>
 <td>"is not free"</td>

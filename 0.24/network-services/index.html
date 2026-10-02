@@ -1239,13 +1239,19 @@ they could affect reachability.</p>
   dynamic lease can be converted to static in place, which is the usual way to pin an address
   to a device you care about.</li>
 <li><strong>Pools</strong> and <strong>servers</strong> can be created, edited and removed.</li>
+<li>A static <strong>IPv6 binding</strong> is matched by the client's DUID, not its MAC address, and assigns
+  a prefix. Before 0.24.51 the form asked for a MAC address, which RouterOS refused.</li>
 </ul>
 <p>A DHCP server bound to an interface that later changes VLAN is a common way to hand out
 addresses on the wrong segment; the lease list is the quickest way to notice.</p>
 <h2 id="dns">DNS<a class="headerlink" href="#dns" title="Permanent link">&para;</a></h2>
 <p>The resolver configuration on each device, plus static entries.</p>
 <ul>
-<li><strong>Static DNS</strong> entries are managed per device, including regexp entries.</li>
+<li><strong>Static DNS</strong> entries are managed per device, including regexp entries. The record types
+  are RouterOS's own: A, AAAA, CNAME, MX (with a preference), NS, TXT, SRV (with port,
+  priority and weight) and FWD (forward that name to another DNS server). RouterOS has no
+  static PTR record. Before 0.24.51 MX, NS and SRV targets went into the wrong field and the
+  record wasn't created.</li>
 <li><strong>Flush cache</strong> clears the resolver cache on a device, which is worth doing after changing
   an upstream server or a static entry.</li>
 </ul>
@@ -1255,6 +1261,10 @@ wrong clock produces logs that cannot be correlated, certificates that appear
 invalid — see <a href="../alerting/#certificate-expiry">Alerting</a> — and scheduled work that fires at
 the wrong time.</p>
 <p><a href="../devices/">Configuration templates</a> can push the same NTP servers to many devices at once.</p>
+<p>On RouterOS 6 the NTP server comes with the optional ntp package, so a stock device shows the
+client only. Its client takes up to two IP addresses plus any number of names, and its mode
+follows from the servers: unicast when some are set, broadcast when none are. Before 0.24.51
+saving NTP settings on such a device failed with an error 500.</p>
 <h2 id="wireguard">WireGuard<a class="headerlink" href="#wireguard" title="Permanent link">&para;</a></h2>
 <p>Interfaces and peers per device: create, edit, enable, disable and remove. Peer public keys and
 allowed addresses are shown so a tunnel can be checked against the far end without leaving the
@@ -1262,6 +1272,11 @@ platform.</p>
 <h2 id="logging-syslog">Logging (syslog)<a class="headerlink" href="#logging-syslog" title="Permanent link">&para;</a></h2>
 <p>Where each device sends its logs — remote actions and the rules that select which topics go to
 them. Rules can be toggled without deleting them.</p>
+<p>On current RouterOS 7, a remote action with a facility and severity is sent in syslog format
+(<code>remote-log-format=syslog</code>), and <strong>BSD syslog</strong> picks the BSD timestamp style over ISO 8601.
+Older RouterOS takes the same settings in its own form. The built-in actions (memory, disk,
+echo, remote) can be edited but not renamed or changed to another kind. Before 0.24.51 adding
+an action failed on every device.</p>
 <p>This is separate from the events the platform collects itself. The platform reads
 <code>/log/print</code> on its own cadence regardless of whether you forward logs anywhere.</p>
 <h2 id="netflow">NetFlow<a class="headerlink" href="#netflow" title="Permanent link">&para;</a></h2>

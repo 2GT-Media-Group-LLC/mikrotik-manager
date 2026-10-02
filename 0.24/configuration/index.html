@@ -374,6 +374,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#internal-service-passwords" class="md-nav__link">
+    <span class="md-ellipsis">
+      Internal service passwords
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#first-login" class="md-nav__link">
     <span class="md-ellipsis">
       First login
@@ -455,6 +464,15 @@
   <a href="#network-exposure" class="md-nav__link">
     <span class="md-ellipsis">
       Network exposure
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#container-hardening" class="md-nav__link">
+    <span class="md-ellipsis">
+      Container hardening
     </span>
   </a>
   
@@ -1168,6 +1186,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#internal-service-passwords" class="md-nav__link">
+    <span class="md-ellipsis">
+      Internal service passwords
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#first-login" class="md-nav__link">
     <span class="md-ellipsis">
       First login
@@ -1249,6 +1276,15 @@
   <a href="#network-exposure" class="md-nav__link">
     <span class="md-ellipsis">
       Network exposure
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#container-hardening" class="md-nav__link">
+    <span class="md-ellipsis">
+      Container hardening
     </span>
   </a>
   
@@ -1353,6 +1389,11 @@
 <td>InfluxDB admin UI password</td>
 </tr>
 <tr>
+<td><code>REDIS_PASSWORD</code></td>
+<td><em>none</em></td>
+<td>Makes Redis require a password. Can be set or changed at any time</td>
+</tr>
+<tr>
 <td><code>HTTP_PORT</code></td>
 <td><code>80</code></td>
 <td>Host port for HTTP (redirects to HTTPS)</td>
@@ -1379,6 +1420,39 @@
 </blockquote>
 <p>For a production deployment the only variable you genuinely must set is <code>CORS_ORIGIN</code>.
 Both secrets generate themselves safely — see below.</p>
+<h2 id="internal-service-passwords">Internal service passwords<a class="headerlink" href="#internal-service-passwords" title="Permanent link">&para;</a></h2>
+<p><code>DB_PASSWORD</code>, <code>INFLUXDB_TOKEN</code>, <code>INFLUXDB_ADMIN_PASSWORD</code> and <code>REDIS_PASSWORD</code> protect the
+databases. Their defaults are public, so set your own. Postgres, InfluxDB and Redis sit on a
+network of their own that only the backend joins, with no route out, so nothing else can reach
+them. The passwords are a second layer.</p>
+<p><strong>On a new install</strong>, set them in <code>.env</code> before the first <code>docker compose up -d</code>. Hex values
+are the easiest, since they need no quoting anywhere:</p>
+<div class="highlight"><pre><span></span><code>openssl rand -hex 24
+</code></pre></div>
+<p><strong>On an existing install</strong>, Postgres and InfluxDB keep the password they were first started
+with: they read these variables only when their data volume is empty. Changing <code>.env</code> alone
+then leaves the backend unable to log in. Change the password inside the database first, then
+in <code>.env</code>:</p>
+<ul>
+<li><strong>Postgres</strong>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>docker compose exec postgres psql -U mikrotik -d mikrotik_manager \
+  -c "ALTER USER mikrotik WITH PASSWORD 'new-password'"
+</code></pre></div>
+<p>Then set <code>DB_PASSWORD=new-password</code> in <code>.env</code> and run <code>docker compose up -d</code>.</p>
+<ul>
+<li><strong>InfluxDB token</strong>: create a new all-access token, put it in <code>INFLUXDB_TOKEN</code>, run
+  <code>docker compose up -d</code>, then delete the old token:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>docker compose exec influxdb influx auth create --all-access --org mikrotik-manager
+</code></pre></div>
+<p><code>influx auth list</code> shows the old token's ID, and <code>influx auth delete --id &lt;id&gt;</code> removes it.</p>
+<ul>
+<li><strong>Redis</strong> stores no password, so <code>REDIS_PASSWORD</code> can be set or changed at any time; run
+  <code>docker compose up -d</code> afterwards.</li>
+</ul>
+<p>Before 0.24.51 the database password was part of a connection URL, so a password containing
+<code>/</code>, <code>@</code> or <code>:</code> stopped the backend from starting. It is now passed on its own.</p>
 <h2 id="first-login">First login<a class="headerlink" href="#first-login" title="Permanent link">&para;</a></h2>
 <p>A new install has one account, <strong>admin</strong> with the password <strong>admin</strong>. Signing in with it
 goes straight to a page that asks for a new password (at least 10 characters and at most
@@ -1587,6 +1661,17 @@ from unknown exporters</strong> (see <a href="../traffic/">Traffic</a>), but lim
 is still the real protection.</p>
 <p>Before 0.24.47 there was no bind setting, and the ports were always published on every
 interface.</p>
+<h2 id="container-hardening">Container hardening<a class="headerlink" href="#container-hardening" title="Permanent link">&para;</a></h2>
+<p>From 0.24.51 the containers run with less:</p>
+<ul>
+<li><strong>backend</strong>: every Linux capability dropped except <code>NET_RAW</code> (server-side ARP discovery), a
+  read-only root filesystem, and a non-root user that owns only its data directories. It can
+  write its volumes and <code>/tmp</code>, and nothing else.</li>
+<li><strong>nginx</strong>: only the capabilities it uses, no privilege escalation, and a read-only root
+  filesystem.</li>
+<li><strong>Postgres, Redis, InfluxDB</strong>: no privilege escalation, on the internal network only.</li>
+<li><strong>Logs</strong> from every container rotate at 10 MB, five files each.</li>
+</ul>
 <h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
 <p>A self-signed certificate is generated on first run. Replace it under
 <strong>Settings → TLS Certificate</strong> by uploading a certificate and private key, or regenerate the
@@ -1600,6 +1685,15 @@ backend user (uid 100, gid 101) at every start, which also fixes existing instal
 <code>ghcr.io/2gt-media-group-llc/mikrotik-manager-backend</code> and <code>…-nginx</code>. Each is tagged
 <code>latest</code>, its version (for example <code>0.24.37-beta</code>) and <code>sha-&lt;commit&gt;</code>. To stay on a
 version, replace <code>latest</code> with the version tag in <code>docker-compose.ghcr.yml</code>.</p>
+<p>From 0.24.51 each image carries an SBOM and build provenance, and is signed with
+<a href="https://docs.sigstore.dev/">cosign</a> by the workflow that built it. To check an image before
+running it:</p>
+<div class="highlight"><pre><span></span><code>cosign verify ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:latest \
+  --certificate-identity-regexp 'https://github.com/2GT-Media-Group-LLC/mikrotik-manager/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+</code></pre></div>
+<p>Base images and the database images are pinned by digest, so a tag moved upstream can't change
+what's built or run until an update is reviewed.</p>
 <h2 id="dark-site-mode">Dark Site Mode<a class="headerlink" href="#dark-site-mode" title="Permanent link">&para;</a></h2>
 <p><strong>Settings → Dark Site Mode</strong> lists every feature that makes a request to the
 internet on its own, with where each one goes and what stops working without it. Each can be
