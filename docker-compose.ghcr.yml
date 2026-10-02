@@ -38,8 +38,8 @@ services:
     logging: *default-logging
     # Hardening (outside review O4): only the capabilities nginx and its
     # entrypoint use (binding 80/443, dropping to the worker user, handing
-    # /certs to the backend user), no privilege gain, and a read-only root
-    # filesystem with scratch space in memory.
+    # /certs to the backend user), and a read-only root filesystem with
+    # scratch space in memory.
     cap_drop:
       - ALL
     cap_add:
@@ -49,8 +49,6 @@ services:
       - SETUID
       - SETGID
       - NET_BIND_SERVICE
-    security_opt:
-      - no-new-privileges:true
     read_only: true
     tmpfs:
       - /var/cache/nginx
@@ -142,8 +140,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     logging: *default-logging
-    security_opt:
-      - no-new-privileges:true
+    # No service sets no-new-privileges. On Ubuntu with AppArmor it makes the
+    # container's first exec fail ("exec /usr/local/bin/docker-entrypoint.sh:
+    # operation not permitted"), because entering Docker's AppArmor profile
+    # counts as gaining a privilege. 0.24.51 set it and the stack wouldn't
+    # start on Ubuntu 26.04 / Docker 29 (Discussion #85).
     networks:
       - data-network
     healthcheck:
@@ -175,8 +176,6 @@ services:
       - redis_data:/data
     restart: unless-stopped
     logging: *default-logging
-    security_opt:
-      - no-new-privileges:true
     networks:
       - data-network
     healthcheck:
@@ -198,8 +197,6 @@ services:
       - influxdb_data:/var/lib/influxdb2
     restart: unless-stopped
     logging: *default-logging
-    security_opt:
-      - no-new-privileges:true
     networks:
       - data-network
     healthcheck:

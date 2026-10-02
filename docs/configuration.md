@@ -259,10 +259,13 @@ From 0.24.51 the containers run with less:
 - **backend**: every Linux capability dropped except `NET_RAW` (server-side ARP discovery), a
   read-only root filesystem, and a non-root user that owns only its data directories. It can
   write its volumes and `/tmp`, and nothing else.
-- **nginx**: only the capabilities it uses, no privilege escalation, and a read-only root
-  filesystem.
-- **Postgres, Redis, InfluxDB**: no privilege escalation, on the internal network only.
+- **nginx**: only the capabilities it uses, and a read-only root filesystem.
+- **Postgres, Redis, InfluxDB**: on the internal network only.
 - **Logs** from every container rotate at 10 MB, five files each.
+
+The containers don't set `no-new-privileges`. On Ubuntu with AppArmor it stops them starting at
+all: the first command in the container fails with "operation not permitted". 0.24.51 set it,
+and on such hosts the update left the databases restarting; 0.24.52 removes it.
 
 ## TLS
 
