@@ -1158,6 +1158,15 @@ CREATE TABLE IF NOT EXISTS proxy_connections (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_proxy_conn_device_log ON proxy_connections(device_id, log_id);
 CREATE INDEX IF NOT EXISTS idx_proxy_conn_time ON proxy_connections(event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_proxy_conn_client ON proxy_connections(client_ip, event_time DESC);
+-- Covering partial indexes for the dashboard rankings: the aggregations read these
+-- instead of the heap (index-only scans). device_id/source/proxy_port are included so
+-- site, instance and device filters stay index-only too.
+CREATE INDEX IF NOT EXISTS idx_proxy_conn_ok_cov ON proxy_connections(event_time DESC)
+  INCLUDE (client_ip, auth_user, hostname, server_ip, bytes_sent, bytes_received, device_id, source, proxy_port)
+  WHERE status = 'ok';
+CREATE INDEX IF NOT EXISTS idx_proxy_conn_denied_cov ON proxy_connections(event_time DESC)
+  INCLUDE (client_ip, proxy_port, device_id, source)
+  WHERE status <> 'ok' AND auth_user IS NULL;
 -- Fold per-worker suffixes (3proxy-b-32 -> 3proxy) on rows stored before they were stripped.
 UPDATE proxy_connections SET source = COALESCE(NULLIF(regexp_replace(source, '(-[a-zA-Z])?-[0-9]+$', ''), ''), 'proxy')
   WHERE source ~ '-[0-9]+$';

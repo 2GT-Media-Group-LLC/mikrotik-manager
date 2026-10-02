@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { proxyApi } from '../services/api';
@@ -38,6 +38,7 @@ export default function ProxyUsageCard() {
       source: source || undefined, port: port ? Number(port) : undefined,
     }).then(r => r.data),
     refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
     enabled: sources.length > 0,
   });
 
