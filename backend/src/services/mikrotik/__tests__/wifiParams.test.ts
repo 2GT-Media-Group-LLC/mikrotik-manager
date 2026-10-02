@@ -31,4 +31,9 @@ describe('translateToWifiParams (C6)', () => {
     expect(translateToWifiParams({ mode: 'ap', 'master-interface': 'wifi1', ssid: 'g' }))
       .toEqual({ 'master-interface': 'wifi1', 'configuration.ssid': 'g' });
   });
+
+  it('refuses keys that are not RouterOS properties', () => {
+    expect(() => translateToWifiParams({ __proto__x: 'y' } as Record<string, string>)).toThrow(/wireless setting/);
+    expect(() => translateToWifiParams(JSON.parse('{"__proto__":"y"}'))).toThrow(/wireless setting/);
+  });
 });

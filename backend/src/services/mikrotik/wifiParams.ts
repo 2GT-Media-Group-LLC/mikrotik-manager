@@ -43,8 +43,13 @@ function mapCiphers(key: string, value: string): string {
   }).join(',');
 }
 
+/** RouterOS property names only ("tx-power", "security.passphrase"). */
+const PROPERTY = /^[a-z][a-z0-9.-]*$/;
+
 export function translateToWifiParams(params: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
+  // Built as entries, never by writing request-supplied keys onto an object
+  // (CodeQL #109), and only for names shaped like RouterOS properties.
+  const out: [string, string][] = [];
   // Virtual APs (master-interface set) inherit mode from their master — RouterOS rejects
   // configuration.mode if it is sent explicitly for a virtual interface.
   const isVirtualAp = !!params['master-interface'];
@@ -58,7 +63,9 @@ export function translateToWifiParams(params: Record<string, string>): Record<st
     // Both keys carry the same passphrase; the WPA2 one wins if they differ.
     if (k === 'wpa-pre-shared-key' && params['wpa2-pre-shared-key'] !== undefined) continue;
     const v = k === 'unicast-ciphers' || k === 'group-ciphers' ? mapCiphers(k, raw) : raw;
-    out[FIELD_MAP[k] ?? k] = v;
+    const key = new Map(Object.entries(FIELD_MAP)).get(k) ?? k;
+    if (!PROPERTY.test(key)) throw new Error(`"${k}" isn't a wireless setting.`);
+    out.push([key, v]);
   }
-  return out;
+  return Object.fromEntries(out);
 }

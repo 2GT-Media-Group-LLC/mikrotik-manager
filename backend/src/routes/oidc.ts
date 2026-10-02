@@ -22,6 +22,7 @@ import {
   loadOidcConfig, saveOidcConfig, maskedConfig, APP_ROLES, type AppRole, type OidcConfig,
 } from '../services/oidc/oidcConfig';
 import { beginLogin, completeLogin, resetOidcClientCache, bindingHash } from '../services/oidc/OidcService';
+import { logSafe } from '../utils/logSafe';
 
 const router = Router();
 
@@ -116,7 +117,8 @@ router.get(
     try {
       const params = req.query as Record<string, string>;
       if (params.error) {
-        console.warn('[OIDC] the provider returned an error:', String(params.error), String(params.error_description || ''));
+        // Provider-supplied text, so made log-safe (CodeQL #110/#111).
+        console.warn('[OIDC] the provider returned an error:', logSafe(params.error), logSafe(params.error_description || ''));
         res.redirect('/login?error=sso&code=provider');
         return;
       }
