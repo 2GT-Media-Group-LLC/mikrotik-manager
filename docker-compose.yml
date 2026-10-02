@@ -149,7 +149,7 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
     # A memory ceiling so a runaway producer can never take the host down, with
     # eviction disabled.
     #
