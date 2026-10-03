@@ -17,6 +17,7 @@ import {
   planFiles, isMirrorFolder, isMirrorVersion, clampKeepVersions, supportsLocalUpdate, DEFAULT_MIRROR_FOLDER,
 } from '../utils/firmwareMirror';
 import { normalizeDeviceAddress } from '../utils/deviceAddress';
+import { logSafe } from '../utils/logSafe';
 
 const router = Router();
 router.use(requireAuth);
@@ -221,7 +222,7 @@ router.post('/:id/sync', async (req: Request, res: Response) => {
   if (version !== undefined && !isMirrorVersion(version)) return res.status(400).json({ error: 'version must be a RouterOS 7 release such as 7.24.5' });
   if (m.status === 'syncing') return res.status(409).json({ error: 'This mirror is already syncing' });
   await query(`UPDATE firmware_mirrors SET status = 'syncing', last_error = NULL WHERE id = $1`, [m.id]);
-  void syncMirror(m.id, version).catch((e) => console.warn(`[Mirror] #${m.id} sync: ${(e as Error).message}`));
+  void syncMirror(m.id, version).catch((e) => console.warn(`[Mirror] #${m.id} sync: ${logSafe((e as Error).message)}`));
   res.status(202).json({ started: true });
 });
 

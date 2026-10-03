@@ -26,9 +26,9 @@ import { encrypt, decrypt } from '../utils/crypto';
 import { DeviceCollector, type DeviceRow } from './mikrotik/DeviceCollector';
 import { resolveAuth } from './sshExec';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
-import { compareRosVersions } from '../utils/rosVersion';
+import { logSafe } from '../utils/logSafe';
 import {
-  planFiles, versionsToPrune, parseNewest, parseSha256File, downloadUrl, supportsLocalUpdate,
+  planFiles, versionsToPrune, parseNewest, parseSha256File, supportsLocalUpdate,
   isMirrorVersion, newestCompleteFrom, MIRROR_GROUP, MIRROR_GROUP_POLICY, type FleetDevice, type NeededFile,
 } from '../utils/firmwareMirror';
 
@@ -69,33 +69,34 @@ const busy = new Set<number>();
 
 // ─── Talking to MikroTik ─────────────────────────────────────────────────────
 
-/** HTTPS GET from *.mikrotik.com only, one redirect at most. */
-function get(url: string, onResponse: (res: import('http').IncomingMessage) => void, onError: (e: Error) => void, redirects = 1): void {
-  const u = new URL(url);
-  if (u.protocol !== 'https:' || !/(^|\.)mikrotik\.com$/.test(u.hostname)) {
-    onError(new Error(`Refusing to fetch from ${u.hostname}: packages come from mikrotik.com only`));
+/**
+ * HTTPS GET from MikroTik only. The host is fixed here, not taken from the
+ * caller, and redirects aren't followed: download.mikrotik.com and
+ * upgrade.mikrotik.com answer directly, so a redirect is treated as an error
+ * rather than a way to send the manager somewhere else.
+ */
+const MIKROTIK_HOSTS = new Set(['download.mikrotik.com', 'upgrade.mikrotik.com']);
+
+function get(host: string, pathname: string, onResponse: (res: import('http').IncomingMessage) => void, onError: (e: Error) => void): void {
+  if (!MIKROTIK_HOSTS.has(host) || !/^\/routeros\/[A-Za-z0-9._/-]+$/.test(pathname) || pathname.includes('..')) {
+    onError(new Error('Refusing to fetch: packages come from mikrotik.com only'));
     return;
   }
-  const req = https.get(u, { timeout: 30_000 }, (res) => {
-    if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
-      res.resume();
-      get(new URL(res.headers.location, u).toString(), onResponse, onError, redirects - 1);
-      return;
-    }
+  const req = https.get({ host, path: pathname, protocol: 'https:', timeout: 30_000 }, (res) => {
     if (res.statusCode !== 200) {
       res.resume();
-      onError(new Error(`${u.hostname} answered ${res.statusCode} for ${path.basename(u.pathname)}`));
+      onError(new Error(`${host} answered ${res.statusCode} for ${path.posix.basename(pathname)}`));
       return;
     }
     onResponse(res);
   });
-  req.on('timeout', () => req.destroy(new Error(`${u.hostname} stopped answering`)));
+  req.on('timeout', () => req.destroy(new Error(`${host} stopped answering`)));
   req.on('error', onError);
 }
 
-function fetchText(url: string, maxBytes = 4096): Promise<string> {
+function fetchText(host: string, pathname: string, maxBytes = 4096): Promise<string> {
   return new Promise((resolve, reject) => {
-    get(url, (res) => {
+    get(host, pathname, (res) => {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (c: string) => {
@@ -111,14 +112,39 @@ function fetchText(url: string, maxBytes = 4096): Promise<string> {
 /** The newest RouterOS 7 release on a channel, as MikroTik announces it. */
 export async function latestVersion(channel: string): Promise<string> {
   const ch = channel === 'long-term' ? 'long-term' : 'stable';
-  const body = await fetchText(`https://upgrade.mikrotik.com/routeros/NEWESTa7.${ch}`);
+  const body = await fetchText('upgrade.mikrotik.com', `/routeros/NEWESTa7.${ch}`);
   const v = parseNewest(body);
   if (!v) throw new Error(`MikroTik didn't name a ${ch} version`);
   return v;
 }
 
+/**
+ * A file's place in the cache. The version is rebuilt from its numbers and the
+ * name checked against the package-file shape, and the result has to resolve
+ * inside the cache: nothing from a request can point outside it.
+ */
 function cachePath(version: string, filename: string): string {
-  return path.join(CACHE_ROOT, version, filename);
+  const v = canonicalVersion(version);
+  if (!/^[a-z0-9][a-z0-9-]*-7\.\d{1,3}(?:\.\d{1,3})?(?:-[a-z0-9_]+)?\.npk$/.test(filename)) {
+    throw new Error(`Unexpected package file name ${JSON.stringify(filename)}`);
+  }
+  const root = path.resolve(CACHE_ROOT);
+  const full = path.resolve(root, v, path.basename(filename));
+  if (!full.startsWith(root + path.sep)) throw new Error('Package path outside the cache');
+  return full;
+}
+
+function cacheDir(version: string): string {
+  const root = path.resolve(CACHE_ROOT);
+  const full = path.resolve(root, canonicalVersion(version));
+  if (!full.startsWith(root + path.sep)) throw new Error('Package path outside the cache');
+  return full;
+}
+
+/** "7.24.5" rebuilt from its numbers, so only digits and dots survive. */
+function canonicalVersion(version: string): string {
+  if (!isMirrorVersion(version)) throw new Error(`${JSON.stringify(version)} isn't a RouterOS 7 release`);
+  return version.split('.').map((n) => String(Number(n))).join('.');
 }
 
 /**
@@ -138,10 +164,11 @@ export async function ensureCached(version: string, filename: string): Promise<{
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
     try {
-      const expected = parseSha256File(await fetchText(`${downloadUrl(version, filename)}.sha256`));
+      const remote = `/routeros/${canonicalVersion(version)}/${path.basename(file)}`;
+      const expected = parseSha256File(await fetchText('download.mikrotik.com', `${remote}.sha256`));
       if (!expected) throw new Error(`MikroTik's checksum for ${filename} couldn't be read`);
       const tmp = `${file}.part`;
-      const { sha256, size } = await download(downloadUrl(version, filename), tmp);
+      const { sha256, size } = await download(remote, tmp);
       if (sha256 !== expected) {
         fs.rmSync(tmp, { force: true });
         throw new Error(`${filename} didn't match MikroTik's checksum`);
@@ -151,15 +178,15 @@ export async function ensureCached(version: string, filename: string): Promise<{
       return { path: file, size, sha256 };
     } catch (e) {
       lastError = e as Error;
-      console.warn(`[Mirror] fetching ${filename} (attempt ${attempt}/${FETCH_ATTEMPTS}): ${lastError.message}`);
+      console.warn(`[Mirror] fetching ${logSafe(filename)} (attempt ${attempt}/${FETCH_ATTEMPTS}): ${logSafe(lastError.message)}`);
     }
   }
   throw new Error(`Couldn't fetch ${filename} from MikroTik: ${lastError?.message ?? 'unknown error'}`);
 }
 
-function download(url: string, dest: string): Promise<{ sha256: string; size: number }> {
+function download(pathname: string, dest: string): Promise<{ sha256: string; size: number }> {
   return new Promise((resolve, reject) => {
-    get(url, (res) => {
+    get('download.mikrotik.com', pathname, (res) => {
       const declared = Number(res.headers['content-length'] || 0);
       if (declared > MAX_PACKAGE_BYTES) { res.destroy(); reject(new Error('Package larger than expected')); return; }
       const hash = createHash('sha256');
@@ -356,7 +383,7 @@ export async function syncMirror(id: number, requested?: string): Promise<SyncRe
     await query(
       `UPDATE firmware_mirrors SET status = 'ready', last_error = NULL, last_sync_at = NOW(), free_bytes = $2, total_bytes = $3 WHERE id = $1`,
       [id, final ? Number(final['free-hdd-space'] || 0) : after.free, final ? Number(final['total-hdd-space'] || 0) : after.total]);
-    console.log(`[Mirror] #${id} synced ${version}: ${result.uploaded.length} uploaded, ${result.alreadyThere.length} already there, ${result.pruned.length} pruned`);
+    console.log(`[Mirror] #${id} synced ${logSafe(version)}: ${result.uploaded.length} uploaded, ${result.alreadyThere.length} already there, ${result.pruned.length} pruned`);
     return result;
   } catch (e) {
     await setStatus(id, 'error', (e as Error).message).catch(() => {});
@@ -384,7 +411,7 @@ async function prune(mirror: MirrorRow, server: DeviceRow): Promise<string[]> {
   // A version no mirror holds any more leaves the cache too.
   for (const v of drop) {
     const still = await queryOne(`SELECT 1 FROM firmware_mirror_files WHERE version = $1 LIMIT 1`, [v]);
-    if (!still && isMirrorVersion(v)) fs.rmSync(path.join(CACHE_ROOT, v), { recursive: true, force: true });
+    if (!still && isMirrorVersion(v)) fs.rmSync(cacheDir(v), { recursive: true, force: true });
   }
   return drop;
 }
@@ -505,7 +532,7 @@ let timer: ReturnType<typeof setInterval> | null = null;
 /** Check each auto-sync mirror for a newer release every few hours. */
 export function startMirrorScheduler(): void {
   if (timer) return;
-  const tick = () => { void autoSync().catch((e) => console.error('[Mirror] auto-sync:', (e as Error).message)); };
+  const tick = () => { void autoSync().catch((e) => console.error('[Mirror] auto-sync:', logSafe((e as Error).message))); };
   setTimeout(tick, 5 * 60_000);
   timer = setInterval(tick, AUTO_SYNC_EVERY_MS);
 }
@@ -519,7 +546,7 @@ async function autoSync(): Promise<void> {
       const have = await queryOne(`SELECT 1 FROM firmware_mirror_files WHERE mirror_id = $1 AND version = $2 LIMIT 1`, [m.id, latest]);
       if (!have) await syncMirror(m.id, latest);
     } catch (e) {
-      console.warn(`[Mirror] #${m.id} auto-sync: ${(e as Error).message}`);
+      console.warn(`[Mirror] #${m.id} auto-sync: ${logSafe((e as Error).message)}`);
     }
   }
 }
