@@ -394,10 +394,13 @@ router.get('/summary', async (req: Request, res: Response) => {
        FROM clients ${cliFilter ? `WHERE ${cliFilter}` : ''}`
     ),
     query<{ critical: string; warning: string }>(
+      // The severity test sits in the WHERE as well as the FILTERs: almost every event
+      // is info, and without it the 24h count read every one of them (hundreds of
+      // thousands of rows, about a second) instead of the few that are counted.
       `SELECT
         COUNT(*) FILTER (WHERE severity='error') as critical,
         COUNT(*) FILTER (WHERE severity='warning') as warning
-       FROM events WHERE event_time > NOW() - INTERVAL '24 hours'
+       FROM events WHERE severity IN ('error','warning') AND event_time > NOW() - INTERVAL '24 hours'
          ${evtFilter ? `AND ${evtFilter}` : ''}`
     ),
     query<{ total_outage_sec: string }>(

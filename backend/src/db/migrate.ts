@@ -1,6 +1,7 @@
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
-import { backfillProxyConnections } from '../services/ProxyLogService';
+import { backfillProxyConnections, backfillProxySources } from '../services/ProxyLogService';
+import { backfillProxyUsage } from '../services/ProxyUsageService';
 
 const MIGRATION_SQL = `
 -- Users
@@ -1169,15 +1170,40 @@ CREATE TABLE IF NOT EXISTS proxy_connections (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_proxy_conn_device_log ON proxy_connections(device_id, log_id);
 CREATE INDEX IF NOT EXISTS idx_proxy_conn_time ON proxy_connections(event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_proxy_conn_client ON proxy_connections(client_ip, event_time DESC);
--- Covering partial indexes for the dashboard rankings: the aggregations read these
--- instead of the heap (index-only scans). device_id/source/proxy_port are included so
--- site, instance and device filters stay index-only too.
-CREATE INDEX IF NOT EXISTS idx_proxy_conn_ok_cov ON proxy_connections(event_time DESC)
-  INCLUDE (client_ip, auth_user, hostname, server_ip, bytes_sent, bytes_received, device_id, source, proxy_port)
-  WHERE status = 'ok';
-CREATE INDEX IF NOT EXISTS idx_proxy_conn_denied_cov ON proxy_connections(event_time DESC)
-  INCLUDE (client_ip, proxy_port, device_id, source)
-  WHERE status <> 'ok' AND auth_user IS NULL;
+-- Covering partial indexes tried for the dashboard rankings were never chosen on real
+-- (time-ordered) data: the planner kept the plain event_time index, which the retention
+-- purge needs anyway. Drop them where an earlier build created them.
+DROP INDEX IF EXISTS idx_proxy_conn_ok_cov;
+DROP INDEX IF EXISTS idx_proxy_conn_denied_cov;
+-- One row per proxy instance per device, kept up to date as logs arrive, so the
+-- instance selector does not have to aggregate the whole of proxy_connections.
+-- proxy_port is 0 where a log line carried none (a key column cannot be NULL).
+CREATE TABLE IF NOT EXISTS proxy_sources (
+  device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  source     VARCHAR(64) NOT NULL,
+  proxy_type VARCHAR(16) NOT NULL,
+  proxy_port INTEGER NOT NULL DEFAULT 0,
+  last_seen  TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (device_id, source, proxy_type, proxy_port)
+);
+-- Hourly rollup behind the proxy usage rankings: one row per (hour, device, source,
+-- port, key, peer) for each tab (kind 1 clients, 2 users, 3 destinations, 4 denied).
+-- proxy_port is 0 and peer is '' where a log line carried none (key columns cannot be NULL).
+CREATE TABLE IF NOT EXISTS proxy_usage_hourly (
+  kind       SMALLINT NOT NULL,
+  bucket     TIMESTAMPTZ NOT NULL,
+  device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  source     VARCHAR(64) NOT NULL,
+  proxy_port INTEGER NOT NULL DEFAULT 0,
+  key        VARCHAR(255) NOT NULL,
+  peer       VARCHAR(255) NOT NULL DEFAULT '',
+  requests   BIGINT NOT NULL,
+  bytes_in   BIGINT NOT NULL DEFAULT 0,
+  bytes_out  BIGINT NOT NULL DEFAULT 0,
+  last_seen  TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (kind, bucket, device_id, source, proxy_port, key, peer)
+);
+CREATE INDEX IF NOT EXISTS idx_proxy_usage_hourly_bucket ON proxy_usage_hourly(bucket);
 -- Fold per-worker suffixes (3proxy-b-32 -> 3proxy) on rows stored before they were stripped.
 UPDATE proxy_connections SET source = COALESCE(NULLIF(regexp_replace(source, '(-[a-zA-Z])?-[0-9]+$', ''), ''), 'proxy')
   WHERE source ~ '-[0-9]+$';
@@ -1394,6 +1420,24 @@ export async function runMigrations(): Promise<void> {
       if (n > 0) console.log(`Backfilled ${n} proxy connection(s) from events`);
     } catch (err) {
       console.error('Proxy connection backfill failed (non-fatal):', err);
+    }
+
+    // Build the hourly rollup from rows already stored, once. Until it is marked ready
+    // the rankings read proxy_connections, so a failure here only delays the speed-up.
+    try {
+      const n = await backfillProxyUsage(client);
+      if (n > 0) console.log(`Built the proxy usage rollup from ${n} day(s) of connections`);
+    } catch (err) {
+      console.error('Proxy usage rollup backfill failed (non-fatal):', err);
+    }
+
+    // Fill the instance list from rows already stored. Only does work while the list is
+    // empty, so it costs one scan on upgrade and nothing afterwards.
+    try {
+      const n = await backfillProxySources(client);
+      if (n > 0) console.log(`Recorded ${n} proxy instance(s) from existing connections`);
+    } catch (err) {
+      console.error('Proxy instance backfill failed (non-fatal):', err);
     }
 
     console.log('Database migrations completed successfully');

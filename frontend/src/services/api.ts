@@ -952,7 +952,10 @@ export const eventsApi = {
     /** 1 includes NTP/cloud clock adjustments, hidden by default (#213). */
     clock?: 1;
   }) =>
-    api.get<{ events: DeviceEvent[]; total: number; criticalCount: number }>('/events', { params }),
+    api.get<{ events: DeviceEvent[]; total: number; totalCapped: boolean; criticalCount: number }>('/events', { params }),
+  /** The newest events only, without the totals the list endpoint also computes. */
+  recent: (params: { severity?: string; limit: number }) =>
+    api.get<{ events: DeviceEvent[] }>('/events', { params: { ...params, counts: 0 } }),
   clear: (deviceId?: number) => api.delete('/events', { params: deviceId ? { deviceId } : {} }),
 };
 
@@ -2053,7 +2056,7 @@ export interface ProxyTopRow {
   distinct_peers: number;
   last_seen: string;
 }
-export interface ProxySource { source: string; proxy_type: string; proxy_port: number | null; requests: number }
+export interface ProxySource { source: string; proxy_type: string; proxy_port: number | null }
 
 export const proxyApi = {
   top: (params: { by: 'client' | 'user' | 'destination' | 'denied'; range: string; limit?: number; source?: string; port?: number }) =>
