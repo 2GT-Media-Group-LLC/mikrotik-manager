@@ -2053,7 +2053,7 @@ export interface ProxyTopRow {
   distinct_peers: number;
   last_seen: string;
 }
-export interface ProxySource { source: string; proxy_type: string; proxy_port: number | null; requests: number }
+export interface ProxySource { source: string; proxy_type: string; proxy_port: number | null }
 
 export const proxyApi = {
   top: (params: { by: 'client' | 'user' | 'destination' | 'denied'; range: string; limit?: number; source?: string; port?: number }) =>

@@ -723,6 +723,7 @@ export class PollerService {
     if (deleted.length > 0) {
       console.log(`[Poller] Pruned ${deleted.length} proxy connections older than ${days} days`);
     }
+    await query(`DELETE FROM proxy_sources WHERE last_seen < NOW() - ($1 || ' days')::interval`, [String(days)]);
   }
 
   private async pruneStaleClients(settings: Record<string, unknown>): Promise<void> {
