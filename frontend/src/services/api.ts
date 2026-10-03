@@ -952,7 +952,7 @@ export const eventsApi = {
     /** 1 includes NTP/cloud clock adjustments, hidden by default (#213). */
     clock?: 1;
   }) =>
-    api.get<{ events: DeviceEvent[]; total: number; criticalCount: number }>('/events', { params }),
+    api.get<{ events: DeviceEvent[]; total: number; totalCapped: boolean; criticalCount: number }>('/events', { params }),
   /** The newest events only, without the totals the list endpoint also computes. */
   recent: (params: { severity?: string; limit: number }) =>
     api.get<{ events: DeviceEvent[] }>('/events', { params: { ...params, counts: 0 } }),

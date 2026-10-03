@@ -93,6 +93,9 @@ export default function EventsPage() {
 
   const events = eventsData?.events ?? [];
   const total = eventsData?.total ?? 0;
+  // Past the server's cap the total is a floor, shown as "100,000+".
+  const capped = eventsData?.totalCapped ?? false;
+  const totalLabel = `${total.toLocaleString()}${capped ? '+' : ''}`;
 
   return (
     <div className="space-y-4">
@@ -101,7 +104,7 @@ export default function EventsPage() {
           Events
           {total > 0 && (
             <span className="ml-2 text-sm font-normal text-gray-500 dark:text-slate-400">
-              ({total.toLocaleString()})
+              ({totalLabel})
             </span>
           )}
           {eventsData?.criticalCount ? (
@@ -250,7 +253,7 @@ export default function EventsPage() {
       {total > PAGE_SIZE && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-500 dark:text-slate-400">
-            Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, total).toLocaleString()} of {total.toLocaleString()}
+            Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{(page * PAGE_SIZE + events.length).toLocaleString()} of {totalLabel}
           </span>
           <div className="flex gap-2">
             <button
@@ -262,7 +265,7 @@ export default function EventsPage() {
             </button>
             <button
               onClick={() => setPage((p) => p + 1)}
-              disabled={(page + 1) * PAGE_SIZE >= total}
+              disabled={capped ? events.length < PAGE_SIZE : (page + 1) * PAGE_SIZE >= total}
               className="btn-secondary py-1 text-xs"
             >
               Next →
