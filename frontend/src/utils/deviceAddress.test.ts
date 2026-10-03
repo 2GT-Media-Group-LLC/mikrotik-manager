@@ -138,3 +138,18 @@ describe('sameAddress (#178)', () => {
     expect(sameAddress('Router.local', 'router.local')).toBe(true);
   });
 });
+
+describe('hostPort / winboxAddress (#198)', () => {
+  it('brackets IPv6 before a port', async () => {
+    const { hostPort } = await import('./deviceAddress');
+    expect(hostPort('fdfd:abcd:1235:4f39:eb11:c0a7:b1c5:a65c', 8728)).toBe('[fdfd:abcd:1235:4f39:eb11:c0a7:b1c5:a65c]:8728');
+    expect(hostPort('[2001:db8::1]', 8729)).toBe('[2001:db8::1]:8729');
+    expect(hostPort('192.168.0.51', 8729)).toBe('192.168.0.51:8729');
+    expect(hostPort('router.example', 8728)).toBe('router.example:8728');
+  });
+  it('gives Winbox the address without the API port', async () => {
+    const { winboxAddress } = await import('./deviceAddress');
+    expect(winboxAddress('2001:db8::1')).toBe('[2001:db8::1]');
+    expect(winboxAddress('192.168.0.51')).toBe('192.168.0.51');
+  });
+});

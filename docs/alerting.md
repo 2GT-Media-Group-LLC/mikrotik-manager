@@ -69,6 +69,11 @@ would otherwise sit permanently red with nothing to be done about them. Expired 
 are shown by default and the hidden count stays visible, because they are the main thing this
 feature exists to surface.
 
+CAPsMAN's own certificates work the other way round. The ones it generates for itself and its
+CAPs (named `CAPsMAN-CA-<mac>`, `CAPsMAN-<mac>` and `CAP-<mac>`) are valid until 2038 and
+need no attention, so they're hidden by default; **Show CAPsMAN certificates (N)** lists them.
+One that is no longer valid is always shown.
+
 The state shown on those pages is decided by the server using the same function and the same
 threshold that produce the alert, so a page cannot disagree with an email sent about the same
 certificate.

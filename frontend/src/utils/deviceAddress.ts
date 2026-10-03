@@ -150,3 +150,21 @@ export function sameAddress(a: string, b: string): boolean {
   if (x || y) return x === y;
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
+
+/**
+ * "address:port" with an IPv6 address in brackets, so the port can't be read
+ * as part of it ("[2001:db8::1]:8728", not "2001:db8::1:8728"; #198).
+ */
+export function hostPort(address: string, port: number | string): string {
+  const bare = stripIPv6Brackets(address);
+  return `${isValidIPv6(bare) ? `[${bare}]` : bare}:${port}`;
+}
+
+/**
+ * The address as Winbox's Connect To takes it: IPv6 in brackets, without the
+ * API port (Winbox uses its own; #198).
+ */
+export function winboxAddress(address: string): string {
+  const bare = stripIPv6Brackets(address);
+  return isValidIPv6(bare) ? `[${bare}]` : bare;
+}

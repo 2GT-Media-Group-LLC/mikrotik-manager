@@ -125,13 +125,32 @@ router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
 
 // ─── Section overview ─────────────────────────────────────────────────────────
 
+/**
+ * True for an interface on a controller that is really one of its CAPs'
+ * radios (or a virtual interface on one): the controller mirrors them locally,
+ * and capsman_radios lists them as not local (#196).
+ */
+const REMOTE_RADIO = `
+  SELECT 1 FROM capsman_radios cr
+   WHERE cr.controller_device_id = d.id AND cr.local = false
+     AND (cr.interface_name = wi.name
+          OR cr.interface_name = wi.config_json->>'master-interface'
+          OR (wi.radio_mac IS NOT NULL AND cr.radio_mac = wi.radio_mac))`;
+
 // GET /api/wireless — all wireless_ap devices with aggregated stats
 router.get('/', async (req: Request, res: Response) => {
   const siteFilter = siteScopeDevices(activeSite(req), 'd');
   const aps = await query(`
     SELECT d.id, d.name, d.ip_address, d.model, d.device_type, d.status, d.last_seen,
            d.ros_version, d.firmware_version, d.serial_number, d.rack_name, d.rack_slot,
-           COUNT(DISTINCT wi.id)                           AS radio_count,
+           -- Radios are physical interfaces only: virtual APs carry a
+           -- master-interface. And a controller's copies of its CAPs'
+           -- interfaces (remote radios in capsman_radios, and the virtual
+           -- interfaces on them) belong to the CAPs, not the controller (#196).
+           COUNT(DISTINCT wi.id) FILTER (
+             WHERE COALESCE(wi.config_json->>'master-interface', '') = ''
+               AND NOT EXISTS (${REMOTE_RADIO})
+           )                                              AS radio_count,
            -- A CAP's own registration table is empty when the controller processes
            -- traffic centrally, so its per-interface counts read zero. GREATEST
            -- prefers whichever source actually has the clients without adding the
@@ -141,7 +160,9 @@ router.get('/', async (req: Request, res: Response) => {
              COALESCE((SELECT SUM(cr.registered_peers) FROM capsman_radios cr
                         WHERE cr.matched_device_id = d.id), 0)
            )                                              AS client_count,
-           COUNT(DISTINCT wi.id) FILTER (WHERE wi.ssid IS NOT NULL AND wi.disabled = false) AS ssid_count
+           COUNT(DISTINCT wi.id) FILTER (
+             WHERE wi.ssid IS NOT NULL AND wi.disabled = false AND NOT EXISTS (${REMOTE_RADIO})
+           )                                              AS ssid_count
     FROM devices d
     LEFT JOIN wireless_interfaces wi ON wi.device_id = d.id
     WHERE (d.device_type = 'wireless_ap' OR d.wifi_role IN ('cap','controller','controller_cap'))

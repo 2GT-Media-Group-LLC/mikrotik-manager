@@ -76,6 +76,16 @@ router.get('/', async (req: Request, res: Response) => {
      FROM devices ${where} ORDER BY name ASC`
   );
 
+  // How the manager logs in (#199): a stored password, and an SSH key it has
+  // verified (the only state in which SSH uses the key). Asked separately so
+  // the device payload query never names a credential column.
+  const loginRows = await query<{ id: number; has_password: boolean; has_ssh_key: boolean }>(
+    `SELECT id, (COALESCE(api_password_encrypted, '') <> '') AS has_password,
+            EXISTS (SELECT 1 FROM device_ssh_keys k WHERE k.device_id = devices.id AND k.status = 'verified') AS has_ssh_key
+     FROM devices ${where}`
+  );
+  const loginById = new Map(loginRows.map((r) => [r.id, r]));
+
   // Attach tags to each device
   const tagRows = await query<{ device_id: number; id: number; name: string; color: string }>(
     `SELECT dt.device_id, t.id, t.name, t.color
@@ -89,6 +99,8 @@ router.get('/', async (req: Request, res: Response) => {
   const result = (devices as { id: number; site_id: number | null }[]).map((d) => ({
     ...d,
     tags: tagsByDevice[d.id] ?? [],
+    has_password: loginById.get(d.id)?.has_password ?? true,
+    has_ssh_key: loginById.get(d.id)?.has_ssh_key ?? false,
   }));
 
   res.json(await withEffectiveLocation(result));

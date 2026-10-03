@@ -133,6 +133,13 @@ The import runs as the same server-side job as **Try All**, so the tab can be cl
 Filter by status, type, tag, rack or location, and sort by any column. The search box matches
 name, address, serial and MAC.
 
+Two columns show how the manager reaches each device, and each has a filter:
+
+- **API**: **SSL** for API-SSL (8729), **PLAIN** for the unencrypted API (8728). See
+  [Encrypted management](security.md#encrypted-management-api-ssl).
+- **Login**: **PW** when the manager has only the password, **PW+KEY** when it also has a
+  verified [SSH key](ssh-keys.md) (SSH then uses the key), **KEY** for a key without a password.
+
 The list updates by itself as polls finish; there is no need to reload.
 
 ### Device names

@@ -57,6 +57,10 @@ export type DeviceType = 'router' | 'switch' | 'wireless_ap' | 'other';
 
 export interface Device {
   id: number;
+  /** A stored password (#199). Absent on rows from older endpoints. */
+  has_password?: boolean;
+  /** A verified SSH key the manager logs in with (#199). */
+  has_ssh_key?: boolean;
   name: string;
   /**
    * False: `name` follows the router's own /system/identity on every poll.

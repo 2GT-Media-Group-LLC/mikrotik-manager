@@ -135,6 +135,19 @@ function LoadSparkline({ data }: { data: number[] }) {
   );
 }
 
+/** How the manager reaches a device (#199). */
+type LoginKind = 'password' | 'key' | 'both';
+const apiKind = (d: Device): 'ssl' | 'plain' => (d.api_port === 8729 ? 'ssl' : 'plain');
+/** Stored password, verified SSH key, or both. */
+const loginKind = (d: Device): LoginKind =>
+  d.has_ssh_key ? (d.has_password === false ? 'key' : 'both') : 'password';
+const LOGIN_LABEL: Record<LoginKind, string> = { password: 'PW', key: 'KEY', both: 'PW+KEY' };
+const LOGIN_TITLE: Record<LoginKind, string> = {
+  password: 'Password only: SSH also uses the password',
+  key: 'SSH key only',
+  both: 'Password for the API, verified SSH key for SSH',
+};
+
 export default function DevicesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -156,6 +169,9 @@ export default function DevicesPage() {
   // the options come from what is actually recorded rather than a fixed list.
   const [rackFilter, setRackFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
+  // How the manager reaches each device (#199).
+  const [apiFilter, setApiFilter] = useState<'' | 'ssl' | 'plain'>('');
+  const [loginFilter, setLoginFilter] = useState<'' | LoginKind>('');
   const [discoveredSort, setDiscoveredSort] = useState<{ key: DiscoveredSortKey; dir: SortDir }>({
     key: 'discovered_at',
     dir: 'desc',
@@ -278,6 +294,8 @@ export default function DevicesPage() {
       if (typeFilter === 'SW' && d.device_type !== 'switch') return false;
       if (typeFilter === 'RTR' && d.device_type !== 'router') return false;
       if (tagFilter != null && !d.tags?.some(t => t.id === tagFilter)) return false;
+      if (apiFilter && apiKind(d) !== apiFilter) return false;
+      if (loginFilter && loginKind(d) !== loginFilter) return false;
       return true;
     });
     const sorted = [...base].sort((a, b) => {
@@ -303,7 +321,7 @@ export default function DevicesPage() {
       return deviceSort.dir === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [devices, search, statusFilter, typeFilter, tagFilter, rackFilter, locationFilter, deviceSort]);
+  }, [devices, search, statusFilter, typeFilter, tagFilter, rackFilter, locationFilter, apiFilter, loginFilter, deviceSort]);
 
   // Bulk actions only ever apply to devices the operator can see. A selection
   // made before narrowing the filters must not quietly include hidden rows.
@@ -443,6 +461,29 @@ export default function DevicesPage() {
             {locationOptions.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
         )}
+        <select
+          value={apiFilter}
+          onChange={e => setApiFilter(e.target.value as '' | 'ssl' | 'plain')}
+          title="How the manager connects to the device"
+          className="mono text-[11.5px] px-[8px] py-[4px] rounded-[5px] bg-transparent outline-none"
+          style={{ color: apiFilter ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
+        >
+          <option value="">Any API</option>
+          <option value="ssl">API-SSL</option>
+          <option value="plain">Plain API</option>
+        </select>
+        <select
+          value={loginFilter}
+          onChange={e => setLoginFilter(e.target.value as '' | LoginKind)}
+          title="Which credentials the manager has for the device"
+          className="mono text-[11.5px] px-[8px] py-[4px] rounded-[5px] bg-transparent outline-none"
+          style={{ color: loginFilter ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
+        >
+          <option value="">Any login</option>
+          <option value="password">Password only</option>
+          <option value="key">SSH key only</option>
+          <option value="both">Password + SSH key</option>
+        </select>
         {(['all', 'online', 'offline', 'updates'] as const).map(f => (
           <button
             key={f}
@@ -542,6 +583,8 @@ export default function DevicesPage() {
                     { key: 'serial_number', label: 'SERIAL',  w: 130  },
                     { key: 'rack_name',  label: 'RACK',       w: 100  },
                     { key: 'ip_address', label: 'IP ADDRESS', w: null },
+                    { key: null,         label: 'API',        w: 64  },
+                    { key: null,         label: 'LOGIN',      w: 90  },
                     { key: 'ros_version',label: 'ROS',        w: 110 },
                     { key: null,         label: 'CPU',        w: 110 },
                     { key: null,         label: 'LOAD',       w: 100 },
@@ -640,6 +683,16 @@ export default function DevicesPage() {
                       </td>
                       <td className="px-4 py-[12px]">
                         <span className="mono num-tab text-[12px]" style={{ color: 'var(--ink-2)' }}>{device.ip_address}</span>
+                      </td>
+                      <td className="px-4 py-[12px]">
+                        {apiKind(device) === 'ssl'
+                          ? <span className="mono text-[11px]" style={{ color: 'var(--ok, #16a34a)' }} title="Managed over API-SSL (8729)">SSL</span>
+                          : <span className="mono text-[11px]" style={{ color: 'var(--warn)' }} title="Managed over the plain, unencrypted API">PLAIN</span>}
+                      </td>
+                      <td className="px-4 py-[12px]">
+                        <span className="mono text-[11px]" style={{ color: 'var(--ink-2)' }} title={LOGIN_TITLE[loginKind(device)]}>
+                          {LOGIN_LABEL[loginKind(device)]}
+                        </span>
                       </td>
                       <td className="px-4 py-[12px]">
                         <span

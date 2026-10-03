@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ShieldCheck, ShieldAlert, ShieldX, ShieldOff, Clock, KeyRound } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
+import { isQuietCapsmanCertificate } from '../utils/capsmanCerts';
 import type { DeviceCertificate, CertState } from '../services/api';
 
 /**
@@ -58,9 +59,13 @@ interface Props {
  * nobody forgets what they filtered out.
  */
 function useHideExpired(storageKey: string): [boolean, (v: boolean) => void] {
-  const key = `certs.hideExpired.${storageKey}`;
+  return useStoredFlag(`certs.hideExpired.${storageKey}`, false);
+}
+
+/** A remembered on/off choice, per list. */
+function useStoredFlag(key: string, fallback: boolean): [boolean, (v: boolean) => void] {
   const [hide, setHide] = useState(() => {
-    try { return localStorage.getItem(key) === '1'; } catch { return false; }
+    try { const v = localStorage.getItem(key); return v === null ? fallback : v === '1'; } catch { return fallback; }
   });
   return [hide, (v: boolean) => {
     setHide(v);
@@ -72,14 +77,19 @@ export default function CertificateList({
   certificates, showDevice, emptyText, storageKey = 'default',
 }: Props) {
   const [hideExpired, setHideExpired] = useHideExpired(storageKey);
+  // CAPsMAN's own certificates (valid until 2038) are hidden by default (#197).
+  const [showCapsman, setShowCapsman] = useStoredFlag(`certs.showCapsman.${storageKey}`, false);
+  const capsmanCount = useMemo(() => certificates.filter(isQuietCapsmanCertificate).length, [certificates]);
 
   const expiredCount = useMemo(
     () => certificates.filter((c) => c.state === 'expired').length,
     [certificates]
   );
   const visible = useMemo(
-    () => (hideExpired ? certificates.filter((c) => c.state !== 'expired') : certificates),
-    [certificates, hideExpired]
+    () => certificates
+      .filter((c) => !hideExpired || c.state !== 'expired')
+      .filter((c) => showCapsman || !isQuietCapsmanCertificate(c)),
+    [certificates, hideExpired, showCapsman]
   );
 
   if (certificates.length === 0) {
@@ -94,8 +104,21 @@ export default function CertificateList({
     <div>
       {/* Only offered when there is something to hide — a permanent control for
           a situation most fleets never hit is just clutter. */}
-      {expiredCount > 0 && (
-        <div className="flex items-center justify-end pb-2">
+      {(expiredCount > 0 || capsmanCount > 0) && (
+        <div className="flex items-center justify-end gap-4 pb-2">
+          {capsmanCount > 0 && (
+            <label className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400 cursor-pointer select-none"
+              title="Certificates CAPsMAN generated for itself and its CAPs, valid until 2038">
+              <input
+                type="checkbox"
+                checked={showCapsman}
+                onChange={(e) => setShowCapsman(e.target.checked)}
+                className="rounded border-gray-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500"
+              />
+              Show CAPsMAN certificates ({capsmanCount})
+            </label>
+          )}
+          {expiredCount > 0 && (
           <label className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -105,12 +128,13 @@ export default function CertificateList({
             />
             Hide expired ({expiredCount})
           </label>
+          )}
         </div>
       )}
 
       {visible.length === 0 ? (
         <p className="text-sm text-gray-400 dark:text-slate-500 py-3">
-          All {expiredCount} certificate{expiredCount === 1 ? ' is' : 's are'} expired and hidden.
+          {certificates.length} certificate{certificates.length === 1 ? ' is' : 's are'} hidden by the filters above.
         </p>
       ) : (
       <div className="overflow-x-auto">

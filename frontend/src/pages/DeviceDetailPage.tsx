@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, RefreshCw, Activity, Cpu, MemoryStick, Clock, ExternalLink, TerminalSquare, ShieldCheck,
+  ArrowLeft, RefreshCw, Activity, Cpu, MemoryStick, Clock, ExternalLink, TerminalSquare, ShieldCheck, Copy, Check,
 } from 'lucide-react';
+import { hostPort, winboxAddress } from '../utils/deviceAddress';
 import { devicesApi, metricsApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import SwitchPortDiagram from '../components/ports/SwitchPortDiagram';
@@ -60,6 +61,7 @@ export default function DeviceDetailPage() {
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [addrCopied, setAddrCopied] = useState(false);
 
   const deviceId = parseInt(id!);
 
@@ -186,7 +188,12 @@ export default function DeviceDetailPage() {
               })()}
             </div>
             <p className="text-sm text-gray-500 dark:text-slate-400 font-mono truncate">
-              {device.ip_address}:{device.api_port}
+              {hostPort(device.ip_address, device.api_port)}
+              <button type="button" title="Copy the address for Winbox" aria-label="Copy the address for Winbox"
+                onClick={() => { void navigator.clipboard.writeText(winboxAddress(device.ip_address)).then(() => { setAddrCopied(true); setTimeout(() => setAddrCopied(false), 1500); }); }}
+                className="inline-flex align-middle ml-1.5 p-0.5 rounded text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">
+                {addrCopied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
               {device.model && ` · ${device.model}`}
               {device.ros_version && ` · ROS ${device.ros_version}`}
             </p>
