@@ -14,6 +14,7 @@ import TopologyPage from './pages/TopologyPage';
 import BackupsPage from './pages/BackupsPage';
 import FirmwarePage from './pages/FirmwarePage';
 import FirmwareHistoryPage from './pages/FirmwareHistoryPage';
+import CredentialsPage from './pages/CredentialsPage';
 import CommandsPage from './pages/CommandsPage';
 import TemplatesPage from './pages/TemplatesPage';
 import SettingsPage from './pages/SettingsPage';
@@ -79,6 +80,7 @@ export default function App() {
           <Route path="backups" element={<BackupsPage />} />
           <Route path="firmware" element={<FirmwarePage />} />
           <Route path="firmware/history" element={<FirmwareHistoryPage />} />
+          <Route path="credentials" element={<CredentialsPage />} />
           <Route path="commands" element={<CommandsPage />} />
           <Route path="templates" element={<TemplatesPage />} />
           <Route path="sites" element={<SitesPage />} />

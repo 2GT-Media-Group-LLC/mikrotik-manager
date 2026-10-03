@@ -418,3 +418,30 @@ describe('spanning tree', () => {
     expect(rules(healthy())).not.toContain('stp-disabled');
   });
 });
+
+describe('device-mode (#230)', () => {
+  // As a wAP ax in basic mode reports it (from the test bench).
+  const wapBasic = {
+    mode: 'basic', flagged: 'false', scheduler: 'true', fetch: 'true', 'bandwidth-test': 'false',
+    'traffic-gen': 'false', sniffer: 'true', hotspot: 'false', container: 'false',
+  };
+  it('flags the features the manager uses that device-mode blocks', () => {
+    const f = auditConfig(healthy({ deviceMode: wapBasic }), device);
+    expect(f.map((x) => x.rule)).toEqual(['device-mode-blocks-features']);
+    expect(f[0].severity).toBe('info');
+    expect(f[0].objects).toEqual(['bandwidth-test', 'hotspot']);
+    expect(f[0].title).toMatch(/basic/);
+  });
+  it('warns when the scheduler is blocked, since Change Guard depends on it', () => {
+    const f = auditConfig(healthy({ deviceMode: { ...wapBasic, scheduler: 'false' } }), device);
+    expect(f.find((x) => x.rule === 'device-mode-no-scheduler')?.severity).toBe('warning');
+  });
+  it('warns when RouterOS has flagged the device', () => {
+    expect(rules(healthy({ deviceMode: { ...wapBasic, flagged: 'true' } }))).toContain('device-mode-flagged');
+  });
+  it('says nothing for advanced mode, or when device-mode is unreadable', () => {
+    const advanced = { ...wapBasic, mode: 'advanced', 'bandwidth-test': 'true', hotspot: 'true' };
+    expect(auditConfig(healthy({ deviceMode: advanced }), device)).toEqual([]);
+    expect(auditConfig(healthy({ deviceMode: null }), device)).toEqual([]);
+  });
+});

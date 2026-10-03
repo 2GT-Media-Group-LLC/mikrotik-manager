@@ -591,6 +591,85 @@ function ruleStpLegacyMode(snap: DeviceSnapshot): ConfigFinding[] {
     }));
 }
 
+const DEVICE_MODE_DOC = 'https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode';
+
+/** Device-mode features the manager relies on, and what each one powers here. */
+const MANAGER_FEATURES: { key: string; what: string }[] = [
+  { key: 'bandwidth-test', what: 'the bandwidth test tool' },
+  { key: 'sniffer', what: 'packet capture' },
+  { key: 'hotspot', what: 'the Guest WiFi wizard (hotspot)' },
+  { key: 'fetch', what: 'adopting new devices through this one' },
+];
+
+/**
+ * RouterOS device-mode blocking what the manager uses (#230).
+ *
+ * Device-mode switches RouterOS features off below the configuration: a
+ * command for a blocked feature fails with "not allowed by device-mode", and
+ * changing it needs someone at the device to press its button or power-cycle
+ * it. Found out at the worst moment, as the reason a protected change couldn't
+ * run, so it's raised ahead of time.
+ */
+function ruleDeviceMode(snap: DeviceSnapshot): ConfigFinding[] {
+  const dm = snap.deviceMode;
+  if (!dm) return [];
+  const fields = new Map(Object.entries(dm));
+  const blocked = (key: string) => ['false', 'no'].includes(fields.get(key) ?? '');
+  const mode = dm['mode'] || 'unknown';
+  const out: ConfigFinding[] = [];
+  const how = `Changing device-mode needs physical access: run /system/device-mode/update with the `
+    + `feature set to yes, then press the device's reset or mode button (or power-cycle it) within `
+    + `the confirmation window.`;
+
+  if (isTrue(dm['flagged'])) {
+    out.push({
+      rule: 'device-mode-flagged',
+      fingerprint: 'device-mode-flagged',
+      severity: 'warning',
+      title: 'RouterOS has flagged this device',
+      detail: `RouterOS flags a device when it finds configuration it considers suspicious, and `
+        + `then refuses to change device-mode until the flag is cleared. Something on this device `
+        + `triggered it, which is worth checking for compromise.`,
+      remediation: `Review the configuration for anything you didn't add, then clear the flag `
+        + `with /system/device-mode/update flagged=no and confirm at the device. ${how}`,
+      docUrl: DEVICE_MODE_DOC,
+      objects: [],
+    });
+  }
+
+  if (blocked('scheduler')) {
+    out.push({
+      rule: 'device-mode-no-scheduler',
+      fingerprint: 'device-mode-no-scheduler',
+      severity: 'warning',
+      title: `Device-mode (${mode}) blocks the scheduler, so Change Guard can't protect changes`,
+      detail: `Change Guard arms its automatic undo as a scheduler entry on the device. With the `
+        + `scheduler blocked it can't, and a change that could cut off management is refused rather `
+        + `than made unprotected.`,
+      remediation: `Allow the scheduler: /system/device-mode/update scheduler=yes. ${how}`,
+      docUrl: DEVICE_MODE_DOC,
+      objects: ['scheduler'],
+    });
+  }
+
+  const off = MANAGER_FEATURES.filter((f) => blocked(f.key));
+  if (off.length > 0) {
+    out.push({
+      rule: 'device-mode-blocks-features',
+      fingerprint: `device-mode-blocks-features:${off.map((f) => f.key).join(',')}`,
+      severity: 'info',
+      title: `Device-mode (${mode}) blocks ${off.map((f) => f.key).join(', ')}`,
+      detail: `These are switched off on the device, so ${off.map((f) => f.what).join(', ')} won't `
+        + `work here; RouterOS answers "not allowed by device-mode". That's fine if it's deliberate.`,
+      remediation: `Allow what you need, for example /system/device-mode/update `
+        + `${off.map((f) => `${f.key}=yes`).join(' ')}. ${how}`,
+      docUrl: DEVICE_MODE_DOC,
+      objects: off.map((f) => f.key),
+    });
+  }
+  return out;
+}
+
 export function auditConfig(snap: DeviceSnapshot, device: GuardDevice): ConfigFinding[] {
   const findings = [
     ...ruleIpOnBridgePort(snap),
@@ -607,6 +686,7 @@ export function auditConfig(snap: DeviceSnapshot, device: GuardDevice): ConfigFi
     ...ruleDuplicateAddress(snap),
     ...ruleStpDisabled(snap),
     ...ruleStpLegacyMode(snap),
+    ...ruleDeviceMode(snap),
   ];
   return findings.sort(
     (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.rule.localeCompare(b.rule)

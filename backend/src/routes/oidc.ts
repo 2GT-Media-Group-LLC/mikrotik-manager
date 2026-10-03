@@ -191,6 +191,27 @@ router.put('/config', requireAuth, requireAdmin, async (req: Request, res: Respo
     try { new URL(body.issuer_url); } catch { return res.status(400).json({ error: 'issuer_url must be a valid URL' }); }
   }
 
+  // An admin signed in through SSO has no local password: turning SSO off, or
+  // pointing it at another provider, would lock them out on their next
+  // sign-in (#227). That change has to come from a local admin account.
+  const me = await queryOne<{ auth_provider: string; oidc_issuer: string | null; has_password: boolean }>(
+    `SELECT auth_provider, oidc_issuer, password_hash IS NOT NULL AS has_password FROM users WHERE id = $1`,
+    [req.user!.userId]
+  );
+  if (me && me.auth_provider === 'oidc' && !me.has_password) {
+    const current = await loadOidcConfig();
+    const disabling = body.enabled === false && current.enabled;
+    const sameIssuer = (a?: string | null, b?: string | null) => (a ?? '').replace(/\/+$/, '') === (b ?? '').replace(/\/+$/, '');
+    const movingIssuer = body.issuer_url !== undefined && !sameIssuer(body.issuer_url, current.issuer_url);
+    if (disabling || movingIssuer) {
+      return res.status(409).json({
+        error: disabling
+          ? "You're signed in through SSO and have no local password, so turning SSO off would lock you out. Make this change from a local admin account."
+          : "You're signed in through SSO with this provider, so switching to another one would lock you out. Make this change from a local admin account.",
+      });
+    }
+  }
+
   // client_secret handling: undefined = keep, '' = clear, string = set.
   const { client_secret, ...patch } = body;
   delete (patch as Record<string, unknown>).client_secret_encrypted; // never accept ciphertext from the client

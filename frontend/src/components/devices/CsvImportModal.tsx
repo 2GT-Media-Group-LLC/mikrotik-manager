@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Upload, Download, Loader2, Check, AlertTriangle, FileText } from 'lucide-react';
 import clsx from 'clsx';
-import { credentialPresetsApi, devicesApi, tagsApi, type BulkAddJobStatus } from '../../services/api';
+import { devicesApi, tagsApi, type BulkAddJobStatus } from '../../services/api';
 import { parseDeviceCsv, buildCsvTemplate, MAX_ROWS } from '../../utils/csvImport';
+import { useSitePresets } from '../../hooks/useSitePresets';
 
 /**
  * Bulk device import from a CSV file (#160).
@@ -29,10 +30,8 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
   const [error, setError] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { data: presets = [] } = useQuery({
-    queryKey: ['credential-presets'],
-    queryFn: () => credentialPresetsApi.list().then((r) => r.data),
-  });
+  // Only presets that can apply in the site the device joins (#228).
+  const { presets } = useSitePresets();
 
   const { data: tags = [] } = useQuery({
     queryKey: ['tags'],

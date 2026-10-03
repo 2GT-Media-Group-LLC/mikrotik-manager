@@ -89,8 +89,9 @@ What a site-limited account gets:
   devices in the first and only look at the second. Write controls follow the site selected.
 - **Site admins** can do everything an operator can in their sites, plus admin-level device
   actions such as trusting a changed certificate. They can't manage users, SSO, alerting, API
-  tokens, encryption or other fleet settings, and admin-only credential presets are as closed
-  to them as to an operator.
+  tokens, encryption or other fleet settings, and admin-only fleet-wide credential presets are
+  as closed to them as to an operator. They do manage their own sites' credential presets
+  under **Operations → Credentials**.
 - **Bulk work within its sites.** Bulk commands and firmware rollouts are available only if
   every device in them is in the account's sites. "Apply to all" actions (SNMP, LLDP, Backup
   all) skip sites where it's only a viewer.
@@ -149,7 +150,8 @@ Deliberately **not** scoped:
   managed AP at another site is also called "Guest". One of your own AP addresses heard on
   a channel that radio isn't using is flagged as a likely spoof.
 - **Install-wide configuration**: users, alert rules, webhooks, config templates,
-  credential presets, tags, maintenance windows and settings.
+  fleet-wide credential presets, tags, maintenance windows and settings. A credential preset
+  can also belong to one site (see [Device credentials](devices.md#device-credentials)).
 
 Bulk actions — Backup all, Sync all, firmware check-all, bulk commands — obey the
 selector. A bulk operation that silently spanned two customers is precisely the blast

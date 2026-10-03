@@ -3,7 +3,7 @@ import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
-  ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound, ClipboardList, Zap, LogIn,
+  ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, ClipboardList, Zap, LogIn,
   Activity, Moon, Globe } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
 import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
@@ -17,7 +17,6 @@ import {
   type BackupFrequency,
 } from '../utils/backupSchedule';
 import clsx from 'clsx';
-import CredentialPresetsSettings from '../components/settings/CredentialPresetsSettings';
 import FirmwareTimeoutCard from '../components/settings/FirmwareTimeoutCard';
 import PollModulesCard from '../components/settings/PollModulesCard';
 import TagRow from '../components/settings/TagRow';
@@ -81,7 +80,7 @@ export default function SettingsPage() {
   }, []);
 
   const siteScoped = useIsSiteScoped();
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys'>(siteScoped ? 'security' : 'general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys'>(siteScoped ? 'security' : 'general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -409,6 +408,7 @@ export default function SettingsPage() {
     // The two rules that showed without a caption (#223).
     config_drift: 'Configuration changed on a device',
     firmware_update_available: 'RouterOS update available',
+    cve_active: 'Serious RouterOS CVE affects the fleet (exploited, critical or high)',
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';
@@ -443,7 +443,6 @@ export default function SettingsPage() {
     {
       label: 'Fleet',
       tabs: [
-        { key: 'credentials' as const, label: 'Device Credentials', icon: KeyRound },
         ...(isAdmin ? [{ key: 'sshkeys' as const, label: 'SSH Keys', icon: Key }] : []),
         { key: 'alerting' as const, label: 'Alerting', icon: Bell },
         { key: 'automation' as const, label: 'Automation', icon: Zap },
@@ -454,9 +453,18 @@ export default function SettingsPage() {
       ],
     },
   ];
+  // With password sign-in off (PASSWORD_LOGIN=false, #226) there is no
+  // password or 2FA to manage, so My Account goes.
+  const { data: loginHints } = useQuery({
+    queryKey: ['login-hints'],
+    queryFn: () => authApi.loginHints().then((r) => r.data),
+    staleTime: 300_000,
+  });
+  const passwordLogin = loginHints?.password_login !== false;
+  const visibleGroups = passwordLogin ? allTabGroups : allTabGroups.filter((g) => g.label !== 'My Account');
   const tabGroups = siteScoped
-    ? allTabGroups.filter((g) => g.label === 'My Account')
-    : allTabGroups;
+    ? visibleGroups.filter((g) => g.label === 'My Account')
+    : visibleGroups;
 
   return (
     <div className="space-y-4">
@@ -1199,14 +1207,16 @@ export default function SettingsPage() {
       )}
 
       {/* ── Device Credential Presets ── */}
-      {activeTab === 'credentials' && (
-        <CredentialPresetsSettings isAdmin={isAdmin} />
-      )}
 
       {activeTab === 'sshkeys' && isAdmin && <FleetSshKeysCard />}
 
       {/* ── My Password ── */}
-      {activeTab === 'security' && (
+      {activeTab === 'security' && !passwordLogin && (
+        <div className="card p-5 max-w-2xl text-sm text-gray-600 dark:text-slate-300">
+          Password sign-in is turned off on this server, so accounts are managed through SSO.
+        </div>
+      )}
+      {activeTab === 'security' && passwordLogin && (
         <div className="max-w-md space-y-4">
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Change My Password</h3>

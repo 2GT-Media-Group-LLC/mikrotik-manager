@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
-import { requireAuth, requireAdmin, isSiteScoped } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
+import { presetCaller, canManagePresetSite, canSeePreset, type PresetCaller } from '../utils/presetAccess';
 import { encrypt } from '../utils/crypto';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
 
@@ -25,6 +26,9 @@ export interface CredentialPresetRow {
   notes: string | null;
   /** When false, only admins may use this preset when adding/updating devices. */
   allow_operator_use: boolean;
+  /** The site it belongs to; null = fleet-wide (#228). */
+  site_id: number | null;
+  site_name?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,11 +46,15 @@ interface CredentialPresetPublic {
   allow_operator_use: boolean;
   has_api_password: boolean;
   has_ssh_password: boolean;
+  site_id: number | null;
+  site_name: string | null;
+  /** Whether the requesting account may edit or delete it. */
+  can_manage: boolean;
   created_at: string;
   updated_at: string;
 }
 
-function toPublic(row: CredentialPresetRow): CredentialPresetPublic {
+function toPublic(row: CredentialPresetRow, caller: PresetCaller): CredentialPresetPublic {
   return {
     id: row.id,
     name: row.name,
@@ -58,6 +66,9 @@ function toPublic(row: CredentialPresetRow): CredentialPresetPublic {
     allow_operator_use: row.allow_operator_use !== false,
     has_api_password: !!row.api_password_encrypted,
     has_ssh_password: !!row.ssh_password_encrypted,
+    site_id: row.site_id ?? null,
+    site_name: row.site_name ?? null,
+    can_manage: canManagePresetSite(caller, row.site_id ?? null),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -66,20 +77,32 @@ function toPublic(row: CredentialPresetRow): CredentialPresetPublic {
 // GET /api/credential-presets — any authenticated user can list (the Add
 // Device modal needs this for its picker), but secrets are never exposed.
 router.get('/', async (req: Request, res: Response) => {
-  const role = req.user?.role;
+  const caller = presetCaller(req.user);
   const rows = await query<CredentialPresetRow>(
-    `SELECT * FROM credential_presets ORDER BY name ASC`
+    `SELECT p.*, s.name AS site_name FROM credential_presets p
+       LEFT JOIN sites s ON s.id = p.site_id
+      ORDER BY p.site_id NULLS FIRST, p.name ASC`
   );
-  // Admin-only presets are fleet objects: a site admin sees them as an operator would (P1-7).
-  const filtered =
-    role === 'admin' && !isSiteScoped(req.user)
-      ? rows
-      : rows.filter((r) => (r as CredentialPresetRow).allow_operator_use !== false);
-  res.json(filtered.map(toPublic));
+  // Each account sees what it may use or manage (#228); admin-only fleet
+  // presets stay fleet objects that a site admin sees as an operator would (P1-7).
+  res.json(rows.filter((r) => canSeePreset(caller, r)).map((r) => toPublic(r, caller)));
 });
 
-// POST /api/credential-presets — admin only
-router.post('/', requireAdmin, presetMutationLimiter, async (req: Request, res: Response) => {
+/** The site a request names: null for fleet-wide, undefined when not given, 'bad' when invalid. */
+async function requestedSite(v: unknown): Promise<number | null | undefined | 'bad'> {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  const id = Number(v);
+  if (!Number.isInteger(id) || id <= 0) return 'bad';
+  const site = await queryOne<{ id: number }>(`SELECT id FROM sites WHERE id = $1`, [id]);
+  return site ? id : 'bad';
+}
+
+const MANAGE_REFUSED = 'You can only manage credential presets for sites you administer.';
+
+// POST /api/credential-presets — fleet admins anywhere, site admins for their sites (#228)
+router.post('/', presetMutationLimiter, async (req: Request, res: Response) => {
+  const caller = presetCaller(req.user);
   const {
     name,
     api_username,
@@ -107,10 +130,19 @@ router.post('/', requireAdmin, presetMutationLimiter, async (req: Request, res: 
       .status(400)
       .json({ error: 'name, api_username, and api_password are required' });
   }
+  const site = await requestedSite((req.body as { site_id?: unknown }).site_id);
+  if (site === 'bad') return res.status(400).json({ error: 'Unknown site' });
+  // No site given: fleet-wide for a fleet admin, the only site a site admin
+  // runs. An explicit null (fleet-wide) is checked like any other site, never
+  // quietly swapped for one.
+  const siteId = site !== undefined
+    ? site
+    : (caller.fleetAdmin ? null : (caller.adminSites.length === 1 ? caller.adminSites[0] : null));
+  if (!canManagePresetSite(caller, siteId)) return res.status(403).json({ error: MANAGE_REFUSED });
 
   const existing = await queryOne<{ id: number }>(
-    `SELECT id FROM credential_presets WHERE name = $1`,
-    [name]
+    `SELECT id FROM credential_presets WHERE name = $1 AND COALESCE(site_id, 0) = COALESCE($2::integer, 0)`,
+    [name, siteId]
   );
   if (existing) {
     return res.status(409).json({ error: 'A preset with this name already exists' });
@@ -124,8 +156,8 @@ router.post('/', requireAdmin, presetMutationLimiter, async (req: Request, res: 
   const rows = await query<CredentialPresetRow>(
     `INSERT INTO credential_presets
        (name, api_username, api_password_encrypted, api_port,
-        ssh_username, ssh_password_encrypted, ssh_port, notes, allow_operator_use)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        ssh_username, ssh_password_encrypted, ssh_port, notes, allow_operator_use, site_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      RETURNING *`,
     [
       name,
@@ -137,13 +169,15 @@ router.post('/', requireAdmin, presetMutationLimiter, async (req: Request, res: 
       ssh_port ?? null,
       notes || null,
       allowOp,
+      siteId,
     ]
   );
-  return res.status(201).json(toPublic(rows[0]));
+  return res.status(201).json(toPublic(rows[0], caller));
 });
 
-// PUT /api/credential-presets/:id — admin only
-router.put('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res: Response) => {
+// PUT /api/credential-presets/:id — whoever may manage its site, and the site it moves to
+router.put('/:id', presetMutationLimiter, async (req: Request, res: Response) => {
+  const caller = presetCaller(req.user);
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
 
@@ -152,6 +186,12 @@ router.put('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res
     [id]
   );
   if (!existing) return res.status(404).json({ error: 'Preset not found' });
+  if (!canSeePreset(caller, existing)) return res.status(404).json({ error: 'Preset not found' });
+  if (!canManagePresetSite(caller, existing.site_id ?? null)) return res.status(403).json({ error: MANAGE_REFUSED });
+  const movedTo = await requestedSite((req.body as { site_id?: unknown }).site_id);
+  if (movedTo === 'bad') return res.status(400).json({ error: 'Unknown site' });
+  if (movedTo !== undefined && !canManagePresetSite(caller, movedTo)) return res.status(403).json({ error: MANAGE_REFUSED });
+  const targetSite = movedTo === undefined ? existing.site_id ?? null : movedTo;
 
   const {
     name,
@@ -178,10 +218,10 @@ router.put('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res
     allow_operator_use?: boolean;
   };
 
-  if (typeof name === 'string' && name && name !== existing.name) {
+  if ((typeof name === 'string' && name && name !== existing.name) || movedTo !== undefined) {
     const clash = await queryOne<{ id: number }>(
-      `SELECT id FROM credential_presets WHERE name = $1 AND id <> $2`,
-      [name, id]
+      `SELECT id FROM credential_presets WHERE name = $1 AND id <> $2 AND COALESCE(site_id, 0) = COALESCE($3::integer, 0)`,
+      [name || existing.name, id, targetSite]
     );
     if (clash) return res.status(409).json({ error: 'A preset with this name already exists' });
   }
@@ -207,6 +247,7 @@ router.put('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res
        ssh_port               = CASE WHEN $10::boolean THEN $11::integer ELSE ssh_port END,
        notes                  = CASE WHEN $12::boolean THEN $13::text ELSE notes END,
        allow_operator_use     = COALESCE($14, allow_operator_use),
+       site_id                = CASE WHEN $16::boolean THEN $17::integer ELSE site_id END,
        updated_at             = NOW()
      WHERE id = $15`,
     [
@@ -221,20 +262,25 @@ router.put('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res
       sent(notes), notes || null,
       allow_operator_use === undefined ? null : allow_operator_use,
       id,
+      movedTo !== undefined, movedTo === undefined ? null : movedTo,
     ]
   );
 
   const updated = await queryOne<CredentialPresetRow>(
-    `SELECT * FROM credential_presets WHERE id = $1`,
+    `SELECT p.*, s.name AS site_name FROM credential_presets p LEFT JOIN sites s ON s.id = p.site_id WHERE p.id = $1`,
     [id]
   );
-  return res.json(toPublic(updated!));
+  return res.json(toPublic(updated!, caller));
 });
 
-// DELETE /api/credential-presets/:id — admin only
-router.delete('/:id', requireAdmin, presetMutationLimiter, async (req: Request, res: Response) => {
+// DELETE /api/credential-presets/:id — whoever may manage its site
+router.delete('/:id', presetMutationLimiter, async (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+  const caller = presetCaller(req.user);
+  const row = await queryOne<CredentialPresetRow>(`SELECT * FROM credential_presets WHERE id = $1`, [id]);
+  if (!row || !canSeePreset(caller, row)) return res.status(404).json({ error: 'Preset not found' });
+  if (!canManagePresetSite(caller, row.site_id ?? null)) return res.status(403).json({ error: MANAGE_REFUSED });
   const result = await query(
     `DELETE FROM credential_presets WHERE id = $1 RETURNING id`,
     [id]

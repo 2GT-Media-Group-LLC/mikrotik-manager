@@ -79,6 +79,10 @@ services:
       # The outgoing key while ENCRYPTION_KEY is changed; see docs/configuration.md#key-rotation.
       ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost,http://localhost,https://127.0.0.1,http://127.0.0.1}
+      # false = SSO-only: no username/password on the login page (#226). Takes
+      # effect only while SSO is configured; set it back to true to get in if
+      # SSO breaks. See docs/sso-oidc.md.
+      PASSWORD_LOGIN: ${PASSWORD_LOGIN:-true}
       PORT: 3001
       NETFLOW_BIND_PORT: 2055
       # Poller tuning. These were documented in .env.example but never passed

@@ -43,6 +43,7 @@ export const WEBHOOK_EVENTS = [
   'rollout_completed', 'rollout_failed',
   'device_degraded', 'device_health_restored',
   'device_identity_changed',
+  'cve_active',
 ] as const;
 export type WebhookEvent = typeof WEBHOOK_EVENTS[number] | 'test';
 

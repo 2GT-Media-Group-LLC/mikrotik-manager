@@ -1091,6 +1091,17 @@ ALTER TABLE backups ADD COLUMN IF NOT EXISTS encrypted BOOLEAN NOT NULL DEFAULT 
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
 
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);
+
+-- Credential presets can belong to one site (#228); NULL keeps one fleet-wide.
+-- A site's presets go with the site: they must never turn into fleet-wide ones.
+ALTER TABLE credential_presets ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id) ON DELETE CASCADE;
+-- Names are unique within a site (or fleet-wide), not across every site.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'credential_presets_name_key') THEN
+    ALTER TABLE credential_presets DROP CONSTRAINT credential_presets_name_key;
+  END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credential_presets_site_name ON credential_presets (COALESCE(site_id, 0), name);
 CREATE INDEX IF NOT EXISTS idx_devices_site ON devices(site_id);
 
 -- Config History snapshots that may hold secrets. RouterOS v6 exported them by

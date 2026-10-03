@@ -20,7 +20,8 @@ export type AlertEventType =
   | 'config_drift'
   | 'device_degraded'
   | 'device_health_restored'
-  | 'device_identity_changed';
+  | 'device_identity_changed'
+  | 'cve_active';
 
 export interface AlertContext {
   deviceId?: number;

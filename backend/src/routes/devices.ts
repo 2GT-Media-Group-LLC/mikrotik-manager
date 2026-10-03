@@ -47,6 +47,7 @@ import { parseBandList, uplinkAnchor, totalBandwidthMhz, type LteBandInfo } from
 import { fluxString } from '@influxdata/influxdb-client';
 import { upgradeDecision } from '../utils/firmwarePlan';
 import { sshHostCheck, explainSshError } from '../services/sshHostCheck';
+import { presetCaller } from '../utils/presetAccess';
 import { parseAllowedList, configuredServices, allowedFromKey, managerPeer, addressAllowed } from '../utils/ipServices';
 
 const router = Router();
@@ -289,6 +290,7 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
   const result = await createDeviceFromBody(req.body, pollerService, {
     // Admin-only credential presets are fleet objects: a site admin uses them as an operator would (P1-7).
     requestingUserRole: isSiteScoped(req.user) ? 'operator' : req.user?.role,
+    presetCaller: presetCaller(req.user),
     siteId: target.siteId,
     allowedSites: req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null,
   });
@@ -324,7 +326,7 @@ router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) 
   );
   await redis.set(`device-bulk-add:${jobId}:results`, '[]', 'EX', BULK_ADD_META_TTL_SEC);
   await enqueueBulkAddJob(jobId, items as CreateDeviceInput[], bulkTarget.siteId, isSiteScoped(req.user) ? 'operator' : req.user!.role,
-    req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null);
+    req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null, presetCaller(req.user));
   return res.status(202).json({ job_id: jobId, total: items.length });
 });
 
@@ -504,8 +506,9 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
     api_username: string;
     api_password_encrypted: string;
     ssh_port: number | null;
+    site_id: number | null;
   }>(
-    `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted, ssh_port
+    `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted, ssh_port, site_id
        FROM devices WHERE id = $1`,
     [req.params.id]
   );
@@ -523,9 +526,14 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 
   let preset: Awaited<ReturnType<typeof loadCredentialPreset>>;
   try {
+    // The same rules as adding (#228): a site's preset only on that site's
+    // devices, and admin-only fleet presets kept from site admins (P1-7). Here
+    // the role had been the device's site role, which let a site admin apply
+    // an admin-only fleet preset by editing a device.
     preset = await loadCredentialPreset(credential_preset_id ?? null, {
       requestingUserRole: req.user?.role,
-    });
+      presetCaller: presetCaller(req.user),
+    }, existing.site_id ?? null);
   } catch (err) {
     const status = (err as Error & { statusCode?: number }).statusCode ?? 400;
     return res.status(status).json({ error: (err as Error).message });

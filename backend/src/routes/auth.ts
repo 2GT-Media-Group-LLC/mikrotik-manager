@@ -9,6 +9,7 @@ import { getSecretsInfo, encryptionKeyMissing } from '../utils/secrets';
 import { loginRateLimit, rateLimitRedis } from '../middleware/rateLimitRedis';
 import { validatePassword } from '../utils/passwordPolicy';
 import { sessionResponse } from '../utils/sessionResponse';
+import { passwordLoginEnabled } from '../utils/passwordLogin';
 
 const router = Router();
 
@@ -50,11 +51,21 @@ router.get('/login-hints', async (_req: Request, res: Response) => {
   const row = await queryOne<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM users WHERE username = 'admin' AND must_change_password = TRUE`
   ).catch(() => null);
-  return res.json({ default_credentials: parseInt(row?.n ?? '0', 10) > 0 });
+  // password_login: false hides the username/password form for SSO-only
+  // installs (#226).
+  return res.json({ default_credentials: parseInt(row?.n ?? '0', 10) > 0, password_login: await passwordLoginEnabled() });
 });
+
+/** Refuse a password-based action while password sign-in is off (#226). */
+async function refuseIfPasswordLoginOff(res: Response): Promise<boolean> {
+  if (await passwordLoginEnabled()) return false;
+  res.status(403).json({ error: 'Password sign-in is turned off on this server. Sign in with SSO.' });
+  return true;
+}
 
 // lgtm[js/missing-rate-limiting] - loginRateLimit() middleware handles per-IP rate limiting
 router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
+  if (await refuseIfPasswordLoginOff(res)) return;
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -84,6 +95,7 @@ router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
 
 // Exchange partial TOTP token + code for a full session token
 router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: 'totp-verify', allMethods: true }), async (req: Request, res: Response) => {
+  if (await refuseIfPasswordLoginOff(res)) return;
   const { totp_token, code } = req.body as { totp_token?: string; code?: string };
   if (!totp_token || !code) {
     return res.status(400).json({ error: 'totp_token and code are required' });
@@ -119,6 +131,7 @@ router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: '
 // Requires the current password so a hijacked session can't enroll 2FA and lock
 // the legitimate user out.
 router.post('/totp/setup', requireAuth, async (req: Request, res: Response) => {
+  if (await refuseIfPasswordLoginOff(res)) return;
   const { password } = req.body as { password?: string };
   if (!password) return res.status(400).json({ error: 'Current password is required to set up 2FA' });
 
@@ -156,6 +169,7 @@ router.post('/totp/setup', requireAuth, async (req: Request, res: Response) => {
 
 // Confirm the TOTP setup by validating a code — enables TOTP
 router.post('/totp/confirm', requireAuth, async (req: Request, res: Response) => {
+  if (await refuseIfPasswordLoginOff(res)) return;
   const { code } = req.body as { code?: string };
   if (!code) return res.status(400).json({ error: 'code is required' });
 
@@ -178,6 +192,7 @@ router.post('/totp/confirm', requireAuth, async (req: Request, res: Response) =>
 
 // Disable TOTP — requires password confirmation
 router.post('/totp/disable', requireAuth, async (req: Request, res: Response) => {
+  if (await refuseIfPasswordLoginOff(res)) return;
   const { password } = req.body as { password?: string };
   if (!password) return res.status(400).json({ error: 'password is required' });
 
@@ -214,6 +229,7 @@ router.post('/logout', requireAuth, async (req: Request, res: Response) => {
 });
 
 router.put('/password', requireAuth, async (req: Request, res: Response) => {
+  if (await refuseIfPasswordLoginOff(res)) return;
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'Current and new password required' });

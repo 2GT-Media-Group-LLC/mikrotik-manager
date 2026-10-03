@@ -58,6 +58,8 @@ export interface DeviceSnapshot {
   interfaceListMembers?: RosRow[];
   /** The capture connection's own local port, to pick the manager out of conntrack. */
   managerLocalPort?: number | null;
+  /** /system/device-mode; absent where unreadable (RouterOS 6, older 7) (#230). */
+  deviceMode?: RosRow | null;
 }
 
 export type HopKind = 'address' | 'vlan-interface' | 'bridge' | 'bond' | 'port';
@@ -146,7 +148,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
     const [
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
       bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
-      interfaceLists, interfaceListMembers,
+      interfaceLists, interfaceListMembers, deviceModeRows,
     ] = await Promise.all([
       run('/ip/address/print', { detail: '' }),
       run('/interface/print', { detail: '' }),
@@ -163,6 +165,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       optional('/ip/firewall/connection/print', { detail: '' }),
       run('/interface/list/print'),
       run('/interface/list/member/print'),
+      optional('/system/device-mode/print'),
     ]);
 
     // Only the lists the filter names, each on its own and time-boxed: a
@@ -188,6 +191,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
       addressLists, addressListsRead, interfaceLists, interfaceListMembers,
       managerLocalPort: client.localPort,
+      deviceMode: deviceModeRows[0] ?? null,
     };
   } finally {
     client.disconnect();

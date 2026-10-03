@@ -17,6 +17,7 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `INFLUXDB_BUCKET` | `metrics` | InfluxDB bucket for time-series data |
 | `INFLUXDB_ADMIN_PASSWORD` | `admin_password_123` | InfluxDB admin UI password |
 | `REDIS_PASSWORD` | *none* | Makes Redis require a password. Can be set or changed at any time |
+| `PASSWORD_LOGIN` | `true` | `false` makes sign-in SSO-only. See [SSO-only sign-in](sso-oidc.md#behaviour-and-safety) |
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |

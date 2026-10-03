@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Router, Users, Bell, GitBranch, HardDrive,
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
   Server, Globe, Clock, Shield, FileText, Activity, BarChart3, Ticket, ArrowUpCircle, Radio,
-  LayoutGrid, TerminalSquare,
+  LayoutGrid, TerminalSquare, KeyRound,
 } from 'lucide-react';
 import clsx from 'clsx';
 import SiteSelector from './SiteSelector';
@@ -48,6 +48,7 @@ const operationsItems = [
   { to: '/commands',  icon: TerminalSquare,  label: 'Bulk Commands' },
   { to: '/templates', icon: FileText,        label: 'Templates' },
   { to: '/backups',   icon: HardDrive,       label: 'Backups' },
+  { to: '/credentials', icon: KeyRound,      label: 'Credentials' },
 ];
 
 interface SidebarProps {

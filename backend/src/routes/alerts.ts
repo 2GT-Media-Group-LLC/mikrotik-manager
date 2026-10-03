@@ -31,6 +31,9 @@ const DEFAULT_RULES = [
   // A changed certificate or host key could be someone posing as the device
   // (outside review P1-4). On by default; it fires once per change.
   { event_type: 'device_identity_changed', enabled: true, threshold: null, cooldown_min: 60 },
+  // A serious RouterOS CVE affecting a version the fleet runs (#224). Off by
+  // default; checked after the daily CVE feed refresh, once per CVE and version.
+  { event_type: 'cve_active', enabled: false, threshold: null, cooldown_min: 1440 },
 ];
 
 /**
@@ -71,6 +74,11 @@ router.put('/rules/:type', requireWrite, async (req, res) => {
     threshold:   threshold   !== undefined ? (Number(threshold) || null) : undefined,
     cooldown_min: cooldown_min !== undefined ? Number(cooldown_min)    : undefined,
   });
+  // Turning CVE alerts on checks straight away instead of at the next daily
+  // feed refresh (#224).
+  if (type === 'cve_active' && row?.enabled) {
+    void import('../services/cveAlerts').then(({ checkCveAlerts }) => checkCveAlerts()).catch(() => {});
+  }
   res.json(row);
 });
 

@@ -79,9 +79,21 @@ the session straight away and removes it from the address bar. So a sign-in link
 used to log someone else in to your account, and no session token is left in browser
 history. A sign-in started before an admin turns SSO off is refused when it comes back.
 
-**Break-glass.** Local username and password login stays available. The seeded local admin
-can always get in, even if the IdP is misconfigured, expired, or unreachable. Do not delete
-that account.
+**Break-glass.** Local username and password login stays available unless you turn it off
+(below). The seeded local admin can always get in, even if the IdP is misconfigured,
+expired, or unreachable. Do not delete that account.
+
+**SSO-only sign-in.** Set `PASSWORD_LOGIN=false` in `.env` and restart to make SSO the only
+way in. The login page then shows just the SSO button, and password sign-in, password
+changes and two-factor setup are refused; **My Account** disappears from Settings. API tokens
+keep working. It only takes effect while SSO is configured, so a typo can't lock everyone out.
+If SSO breaks, set `PASSWORD_LOGIN=true`, restart, and sign in with the local admin: that is
+the break-glass, and nothing inside the app can turn it off.
+
+**Turning SSO off while signed in through it.** An admin signed in through SSO has no local
+password, so the app refuses to turn SSO off, or to point it at a different provider, from
+that session: it would lock them out at their next sign-in. Make that change from a local
+admin account.
 
 **Behind a reverse proxy.** The redirect URI is derived from the request host. If your
 external URL differs from what the backend sees — a proxy, a custom domain, a tunnel —

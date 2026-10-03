@@ -10,10 +10,17 @@ import type { CredentialPresetRow } from '../routes/credentialPresets';
 import { DEVICE_BASE_COLUMNS } from './deviceColumns';
 import { connectPreferringSsl, API_SSL_PORT } from './mikrotik/apiConnect';
 import { pinIdentity } from './identityPins';
+import { presetUseRefusal, type PresetCaller } from '../utils/presetAccess';
 
 export type CreateDeviceContext = {
   /** JWT role of the caller ('admin' | 'operator' | 'viewer'). Preset use may be restricted for operators. */
   requestingUserRole?: string;
+  /**
+   * Who is applying a credential preset, for the site and admin-only checks
+   * (#228). Without it the caller counts as a fleet admin only when
+   * requestingUserRole is 'admin', and as nobody's site admin.
+   */
+  presetCaller?: PresetCaller;
   /**
    * Site the device should join (issue #130). A device with no site is invisible
    * the moment any site is selected, so this must never be left unset: when the
@@ -30,7 +37,9 @@ export type CreateDeviceContext = {
 
 export async function loadCredentialPreset(
   id: number | null | undefined,
-  ctx?: CreateDeviceContext
+  ctx?: CreateDeviceContext,
+  /** The site of the device the preset is for (#228). */
+  deviceSiteId?: number | null,
 ): Promise<{
   api_username: string;
   api_password: string;
@@ -45,12 +54,19 @@ export async function loadCredentialPreset(
     [id]
   );
   if (!preset) throw new Error(`Credential preset ${id} not found`);
-  const allowOp = (preset as CredentialPresetRow & { allow_operator_use?: boolean }).allow_operator_use !== false;
-  // A restricted preset needs an admin. Checked as "not admin" rather than "is
-  // operator", so a caller that passes no role (the bulk-add worker used to)
-  // gets least privilege instead of slipping past the check.
-  if (!allowOp && ctx?.requestingUserRole !== 'admin') {
-    const err = new Error('This credential preset is restricted to administrators');
+  // A caller that passes nothing gets least privilege: not an admin, and no
+  // site's admin (the bulk-add worker once passed no role at all).
+  const caller: PresetCaller = ctx?.presetCaller
+    ?? { fleetAdmin: ctx?.requestingUserRole === 'admin', adminSites: [], memberSites: null };
+  // The device's site: the one it's joining or in, else the default site
+  // that a device with no site lands in.
+  let deviceSite = deviceSiteId ?? null;
+  if (deviceSite == null && preset.site_id != null) {
+    deviceSite = (await queryOne<{ id: number }>(`SELECT id FROM sites WHERE is_default ORDER BY id LIMIT 1`))?.id ?? null;
+  }
+  const refusal = presetUseRefusal(caller, preset, deviceSite);
+  if (refusal) {
+    const err = new Error(refusal);
     (err as Error & { statusCode?: number }).statusCode = 403;
     throw err;
   }
@@ -152,7 +168,7 @@ async function createDevice(
 
   let preset: Awaited<ReturnType<typeof loadCredentialPreset>>;
   try {
-    preset = await loadCredentialPreset(credential_preset_id ?? null, ctx);
+    preset = await loadCredentialPreset(credential_preset_id ?? null, ctx, ctx?.siteId ?? null);
   } catch (err) {
     const status = (err as Error & { statusCode?: number }).statusCode ?? 400;
     return { ok: false, status, body: { error: (err as Error).message } };

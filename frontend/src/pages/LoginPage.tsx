@@ -30,6 +30,8 @@ export default function LoginPage() {
   const [sso, setSso] = useState<{ enabled: boolean; button_label: string }>({ enabled: false, button_label: 'Sign in with SSO' });
   // Shown only while the admin account still has its default password.
   const [showDefaultHint, setShowDefaultHint] = useState(false);
+  // False on SSO-only installs (PASSWORD_LOGIN=false): only the SSO button shows (#226).
+  const [passwordLogin, setPasswordLogin] = useState(true);
 
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
@@ -37,7 +39,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     authApi.oidcStatus().then((r) => setSso(r.data)).catch(() => {});
-    authApi.loginHints().then((r) => setShowDefaultHint(r.data.default_credentials)).catch(() => {});
+    authApi.loginHints().then((r) => {
+      setShowDefaultHint(r.data.default_credentials);
+      setPasswordLogin(r.data.password_login !== false);
+    }).catch(() => {});
     // An SSO failure comes back as a fixed code. Only our own wording is shown:
     // text taken from the URL could be anyone's (outside review U8).
     const params = new URLSearchParams(window.location.search);
@@ -143,6 +148,19 @@ export default function LoginPage() {
             Sign in to your account
           </h2>
 
+          {!passwordLogin ? (
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => { window.location.href = '/api/auth/oidc/login'; }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors"
+              >
+                <LogIn className="w-4 h-4" />
+                {sso.button_label || 'Sign in with SSO'}
+              </button>
+              {error && <p className="text-sm text-red-500">{error}</p>}
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {totpToken ? (
               /* Step 2: TOTP code */
@@ -289,9 +307,10 @@ export default function LoginPage() {
               </>
             )}
           </form>
+          )}
         </div>
 
-        {showDefaultHint && (
+        {showDefaultHint && passwordLogin && (
           <p className={`text-center text-xs mt-6 ${isDark ? 'text-slate-600' : 'text-slate-500'}`}>
             Default credentials: admin / admin (you&apos;ll set a new password after signing in)
           </p>

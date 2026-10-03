@@ -3,13 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, KeyRound } from 'lucide-react';
 import {
   devicesApi,
-  credentialPresetsApi,
   tagsApi,
   type DuplicateSerialError,
 } from '../../services/api';
 import ConfirmDuplicateModal from './ConfirmDuplicateModal';
 import { parsePort } from '../../utils/parsePort';
 import { isValidDeviceAddress, classifyAddress, addressFieldValue } from '../../utils/deviceAddress';
+import { useSitePresets } from '../../hooks/useSitePresets';
 
 interface Props {
   onClose: () => void;
@@ -49,11 +49,8 @@ export default function AddDeviceModal({
   const [loading, setLoading] = useState(false);
   const [duplicateSerial, setDuplicateSerial] = useState<DuplicateSerialError | null>(null);
 
-  const { data: presets = [] } = useQuery({
-    queryKey: ['credential-presets'],
-    queryFn: () => credentialPresetsApi.list().then((r) => r.data),
-    staleTime: 30_000,
-  });
+  // Only presets that can apply in the site the device joins (#228).
+  const { presets } = useSitePresets();
 
   const { data: tags = [] } = useQuery({
     queryKey: ['tags'],

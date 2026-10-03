@@ -286,6 +286,12 @@ Findings appear on the device's Security tab and in the dashboard's *Things to h
 | Ingress port would reject the frames management arrives in | `admit-only-vlan-tagged` on a port carrying untagged management drops it at ingress, while every VLAN row still lists the port |
 | Spanning tree off on a bridge with several active ports | Nothing stops a loop; the second cable someone plugs in becomes a broadcast storm |
 | Bridge running classic STP rather than RSTP | Convergence takes tens of seconds where RSTP takes under one |
+| Device-mode blocks the scheduler | Change Guard can't arm its automatic undo, so changes that could cut off management are refused |
+| Device-mode blocks bandwidth-test, sniffer, hotspot or fetch | The bandwidth test, packet capture, Guest WiFi wizard or adopting through this device fail with "not allowed by device-mode" |
+| RouterOS has flagged the device | RouterOS found configuration it considers suspicious; device-mode can't change until it's cleared |
+
+Changing [device-mode](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode)
+needs someone at the device: RouterOS asks for a button press or power-cycle to confirm.
 
 ### Settings
 

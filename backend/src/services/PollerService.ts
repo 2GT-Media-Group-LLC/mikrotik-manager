@@ -18,6 +18,7 @@ import { runHealthCheck } from './healthCheck';
 import { gateTtlSeconds } from '../utils/schedulerGate';
 import { runPollJob, pollJobAborted } from '../utils/pollJobContext';
 import { refreshCveFeed } from './cveFeed';
+import { checkCveAlerts } from './cveAlerts';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -455,7 +456,11 @@ export class PollerService {
       if (appSettings['cve_feed_enabled'] !== false && now - lastCve > 86_400_000) {
         await this.setTimestamp(cveKey, now, 86_400_000);
         refreshCveFeed().catch((e) =>
-          console.warn('[Poller] RouterOS vulnerability list not refreshed:', (e as Error).message));
+          console.warn('[Poller] RouterOS vulnerability list not refreshed:', (e as Error).message))
+          // Then any new serious CVE affecting the fleet (#224), against the
+          // stored list even when the refresh failed (offline, say).
+          .finally(() => checkCveAlerts().catch((e) =>
+            console.warn('[Poller] CVE alert check failed:', (e as Error).message)));
       }
 
       // NetFlow data retention — runs once per day. Purges old client_traffic

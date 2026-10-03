@@ -4,6 +4,7 @@ import { redis } from '../config/redis';
 import { createDeviceFromBody, type CreateDeviceInput } from './deviceCreation';
 import type { PollerService } from './PollerService';
 import { sealItems, openItem } from '../utils/bulkAddSecrets';
+import type { PresetCaller } from '../utils/presetAccess';
 
 const QUEUE_NAME = 'bulk-add-devices';
 const JOB_TTL_SEC = 86400;
@@ -40,6 +41,8 @@ interface BulkJobPayload {
   requestingUserRole?: string;
   /** A site-scoped caller's sites (P1-7), so duplicates elsewhere aren't merged into. */
   allowedSites?: number[] | null;
+  /** Who queued it, for credential preset rules (#228). */
+  presetCaller?: PresetCaller;
 }
 
 async function readMeta(jobId: string): Promise<Record<string, unknown>> {
@@ -75,7 +78,7 @@ async function appendResults(jobId: string, rows: BulkAddResultRow[]): Promise<v
 }
 
 async function processJob(job: Job<BulkJobPayload>): Promise<void> {
-  const { jobId, items, siteId, requestingUserRole, allowedSites } = job.data;
+  const { jobId, items, siteId, requestingUserRole, allowedSites, presetCaller } = job.data;
   await writeMeta(jobId, { status: 'active', processed: 0 });
   const poller = pollerService;
 
@@ -107,7 +110,7 @@ async function processJob(job: Job<BulkJobPayload>): Promise<void> {
       // Without the role, an operator could use an admin-only preset here, and
       // since the add connects to the address in the item, send that preset's
       // credentials to a host of their choosing.
-      { siteId: siteId ?? null, requestingUserRole, allowedSites: allowedSites ?? null }
+      { siteId: siteId ?? null, requestingUserRole, allowedSites: allowedSites ?? null, presetCaller }
     );
 
     let failMsg = 'Failed';
@@ -145,13 +148,14 @@ export async function enqueueBulkAddJob(
   siteId: number | null = null,
   requestingUserRole?: string,
   allowedSites: number[] | null = null,
+  presetCaller?: PresetCaller,
 ): Promise<void> {
   if (!queue) {
     queue = new Queue(QUEUE_NAME, { connection: createRedisConnection() });
   }
   // Passwords are encrypted before they reach Redis, and a finished job is
   // removed at once: progress and results live in their own keys.
-  await queue.add('run', { jobId, items: sealItems(items), siteId, requestingUserRole, allowedSites } satisfies BulkJobPayload, {
+  await queue.add('run', { jobId, items: sealItems(items), siteId, requestingUserRole, allowedSites, presetCaller } satisfies BulkJobPayload, {
     attempts: 1,
     removeOnComplete: true,
     removeOnFail: { age: 86400 },

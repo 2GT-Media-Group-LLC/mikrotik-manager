@@ -11,7 +11,7 @@ platform decides what that means — a factory-default unit is configured first,
 configured one is simply registered. See [Adopting devices](adoption.md).
 
 **+ Add Device** is the manual route when discovery cannot see it: address, credentials, and
-optionally a [credential preset](configuration.md) so the same username and password are not
+optionally a [credential preset](#device-credentials) so the same username and password are not
 retyped per device.
 
 The address can be a LAN IP, a public IP, an IPv6 address, or a hostname (a local DNS name, or
@@ -101,7 +101,7 @@ closed browser tab and reports progress and failures per device.
 | `ip_address` | Required | The device's IP address or hostname |
 | `name` | Optional | What to call it. Blank uses the address |
 | `type` | Optional | `router`, `switch`, `ap` or `other`. Blank means router |
-| `preset` | Login | The name of a saved [credential preset](configuration.md) |
+| `preset` | Login | The name of a saved [credential preset](#device-credentials) |
 | `username`, `password` | Login | The RouterOS login, if not using a preset |
 | `ssh_username`, `ssh_password` | Optional | Only if SSH uses a different login. Blank uses the one above |
 | `tags` | Optional | Existing tags. Create them under Settings → Tags first |
@@ -127,6 +127,26 @@ The import runs as the same server-side job as **Try All**, so the tab can be cl
 !!! note "Credentials are stored encrypted"
     API passwords are encrypted at rest with the key from `ENCRYPTION_KEY`. Losing that key
     means re-entering every device password; see [Configuration](configuration.md).
+
+## Device credentials
+
+**Operations → Credentials** holds credential presets: a RouterOS username and password (and
+optionally SSH login) saved once and picked when adding devices. Passwords are encrypted and
+never sent back to the browser.
+
+A preset is either **fleet-wide** or belongs to **one site**:
+
+- Fleet admins manage every preset. A site admin manages the presets of the sites they
+  administer.
+- A site's preset is only offered, and only accepted, for devices in that site. The Add
+  Device, CSV import and Try All dialogs list fleet-wide presets and those of the site the
+  new device joins (the selected site, or the default site when none is).
+- **Operator access** off makes a preset usable by admins only: fleet admins for fleet-wide
+  presets, and that site's admins for a site's preset.
+- Names are unique within a site, so CSV import matches a preset name against that site's
+  presets and the fleet-wide ones.
+
+Before 0.30.0 presets were fleet-wide only and lived under Settings.
 
 ## The device list
 

@@ -374,9 +374,10 @@ router.get('/insights', async (req: Request, res: Response) => {
         sev: f.severity === 'critical' ? 'error' : 'warn',
         category: 'config',
         title: `${f.name}: ${f.title}`,
-        body: extra > 0
-          ? `RouterOS accepted this configuration without complaint. ${extra} more ${f.severity} finding${extra !== 1 ? 's' : ''} on this device.`
-          : 'RouterOS accepted this configuration without complaint.',
+        body: (f.rule.startsWith('device-mode')
+          ? 'RouterOS device-mode restricts what can be done on this device.'
+          : 'RouterOS accepted this configuration without complaint.')
+          + (extra > 0 ? ` ${extra} more ${f.severity} finding${extra !== 1 ? 's' : ''} on this device.` : ''),
         action: 'Open Config Health', path: `/devices/${f.device_id}?tab=security`,
       });
     }

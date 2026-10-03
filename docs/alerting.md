@@ -13,6 +13,7 @@ cooldown that prevents a flapping device from flooding your channels.
 | `high_cpu` / `high_memory` | Configurable threshold |
 | `cert_expiry` | Certificate approaching expiry |
 | `firmware_update_available` | A newer RouterOS release exists for the device |
+| `cve_active` | A RouterOS version the fleet runs is affected by a CVE that's known to be exploited, or rated critical or high (from the [vulnerability list](security.md)). Off by default. Checked after the daily list refresh and as soon as the rule is turned on; each CVE and version is announced once. Uncertain matches don't alert |
 | `log_error` / `log_warning` | An error or warning line newly read from the device's own log, from the last 15 minutes (one alert per poll for each; an older backlog read from a newly added device doesn't alert). Clock adjustments (`ntp change time`, `cloud change time`) are stored as info, not errors, and hidden on the Events page unless **Clock changes** is ticked |
 | `device_discovered` | An unmanaged neighbour appeared via LLDP/CDP/MNDP |
 | `config_drift` | The device's configuration changed (off by default) |
@@ -140,10 +141,10 @@ The token is sent in the `X-Gotify-Key` header, not the URL, so it doesn't end u
 
 ## Outbound webhooks
 
-Subscribe any URL to fifteen events: device up/down, log errors and warnings, high CPU, high
+Subscribe any URL to sixteen events: device up/down, log errors and warnings, high CPU, high
 memory, certificate expiry, device discovered, firmware update available, config drift,
-firmware rollout completed/failed, hardware degraded/healthy again, and a changed device
-certificate or host key.
+firmware rollout completed/failed, hardware degraded/healthy again, a changed device
+certificate or host key, and a serious CVE affecting the fleet.
 
 Deliveries are JSON `POST`s, **HMAC-SHA256 signed** in `X-MTM-Signature` when a secret is
 set. The secret is stored encrypted. Last-delivery status is tracked per webhook and there is a Send-test button.

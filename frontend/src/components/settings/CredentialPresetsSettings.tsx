@@ -6,9 +6,11 @@ import {
 import clsx from 'clsx';
 import {
   credentialPresetsApi,
+  sitesApi,
   type CredentialPreset,
   type CredentialPresetInput,
 } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
 
 interface FormState {
@@ -22,6 +24,8 @@ interface FormState {
   notes: string;
   clear_ssh_password: boolean;
   allow_operator_use: boolean;
+  /** '' = fleet-wide, else a site id (#228). */
+  site_id: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -35,6 +39,7 @@ const EMPTY_FORM: FormState = {
   notes: '',
   clear_ssh_password: false,
   allow_operator_use: true,
+  site_id: '',
 };
 
 function toInput(f: FormState, isEdit: boolean): CredentialPresetInput {
@@ -50,11 +55,24 @@ function toInput(f: FormState, isEdit: boolean): CredentialPresetInput {
   if (f.ssh_password) input.ssh_password = f.ssh_password;
   else if (isEdit && f.clear_ssh_password) input.clear_ssh_password = true;
   input.allow_operator_use = f.allow_operator_use;
+  input.site_id = f.site_id ? Number(f.site_id) : null;
   return input;
 }
 
-export default function CredentialPresetsSettings({ isAdmin }: { isAdmin: boolean }) {
+/**
+ * Credential presets (#228): fleet-wide ones, managed by fleet admins, and
+ * per-site ones, which that site's admins manage themselves.
+ */
+export default function CredentialPresetsSettings() {
   const qc = useQueryClient();
+  const user = useAuthStore((st) => st.user);
+  const siteRoles = (user as { siteRoles?: Record<string, string> } | null)?.siteRoles;
+  const fleetAdmin = user?.role === 'admin' && !siteRoles;
+  const adminSites = siteRoles ? Object.entries(siteRoles).filter(([, r]) => r === 'admin').map(([id]) => Number(id)) : [];
+  const isAdmin = fleetAdmin || adminSites.length > 0;
+  const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: () => sitesApi.list().then((r) => r.data), staleTime: 300_000 });
+  // Where this user may put a preset: anywhere for a fleet admin, else their sites.
+  const siteChoices = fleetAdmin ? sites : sites.filter((st) => adminSites.includes(st.id));
   const { data: presets = [], isLoading } = useQuery({
     queryKey: ['credential-presets'],
     queryFn: () => credentialPresetsApi.list().then((r) => r.data),
@@ -68,7 +86,7 @@ export default function CredentialPresetsSettings({ isAdmin }: { isAdmin: boolea
     setForm((s) => ({ ...s, [k]: v }));
 
   const openAdd = () => {
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, site_id: fleetAdmin ? '' : String(siteChoices[0]?.id ?? '') });
     setError('');
     setModal({ mode: 'add' });
   };
@@ -85,6 +103,7 @@ export default function CredentialPresetsSettings({ isAdmin }: { isAdmin: boolea
       notes: p.notes ?? '',
       clear_ssh_password: false,
       allow_operator_use: p.allow_operator_use !== false,
+      site_id: p.site_id != null ? String(p.site_id) : '',
     });
     setError('');
     setModal({ mode: 'edit', id: p.id });
@@ -161,6 +180,7 @@ export default function CredentialPresetsSettings({ isAdmin }: { isAdmin: boolea
             <thead>
               <tr className="border-b border-gray-100 dark:border-slate-700">
                 <th className="table-header px-4 py-2.5 text-left">Name</th>
+                <th className="table-header px-4 py-2.5 text-left">Site</th>
                 <th className="table-header px-4 py-2.5 text-left">API</th>
                 <th className="table-header px-4 py-2.5 text-left">SSH</th>
                 <th className="table-header px-4 py-2.5 text-left">Notes</th>
@@ -175,8 +195,11 @@ export default function CredentialPresetsSettings({ isAdmin }: { isAdmin: boolea
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
               {presets.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
-                  <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-2.5 cell-primary">
                     {p.name}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">
+                    {p.site_id != null ? (p.site_name ?? `Site ${p.site_id}`) : 'All sites'}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400">
                     <div className="font-mono">{p.api_username}</div>
@@ -206,7 +229,7 @@ export default function CredentialPresetsSettings({ isAdmin }: { isAdmin: boolea
                     </td>
                   )}
                   <td className="px-4 py-2.5">
-                    {isAdmin && (
+                    {p.can_manage && (
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => openEdit(p)}
@@ -253,6 +276,16 @@ export default function CredentialPresetsSettings({ isAdmin }: { isAdmin: boolea
             </div>
 
             <div className="p-5 space-y-4">
+              <div>
+                <label className="label">Site</label>
+                <select className="input" value={form.site_id} onChange={(e) => set('site_id', e.target.value)}>
+                  {fleetAdmin && <option value="">All sites (fleet-wide)</option>}
+                  {siteChoices.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+                </select>
+                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+                  A site&apos;s preset is only offered for devices in that site, and that site&apos;s admins manage it.
+                </p>
+              </div>
               <div>
                 <label className="label">Preset Name *</label>
                 <input

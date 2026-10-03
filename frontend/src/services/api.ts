@@ -102,7 +102,7 @@ export const authApi = {
   changePassword: (currentPassword: string, newPassword: string) =>
     api.put<{ message: string; token?: string; user?: import('../types').User }>('/auth/password', { currentPassword, newPassword }),
   /** Public: whether the login page should still show the default credentials. */
-  loginHints: () => api.get<{ default_credentials: boolean }>('/auth/login-hints'),
+  loginHints: () => api.get<{ default_credentials: boolean; password_login?: boolean }>('/auth/login-hints'),
   securityStatus: () =>
     api.get<{ warnings: string[] }>('/auth/security-status'),
   oidcStatus: () =>
@@ -781,6 +781,11 @@ export interface CredentialPreset {
   allow_operator_use: boolean;
   has_api_password: boolean;
   has_ssh_password: boolean;
+  /** The site it belongs to; null = fleet-wide (#228). */
+  site_id?: number | null;
+  site_name?: string | null;
+  /** Whether the current user may edit or delete it. */
+  can_manage?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -796,6 +801,7 @@ export interface CredentialPresetInput {
   notes?: string | null;
   clear_ssh_password?: boolean;
   allow_operator_use?: boolean;
+  site_id?: number | null;
 }
 
 export const credentialPresetsApi = {

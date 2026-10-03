@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { X, Loader2, CheckCircle, AlertCircle, KeyRound } from 'lucide-react';
 import {
-  credentialPresetsApi,
   devicesApi,
   type BulkAddDeviceItem,
   type DiscoveredDevice,
 } from '../../services/api';
 import type { DeviceType } from '../../types';
 import { parsePort } from '../../utils/parsePort';
+import { useSitePresets } from '../../hooks/useSitePresets';
 
 interface Props {
   discoveredDevices: DiscoveredDevice[];
@@ -42,11 +41,8 @@ export default function TryAllDiscoveredModal({ discoveredDevices, onClose, onSu
   const [error, setError] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { data: presets = [] } = useQuery({
-    queryKey: ['credential-presets'],
-    queryFn: () => credentialPresetsApi.list().then((r) => r.data),
-    staleTime: 30_000,
-  });
+  // Only presets that can apply in the site the device joins (#228).
+  const { presets } = useSitePresets();
 
   const targets = useMemo(
     () => discoveredDevices.filter((d) => d.address && d.address.trim().length > 0),
