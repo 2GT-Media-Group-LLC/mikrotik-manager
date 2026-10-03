@@ -340,6 +340,14 @@ export class DeviceCollector {
       const routerboard = await this.client.execute('/system/routerboard/print').catch(() => [] as Record<string, string>[]);
       // Needed to place log timestamps correctly — they are device-local (#117).
       const clock = await this.client.execute('/system/clock/print').catch(() => [] as Record<string, string>[]);
+      // Architecture and installed packages: the firmware mirror fetches only
+      // what the fleet runs (#193). RouterOS 7 lists packages it could install
+      // as available=true; those aren't installed. A failed read keeps what was
+      // stored rather than emptying it.
+      const packages = await this.client.execute('/system/package/print').catch(() => null);
+      const installedPackages = packages
+        ? [...new Set(packages.filter((p) => p['available'] !== 'true' && p['name']).map((p) => p['name'].slice(0, 40)))].sort()
+        : null;
 
       const info = resource[0] || {};
       const rb = routerboard[0] || {};
@@ -371,6 +379,8 @@ export class DeviceCollector {
           ros_version = COALESCE($5, ros_version),
           time_zone_name = COALESCE($7, time_zone_name),
           gmt_offset = COALESCE($8, gmt_offset),
+          architecture = COALESCE($9, architecture),
+          installed_packages = COALESCE($10::text[], installed_packages),
           -- An update that has landed is no longer pending. The dedicated
           -- firmware check only runs once a day, so without this a device stays
           -- flagged "update available" for up to 24 hours after it has already
@@ -386,7 +396,8 @@ export class DeviceCollector {
         // Cut to the columns (P2-20): an identity over 100 characters failed
         // this whole update, and the time zone was then never stored.
         [fit(identityName, 100), fit(model, 100), fit(serial, 50), fit(firmware, 50), fit(rosVersion, 20), this.device.id,
-         fit(clock[0]?.['time-zone-name'] || null, 64), fit(clock[0]?.['gmt-offset'] || null, 16)]
+         fit(clock[0]?.['time-zone-name'] || null, 64), fit(clock[0]?.['gmt-offset'] || null, 16),
+         fit(info['architecture-name'] || null, 32), installedPackages && installedPackages.length ? installedPackages : null]
       );
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect system info:`, err);
@@ -4595,6 +4606,100 @@ export class DeviceCollector {
     let matched = false;
     for (const [, n, u] of raw.matchAll(/(\d+)([wdhms])/g)) { total += parseInt(n, 10) * units[u]; matched = true; }
     return matched ? total : null;
+  }
+
+  // ─── Local firmware mirror (#193) ─────────────────────────────────────────
+  //
+  // Client side: /system/package/local-update (RouterOS 7.17+) pulls packages
+  // from a package server, another RouterOS device, over Winbox.
+  // Server side: a read-only login and the packages in a folder of their own.
+
+  async getLocalUpdateSources(): Promise<Record<string, string>[]> {
+    return this.client.execute('/system/package/local-update/update-package-source/print');
+  }
+
+  async addLocalUpdateSource(address: string, user: string, password: string): Promise<void> {
+    await this.client.execute('/system/package/local-update/update-package-source/add', { address, user, password });
+  }
+
+  async removeLocalUpdateSource(id: string): Promise<void> {
+    await this.client.execute('/system/package/local-update/update-package-source/remove', { numbers: id });
+  }
+
+  /** Ask the package server what it holds for this device's architecture. */
+  async refreshLocalUpdate(): Promise<void> {
+    await this.client.execute('/system/package/local-update/refresh', {}, [], { timeoutMs: 120_000 });
+  }
+
+  /** Rows of SOURCE/NAME/VERSION/STATUS (installed, available, scheduled…). */
+  async getLocalUpdatePackages(): Promise<Record<string, string>[]> {
+    return this.client.execute('/system/package/local-update/print');
+  }
+
+  /** Starts in the background; the caller checks the file actually lands. */
+  async downloadLocalUpdate(id: string): Promise<void> {
+    await this.client.execute('/system/package/local-update/download', { numbers: id }, [], { timeoutMs: 120_000 });
+  }
+
+  /** Installed packages, read live (RouterOS 7 marks the rest available=true). */
+  async getInstalledPackages(): Promise<string[]> {
+    const rows = await this.client.execute('/system/package/print');
+    return [...new Set(rows.filter((p) => p['available'] !== 'true' && p['name']).map((p) => p['name']))].sort();
+  }
+
+  /** Every file on the device, for confirming a download landed. */
+  async getFiles(): Promise<Record<string, string>[]> {
+    return this.client.execute('/file/print');
+  }
+
+  async getUsers(): Promise<Record<string, string>[]> {
+    return this.client.execute('/user/print');
+  }
+
+  /**
+   * The package server login and its group. local-update lists packages with
+   * read and winbox but downloads them over file access, which RouterOS's
+   * built-in read group lacks (it has !ftp): with it, devices see the packages
+   * and every download quietly fails. So the login gets a group of its own,
+   * kept to the given policy on every run.
+   */
+  async ensureMirrorUser(name: string, group: string, policy: string, password: string, comment: string): Promise<'created' | 'updated'> {
+    const groups = await this.client.execute('/user/group/print');
+    const g = groups.find((r) => r['name'] === group);
+    if (g?.['.id']) await this.client.execute('/user/group/set', { numbers: g['.id'], policy, comment });
+    else await this.client.execute('/user/group/add', { name: group, policy, comment });
+
+    const existing = (await this.getUsers()).find((u) => u['name'] === name);
+    if (existing?.['.id']) {
+      await this.client.execute('/user/set', { numbers: existing['.id'], group, password, comment });
+      return 'updated';
+    }
+    await this.client.execute('/user/add', { name, group, password, comment });
+    return 'created';
+  }
+
+  async removeUserGroup(group: string): Promise<boolean> {
+    const g = (await this.client.execute('/user/group/print')).find((r) => r['name'] === group);
+    if (!g?.['.id']) return false;
+    await this.client.execute('/user/group/remove', { numbers: g['.id'] });
+    return true;
+  }
+
+  async removeUserByName(name: string): Promise<boolean> {
+    const existing = (await this.getUsers()).find((u) => u['name'] === name);
+    if (!existing?.['.id']) return false;
+    await this.client.execute('/user/remove', { numbers: existing['.id'] });
+    return true;
+  }
+
+  /** Files whose name starts with a prefix, such as "mtm-packages/". */
+  async getFilesUnder(prefix: string): Promise<Record<string, string>[]> {
+    const rows = await this.client.execute('/file/print');
+    return rows.filter((r) => (r['name'] || '').startsWith(prefix));
+  }
+
+  async removeFileById(id: string): Promise<void> {
+    await this.client.execute('/file/remove', { numbers: id });
   }
 
   async installUpdate(): Promise<void> {

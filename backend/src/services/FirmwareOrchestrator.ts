@@ -16,6 +16,8 @@ import { mapWithConcurrency, clampConcurrency } from '../utils/concurrency';
 import { interruptedOutcome, INTERRUPTED_RUN_ERROR } from '../utils/interrupted';
 import { describeUpdateStatus, type UpdateStatus } from '../utils/updateStatus';
 import { upgradeDecision, verifyUpgrade, scheduleDecision } from '../utils/firmwarePlan';
+import { mirrorForDevice, newestCompleteVersion, type MirrorRow } from './firmwareMirror';
+import { matchLocalUpdate, packageFileName } from '../utils/firmwareMirror';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 /**
@@ -78,7 +80,17 @@ interface RolloutRow {
   routerboot_after: boolean;
   /** How many devices in a wave may upgrade at once; 1 is sequential (#135). */
   wave_concurrency: number;
+  /** 'mirror': devices set up for the local mirror pull from it (#193). */
+  package_source: string;
 }
+
+/** The outcome of staging an image from the local mirror. */
+type MirrorStage =
+  | { kind: 'staged'; installed: string; latest: string; uptimeBefore: number | null }
+  | { kind: 'skip'; installed: string; reason: string }
+  | { kind: 'fail'; error: string };
+
+const MIRROR_LIST_WAIT_MS = 60_000;
 interface RolloutDeviceRow {
   id: number; rollout_id: number; device_id: number; wave: number; status: string;
 }
@@ -348,8 +360,28 @@ export class FirmwareOrchestrator {
     let installed: string;
     let latest: string;
     const collector = new DeviceCollector(device);
+    const step = (msg: string) => console.log(`[Firmware] ${device.name}: ${msg}`);
+    // Pull from the local mirror when the rollout asks for it and this device
+    // is set up for one; anything else downloads from MikroTik as before (#193).
+    const mirror = rollout.package_source === 'mirror' ? await mirrorForDevice(device.id).catch(() => null) : null;
+    if (rollout.package_source === 'mirror' && !mirror) {
+      step('not set up for the local mirror; downloading from MikroTik');
+    }
     try {
       await collector.connect();
+      if (mirror) {
+        const staged = await this.stageFromMirror(collector, device, item, mirror, step);
+        if (staged.kind === 'fail') { collector.disconnect(); return fail(staged.error); }
+        if (staged.kind === 'skip') {
+          await this.setItem(item.id, { status: 'skipped', error: staged.reason, to_version: staged.installed || null });
+          await query(`UPDATE firmware_rollout_devices SET finished_at=NOW() WHERE id=$1`, [item.id]);
+          collector.disconnect();
+          return true;
+        }
+        installed = staged.installed;
+        latest = staged.latest;
+        uptimeBefore = staged.uptimeBefore;
+      } else {
       const status = await collector.checkForUpdates();
       installed = (status['installed-version'] || '').trim();
       latest = (status['latest-version'] || '').trim();
@@ -383,7 +415,6 @@ export class FirmwareOrchestrator {
       // device was rebooted on a partial image; it came back on the old version
       // and was reported as "rebooted but still reports X", which was true and
       // was our doing (#141).
-      const step = (msg: string) => console.log(`[Firmware] ${device.name}: ${msg}`);
       step(`downloading ${latest} (installed ${installed || 'unknown'}, ${freeMb || '?'} MB free)`);
 
       let outcome: UpdateStatus | null = null;
@@ -515,6 +546,8 @@ export class FirmwareOrchestrator {
         );
       }
 
+      }
+
       step(`image confirmed on device; rebooting into ${latest}`);
       await this.setItem(item.id, { to_version: latest });
       await collector.reboot();
@@ -603,6 +636,106 @@ export class FirmwareOrchestrator {
       [device.id, newVersion]);
     console.log(`[Firmware] ${device.name}: upgraded to ${newVersion || 'unknown'}`);
     return true;
+  }
+
+  /**
+   * Stage the newest complete version from the device's local mirror (#193).
+   *
+   * Every installed package must be on the mirror at that version: uploading
+   * routeros alone would leave, say, wifi-qcom behind, and RouterOS disables a
+   * mismatched package on reboot. local-update/download runs in the background
+   * and can fail without a word, so success is the files themselves on the
+   * device at the size the mirror recorded, never the command's reply. Nothing
+   * reboots unless every file is there.
+   */
+  private async stageFromMirror(
+    collector: DeviceCollector,
+    device: DeviceRow,
+    item: RolloutDeviceRow,
+    mirror: MirrorRow,
+    step: (msg: string) => void,
+  ): Promise<MirrorStage> {
+    const res = await collector.getSystemResource();
+    const installed = (res['version'] || '').split(' ')[0].trim();
+    const arch = (res['architecture-name'] || '').trim().toLowerCase();
+    const packages = await collector.getInstalledPackages();
+    if (installed) await this.setItem(item.id, { from_version: installed });
+
+    const target = await newestCompleteVersion(mirror.id, arch, packages);
+    if (!target) {
+      return { kind: 'fail', error: `The local mirror has no version with every package this device runs (${packages.join(', ')} for ${arch || 'unknown architecture'}). Sync the mirror, or roll out from MikroTik.` };
+    }
+    const decision = upgradeDecision(installed, target);
+    if (decision.action === 'skip') return { kind: 'skip', installed, reason: decision.reason };
+
+    const expected = await query<{ package: string; filename: string; size_bytes: string }>(
+      `SELECT package, filename, size_bytes FROM firmware_mirror_files WHERE mirror_id = $1 AND version = $2`, [mirror.id, target]);
+    const want = packages.map((p) => {
+      const name = packageFileName(p, target, arch)!;
+      return { pkg: p, name, size: Number(expected.find((e) => e.filename === name)?.size_bytes || 0) };
+    });
+    const needBytes = want.reduce((n, w) => n + w.size, 0);
+    const free = Number(res['free-hdd-space'] || 0);
+    if (free && needBytes > free) {
+      return { kind: 'fail', error: `Not enough space for ${target}: the packages need ${Math.round(needBytes / 1048576)} MB and the device has ${Math.round(free / 1048576)} MB free. Nothing was downloaded.` };
+    }
+    const uptimeBefore = await collector.getUptimeSeconds();
+
+    step(`asking the local mirror for ${target} (${packages.join(', ')}, ${arch})`);
+    await collector.refreshLocalUpdate();
+    let match: ReturnType<typeof matchLocalUpdate> = { ok: false, missing: packages };
+    const listDeadline = Date.now() + MIRROR_LIST_WAIT_MS;
+    while (Date.now() < listDeadline) {
+      match = matchLocalUpdate(await collector.getLocalUpdatePackages(), packages, target);
+      if (match.ok) break;
+      await sleep(5_000);
+    }
+    if (!match.ok) {
+      return { kind: 'fail', error: `The device couldn’t see ${match.missing.join(', ')} ${target} on the local mirror. Check it can reach the package server, then try again. Nothing was downloaded.` };
+    }
+
+    // A partial set left in the root would be installed by the next reboot,
+    // whoever causes it: a new routeros without its wifi-qcom is an access
+    // point with no wireless. So a download that doesn't complete is undone.
+    const removeLanded = async () => {
+      const files = await collector.getFiles().catch(() => [] as Record<string, string>[]);
+      for (const f of files) {
+        if (f['.id'] && want.some((w) => w.name === f['name'])) await collector.removeFileById(f['.id']).catch(() => {});
+      }
+    };
+
+    try {
+      for (const m of match.ids) await collector.downloadLocalUpdate(m.id);
+    } catch (e) {
+      // One may already be on its way; give it a moment, then take it back off.
+      await sleep(DOWNLOAD_POLL_MS);
+      await removeLanded();
+      return { kind: 'fail', error: `The device refused to download ${target} from the local mirror: ${(e as Error).message}. Nothing was rebooted.` };
+    }
+    step(`downloading ${target} from the local mirror`);
+
+    const deadline = Date.now() + this.downloadMs;
+    let landed: string[] = [];
+    while (Date.now() < deadline) {
+      if (this.cancelRequested) {
+        await removeLanded();
+        return { kind: 'fail', error: 'Rollout cancelled while downloading. Nothing was rebooted.' };
+      }
+      await sleep(DOWNLOAD_POLL_MS);
+      const files = await collector.getFiles().catch(() => null);
+      if (!files) continue;
+      landed = want.filter((w) => files.some((f) => f['name'] === w.name && (!w.size || Number(f['size'] || 0) === w.size))).map((w) => w.name);
+      if (landed.length === want.length) {
+        step(`all ${want.length} package(s) on the device`);
+        return { kind: 'staged', installed, latest: target, uptimeBefore };
+      }
+    }
+    const missingFiles = want.map((w) => w.name).filter((n) => !landed.includes(n));
+    await removeLanded();
+    return {
+      kind: 'fail',
+      error: `Didn’t finish downloading ${target} from the local mirror within ${Math.round(this.downloadMs / 60000)} minutes: ${missingFiles.join(', ')} never arrived. The packages that did were removed, and nothing was rebooted.`,
+    };
   }
 
   /**

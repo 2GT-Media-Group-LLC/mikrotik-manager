@@ -1048,12 +1048,68 @@ export interface FirmwareDeviceRow {
   firmware_update_available: boolean;
   firmware_version: string | null; upgrade_firmware_version: string | null;
   routerboard_upgrade_available: boolean;
+  /** Set when the device pulls from a local mirror (#193). */
+  mirror?: { mirror_id: number; status: string } | null;
+  /** Newest version the mirror holds every one of this device's packages for. */
+  mirror_version?: string | null;
+  mirror_update_available?: boolean;
 }
+
+// ─── Local firmware mirror (#193) ─────────────────────────────────────────────
+export interface MirrorFile { package: string; architecture: string; filename: string; size_bytes: number }
+export interface FirmwareMirror {
+  id: number;
+  server: { id: number; name: string; ip_address: string; ros_version: string | null } | null;
+  site: { id: number; name: string } | null;
+  folder: string;
+  serve_address: string | null;
+  effective_address: string;
+  username: string;
+  keep_versions: number;
+  auto_sync: boolean;
+  channel: 'stable' | 'long-term';
+  status: 'new' | 'deployed' | 'syncing' | 'ready' | 'error';
+  last_error: string | null;
+  last_sync_at: string | null;
+  free_bytes: number | null;
+  total_bytes: number | null;
+  used_bytes: number;
+  versions: { version: string; files: MirrorFile[]; total_bytes: number }[];
+  clients: { device_id: number; name: string; status: string; error: string | null }[];
+  can_manage: boolean;
+}
+export interface MirrorDevice {
+  id: number; name: string; ros_version: string | null; architecture: string | null; packages: string[];
+  is_server: boolean; supported: boolean;
+  client: { mirror_id: number; this_mirror: boolean; status: string; error: string | null } | null;
+}
+export interface MirrorClientResult { device_id: number; name: string; ok: boolean; message: string }
+
+export const mirrorApi = {
+  list: () => api.get<{ mirrors: FirmwareMirror[]; can_create_fleet: boolean; admin_sites: number[] | null }>('/firmware/mirrors'),
+  devices: (id: number) => api.get<MirrorDevice[]>(`/firmware/mirrors/${id}/devices`),
+  plan: (id: number, version?: string) =>
+    api.get<{ version: string; files: { package: string; architecture: string; filename: string }[]; skipped: { id: number; name: string; reason: string }[] }>(
+      `/firmware/mirrors/${id}/plan`, { params: version ? { version } : {}, timeout: 30_000 }),
+  create: (data: { device_id: number; site_id: number | null; folder?: string; serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string }) =>
+    api.post<FirmwareMirror>('/firmware/mirrors', data, { timeout: 60_000 }),
+  update: (id: number, data: { serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string }) =>
+    api.put<{ mirror: FirmwareMirror; clients: MirrorClientResult[] | null }>(`/firmware/mirrors/${id}`, data, { timeout: 180_000 }),
+  deploy: (id: number) =>
+    api.post<{ user: string; clients: MirrorClientResult[]; mirror: FirmwareMirror }>(`/firmware/mirrors/${id}/deploy`, undefined, { timeout: 180_000 }),
+  sync: (id: number, version?: string) => api.post<{ started: boolean }>(`/firmware/mirrors/${id}/sync`, version ? { version } : {}),
+  setClients: (id: number, device_ids: number[], enable: boolean) =>
+    api.post<{ results: MirrorClientResult[] }>(`/firmware/mirrors/${id}/clients`, { device_ids, enable }, { timeout: 300_000 }),
+  remove: (id: number) => api.delete<{ notes: string[] }>(`/firmware/mirrors/${id}`, { timeout: 180_000 }),
+};
+
 export interface FirmwareRollout {
   id: number; name: string; status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'missed';
   halt_on_failure: boolean; pre_backup: boolean; routerboot_after: boolean;
   /** Devices per wave allowed to upgrade at once; 1 is sequential (#135). */
   wave_concurrency?: number;
+  /** Where devices got their packages (#193). */
+  package_source?: 'mirror' | 'mikrotik';
   scheduled_at: string | null; started_at: string | null; finished_at: string | null; created_at: string;
   /** Latest time a scheduled rollout may start; null means within an hour of scheduled_at. */
   scheduled_until?: string | null;
@@ -1082,6 +1138,8 @@ export const firmwareApi = {
     scheduled_until?: string | null;
     /** Devices per wave allowed to upgrade at once; 1 is sequential (#135). */
     wave_concurrency?: number;
+    /** 'mirror': devices set up for the local mirror pull from it (#193). */
+    package_source?: 'mirror' | 'mikrotik';
     devices: { device_id: number; wave: number }[];
   }) => api.post<{ id: number }>('/firmware/rollouts', data),
   /** Advisory: selected devices that other selected devices depend on. */
@@ -1808,8 +1866,10 @@ export interface TrafficCollectorStats {
   exporters: { deviceId: number; deviceName: string; packets: number; flows: number; lastSeen: string | null }[];
   /** Whether flows from sources that aren't managed devices are taken (outside review P2-23). */
   acceptUnknown?: boolean;
-  /** Sources whose flows are being refused, and why. Empty for site-limited accounts. */
+  /** Sources whose flows are being refused, and why. Empty when viewing one site. */
   rejectedSources?: { address: string; reason: 'unknown_exporter' | 'public_address'; packets: number; lastSeen: string }[];
+  /** True when `exporters` is limited to the selected site; the counters stay collector-wide (#236). */
+  site_filtered?: boolean;
 }
 
 export const trafficApi = {

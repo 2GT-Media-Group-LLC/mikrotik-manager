@@ -379,18 +379,25 @@ export default function TrafficAnalyticsPage() {
               </span>
             </div>
             <div className="p-5 space-y-4">
+              {/* The charts and the sources below follow the site selector; the
+                  collector's own counters cover everything it receives (#236). */}
+              {status?.site_filtered && (
+                <p className="text-xs text-gray-400 dark:text-slate-500">
+                  Showing this site&apos;s flow sources. Packet and attribution counts cover the whole collector.
+                </p>
+              )}
               {/* Health summary */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div>
-                  <div className="text-xs text-gray-400 dark:text-slate-500">Packets received</div>
+                  <div className="text-xs text-gray-400 dark:text-slate-500">Packets received{status?.site_filtered ? ' (all sites)' : ''}</div>
                   <div className="text-base font-bold text-gray-900 dark:text-white">{formatCount(pktReceived)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400 dark:text-slate-500">Flows attributed</div>
+                  <div className="text-xs text-gray-400 dark:text-slate-500">Flows attributed{status?.site_filtered ? ' (all sites)' : ''}</div>
                   <div className="text-base font-bold text-gray-900 dark:text-white">{formatCount(status?.flowsAttributed || 0)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400 dark:text-slate-500">Attribution rate</div>
+                  <div className="text-xs text-gray-400 dark:text-slate-500">Attribution rate{status?.site_filtered ? ' (all sites)' : ''}</div>
                   <div className={clsx('text-base font-bold',
                     attributionRate >= 90 ? 'text-emerald-600 dark:text-emerald-400'
                       : attributionRate >= 60 ? 'text-amber-600 dark:text-amber-400'
@@ -399,7 +406,7 @@ export default function TrafficAnalyticsPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400 dark:text-slate-500">Exporting devices</div>
+                  <div className="text-xs text-gray-400 dark:text-slate-500">{status?.site_filtered ? 'Exporting devices here' : 'Exporting devices'}</div>
                   <div className="text-base font-bold text-gray-900 dark:text-white">{exporters.length}</div>
                 </div>
               </div>
@@ -417,7 +424,7 @@ export default function TrafficAnalyticsPage() {
 
               {/* Per-exporter rows */}
               {exporters.length === 0
-                ? <div className="text-sm text-gray-400 dark:text-slate-500">No routers have exported flows yet. <Link to="/network-services/netflow" className="text-blue-600 dark:text-blue-400 hover:underline">Configure NetFlow export →</Link></div>
+                ? <div className="text-sm text-gray-400 dark:text-slate-500">{status?.site_filtered ? 'No routers in this site have exported flows yet.' : 'No routers have exported flows yet.'} <Link to="/network-services/netflow" className="text-blue-600 dark:text-blue-400 hover:underline">Configure NetFlow export →</Link></div>
                 : (
                   <div className="divide-y divide-gray-100 dark:divide-slate-800 -mb-1">
                     {exporters.map(e => (

@@ -63,15 +63,20 @@ function sanitizeMac(raw: string): string | null {
 // GET /api/traffic/status — collector state for the config page
 router.get('/status', async (req: Request, res: Response) => {
   const stats = netflowCollector.getStats();
-  if (!req.user?.siteRoles) { res.json(stats); return; }
-  // A site-scoped account sees its own exporters only: not other sites'
-  // device names, nor the sources the collector is refusing.
+  // The exporter list follows the site selector, like the charts (#236). A
+  // site-scoped account's selection is always within its own sites (P1-7).
+  // Collector totals stay collector-wide; the response says so.
+  const sites = siteList(activeSite(req));
+  if (!sites) { res.json({ ...stats, site_filtered: false }); return; }
   const own = new Set((await query<{ id: number }>(
-    `SELECT id FROM devices WHERE site_id = ANY($1::int[])`, [Object.keys(req.user.siteRoles).map(Number)])).map((d) => d.id));
+    `SELECT id FROM devices WHERE site_id = ANY($1::int[])`, [sites])).map((d) => d.id));
   res.json({
     ...stats,
+    // Only this site's devices: unidentified exporters and refused sources
+    // carry no site, so they show in the all-sites view only.
     exporters: stats.exporters.filter((e) => own.has(e.deviceId)),
     rejectedSources: [],
+    site_filtered: true,
   });
 });
 

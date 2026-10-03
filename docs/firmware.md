@@ -63,6 +63,96 @@ never restarted for an image it does not have.
     return cleanly the device is asked again on a fresh connection what actually
     happened, rather than being declared failed: a slow download is not a broken one.
 
+## Local package mirror
+
+By default each device downloads RouterOS from MikroTik's servers itself. On a big fleet a
+device or two in every dozen can fail to download, and the rollout stops at them. A local
+mirror moves that download to one place: the manager keeps a router you choose stocked with
+the packages, and devices pull from it instead.
+
+It uses RouterOS's own local update feature (`/system/package/local-update`), so devices
+need **RouterOS 7.17 or later**. Older devices, and devices not set up for the mirror, keep
+downloading from MikroTik.
+
+Open it from **Firmware → Package mirror**.
+
+### Setting it up
+
+1. **Choose the package server.** Any RouterOS 7.17+ device the manager manages. It needs
+   room for every architecture and package your devices run, roughly 10–25 MB per package
+   file per version, so a CHR or a router with real storage is best. A 128 MB router can't
+   hold one version for a mixed fleet.
+2. **Address devices reach it on.** Leave it blank to use the address the manager uses. Set
+   it when devices reach the server some other way (NAT, a VPN, another interface).
+3. **Versions kept** (1–5, default 3), the **release channel** (stable or long-term), and
+   whether new releases are fetched automatically.
+
+Setting it up creates a login named `mtm-mirror` on the server, with a password only the
+manager knows, in a group of its own (also `mtm-mirror`). Devices use it to fetch packages
+over Winbox (TCP 8291), so they need a route to the server on that port.
+
+The group has RouterOS's built-in read permissions plus `ftp`. Local update lists packages
+with read access but downloads them as files, and the built-in read group has no file access,
+so with it devices see the packages and every download quietly fails. The login can't change
+anything, but it can read every file on the server, so **use a package server that holds
+nothing sensitive**, ideally one dedicated to the job, rather than a router with backups or
+exports on it.
+
+There's one mirror for the whole fleet, and optionally one per site, so a remote site can
+pull from something local. A site's mirror serves that site's devices; the fleet mirror
+serves the rest. Fleet administrators manage the fleet mirror; a site's administrators
+manage its mirror.
+
+### Syncing
+
+**Sync now** fetches the latest release on the mirror's channel. With automatic fetching on,
+the manager checks every six hours and syncs a new release by itself. A sync:
+
+- Works out which files the devices it serves need: every installed package (routeros,
+  wifi-qcom, container and so on) for every architecture in use, and nothing else.
+- Downloads each file once from `download.mikrotik.com` over HTTPS, checks it against
+  MikroTik's published SHA-256, and keeps it in the manager's data volume.
+- Checks the server has room, then uploads what's missing over SFTP into the mirror's
+  folder (`mtm-packages` by default) and confirms each file's size on the server.
+- Removes versions beyond the number kept, from the server and the manager.
+
+Packages go in a folder, never the server's top level, because RouterOS installs any
+`.npk` file in its top level the next time it reboots. In a folder they're only ever served.
+
+Nothing on the server changes unless every file has been fetched and verified first. If the
+server is short of space the sync stops and says how much is needed.
+
+Removing the mirror takes the packages, the login and its group off the server again.
+
+### Switching devices to the mirror
+
+The **Devices** table lists the devices a mirror serves. Select some and choose **Use this
+mirror**: the manager adds the package server to each device's local update sources. **Stop
+using it** removes it again. Devices older than 7.17 can't be selected.
+
+### Rollouts from the mirror
+
+When any selected device uses a mirror, the rollout bar offers **Packages from: Local mirror**
+(the default) or **MikroTik**. With the mirror chosen, each of those devices:
+
+1. Is upgraded to the newest version the mirror holds **every one of its packages** for.
+   Upgrading routeros alone would leave, say, wifi-qcom at the old version, and RouterOS
+   disables a mismatched package on reboot, so an access point would come back with no
+   wireless. A device whose packages aren't all on the mirror fails before anything changes.
+2. Is checked for free space against the size of those packages.
+3. Asks the mirror for them and downloads them through local update.
+4. Is confirmed to have every file, at the size the mirror recorded, before it reboots.
+   RouterOS's download runs in the background and can fail without saying so, so the files
+   themselves are the proof. If they don't all arrive, the ones that did are removed (a
+   partial set would be installed by the next reboot) and nothing is rebooted.
+
+From there the pipeline is the same: reboot, prove it, verify the version, RouterBOOT.
+Devices in the same rollout that don't use a mirror download from MikroTik as before.
+
+The **Fleet versions** table shows a mirror device's newest available version under
+**Latest**, and offers it for upgrade when it's newer than what the device runs, even if the
+device hasn't asked MikroTik.
+
 ## Waves
 
 Waves are the point. Devices are assigned to waves 1 to 9, and **waves run strictly

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, CheckCircle, XCircle, Clock, HardDrive, ShieldAlert, Rocket, Ban, ChevronRight, Cpu, Zap } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, Clock, HardDrive, ShieldAlert, Rocket, Ban, ChevronRight, Cpu, Zap, Server } from 'lucide-react';
 import clsx from 'clsx';
 import { formatDistanceToNow } from 'date-fns';
 import { firmwareApi, type FirmwareRolloutDevice } from '../../services/api';
@@ -64,6 +64,7 @@ export default function RolloutPanel({ rolloutId, canWrite }: { rolloutId: numbe
           {rollout.pre_backup && <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />pre-backup</span>}
           {rollout.halt_on_failure && <span className="flex items-center gap-1"><ShieldAlert className="w-3 h-3" />halt on failure</span>}
           {rollout.routerboot_after && <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />+ RouterBOOT</span>}
+          {rollout.package_source === 'mirror' && <span className="flex items-center gap-1" title="Devices set up for the local mirror pulled from it"><Server className="w-3 h-3" />local mirror</span>}
           {(rollout.wave_concurrency ?? 1) > 1 && (
             <span className="flex items-center gap-1" title="Devices in a wave upgrading at once">
               <Zap className="w-3 h-3" />{rollout.wave_concurrency} at once

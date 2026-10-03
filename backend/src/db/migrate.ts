@@ -1257,6 +1257,61 @@ BEGIN
     ALTER TABLE client_traffic_daily ADD PRIMARY KEY (mac_address, day, site_id);
   END IF;
 END $$;
+
+-- Local firmware mirror (#193). What the fleet runs, so the mirror fetches only
+-- the architecture and package combinations in use.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS architecture VARCHAR(32);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS installed_packages TEXT[];
+
+-- A package server: a RouterOS device the manager keeps stocked with packages
+-- that other devices pull through /system/package/local-update (7.17+). One
+-- for the whole fleet (site_id NULL), and optionally one per site.
+CREATE TABLE IF NOT EXISTS firmware_mirrors (
+  id                  SERIAL PRIMARY KEY,
+  device_id           INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  site_id             INTEGER REFERENCES sites(id) ON DELETE CASCADE,
+  folder              VARCHAR(64) NOT NULL DEFAULT 'mtm-packages',
+  -- The address devices reach the package server on, when it isn't the one
+  -- the manager uses (NAT, a VPN, another interface). NULL: the device's own.
+  serve_address       VARCHAR(255),
+  username            VARCHAR(32) NOT NULL DEFAULT 'mtm-mirror',
+  password_encrypted  TEXT,
+  keep_versions       INTEGER NOT NULL DEFAULT 3,
+  auto_sync           BOOLEAN NOT NULL DEFAULT TRUE,
+  channel             VARCHAR(16) NOT NULL DEFAULT 'stable',
+  status              VARCHAR(16) NOT NULL DEFAULT 'new',
+  last_error          TEXT,
+  last_sync_at        TIMESTAMPTZ,
+  free_bytes          BIGINT,
+  total_bytes         BIGINT,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_firmware_mirrors_site ON firmware_mirrors (COALESCE(site_id, 0));
+
+-- The files on a package server, as uploaded and verified.
+CREATE TABLE IF NOT EXISTS firmware_mirror_files (
+  mirror_id    INTEGER NOT NULL REFERENCES firmware_mirrors(id) ON DELETE CASCADE,
+  version      VARCHAR(20) NOT NULL,
+  package      VARCHAR(40) NOT NULL,
+  architecture VARCHAR(32) NOT NULL,
+  filename     VARCHAR(100) NOT NULL,
+  size_bytes   BIGINT NOT NULL,
+  sha256       CHAR(64) NOT NULL,
+  uploaded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (mirror_id, filename)
+);
+
+-- Devices pointed at a package server, and how that went.
+CREATE TABLE IF NOT EXISTS firmware_mirror_clients (
+  device_id   INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  mirror_id   INTEGER NOT NULL REFERENCES firmware_mirrors(id) ON DELETE CASCADE,
+  status      VARCHAR(16) NOT NULL DEFAULT 'pending',
+  error       TEXT,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Where a rollout's devices get their packages: 'mirror' or 'mikrotik'.
+ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS package_source VARCHAR(10) NOT NULL DEFAULT 'mikrotik';
 `;
 
 const DEFAULT_SETTINGS = [

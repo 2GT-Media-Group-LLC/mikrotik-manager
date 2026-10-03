@@ -9,7 +9,8 @@ import { activeSite, writableScope } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { firmwareOrchestrator } from '../services/FirmwareOrchestrator';
 import { clampConcurrency, MAX_WAVE_CONCURRENCY } from '../utils/concurrency';
-import { updateAvailable } from '../utils/rosVersion';
+import { updateAvailable, isNewerRosVersion } from '../utils/rosVersion';
+import { newestCompleteFrom } from '../utils/firmwareMirror';
 import { findUpstreamWithinSelection } from '../utils/rolloutTopology';
 import type { StpBridge } from '../utils/stpUpstream';
 
@@ -45,7 +46,8 @@ router.get('/overview', async (req: Request, res: Response) => {
   const [devices, latestRollout] = await Promise.all([
     query(`SELECT id, name, device_type, status, model, ros_version, latest_ros_version,
                   firmware_update_available, firmware_version, upgrade_firmware_version,
-                  routerboard_upgrade_available, update_channel, reported_update_channel
+                  routerboard_upgrade_available, update_channel, reported_update_channel,
+                  architecture, installed_packages
            FROM devices ${siteFilter ? `WHERE ${siteFilter}` : ''} ORDER BY name ASC`),
     // The banner links to this rollout, so it must be one this site took part in.
     queryOne<{ id: number }>(`
@@ -70,8 +72,37 @@ router.get('/overview', async (req: Request, res: Response) => {
     tagsByDevice.set(t.device_id, list);
   }
 
+  // Devices pulling from a local mirror (#193): the newest version it holds
+  // every one of their packages for. Newer than what they run means an update,
+  // whether or not the device has asked MikroTik.
+  const clients = await query<{ device_id: number; mirror_id: number; status: string }>(
+    `SELECT c.device_id, c.mirror_id, c.status FROM firmware_mirror_clients c
+       JOIN firmware_mirrors m ON m.id = c.mirror_id`).catch(() => []);
+  const clientById = new Map(clients.map((c) => [c.device_id, c]));
+  const mirrorFiles = new Map<number, { version: string; filename: string }[]>();
+  for (const id of new Set(clients.map((c) => c.mirror_id))) {
+    mirrorFiles.set(id, await query<{ version: string; filename: string }>(
+      `SELECT version, filename FROM firmware_mirror_files WHERE mirror_id = $1`, [id]).catch(() => []));
+  }
+  type OverviewDevice = { id: number; ros_version: string | null; architecture: string | null; installed_packages: string[] | null };
+  const rows = (devices as OverviewDevice[]).map((d) => {
+    const c = clientById.get(d.id);
+    const mirrorVersion = c && c.status === 'ok'
+      ? newestCompleteFrom(mirrorFiles.get(c.mirror_id) ?? [], d.architecture, d.installed_packages)
+      : null;
+    const { architecture: _a, installed_packages: _p, ...rest } = d;
+    void _a; void _p;
+    return {
+      ...rest,
+      tags: tagsByDevice.get(d.id) ?? [],
+      mirror: c ? { mirror_id: c.mirror_id, status: c.status } : null,
+      mirror_version: mirrorVersion,
+      mirror_update_available: !!mirrorVersion && isNewerRosVersion(mirrorVersion, d.ros_version),
+    };
+  });
+
   res.json({
-    devices: (devices as { id: number }[]).map((d) => ({ ...d, tags: tagsByDevice.get(d.id) ?? [] })),
+    devices: rows,
     latestRolloutId: latestRollout?.id ?? null,
     runningRolloutId: firmwareOrchestrator.running,
   });
@@ -110,8 +141,10 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
 router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   const {
     name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, devices, start,
-    wave_concurrency,
+    wave_concurrency, package_source,
   } = req.body as {
+    /** 'mirror': devices set up for the local mirror pull from it (#193). */
+    package_source?: string;
     name?: string; halt_on_failure?: boolean; pre_backup?: boolean; routerboot_after?: boolean; scheduled_at?: string | null;
     /** Don't start after this time; without it the rollout may start up to an hour late. */
     scheduled_until?: string | null;
@@ -170,10 +203,11 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   }
 
   const rollout = await queryOne<{ id: number }>(
-    `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, wave_concurrency)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, wave_concurrency, package_source)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
     [name.trim().slice(0, 100), halt_on_failure !== false, pre_backup !== false, routerboot_after === true,
-     scheduled_at || null, scheduled_until || null, clampConcurrency(wave_concurrency ?? 1)]);
+     scheduled_at || null, scheduled_until || null, clampConcurrency(wave_concurrency ?? 1),
+     package_source === 'mirror' ? 'mirror' : 'mikrotik']);
   for (const d of devices) {
     await query(
       `INSERT INTO firmware_rollout_devices (rollout_id, device_id, wave) VALUES ($1,$2,$3)`,

@@ -54,6 +54,8 @@ import proxyRoutes from './routes/proxy';
 import backupsRoutes from './routes/backups';
 import guestWifiRoutes from './routes/guestWifi';
 import firmwareRoutes from './routes/firmware';
+import firmwareMirrorRoutes from './routes/firmwareMirror';
+import { startMirrorScheduler } from './services/firmwareMirror';
 import automationRoutes from './routes/automation';
 import { reportService } from './services/ReportService';
 import { firmwareOrchestrator } from './services/FirmwareOrchestrator';
@@ -401,6 +403,8 @@ app.use('/api/proxy', proxyRoutes);
 app.use('/api/backups', backupsRoutes);
 app.use('/api/operations', operationsRoutes);
 app.use('/api/guest-wifi', guestWifiRoutes);
+// Before /api/firmware, whose router would otherwise see these paths first (#193).
+app.use('/api/firmware/mirrors', firmwareMirrorRoutes);
 app.use('/api/firmware', firmwareRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/metrics', metricsRoutes);
@@ -532,6 +536,7 @@ async function start(): Promise<void> {
     console.error('[Command] could not reconcile interrupted runs:', e));
 
   firmwareOrchestrator.startScheduler();
+  startMirrorScheduler();
 
   // Scheduled report mailer (hourly check)
   reportService.startScheduler();
