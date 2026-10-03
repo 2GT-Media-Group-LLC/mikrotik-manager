@@ -1219,7 +1219,7 @@ export default function DashboardPage() {
 
   const { data: recentEvents } = useQuery({
     queryKey: ['events-recent', severityParam],
-    queryFn: () => eventsApi.list({ limit: 5, severity: severityParam }).then(r => r.data),
+    queryFn: () => eventsApi.recent({ limit: 5, severity: severityParam }).then(r => r.data),
     refetchInterval: 30_000,
   });
 

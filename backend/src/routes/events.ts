@@ -97,16 +97,26 @@ router.get('/', async (req: Request, res: Response) => {
 
   const where = filters.join(' AND ');
 
+  const rowsQuery = query(
+    `SELECT e.*, d.name as device_name
+     FROM events e
+     LEFT JOIN devices d ON d.id = e.device_id
+     WHERE ${where}
+     ORDER BY e.event_time DESC
+     LIMIT $${idx++} OFFSET $${idx++}`,
+    [...params, parseInt(String(limit), 10), parseInt(String(offset), 10)]
+  );
+
+  // ?counts=0 returns the rows alone. The dashboard shows five events and never reads
+  // the totals, and the total is a regex test over every stored event, several seconds
+  // on a large table that also slowed whatever else the database was doing.
+  if (req.query.counts === '0') {
+    res.json({ events: await rowsQuery });
+    return;
+  }
+
   const [events, totalResult, criticalCount] = await Promise.all([
-    query(
-      `SELECT e.*, d.name as device_name
-       FROM events e
-       LEFT JOIN devices d ON d.id = e.device_id
-       WHERE ${where}
-       ORDER BY e.event_time DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...params, parseInt(String(limit), 10), parseInt(String(offset), 10)]
-    ),
+    rowsQuery,
     query<{ count: string }>(
       `SELECT COUNT(*) as count FROM events e WHERE ${where}`,
       params

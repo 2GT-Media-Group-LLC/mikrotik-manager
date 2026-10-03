@@ -953,6 +953,9 @@ export const eventsApi = {
     clock?: 1;
   }) =>
     api.get<{ events: DeviceEvent[]; total: number; criticalCount: number }>('/events', { params }),
+  /** The newest events only, without the totals the list endpoint also computes. */
+  recent: (params: { severity?: string; limit: number }) =>
+    api.get<{ events: DeviceEvent[] }>('/events', { params: { ...params, counts: 0 } }),
   clear: (deviceId?: number) => api.delete('/events', { params: deviceId ? { deviceId } : {} }),
 };
 
