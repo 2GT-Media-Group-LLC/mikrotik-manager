@@ -21,6 +21,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
 import { fleetStatus } from '../utils/fleetStatus';
 import { escapeHtml } from '../utils/escapeHtml';
+import DeviceTypePill, { deviceTypeLabel } from '../components/devices/DeviceTypePill';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -60,22 +61,6 @@ function Sparkline({ data, w = 120, h = 24, color = 'var(--accent)', area = true
   );
 }
 
-function TypePill({ type }: { type: string }) {
-  const map: Record<string, { label: string; color: string }> = {
-    wireless_ap: { label: 'AP',  color: 'var(--info)' },
-    switch:      { label: 'SW',  color: 'var(--accent)' },
-    router:      { label: 'RTR', color: 'var(--violet)' },
-  };
-  const { label, color } = map[type] ?? { label: type.slice(0, 3).toUpperCase(), color: 'var(--ink-3)' };
-  return (
-    <span
-      className="mono text-[10.5px] font-medium px-[6px] py-[2px] rounded-full"
-      style={{ color, border: '1px solid var(--line)' }}
-    >
-      {label}
-    </span>
-  );
-}
 
 // ─── Device Locations Map ─────────────────────────────────────────────────────
 
@@ -430,7 +415,7 @@ function SummaryView(props: Record<string, any>) {
                   {d.firmware_update_available && <span>↑</span>}
                   {d.ros_version}
                 </div>
-                <TypePill type={d.device_type} />
+                <DeviceTypePill type={d.device_type} />
               </div>
             ))}
           </div>
@@ -1087,7 +1072,7 @@ function OperationsView({
                     glow size={6}
                   />
                   <span className="mono text-[10px]" style={{ color: 'var(--ink-3)' }}>
-                    {d.device_type === 'wireless_ap' ? 'AP' : d.device_type === 'router' ? 'RTR' : 'SW'}
+                    {deviceTypeLabel(d.device_type)}
                   </span>
                   {hasAlert && (
                     <span

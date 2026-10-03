@@ -17,6 +17,7 @@ import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
 import CsvImportModal from '../components/devices/CsvImportModal';
 import BulkTagBar from '../components/devices/BulkTagBar';
 import { displayState, STATE_COLOR } from '../utils/deviceState';
+import DeviceTypePill from '../components/devices/DeviceTypePill';
 
 type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen' | 'rack_name' | 'location_address';
 type DiscoveredSortKey = 'identity' | 'address' | 'mac_address' | 'seen_by' | 'discovered_at';
@@ -75,22 +76,6 @@ function GlowDot({ device }: { device: Device }) {
   );
 }
 
-function TypePill({ type }: { type: Device['device_type'] }) {
-  const map: Record<string, { label: string; color: string }> = {
-    wireless_ap: { label: 'AP',  color: 'var(--info)' },
-    switch:      { label: 'SW',  color: 'var(--accent)' },
-    router:      { label: 'RTR', color: 'var(--violet)' },
-  };
-  const { label, color } = map[type as string] ?? { label: (type as string)?.slice(0, 3)?.toUpperCase() ?? '?', color: 'var(--ink-3)' };
-  return (
-    <span
-      className="mono text-[10.5px] font-medium px-[6px] py-[2px] rounded-full"
-      style={{ color, border: '1px solid var(--line)' }}
-    >
-      {label}
-    </span>
-  );
-}
 
 function CpuValue({ value }: { value: number | undefined }) {
   if (value == null) return <span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>—</span>;
@@ -655,7 +640,7 @@ export default function DevicesPage() {
                         </div>
                       </td>
                       <td className="px-4 py-[12px]">
-                        <TypePill type={device.device_type} />
+                        <DeviceTypePill type={device.device_type} />
                       </td>
                       <td className="px-4 py-[12px]">
                         <span className="mono text-[11.5px]" style={{ color: 'var(--ink-2)' }}>{device.model || '—'}</span>

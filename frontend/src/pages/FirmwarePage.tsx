@@ -1,154 +1,18 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowUpCircle, RefreshCw, CheckCircle, XCircle, AlertTriangle, Clock,
-  HardDrive, ShieldAlert, Rocket, Ban, ChevronRight, Cpu, Zap,
+  ArrowUpCircle, RefreshCw, CheckCircle, AlertTriangle, Clock, ShieldAlert, Rocket, Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { firmwareApi } from '../services/api';
 import UpdateChannelCard from '../components/firmware/UpdateChannelCard';
-import type { FirmwareRolloutDevice } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { formatDistanceToNow } from 'date-fns';
 import ChangelogModal from '../components/ChangelogModal';
-
-const ITEM_STATUS: Record<string, { label: string; cls: string; spin?: boolean }> = {
-  pending:    { label: 'Pending',      cls: 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400' },
-  backing_up: { label: 'Backing up',   cls: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400', spin: true },
-  upgrading:  { label: 'Upgrading',    cls: 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400', spin: true },
-  rebooting:  { label: 'Rebooting',    cls: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400', spin: true },
-  verifying:  { label: 'Verifying',    cls: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400', spin: true },
-  success:    { label: 'Success',      cls: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' },
-  failed:     { label: 'Failed',       cls: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' },
-  skipped:    { label: 'Skipped',      cls: 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400' },
-};
-
-const ROLLOUT_STATUS: Record<string, string> = {
-  pending:   'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300',
-  running:   'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
-  completed: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-  failed:    'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
-  cancelled: 'bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400',
-  missed:    'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300',
-};
-
-function TypePill({ type }: { type: string }) {
-  const label = type === 'wireless_ap' ? 'AP' : type === 'switch' ? 'SW' : type === 'router' ? 'RTR' : '—';
-  return <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400">{label}</span>;
-}
-
-// ─── Rollout progress panel ────────────────────────────────────────────────────
-
-function RolloutPanel({ rolloutId, canWrite }: { rolloutId: number; canWrite: boolean }) {
-  const qc = useQueryClient();
-  const { data: rollout } = useQuery({
-    queryKey: ['fw-rollout', rolloutId],
-    queryFn: () => firmwareApi.getRollout(rolloutId).then(r => r.data),
-    refetchInterval: (q) => {
-      const s = q.state.data?.status;
-      return s === 'running' || s === 'pending' ? 4_000 : false;
-    },
-  });
-
-  // The API answers a cancel with a note explaining that the device currently
-  // being upgraded is never interrupted mid-write. That note was discarded, so
-  // pressing Cancel looked like it did nothing at all (#138).
-  const [cancelNote, setCancelNote] = useState<string | null>(null);
-  const cancelMutation = useMutation({
-    mutationFn: () => firmwareApi.cancelRollout(rolloutId).then(r => r.data),
-    onSuccess: (data) => {
-      setCancelNote(
-        data?.note ?? 'Rollout cancelled. No further devices will be upgraded.'
-      );
-      qc.invalidateQueries({ queryKey: ['fw-rollout', rolloutId] });
-    },
-    onError: (e: unknown) => {
-      const err = e as { response?: { data?: { error?: string } } };
-      setCancelNote(err.response?.data?.error ?? 'Could not cancel the rollout.');
-    },
-  });
-
-  if (!rollout) return null;
-  const waves = [...new Set((rollout.devices ?? []).map(d => d.wave))].sort((a, b) => a - b);
-  const active = rollout.status === 'running' || rollout.status === 'pending';
-
-  return (
-    <div className="card overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 flex-wrap">
-        <Rocket className="w-4 h-4 text-blue-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{rollout.name}</h3>
-        <span className={clsx('px-2 py-0.5 rounded-full text-xs font-medium capitalize', ROLLOUT_STATUS[rollout.status])}>
-          {rollout.status}
-        </span>
-        {rollout.scheduled_at && rollout.status === 'pending' && (
-          <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
-            <Clock className="w-3 h-3" />starts {formatDistanceToNow(new Date(rollout.scheduled_at), { addSuffix: true })}
-            {' '}(not after {new Date(rollout.scheduled_until ?? new Date(rollout.scheduled_at).getTime() + 60 * 60_000).toLocaleString()})
-          </span>
-        )}
-        {rollout.status === 'missed' && (
-          <span className="text-xs text-amber-700 dark:text-amber-400">
-            Missed its start window, so it didn&apos;t run. Nothing was upgraded; schedule it again when it suits.
-          </span>
-        )}
-        <span className="ml-auto flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500">
-          {rollout.pre_backup && <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />pre-backup</span>}
-          {rollout.halt_on_failure && <span className="flex items-center gap-1"><ShieldAlert className="w-3 h-3" />halt on failure</span>}
-          {rollout.routerboot_after && <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />+ RouterBOOT</span>}
-          {(rollout.wave_concurrency ?? 1) > 1 && (
-            <span className="flex items-center gap-1" title="Devices in a wave upgrading at once">
-              <Zap className="w-3 h-3" />{rollout.wave_concurrency} at once
-            </span>
-          )}
-          {canWrite && active && (
-            <button onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending || !!cancelNote}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50">
-              <Ban className="w-3 h-3" />
-              {cancelMutation.isPending ? 'Cancelling…' : cancelNote ? 'Cancelling' : 'Cancel'}
-            </button>
-          )}
-        </span>
-      </div>
-
-      {cancelNote && (
-        <div className="px-5 py-2 flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border-b border-amber-200 dark:border-amber-900">
-          <Ban className="w-3.5 h-3.5 mt-px flex-shrink-0" />
-          <span>{cancelNote}</span>
-        </div>
-      )}
-
-      {waves.map(w => (
-        <div key={w}>
-          <div className="px-5 py-1.5 bg-gray-50 dark:bg-slate-800/50 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">
-            Wave {w}{w === 1 ? ' — canary' : ''}
-          </div>
-          {(rollout.devices ?? []).filter(d => d.wave === w).map((d: FirmwareRolloutDevice) => {
-            const meta = ITEM_STATUS[d.status] ?? ITEM_STATUS.pending;
-            return (
-              <div key={d.id} className="px-5 py-2.5 flex items-center gap-3 border-t border-gray-100 dark:border-slate-700/60">
-                <span className={clsx('px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 flex-shrink-0', meta.cls)}>
-                  {meta.spin && <RefreshCw className="w-3 h-3 animate-spin" />}
-                  {d.status === 'success' && <CheckCircle className="w-3 h-3" />}
-                  {d.status === 'failed' && <XCircle className="w-3 h-3" />}
-                  {meta.label}
-                </span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white truncate">{d.device_name}</span>
-                <span className="font-mono text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1 flex-shrink-0">
-                  {d.from_version || '—'}
-                  {(d.to_version || d.status === 'success') && <><ChevronRight className="w-3 h-3" />{d.to_version || '?'}</>}
-                </span>
-                {d.error && <span className="text-xs text-red-500 truncate" title={d.error}>{d.error}</span>}
-                <span className="ml-auto text-[11px] text-gray-400 dark:text-slate-500 flex-shrink-0">
-                  {d.finished_at ? formatDistanceToNow(new Date(d.finished_at), { addSuffix: true }) : ''}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
+import DeviceTypePill from '../components/devices/DeviceTypePill';
+import RolloutPanel from '../components/firmware/RolloutPanel';
+import { ROLLOUT_STATUS } from '../components/firmware/rolloutStatus';
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -185,6 +49,18 @@ export default function FirmwarePage() {
   const devices = overview?.devices ?? [];
   const updatable = devices.filter(d => d.firmware_update_available && d.status === 'online');
   const upToDate = devices.filter(d => !d.firmware_update_available && d.ros_version).length;
+  // Up-to-date devices (nothing for RouterOS or RouterBOOT) are hidden by
+  // default (#204): on a big fleet they were most of the table, greyed out.
+  const isCurrent = (d: (typeof devices)[number]) => !!d.ros_version && !d.firmware_update_available && !d.routerboard_upgrade_available;
+  const [showCurrent, setShowCurrentState] = useState(() => {
+    try { return localStorage.getItem('firmware.showUpToDate') === '1'; } catch { return false; }
+  });
+  const setShowCurrent = (v: boolean) => {
+    setShowCurrentState(v);
+    try { localStorage.setItem('firmware.showUpToDate', v ? '1' : '0'); } catch { /* private mode */ }
+  };
+  const currentCount = devices.filter(isCurrent).length;
+  const tableDevices = showCurrent ? devices : devices.filter(d => !isCurrent(d));
   const activeRolloutId = viewRolloutId ?? overview?.runningRolloutId ?? overview?.latestRolloutId ?? null;
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['fw-overview'] });
@@ -327,6 +203,13 @@ export default function FirmwarePage() {
       <div className="card overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Fleet versions</h3>
+          {currentCount > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400 cursor-pointer select-none">
+              <input type="checkbox" checked={showCurrent} onChange={(e) => setShowCurrent(e.target.checked)}
+                className="rounded border-gray-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500" />
+              Show up-to-date ({currentCount})
+            </label>
+          )}
           {canWrite && updatable.length > 0 && (
             <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
               {/* Tags work as groups here (#161). Each click adds that tag's
@@ -369,7 +252,12 @@ export default function FirmwarePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700/50">
-                {devices.map((d) => {
+                {tableDevices.length === 0 && (
+                  <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-400 dark:text-slate-500">
+                    All {currentCount} device{currentCount === 1 ? ' is' : 's are'} up to date.
+                  </td></tr>
+                )}
+                {tableDevices.map((d) => {
                   const isSel = selected.has(d.id);
                   const selectable = canWrite && d.firmware_update_available && d.status === 'online';
                   // Zebra striping comes from index.css, as it does on /devices.
@@ -385,7 +273,7 @@ export default function FirmwarePage() {
                       )}
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
-                          <TypePill type={d.device_type} />
+                          <DeviceTypePill type={d.device_type} />
                           <span className="font-medium text-gray-900 dark:text-white">{d.name}</span>
                           {d.tags?.map(tag => (
                             <span
@@ -549,14 +437,17 @@ export default function FirmwarePage() {
       {/* Latest / running rollout */}
       {activeRolloutId && <RolloutPanel rolloutId={activeRolloutId} canWrite={canWrite} />}
 
-      {/* Past rollouts */}
+      {/* Past rollouts: the latest few here, everything on its own page (#202). */}
       {rollouts.length > 1 && (
         <div className="card overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700">
+          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">History</h3>
+            <Link to="/firmware/history" className="ml-auto text-xs text-blue-600 dark:text-blue-400 hover:underline">
+              All upgrade history
+            </Link>
           </div>
           <div className="divide-y divide-gray-100 dark:divide-slate-700/50">
-            {rollouts.map(r => (
+            {rollouts.slice(0, 5).map(r => (
               <button key={r.id} onClick={() => setViewRolloutId(r.id)}
                 className="w-full px-5 py-2.5 flex items-center gap-3 text-left hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                 <span className={clsx('px-2 py-0.5 rounded-full text-xs font-medium capitalize flex-shrink-0', ROLLOUT_STATUS[r.status])}>{r.status}</span>

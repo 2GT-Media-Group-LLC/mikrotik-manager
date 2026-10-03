@@ -243,15 +243,25 @@ router.get('/rollouts', async (req: Request, res: Response) => {
     memberFilter ? `EXISTS (SELECT 1 FROM firmware_rollout_devices frd WHERE frd.rollout_id = r.id AND ${memberFilter})` : null,
     ownSites ? `NOT EXISTS (SELECT 1 FROM firmware_rollout_devices x WHERE x.rollout_id = r.id AND NOT (${ownSites}))` : null,
   ].filter(Boolean);
-  const rows = await query(`
-    SELECT r.*,
-           COUNT(d.id)::int AS device_count,
-           COUNT(d.id) FILTER (WHERE d.status = 'success')::int AS success_count,
-           COUNT(d.id) FILTER (WHERE d.status = 'failed')::int  AS failed_count
-    FROM firmware_rollouts r
-    LEFT JOIN firmware_rollout_devices d ON d.rollout_id = r.id
-    ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
-    GROUP BY r.id ORDER BY r.created_at DESC LIMIT 20`);
+  // Paged for the history page (#202): ?limit= (default 20, at most 100) and
+  // ?offset=. The total comes back in X-Total-Count, so the body stays the
+  // array it has always been.
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? '20'), 10) || 20, 1), 100);
+  const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const [rows, total] = await Promise.all([
+    query(`
+      SELECT r.*,
+             COUNT(d.id)::int AS device_count,
+             COUNT(d.id) FILTER (WHERE d.status = 'success')::int AS success_count,
+             COUNT(d.id) FILTER (WHERE d.status = 'failed')::int  AS failed_count
+      FROM firmware_rollouts r
+      LEFT JOIN firmware_rollout_devices d ON d.rollout_id = r.id
+      ${where}
+      GROUP BY r.id ORDER BY r.created_at DESC, r.id DESC LIMIT $1 OFFSET $2`, [limit, offset]),
+    queryOne<{ n: number }>(`SELECT COUNT(*)::int AS n FROM firmware_rollouts r ${where}`),
+  ]);
+  res.setHeader('X-Total-Count', String(total?.n ?? 0));
   res.json(rows);
 });
 

@@ -5,6 +5,15 @@
 Upgrade RouterOS across a fleet in waves, with a verified pipeline per device and
 a stopping point before a bad build reaches everything.
 
+## The Firmware page
+
+**Fleet versions** lists each device's RouterOS, the latest on its channel, and RouterBOOT.
+Devices with nothing to install are hidden by default; **Show up-to-date (N)** brings them
+back, and the choice is remembered.
+
+The page shows the running or latest rollout and the five before it. **All upgrade history**
+opens every rollout, newest first, 25 to a page; click one to see its devices and steps.
+
 ## Timeouts
 
 Two settings, both in minutes, changed without a restart:

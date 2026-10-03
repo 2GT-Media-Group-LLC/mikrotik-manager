@@ -9,6 +9,8 @@ import { useCanWrite } from '../../hooks/useCanWrite';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import ConfigHealthCard from './ConfigHealthCard';
 import clsx from 'clsx';
+import ListInput from '../common/ListInput';
+import { isIpOrPrefix } from '../../utils/ipPrefix';
 
 type Row = Record<string, string> & { '.id': string };
 
@@ -76,7 +78,7 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
 
   // Editing a service's allowed addresses (#192). RouterOS 7.24 calls the
   // field available-from; older versions call it address.
-  const [editingSvc, setEditingSvc] = useState<{ id: string; value: string } | null>(null);
+  const [editingSvc, setEditingSvc] = useState<{ id: string; value: string[] } | null>(null);
   const allowedFromOf = (s: Row) => ((s['available-from'] ?? s.address ?? '') as string)
     .split(',').map(x => x.trim()).filter(Boolean);
   const setAllowed = useMutation({
@@ -296,10 +298,13 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                       <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">
                         {editingSvc?.id === s['.id'] ? (
                           <form className="flex items-center gap-1.5"
-                            onSubmit={(e) => { e.preventDefault(); setAllowed.mutate({ id: s['.id'], value: editingSvc.value }); }}>
-                            <input autoFocus className="input py-1 text-xs font-mono w-56" value={editingSvc.value}
-                              placeholder="any address (e.g. 10.0.0.0/8, 192.168.1.0/24)"
-                              onChange={(e) => setEditingSvc({ id: s['.id'], value: e.target.value })} />
+                            onSubmit={(e) => { e.preventDefault(); setAllowed.mutate({ id: s['.id'], value: editingSvc.value.join(',') }); }}>
+                            <div className="w-72">
+                              <ListInput value={editingSvc.value} ariaLabel="Allowed addresses"
+                                onChange={(next) => setEditingSvc({ id: s['.id'], value: next })}
+                                validate={(e) => (isIpOrPrefix(e) ? null : `${e} isn't an IP address or prefix`)}
+                                placeholder="empty = any address" />
+                            </div>
                             <button type="submit" disabled={setAllowed.isPending} className="btn-primary text-xs px-2 py-1">Save</button>
                             <button type="button" onClick={() => setEditingSvc(null)} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-slate-300">Cancel</button>
                           </form>
@@ -308,7 +313,7 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                             {allowedFromOf(s).join(', ') || 'any'}
                             {canWrite && (
                               <button type="button" title="Change which addresses may connect"
-                                onClick={() => { setServiceError(''); setEditingSvc({ id: s['.id'], value: allowedFromOf(s).join(', ') }); }}
+                                onClick={() => { setServiceError(''); setEditingSvc({ id: s['.id'], value: allowedFromOf(s) }); }}
                                 className="text-blue-600 dark:text-blue-400 hover:underline font-sans">edit</button>
                             )}
                           </span>

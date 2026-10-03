@@ -1082,6 +1082,10 @@ export const firmwareApi = {
       '/firmware/rollouts/upstream-check', { params: { ids: ids.join(',') } }
     ),
   listRollouts: () => api.get<FirmwareRollout[]>('/firmware/rollouts'),
+  // One page of rollout history, newest first, with the total (#202).
+  listRolloutsPage: (limit: number, offset: number) =>
+    api.get<FirmwareRollout[]>('/firmware/rollouts', { params: { limit, offset } })
+      .then((r) => ({ rows: r.data, total: Number(r.headers['x-total-count'] ?? r.data.length) })),
   getRollout: (id: number) =>
     api.get<FirmwareRollout & { devices: FirmwareRolloutDevice[] }>(`/firmware/rollouts/${id}`),
   startRollout: (id: number) => api.post(`/firmware/rollouts/${id}/start`),

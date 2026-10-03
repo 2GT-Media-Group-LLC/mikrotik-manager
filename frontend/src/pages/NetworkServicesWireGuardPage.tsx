@@ -9,6 +9,9 @@ import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useGuardedWrite, GuardedWriteUi } from '../components/ChangeGuardDialog';
 import { apiErrorMessage } from '../utils/apiError';
+import { rosDurationSeconds } from '../utils/rosDuration';
+import ListInput from '../components/common/ListInput';
+import { isIpOrPrefix, splitList } from '../utils/ipPrefix';
 
 type NS = Record<string, string>;
 
@@ -125,10 +128,12 @@ interface PeerFormProps {
 function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
   const qc = useQueryClient();
   const [pubKey, setPubKey]         = useState(existing?.['public-key'] || '');
-  const [allowedAddr, setAllowedAddr] = useState(existing?.['allowed-address'] || '');
+  const [allowedAddr, setAllowedAddr] = useState<string[]>(splitList(existing?.['allowed-address'] || ''));
   const [endpointAddr, setEndpointAddr] = useState(existing?.['endpoint-address'] || '');
-  const [endpointPort, setEndpointPort] = useState(existing?.['endpoint-port'] || '');
-  const [keepalive, setKeepalive]   = useState(existing?.['persistent-keepalive'] || '');
+  const [endpointPort, setEndpointPort] = useState(existing?.['endpoint-port'] && existing['endpoint-port'] !== '0' ? existing['endpoint-port'] : '');
+  // RouterOS reports a duration ("25s"), which a number box can't show, so the
+  // field looked empty and saving it cleared the setting (#206).
+  const [keepalive, setKeepalive]   = useState(String(rosDurationSeconds(existing?.['persistent-keepalive']) ?? ''));
   const [presharedKey, setPresharedKey] = useState('');
 
   const save = useMutation({
@@ -137,7 +142,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
       const body: NS = {
         interface: ifaceName,
         'public-key': pubKey,
-        'allowed-address': allowedAddr,
+        'allowed-address': allowedAddr.join(','),
       };
       // When editing, an emptied field is sent as '' so it is cleared on the
       // device; it used to be left out and the old value stayed (P2-10). The
@@ -147,8 +152,13 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
         else if (existing) Object.assign(body, { [key]: '' });
       };
       opt('endpoint-address', endpointAddr);
-      opt('endpoint-port', endpointPort);
-      opt('persistent-keepalive', keepalive);
+      // RouterOS wants a number here and uses 0 for "no endpoint"; an empty
+      // value made every edit of a peer without one fail.
+      if (endpointPort && endpointPort !== '0') body['endpoint-port'] = endpointPort;
+      else if (existing) body['endpoint-port'] = '0';
+      // RouterOS rejects an empty keepalive; 0 is how it's turned off.
+      if (keepalive) body['persistent-keepalive'] = `${keepalive}s`;
+      else if (existing) body['persistent-keepalive'] = '0';
       if (presharedKey) body['preshared-key'] = presharedKey;
 
       return existing?.['.id']
@@ -174,8 +184,10 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Allowed Addresses *</label>
-            <input className="input w-full font-mono" value={allowedAddr} onChange={e => setAllowedAddr(e.target.value)} placeholder="10.0.0.2/32 or 0.0.0.0/0" />
-            <p className="mt-0.5 text-xs text-gray-400">Comma-separated CIDRs this peer is allowed to use.</p>
+            <ListInput value={allowedAddr} onChange={setAllowedAddr} ariaLabel="Allowed addresses"
+              validate={(e) => (isIpOrPrefix(e) ? null : `${e} isn't an IP address or prefix`)}
+              placeholder="10.0.0.2/32 or 0.0.0.0/0" />
+            <p className="mt-0.5 text-xs text-gray-400">Addresses or prefixes this peer may use. Press Enter after each.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -199,7 +211,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
           </div>
         </div>
         <div className="px-5 pb-4 flex items-center gap-3">
-          <button onClick={() => save.mutate()} disabled={!pubKey || !allowedAddr || save.isPending}
+          <button onClick={() => save.mutate()} disabled={!pubKey || allowedAddr.length === 0 || save.isPending}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
             <Check className="w-3.5 h-3.5" />{save.isPending ? 'Saving…' : 'Save Peer'}
           </button>
