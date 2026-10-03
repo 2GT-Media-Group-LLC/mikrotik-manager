@@ -10,6 +10,14 @@ describe('CAPsMAN certificates (#197)', () => {
     expect(isCapsmanCertificate(cert('CAP-04F41CA2C45A'))).toBe(true);
     expect(isCapsmanCertificate(cert(null, 'valid', 'CAP-04F41CA2C45A'))).toBe(true);
   });
+  it('recognises the wifi package\'s names, with a WiFi- prefix', () => {
+    // Verbatim from #197.
+    expect(isCapsmanCertificate(cert('WiFi-CAPsMAN-05A36C9ACE6F'))).toBe(true);
+    expect(isCapsmanCertificate(cert('WiFi-CAPsMAN-CA-DDEAFF261184'))).toBe(true);
+    expect(isCapsmanCertificate(cert('WiFi-CAP-04F41CA2C45A'))).toBe(true);
+    expect(isCapsmanCertificate(cert('WiFi-office'))).toBe(false);
+    expect(isCapsmanCertificate(cert('WiFi-WiFi-CAP-04F41CA2C45A'))).toBe(false);
+  });
   it('leaves other certificates alone', () => {
     expect(isCapsmanCertificate(cert('2GT-NW-AP4'))).toBe(false);
     expect(isCapsmanCertificate(cert('CAP-office'))).toBe(false);

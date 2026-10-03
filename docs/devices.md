@@ -69,6 +69,11 @@ With the pre-built images, add `-f docker-compose.ghcr.yml` to both commands.
 
 To turn it off, remove the line and run the same two commands.
 
+The web UI (nginx) and the backend listen on both IPv4 and IPv6 inside their containers
+whenever the host's kernel has IPv6, whether or not this setting is on. With it on, they
+accept IPv6 connections directly, including from a reverse proxy of your own. On a host
+booted with IPv6 disabled they listen on IPv4 only.
+
 Use `down` then `up` rather than just `up -d`. Docker has to rebuild the network when this
 setting changes. Recent Compose versions do that on a plain `up -d`, but older ones can keep
 the old network and not apply the change. `down` then `up` works on all of them.

@@ -536,8 +536,11 @@ async function start(): Promise<void> {
   // Scheduled report mailer (hourly check)
   reportService.startScheduler();
 
-  // Start HTTP server
-  httpServer.listen(PORT, '0.0.0.0', () => {
+  // Start HTTP server. No host given, Node listens on :: (IPv4 and IPv6) where
+  // the kernel has IPv6 and falls back to 0.0.0.0 where it doesn't (#231).
+  // IPv4 peers then appear as ::ffff:a.b.c.d; clientIpBehindProxy and the audit
+  // log strip that prefix.
+  httpServer.listen(PORT, () => {
     console.log(`✓ Mikrotik Manager backend running on port ${PORT}`);
   });
 

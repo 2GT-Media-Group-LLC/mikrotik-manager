@@ -71,7 +71,8 @@ are shown by default and the hidden count stays visible, because they are the ma
 feature exists to surface.
 
 CAPsMAN's own certificates work the other way round. The ones it generates for itself and its
-CAPs (named `CAPsMAN-CA-<mac>`, `CAPsMAN-<mac>` and `CAP-<mac>`) are valid until 2038 and
+CAPs (named `CAPsMAN-CA-<mac>`, `CAPsMAN-<mac>` and `CAP-<mac>`, with a `WiFi-` prefix on the
+newer wifi package) are valid until 2038 and
 need no attention, so they're hidden by default; **Show CAPsMAN certificates (N)** lists them.
 One that is no longer valid is always shown.
 

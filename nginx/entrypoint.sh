@@ -46,6 +46,18 @@ else
     echo "set \$https_port_suffix \":$HTTPS_PORT\";" > /var/cache/nginx/https-port.conf
 fi
 
+# IPv6 listeners (#231), only where the kernel has IPv6: on a host booted with
+# it disabled, listening on [::] would stop nginx starting. Same test the
+# official nginx image uses.
+if [ -f /proc/net/if_inet6 ]; then
+    echo 'listen [::]:80;' > /var/cache/nginx/listen-v6-http.conf
+    echo 'listen [::]:443 ssl;' > /var/cache/nginx/listen-v6-https.conf
+else
+    echo "[entrypoint] IPv6 isn't available; listening on IPv4 only."
+    : > /var/cache/nginx/listen-v6-http.conf
+    : > /var/cache/nginx/listen-v6-https.conf
+fi
+
 # Background watcher: reload nginx when backend writes a .reload signal file
 (while true; do
     if [ -f "$RELOAD_SIGNAL" ]; then
