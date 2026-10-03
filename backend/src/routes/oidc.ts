@@ -201,7 +201,15 @@ router.put('/config', requireAuth, requireAdmin, async (req: Request, res: Respo
   if (me && me.auth_provider === 'oidc' && !me.has_password) {
     const current = await loadOidcConfig();
     const disabling = body.enabled === false && current.enabled;
-    const sameIssuer = (a?: string | null, b?: string | null) => (a ?? '').replace(/\/+$/, '') === (b ?? '').replace(/\/+$/, '');
+    // Trailing slashes trimmed by a loop: a regex here ran in polynomial time
+    // on a crafted run of slashes (CodeQL #114).
+    const trimSlashes = (v?: string | null) => {
+      const t = v ?? '';
+      let end = t.length;
+      while (end > 0 && t.charCodeAt(end - 1) === 47 /* '/' */) end--;
+      return t.slice(0, end);
+    };
+    const sameIssuer = (a?: string | null, b?: string | null) => trimSlashes(a) === trimSlashes(b);
     const movingIssuer = body.issuer_url !== undefined && !sameIssuer(body.issuer_url, current.issuer_url);
     if (disabling || movingIssuer) {
       return res.status(409).json({
