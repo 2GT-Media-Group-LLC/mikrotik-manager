@@ -21,7 +21,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
 import { fleetStatus } from '../utils/fleetStatus';
 import { escapeHtml } from '../utils/escapeHtml';
-import DeviceTypePill, { deviceTypeLabel } from '../components/devices/DeviceTypePill';
+import DeviceTypePill from '../components/devices/DeviceTypePill';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -1071,9 +1071,7 @@ function OperationsView({
                     color={d.status === 'online' ? 'var(--good)' : d.status === 'offline' ? 'var(--bad)' : 'var(--warn)'}
                     glow size={6}
                   />
-                  <span className="mono text-[10px]" style={{ color: 'var(--ink-3)' }}>
-                    {deviceTypeLabel(d.device_type)}
-                  </span>
+                  <DeviceTypePill type={d.device_type} />
                   {hasAlert && (
                     <span
                       className="ml-auto text-[10px] font-bold px-[5px] py-[1px] rounded-full"

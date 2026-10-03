@@ -1,7 +1,7 @@
 /**
  * The one device-type badge (#203): the Firmware page had its own grey
  * version, and the dashboard tiles labelled anything that wasn't an AP or a
- * router as "SW".
+ * router as "SW". Dashboard tiles use it too.
  */
 const TYPES: Record<string, { label: string; color: string }> = {
   wireless_ap: { label: 'AP',  color: 'var(--info)' },
@@ -9,7 +9,7 @@ const TYPES: Record<string, { label: string; color: string }> = {
   router:      { label: 'RTR', color: 'var(--violet)' },
 };
 
-export function deviceTypeLabel(type: string | null | undefined): string {
+function deviceTypeLabel(type: string | null | undefined): string {
   return TYPES[type ?? '']?.label ?? ((type ?? '').slice(0, 3).toUpperCase() || '—');
 }
 

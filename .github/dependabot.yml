@@ -45,8 +45,11 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "redis"
         update-types: ["version-update:semver-major"]
+      # InfluxDB minors too: 2.8 migrates its metadata one way, so going back
+      # needs `influxd downgrade`. Held at 2.7 until there's a reason to move
+      # (#181); 2.7.x patch updates still come through.
       - dependency-name: "influxdb"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # GitHub Actions workflow dependencies (pinned by commit SHA)
   - package-ecosystem: "github-actions"
