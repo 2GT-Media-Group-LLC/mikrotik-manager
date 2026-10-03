@@ -10,6 +10,7 @@ import { logAlertCandidates } from '../utils/logAlerts';
 import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 import { cronMatches } from '../utils/cron';
+import { reconcileProxyUsage } from './ProxyUsageService';
 import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
@@ -501,6 +502,15 @@ export class PollerService {
         this.pruneProxyConnections(appSettings).catch((e) =>
           console.error('[Poller] Proxy prune error:', e)
         );
+        // Once a day, recompute the last 48 hours of the proxy usage rollup from the raw
+        // rows, so a crash or a rolling deploy cannot leave it drifting.
+        const reconcileKey = 'task:proxy_usage_reconcile';
+        if (now - await this.getTimestamp(reconcileKey) > 86_400_000) {
+          await this.setTimestamp(reconcileKey, now, 86_400_000);
+          reconcileProxyUsage().catch((e) =>
+            console.error('[Poller] Proxy usage reconcile error:', e)
+          );
+        }
         this.pruneHistoryTables(appSettings).catch((e) =>
           console.error('[Poller] History prune error:', e)
         );
@@ -724,6 +734,7 @@ export class PollerService {
       console.log(`[Poller] Pruned ${deleted.length} proxy connections older than ${days} days`);
     }
     await query(`DELETE FROM proxy_sources WHERE last_seen < NOW() - ($1 || ' days')::interval`, [String(days)]);
+    await query(`DELETE FROM proxy_usage_hourly WHERE bucket < NOW() - ($1 || ' days')::interval`, [String(days)]);
   }
 
   private async pruneStaleClients(settings: Record<string, unknown>): Promise<void> {

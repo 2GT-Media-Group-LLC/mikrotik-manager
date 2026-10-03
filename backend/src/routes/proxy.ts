@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { resolveProxyQuery } from '../utils/proxyQuery';
+import { USAGE_KIND, useProxyUsageRollup } from '../services/ProxyUsageService';
 
 const router = Router();
 router.use(requireAuth);
@@ -15,8 +16,53 @@ router.use(deviceSiteAccess(deviceIdQuery));
 router.get('/top', async (req: Request, res: Response) => {
   const choice = resolveProxyQuery(req.query.by, req.query.range);
   if ('error' in choice) return res.status(400).json({ error: choice.error });
-  const { group, interval } = choice;
+  const { by, range, group, interval } = choice;
   const limit = Math.min(Math.max(parseInt(String(req.query.limit || '10'), 10) || 10, 1), 100);
+
+  // 24h, 7d and 30d read the hourly rollup (a few thousand rows) once it is built; 1h
+  // stays on the raw rows so it is exact to the minute. The window starts at the hour
+  // containing now - range, so it can reach up to an hour further back.
+  if (range !== '1h' && await useProxyUsageRollup()) {
+    const rparams: unknown[] = [USAGE_KIND[by], interval];
+    const rfilters = [
+      'kind = $1',
+      `bucket >= (date_trunc('hour', (NOW() - $2::interval) AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`,
+    ];
+    if (req.query.source) { rparams.push(String(req.query.source)); rfilters.push(`source = $${rparams.length}`); }
+    if (req.query.port) {
+      const port = parseInt(String(req.query.port), 10);
+      if (Number.isFinite(port)) { rparams.push(port); rfilters.push(`proxy_port = $${rparams.length}`); }
+    }
+    if (req.query.deviceId) {
+      const id = parseInt(String(req.query.deviceId), 10);
+      if (Number.isFinite(id)) { rparams.push(id); rfilters.push(`device_id = $${rparams.length}`); }
+    }
+    const rsite = siteScopeByDevice(activeSite(req), 'device_id');
+    if (rsite) rfilters.push(rsite);
+    rparams.push(limit);
+    const rolled = await query(
+      `SELECT key,
+              SUM(requests)::bigint AS requests,
+              SUM(bytes_out)::bigint AS bytes_out,
+              SUM(bytes_in)::bigint AS bytes_in,
+              COUNT(DISTINCT NULLIF(peer, ''))::int AS distinct_peers,
+              MAX(last_seen) AS last_seen
+         FROM proxy_usage_hourly
+        WHERE ${rfilters.join(' AND ')}
+        GROUP BY key
+        ORDER BY requests DESC, last_seen DESC
+        LIMIT $${rparams.length}`,
+      rparams
+    );
+    return res.json(rolled.map((r: any) => ({
+      key: r.key,
+      requests: Number(r.requests),
+      bytes_in: Number(r.bytes_in),
+      bytes_out: Number(r.bytes_out),
+      distinct_peers: r.distinct_peers,
+      last_seen: r.last_seen,
+    })));
+  }
 
   const filters = [group.where, `event_time > NOW() - $1::interval`];
   const params: unknown[] = [interval];

@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { query } from '../config/database';
 import { parseProxyLog, type ProxyConnection } from '../utils/proxyLog';
 import { logSafe } from '../utils/logSafe';
+import { usageUpsertCtes } from './ProxyUsageService';
 
 export interface ProxyLogInput {
   logId: string;
@@ -29,13 +30,20 @@ async function insertParsed(
       c.clientIp, c.clientPort, c.serverIp, c.serverPort, c.authUser, c.hostname,
       c.method, c.bytesSent, c.bytesReceived, c.errorCode, c.status,
     ]);
+    // One statement: the rows actually inserted (a re-collected line is dropped by the
+    // conflict) also feed the hourly rollup, so the two cannot disagree.
     await run(
-      `INSERT INTO proxy_connections
-         (device_id, log_id, event_time, source, proxy_type, proxy_port, client_ip, client_port,
-          server_ip, server_port, auth_user, hostname, method, bytes_sent, bytes_received,
-          error_code, status)
-       VALUES ${values}
-       ON CONFLICT (device_id, log_id) DO NOTHING`,
+      `WITH inserted AS (
+         INSERT INTO proxy_connections
+           (device_id, log_id, event_time, source, proxy_type, proxy_port, client_ip, client_port,
+            server_ip, server_port, auth_user, hostname, method, bytes_sent, bytes_received,
+            error_code, status)
+         VALUES ${values}
+         ON CONFLICT (device_id, log_id) DO NOTHING
+         RETURNING device_id, event_time, source, proxy_port, client_ip, auth_user, hostname,
+                   server_ip, bytes_sent, bytes_received, status
+       )${usageUpsertCtes('inserted')}
+       SELECT 1`,
       params,
     );
   }

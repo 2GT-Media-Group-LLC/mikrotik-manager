@@ -1,6 +1,7 @@
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
 import { backfillProxyConnections, backfillProxySources } from '../services/ProxyLogService';
+import { backfillProxyUsage } from '../services/ProxyUsageService';
 
 const MIGRATION_SQL = `
 -- Users
@@ -1185,6 +1186,24 @@ CREATE TABLE IF NOT EXISTS proxy_sources (
   last_seen  TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (device_id, source, proxy_type, proxy_port)
 );
+-- Hourly rollup behind the proxy usage rankings: one row per (hour, device, source,
+-- port, key, peer) for each tab (kind 1 clients, 2 users, 3 destinations, 4 denied).
+-- proxy_port is 0 and peer is '' where a log line carried none (key columns cannot be NULL).
+CREATE TABLE IF NOT EXISTS proxy_usage_hourly (
+  kind       SMALLINT NOT NULL,
+  bucket     TIMESTAMPTZ NOT NULL,
+  device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  source     VARCHAR(64) NOT NULL,
+  proxy_port INTEGER NOT NULL DEFAULT 0,
+  key        VARCHAR(255) NOT NULL,
+  peer       VARCHAR(255) NOT NULL DEFAULT '',
+  requests   BIGINT NOT NULL,
+  bytes_in   BIGINT NOT NULL DEFAULT 0,
+  bytes_out  BIGINT NOT NULL DEFAULT 0,
+  last_seen  TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (kind, bucket, device_id, source, proxy_port, key, peer)
+);
+CREATE INDEX IF NOT EXISTS idx_proxy_usage_hourly_bucket ON proxy_usage_hourly(bucket);
 -- Fold per-worker suffixes (3proxy-b-32 -> 3proxy) on rows stored before they were stripped.
 UPDATE proxy_connections SET source = COALESCE(NULLIF(regexp_replace(source, '(-[a-zA-Z])?-[0-9]+$', ''), ''), 'proxy')
   WHERE source ~ '-[0-9]+$';
@@ -1401,6 +1420,15 @@ export async function runMigrations(): Promise<void> {
       if (n > 0) console.log(`Backfilled ${n} proxy connection(s) from events`);
     } catch (err) {
       console.error('Proxy connection backfill failed (non-fatal):', err);
+    }
+
+    // Build the hourly rollup from rows already stored, once. Until it is marked ready
+    // the rankings read proxy_connections, so a failure here only delays the speed-up.
+    try {
+      const n = await backfillProxyUsage(client);
+      if (n > 0) console.log(`Built the proxy usage rollup from ${n} day(s) of connections`);
+    } catch (err) {
+      console.error('Proxy usage rollup backfill failed (non-fatal):', err);
     }
 
     // Fill the instance list from rows already stored. Only does work while the list is
