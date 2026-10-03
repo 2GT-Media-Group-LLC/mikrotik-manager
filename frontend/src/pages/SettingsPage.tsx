@@ -1,10 +1,9 @@
 import NumberSetting from '../components/settings/NumberSetting';
-import { Link } from 'react-router-dom';
 import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
-  ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound, ClipboardList, FileText, Zap, LogIn,
+  ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, KeyRound, ClipboardList, Zap, LogIn,
   Activity, Moon, Globe } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
 import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
@@ -82,7 +81,7 @@ export default function SettingsPage() {
   }, []);
 
   const siteScoped = useIsSiteScoped();
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'templates' | 'automation' | 'poller' | 'darksite' | 'sshkeys'>(siteScoped ? 'security' : 'general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'credentials' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys'>(siteScoped ? 'security' : 'general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -407,6 +406,9 @@ export default function SettingsPage() {
     device_degraded: 'Device degraded (power supply, fan or temperature)',
     device_identity_changed: 'Device certificate or SSH host key changed',
     device_health_restored: 'Device hardware healthy again',
+    // The two rules that showed without a caption (#223).
+    config_drift: 'Configuration changed on a device',
+    firmware_update_available: 'RouterOS update available',
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';
@@ -446,7 +448,6 @@ export default function SettingsPage() {
         { key: 'alerting' as const, label: 'Alerting', icon: Bell },
         { key: 'automation' as const, label: 'Automation', icon: Zap },
         ...(isAdmin ? [
-          { key: 'templates' as const, label: 'Config Templates (moved)', icon: FileText },
           { key: 'tags' as const, label: 'Tags', icon: ShieldCheck },
           { key: 'maintenance' as const, label: 'Maintenance', icon: ShieldAlert },
         ] : []),
@@ -2113,21 +2114,6 @@ export default function SettingsPage() {
       {activeTab === 'sso' && (
         <OidcSettings isAdmin={isAdmin} />
       )}
-      {/* ── Config Templates: moved (#163) ── */}
-      {activeTab === 'templates' && (
-        <div className="card p-5 max-w-2xl space-y-3">
-          <h3 className="font-semibold text-gray-900 dark:text-white">Config Templates have moved</h3>
-          <p className="text-sm text-gray-600 dark:text-slate-300">
-            They are now <strong>command templates</strong>: saved RouterOS commands that run through Bulk
-            Commands, in waves and with Change Guard. Any Config Templates you had were converted
-            automatically, with the same DNS, NTP and syslog settings.
-          </p>
-          <Link to="/templates" className="btn-primary inline-flex items-center gap-1.5 text-sm">
-            <FileText className="w-4 h-4" /> Open templates
-          </Link>
-        </div>
-      )}
-
       {/* ── Tags ── */}
       {activeTab === 'tags' && (
         <div className="space-y-4">

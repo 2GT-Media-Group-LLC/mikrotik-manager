@@ -43,7 +43,7 @@ router.use(resourceSiteAccess(async (req) => {
 }, 'Backup not found'));
 
 router.get('/', async (req: Request, res: Response) => {
-  const { deviceId, type, from, to, search } = req.query as Record<string, string | undefined>;
+  const { deviceId, type, from, to, search, limit, offset } = req.query as Record<string, string | undefined>;
 
   const filters: string[] = [];
   const params: unknown[] = [];
@@ -71,17 +71,31 @@ router.get('/', async (req: Request, res: Response) => {
   if (siteFilter) filters.push(siteFilter);
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const backups = await query(
-    // Device type and tags, for the Backups table (#219).
-    `SELECT b.*, d.name as device_name, d.device_type,
-            COALESCE((SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name)
-                        FROM device_tags dt JOIN tags t ON t.id = dt.tag_id
-                       WHERE dt.device_id = d.id), '[]'::json) AS device_tags
-       FROM backups b JOIN devices d ON d.id = b.device_id
-       ${where}
-      ORDER BY b.created_at DESC`,
-    params
-  );
+  // Paged when asked (#221: 9,000 backups were sent and drawn at once):
+  // ?limit= (at most 500) and ?offset=, with the total in X-Total-Count.
+  // Without a limit the whole list comes back, as it always has.
+  const paged = limit !== undefined;
+  const pageSql = paged
+    ? ` LIMIT ${bind(Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500))} OFFSET ${bind(Math.max(parseInt(offset ?? '0', 10) || 0, 0))}`
+    : '';
+  const filterParams = params.slice(0, params.length - (paged ? 2 : 0));
+  const [backups, total] = await Promise.all([
+    query(
+      // Device type and tags, for the Backups table (#219).
+      `SELECT b.*, d.name as device_name, d.device_type,
+              COALESCE((SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name)
+                          FROM device_tags dt JOIN tags t ON t.id = dt.tag_id
+                         WHERE dt.device_id = d.id), '[]'::json) AS device_tags
+         FROM backups b JOIN devices d ON d.id = b.device_id
+         ${where}
+        ORDER BY b.created_at DESC, b.id DESC${pageSql}`,
+      params
+    ),
+    paged
+      ? queryOne<{ n: number }>(`SELECT COUNT(*)::int AS n FROM backups b JOIN devices d ON d.id = b.device_id ${where}`, filterParams)
+      : Promise.resolve(null),
+  ]);
+  if (paged) res.setHeader('X-Total-Count', String(total?.n ?? 0));
   res.json(backups);
 });
 

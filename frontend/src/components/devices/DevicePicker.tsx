@@ -10,6 +10,7 @@ import TagChips from './TagChips';
  * Choosing devices (#218): grouped by site, each with its type badge and tags,
  * a select-all per site, and a search once the list is long. Used for
  * maintenance windows and bulk commands, which were plain checkbox lists.
+ * Site headers scroll with the list: sticky ones overlapped rows (#218).
  */
 export default function DevicePicker({
   devices, selected, onChange, maxHeight = 'max-h-72',
@@ -62,7 +63,7 @@ export default function DevicePicker({
           return (
             <div key={g.id ?? 'none'}>
               {showHeaders && (
-                <label className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-slate-800/60 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 cursor-pointer select-none sticky top-0">
+                <label className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-slate-800/60 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 cursor-pointer select-none">
                   <input type="checkbox" checked={inGroup === g.list.length}
                     ref={(el) => { if (el) el.indeterminate = inGroup > 0 && inGroup < g.list.length; }}
                     onChange={(e) => setGroup(g.list, e.target.checked)} aria-label={`Select every device in ${g.name}`} />

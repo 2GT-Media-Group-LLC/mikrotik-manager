@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { apiErrorMessage } from '../utils/apiError';
+import { Link } from 'react-router-dom';
 
 type NS = Record<string, string>;
 
@@ -560,6 +561,7 @@ export default function NetworkServicesDHCPPage() {
     queryFn: () => networkServicesApi.getLeases(deviceId, 'ipv4').then(r => r.data),
     enabled: deviceId > 0,
   });
+  const staticV4 = leasesV4.filter((l) => l['dynamic'] !== 'true');
 
   const { data: leasesV6 = [] } = useQuery({
     queryKey: ['ns-leases', deviceId, 'ipv6'],
@@ -705,11 +707,15 @@ export default function NetworkServicesDHCPPage() {
               onDelete={(id) => deletePool.mutate({ id, protocol: 'ipv4' })} />
           </Section>
 
-          {/* IPv4 Leases */}
-          <Section color="text-sky-500" title="IPv4 Leases" count={leasesV4.length}
+          {/* IPv4 static leases only: dynamic ones are on Clients, with far more
+              about each client (#229). Reservations are still managed here. */}
+          <Section color="text-sky-500" title="IPv4 Static Leases" count={staticV4.length}
             action={canWrite ? <button onClick={() => setLeaseForm('ipv4')} className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"><Plus className="w-3 h-3" />Static</button> : undefined}>
-            <LeaseTable leases={leasesV4} canWrite={canWrite}
+            <LeaseTable leases={staticV4} canWrite={canWrite}
               onDelete={(id) => deleteLease.mutate({ id, protocol: 'ipv4' })} />
+            <div className="px-5 py-2.5 border-t border-gray-100 dark:border-slate-800 text-xs text-gray-500 dark:text-slate-400">
+              Dynamic leases ({leasesV4.length - staticV4.length}) are on <Link to="/clients" className="text-blue-600 dark:text-blue-400 hover:underline">Clients</Link>.
+            </div>
           </Section>
 
           {/* IPv6 Servers */}

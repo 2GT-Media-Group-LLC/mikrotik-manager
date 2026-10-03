@@ -1174,6 +1174,14 @@ export const backupsApi = {
     );
     return api.get<Backup[]>('/backups', { params });
   },
+  /** One page, newest first, with the total for the filters (#221). */
+  listPage: (filters: BackupFilters, limit: number, offset: number) => {
+    const params = Object.fromEntries(
+      Object.entries(filters).filter(([, v]) => v !== undefined && v !== '')
+    );
+    return api.get<Backup[]>('/backups', { params: { ...params, limit, offset } })
+      .then((r) => ({ rows: r.data, total: Number(r.headers['x-total-count'] ?? r.data.length) }));
+  },
   types: () => api.get<{ type: string; count: number }[]>('/backups/types'),
   // A large configuration can take minutes to export; the default 30 seconds
   // gave up first and showed a bare "Backup failed" (Discussion #85).

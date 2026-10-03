@@ -9,12 +9,12 @@ they could affect reachability.
 
 ## DHCP
 
-Servers, address pools and leases, per device. A device's lease list shows the first 100;
-**Show all** lists the rest.
+Servers, address pools and leases, per device. A lease list shows the first 100; **Show all**
+lists the rest.
 
-- **Leases** lists every current lease across the fleet, with the client it belongs to. A
-  dynamic lease can be converted to static in place, which is the usual way to pin an address
-  to a device you care about.
+- **IPv4 Static Leases** lists a device's reservations: add one with **Static**, remove one with
+  its delete button. Dynamic leases are on the [Clients](clients.md) page, which knows far more
+  about each client.
 - **Pools** and **servers** can be created, edited and removed.
 - A static **IPv6 binding** is matched by the client's DUID, not its MAC address, and assigns
   a prefix. Before 0.24.51 the form asked for a MAC address, which RouterOS refused.

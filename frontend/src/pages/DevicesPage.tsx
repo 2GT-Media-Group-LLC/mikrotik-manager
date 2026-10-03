@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Plus, RefreshCw, Router, Trash2, ChevronRight, Search,
+  Plus, RefreshCw, Router, Trash2, ChevronRight,
   Radar, Pencil, ShieldQuestion, Upload} from 'lucide-react';
 import { devicesApi, topologyApi, metricsApi, tagsApi, adoptionApi} from '../services/api';
 import type { Device } from '../types';
@@ -19,6 +19,7 @@ import BulkTagBar from '../components/devices/BulkTagBar';
 import { displayState, STATE_COLOR } from '../utils/deviceState';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import SortableHeader, { type SortDir } from '../components/common/SortableHeader';
+import { FilterBar, FilterSearch, FilterSelect } from '../components/common/FilterBar';
 
 type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen' | 'rack_name' | 'location_address';
 type DiscoveredSortKey = 'identity' | 'address' | 'mac_address' | 'seen_by' | 'discovered_at';
@@ -377,64 +378,32 @@ export default function DevicesPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="card-subtle flex flex-wrap items-center gap-[6px] p-[6px]">
-        <div className="flex items-center gap-2 flex-1 min-w-[160px] px-[10px] py-[6px]" style={{ color: 'var(--ink-3)' }}>
-          <Search className="w-3.5 h-3.5 flex-shrink-0" />
-          <input
-            type="text"
-            className="bg-transparent text-[13px] outline-none w-full"
-            style={{ color: 'var(--ink)' }}
-            placeholder="Filter devices…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
+      <FilterBar>
+        <FilterSearch value={search} onChange={setSearch} placeholder="Filter devices…" />
         {/* Placement filters — only offered when placement is actually recorded (#107) */}
         {rackOptions.length > 0 && (
-          <select
-            value={rackFilter}
-            onChange={e => setRackFilter(e.target.value)}
-            className="mono text-[11.5px] px-[8px] py-[4px] rounded-[5px] bg-transparent outline-none"
-            style={{ color: rackFilter ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
-          >
+          <FilterSelect value={rackFilter} onChange={setRackFilter} title="Rack">
             <option value="">All racks</option>
             {rackOptions.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
+          </FilterSelect>
         )}
         {locationOptions.length > 0 && (
-          <select
-            value={locationFilter}
-            onChange={e => setLocationFilter(e.target.value)}
-            className="text-[11.5px] px-[8px] py-[4px] rounded-[5px] bg-transparent outline-none max-w-[180px]"
-            style={{ color: locationFilter ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
-          >
+          <FilterSelect value={locationFilter} onChange={setLocationFilter} title="Location" className="max-w-[180px]">
             <option value="">All locations</option>
             {locationOptions.map(l => <option key={l} value={l}>{l}</option>)}
-          </select>
+          </FilterSelect>
         )}
-        <select
-          value={apiFilter}
-          onChange={e => setApiFilter(e.target.value as '' | 'ssl' | 'plain')}
-          title="How the manager connects to the device"
-          className="mono text-[11.5px] px-[8px] py-[4px] rounded-[5px] bg-transparent outline-none"
-          style={{ color: apiFilter ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
-        >
+        <FilterSelect value={apiFilter} onChange={v => setApiFilter(v as '' | 'ssl' | 'plain')} title="How the manager connects to the device">
           <option value="">Any API</option>
           <option value="ssl">API-SSL</option>
           <option value="plain">Plain API</option>
-        </select>
-        <select
-          value={loginFilter}
-          onChange={e => setLoginFilter(e.target.value as '' | LoginKind)}
-          title="Which credentials the manager has for the device"
-          className="mono text-[11.5px] px-[8px] py-[4px] rounded-[5px] bg-transparent outline-none"
-          style={{ color: loginFilter ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
-        >
+        </FilterSelect>
+        <FilterSelect value={loginFilter} onChange={v => setLoginFilter(v as '' | LoginKind)} title="Which credentials the manager has for the device">
           <option value="">Any login</option>
           <option value="password">Password only</option>
           <option value="key">SSH key only</option>
           <option value="both">Password + SSH key</option>
-        </select>
+        </FilterSelect>
         {(['all', 'online', 'offline', 'updates'] as const).map(f => (
           <button
             key={f}
@@ -470,20 +439,15 @@ export default function DevicesPage() {
         {allTags.length > 0 && (
           <>
             <div className="w-px h-[18px] mx-1" style={{ background: 'var(--line)' }} />
-            <select
-              value={tagFilter ?? ''}
-              onChange={e => setTagFilter(e.target.value ? parseInt(e.target.value, 10) : null)}
-              className="mono text-[11px] px-[8px] py-[4px] rounded-[5px] transition-colors"
-              style={{ background: 'var(--surface-2)', color: 'var(--ink-3)', border: '1px solid var(--line)' }}
-            >
+            <FilterSelect value={tagFilter != null ? String(tagFilter) : ''} onChange={v => setTagFilter(v ? parseInt(v, 10) : null)} title="Tag">
               <option value="">All tags</option>
               {allTags.map(t => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
-            </select>
+            </FilterSelect>
           </>
         )}
-      </div>
+      </FilterBar>
 
       {/* Device table */}
       {isLoading ? (

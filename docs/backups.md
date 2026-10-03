@@ -67,7 +67,7 @@ version is known.
 ## Finding one
 
 The table filters by **device**, **type**, a **date range** and free text across
-device name, filename and notes. Date ranges include both ends — "to: 3 September"
+device name, filename and notes, and shows 100 backups to a page. Date ranges include both ends — "to: 3 September"
 covers everything that happened on the 3rd.
 
 Types:
@@ -141,7 +141,7 @@ since a backup can hold secrets.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/backups` | List, with `deviceId`, `type`, `from`, `to`, `search` |
+| `GET` | `/api/backups` | List, with `deviceId`, `type`, `from`, `to`, `search`; add `limit` (up to 500) and `offset` to page it, with the total in the `X-Total-Count` header |
 | `GET` | `/api/backups/types` | Types present, with counts |
 | `POST` | `/api/backups` | Create one for a device |
 | `GET` | `/api/backups/:id/content` | Read the text (capped at 2 MB) |

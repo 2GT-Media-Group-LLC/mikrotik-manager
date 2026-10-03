@@ -17,8 +17,10 @@ That merge is why a client shows a switch port *and* an access point: the MAC is
 
 ## The list
 
-Filter by type (wired or wireless), category, device, VLAN, or signal range. Search matches
-hostname, MAC, IP address and vendor.
+Filter by status (online, or all including inactive clients), type (wired or wireless), the
+device a client is connected to, VLAN, or signal range, in the same filter bar as the device
+list. Search matches hostname, MAC, IP address and vendor. **Refresh**, the automatic refresh
+interval and **Purge stale** sit beside the page title.
 
 Every column sorts. With **Wireless** selected, SSID and Signal replace the Type column and
 sort too; Signal sorts strongest first on the first click.

@@ -244,6 +244,7 @@ export default function FirmwarePage() {
                 <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/40">
                   {canWrite && <th className="table-header px-4 py-[10px] w-8" />}
                   <th className="table-header px-4 py-[10px]">Device</th>
+                  <th className="table-header px-4 py-[10px] w-[72px]">Type</th>
                   <th className="table-header px-4 py-[10px]">Model</th>
                   <th className="table-header px-4 py-[10px]">RouterOS</th>
                   <th className="table-header px-4 py-[10px]">Latest</th>
@@ -254,7 +255,7 @@ export default function FirmwarePage() {
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700/50">
                 {tableDevices.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-400 dark:text-slate-500">
+                  <tr><td colSpan={9} className="px-4 py-6 text-center text-sm text-gray-400 dark:text-slate-500">
                     All {currentCount} device{currentCount === 1 ? ' is' : 's are'} up to date.
                   </td></tr>
                 )}
@@ -274,12 +275,13 @@ export default function FirmwarePage() {
                       )}
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
-                          <DeviceTypePill type={d.device_type} />
                           <span className="cell-primary">{d.name}</span>
                           <TagChips tags={d.tags} />
                           {d.status !== 'online' && <span className="text-[10px] text-red-400">offline</span>}
                         </div>
                       </td>
+                      {/* Its own column after the name, as on Devices (#220). */}
+                      <td className="px-4 py-2.5"><DeviceTypePill type={d.device_type} /></td>
                       <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400">{d.model || '—'}</td>
                       <td className="px-4 py-2.5 font-mono text-xs text-gray-700 dark:text-slate-300">{d.ros_version || '—'}</td>
                       <td className="px-4 py-2.5 font-mono text-xs">

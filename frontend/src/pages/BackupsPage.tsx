@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   HardDrive, Plus, Download, RotateCcw, Trash2, AlertCircle, AlertTriangle,
-  Loader2, X, Search, GitCompare, FileText, FilterX, Lock,
+  Loader2, X, GitCompare, FileText, FilterX, Lock, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { backupsApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
@@ -14,6 +14,7 @@ import { format } from 'date-fns';
 import clsx from 'clsx';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import TagChips from '../components/devices/TagChips';
+import { FilterBar, FilterSearch, FilterSelect, FilterDivider } from '../components/common/FilterBar';
 
 /** One home for backup-type wording, used by the filter and the table badge. */
 const TYPE_LABEL: Record<string, string> = {
@@ -53,10 +54,20 @@ export default function BackupsPage() {
   const [viewing, setViewing] = useState<number[] | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
 
-  const { data: backups = [], isLoading } = useQuery({
-    queryKey: ['backups', filters],
-    queryFn: () => backupsApi.list(filters).then((r) => r.data),
+  // A page at a time (#221): a fleet's backups run to thousands.
+  const PAGE = 100;
+  const [page, setPage] = useState(0);
+  const filterKey = JSON.stringify(filters);
+  const [pagedFor, setPagedFor] = useState(filterKey);
+  if (pagedFor !== filterKey) { setPagedFor(filterKey); setPage(0); }
+  const { data: pageData, isLoading } = useQuery({
+    queryKey: ['backups', filters, page],
+    queryFn: () => backupsApi.listPage(filters, PAGE, page * PAGE),
+    placeholderData: keepPreviousData,
   });
+  const backups = useMemo(() => pageData?.rows ?? [], [pageData]);
+  const totalBackups = pageData?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(totalBackups / PAGE));
 
   const { data: types = [] } = useQuery({
     queryKey: ['backup-types'],
@@ -167,9 +178,9 @@ export default function BackupsPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">
           Backups
-          {backups.length > 0 && (
+          {totalBackups > 0 && (
             <span className="ml-2 text-sm font-normal text-gray-500 dark:text-slate-400">
-              ({backups.length} total)
+              ({totalBackups} total)
             </span>
           )}
         </h1>
@@ -260,62 +271,38 @@ export default function BackupsPage() {
         </div>
       )}
 
-      {/* Filters (#134) */}
-      <div className="card p-3 flex flex-wrap items-end gap-2">
-        <div className="flex-1 min-w-[180px]">
-          <label className="label text-[11px]">Search</label>
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              className="input pl-8"
-              placeholder="Device, filename or note…"
-              value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-            />
-          </div>
-        </div>
-        <div className="min-w-[150px]">
-          <label className="label text-[11px]">Device</label>
-          <select
-            className="input"
-            value={filters.deviceId}
-            onChange={(e) => setFilters((f) => ({ ...f, deviceId: e.target.value }))}
-          >
-            <option value="">All devices</option>
-            {devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </div>
-        <div className="min-w-[140px]">
-          <label className="label text-[11px]">Type</label>
-          <select
-            className="input"
-            value={filters.type}
-            onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
-          >
-            <option value="">All types</option>
-            {types.map((t) => (
-              <option key={t.type} value={t.type}>{TYPE_LABEL[t.type] ?? t.type} ({t.count})</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label text-[11px]">From</label>
-          <input type="date" className="input"
-            value={filters.from}
-            onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))} />
-        </div>
-        <div>
-          <label className="label text-[11px]">To</label>
-          <input type="date" className="input"
-            value={filters.to}
-            onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))} />
-        </div>
+      {/* Filters (#134), in the same bar as Devices and Clients (#217). */}
+      <FilterBar>
+        <FilterSearch value={filters.search} onChange={(v) => setFilters((f) => ({ ...f, search: v }))} placeholder="Device, filename or note…" />
+        <FilterSelect value={filters.deviceId} onChange={(v) => setFilters((f) => ({ ...f, deviceId: v }))} title="Device">
+          <option value="">All devices</option>
+          {devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </FilterSelect>
+        <FilterSelect value={filters.type} onChange={(v) => setFilters((f) => ({ ...f, type: v }))} title="Type">
+          <option value="">All types</option>
+          {types.map((t) => (
+            <option key={t.type} value={t.type}>{TYPE_LABEL[t.type] ?? t.type} ({t.count})</option>
+          ))}
+        </FilterSelect>
+        <FilterDivider />
+        <label className="mono text-[11.5px] flex items-center gap-1" style={{ color: 'var(--ink-3)' }}>
+          from
+          <input type="date" aria-label="From date" className="bg-transparent outline-none px-[6px] py-[3px] rounded-[5px]"
+            style={{ color: filters.from ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
+            value={filters.from} onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))} />
+        </label>
+        <label className="mono text-[11.5px] flex items-center gap-1" style={{ color: 'var(--ink-3)' }}>
+          to
+          <input type="date" aria-label="To date" className="bg-transparent outline-none px-[6px] py-[3px] rounded-[5px]"
+            style={{ color: filters.to ? 'var(--ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}
+            value={filters.to} onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))} />
+        </label>
         {activeFilterCount > 0 && (
-          <button onClick={clearFilters} className="btn-secondary flex items-center gap-1.5 text-xs">
-            <FilterX className="w-3.5 h-3.5" /> Clear
+          <button onClick={clearFilters} className="mono text-[11.5px] px-[8px] py-[4px] rounded-[5px] flex items-center gap-1" style={{ color: 'var(--ink-3)' }}>
+            <FilterX className="w-3.5 h-3.5" /> clear
           </button>
         )}
-      </div>
+      </FilterBar>
 
       {/* Selection actions */}
       {selected.length > 0 && (
@@ -535,6 +522,16 @@ export default function BackupsPage() {
             </tbody>
           </table>
           </div>
+          {pages > 1 && (
+            <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-200 dark:border-slate-700 text-xs text-gray-500 dark:text-slate-400">
+              <span>{page * PAGE + 1}–{Math.min((page + 1) * PAGE, totalBackups)} of {totalBackups}</span>
+              <div className="flex items-center gap-1">
+                <button className="p-1 rounded disabled:opacity-40" disabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="Previous page"><ChevronLeft className="w-4 h-4" /></button>
+                <span>Page {page + 1} of {pages}</span>
+                <button className="p-1 rounded disabled:opacity-40" disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)} aria-label="Next page"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

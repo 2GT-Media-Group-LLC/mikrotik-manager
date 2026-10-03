@@ -34,7 +34,7 @@ const SERVICES: { key: ServiceKey; label: string }[] = [
 ];
 
 /** on / off / not configured / unknown, with the text shown beside it. */
-interface Cell { state: 'on' | 'off' | 'none' | 'unknown'; label: string }
+interface Cell { state: 'on' | 'partial' | 'off' | 'none' | 'unknown'; label: string }
 
 function cellFor(row: DeviceServiceRow, key: ServiceKey): Cell {
   const svc = row[key];
@@ -44,7 +44,7 @@ function cellFor(row: DeviceServiceRow, key: ServiceKey): Cell {
     case 'dhcp_v6': {
       const s = svc as { total: number; enabled: number };
       if (s.total === 0) return { state: 'none', label: 'None' };
-      return { state: s.enabled > 0 ? 'on' : 'off', label: `${s.enabled}/${s.total} on` };
+      return { state: partOf(s.enabled, s.total), label: `${s.enabled}/${s.total} on` };
     }
     case 'dns': {
       const s = svc as { allow_remote: boolean };
@@ -59,7 +59,7 @@ function cellFor(row: DeviceServiceRow, key: ServiceKey): Cell {
     case 'wireguard': {
       const s = svc as { total: number; running: number };
       if (s.total === 0) return { state: 'none', label: 'None' };
-      return { state: s.running > 0 ? 'on' : 'off', label: `${s.running}/${s.total} up` };
+      return { state: partOf(s.running, s.total), label: `${s.running}/${s.total} up` };
     }
     case 'syslog': {
       const s = svc as { remote_count: number };
@@ -68,16 +68,25 @@ function cellFor(row: DeviceServiceRow, key: ServiceKey): Cell {
   }
 }
 
-const STATE_RANK: Record<Cell['state'], number> = { on: 3, off: 2, none: 1, unknown: 0 };
+/** All on, some on (easy to miss among the greens, so it gets its own colour; #212), or none. */
+function partOf(up: number, total: number): Cell['state'] {
+  if (up <= 0) return 'off';
+  return up < total ? 'partial' : 'on';
+}
+
+const STATE_RANK: Record<Cell['state'], number> = { on: 4, partial: 3, off: 2, none: 1, unknown: 0 };
 
 /** The same on/off dot as the WireGuard and DHCP panels (#212). */
 function ServiceState({ cell }: { cell: Cell }) {
   if (cell.state === 'unknown') return <span className="text-xs text-gray-400 dark:text-slate-500">—</span>;
   return (
     <span className={clsx('inline-flex items-center gap-1.5 text-xs',
-      cell.state === 'on' ? 'text-green-700 dark:text-green-400 font-medium' : 'text-gray-500 dark:text-slate-400')}>
+      cell.state === 'on' ? 'text-green-700 dark:text-green-400 font-medium'
+        : cell.state === 'partial' ? 'text-amber-700 dark:text-amber-400 font-medium'
+        : 'text-gray-500 dark:text-slate-400')}>
       <span className={clsx('w-1.5 h-1.5 rounded-full',
-        cell.state === 'on' ? 'bg-green-500' : cell.state === 'off' ? 'bg-gray-400' : 'border border-gray-300 dark:border-slate-600')} />
+        cell.state === 'on' ? 'bg-green-500' : cell.state === 'partial' ? 'bg-amber-500'
+          : cell.state === 'off' ? 'bg-gray-400' : 'border border-gray-300 dark:border-slate-600')} />
       {cell.label}
     </span>
   );
