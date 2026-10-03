@@ -294,6 +294,9 @@ export interface Backup {
   created_at: string;
   /** Holds passwords and keys; encrypted on disk, admin-only to view (#172). */
   contains_secrets?: boolean;
+  /** The device's type and tags, for the table (#219). */
+  device_type?: string;
+  device_tags?: { id: number; name: string; color: string }[];
 }
 
 export interface TopologyDevice {

@@ -415,7 +415,7 @@ export default function NetworkServicesDiscoveryPage() {
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
                 {lldpStatuses.map(r => (
                   <tr key={`${r.kind}-${r.id}`} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
-                    <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{r.name}</td>
+                    <td className="px-4 py-2.5 cell-primary">{r.name}</td>
                     <td className="px-4 py-2.5"><KindPill kind={r.kind} /></td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400">{r.ip_address}</td>
                     <td className="px-4 py-2.5">
@@ -674,7 +674,7 @@ export default function NetworkServicesDiscoveryPage() {
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
                 {snmpStatuses.map(r => (
                   <tr key={`${r.kind}-${r.id}`} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
-                    <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{r.name}</td>
+                    <td className="px-4 py-2.5 cell-primary">{r.name}</td>
                     <td className="px-4 py-2.5"><KindPill kind={r.kind} /></td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400">{r.ip_address}</td>
                     <td className="px-4 py-2.5">

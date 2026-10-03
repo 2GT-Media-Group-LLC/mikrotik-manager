@@ -4,6 +4,7 @@ import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeByNullableDevice } from '../utils/siteScope';
 import { activeSite, writableScope } from '../middleware/site';
+import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
 
 const router = Router();
 router.use(requireAuth);
@@ -44,6 +45,7 @@ router.get('/', async (req: Request, res: Response) => {
     since,
     limit = '200',
     offset = '0',
+    clock,
   } = req.query;
 
   const filters: string[] = ['1=1'];
@@ -89,6 +91,10 @@ router.get('/', async (req: Request, res: Response) => {
     idx++;
   }
 
+  // Clock adjustments are hidden unless ?clock=1 (#213). Rows stored before
+  // they were reclassified as info are hidden the same way.
+  if (clock !== '1') filters.push(`NOT ${CLOCK_CHANGE_SQL.replace('message', 'e.message')}`);
+
   const where = filters.join(' AND ');
 
   const [events, totalResult, criticalCount] = await Promise.all([
@@ -108,6 +114,7 @@ router.get('/', async (req: Request, res: Response) => {
     query<{ count: string }>(
       `SELECT COUNT(*) as count FROM events
        WHERE severity IN ('error','critical') AND event_time > NOW() - INTERVAL '24 hours'
+         AND NOT ${CLOCK_CHANGE_SQL}
          ${siteFilterBare ? `AND ${siteFilterBare}` : ''}`
     ),
   ]);

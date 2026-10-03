@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, RefreshCw, Router, Trash2, ChevronRight, Search,
-  Radar, Pencil, ArrowUpDown, ArrowUp, ArrowDown, ShieldQuestion, Upload} from 'lucide-react';
+  Radar, Pencil, ShieldQuestion, Upload} from 'lucide-react';
 import { devicesApi, topologyApi, metricsApi, tagsApi, adoptionApi} from '../services/api';
 import type { Device } from '../types';
 import type { DiscoveredDevice, AdoptionCandidate} from '../services/api';
@@ -18,45 +18,11 @@ import CsvImportModal from '../components/devices/CsvImportModal';
 import BulkTagBar from '../components/devices/BulkTagBar';
 import { displayState, STATE_COLOR } from '../utils/deviceState';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
+import SortableHeader, { type SortDir } from '../components/common/SortableHeader';
 
 type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen' | 'rack_name' | 'location_address';
 type DiscoveredSortKey = 'identity' | 'address' | 'mac_address' | 'seen_by' | 'discovered_at';
-type SortDir = 'asc' | 'desc';
 
-function SortableHeader({
-  label,
-  active,
-  dir,
-  onClick,
-  align = 'left',
-}: {
-  label: string;
-  active: boolean;
-  dir: SortDir;
-  onClick: () => void;
-  align?: 'left' | 'center' | 'right';
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={clsx(
-        'inline-flex items-center gap-1.5 text-inherit transition-colors',
-        align === 'center' && 'justify-center',
-        align === 'right' && 'justify-end'
-      )}
-      style={{ color: 'inherit' }}
-      onMouseEnter={e => (e.currentTarget.style.color = 'var(--ink)')}
-      onMouseLeave={e => (e.currentTarget.style.color = 'inherit')}
-      title={`Sort by ${label}`}
-    >
-      <span>{label}</span>
-      {active ? (dir === 'asc' ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />) : (
-        <ArrowUpDown className="w-3.5 h-3.5 opacity-50" />
-      )}
-    </button>
-  );
-}
 
 function GlowDot({ device }: { device: Device }) {
   const state = displayState(device);
@@ -627,7 +593,7 @@ export default function DevicesPage() {
                             flex-wrap keeps a long tag list from pushing the name
                             off the row on narrow screens. */}
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[13px] font-medium" style={{ color: 'var(--ink)' }}>{device.name}</span>
+                          <span className="cell-primary">{device.name}</span>
                           {device.tags?.map(tag => (
                             <span
                               key={tag.id}

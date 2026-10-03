@@ -890,7 +890,9 @@ function OperationsView({
                       fingerprint: item.fingerprint!, hours: 24,
                       category: item.category, title: item.title,
                     })}
-                    disabled={dismissInsight.isPending}
+                    // Only the insight being snoozed: one shared flag dimmed
+                    // every button in the list at once (#215).
+                    disabled={dismissInsight.isPending && dismissInsight.variables?.fingerprint === item.fingerprint}
                     title="Hide this for 24 hours. It returns if it is still true."
                     className="text-[11.5px] rounded-[5px] px-2 py-[6px] whitespace-nowrap transition-colors disabled:opacity-50"
                     style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink-3)' }}

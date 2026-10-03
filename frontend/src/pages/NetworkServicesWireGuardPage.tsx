@@ -12,6 +12,9 @@ import { apiErrorMessage } from '../utils/apiError';
 import { rosDurationSeconds } from '../utils/rosDuration';
 import ListInput from '../components/common/ListInput';
 import { isIpOrPrefix, splitList } from '../utils/ipPrefix';
+import { Link } from 'react-router-dom';
+import DeviceTypePill from '../components/devices/DeviceTypePill';
+import TagChips, { type TagLike } from '../components/devices/TagChips';
 
 type NS = Record<string, string>;
 
@@ -225,27 +228,18 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function NetworkServicesWireGuardPage() {
+/** One device's WireGuard interfaces and peers, as a card (#209). */
+function DeviceWireGuardCard({ device }: { device: { id: number; name: string; device_type?: string; status?: string; tags?: TagLike[] } }) {
   const canWrite = useCanWrite();
   const qc = useQueryClient();
-  const [selectedDeviceId, setSelectedDeviceId] = useState<number | ''>('');
+  const deviceId = device.id;
   const [expandedIface, setExpandedIface] = useState<string | null>(null);
   const [ifaceForm, setIfaceForm] = useState<NS | 'new' | null>(null);
   const [peerForm, setPeerForm] = useState<{ ifaceName: string; existing?: NS } | null>(null);
 
-  const { data: devices = [] } = useQuery({
-    queryKey: ['devices'],
-    queryFn: () => devicesApi.list().then(r => r.data),
-    staleTime: 60_000,
-  });
-
-  const deviceId = typeof selectedDeviceId === 'number' ? selectedDeviceId : 0;
-  const selectedDevice = devices.find(d => d.id === deviceId);
-
   const { data: wg, isLoading, refetch, isFetching, error } = useQuery({
     queryKey: ['ns-wireguard', deviceId],
     queryFn: () => networkServicesApi.getWireGuard(deviceId).then(r => r.data),
-    enabled: deviceId > 0,
   });
 
   // Turning off or deleting the tunnel the manager arrives through is predicted
@@ -281,7 +275,7 @@ export default function NetworkServicesWireGuardPage() {
   const peersForIface = (name: string) => (wg?.peers || []).filter(p => p['interface'] === name);
 
   return (
-    <div className="space-y-6">
+    <div className="card overflow-hidden">
       {/* Modals */}
       {ifaceForm && (
         <IfaceForm
@@ -299,59 +293,41 @@ export default function NetworkServicesWireGuardPage() {
         />
       )}
 
-      {writeError && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{writeError}</div>}
-      <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={selectedDevice?.name}
+      {writeError && <div className="m-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{writeError}</div>}
+      <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={device.name}
         pending={toggleIface.isPending || deleteIface.isPending} />
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">WireGuard</h1>
-          <p className="text-sm text-gray-500 dark:text-slate-400">WireGuard VPN interfaces and peers</p>
-        </div>
-        {deviceId > 0 && (
-          <div className="flex items-center gap-2">
-            {canWrite && (
-              <button onClick={() => setIfaceForm('new')}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
-                <Plus className="w-3.5 h-3.5" />New Interface
-              </button>
-            )}
-            <button onClick={() => refetch()} disabled={isFetching}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors">
-              <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />Refresh
+      {/* Device header */}
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-200 dark:border-slate-700">
+        <DeviceTypePill type={device.device_type} />
+        <Link to={`/devices/${device.id}`} className="cell-primary hover:underline">{device.name}</Link>
+        <TagChips tags={device.tags} />
+        {device.status !== 'online' && (
+          <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><AlertTriangle className="w-3.5 h-3.5" />offline</span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {canWrite && (
+            <button onClick={() => setIfaceForm('new')}
+              className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors">
+              <Plus className="w-3 h-3" />New Interface
             </button>
-          </div>
-        )}
+          )}
+          <button onClick={() => refetch()} disabled={isFetching} title="Refresh" aria-label="Refresh"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 disabled:opacity-50">
+            <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />
+          </button>
+        </div>
       </div>
 
-      {/* Device selector */}
-      <div className="card p-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-2">Select Device</label>
-        <select className="input w-full max-w-xs" value={selectedDeviceId}
-          onChange={e => setSelectedDeviceId(e.target.value === '' ? '' : parseInt(e.target.value))}>
-          <option value="">— Choose a device —</option>
-          {devices.map(d => <option key={d.id} value={d.id}>{d.name} ({d.ip_address}){d.status !== 'online' ? ' — offline' : ''}</option>)}
-        </select>
-        {selectedDevice?.status !== 'online' && deviceId > 0 && (
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-            <AlertTriangle className="w-3.5 h-3.5" />This device is currently offline.
-          </div>
-        )}
-      </div>
-
-      {deviceId === 0 && <div className="card p-8 text-center text-sm text-gray-400 dark:text-slate-500">Select a device above.</div>}
-      {deviceId > 0 && isLoading && <div className="card p-8 text-center text-sm text-gray-400 dark:text-slate-500">Loading…</div>}
-      {deviceId > 0 && error && (
-        <div className="card p-4 flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />Failed: {(error as Error).message}
+      {isLoading && <div className="p-5 text-center text-sm text-gray-400 dark:text-slate-500">Loading…</div>}
+      {error && (
+        <div className="p-4 flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />Failed: {apiErrorMessage(error)}
         </div>
       )}
 
-      {wg && wg.interfaces.length === 0 && deviceId > 0 && !isLoading && (
-        <div className="card p-8 text-center text-sm text-gray-400 dark:text-slate-500">
-          No WireGuard interfaces configured.{canWrite && ' Click "New Interface" to add one.'}
-        </div>
+      {wg && wg.interfaces.length === 0 && !isLoading && (
+        <div className="p-5 text-center text-sm text-gray-400 dark:text-slate-500">No WireGuard interfaces.</div>
       )}
 
       {wg && wg.interfaces.map(iface => {
@@ -363,7 +339,7 @@ export default function NetworkServicesWireGuardPage() {
         const isExpanded = expandedIface === name;
 
         return (
-          <div key={id || name} className="card overflow-hidden">
+          <div key={id || name} className="border-b last:border-b-0 border-gray-100 dark:border-slate-700/60">
             {/* Interface header */}
             <div className="flex items-center border-b border-gray-200 dark:border-slate-700">
               <button onClick={() => setExpandedIface(isExpanded ? null : name)}
@@ -499,6 +475,72 @@ export default function NetworkServicesWireGuardPage() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Every device in the site at once (#209), the way CAPsMAN controllers show on
+ * the Wireless page, instead of picking one device at a time. Devices with
+ * WireGuard get a card; the rest are listed underneath with a way to add one.
+ */
+export default function NetworkServicesWireGuardPage() {
+  const canWrite = useCanWrite();
+  const [adding, setAdding] = useState<number | null>(null);
+
+  const { data: devices = [], isLoading: devicesLoading } = useQuery({
+    queryKey: ['devices'],
+    queryFn: () => devicesApi.list().then(r => r.data),
+    staleTime: 60_000,
+  });
+  // How many WireGuard interfaces each device has, from the services overview.
+  const { data: overview = [], isLoading: overviewLoading } = useQuery({
+    queryKey: ['network-services-overview'],
+    queryFn: () => networkServicesApi.overview().then(r => r.data as Record<string, unknown>[]),
+    staleTime: 60_000,
+  });
+  const wgCount = new Map(overview.map((o) => [o.id as number, (o.wireguard as { total?: number } | null)?.total ?? null]));
+  const withWg = devices.filter((d) => (wgCount.get(d.id) ?? 0) > 0 || d.id === adding);
+  const unread = devices.filter((d) => wgCount.has(d.id) && wgCount.get(d.id) === null && d.id !== adding);
+  const without = devices.filter((d) => wgCount.get(d.id) === 0 && d.id !== adding);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">WireGuard</h1>
+        <p className="text-sm text-gray-500 dark:text-slate-400">WireGuard interfaces and peers on every device in this site</p>
+      </div>
+
+      {(devicesLoading || overviewLoading) && <div className="card p-8 text-center text-sm text-gray-400 dark:text-slate-500">Loading…</div>}
+
+      {!devicesLoading && !overviewLoading && withWg.length === 0 && (
+        <div className="card p-8 text-center text-sm text-gray-400 dark:text-slate-500">No device in this site has a WireGuard interface.</div>
+      )}
+
+      {withWg.map((d) => <DeviceWireGuardCard key={d.id} device={d} />)}
+
+      {(without.length > 0 || unread.length > 0) && !overviewLoading && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 text-sm font-semibold text-gray-700 dark:text-slate-200">
+            Without WireGuard ({without.length}){unread.length > 0 && <span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">{unread.length} couldn&apos;t be read</span>}
+          </div>
+          <div className="divide-y divide-gray-100 dark:divide-slate-700/60">
+            {[...without, ...unread].map((d) => (
+              <div key={d.id} className="flex items-center gap-2 px-5 py-2">
+                <DeviceTypePill type={d.device_type} />
+                <Link to={`/devices/${d.id}`} className="cell-primary hover:underline">{d.name}</Link>
+                <TagChips tags={d.tags} />
+                {wgCount.get(d.id) === null && <span className="text-xs text-amber-600 dark:text-amber-400">couldn&apos;t read</span>}
+                {canWrite && (
+                  <button onClick={() => setAdding(d.id)} className="ml-auto text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                    Show / add interface
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban, Download } from 'lucide-react';
 import { commandsApi, devicesApi, type CommandRunDetail, tagsApi} from '../services/api';
 import CommandTemplateBar from '../components/commands/CommandTemplateBar';
+import DevicePicker from '../components/devices/DevicePicker';
 
 /**
  * Bulk command execution.
@@ -93,8 +94,6 @@ export default function CommandsPage() {
     },
   });
 
-  const toggle = (id: number) =>
-    setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
 
   const risky = preview?.risky ?? false;
   // Guards off on a command that can sever management is the one combination
@@ -175,15 +174,7 @@ export default function CommandsPage() {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-slate-700 p-2">
-            {devices.map(d => (
-              <label key={d.id} className="flex items-center gap-2 text-xs px-1 py-0.5">
-                <input type="checkbox" checked={selected.includes(d.id)} onChange={() => toggle(d.id)} />
-                <span className="truncate text-gray-900 dark:text-white">{d.name.trim()}</span>
-                {d.status !== 'online' && <span className="text-gray-400 text-[10px]">offline</span>}
-              </label>
-            ))}
-          </div>
+          <DevicePicker devices={devices} selected={selected} onChange={setSelected} />
         </div>
 
         {/* The controls that make this different from a shell loop */}

@@ -11,6 +11,7 @@ import { useCanWrite } from '../hooks/useCanWrite';
 import { formatDistanceToNow } from 'date-fns';
 import ChangelogModal from '../components/ChangelogModal';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
+import TagChips from '../components/devices/TagChips';
 import RolloutPanel from '../components/firmware/RolloutPanel';
 import { ROLLOUT_STATUS } from '../components/firmware/rolloutStatus';
 
@@ -274,16 +275,8 @@ export default function FirmwarePage() {
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
                           <DeviceTypePill type={d.device_type} />
-                          <span className="font-medium text-gray-900 dark:text-white">{d.name}</span>
-                          {d.tags?.map(tag => (
-                            <span
-                              key={tag.id}
-                              className="text-[10px] px-[5px] py-[1px] rounded-full font-medium"
-                              style={{ background: tag.color + '33', color: tag.color, border: `1px solid ${tag.color}55` }}
-                            >
-                              {tag.name}
-                            </span>
-                          ))}
+                          <span className="cell-primary">{d.name}</span>
+                          <TagChips tags={d.tags} />
                           {d.status !== 'online' && <span className="text-[10px] text-red-400">offline</span>}
                         </div>
                       </td>

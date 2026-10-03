@@ -1,14 +1,16 @@
 # Network services
 
 DHCP, DNS, NTP, WireGuard, logging, NetFlow and discovery, viewed across the fleet rather than
-one device at a time. **Network Services → Overview** summarises which devices run what.
+one device at a time. **Network Services → Overview** is a table of which devices run what:
+search it, sort by any service, and click a row to open the device.
 
 Everything here writes to the device. Changes go through [Change Guard](change-guard.md) where
 they could affect reachability.
 
 ## DHCP
 
-Servers, address pools and leases, per device.
+Servers, address pools and leases, per device. A device's lease list shows the first 100;
+**Show all** lists the rest.
 
 - **Leases** lists every current lease across the fleet, with the client it belongs to. A
   dynamic lease can be converted to static in place, which is the usual way to pin an address
@@ -51,6 +53,11 @@ saving NTP settings on such a device failed with an error 500.
 Interfaces and peers per device: create, edit, enable, disable and remove. Peer public keys and
 allowed addresses are shown so a tunnel can be checked against the far end without leaving the
 platform.
+
+Every device in the site that has WireGuard gets its own card. Devices without it are listed
+underneath; **Show / add interface** opens a card for one so an interface can be added.
+
+A peer's persistent keepalive is in seconds; leave it empty to turn keepalive off.
 
 ## Logging (syslog)
 

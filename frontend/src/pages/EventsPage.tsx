@@ -33,6 +33,8 @@ export default function EventsPage() {
   const [topic, setTopic] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [page, setPage] = useState(0);
+  // NTP/cloud clock adjustments are routine and hidden by default (#213).
+  const [showClock, setShowClock] = useState(false);
   // RouterOS reports topics as a comma-separated list, so the server splits them
   // into individual tokens and counts them across the whole table — the operator
   // picks from what actually exists rather than guessing a spelling (#108).
@@ -59,7 +61,7 @@ export default function EventsPage() {
       : [...severities].join(',');
 
   const { data: eventsData, isLoading } = useQuery({
-    queryKey: ['events', { search, severityParam, topic, deviceId, page }],
+    queryKey: ['events', { search, severityParam, topic, deviceId, page, showClock }],
     queryFn: () =>
       eventsApi
         .list({
@@ -69,6 +71,7 @@ export default function EventsPage() {
           deviceId: deviceId ? parseInt(deviceId) : undefined,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
+          ...(showClock ? { clock: 1 as const } : {}),
         })
         .then((r) => r.data),
     refetchInterval: 30_000,
@@ -162,6 +165,14 @@ export default function EventsPage() {
               <span className={clsx('text-xs font-medium', color)}>{label}</span>
             </label>
           ))}
+          <span className="w-px h-4 bg-gray-200 dark:bg-slate-600" />
+          <label className="flex items-center gap-1.5 cursor-pointer select-none"
+            title="NTP and IP Cloud clock adjustments ('ntp change time', 'cloud change time')">
+            <input type="checkbox" checked={showClock}
+              onChange={(e) => { setShowClock(e.target.checked); setPage(0); }}
+              className="w-3.5 h-3.5 rounded accent-current cursor-pointer" />
+            <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Clock changes</span>
+          </label>
         </div>
 
         <select

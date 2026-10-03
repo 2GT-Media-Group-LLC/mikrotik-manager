@@ -12,6 +12,8 @@ import BackupViewerModal from '../components/backups/BackupViewerModal';
 import { orderForDiff } from '../utils/backupCompare';
 import { format } from 'date-fns';
 import clsx from 'clsx';
+import DeviceTypePill from '../components/devices/DeviceTypePill';
+import TagChips from '../components/devices/TagChips';
 
 /** One home for backup-type wording, used by the filter and the table badge. */
 const TYPE_LABEL: Record<string, string> = {
@@ -379,6 +381,7 @@ export default function BackupsPage() {
                     className="cursor-pointer"
                   />
                 </th>
+                <th className="table-header px-1 py-2.5 w-6" aria-label="Contains secrets" />
                 <th className="table-header px-4 py-2.5 text-left">Device</th>
                 <th className="table-header px-4 py-2.5 text-left">Type</th>
                 <th className="table-header px-4 py-2.5 text-left">Size</th>
@@ -407,8 +410,21 @@ export default function BackupsPage() {
                       className="cursor-pointer"
                     />
                   </td>
-                  <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">
-                    {backup.device_name || '—'}
+                  {/* Secrets as a small lock, not a badge in Type: it isn't a type (#219). */}
+                  <td className="px-1 py-2.5">
+                    {backup.contains_secrets && (
+                      <span title="Includes passwords and keys. Encrypted on disk; only admins can view or download it."
+                        aria-label="Contains secrets" className="inline-flex text-green-600 dark:text-green-400">
+                        <Lock className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {backup.device_type && <DeviceTypePill type={backup.device_type} />}
+                      <span className="cell-primary">{backup.device_name || '—'}</span>
+                      <TagChips tags={backup.device_tags} />
+                    </div>
                   </td>
                   <td className="px-4 py-2.5">
                     <span
@@ -429,14 +445,6 @@ export default function BackupsPage() {
                     >
                       {TYPE_LABEL[backup.backup_type ?? ''] ?? backup.backup_type ?? 'Manual'}
                     </span>
-                    {backup.contains_secrets && (
-                      <span
-                        className="ml-1.5 inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
-                        title="Includes passwords and keys. Encrypted on disk; only admins can view or download it."
-                      >
-                        <Lock className="w-3 h-3" /> secrets
-                      </span>
-                    )}
                   </td>
                   <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">
                     {formatBytes(backup.size_bytes)}

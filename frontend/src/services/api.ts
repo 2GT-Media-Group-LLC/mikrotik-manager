@@ -943,6 +943,8 @@ export const eventsApi = {
     since?: string;
     limit?: number;
     offset?: number;
+    /** 1 includes NTP/cloud clock adjustments, hidden by default (#213). */
+    clock?: 1;
   }) =>
     api.get<{ events: DeviceEvent[]; total: number; criticalCount: number }>('/events', { params }),
   clear: (deviceId?: number) => api.delete('/events', { params: deviceId ? { deviceId } : {} }),

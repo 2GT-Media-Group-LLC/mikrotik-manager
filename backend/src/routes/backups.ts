@@ -72,7 +72,11 @@ router.get('/', async (req: Request, res: Response) => {
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const backups = await query(
-    `SELECT b.*, d.name as device_name
+    // Device type and tags, for the Backups table (#219).
+    `SELECT b.*, d.name as device_name, d.device_type,
+            COALESCE((SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name)
+                        FROM device_tags dt JOIN tags t ON t.id = dt.tag_id
+                       WHERE dt.device_id = d.id), '[]'::json) AS device_tags
        FROM backups b JOIN devices d ON d.id = b.device_id
        ${where}
       ORDER BY b.created_at DESC`,

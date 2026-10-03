@@ -256,7 +256,11 @@ export class SshKeyService {
         const out = await exec(conn, `/user ssh-keys import public-key-file=${fileName} user=${username}`);
         const rejected = importRejection(out);
         if (rejected) throw new Error(`Device rejected the key import: ${rejected}`);
-        await exec(conn, `/file remove ${fileName}`).catch(() => '');
+        // RouterOS deletes the key file itself as part of the import. A plain
+        // `/file remove <name>` then failed, and RouterOS logged "executing
+        // script from sshd failed ... no such item" (#214). [find] matches
+        // nothing when it's already gone.
+        await exec(conn, `/file remove [find name="${fileName}"]`).catch(() => '');
       });
     } catch (e) {
       const msg = (e as Error).message;

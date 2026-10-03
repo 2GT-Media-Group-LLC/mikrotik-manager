@@ -41,7 +41,7 @@ keys and SNMP communities, so a restore brings back the configuration without th
 adds them, using `/export compact show-sensitive`. A backup that holds them:
 
 - is **encrypted on disk** with `ENCRYPTION_KEY`, the same key that protects device logins
-- is marked **secrets** in the Backups list
+- is marked with a green lock in the Backups list
 - can be **previewed, compared and downloaded only by admins**; the download is the readable
   `.rsc`, decrypted
 - can still be **restored by operators**, since restoring sends the secrets back to the device

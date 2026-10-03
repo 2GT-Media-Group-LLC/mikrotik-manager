@@ -40,7 +40,9 @@ tried the v6 form. The old `/api/config-templates` endpoints now answer `410 Gon
 
 ## Choosing devices
 
-Pick them individually, or use **All** / **None**.
+Pick them individually, or use **All** / **None**. Devices are grouped by site, with a
+checkbox per site that selects all of it, and a search box once the list is long. The same
+picker is used for [maintenance windows](alerting.md#maintenance-windows).
 
 Where devices carry tags, each tag in use appears as a chip beside those buttons and selects
 every device carrying it. Tags are assigned on the device page, or to many devices at once

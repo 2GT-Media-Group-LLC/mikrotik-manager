@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Server, RefreshCw, AlertTriangle, Power, Plus, Pencil, Trash2,
-  ChevronDown, ChevronRight, X, Check,
+  X, Check,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
@@ -323,28 +323,24 @@ interface SectionProps {
   color: string;
   title: string;
   count: number;
-  open: boolean;
-  onToggle: () => void;
   action?: React.ReactNode;
   children: React.ReactNode;
 }
 
-function Section({ color, title, count, open, onToggle, action, children }: SectionProps) {
+// A plain card: the sections used to collapse, hiding most of the page behind
+// clicks (#211).
+function Section({ color, title, count, action, children }: SectionProps) {
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center border-b border-gray-200 dark:border-slate-700">
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-2 flex-1 px-5 py-3 hover:bg-gray-50 dark:hover:bg-slate-800/40 transition-colors text-left"
-        >
-          {open ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+        <div className="flex items-center gap-2 flex-1 px-5 py-3">
           <Server className={clsx('w-4 h-4', color)} />
           <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">{title}</h2>
           <span className="ml-2 text-xs text-gray-400 dark:text-slate-500">{count}</span>
-        </button>
+        </div>
         {action && <div className="px-3">{action}</div>}
       </div>
-      {open && children}
+      {children}
     </div>
   );
 }
@@ -473,8 +469,14 @@ interface LeaseTableProps {
   onDelete: (id: string) => void;
 }
 
+const LEASE_PREVIEW = 100;
+
 function LeaseTable({ leases, canWrite, onDelete }: LeaseTableProps) {
+  // A busy server can hold thousands of leases: the first 100 show, the rest on
+  // request, now that the card is always open (#211).
+  const [showAll, setShowAll] = useState(false);
   if (leases.length === 0) return <div className="px-5 py-6 text-sm text-gray-400 dark:text-slate-500 text-center">No leases.</div>;
+  const shown = showAll ? leases : leases.slice(0, LEASE_PREVIEW);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -488,7 +490,7 @@ function LeaseTable({ leases, canWrite, onDelete }: LeaseTableProps) {
           </tr>
         </thead>
         <tbody>
-          {leases.map((l, i) => {
+          {shown.map((l, i) => {
             const isStatic = l['dynamic'] !== 'true';
             return (
               <tr key={l['.id'] || i} className={clsx('border-b border-gray-100 dark:border-slate-800 transition-colors hover:bg-blue-50 dark:hover:bg-slate-700/40', i % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-gray-50 dark:bg-slate-800/40')}>
@@ -515,6 +517,13 @@ function LeaseTable({ leases, canWrite, onDelete }: LeaseTableProps) {
           })}
         </tbody>
       </table>
+      {leases.length > LEASE_PREVIEW && (
+        <div className="px-5 py-2.5 border-t border-gray-100 dark:border-slate-800 text-xs">
+          <button onClick={() => setShowAll((v) => !v)} className="text-blue-600 dark:text-blue-400 hover:underline">
+            {showAll ? `Show the first ${LEASE_PREVIEW}` : `Show all ${leases.length} leases`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -525,12 +534,6 @@ export default function NetworkServicesDHCPPage() {
   const canWrite = useCanWrite();
   const qc = useQueryClient();
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | ''>('');
-  const [v4Open, setV4Open] = useState(true);
-  const [v6Open, setV6Open] = useState(true);
-  const [poolsV4Open, setPoolsV4Open] = useState(false);
-  const [poolsV6Open, setPoolsV6Open] = useState(false);
-  const [leasesOpen, setLeasesOpen] = useState(false);
-  const [leasesV6Open, setLeasesV6Open] = useState(false);
 
   // Modals
   const [serverForm, setServerForm] = useState<{ protocol: 'ipv4' | 'ipv6'; existing?: NS } | null>(null);
@@ -555,13 +558,13 @@ export default function NetworkServicesDHCPPage() {
   const { data: leasesV4 = [] } = useQuery({
     queryKey: ['ns-leases', deviceId, 'ipv4'],
     queryFn: () => networkServicesApi.getLeases(deviceId, 'ipv4').then(r => r.data),
-    enabled: deviceId > 0 && leasesOpen,
+    enabled: deviceId > 0,
   });
 
   const { data: leasesV6 = [] } = useQuery({
     queryKey: ['ns-leases', deviceId, 'ipv6'],
     queryFn: () => networkServicesApi.getLeases(deviceId, 'ipv6').then(r => r.data),
-    enabled: deviceId > 0 && leasesV6Open,
+    enabled: deviceId > 0,
   });
 
   const deleteServer = useMutation({
@@ -687,7 +690,6 @@ export default function NetworkServicesDHCPPage() {
         <>
           {/* IPv4 Servers */}
           <Section color="text-blue-500" title="IPv4 DHCP Servers" count={dhcp.ipv4.length}
-            open={v4Open} onToggle={() => setV4Open(o => !o)}
             action={canWrite ? <button onClick={() => setServerForm({ protocol: 'ipv4' })} className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"><Plus className="w-3 h-3" />Add</button> : undefined}>
             <ServerTable servers={dhcp.ipv4} protocol="ipv4" canWrite={canWrite}
               conflictDevices={conflictDevicesV4 as { name: unknown }[]}
@@ -698,7 +700,6 @@ export default function NetworkServicesDHCPPage() {
 
           {/* IPv4 Pools */}
           <Section color="text-cyan-500" title="IPv4 Address Pools" count={dhcp.pools_v4.length}
-            open={poolsV4Open} onToggle={() => setPoolsV4Open(o => !o)}
             action={canWrite ? <button onClick={() => setPoolForm('ipv4')} className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"><Plus className="w-3 h-3" />Add</button> : undefined}>
             <PoolTable pools={dhcp.pools_v4} protocol="ipv4" canWrite={canWrite}
               onDelete={(id) => deletePool.mutate({ id, protocol: 'ipv4' })} />
@@ -706,7 +707,6 @@ export default function NetworkServicesDHCPPage() {
 
           {/* IPv4 Leases */}
           <Section color="text-sky-500" title="IPv4 Leases" count={leasesV4.length}
-            open={leasesOpen} onToggle={() => setLeasesOpen(o => !o)}
             action={canWrite ? <button onClick={() => setLeaseForm('ipv4')} className="flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"><Plus className="w-3 h-3" />Static</button> : undefined}>
             <LeaseTable leases={leasesV4} canWrite={canWrite}
               onDelete={(id) => deleteLease.mutate({ id, protocol: 'ipv4' })} />
@@ -714,7 +714,6 @@ export default function NetworkServicesDHCPPage() {
 
           {/* IPv6 Servers */}
           <Section color="text-indigo-500" title="IPv6 DHCP Servers" count={dhcp.ipv6.length}
-            open={v6Open} onToggle={() => setV6Open(o => !o)}
             action={canWrite ? <button onClick={() => setServerForm({ protocol: 'ipv6' })} className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"><Plus className="w-3 h-3" />Add</button> : undefined}>
             <ServerTable servers={dhcp.ipv6} protocol="ipv6" canWrite={canWrite}
               conflictDevices={conflictDevicesV6 as { name: unknown }[]}
@@ -725,7 +724,6 @@ export default function NetworkServicesDHCPPage() {
 
           {/* IPv6 Pools */}
           <Section color="text-violet-500" title="IPv6 Address Pools" count={dhcp.pools_v6.length}
-            open={poolsV6Open} onToggle={() => setPoolsV6Open(o => !o)}
             action={canWrite ? <button onClick={() => setPoolForm('ipv6')} className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"><Plus className="w-3 h-3" />Add</button> : undefined}>
             <PoolTable pools={dhcp.pools_v6} protocol="ipv6" canWrite={canWrite}
               onDelete={(id) => deletePool.mutate({ id, protocol: 'ipv6' })} />
@@ -733,7 +731,6 @@ export default function NetworkServicesDHCPPage() {
 
           {/* IPv6 Leases */}
           <Section color="text-purple-500" title="IPv6 Bindings" count={leasesV6.length}
-            open={leasesV6Open} onToggle={() => setLeasesV6Open(o => !o)}
             action={canWrite ? <button onClick={() => setLeaseForm('ipv6')} className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"><Plus className="w-3 h-3" />Static</button> : undefined}>
             <LeaseTable leases={leasesV6} canWrite={canWrite}
               onDelete={(id) => deleteLease.mutate({ id, protocol: 'ipv6' })} />

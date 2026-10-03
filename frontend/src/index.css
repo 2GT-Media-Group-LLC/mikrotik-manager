@@ -249,6 +249,13 @@
     @apply text-left text-[10.5px] font-medium uppercase tracking-[0.08em];
   }
 
+  /* The primary text in a table row (usually the device name), the same size
+     everywhere: tables had drifted between 13px and 14px (#217). */
+  .cell-primary {
+    color: var(--ink);
+    @apply text-[13px] font-medium;
+  }
+
   /* Zebra striping — uses :where() so explicit bg on <tr> always wins */
   :where(.table-zebra > tr:nth-child(even)) {
     background: var(--surface-2);

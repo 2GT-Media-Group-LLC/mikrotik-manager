@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { maintenanceApi, devicesApi, type MaintenanceWindow } from '../../services/api';
+import DevicePicker from '../devices/DevicePicker';
 
 /**
  * Maintenance windows (P2-26).
@@ -96,8 +97,6 @@ export default function MaintenanceWindowsCard({ isAdmin, timeZone }: { isAdmin:
   });
 
   const endsBeforeStart = form.start && form.end && new Date(form.end) <= new Date(form.start);
-  const toggleDevice = (id: number) =>
-    setDeviceIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   return (
     <div className="card p-5">
@@ -143,13 +142,8 @@ export default function MaintenanceWindowsCard({ isAdmin, timeZone }: { isAdmin:
             <summary className="cursor-pointer px-3 py-2 text-sm text-gray-700 dark:text-slate-300">
               Devices: {deviceIds.length === 0 ? <strong>All devices</strong> : <strong>{deviceIds.length} selected</strong>}
             </summary>
-            <div className="px-3 pb-3 pt-1 max-h-56 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1">
-              {devices.map((d) => (
-                <label key={d.id} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
-                  <input type="checkbox" checked={deviceIds.includes(d.id)} onChange={() => toggleDevice(d.id)} />
-                  {d.name}
-                </label>
-              ))}
+            <div className="px-3 pb-3 pt-1 space-y-1.5">
+              <DevicePicker devices={devices} selected={deviceIds} onChange={setDeviceIds} maxHeight="max-h-56" />
               {deviceIds.length > 0 && (
                 <button type="button" className="text-xs text-blue-600 text-left" onClick={() => setDeviceIds([])}>
                   Clear, to cover all devices

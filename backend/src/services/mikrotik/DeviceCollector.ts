@@ -59,6 +59,7 @@ import { translateToWifiParams } from './wifiParams';
 import { toV7FilterRule } from './routeFilter';
 import { usesRemoteLogFormat, toSyslogActionParams } from './syslogAction';
 import { configuredServices } from '../../utils/ipServices';
+import { isClockChangeLine } from '../../utils/clockLogLines';
 import { planNtpWrites, isLegacyClient, legacyServerList, type NtpForm } from './ntpSettings';
 
 /** A RouterOS property name: lower-case words joined by '-' or '.', never '.id'. */
@@ -1088,7 +1089,7 @@ export class DeviceCollector {
         const topics = ((log['topics'] as string) || '').slice(0, 100); // events.topic is VARCHAR(100)
         const message = ((log['message'] as string) || '').slice(0, MAX_LOG_MESSAGE);
         const time = this.parseLogTime(log['time'] || '');
-        const severity = this.mapLogSeverity(topics);
+        const severity = this.mapLogSeverity(topics, message);
         // Never store a null log_id: the unique index that stops re-insertion
         // does not constrain nulls, so a device whose lines carry no `.id`
         // would accumulate the same entries for ever (#137).
@@ -1186,7 +1187,9 @@ export class DeviceCollector {
     return parsed ?? new Date();
   }
 
-  private mapLogSeverity(topics: string): string {
+  private mapLogSeverity(topics: string, message?: string): string {
+    // A clock adjustment is routine, whatever RouterOS tags it (#213).
+    if (isClockChangeLine(message)) return 'info';
     if (topics.includes('critical') || topics.includes('error')) return 'error';
     if (topics.includes('warning')) return 'warning';
     if (topics.includes('info')) return 'info';

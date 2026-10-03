@@ -101,7 +101,7 @@ export default function RolloutPanel({ rolloutId, canWrite }: { rolloutId: numbe
                   {d.status === 'failed' && <XCircle className="w-3 h-3" />}
                   {meta.label}
                 </span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white truncate">{d.device_name}</span>
+                <span className="cell-primary truncate">{d.device_name}</span>
                 <span className="font-mono text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1 flex-shrink-0">
                   {d.from_version || '—'}
                   {(d.to_version || d.status === 'success') && <><ChevronRight className="w-3 h-3" />{d.to_version || '?'}</>}

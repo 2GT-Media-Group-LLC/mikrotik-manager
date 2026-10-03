@@ -1,11 +1,12 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import {
-  Server, RefreshCw, CheckCircle, XCircle, MinusCircle,
-  Globe, Clock, Shield, Wifi, FileText,
-} from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import clsx from 'clsx';
-import { networkServicesApi } from '../services/api';
+import { networkServicesApi, devicesApi } from '../services/api';
+import DeviceTypePill from '../components/devices/DeviceTypePill';
+import TagChips from '../components/devices/TagChips';
+import SortableHeader, { type SortDir } from '../components/common/SortableHeader';
 
 interface DeviceServiceRow {
   id: number;
@@ -20,184 +21,173 @@ interface DeviceServiceRow {
   error?: string;
 }
 
-function ServiceCell({ active, label }: { active: boolean | null; label?: string }) {
-  if (active === null) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-slate-500">
-        <MinusCircle className="w-3.5 h-3.5" />
-        {label ?? '—'}
-      </span>
-    );
+type ServiceKey = 'dhcp_v4' | 'dhcp_v6' | 'dns' | 'ntp' | 'wireguard' | 'syslog';
+type SortKey = 'name' | ServiceKey;
+
+const SERVICES: { key: ServiceKey; label: string }[] = [
+  { key: 'dhcp_v4', label: 'DHCP v4' },
+  { key: 'dhcp_v6', label: 'DHCP v6' },
+  { key: 'dns', label: 'DNS' },
+  { key: 'ntp', label: 'NTP' },
+  { key: 'wireguard', label: 'WireGuard' },
+  { key: 'syslog', label: 'Logging' },
+];
+
+/** on / off / not configured / unknown, with the text shown beside it. */
+interface Cell { state: 'on' | 'off' | 'none' | 'unknown'; label: string }
+
+function cellFor(row: DeviceServiceRow, key: ServiceKey): Cell {
+  const svc = row[key];
+  if (row.error || !svc) return { state: 'unknown', label: '—' };
+  switch (key) {
+    case 'dhcp_v4':
+    case 'dhcp_v6': {
+      const s = svc as { total: number; enabled: number };
+      if (s.total === 0) return { state: 'none', label: 'None' };
+      return { state: s.enabled > 0 ? 'on' : 'off', label: `${s.enabled}/${s.total} on` };
+    }
+    case 'dns': {
+      const s = svc as { allow_remote: boolean };
+      return s.allow_remote ? { state: 'on', label: 'Remote on' } : { state: 'off', label: 'Local only' };
+    }
+    case 'ntp': {
+      const s = svc as { server_enabled: boolean; client_enabled: boolean };
+      if (s.server_enabled) return { state: 'on', label: 'Server on' };
+      if (s.client_enabled) return { state: 'on', label: 'Client' };
+      return { state: 'off', label: 'Off' };
+    }
+    case 'wireguard': {
+      const s = svc as { total: number; running: number };
+      if (s.total === 0) return { state: 'none', label: 'None' };
+      return { state: s.running > 0 ? 'on' : 'off', label: `${s.running}/${s.total} up` };
+    }
+    case 'syslog': {
+      const s = svc as { remote_count: number };
+      return s.remote_count > 0 ? { state: 'on', label: `${s.remote_count} remote` } : { state: 'off', label: 'Local only' };
+    }
   }
-  if (active) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
-        <CheckCircle className="w-3.5 h-3.5" />
-        {label ?? 'Active'}
-      </span>
-    );
-  }
+}
+
+const STATE_RANK: Record<Cell['state'], number> = { on: 3, off: 2, none: 1, unknown: 0 };
+
+/** The same on/off dot as the WireGuard and DHCP panels (#212). */
+function ServiceState({ cell }: { cell: Cell }) {
+  if (cell.state === 'unknown') return <span className="text-xs text-gray-400 dark:text-slate-500">—</span>;
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-slate-500">
-      <XCircle className="w-3.5 h-3.5" />
-      {label ?? 'Inactive'}
+    <span className={clsx('inline-flex items-center gap-1.5 text-xs',
+      cell.state === 'on' ? 'text-green-700 dark:text-green-400 font-medium' : 'text-gray-500 dark:text-slate-400')}>
+      <span className={clsx('w-1.5 h-1.5 rounded-full',
+        cell.state === 'on' ? 'bg-green-500' : cell.state === 'off' ? 'bg-gray-400' : 'border border-gray-300 dark:border-slate-600')} />
+      {cell.label}
     </span>
   );
 }
 
+/**
+ * Which network services each device runs (#212): the whole page is the table,
+ * searchable and sortable, each row opening its device.
+ */
 export default function NetworkServicesOverviewPage() {
   const navigate = useNavigate();
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
 
   const { data = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['network-services-overview'],
     queryFn: () => networkServicesApi.overview().then(r => r.data as unknown as DeviceServiceRow[]),
     refetchInterval: 60_000,
   });
-
-  const serviceColumns = [
-    { key: 'dhcp_v4', label: 'DHCP v4', icon: Server, href: '/network-services/dhcp' },
-    { key: 'dhcp_v6', label: 'DHCP v6', icon: Server, href: '/network-services/dhcp' },
-    { key: 'dns',     label: 'DNS',     icon: Globe,  href: '/network-services/dns' },
-    { key: 'ntp',     label: 'NTP',     icon: Clock,  href: '/network-services/ntp' },
-    { key: 'wireguard', label: 'WireGuard', icon: Shield,    href: '/network-services/wireguard' },
-    { key: 'syslog',    label: 'Logging',   icon: FileText,  href: '/network-services/syslog' },
-  ] as const;
-
-  // KPI: for each service, how many devices have it active?
-  const kpis = serviceColumns.map((col) => {
-    const active = data.filter((d) => {
-      const svc = d[col.key];
-      if (!svc) return false;
-      if (col.key === 'dhcp_v4' || col.key === 'dhcp_v6') {
-        return (svc as { enabled: number }).enabled > 0;
-      }
-      if (col.key === 'dns') return (svc as { allow_remote: boolean }).allow_remote;
-      if (col.key === 'ntp') return (svc as { server_enabled: boolean }).server_enabled || (svc as { client_enabled: boolean }).client_enabled;
-      if (col.key === 'wireguard') return (svc as { running: number }).running > 0;
-      if (col.key === 'syslog') return (svc as { remote_count: number }).remote_count > 0;
-      return false;
-    }).length;
-    return { ...col, active, total: data.length };
+  // Type and tags come from the device list.
+  const { data: devices = [] } = useQuery({
+    queryKey: ['devices'],
+    queryFn: () => devicesApi.list().then(r => r.data),
+    staleTime: 60_000,
   });
+  const deviceById = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
 
-  function renderCell(device: DeviceServiceRow, key: typeof serviceColumns[number]['key']) {
-    const svc = device[key];
-    if (device.error || !svc) {
-      return <ServiceCell active={null} />;
-    }
-    if (key === 'dhcp_v4' || key === 'dhcp_v6') {
-      const s = svc as { total: number; enabled: number };
-      if (s.total === 0) return <ServiceCell active={null} label="None" />;
-      return <ServiceCell active={s.enabled > 0} label={`${s.enabled}/${s.total} active`} />;
-    }
-    if (key === 'dns') {
-      const s = svc as { allow_remote: boolean; servers: string };
-      return <ServiceCell active={s.allow_remote} label={s.allow_remote ? 'Remote on' : 'Local only'} />;
-    }
-    if (key === 'ntp') {
-      const s = svc as { server_enabled: boolean; client_enabled: boolean };
-      const label = s.server_enabled ? 'Server on' : s.client_enabled ? 'Client only' : 'Disabled';
-      return <ServiceCell active={s.server_enabled || s.client_enabled} label={label} />;
-    }
-    if (key === 'wireguard') {
-      const s = svc as { total: number; running: number };
-      if (s.total === 0) return <ServiceCell active={null} label="None" />;
-      return <ServiceCell active={s.running > 0} label={`${s.running}/${s.total} up`} />;
-    }
-    if (key === 'syslog') {
-      const s = svc as { remote_count: number };
-      return <ServiceCell active={s.remote_count > 0} label={s.remote_count > 0 ? `${s.remote_count} remote` : 'No remote'} />;
-    }
-    return <ServiceCell active={null} />;
-  }
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = data.filter((r) => {
+      if (!q) return true;
+      const d = deviceById.get(r.id);
+      return [r.name, r.ip_address, d?.model, ...(d?.tags ?? []).map((t) => t.name)]
+        .some((v) => v && String(v).toLowerCase().includes(q));
+    });
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      if (sort.key === 'name') return dir * a.name.localeCompare(b.name);
+      const diff = STATE_RANK[cellFor(a, sort.key).state] - STATE_RANK[cellFor(b, sort.key).state];
+      return diff !== 0 ? dir * diff : a.name.localeCompare(b.name);
+    });
+  }, [data, search, sort, deviceById]);
+
+  const flip = (key: SortKey) =>
+    setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'name' ? 'asc' : 'desc' }));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Network Services</h1>
-          <p className="text-sm text-gray-500 dark:text-slate-400">
-            Service status across all online devices
-          </p>
+          <p className="text-sm text-gray-500 dark:text-slate-400">Which services each device runs</p>
         </div>
-        <button
-          onClick={() => refetch()}
-          disabled={isFetching}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />
-          Refresh
-        </button>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        {kpis.map(({ key, label, icon: Icon, active, total, href }) => (
-          <button
-            key={key}
-            onClick={() => navigate(href)}
-            className="card p-4 flex flex-col gap-2 text-left hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
-                <Icon className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <span className="text-xs font-medium text-gray-500 dark:text-slate-400">{label}</span>
-            </div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{active}</div>
-            <div className="text-xs text-gray-400 dark:text-slate-500">of {total} device{total !== 1 ? 's' : ''}</div>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input className="input pl-8 w-56" placeholder="Search devices or tags" value={search}
+              onChange={(e) => setSearch(e.target.value)} aria-label="Search devices" />
+          </div>
+          <button onClick={() => refetch()} disabled={isFetching}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors">
+            <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />
+            Refresh
           </button>
-        ))}
+        </div>
       </div>
 
-      {/* Table */}
       <div className="card overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
-          <Wifi className="w-4 h-4 text-gray-400 dark:text-slate-500" />
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Per-Device Service Status</h2>
-        </div>
-
         {isLoading ? (
           <div className="p-8 text-center text-sm text-gray-400 dark:text-slate-500">Loading service status…</div>
-        ) : data.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-400 dark:text-slate-500">No online devices found.</div>
+        ) : rows.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-400 dark:text-slate-500">
+            {data.length === 0 ? 'No online devices found.' : 'No devices match your search.'}
+          </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/40">
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Device</th>
-                  {serviceColumns.map((col) => (
-                    <th key={col.key} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
-                      {col.label}
+                <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                  <th className="table-header px-4 py-[10px]">
+                    <SortableHeader label="DEVICE" active={sort.key === 'name'} dir={sort.dir} onClick={() => flip('name')} />
+                  </th>
+                  {SERVICES.map((s) => (
+                    <th key={s.key} className="table-header px-4 py-[10px]">
+                      <SortableHeader label={s.label.toUpperCase()} active={sort.key === s.key} dir={sort.dir} onClick={() => flip(s.key)} />
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
-                {data.map((device, i) => (
-                  <tr
-                    key={device.id}
-                    className={clsx(
-                      'border-b border-gray-100 dark:border-slate-800 transition-colors hover:bg-blue-50 dark:hover:bg-slate-700/40',
-                      i % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-gray-50 dark:bg-slate-800/40'
-                    )}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900 dark:text-white">{device.name}</div>
-                      <div className="text-xs text-gray-400 dark:text-slate-500">{device.ip_address}</div>
-                      {device.error && (
-                        <div className="text-xs text-red-500 mt-0.5">Connection failed</div>
-                      )}
-                    </td>
-                    {serviceColumns.map((col) => (
-                      <td key={col.key} className="px-4 py-3">
-                        {renderCell(device, col.key)}
+              <tbody className="table-zebra">
+                {rows.map((row) => {
+                  const d = deviceById.get(row.id);
+                  return (
+                    <tr key={row.id} onClick={() => navigate(`/devices/${row.id}`)}
+                      className="cursor-pointer transition-colors hover:bg-[var(--surface-3)]"
+                      style={{ borderBottom: '1px solid var(--line-soft)' }}>
+                      <td className="px-4 py-[12px]">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <DeviceTypePill type={d?.device_type} />
+                          <span className="cell-primary">{row.name}</span>
+                          <TagChips tags={d?.tags} />
+                          {row.error && <span className="text-xs text-red-500">couldn&apos;t connect</span>}
+                        </div>
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                      {SERVICES.map((s) => (
+                        <td key={s.key} className="px-4 py-[12px]"><ServiceState cell={cellFor(row, s.key)} /></td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

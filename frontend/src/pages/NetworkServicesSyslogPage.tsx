@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   FileText, RefreshCw, AlertTriangle, Plus, Pencil, Trash2, X, Save,
-  CheckCircle, XCircle,
+  CheckCircle, XCircle, Power,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
@@ -727,9 +727,12 @@ export default function NetworkServicesSyslogPage() {
                                   <button
                                     onClick={() => handleToggleRuleAll(coverage, !isDisabled)}
                                     disabled={togglePending}
-                                    className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                                    className={clsx('p-1.5 rounded-lg transition-colors disabled:opacity-50',
+                                      isDisabled ? 'text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'
+                                        : 'text-green-600 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20')}
                                     title={isDisabled ? 'Enable on covered devices' : 'Disable on covered devices'}>
-                                    <span className="text-xs font-medium">{isDisabled ? 'En' : 'Dis'}</span>
+                                    {/* The same power toggle as WireGuard interfaces (#210). */}
+                                    <Power className="w-3.5 h-3.5" />
                                   </button>
                                 )}
                                 {canWrite && (

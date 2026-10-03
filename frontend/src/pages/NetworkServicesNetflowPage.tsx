@@ -340,7 +340,7 @@ export default function NetworkServicesNetflowPage() {
                     className={clsx('border-b border-gray-100 dark:border-slate-800 transition-colors hover:bg-blue-50 dark:hover:bg-slate-700/40',
                       i % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-gray-50 dark:bg-slate-800/40')}>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900 dark:text-white">{d.name}</div>
+                      <div className="cell-primary">{d.name}</div>
                       <div className="font-mono text-xs text-gray-400 dark:text-slate-500">{d.ip_address}</div>
                     </td>
                     <td className="px-4 py-3">{deviceBadge(d)}</td>
