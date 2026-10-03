@@ -15,6 +15,7 @@ import { PacketRateLimiter } from './rateLimiter';
 import {
   AMBIGUOUS, buildAttributionMaps, isLocalAddress, matchClient,
   type AttributionMaps, type ClientRow, type DeviceRow, type ExporterInfo,
+  canonicalIp,
 } from './attribution';
 
 const FLUSH_INTERVAL_MS = 60_000;
@@ -202,16 +203,27 @@ export class NetflowCollector {
     }
   }
 
-  private bindSocket(port: number): void {
-    const socket = dgram.createSocket('udp4');
+  /**
+   * IPv4 and IPv6 on one socket where the kernel has IPv6 (#233); IPv4 only
+   * where it doesn't, so a host booted without IPv6 still collects.
+   */
+  private bindSocket(port: number, type: 'udp6' | 'udp4' = 'udp6'): void {
+    const socket = dgram.createSocket({ type, ipv6Only: false });
     socket.on('message', (msg, rinfo) => this.onMessage(msg, rinfo));
-    socket.on('error', (err) => {
-      console.error(`[NetFlow] Socket error: ${err.message}`);
+    socket.on('error', (err: NodeJS.ErrnoException) => {
+      const v6Unavailable = type === 'udp6' && !this.listening
+        && ['EAFNOSUPPORT', 'EADDRNOTAVAIL', 'EINVAL', 'EPROTONOSUPPORT'].includes(err.code ?? '');
       this.closeSocket();
+      if (v6Unavailable) {
+        console.log(`[NetFlow] IPv6 isn't available (${err.code}); listening on IPv4 only`);
+        this.bindSocket(port, 'udp4');
+        return;
+      }
+      console.error(`[NetFlow] Socket error: ${err.message}`);
     });
     socket.bind(port, () => {
       this.listening = true;
-      console.log(`[NetFlow] Collector listening on udp/${port}`);
+      console.log(`[NetFlow] Collector listening on udp/${port} (${type === 'udp6' ? 'IPv4 and IPv6' : 'IPv4'})`);
     });
     this.socket = socket;
   }
@@ -231,6 +243,9 @@ export class NetflowCollector {
 
   private onMessage(msg: Buffer, rinfo: dgram.RemoteInfo): void {
     this.packetsReceived++;
+    // ::ffff:a.b.c.d from the dual-stack socket becomes a.b.c.d, and IPv6 is
+    // written one way, so it matches device addresses (#233).
+    const source = canonicalIp(rinfo.address);
 
     // Cheap guards before any parsing work: undersized datagrams can't carry a
     // usable header, and a single source must not be able to monopolise the
@@ -239,7 +254,7 @@ export class NetflowCollector {
       this.packetsDropped++;
       return;
     }
-    if (this.rateLimiter.shouldDrop(rinfo.address)) {
+    if (this.rateLimiter.shouldDrop(source)) {
       this.packetsDropped++;
       return;
     }
@@ -248,7 +263,7 @@ export class NetflowCollector {
     // the site its clients are matched in. An address shared by devices in two
     // sites is a managed device, but not one site's, so its clients are matched
     // as for an unidentified exporter.
-    const found = this.maps.exporterByIp.get(rinfo.address);
+    const found = this.maps.exporterByIp.get(source);
     let identified: ExporterInfo | null = null;
     let statsId: number;
     let statsName: string;
@@ -265,15 +280,15 @@ export class NetflowCollector {
         // are taken only when the admin has turned that on, and never from a
         // public address: a NAT gateway in front of the collector is local.
         this.packetsFromUnknownExporter++;
-        if (!this.settings.acceptUnknown) { this.reject(rinfo.address, 'unknown_exporter'); return; }
-        if (!isLocalAddress(rinfo.address)) { this.reject(rinfo.address, 'public_address'); return; }
+        if (!this.settings.acceptUnknown) { this.reject(source, 'unknown_exporter'); return; }
+        if (!isLocalAddress(source)) { this.reject(source, 'public_address'); return; }
       }
-      const pseudo = this.pseudoExporter(rinfo.address, found === AMBIGUOUS);
+      const pseudo = this.pseudoExporter(source, found === AMBIGUOUS);
       statsId = pseudo.id;
       statsName = pseudo.name;
     }
 
-    const result = decodePacket(msg, rinfo.address, this.templates);
+    const result = decodePacket(msg, source, this.templates);
     this.flowsDecoded += result.flows.length;
     this.recordsWithoutTemplate += result.recordsWithoutTemplate;
 

@@ -4,7 +4,7 @@
 
 | Version | Supported |
 | ------- | --------- |
-| The latest release (0.24.x beta) | Yes |
+| The latest release | Yes |
 | Anything older | No |
 
 MikroTik Manager is in beta, and security fixes go into the latest release only. Every commit to
@@ -35,6 +35,19 @@ If you discover a security vulnerability, please use one of the following channe
 - **Fix and disclosure** coordinated with you once a patch is ready
 
 We ask that you give us reasonable time to address the issue before any public disclosure. We will credit you in the release notes if you wish.
+
+## Acknowledgements
+
+Thank you to the people and organizations who have taken the time to review MikroTik Manager
+and report what they found.
+
+- **[Novus Insight](https://novusinsight.com)** carried out an independent code and security
+  review of version 0.24.32 in September 2026: 12 serious findings, 36 bugs and 54 hardening
+  items, each traced through the code and several reproduced. Every one of them is fixed, in
+  0.24.35 through 0.24.51. The review led to session revocation, per-site access roles, API-SSL
+  with certificate and host-key pinning, Change Guard refusing what it can't protect, honest
+  restore results and signed, digest-pinned images, among much else. Novus Insight supports
+  schools, municipalities and non-profit organizations, and runs MikroTik throughout.
 
 ## Security Considerations for Self-Hosted Deployments
 

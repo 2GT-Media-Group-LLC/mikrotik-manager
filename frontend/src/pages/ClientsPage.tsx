@@ -207,6 +207,8 @@ export default function ClientsPage() {
     setPage(0);
   };
   const isWireless = typeFilter === 'wireless';
+  // Filtered to wired, every row is wired: no Type column (#222).
+  const isWired = typeFilter === 'wired';
 
   // VLAN and signal-range filters live in the URL alongside type, so the AP
   // Deployment Density chart can hand off the band the user clicked (#99) and any
@@ -397,6 +399,26 @@ export default function ClientsPage() {
 
       <FilterBar>
         <FilterSearch value={search} onChange={(v) => { setSearch(v); setPage(0); }} placeholder="Search hostname, MAC, IP, or vendor…" />
+        {/* Signal band — the same buckets the AP density chart clusters by, which
+            is what lets that chart link straight here (#99). First after the
+            search, so the rest of the row doesn't move when it appears (#222). */}
+        {isWireless && (
+          <FilterSelect
+            value={signalMin != null || signalMax != null ? `${signalMin ?? ''}:${signalMax ?? ''}` : ''}
+            onChange={(v) => {
+              const [lo, hi] = v.split(':');
+              setUrlFilter({ smin: lo || null, smax: hi || null });
+            }}
+            title="Signal"
+          >
+            <option value="">Any signal</option>
+            {RSSI_ZONES.map(z => (
+              <option key={z.label} value={`${z.min}:${z.max}`}>
+                {z.label} ({z.min} to {z.max} dBm)
+              </option>
+            ))}
+          </FilterSelect>
+        )}
         <FilterSegment
           options={[{ value: 'online', label: 'online' }, { value: 'all', label: 'all' }]}
           value={showAll ? 'all' : 'online'}
@@ -418,25 +440,6 @@ export default function ClientsPage() {
           <FilterSelect value={vlanFilter != null ? String(vlanFilter) : ''} onChange={(v) => setUrlFilter({ vlan: v || null })} title="VLAN">
             <option value="">All VLANs</option>
             {vlanOptions.map(v => <option key={v} value={v}>VLAN {v}</option>)}
-          </FilterSelect>
-        )}
-        {/* Signal band — the same buckets the AP density chart clusters by, which
-            is what lets that chart link straight here (#99). */}
-        {isWireless && (
-          <FilterSelect
-            value={signalMin != null || signalMax != null ? `${signalMin ?? ''}:${signalMax ?? ''}` : ''}
-            onChange={(v) => {
-              const [lo, hi] = v.split(':');
-              setUrlFilter({ smin: lo || null, smax: hi || null });
-            }}
-            title="Signal"
-          >
-            <option value="">Any signal</option>
-            {RSSI_ZONES.map(z => (
-              <option key={z.label} value={`${z.min}:${z.max}`}>
-                {z.label} ({z.min} to {z.max} dBm)
-              </option>
-            ))}
           </FilterSelect>
         )}
         {activeFilterCount > 0 && (
@@ -469,7 +472,9 @@ export default function ClientsPage() {
               <colgroup>
                 {(isWireless
                   ? ['20%', '11%', '11%', '11%', '9%', '6%', '12%', '9%', '11%']
-                  : ['22%', '12%', '13%', '11%', '7%', '13%', '10%', '12%']
+                  : isWired
+                    ? ['26%', '14%', '13%', '8%', '15%', '11%', '13%']
+                    : ['22%', '12%', '13%', '11%', '7%', '13%', '10%', '12%']
                 ).map((w, i) => <col key={i} style={{ width: w }} />)}
                 {showAll && <col style={{ width: '6%' }} />}
               </colgroup>
@@ -485,7 +490,7 @@ export default function ClientsPage() {
                           { col: 'ssid',            label: 'SSID',   align: 'left' as const },
                           { col: 'signal_strength', label: 'Signal', align: 'left' as const },
                         ]
-                      : [{ col: 'client_type', label: 'Type', align: 'left' as const }]),
+                      : isWired ? [] : [{ col: 'client_type', label: 'Type', align: 'left' as const }]),
                     { col: 'interface_name', label: 'Port',                align: 'left'  },
                     { col: 'vlan_id',        label: 'VLAN',                align: 'left'  },
                     { col: 'device_name',    label: 'Device',              align: 'left'  },
@@ -570,7 +575,7 @@ export default function ClientsPage() {
                           )}
                         </td>
                       </>
-                    ) : (
+                    ) : isWired ? null : (
                       <td className="px-4 py-2.5">
                         <span
                           className={clsx(

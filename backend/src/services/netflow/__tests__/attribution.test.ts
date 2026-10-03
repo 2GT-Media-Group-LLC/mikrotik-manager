@@ -1,4 +1,4 @@
-import { AMBIGUOUS, buildAttributionMaps, isLocalAddress, matchClient, type DeviceRow, type ClientRow } from '../attribution';
+import { AMBIGUOUS, buildAttributionMaps, canonicalIp, isLocalAddress, matchClient, type DeviceRow, type ClientRow } from '../attribution';
 
 // Outside review P2-23 / J4: two customers on the RouterOS default subnet.
 const devices: DeviceRow[] = [
@@ -63,3 +63,29 @@ describe('isLocalAddress', () => {
   it.each(['8.8.8.8', '172.32.0.1', '203.0.113.9', '2001:db8::1', '::ffff:8.8.8.8'])(
     '%s is not', (ip) => expect(isLocalAddress(ip)).toBe(false));
 });
+
+describe('canonicalIp (#233)', () => {
+  it('unwraps IPv4-mapped senders from the dual-stack socket', () => {
+    expect(canonicalIp('::ffff:192.168.0.5')).toBe('192.168.0.5');
+    expect(canonicalIp('::FFFF:10.0.0.1')).toBe('10.0.0.1');
+  });
+  it('writes IPv6 one way', () => {
+    expect(canonicalIp('2001:DB8:0:0::1')).toBe('2001:db8::1');
+    expect(canonicalIp('2001:db8:0:0:1:0:0:1')).toBe('2001:db8::1:0:0:1');
+    expect(canonicalIp(' 2001:db8::1 ')).toBe('2001:db8::1');
+  });
+  it('leaves IPv4 and anything unparseable alone', () => {
+    expect(canonicalIp('192.168.0.5')).toBe('192.168.0.5');
+    expect(canonicalIp('fe80::1%eth0')).toBe('fe80::1%eth0');
+    expect(canonicalIp('')).toBe('');
+  });
+  it('matches a device saved in a different spelling', () => {
+    const maps = buildAttributionMaps(
+      [{ id: 1, name: 'r6', site_id: 1, ip_address: '2001:DB8:0::1', ip_addresses_jsonb: [{ address: '2001:DB8:1::1/64' }] }],
+      [],
+    );
+    expect(maps.exporterByIp.get(canonicalIp('2001:db8::1'))).toMatchObject({ deviceId: 1 });
+    expect(maps.exporterByIp.get(canonicalIp('2001:db8:1::1'))).toMatchObject({ deviceId: 1 });
+  });
+});
+

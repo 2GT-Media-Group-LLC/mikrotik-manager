@@ -8,6 +8,8 @@
 // be identified (NAT between the routers and the collector) is the fleet
 // searched, and then only an address that exists in exactly one site counts.
 
+import { isIPv6 } from 'net';
+
 export interface ExporterInfo {
   deviceId: number;
   deviceName: string;
@@ -43,11 +45,31 @@ export interface AttributionMaps {
 
 const siteKey = (siteId: number | null): number => siteId ?? 0;
 
+/**
+ * One spelling per address, so a datagram's source matches the address a
+ * device was saved with (#233). On the dual-stack socket an IPv4 sender
+ * arrives as ::ffff:a.b.c.d; that becomes a.b.c.d. IPv6 is lowercased and
+ * compressed the standard way (RFC 5952, via the URL parser), so a device
+ * saved as 2001:DB8:0::1 matches packets from 2001:db8::1. Anything else,
+ * including a zoned link-local address, is returned trimmed and lowercased.
+ */
+export function canonicalIp(raw: string): string {
+  const ip = (raw || '').trim().toLowerCase();
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(ip);
+  if (mapped) return mapped[1];
+  if (!isIPv6(ip)) return ip;
+  try {
+    return new URL(`http://[${ip}]`).hostname.slice(1, -1);
+  } catch {
+    return ip;
+  }
+}
+
 function deviceAddresses(d: DeviceRow): string[] {
-  const out = [d.ip_address];
+  const out = [canonicalIp(d.ip_address)];
   for (const entry of d.ip_addresses_jsonb || []) {
     const ip = (entry.address || '').split('/')[0];
-    if (ip) out.push(ip);
+    if (ip) out.push(canonicalIp(ip));
   }
   return out;
 }

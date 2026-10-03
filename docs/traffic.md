@@ -6,6 +6,9 @@ Per-client and per-application traffic, from a NetFlow collector built into the 
 
 The platform listens for **NetFlow v9 and IPFIX on UDP 2055**. There is no external collector
 to run. Point a device's exporter at the platform's address and flows start arriving.
+It accepts IPv4 and IPv6 exporters on the same port where the host's kernel has IPv6, and
+IPv4 only where it doesn't. A device exporting over IPv6 is recognised by its IPv6 address,
+however that address was written when the device was added.
 
 How flows are counted:
 
