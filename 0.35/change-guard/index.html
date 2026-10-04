@@ -1,0 +1,1987 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Self-hosted management for MikroTik fleets">
+      
+      
+      
+      
+        <link rel="prev" href="../traffic/">
+      
+      
+        <link rel="next" href="../security/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.44">
+    
+    
+      
+        <title>Change Guard and Config Health - MikroTik Manager</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.0253249f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#change-guard-and-config-health" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="MikroTik Manager" class="md-header__button md-logo" aria-label="MikroTik Manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MikroTik Manager
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Change Guard and Config Health
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    2GT-Media-Group-LLC/mikrotik-manager
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="MikroTik Manager" class="md-nav__button md-logo" aria-label="MikroTik Manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    MikroTik Manager
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    2GT-Media-Group-LLC/mikrotik-manager
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operating
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Operating
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../clients/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Clients
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adoption/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adopting devices
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sites/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Sites
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../topology/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Topology
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../traffic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Traffic analytics
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Change Guard and Config Health
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Change Guard and Config Health
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#change-guard-device-side-auto-revert" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change Guard — device-side auto-revert
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Change Guard — device-side auto-revert">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#covered-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Covered changes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-managers-wireguard-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      The manager's WireGuard tunnel
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-change-at-a-time-per-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      One change at a time per device
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-you-see-when-it-fires" class="md-nav__link">
+    <span class="md-ellipsis">
+      What you see when it fires
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#guard-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      Guard history
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Settings
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lockout-prediction" class="md-nav__link">
+    <span class="md-ellipsis">
+      Lockout prediction
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lockout prediction">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#firewall-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Firewall rules
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#overriding-a-verdict" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overriding a verdict
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-protection-is-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      When protection is required
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#capability-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capability probe
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      Config Health
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Config Health">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-click-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      One-click fixes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      What it checks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Settings
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-note-on-false-positives" class="md-nav__link">
+    <span class="md-ellipsis">
+      A note on false positives
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Security page
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scaling/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Polling and scaling
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../alerting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Alerting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ssh-keys/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    SSH keys
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commands/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Bulk commands
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../firmware/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Firmware rollouts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backups/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Backups
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wireless/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Wireless
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-services/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network services
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cellular/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Cellular (LTE)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capsman/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CAPsMAN
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Integration
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Integration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    API and automation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sso-oidc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Single sign-on (OIDC)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Contributing
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#change-guard-device-side-auto-revert" class="md-nav__link">
+    <span class="md-ellipsis">
+      Change Guard — device-side auto-revert
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Change Guard — device-side auto-revert">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#covered-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Covered changes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-managers-wireguard-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      The manager's WireGuard tunnel
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-change-at-a-time-per-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      One change at a time per device
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-you-see-when-it-fires" class="md-nav__link">
+    <span class="md-ellipsis">
+      What you see when it fires
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#guard-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      Guard history
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Settings
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lockout-prediction" class="md-nav__link">
+    <span class="md-ellipsis">
+      Lockout prediction
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lockout prediction">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#firewall-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Firewall rules
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#overriding-a-verdict" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overriding a verdict
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-protection-is-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      When protection is required
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#capability-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capability probe
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      Config Health
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Config Health">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-click-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      One-click fixes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      What it checks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      Settings
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-note-on-false-positives" class="md-nav__link">
+    <span class="md-ellipsis">
+      A note on false positives
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="change-guard-and-config-health">Change Guard and Config Health<a class="headerlink" href="#change-guard-and-config-health" title="Permanent link">&para;</a></h1>
+<p><a href="../">← Documentation index</a></p>
+<p>RouterOS applies every command immediately and independently. There is no transaction,
+no rollback, and no cross-object validation — so it will accept a change that severs the
+very path you are managing the device over. MikroTik's own documented advice for enabling
+VLAN filtering is to have a serial console ready.</p>
+<p>Three layers address that. This page covers how they behave and how to configure them;
+the <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/blob/main/README.md#what-makes-it-different">README</a> has the short version.</p>
+<h2 id="change-guard-device-side-auto-revert">Change Guard — device-side auto-revert<a class="headerlink" href="#change-guard-device-side-auto-revert" title="Permanent link">&para;</a></h2>
+<p>Before applying a protected change:</p>
+<ol>
+<li>The device saves a <strong>restore point</strong> locally.</li>
+<li>A <strong>scheduler</strong> is armed to reapply it after a timeout.</li>
+<li>The change is applied.</li>
+<li>Reachability is proven <strong>on a brand-new connection</strong> — not the one that made the change.</li>
+<li>Confirmed → the scheduler is disarmed and the restore point deleted.
+   Unreachable → nothing is done, and the device restores itself.</li>
+</ol>
+<p>The restore point is saved <em>before</em> the scheduler is armed, so a rollback returns a
+configuration containing neither the scheduler nor the change. It is self-cleaning, and
+a revert loop is impossible.</p>
+<p>Everything runs over the RouterOS API, so it works on devices with no SSH credentials
+configured.</p>
+<h3 id="covered-changes">Covered changes<a class="headerlink" href="#covered-changes" title="Permanent link">&para;</a></h3>
+<p>Every write that can take a device off the network runs under Change Guard. Some are
+also simulated first, so a change predicted to cut management is stopped before it is
+applied; the rest are protected by auto-revert alone.</p>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Operations</th>
+<th>Predicted?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Firewall filter</td>
+<td>add, edit, enable/disable, move, delete</td>
+<td>Yes, in rule order (see <a href="#firewall-rules">Firewall rules</a>)</td>
+</tr>
+<tr>
+<td>Firewall address lists</td>
+<td>add, edit, remove</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Bridge</td>
+<td>VLAN filtering toggle</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Ports</td>
+<td>PVID and tagged/untagged membership</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Ports</td>
+<td>enable/disable</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Ports</td>
+<td>MTU, FEC, flow control, speed, PoE</td>
+<td>Flagged when the port carries management</td>
+</tr>
+<tr>
+<td>Bridge VLANs</td>
+<td>add, update, delete, copy from another switch</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Addressing</td>
+<td>IP address add, remove</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Routing</td>
+<td>static route add, remove</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Routing</td>
+<td>OSPF, BGP, routing tables, route filters</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Bonding</td>
+<td>create, edit, delete</td>
+<td>Flagged when a member or the bond carries management</td>
+</tr>
+<tr>
+<td>Services</td>
+<td>management service enable/disable</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>NAT</td>
+<td>add, edit, move, delete</td>
+<td>No</td>
+</tr>
+<tr>
+<td>WireGuard</td>
+<td>interface enable/disable, delete</td>
+<td>Yes; the tunnel the manager arrives through is read-only, below</td>
+</tr>
+<tr>
+<td>WireGuard</td>
+<td>interface edit, peers</td>
+<td>Flagged when the tunnel carries management; the manager's own tunnel is read-only, below</td>
+</tr>
+<tr>
+<td>Wireless</td>
+<td>interface edit, enable/disable, delete; security profile edit, delete</td>
+<td>Enable/disable and delete predicted; edits flagged when the interface carries management</td>
+</tr>
+<tr>
+<td>Guest Wi-Fi</td>
+<td>hotspot setup, server enable/disable, remove</td>
+<td>Setup flagged when the chosen interface carries management</td>
+</tr>
+</tbody>
+</table>
+<p>"Flagged" means the change can't be simulated, but because it touches something the
+manager's connection runs through, auto-revert becomes mandatory for it (see
+<a href="#when-protection-is-required">When protection is required</a>).</p>
+<h3 id="the-managers-wireguard-tunnel">The manager's WireGuard tunnel<a class="headerlink" href="#the-managers-wireguard-tunnel" title="Permanent link">&para;</a></h3>
+<p>When the manager reaches a device through WireGuard, that tunnel is left alone from here
+(#205). It's the WireGuard interface that either holds the address the manager connects to,
+or carries the device's route back to the manager.</p>
+<ul>
+<li>The WireGuard page marks it <strong>Protected</strong>, says why, and shows the interface and every
+  peer on it read-only: no switching off, editing or deleting, and no adding peers. The peer
+  carrying the manager's address is marked <em>Manager</em>.</li>
+<li>The API refuses any change to that interface or its peers, including moving another
+  peer onto it, with the reason.</li>
+</ul>
+<p>Change it on the device itself (WinBox or the terminal), or move management off the tunnel
+first. Other WireGuard interfaces work as before, under Change Guard.</p>
+<p>Where the device doesn't track connections, the manager can't see its own address there,
+so the peer carrying it can't be singled out (<em>Maybe manager</em> on every peer). The tunnel is
+protected either way.</p>
+<p>Creating a bond also moves the member ports' VLAN membership onto the bond, and deleting
+it gives the ports their VLANs back. Before 0.24.44 a port tagged on a VLAN became a bond
+that wasn't, and that VLAN stopped crossing the link.</p>
+<p>Each guarded change takes a few seconds longer than an unguarded one: the device saves a
+restore point first, and the manager proves it can still connect before disarming.</p>
+<h3 id="one-change-at-a-time-per-device">One change at a time per device<a class="headerlink" href="#one-change-at-a-time-per-device" title="Permanent link">&para;</a></h3>
+<p>While a protected change is being applied or verified, other writes to the same device
+are refused with HTTP 409 and <code>code: "device_busy"</code>. A revert restores a backup taken
+before its change, so a write that slipped in between would be undone with it. Reads,
+diagnostics and the manager's own records (location, monitoring) are not affected.</p>
+<h3 id="what-you-see-when-it-fires">What you see when it fires<a class="headerlink" href="#what-you-see-when-it-fires" title="Permanent link">&para;</a></h3>
+<p>Verified end to end on a CRS running RouterOS 7.23.3 by deliberately deleting a switch's
+own management address:</p>
+<div class="highlight"><pre><span></span><code>T+0      restore point saved, revert scheduler armed, change applied
+T+0s     device drops off the network
+T+40s    manager gives up after 4 fresh connection attempts and reports back
+T+120s   device restores its own backup and reboots
+T+3m     device is back, change undone, scheduler and restore point gone
+</code></pre></div>
+<p>The request returns <strong>HTTP 200</strong> with <code>guard.auto_reverting: true</code> and the message
+<em>"Contact with the device was lost while applying this change. It is restoring itself and
+should come back shortly."</em> — deliberately not an error.</p>
+<p>This matters. The most dangerous changes sever the very connection carrying them, so the
+API call times out even though the change succeeded on the device. <strong>Reachability, not the
+exception, decides the outcome.</strong> A change that throws while the device is still reachable
+is a genuine failure, and the guard is disarmed immediately so nothing reboots for nothing.</p>
+<h3 id="guard-history">Guard history<a class="headerlink" href="#guard-history" title="Permanent link">&para;</a></h3>
+<p>Every protected change is recorded per device:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>committed</code></td>
+<td>Change applied, device confirmed reachable, guard disarmed and proven gone</td>
+</tr>
+<tr>
+<td><code>reverted</code></td>
+<td>Contact lost; the device was left to restore itself</td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>Change rejected by the device; nothing applied, guard disarmed</td>
+</tr>
+<tr>
+<td><code>uncertain</code></td>
+<td>Change applied and the device is reachable, but the revert scheduler could not be confirmed removed. The device may still restore its previous configuration when the timeout runs out; the UI gives the time.</td>
+</tr>
+</tbody>
+</table>
+<p>Disarming is only counted once the manager has re-read the device's schedulers and seen
+the revert gone. A failed read is a failure, not an empty list: before 0.24.36 a timed-out
+read could record <code>committed</code> while the revert stayed armed and later undid the change.
+While a revert may still fire, the device stays locked against other protected changes.</p>
+<h3 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>change_guard_enabled</code></td>
+<td><code>true</code></td>
+<td>Master switch. When off, routine guarded changes apply with no safety net, and changes that need protection (see below) are refused.</td>
+</tr>
+<tr>
+<td><code>change_guard_mode</code></td>
+<td><code>binary</code></td>
+<td>See below.</td>
+</tr>
+<tr>
+<td><code>change_guard_timeout_sec</code></td>
+<td><code>120</code></td>
+<td>How long the device waits before rescuing itself.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Choosing a mode:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Mechanism</th>
+<th>Reboots?</th>
+<th>Recovers a deletion?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>binary</code></td>
+<td><code>/system backup</code> restore</td>
+<td><strong>Yes</strong></td>
+<td>Yes — restores the configuration exactly</td>
+</tr>
+<tr>
+<td><code>script</code></td>
+<td><code>/export</code> then <code>/import</code></td>
+<td>No</td>
+<td><strong>No</strong> — <code>/import</code> is additive</td>
+</tr>
+</tbody>
+</table>
+<p><code>binary</code> is the default because a change that deletes an interface can only be undone by
+a restore that recreates it. <code>script</code> avoids the reboot but cannot undo a deletion, which
+is the case most likely to lock you out.</p>
+<p><strong>Choosing a timeout:</strong> it must exceed the time the manager needs to verify reachability —
+roughly 40 seconds across four connection attempts — with margin for a slow device. Too
+short and a healthy device reverts a good change; too long and an outage lasts longer than
+it needs to.</p>
+<h2 id="lockout-prediction">Lockout prediction<a class="headerlink" href="#lockout-prediction" title="Permanent link">&para;</a></h2>
+<p>Rather than blocklisting operations someone once decided were dangerous, the platform
+reads live device state, resolves how the manager actually reaches the device, simulates
+the proposed change against that model, and reports any invariant that flips from
+satisfied to violated.</p>
+<p>Two details make the result precise rather than merely cautious:</p>
+<ul>
+<li>The <strong>manager's own address</strong>, as the device sees it, is read from the device's
+  connection tracking — rather than being treated as unknowable behind NAT. When other
+  hosts (a monitoring tool, WinBox) are connected to the API port too, the manager picks
+  out its own session by its source port; if it can't, it says so and works from the
+  default gateway instead of guessing.</li>
+<li>The <strong>ingress port</strong> is taken from the bridge forwarding table, so it is the port the
+  traffic actually arrives on, not a guess from topology.</li>
+</ul>
+<p>What the model follows:</p>
+<ul>
+<li>the address, the interface holding it, and a VLAN interface's parent port, so
+  disabling <code>ether1</code> under <code>vlan10</code> is caught;</li>
+<li>the bridge and its VLAN table, including a VLAN interface reached through an access
+  port whose PVID is that VLAN (tagged at the CPU, untagged on the wire);</li>
+<li>a bond holding the address, under its VLAN interface, or as the ingress port;</li>
+<li>the route back to an off-subnet manager, whether that is the default route or a more
+  specific one;</li>
+<li>the API service and the input firewall chain.</li>
+</ul>
+<p>A failed read during the check is never taken as "nothing there": the check fails, and the
+change then requires auto-revert. VLAN edits are simulated with the same planning code the
+device write uses, so the prediction and the write can't disagree about which rows change.
+(Before 0.24.49 a port listed as both tagged and untagged for a VLAN was simulated as both;
+the write leaves it untagged.)</p>
+<p>The resulting warning names the mechanism:</p>
+<blockquote>
+<p><strong>This change is predicted to cut management access to 2GT-NW-100G.</strong>
+Management arrives untagged on <code>sfp28-1</code> (PVID 1) — the gateway's MAC is learned there —
+but VLAN 1 has no bridge VLAN entry listing <code>bridge1</code> as an untagged member.</p>
+</blockquote>
+<h3 id="firewall-rules">Firewall rules<a class="headerlink" href="#firewall-rules" title="Permanent link">&para;</a></h3>
+<p>The input chain is evaluated the way RouterOS does it, first match wins, for the
+connection the manager actually opens: a new TCP connection from its address to the API
+port, arriving on the interface that holds the management address. Address lists,
+interface lists and jumps into custom chains are followed. Anything the check can't
+evaluate (tcp-flags, rate limits, marks, time) counts as "maybe", and a rule that maybe
+matches makes the answer "can't tell" rather than a guess.</p>
+<p>So enabling a staged drop rule with the toggle, moving a drop above the rule that
+accepts the manager, deleting that accept rule, or removing the manager from an accepted
+address list is caught before it is applied. RouterOS's default configuration is
+understood correctly: it lets LAN traffic reach the end of the chain, so appending a
+drop-all to it is predicted as a lockout.</p>
+<p>Only the IPv4 filter table is checked. Rules in the raw table are not, and a manager
+connecting over IPv6 isn't affected by the IPv4 filter at all. If the device has
+connection tracking switched off (RouterOS turns it on only once firewall rules exist),
+the manager's address isn't known, so rules scoped to a source address count as "can't
+tell".</p>
+<h3 id="overriding-a-verdict">Overriding a verdict<a class="headerlink" href="#overriding-a-verdict" title="Permanent link">&para;</a></h3>
+<p>Deliberately awkward. The API requires <code>confirm_lockout: true</code> in the request body, and
+the UI requires typing the device name. The change then runs under Change Guard regardless,
+so an override is a decision to <em>rely on</em> auto-revert — not to bypass protection.</p>
+<h3 id="when-protection-is-required">When protection is required<a class="headerlink" href="#when-protection-is-required" title="Permanent link">&para;</a></h3>
+<p>Auto-revert is mandatory, not best effort, for a change that:</p>
+<ul>
+<li>you confirmed past a lockout warning,</li>
+<li>the prediction flagged as a warning, or</li>
+<li>could not be analysed (the device's state couldn't be read), or</li>
+<li>depends on something the check couldn't evaluate.</li>
+</ul>
+<p>A failed read of any part of the device's state counts as "could not be analysed". Before
+0.24.44 a failed read was treated as an empty table, which could produce a confident
+"safe".</p>
+<p>If the device can't arm auto-revert for one of these (the API user can't save a backup or
+add a scheduler, the flash is full, or Change Guard is turned off), the change is <strong>refused
+before anything is applied</strong>, with HTTP 422 and <code>code: "guard_required"</code>. Until 0.24.36 it
+ran unprotected and only said so afterwards. Bulk commands with Change Guard ticked follow
+the same rule: a device that can't arm it is marked failed, which counts toward
+halt-on-failure.</p>
+<p>The lockout dialog checks this before you confirm, so it never promises protection the
+device can't give:</p>
+<div class="highlight"><pre><span></span><code>POST /api/devices/:id/change-guard/check   -&gt;  { "ready": true, "mode": "binary", "reason": null }
+</code></pre></div>
+<p>The check does what a real guard does, with throwaway names: it saves a restore point and
+adds a scheduler, then removes both.</p>
+<p>A pre-existing violation is reported separately from one your change would cause. That
+distinction matters: if an invariant is already broken, that check cannot detect a new
+break, and the verdict says so rather than implying a clean result.</p>
+<h3 id="capability-probe">Capability probe<a class="headerlink" href="#capability-probe" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>POST /api/devices/:id/change-guard/probe
+</code></pre></div>
+<p>Reports what safety mechanisms a device actually supports, tested on the device rather
+than assumed. Non-destructive — it creates and removes a harmless scheduler and leaves
+nothing behind.</p>
+<p>It also establishes whether <code>/system history</code> can revert a change without a reboot.
+Measured on RouterOS 7.23 over the binary API:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/system/history/print</code></td>
+<td>works</td>
+</tr>
+<tr>
+<td><code>/system/history/undo</code></td>
+<td>no such command</td>
+</tr>
+<tr>
+<td><code>/undo numbers=&lt;id&gt;</code></td>
+<td>unknown parameter</td>
+</tr>
+<tr>
+<td><code>/undo</code></td>
+<td>works — reverts the newest action, no reboot</td>
+</tr>
+</tbody>
+</table>
+<p>Undo is therefore real but <strong>untargeted</strong>, and it cannot replace auto-revert: a dead-man
+switch has to fire once the manager has already lost contact, and issuing an undo requires
+the contact that was just lost. Binary restore remains the default.</p>
+<h2 id="config-health">Config Health<a class="headerlink" href="#config-health" title="Permanent link">&para;</a></h2>
+<p>A scheduled, read-only audit for configurations RouterOS accepts without complaint and
+then quietly fails to honour. Each finding explains what it does to the network, how to
+fix it, how long it has been present, and links the relevant MikroTik documentation.</p>
+<p>Findings appear at the top of the device's <strong>Config</strong> tab and in the dashboard's <em>Things to
+handle</em>.</p>
+<h3 id="one-click-fixes">One-click fixes<a class="headerlink" href="#one-click-fixes" title="Permanent link">&para;</a></h3>
+<p>Findings with one clearly right fix have a <strong>Fix it</strong> button (#239). It shows the exact
+change first, then runs it under Change Guard, and the audit runs again afterwards so the
+finding clears:</p>
+<table>
+<thead>
+<tr>
+<th>Finding</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Spanning tree off on a bridge</td>
+<td><code>/interface/bridge set &lt;bridge&gt; protocol-mode=rstp</code></td>
+</tr>
+<tr>
+<td>Bridge running classic STP</td>
+<td><code>/interface/bridge set &lt;bridge&gt; protocol-mode=rstp</code></td>
+</tr>
+<tr>
+<td>VLAN interface whose VLAN the bridge is not tagged in</td>
+<td>Adds the bridge to that VLAN's tagged ports, creating the entry if there is none. A VLAN that's part of a multi-VLAN entry is left for you to change on the device</td>
+</tr>
+</tbody>
+</table>
+<p>The others have no button, and say why: most have more than one reasonable fix (move the
+address or take the port out of the bridge? lower the MTU or raise the L2 MTU?), and
+device-mode can only be changed at the device. Their advice is unchanged.</p>
+<h3 id="what-it-checks">What it checks<a class="headerlink" href="#what-it-checks" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Finding</th>
+<th>Consequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IP address on a bridge slave port</td>
+<td>The address is served by the bridge, or not at all</td>
+</tr>
+<tr>
+<td>VLAN interface on a bridge slave port</td>
+<td>The interface receives nothing; management may be unreachable</td>
+</tr>
+<tr>
+<td>VLAN interface added as a bridge port</td>
+<td>Forwarding loop; STP ports flap</td>
+</tr>
+<tr>
+<td>Bond slave that is also a bridge port</td>
+<td>Undefined forwarding path; the bond silently loses members</td>
+</tr>
+<tr>
+<td>VLAN interface whose VLAN the bridge is not tagged in</td>
+<td>The interface is up and carries nothing</td>
+</tr>
+<tr>
+<td>Management surviving only on a dynamic VLAN entry</td>
+<td>Works today; disappears the moment a port admits only tagged frames</td>
+</tr>
+<tr>
+<td>Port in no VLAN on a filtering bridge</td>
+<td>Links up, then every frame is dropped</td>
+</tr>
+<tr>
+<td>Multi-VLAN bridge entry with untagged ports</td>
+<td>Ambiguous; RouterOS warns and applies it anyway</td>
+</tr>
+<tr>
+<td>PVID next to <code>frame-type=admit-only-vlan-tagged</code></td>
+<td>The PVID is stored but never applied</td>
+</tr>
+<tr>
+<td>Several bridges competing for hardware offload</td>
+<td>One silently falls back to CPU forwarding</td>
+</tr>
+<tr>
+<td>MTU above L2MTU</td>
+<td>Large frames dropped without error</td>
+</tr>
+<tr>
+<td>Duplicate address on two interfaces</td>
+<td>Only one can answer; which is not stated by the config</td>
+</tr>
+<tr>
+<td>Ingress port would reject the frames management arrives in</td>
+<td><code>admit-only-vlan-tagged</code> on a port carrying untagged management drops it at ingress, while every VLAN row still lists the port</td>
+</tr>
+<tr>
+<td>Spanning tree off on a bridge with several active ports</td>
+<td>Nothing stops a loop; the second cable someone plugs in becomes a broadcast storm</td>
+</tr>
+<tr>
+<td>Bridge running classic STP rather than RSTP</td>
+<td>Convergence takes tens of seconds where RSTP takes under one</td>
+</tr>
+<tr>
+<td>Device-mode blocks the scheduler</td>
+<td>Change Guard can't arm its automatic undo, so changes that could cut off management are refused</td>
+</tr>
+<tr>
+<td>Device-mode blocks bandwidth-test, sniffer, hotspot or fetch</td>
+<td>The bandwidth test, packet capture, Guest WiFi wizard or adopting through this device fail with "not allowed by device-mode"</td>
+</tr>
+<tr>
+<td>RouterOS has flagged the device</td>
+<td>RouterOS found configuration it considers suspicious; device-mode can't change until it's cleared</td>
+</tr>
+</tbody>
+</table>
+<p>Changing <a href="https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode">device-mode</a>
+needs someone at the device: RouterOS asks for a button press or power-cycle to confirm.</p>
+<h3 id="settings_1">Settings<a class="headerlink" href="#settings_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>config_health_enabled</code></td>
+<td><code>true</code></td>
+<td>Runs the standing audit</td>
+</tr>
+<tr>
+<td><code>config_health_interval_min</code></td>
+<td><code>60</code></td>
+<td>Cadence per device — one read-only snapshot over the API</td>
+</tr>
+</tbody>
+</table>
+<p>Both are under <strong>Settings → General → Config Health</strong>. Before 0.24.37 the scheduler never
+read them, so the audit always ran hourly whatever they said.</p>
+<h3 id="a-note-on-false-positives">A note on false positives<a class="headerlink" href="#a-note-on-false-positives" title="Permanent link">&para;</a></h3>
+<p>Rules are calibrated against real hardware rather than documentation alone. For example,
+RouterOS 7 relocates an address configured on a bridge slave port onto the bridge itself
+(<code>actual-interface</code>), so that stock configuration works — and is reported as informational
+rather than critical. Similarly, a port that belongs to no VLAN is only reported when it
+is actually active, because an unplugged port carrying no configuration is not a fault.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.instant", "navigation.top", "navigation.sections", "content.code.copy", "search.highlight"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.83f73b43.min.js"></script>
+      
+    
+  </body>
+</html>

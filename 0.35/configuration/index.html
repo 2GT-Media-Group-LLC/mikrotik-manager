@@ -1,0 +1,1820 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Self-hosted management for MikroTik fleets">
+      
+      
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../devices/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.44">
+    
+    
+      
+        <title>Configuration - MikroTik Manager</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.0253249f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="MikroTik Manager" class="md-header__button md-logo" aria-label="MikroTik Manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MikroTik Manager
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    2GT-Media-Group-LLC/mikrotik-manager
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="MikroTik Manager" class="md-nav__button md-logo" aria-label="MikroTik Manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    MikroTik Manager
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    2GT-Media-Group-LLC/mikrotik-manager
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      Environment variables
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#internal-service-passwords" class="md-nav__link">
+    <span class="md-ellipsis">
+      Internal service passwords
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      First login
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sessions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secret-management-self-healing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Secret management (self-healing)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Secret management (self-healing)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upgrading-is-non-breaking" class="md-nav__link">
+    <span class="md-ellipsis">
+      Upgrading is non-breaking
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changing-jwt_secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      Changing JWT_SECRET
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-rotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key rotation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backing-up-the-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      Backing up the manager
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-stored-in-the-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      Settings stored in the database
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network exposure
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#container-hardening" class="md-nav__link">
+    <span class="md-ellipsis">
+      Container hardening
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tls" class="md-nav__link">
+    <span class="md-ellipsis">
+      TLS
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#updating-and-image-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Updating and image versions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dark-site-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dark Site Mode
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operating
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Operating
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../clients/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Clients
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adoption/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adopting devices
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sites/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Sites
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../topology/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Topology
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../traffic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Traffic analytics
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change-guard/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Change Guard and Config Health
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Security page
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scaling/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Polling and scaling
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../alerting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Alerting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ssh-keys/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    SSH keys
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commands/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Bulk commands
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../firmware/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Firmware rollouts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backups/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Backups
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wireless/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Wireless
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-services/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network services
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cellular/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Cellular (LTE)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capsman/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CAPsMAN
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Integration
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Integration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    API and automation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sso-oidc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Single sign-on (OIDC)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Contributing
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      Environment variables
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#internal-service-passwords" class="md-nav__link">
+    <span class="md-ellipsis">
+      Internal service passwords
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      First login
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Sessions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secret-management-self-healing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Secret management (self-healing)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Secret management (self-healing)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upgrading-is-non-breaking" class="md-nav__link">
+    <span class="md-ellipsis">
+      Upgrading is non-breaking
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changing-jwt_secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      Changing JWT_SECRET
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-rotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Key rotation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backing-up-the-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      Backing up the manager
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-stored-in-the-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      Settings stored in the database
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      Network exposure
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#container-hardening" class="md-nav__link">
+    <span class="md-ellipsis">
+      Container hardening
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tls" class="md-nav__link">
+    <span class="md-ellipsis">
+      TLS
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#updating-and-image-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Updating and image versions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dark-site-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dark Site Mode
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
+<p><a href="../">← Documentation index</a></p>
+<h2 id="environment-variables">Environment variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<p>Set in <code>.env</code> at the project root. Changing any of these requires a container restart.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>JWT_SECRET</code></td>
+<td><em>auto-generated &amp; persisted</em></td>
+<td>Signs session tokens. Set it to pin your own value.</td>
+</tr>
+<tr>
+<td><code>ENCRYPTION_KEY</code></td>
+<td><em>auto-generated &amp; persisted</em></td>
+<td>Encrypts device passwords at rest. Set it to pin your own value.</td>
+</tr>
+<tr>
+<td><code>CORS_ORIGIN</code></td>
+<td><em>localhost defaults</em></td>
+<td>Comma-separated browser origins allowed to call the API. <strong>Required in production.</strong></td>
+</tr>
+<tr>
+<td><code>DB_PASSWORD</code></td>
+<td><code>mikrotik_secure_pw</code></td>
+<td>PostgreSQL password</td>
+</tr>
+<tr>
+<td><code>INFLUXDB_TOKEN</code></td>
+<td><code>mytoken123456789</code></td>
+<td>InfluxDB admin token</td>
+</tr>
+<tr>
+<td><code>INFLUXDB_ORG</code></td>
+<td><code>mikrotik-manager</code></td>
+<td>InfluxDB organization</td>
+</tr>
+<tr>
+<td><code>INFLUXDB_BUCKET</code></td>
+<td><code>metrics</code></td>
+<td>InfluxDB bucket for time-series data</td>
+</tr>
+<tr>
+<td><code>INFLUXDB_ADMIN_PASSWORD</code></td>
+<td><code>admin_password_123</code></td>
+<td>InfluxDB admin UI password</td>
+</tr>
+<tr>
+<td><code>REDIS_PASSWORD</code></td>
+<td><em>none</em></td>
+<td>Makes Redis require a password. Can be set or changed at any time</td>
+</tr>
+<tr>
+<td><code>PASSWORD_LOGIN</code></td>
+<td><code>true</code></td>
+<td><code>false</code> makes sign-in SSO-only. See <a href="../sso-oidc/#behaviour-and-safety">SSO-only sign-in</a></td>
+</tr>
+<tr>
+<td><code>HTTP_PORT</code></td>
+<td><code>80</code></td>
+<td>Host port for HTTP (redirects to HTTPS)</td>
+</tr>
+<tr>
+<td><code>HTTPS_PORT</code></td>
+<td><code>443</code></td>
+<td>Host port for HTTPS</td>
+</tr>
+<tr>
+<td><code>BIND_ADDRESS</code></td>
+<td><em>every interface</em></td>
+<td>Host address the web UI is published on. See <a href="#network-exposure">Network exposure</a>.</td>
+</tr>
+<tr>
+<td><code>NETFLOW_BIND_ADDRESS</code></td>
+<td><em>every interface</em></td>
+<td>Host address the NetFlow collector (UDP 2055) is published on.</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Never commit <code>.env</code>. It is already listed in <code>.gitignore</code>.</p>
+</blockquote>
+<p>For a production deployment the only variable you genuinely must set is <code>CORS_ORIGIN</code>.
+Both secrets generate themselves safely — see below.</p>
+<h2 id="internal-service-passwords">Internal service passwords<a class="headerlink" href="#internal-service-passwords" title="Permanent link">&para;</a></h2>
+<p><code>DB_PASSWORD</code>, <code>INFLUXDB_TOKEN</code>, <code>INFLUXDB_ADMIN_PASSWORD</code> and <code>REDIS_PASSWORD</code> protect the
+databases. Their defaults are public, so set your own. Postgres, InfluxDB and Redis sit on a
+network of their own that only the backend joins, with no route out, so nothing else can reach
+them. The passwords are a second layer.</p>
+<p><strong>On a new install</strong>, set them in <code>.env</code> before the first <code>docker compose up -d</code>. Hex values
+are the easiest, since they need no quoting anywhere:</p>
+<div class="highlight"><pre><span></span><code>openssl rand -hex 24
+</code></pre></div>
+<p><strong>On an existing install</strong>, Postgres and InfluxDB keep the password they were first started
+with: they read these variables only when their data volume is empty. Changing <code>.env</code> alone
+then leaves the backend unable to log in. Change the password inside the database first, then
+in <code>.env</code>:</p>
+<ul>
+<li><strong>Postgres</strong>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>docker compose exec postgres psql -U mikrotik -d mikrotik_manager \
+  -c "ALTER USER mikrotik WITH PASSWORD 'new-password'"
+</code></pre></div>
+<p>Then set <code>DB_PASSWORD=new-password</code> in <code>.env</code> and run <code>docker compose up -d</code>.</p>
+<ul>
+<li><strong>InfluxDB token</strong>: create a new all-access token, put it in <code>INFLUXDB_TOKEN</code>, run
+  <code>docker compose up -d</code>, then delete the old token:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>docker compose exec influxdb influx auth create --all-access --org mikrotik-manager
+</code></pre></div>
+<p><code>influx auth list</code> shows the old token's ID, and <code>influx auth delete --id &lt;id&gt;</code> removes it.</p>
+<ul>
+<li><strong>Redis</strong> stores no password, so <code>REDIS_PASSWORD</code> can be set or changed at any time; run
+  <code>docker compose up -d</code> afterwards.</li>
+</ul>
+<p>Before 0.24.51 the database password was part of a connection URL, so a password containing
+<code>/</code>, <code>@</code> or <code>:</code> stopped the backend from starting. It is now passed on its own.</p>
+<h2 id="first-login">First login<a class="headerlink" href="#first-login" title="Permanent link">&para;</a></h2>
+<p>A new install has one account, <strong>admin</strong> with the password <strong>admin</strong>. Signing in with it
+goes straight to a page that asks for a new password (at least 10 characters and at most
+72 bytes, with a letter and a number); nothing else works until it is set. The 72-byte limit
+is bcrypt's: it ignores anything longer, so a longer password changed only at the end would
+still accept the old one. The login page shows the
+default credentials only until then. An existing install still using admin/admin gets
+the same prompt at its next login.</p>
+<h2 id="sessions">Sessions<a class="headerlink" href="#sessions" title="Permanent link">&para;</a></h2>
+<p>A sign-in lasts up to 24 hours, but every request checks the account as it is now, so a
+session ends straight away when:</p>
+<ul>
+<li>the user <strong>logs out</strong> (that session only);</li>
+<li>an admin <strong>changes the user's role</strong> or <strong>resets their password</strong> (all of that user's
+  sessions, in every browser);</li>
+<li>the user <strong>changes their own password</strong> (all their other sessions; the browser they
+  changed it in stays signed in);</li>
+<li>the account is <strong>deleted</strong>.</li>
+</ul>
+<p>The role in effect is always the account's current one. Open live-update and terminal
+connections are checked again every minute and closed when their session has ended, and a
+terminal re-checks the account before it opens a shell. Before 0.24.46 a session kept its
+original role and access for its full 24 hours, whatever happened to the account.</p>
+<p>An admin who resets their <em>own</em> password from <strong>Settings → Users</strong> is signed out and
+signs in again with the new one. API tokens are separate and unaffected: revoke those
+under <strong>Settings → Automation → API Tokens</strong>.</p>
+<h2 id="secret-management-self-healing">Secret management (self-healing)<a class="headerlink" href="#secret-management-self-healing" title="Permanent link">&para;</a></h2>
+<p><code>JWT_SECRET</code> and <code>ENCRYPTION_KEY</code> are managed automatically so that a fresh install is
+secure by default and an upgrade never strands existing data.</p>
+<ul>
+<li><strong>Set to a strong value in the environment</strong> — that value is used, and you stay in
+  control.</li>
+<li><strong>Unset, or left at a value from an example file</strong> (for <code>JWT_SECRET</code>, anything
+  starting <code>changeme</code>) — the backend generates a strong secret once,
+  persists it to the <code>app_data</code> volume (<code>SECRETS_DIR</code>, default <code>/app/data</code>), and reuses
+  it on every boot.</li>
+</ul>
+<p>Secrets live outside the database deliberately: a database dump alone cannot reveal the
+key protecting the credentials stored inside it.</p>
+<h3 id="upgrading-is-non-breaking">Upgrading is non-breaking<a class="headerlink" href="#upgrading-is-non-breaking" title="Permanent link">&para;</a></h3>
+<p>Existing ciphertext is decrypted through a <strong>legacy-key fallback</strong> — including previous
+shipped defaults — and transparently re-encrypted under the current key by a background
+sweep. Nothing needs to be re-entered.</p>
+<p>Rotating the JWT secret off a public default invalidates sessions signed with it. Users
+simply log in again once.</p>
+<h3 id="changing-jwt_secret">Changing JWT_SECRET<a class="headerlink" href="#changing-jwt_secret" title="Permanent link">&para;</a></h3>
+<p>Setting <code>JWT_SECRET</code> in <code>.env</code> (or changing it) is treated as a rotation. The secret the
+manager was using before, and any older ones, keep working for 24 hours from the first start
+with the new value, so signed-in users aren't cut off mid-session, and then stop. They are also
+removed from <code>secrets.json</code>, so unsetting <code>JWT_SECRET</code> later never brings a retired secret back
+(the manager generates a fresh one instead). This is the step to take if <code>secrets.json</code> may
+have leaked; before 0.24.50 the leaked secret stayed valid. If the old secret must stop
+working at once rather than after 24 hours, also delete the <code>retiringJwtSecrets</code> entry from
+<code>secrets.json</code> in the <code>app_data</code> volume and restart the backend; everyone then signs in again.</p>
+<h3 id="key-rotation">Key rotation<a class="headerlink" href="#key-rotation" title="Permanent link">&para;</a></h3>
+<p><strong>Settings → General → Encryption key</strong> shows where the key comes from, a short key ID (a
+fingerprint, not the key), and how many stored values are under the current key, under an
+older key, or under no key the manager has.</p>
+<p>Everything the key protects is covered: device API and SSH passwords, credential presets, SSH
+private keys, the SSO client secret, alert channel secrets (SMTP password, Telegram bot token,
+ntfy and Gotify tokens, Slack and Discord webhook URLs), webhook signing secrets, and backups
+that contain secrets. On every start, anything
+still under an older key is re-encrypted with the current one.</p>
+<p><strong>A key the manager generated</strong> (the default, kept in <code>app_data/secrets.json</code>):</p>
+<ol>
+<li>Click <strong>Rotate key…</strong> and confirm. A new key is written to <code>secrets.json</code> with the old one
+   kept beside it, and only then does the manager switch. Everything is re-encrypted straight
+   away.</li>
+<li>When the card shows nothing under an older key, click <strong>Retire older keys</strong>.</li>
+</ol>
+<p><strong>A key you set in <code>.env</code>:</strong></p>
+<ol>
+<li>Put the new key in <code>ENCRYPTION_KEY</code> and the old one in <code>ENCRYPTION_KEY_PREVIOUS</code>, then
+   restart (<code>docker compose up -d</code>). The manager re-encrypts everything with the new key as it
+   starts.</li>
+<li>When the card shows nothing under an older key, remove <code>ENCRYPTION_KEY_PREVIOUS</code> and
+   restart again.</li>
+</ol>
+<p><code>ENCRYPTION_KEY_PREVIOUS</code> takes a comma-separated list if you have more than one old key.</p>
+<div class="admonition danger">
+<p class="admonition-title">Changing <code>ENCRYPTION_KEY</code> without <code>ENCRYPTION_KEY_PREVIOUS</code></p>
+<p>Before 0.24.46 this silently made every stored credential unreadable. Now the manager
+notices at startup: it shows <strong>Encryption key missing</strong> to admins, logs it, and refuses to
+save new credentials, so nothing is written under the wrong key. Put the original key back
+(in <code>ENCRYPTION_KEY</code>, or in <code>ENCRYPTION_KEY_PREVIOUS</code>) and restart, and everything reads
+again. Don't re-enter device passwords first.</p>
+</div>
+<p>The same happens if the key is lost with the <code>app_data</code> volume, for example after moving the
+manager to a new host with only a database dump: restore <code>secrets.json</code> and restart.</p>
+<h2 id="backing-up-the-manager">Backing up the manager<a class="headerlink" href="#backing-up-the-manager" title="Permanent link">&para;</a></h2>
+<p>A complete backup is these four things. The first is useless without the second.</p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Where</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The database</td>
+<td><code>docker compose exec postgres pg_dump -U mikrotik mikrotik_manager</code></td>
+<td>Devices, settings, history, and the encrypted credentials</td>
+</tr>
+<tr>
+<td>The encryption key</td>
+<td><code>app_data</code> volume (<code>secrets.json</code>), or your <code>ENCRYPTION_KEY</code></td>
+<td>Without it the credentials in the dump can't be decrypted</td>
+</tr>
+<tr>
+<td>Device backups</td>
+<td><code>backups_data</code> volume</td>
+<td>The configuration backups themselves; some are encrypted with the key</td>
+</tr>
+<tr>
+<td>TLS certificate</td>
+<td><code>certs_data</code> volume</td>
+<td>Only if you installed your own certificate</td>
+</tr>
+</tbody>
+</table>
+<p>Store the key <strong>separately</strong> from the database dump. Together they give anyone the admin
+passwords of every managed device; apart, neither does. To restore, bring back all four, with
+the key in place before the manager's first start.</p>
+<h2 id="settings-stored-in-the-database">Settings stored in the database<a class="headerlink" href="#settings-stored-in-the-database" title="Permanent link">&para;</a></h2>
+<p>These are edited in the Settings UI and take effect without a restart:</p>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Settings</th>
+<th>Documented in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Change Guard</td>
+<td><code>change_guard_enabled</code>, <code>change_guard_mode</code>, <code>change_guard_timeout_sec</code></td>
+<td><a href="../change-guard/">Change Guard</a></td>
+</tr>
+<tr>
+<td>Config Health</td>
+<td><code>config_health_enabled</code>, <code>config_health_interval_min</code></td>
+<td><a href="../change-guard/">Change Guard</a></td>
+</tr>
+<tr>
+<td>Polling</td>
+<td>fast / slow / log intervals, MAC scan, spectral and AP scan cadence</td>
+<td>Settings → Polling</td>
+</tr>
+<tr>
+<td>Config snapshots</td>
+<td><code>config_snapshot_enabled</code>, <code>config_snapshot_interval_min</code>, <code>config_snapshot_retention</code></td>
+<td>Settings → Config History</td>
+</tr>
+<tr>
+<td>NetFlow</td>
+<td>collector address and port, version, retention, top-N clients</td>
+<td>Settings → NetFlow</td>
+</tr>
+<tr>
+<td>Alerting</td>
+<td>rules, thresholds, cooldowns, channels</td>
+<td><a href="../alerting/">Alerting</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="network-exposure">Network exposure<a class="headerlink" href="#network-exposure" title="Permanent link">&para;</a></h2>
+<p>The manager holds the admin credentials for every device it manages, so keep it off the
+internet: reach it over your LAN or a VPN.</p>
+<p>By default Docker publishes the web UI (80, 443) and the NetFlow collector (UDP 2055) on
+<strong>every</strong> host interface. <strong>A host firewall such as ufw or firewalld does not close
+them</strong>: Docker adds its own rules for published ports, and traffic to them never reaches
+the chains those tools manage. On a host with a public or DMZ interface, the manager is
+reachable from the internet even though ufw says the port is closed.</p>
+<p>Pick one of these:</p>
+<ul>
+<li><strong>Publish on one address.</strong> Set <code>BIND_ADDRESS</code> (and <code>NETFLOW_BIND_ADDRESS</code>) in <code>.env</code> to
+  the host's LAN or VPN address, then <code>docker compose up -d</code>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>BIND_ADDRESS=192.168.1.10
+NETFLOW_BIND_ADDRESS=192.168.1.10
+</code></pre></div>
+<p>Only that address listens. To reach it over IPv6 as well, leave it unset and use the
+  next option instead.</p>
+<ul>
+<li><strong>Filter in the <code>DOCKER-USER</code> chain.</strong> Docker checks this chain before its own rules, so
+  it does apply to published ports. For example, to allow the UI only from 192.168.1.0/24
+  and NetFlow only from your routers' management subnet, where <code>eth0</code> is the public
+  interface:</li>
+</ul>
+<div class="highlight"><pre><span></span><code>iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 443 ! -s 192.168.1.0/24 -j DROP
+iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 80 ! -s 192.168.1.0/24 -j DROP
+iptables -I DOCKER-USER -i eth0 -p udp -m conntrack --ctorigdstport 2055 ! -s 10.10.0.0/24 -j DROP
+</code></pre></div>
+<p>These rules don't survive a reboot by themselves; save them the way your distribution
+  does (for example <code>netfilter-persistent save</code>).</p>
+<ul>
+<li><strong>Put the host behind a firewall it doesn't control</strong>, such as the router in front of it
+  or a cloud security group.</li>
+</ul>
+<p>NetFlow has no authentication of its own, so whatever can reach UDP 2055 can send flows.
+The collector only accepts flows from managed devices unless you turn on <strong>Accept flows
+from unknown exporters</strong> (see <a href="../traffic/">Traffic</a>), but limiting who can reach the port
+is still the real protection.</p>
+<p>Before 0.24.47 there was no bind setting, and the ports were always published on every
+interface.</p>
+<h2 id="container-hardening">Container hardening<a class="headerlink" href="#container-hardening" title="Permanent link">&para;</a></h2>
+<p>From 0.24.51 the containers run with less:</p>
+<ul>
+<li><strong>backend</strong>: every Linux capability dropped except <code>NET_RAW</code> (server-side ARP discovery), a
+  read-only root filesystem, and a non-root user that owns only its data directories. It can
+  write its volumes and <code>/tmp</code>, and nothing else.</li>
+<li><strong>nginx</strong>: only the capabilities it uses, and a read-only root filesystem.</li>
+<li><strong>Postgres, Redis, InfluxDB</strong>: on the internal network only.</li>
+<li><strong>Logs</strong> from every container rotate at 10 MB, five files each.</li>
+</ul>
+<p>The containers don't set <code>no-new-privileges</code>. On Ubuntu with AppArmor it stops them starting at
+all: the first command in the container fails with "operation not permitted". 0.24.51 set it,
+and on such hosts the update left the databases restarting; 0.24.52 removes it.</p>
+<h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
+<p>A self-signed certificate is generated on first run. Replace it under
+<strong>Settings → TLS Certificate</strong> by uploading a certificate and private key, or regenerate the
+self-signed one; nginx terminates TLS, picks up the new certificate within a few seconds, and
+redirects HTTP to HTTPS.</p>
+<p>Before 0.24.37 both failed with "permission denied": the certificate volume was owned by
+root and the backend runs as a normal user. The nginx container now hands the volume to the
+backend user (uid 100, gid 101) at every start, which also fixes existing installs.</p>
+<h2 id="updating-and-image-versions">Updating and image versions<a class="headerlink" href="#updating-and-image-versions" title="Permanent link">&para;</a></h2>
+<p>Images are published to GHCR only after CI has passed on that commit:
+<code>ghcr.io/2gt-media-group-llc/mikrotik-manager-backend</code> and <code>…-nginx</code>. Each is tagged
+<code>latest</code>, its version (for example <code>0.24.37-beta</code>) and <code>sha-&lt;commit&gt;</code>. To stay on a
+version, replace <code>latest</code> with the version tag in <code>docker-compose.ghcr.yml</code>.</p>
+<p>From 0.24.51 each image carries an SBOM and build provenance, and is signed with
+<a href="https://docs.sigstore.dev/">cosign</a> by the workflow that built it. To check an image before
+running it:</p>
+<div class="highlight"><pre><span></span><code>cosign verify ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:latest \
+  --certificate-identity-regexp 'https://github.com/2GT-Media-Group-LLC/mikrotik-manager/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+</code></pre></div>
+<p>Base images and the database images are pinned by digest, so a tag moved upstream can't change
+what's built or run until an update is reviewed.</p>
+<h2 id="dark-site-mode">Dark Site Mode<a class="headerlink" href="#dark-site-mode" title="Permanent link">&para;</a></h2>
+<p><strong>Settings → Dark Site Mode</strong> lists every feature that makes a request to the
+internet on its own, with where each one goes and what stops working without it. Each can be
+turned off individually. All are <strong>on</strong> by default.</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Destination</th>
+<th>When off</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Maps and address lookup</td>
+<td><code>*.tile.openstreetmap.org</code>, <code>nominatim.openstreetmap.org</code></td>
+<td>No location maps; addresses are kept as text</td>
+</tr>
+<tr>
+<td>Platform update check</td>
+<td><code>raw.githubusercontent.com</code></td>
+<td>The dashboard does not report newer releases</td>
+</tr>
+<tr>
+<td>Daily RouterOS update check</td>
+<td>MikroTik's update servers, contacted <strong>by each device</strong></td>
+<td>Devices are not asked daily; the on-demand button still works</td>
+</tr>
+<tr>
+<td>RouterOS changelogs</td>
+<td><code>download.mikrotik.com</code></td>
+<td>Release notes are not shown</td>
+</tr>
+<tr>
+<td>MAC vendor database download</td>
+<td><code>standards-oui.ieee.org</code></td>
+<td>The vendor list is not refreshed; an existing copy is still used</td>
+</tr>
+<tr>
+<td>RouterOS vulnerability list</td>
+<td><code>services.nvd.nist.gov</code>, <code>www.cisa.gov</code></td>
+<td>The Security page doesn't list known CVEs for the fleet's versions</td>
+</tr>
+<tr>
+<td>Documentation link</td>
+<td><code>2gt-media-group-llc.github.io</code></td>
+<td>The top-bar documentation button is hidden</td>
+</tr>
+</tbody>
+</table>
+<p>Alert channels — Slack, Discord, Telegram, ntfy, webhooks — are not listed. They send only
+when a destination has been configured, so leaving them unconfigured is already the off switch.</p>
+<p>The daily RouterOS check is the one that is easy to miss when auditing a firewall: the request
+comes from each MikroTik device, not from the manager's host.</p>
+<p>The MAC vendor database is downloaded at startup when the cached copy is older than its refresh
+interval. With the download off, the cached copy is used however old it is. Before v0.24.24 a
+failed download discarded the cache and left vendor lookups empty; it now falls back to it.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.instant", "navigation.top", "navigation.sections", "content.code.copy", "search.highlight"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.83f73b43.min.js"></script>
+      
+    
+  </body>
+</html>
