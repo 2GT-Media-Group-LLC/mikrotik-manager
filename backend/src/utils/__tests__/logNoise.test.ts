@@ -1,4 +1,4 @@
-import { isOwnApiSession, stripOwnSessionNoise, managerAddressFromActive } from '../logNoise';
+import { isOwnApiSession, isOwnSshSession, stripOwnSessionNoise, managerAddressFromActive } from '../logNoise';
 
 /**
  * Messages are verbatim from the events table of the reference fleet, where
@@ -113,5 +113,46 @@ describe('own session by address', () => {
     expect(managerAddressFromActive([row('admin', '172.24.1.7'), row('admin', '172.24.1.7'), row('rich', '10.0.0.5', 'winbox')], 'admin')).toBe('172.24.1.7');
     expect(managerAddressFromActive([row('admin', '172.24.1.7'), row('admin', '203.0.113.50')], 'admin')).toBeNull();
     expect(managerAddressFromActive([row('admin', '172.24.1.7', 'winbox')], 'admin')).toBeNull();
+  });
+});
+
+describe('own SSH sessions (#238)', () => {
+  const mgr = new Set(['192.168.0.76']);
+  const fp = 'SHA256:AbCdEf0123456789xyz';
+  const ssh = { username: 'admin', keyFingerprint: fp };
+  const line = (message: string, topics = 'system,info,account') => ({ topics, message });
+
+  it('drops the publickey line for the manager’s own key only', () => {
+    expect(isOwnSshSession(line('publickey accepted for user: admin, fingerprint: SHA256:AbCdEf0123456789xyz'), ssh, mgr)).toBe(true);
+    // RouterOS sometimes prints padding or a space after the prefix.
+    expect(isOwnSshSession(line('publickey accepted for user: admin, fingerprint: SHA256: AbCdEf0123456789xyz='), ssh, mgr)).toBe(true);
+    expect(isOwnSshSession(line('publickey accepted for user: admin, fingerprint: SHA256:SomebodyElsesKey'), ssh, mgr)).toBe(false);
+    expect(isOwnSshSession(line('publickey accepted for user: tech, fingerprint: SHA256:AbCdEf0123456789xyz'), ssh, mgr)).toBe(false);
+    expect(isOwnSshSession(line('publickey accepted for user: admin, fingerprint: SHA256:AbCdEf0123456789xyz'), { username: 'admin', keyFingerprint: null }, mgr)).toBe(false);
+  });
+
+  it('drops SSH logins only for the manager account from the manager address', () => {
+    expect(isOwnSshSession(line('user admin logged in from 192.168.0.76 via ssh'), ssh, mgr)).toBe(true);
+    expect(isOwnSshSession(line('user admin logged out from 192.168.0.76 via ssh'), ssh, mgr)).toBe(true);
+    expect(isOwnSshSession(line('user admin logged in from 10.9.9.9 via ssh'), ssh, mgr)).toBe(false);
+    expect(isOwnSshSession(line('user tech logged in from 192.168.0.76 via ssh'), ssh, mgr)).toBe(false);
+    expect(isOwnSshSession(line('user admin logged in from 192.168.0.76 via winbox'), ssh, mgr)).toBe(false);
+    expect(isOwnSshSession(line('login failure for user admin from 192.168.0.76 via ssh', 'system,error,critical'), ssh, mgr)).toBe(false);
+  });
+
+  it('keeps SSH logins while the manager address is unknown', () => {
+    expect(isOwnSshSession(line('user admin logged in from 192.168.0.76 via ssh'), ssh, new Set())).toBe(false);
+    expect(isOwnSshSession(line('user admin logged in from 192.168.0.76 via ssh'), ssh, undefined)).toBe(false);
+  });
+
+  it('strips both kinds in one pass', () => {
+    const { kept, dropped } = stripOwnSessionNoise([
+      line('user admin logged in from 192.168.0.76 via api'),
+      line('user admin logged in from 192.168.0.76 via ssh'),
+      line('publickey accepted for user: admin, fingerprint: SHA256:AbCdEf0123456789xyz'),
+      line('user admin logged in from 10.1.1.1 via ssh'),
+    ], 'admin', mgr, ssh);
+    expect(dropped).toBe(3);
+    expect(kept.map((l) => l.message)).toEqual(['user admin logged in from 10.1.1.1 via ssh']);
   });
 });

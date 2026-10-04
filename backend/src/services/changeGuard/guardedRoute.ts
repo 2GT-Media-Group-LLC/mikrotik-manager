@@ -30,11 +30,6 @@ export async function withGuardedChange<T>(
     kind: string; summary: string; change?: PlannedChange;
     /** Seconds before the device restores itself; for slow multi-step changes. */
     timeoutSec?: number;
-    /**
-     * Require auto-revert whatever the prediction says: the caller knows this
-     * touches the manager's path in a way the model can't see (#205).
-     */
-    protect?: boolean;
   },
   fn: (c: DeviceCollector) => Promise<T>,
   afterConfirmed?: (c: DeviceCollector) => Promise<void>
@@ -54,7 +49,7 @@ export async function withGuardedChange<T>(
   // body, so it can come as ?confirm_lockout=true.
   const confirmedLockout = req.body?.confirm_lockout === true || req.body?.force === true
     || req.query?.confirm_lockout === 'true';
-  let requireProtection = confirmedLockout || meta.protect === true;
+  let requireProtection = confirmedLockout;
   if (meta.change && !confirmedLockout) {
     try {
       const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);

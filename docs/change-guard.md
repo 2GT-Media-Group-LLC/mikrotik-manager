@@ -49,8 +49,8 @@ applied; the rest are protected by auto-revert alone.
 | Bonding | create, edit, delete | Flagged when a member or the bond carries management |
 | Services | management service enable/disable | Yes |
 | NAT | add, edit, move, delete | No |
-| WireGuard | interface enable/disable, delete | Yes; **refused** for the tunnel the manager arrives through |
-| WireGuard | interface edit, peers | Flagged when the tunnel carries management; some peer changes **refused**, below |
+| WireGuard | interface enable/disable, delete | Yes; the tunnel the manager arrives through is read-only, below |
+| WireGuard | interface edit, peers | Flagged when the tunnel carries management; the manager's own tunnel is read-only, below |
 | Wireless | interface edit, enable/disable, delete; security profile edit, delete | Enable/disable and delete predicted; edits flagged when the interface carries management |
 | Guest Wi-Fi | hotspot setup, server enable/disable, remove | Setup flagged when the chosen interface carries management |
 
@@ -60,28 +60,22 @@ manager's connection runs through, auto-revert becomes mandatory for it (see
 
 ### The manager's WireGuard tunnel
 
-When the manager reaches a device through WireGuard, the changes that would certainly cut
-it off are refused outright rather than offered with an "Apply anyway" (#205). The tunnel
-is the one that either holds the address the manager connects to, or carries the device's
-route back to the manager; the peer is the one whose allowed addresses cover the manager's
-address as the device sees it. The WireGuard page marks both (*Manager's tunnel*,
-*Manager*) and doesn't offer to delete or switch them off.
+When the manager reaches a device through WireGuard, that tunnel is left alone from here
+(#205). It's the WireGuard interface that either holds the address the manager connects to,
+or carries the device's route back to the manager.
 
-Refused, with the reason:
+- The WireGuard page marks it **Protected**, says why, and shows the interface and every
+  peer on it read-only: no switching off, editing or deleting, and no adding peers. The peer
+  carrying the manager's address is marked *Manager*.
+- The API refuses any change to that interface or its peers, including moving another
+  peer onto it, with the reason.
 
-- deleting or disabling the tunnel's interface;
-- deleting or disabling the peer that carries the manager, moving it to another interface,
-  or editing its allowed addresses so they no longer cover the manager;
-- adding a peer to the tunnel, or editing another peer on it, so its allowed addresses
-  cover the manager's address. WireGuard routes by allowed address, so that peer would take
-  the manager's traffic away from the one carrying it now.
+Change it on the device itself (WinBox or the terminal), or move management off the tunnel
+first. Other WireGuard interfaces work as before, under Change Guard.
 
-Any other change to the tunnel's interface or its peers runs with auto-revert required. To
-make a refused change, do it on the device itself, or move management off the tunnel first.
-
-Where the device doesn't track connections, the manager's own address can't be seen. Then
-every enabled peer on the tunnel is treated as possibly carrying it (*Maybe manager*):
-changes to them are guarded but not refused.
+Where the device doesn't track connections, the manager can't see its own address there,
+so the peer carrying it can't be singled out (*Maybe manager* on every peer). The tunnel is
+protected either way.
 
 Creating a bond also moves the member ports' VLAN membership onto the bond, and deleting
 it gives the ports their VLANs back. Before 0.24.44 a port tagged on a VLAN became a bond

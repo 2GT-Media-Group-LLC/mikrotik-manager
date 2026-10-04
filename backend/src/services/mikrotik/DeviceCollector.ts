@@ -1133,13 +1133,20 @@ export class DeviceCollector {
       // 99.8% of the events table on the reference fleet (see utils/logNoise).
       // Only lines from the manager's own address (S9): someone else using
       // the same account is kept.
+      // Our own SSH sessions too (#238): backups, commands and the terminal.
+      const key = await queryOne<{ ssh_username: string | null; fingerprint: string | null }>(
+        `SELECT ssh_username, fingerprint FROM device_ssh_keys WHERE device_id = $1`, [this.device.id]).catch(() => null);
       const { kept, dropped } = stripOwnSessionNoise(
         fresh as { topics?: string; message?: string }[],
         this.device.api_username,
         await this.learnManagerAddresses(),
+        {
+          username: key?.ssh_username || this.device.ssh_username || this.device.api_username,
+          keyFingerprint: key?.fingerprint ?? null,
+        },
       );
       if (dropped > 0) {
-        console.log(`[${this.device.name}] skipped ${dropped} of our own API session log lines`);
+        console.log(`[${this.device.name}] skipped ${dropped} of our own API/SSH session log lines`);
       }
 
       const pending: unknown[][] = [];

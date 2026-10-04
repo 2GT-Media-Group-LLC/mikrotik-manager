@@ -1,4 +1,4 @@
-import { managementTunnel, prefixContains, allowedCovers, peerRule, type TunnelState } from '../wireguardPath';
+import { managementTunnel, prefixContains, allowedCovers, tunnelWriteRule, type TunnelState } from '../wireguardPath';
 
 const wg = [{ '.id': '*A', name: 'wg-mgmt' }, { '.id': '*B', name: 'wg-site' }];
 const peers = [
@@ -67,38 +67,28 @@ describe('managementTunnel (#205)', () => {
   });
 });
 
-describe('peerRule (#205)', () => {
+describe('tunnelWriteRule (#205)', () => {
   const t = managementTunnel(base({ addresses: [{ address: '10.99.0.7/24', interface: 'wg-mgmt', disabled: 'false' }] }));
-  const refused = (v: ReturnType<typeof peerRule>) => !!v && 'refuse' in v;
-  const guarded = (v: ReturnType<typeof peerRule>) => !!v && 'protect' in v;
+  const refused = (v: ReturnType<typeof tunnelWriteRule>) => !!v && 'refuse' in v;
 
-  it('refuses deleting or disabling the peer that carries the manager', () => {
-    expect(refused(peerRule(t, '*1', undefined, 'remove'))).toBe(true);
-    expect(refused(peerRule(t, '*1', { disabled: 'yes' }, 'set'))).toBe(true);
+  it('refuses any write to the tunnel interface, by id or name', () => {
+    expect(refused(tunnelWriteRule(t, { ifaceIdOrName: '*A' }))).toBe(true);
+    expect(refused(tunnelWriteRule(t, { ifaceIdOrName: 'wg-mgmt' }))).toBe(true);
+    expect(tunnelWriteRule(t, { ifaceIdOrName: 'wg-site' })).toBeNull();
   });
-  it('refuses dropping the manager from its allowed addresses, or moving it', () => {
-    expect(refused(peerRule(t, '*1', { 'allowed-address': '10.99.0.2/32' }, 'set'))).toBe(true);
-    expect(refused(peerRule(t, '*1', { interface: 'wg-site' }, 'set'))).toBe(true);
+  it('refuses any write to a peer on the tunnel, enabled or not', () => {
+    expect(refused(tunnelWriteRule(t, { peerId: '*1' }))).toBe(true);
+    expect(refused(tunnelWriteRule(t, { peerId: '*2' }))).toBe(true);
+    expect(refused(tunnelWriteRule(t, { peerId: '*4' }))).toBe(true); // disabled, still on the tunnel
+    expect(tunnelWriteRule(t, { peerId: '*3' })).toBeNull();
   });
-  it('guards other edits to it', () => {
-    expect(guarded(peerRule(t, '*1', { 'endpoint-port': '13232' }, 'set'))).toBe(true);
-    expect(guarded(peerRule(t, '*1', { 'allowed-address': '10.99.0.0/24' }, 'set'))).toBe(true);
+  it('refuses adding a peer to the tunnel or moving one onto it', () => {
+    expect(refused(tunnelWriteRule(t, { targetIface: 'wg-mgmt' }))).toBe(true);
+    expect(refused(tunnelWriteRule(t, { peerId: '*3', targetIface: 'wg-mgmt' }))).toBe(true);
+    expect(tunnelWriteRule(t, { targetIface: 'wg-site' })).toBeNull();
   });
-  it('refuses another peer claiming the manager address, new or edited', () => {
-    expect(refused(peerRule(t, null, { interface: 'wg-mgmt', 'allowed-address': '0.0.0.0/0' }, 'add'))).toBe(true);
-    expect(refused(peerRule(t, '*2', { 'allowed-address': '10.99.0.0/24' }, 'set'))).toBe(true);
-  });
-  it('guards harmless changes on the tunnel and ignores other interfaces', () => {
-    expect(guarded(peerRule(t, null, { interface: 'wg-mgmt', 'allowed-address': '10.99.0.60/32' }, 'add'))).toBe(true);
-    expect(guarded(peerRule(t, '*2', { comment: 'x' }, 'set'))).toBe(true);
-    expect(peerRule(t, '*2', undefined, 'remove')).toBeNull();
-    expect(peerRule(t, '*3', { 'allowed-address': '10.99.0.1/32' }, 'set')).toBeNull();
-    expect(peerRule(t, null, { interface: 'wg-site', 'allowed-address': '0.0.0.0/0' }, 'add')).toBeNull();
-  });
-  it('only guards the carrying peer when the manager address is unknown', () => {
-    const u = managementTunnel(base({ managerIp: null, addresses: [{ address: '10.99.0.7/24', interface: 'wg-mgmt', disabled: 'false' }] }));
-    expect(guarded(peerRule(u, '*1', undefined, 'remove'))).toBe(true);
-    expect(guarded(peerRule(u, '*1', { disabled: 'yes' }, 'set'))).toBe(true);
+  it('allows everything when the manager isn\u2019t on a tunnel', () => {
+    const none = managementTunnel(base({ wgInterfaces: [] }));
+    expect(tunnelWriteRule(none, { ifaceIdOrName: '*A', peerId: '*1', targetIface: 'wg-mgmt' })).toBeNull();
   });
 });
-

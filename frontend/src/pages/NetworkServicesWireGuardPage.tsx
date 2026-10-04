@@ -357,7 +357,7 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
                 {isMgmtIface(iface) && (
                   <span title={mgmt!.reason}
                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300">
-                    <Lock className="w-3 h-3" /> Manager&apos;s tunnel
+                    <Lock className="w-3 h-3" /> Protected
                   </span>
                 )}
               </button>
@@ -370,11 +370,10 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
                   <span className={clsx('w-1.5 h-1.5 rounded-full', running && !disabled ? 'bg-green-500' : disabled ? 'bg-gray-400' : 'bg-amber-400')} />
                   {disabled ? 'Disabled' : running ? 'Running' : 'Stopped'}
                 </span>
-                {canWrite && id && (
+                {canWrite && id && !isMgmtIface(iface) && (
                   <>
                     <button onClick={() => toggle(id, !disabled)}
-                      disabled={isMgmtIface(iface) && !disabled}
-                      title={isMgmtIface(iface) && !disabled ? 'The manager reaches this device through this tunnel, so it can\u2019t be turned off from here' : disabled ? 'Enable' : 'Disable'}
+                      title={disabled ? 'Enable' : 'Disable'}
                       className={clsx('p-1.5 rounded-lg transition-colors',
                         disabled ? 'text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'
                         : 'text-green-600 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20')}>
@@ -385,8 +384,7 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button onClick={() => { if (confirm(`Delete WireGuard interface "${name}" and all its peers?`)) removeIface(id); }}
-                      disabled={isMgmtIface(iface)}
-                      title={isMgmtIface(iface) ? 'The manager reaches this device through this tunnel, so it can\u2019t be deleted from here' : 'Delete'}
+                      title="Delete"
                       className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -395,6 +393,15 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
               </div>
             </div>
 
+            {isMgmtIface(iface) && (
+              <p className="px-5 py-2 text-xs text-indigo-800 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 flex items-start gap-1.5 border-b border-gray-200 dark:border-slate-700">
+                <Lock className="w-3.5 h-3.5 mt-px flex-shrink-0" />
+                <span>
+                  {mgmt!.reason} This tunnel and its peers are shown read-only so the manager can&apos;t cut itself off.
+                  Change them on the device itself (WinBox or the terminal).
+                </span>
+              </p>
+            )}
             {isExpanded && (
               <div className="p-5 space-y-5">
                 {/* Interface details */}
@@ -421,7 +428,7 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
                     <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
                       Peers ({peers.length})
                     </h3>
-                    {canWrite && (
+                    {canWrite && !isMgmtIface(iface) && (
                       <button onClick={() => setPeerForm({ ifaceName: name })}
                         className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors">
                         <Plus className="w-3 h-3" />Add Peer
@@ -441,7 +448,7 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
                             <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Endpoint</th>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">TX / RX</th>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Last Handshake</th>
-                            {canWrite && <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Actions</th>}
+                            {canWrite && !isMgmtIface(iface) && <th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Actions</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -469,7 +476,7 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
                               <td className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">
                                 {peer['last-handshake'] || '—'}
                               </td>
-                              {canWrite && (
+                              {canWrite && !isMgmtIface(iface) && (
                                 <td className="px-3 py-2">
                                   <div className="flex items-center justify-end gap-1">
                                     <button onClick={() => setPeerForm({ ifaceName: name, existing: peer })}
@@ -477,8 +484,7 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
                                       <Pencil className="w-3.5 h-3.5" />
                                     </button>
                                     <button onClick={() => { if (confirm('Delete this peer?')) deletePeer.mutate(peer['.id']); }}
-                                      disabled={carriesManager(peer) && mgmt!.peer_certain}
-                                      title={carriesManager(peer) && mgmt!.peer_certain ? 'This peer carries the manager\u2019s connection, so it can\u2019t be deleted from here' : 'Delete'}
+                                      title="Delete"
                                       className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>

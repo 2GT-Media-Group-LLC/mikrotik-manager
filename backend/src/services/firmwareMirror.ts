@@ -501,7 +501,14 @@ export async function removeMirror(id: number): Promise<{ notes: string[] }> {
   } catch (e) {
     notes.push(`Package server: ${(e as Error).message}`);
   }
+  const versions = (await query<{ version: string }>(
+    `SELECT DISTINCT version FROM firmware_mirror_files WHERE mirror_id = $1`, [id])).map((r) => r.version);
   await query(`DELETE FROM firmware_mirrors WHERE id = $1`, [id]);
+  // The manager's own copies go too, unless another mirror still holds them.
+  for (const v of versions) {
+    const still = await queryOne(`SELECT 1 FROM firmware_mirror_files WHERE version = $1 LIMIT 1`, [v]);
+    if (!still && isMirrorVersion(v)) fs.rmSync(cacheDir(v), { recursive: true, force: true });
+  }
   return { notes };
 }
 

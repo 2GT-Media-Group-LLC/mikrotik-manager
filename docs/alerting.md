@@ -25,6 +25,23 @@ Alerts are suppressed for devices inside an active [maintenance window](#mainten
 Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
 only send an offline alert once they have been gone longer than their limit.
 
+### The manager's own sessions
+
+Each poll signs in to the device, and backups, bulk commands and the terminal open SSH
+sessions. RouterOS logs every one, so the manager would otherwise store and alert on its
+own logins. These lines are left out of Events and log alerts:
+
+- `user <account> logged in/out from <manager address> via api`, for the device's API
+  account;
+- `user <account> logged in/out from <manager address> via ssh`, for the manager's SSH
+  account;
+- `publickey accepted for user: <account>, fingerprint: ...` when the fingerprint is the
+  key the manager deployed to that device, which nobody else holds.
+
+The manager's address is learned from the device's list of active sessions. Until it's
+known, the login lines are kept. Anyone else's login, including with the same account from
+another address, is always kept.
+
 ## Certificate expiry
 
 Certificates on each device are read on the slow poll and checked hourly. The

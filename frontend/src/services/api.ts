@@ -1805,7 +1805,7 @@ export const networkServicesApi = {
     api.get<{
       interfaces: NS[]; peers: NS[];
       /** The tunnel the manager reaches this device through, if it does (#205). */
-      management: { interface: string; interface_id: string | null; peer_ids: string[]; peer_certain: boolean; reason: string } | null;
+      management: { interface: string; interface_id: string | null; peer_ids: string[]; peer_certain: boolean; manager_ip: string | null; reason: string } | null;
     }>('/network-services/wireguard', { params: { deviceId } }),
   addWireGuardInterface: (deviceId: number, body: NS) =>
     api.post<NS[]>('/network-services/wireguard', body, { params: { deviceId } }),

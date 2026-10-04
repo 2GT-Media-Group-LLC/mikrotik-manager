@@ -38,7 +38,7 @@ export interface ManagementTunnel {
   peerIds: string[];
   /** True when the peers were picked by the manager's own address. */
   peerCertain: boolean;
-  /** Every enabled peer on the interface, carrying the manager or not. */
+  /** Every peer on the interface, enabled or not, carrying the manager or not. */
   interfacePeerIds: string[];
   managerIp: string | null;
   /** One sentence for the UI and refusals. */
@@ -139,62 +139,33 @@ export function managementTunnel(s: TunnelState): ManagementTunnel {
     via,
     peerIds: peers.map((p) => p['.id']).filter(Boolean),
     peerCertain: certain,
-    interfacePeerIds: onIface.map((p) => p['.id']).filter(Boolean),
+    interfacePeerIds: s.peers.filter((p) => p['interface'] === name).map((p) => p['.id']).filter(Boolean),
     managerIp: s.managerIp,
     reason: `The manager reaches this device through WireGuard: ${how}.`,
   };
 }
 
-const truthy = (v: unknown): boolean => v === true || v === 'true' || v === 'yes';
-const ELSEWHERE = 'Make this change on the device itself, or move management off this tunnel first.';
+const ELSEWHERE = 'Change it on the device itself (WinBox or the terminal), or move management off this tunnel first.';
 
-export type TunnelVerdict = { refuse: string } | { protect: true } | null;
+export type TunnelVerdict = { refuse: string } | null;
 
 /**
- * What a peer change does to the management tunnel: refused when it would take
- * the manager's traffic away, guarded (auto-revert) when it touches the tunnel
- * otherwise, nothing when it doesn't touch it. `peerId` is null for a new peer.
+ * Writes to the manager's tunnel (#205). The tunnel the manager reaches the
+ * device through, and every peer on it, are not changed from here at all: the
+ * page offers no way to, and the API refuses, so there is no half-allowed
+ * state to get wrong. `ifaceIdOrName` is the interface a write targets;
+ * `peerId` is the peer, null for a new one; `targetIface` is where a peer is
+ * being put.
  */
-export function peerRule(
-  t: ManagementTunnel, peerId: string | null, body: Record<string, unknown> | undefined, action: 'add' | 'set' | 'remove',
+export function tunnelWriteRule(
+  t: ManagementTunnel, target: { ifaceIdOrName?: string; peerId?: string | null; targetIface?: string | null },
 ): TunnelVerdict {
   if (!t.interface) return null;
-  const ip = t.managerIp;
-  const carries = peerId !== null && t.peerIds.includes(peerId);
-  const covers = (v: unknown) => !!ip && v !== undefined && allowedCovers(String(v), ip);
-
-  if (action === 'remove') {
-    if (!carries) return null;
-    return t.peerCertain
-      ? { refuse: `This peer carries the manager's connection (its allowed addresses include ${ip}); deleting it would cut the manager off. ${ELSEWHERE}` }
-      : { protect: true };
-  }
-
-  if (!carries) {
-    // A peer that doesn't carry the manager, new or existing, ending up on the
-    // tunnel. WireGuard routes by allowed address, so one claiming the
-    // manager's address takes its traffic away from the peer carrying it now.
-    const onTunnelNow = peerId !== null && t.interfacePeerIds.includes(peerId);
-    const target = body?.interface !== undefined ? String(body.interface) : (onTunnelNow ? t.interface : null);
-    if (target !== t.interface) return null;
-    if (covers(body?.['allowed-address'])) {
-      return { refuse: `A peer whose allowed addresses include ${ip} would take the manager's traffic away from the peer that carries it now. ${ELSEWHERE}` };
-    }
-    return { protect: true };
-  }
-
-  if (t.peerCertain) {
-    if (truthy(body?.disabled)) {
-      return { refuse: `This peer carries the manager's connection; turning it off would cut the manager off. ${ELSEWHERE}` };
-    }
-    if (body?.['allowed-address'] !== undefined && !covers(body['allowed-address'])) {
-      return { refuse: `This peer carries the manager's connection; without ${ip} in its allowed addresses the manager's traffic would no longer reach it. ${ELSEWHERE}` };
-    }
-    if (body?.interface !== undefined && String(body.interface) !== t.interface) {
-      return { refuse: `This peer carries the manager's connection; moving it to another interface would cut the manager off. ${ELSEWHERE}` };
-    }
-  }
-  return { protect: true };
+  const refuse = { refuse: `${t.interface} is protected: the manager reaches this device through it. ${ELSEWHERE}` };
+  if (target.ifaceIdOrName && (target.ifaceIdOrName === t.interfaceId || target.ifaceIdOrName === t.interface)) return refuse;
+  if (target.peerId && t.interfacePeerIds.includes(target.peerId)) return refuse;
+  if (target.targetIface && target.targetIface === t.interface) return refuse;
+  return null;
 }
 
 /**

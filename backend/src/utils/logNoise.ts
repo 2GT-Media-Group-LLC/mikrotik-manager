@@ -94,6 +94,47 @@ export function managerAddressFromActive(rows: Record<string, string>[], apiUser
 }
 
 /**
+ * The manager's own SSH sessions (#238): backups, bulk commands and the
+ * terminal open SSH sessions too, and RouterOS logs each one.
+ *   publickey accepted for user: admin, fingerprint: SHA256:abc...
+ *   user admin logged in from 192.168.0.76 via ssh
+ * The publickey line is the manager's only when the fingerprint is the key the
+ * manager deployed to this device, which nobody else holds. The login and
+ * logout lines are dropped only for the manager's SSH account from the
+ * manager's own address, the same rule as API sessions (S9). Anyone else's SSH
+ * login, including with the same account from elsewhere, is kept.
+ */
+const SSH_ACCOUNT_LINE = /^user\s+(\S+)\s+logged\s+(?:in|out)\s+from\s+(\S+)\s+via\s+ssh\b/i;
+const PUBKEY_LINE = /^publickey\s+accepted\s+for\s+user:\s*([^,\s]+)\s*,\s*fingerprint:\s*(.+)$/i;
+
+/** "SHA256: abc=" and "SHA256:abc" are the same fingerprint. */
+export function normFingerprint(f: string | null | undefined): string {
+  return (f || '').replace(/\s+/g, '').replace(/^SHA256:/i, '').replace(/=+$/, '');
+}
+
+export interface OwnSsh {
+  /** The account the manager signs in with over SSH. */
+  username?: string | null;
+  /** SHA256 fingerprint of the key the manager deployed to this device, if any. */
+  keyFingerprint?: string | null;
+}
+
+export function isOwnSshSession(line: LogLineLike, ssh: OwnSsh | undefined, managerAddresses?: ReadonlySet<string>): boolean {
+  const user = (ssh?.username || '').trim();
+  if (!user) return false;
+  const msg = (line.message || '').trim();
+  const key = PUBKEY_LINE.exec(msg);
+  if (key) {
+    const ours = normFingerprint(ssh?.keyFingerprint);
+    return key[1] === user && !!ours && normFingerprint(key[2]) === ours;
+  }
+  if (!(line.topics || '').toLowerCase().includes('account')) return false;
+  const m = SSH_ACCOUNT_LINE.exec(msg);
+  // Only once the manager's address is known: noise beats hiding someone.
+  return !!m && m[1] === user && !!managerAddresses && managerAddresses.size > 0 && managerAddresses.has(m[2]);
+}
+
+/**
  * Drop our own session noise, keeping everything else in order.
  *
  * Returns the kept lines and how many were dropped, because a silent filter
@@ -103,7 +144,8 @@ export function stripOwnSessionNoise<T extends LogLineLike>(
   lines: T[],
   apiUsername: string | null | undefined,
   managerAddresses?: ReadonlySet<string>,
+  ssh?: OwnSsh,
 ): { kept: T[]; dropped: number } {
-  const kept = lines.filter((l) => !isOwnApiSession(l, apiUsername, managerAddresses));
+  const kept = lines.filter((l) => !isOwnApiSession(l, apiUsername, managerAddresses) && !isOwnSshSession(l, ssh, managerAddresses));
   return { kept, dropped: lines.length - kept.length };
 }
