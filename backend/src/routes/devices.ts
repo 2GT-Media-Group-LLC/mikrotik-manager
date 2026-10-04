@@ -22,6 +22,8 @@ import { withSafeApply, probeCapability, probeUndoCapability, GuardRequiredError
 import { captureSnapshot, resolveManagementPath } from '../services/changeGuard/pathModel';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
 import { runConfigHealth } from '../services/changeGuard/configHealth';
+import { fixFor, noFixReason } from '../utils/configHealthFixes';
+import { expandVlanIds } from '../utils/vlan';
 import { isMultiVlanSpec } from '../utils/vlan';
 import { redis } from '../config/redis';
 import { enqueueBulkAddJob, getBulkAddJobState } from '../services/DeviceBulkAddWorker';
@@ -1182,14 +1184,88 @@ router.get('/:id/config-health', async (req: Request, res: Response) => {
   );
   if (!device) return res.status(404).json({ error: 'Device not found' });
 
-  const findings = await query(
+  const findings = await query<{ rule: string; objects: string[] }>(
     `SELECT rule, severity, title, detail, remediation, doc_url, objects, first_seen, last_seen
      FROM device_config_findings
      WHERE device_id = $1
      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, rule`,
     [req.params.id]
   );
-  return res.json({ findings, checked_at: device.config_health_checked_at });
+  return res.json({ findings: findings.map(withFix), checked_at: device.config_health_checked_at });
+});
+
+/** A finding with its one-click fix (#239), or the reason it has none. */
+function withFix<T extends { rule: string; objects: string[] }>(f: T): T & { fix: ReturnType<typeof fixFor>; no_fix_reason: string | null } {
+  const fix = fixFor(f.rule, f.objects ?? []);
+  return { ...f, fix, no_fix_reason: fix ? null : noFixReason(f.rule) };
+}
+
+// POST /api/devices/:id/config-health/fix { rule, objects } — apply a finding's
+// one-click fix (#239). Only a finding recorded for this device, only one with
+// a fix, and always under Change Guard; the audit runs again afterwards so the
+// finding clears.
+router.post('/:id/config-health/fix', requireWrite, async (req: Request, res: Response) => {
+  const { rule, objects } = req.body as { rule?: string; objects?: unknown };
+  if (typeof rule !== 'string' || !Array.isArray(objects) || !objects.every((o) => typeof o === 'string')) {
+    return res.status(400).json({ error: 'rule and objects are required' });
+  }
+  const recorded = await queryOne(
+    `SELECT 1 FROM device_config_findings WHERE device_id = $1 AND rule = $2 AND objects = $3::text[]`,
+    [req.params.id, rule, objects]);
+  if (!recorded) return res.status(404).json({ error: 'That finding isn\u2019t current for this device. Run the check again.' });
+  const plan = fixFor(rule, objects as string[]);
+  if (!plan) return res.status(400).json({ error: noFixReason(rule) });
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const rescan = async () => { await runConfigHealth(deviceRow as unknown as GuardDevice).catch(() => {}); };
+
+  if (rule === 'stp-disabled' || rule === 'stp-legacy-mode') {
+    const bridge = (objects as string[])[0];
+    return withGuardedChange(req.params.id, req, res,
+      { kind: 'config-health.fix', summary: plan.summary,
+        // Spanning tree reconverges when it starts; if the management path runs
+        // through this bridge, the change must be able to undo itself.
+        change: { kind: 'path-object.change', name: bridge, what: 'Changing the bridge\u2019s spanning tree mode' } },
+      async (c) => { await c.setBridgeProtocolMode(bridge, 'rstp'); return { message: `${plan.summary}: done` }; },
+      rescan);
+  }
+
+  if (rule === 'vlan-iface-not-tagged-on-bridge') {
+    const [, bridge, vidRaw] = objects as string[];
+    const vid = Number(vidRaw);
+    // Read the entry as it stands, so the bridge is added to what's there.
+    let entry: Record<string, string> | undefined;
+    const reader = new DeviceCollector(deviceRow);
+    try {
+      await reader.connect();
+      const entries = (await reader.getBridgeVlanEntries(bridge)).filter((e) => e['dynamic'] !== 'true');
+      const matches = entries.filter((e) => expandVlanIds(e['vlan-ids']).includes(vid));
+      if (matches.some((e) => expandVlanIds(e['vlan-ids']).length > 1)) {
+        return res.status(409).json({ error: `VLAN ${vid} on ${bridge} is part of a multi-VLAN entry; add ${bridge} as tagged there on the device.` });
+      }
+      entry = matches[0];
+    } catch (err) {
+      return res.status(502).json({ error: `Could not read the bridge VLAN table: ${(err as Error).message}` });
+    } finally {
+      reader.disconnect();
+    }
+    const list = (v: string | undefined) => (v || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const tagged = [...new Set([...list(entry?.['tagged']), bridge])];
+    const untagged = list(entry?.['untagged']).filter((p) => p !== bridge);
+    return withGuardedChange(req.params.id, req, res,
+      { kind: 'config-health.fix', summary: plan.summary,
+        change: entry
+          ? { kind: 'vlan.update', bridge, vlanId: vid, tagged, untagged }
+          : { kind: 'vlan.add', bridge, vlanId: vid, tagged, untagged } },
+      async (c) => {
+        if (entry) await c.updateBridgeVlan(bridge, vid, tagged, untagged);
+        else await c.addBridgeVlan(bridge, vid, tagged, untagged);
+        return { message: `${plan.summary}: done` };
+      },
+      async (c) => { await c.collectVlans().catch(() => {}); await rescan(); });
+  }
+
+  return res.status(400).json({ error: noFixReason(rule) });
 });
 
 // POST /api/devices/:id/config-health/scan — audit now instead of waiting for the
@@ -1201,7 +1277,7 @@ router.post('/:id/config-health/scan', requireWrite, async (req: Request, res: R
     const { findings, checkedAt } = await runConfigHealth(deviceRow as unknown as GuardDevice);
     // Same shape as the cached GET, so the UI has one contract for both.
     return res.json({
-      findings: findings.map((f) => ({
+      findings: findings.map((f) => withFix({
         rule: f.rule, severity: f.severity, title: f.title, detail: f.detail,
         remediation: f.remediation, doc_url: f.docUrl, objects: f.objects,
         first_seen: null, last_seen: checkedAt.toISOString(),

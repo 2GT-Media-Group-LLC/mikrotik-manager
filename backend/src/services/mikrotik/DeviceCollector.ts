@@ -3531,6 +3531,19 @@ export class DeviceCollector {
     });
   }
 
+  /** Spanning tree mode of a bridge (none, stp, rstp, mstp); for the Config Health fix (#239). */
+  async setBridgeProtocolMode(bridgeName: string, mode: 'rstp'): Promise<void> {
+    const bridges = await this.client.execute('/interface/bridge/print');
+    const bridge = bridges.find((b) => b['name'] === bridgeName);
+    if (!bridge || !bridge['.id']) throw new Error(`Bridge '${bridgeName}' not found`);
+    await this.client.execute('/interface/bridge/set', { '.id': bridge['.id'], 'protocol-mode': mode });
+  }
+
+  /** The bridge VLAN table entries of one bridge, as configured. */
+  async getBridgeVlanEntries(bridge: string): Promise<Record<string, string>[]> {
+    return this.client.execute('/interface/bridge/vlan/print', { detail: '' }, [`?bridge=${bridge}`]);
+  }
+
   async getSystemResource(): Promise<Record<string, string>> {
     const res = await this.client.execute('/system/resource/print');
     return res[0] || {};

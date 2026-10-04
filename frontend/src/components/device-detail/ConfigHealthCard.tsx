@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { devicesApi, type ConfigFinding } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
+import { apiErrorMessage } from '../../utils/apiError';
 import clsx from 'clsx';
 
 const SEV: Record<ConfigFinding['severity'], { chip: string; card: string; label: string }> = {
@@ -35,9 +37,29 @@ function since(iso: string | null): string {
   return `present for ${days} days`;
 }
 
-function Finding({ f }: { f: ConfigFinding }) {
+function Finding({ f, deviceId, deviceName }: { f: ConfigFinding; deviceId: number; deviceName?: string }) {
   const [open, setOpen] = useState(f.severity === 'critical');
   const style = SEV[f.severity];
+  const canWrite = useCanWrite();
+  const qc = useQueryClient();
+  // One-click fix (#239): confirmed first with the exact command, then run
+  // under Change Guard, which may still ask about a predicted lockout.
+  const guard = useGuardedWrite();
+  const [confirming, setConfirming] = useState(false);
+  const [fixError, setFixError] = useState('');
+  const fix = useMutation({
+    mutationFn: (confirm: boolean) => devicesApi.fixConfigHealth(deviceId, f.rule, f.objects, confirm),
+    onSuccess: (res) => {
+      setConfirming(false);
+      setFixError('');
+      guard.onSuccess(res);
+      void qc.invalidateQueries({ queryKey: ['config-health', deviceId] });
+    },
+  });
+  const runFix = () => fix.mutate(false, {
+    onError: guard.onError(() => fix.mutate(true, { onError: (e) => setFixError(apiErrorMessage(e, 'The fix failed')) }),
+      (e) => setFixError(apiErrorMessage(e, 'The fix failed'))),
+  });
 
   return (
     <div className={clsx('rounded-lg border', style.card)}>
@@ -68,8 +90,31 @@ function Finding({ f }: { f: ConfigFinding }) {
           {f.remediation && (
             <div className="flex items-start gap-2 rounded-md bg-gray-50 dark:bg-slate-800/60 p-2.5">
               <Wrench className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
-              <p className="text-sm text-gray-700 dark:text-slate-200">{f.remediation}</p>
+              <p className="text-sm text-gray-700 dark:text-slate-200 flex-1">{f.remediation}</p>
+              {f.fix && canWrite && !confirming && (
+                <button onClick={() => setConfirming(true)} className="btn-primary text-xs py-1 flex-shrink-0">Fix it</button>
+              )}
             </div>
+          )}
+          {f.fix && confirming && (
+            <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-2.5 space-y-2">
+              <p className="text-sm text-blue-900 dark:text-blue-200">{f.fix.summary}. This runs on the device:</p>
+              <code className="block text-xs font-mono text-blue-900 dark:text-blue-100 break-all">{f.fix.command}</code>
+              <p className="text-xs text-blue-800/80 dark:text-blue-300/80">
+                It runs under Change Guard, so if it cuts the manager off the device undoes it by itself.
+              </p>
+              <div className="flex items-center gap-2">
+                <button onClick={runFix} disabled={fix.isPending} className="btn-primary text-xs py-1">
+                  {fix.isPending ? 'Applying…' : 'Apply fix'}
+                </button>
+                <button onClick={() => setConfirming(false)} disabled={fix.isPending} className="btn-secondary text-xs py-1">Cancel</button>
+              </div>
+            </div>
+          )}
+          {fixError && <p className="text-xs text-red-600 dark:text-red-400">{fixError}</p>}
+          <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={fix.isPending} />
+          {!f.fix && f.no_fix_reason && (
+            <p className="text-xs text-gray-400 dark:text-slate-500">No one-click fix: {f.no_fix_reason}</p>
           )}
 
           <div className="flex items-center gap-3 flex-wrap text-xs text-gray-400">
@@ -102,7 +147,7 @@ function Finding({ f }: { f: ConfigFinding }) {
  * port, a PVID that a frame-type makes inert — so this panel is the only place
  * they become visible.
  */
-export default function ConfigHealthCard({ deviceId }: { deviceId: number }) {
+export default function ConfigHealthCard({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [scanError, setScanError] = useState('');
@@ -193,7 +238,7 @@ export default function ConfigHealthCard({ deviceId }: { deviceId: number }) {
       ) : (
         <>
           <div className="space-y-2">
-            {findings.map((f) => <Finding key={`${f.rule}:${f.objects.join(',')}`} f={f} />)}
+            {findings.map((f) => <Finding key={`${f.rule}:${f.objects.join(',')}`} f={f} deviceId={deviceId} deviceName={deviceName} />)}
           </div>
           {data?.checked_at && (
             <div className="flex items-center gap-1.5 text-xs text-gray-400">

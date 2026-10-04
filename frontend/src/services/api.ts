@@ -276,6 +276,9 @@ export interface ConfigFinding {
   objects: string[];
   first_seen: string | null;
   last_seen: string | null;
+  /** A one-click fix (#239), or why there isn't one. */
+  fix?: { summary: string; command: string } | null;
+  no_fix_reason?: string | null;
 }
 
 export interface ConfigHealthResponse {
@@ -752,6 +755,9 @@ export const devicesApi = {
     api.get<ConfigHealthResponse>(`/devices/${id}/config-health`),
   scanConfigHealth: (id: number) =>
     api.post<ConfigHealthResponse>(`/devices/${id}/config-health/scan`),
+  /** Apply a finding's one-click fix under Change Guard (#239). */
+  fixConfigHealth: (id: number, rule: string, objects: string[], confirmLockout = false) =>
+    api.post<{ message?: string; guard?: unknown }>(`/devices/${id}/config-health/fix`, { rule, objects, ...(confirmLockout ? { confirm_lockout: true } : {}) }, { timeout: 180_000 }),
   /** Can this device arm Change Guard's auto-revert right now? Saves and removes a throwaway restore point. */
   changeGuardCheck: (id: number) =>
     api.post<{ ready: boolean; mode: 'binary' | 'script'; reason: string | null }>(`/devices/${id}/change-guard/check`),

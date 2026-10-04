@@ -1,3 +1,4 @@
+import ConfigHealthCard from './ConfigHealthCard';
 import { useState, useEffect } from 'react';
 import SshKeyCard from './SshKeyCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -288,6 +289,12 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
       {changelogVersion && (
         <ChangelogModal version={changelogVersion} onClose={() => setChangelogVersion(null)} />
       )}
+      {/* Config Health first (#239): what the configuration gets wrong, with
+          one-click fixes where there's one right answer. */}
+      <div className="card p-5">
+        <ConfigHealthCard deviceId={deviceId} deviceName={device.name} />
+      </div>
+
       {/* ── System Settings (identity, NTP, DNS, clock) ── */}
       <div className="card p-5">
         <div className="flex items-center justify-between mb-4">

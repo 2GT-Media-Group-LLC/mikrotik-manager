@@ -284,7 +284,24 @@ A scheduled, read-only audit for configurations RouterOS accepts without complai
 then quietly fails to honour. Each finding explains what it does to the network, how to
 fix it, how long it has been present, and links the relevant MikroTik documentation.
 
-Findings appear on the device's Security tab and in the dashboard's *Things to handle*.
+Findings appear at the top of the device's **Config** tab and in the dashboard's *Things to
+handle*.
+
+### One-click fixes
+
+Findings with one clearly right fix have a **Fix it** button (#239). It shows the exact
+change first, then runs it under Change Guard, and the audit runs again afterwards so the
+finding clears:
+
+| Finding | Fix |
+|---|---|
+| Spanning tree off on a bridge | `/interface/bridge set <bridge> protocol-mode=rstp` |
+| Bridge running classic STP | `/interface/bridge set <bridge> protocol-mode=rstp` |
+| VLAN interface whose VLAN the bridge is not tagged in | Adds the bridge to that VLAN's tagged ports, creating the entry if there is none. A VLAN that's part of a multi-VLAN entry is left for you to change on the device |
+
+The others have no button, and say why: most have more than one reasonable fix (move the
+address or take the port out of the bridge? lower the MTU or raise the L2 MTU?), and
+device-mode can only be changed at the device. Their advice is unchanged.
 
 ### What it checks
 
