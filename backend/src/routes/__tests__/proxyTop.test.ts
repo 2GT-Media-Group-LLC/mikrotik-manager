@@ -5,16 +5,18 @@ jest.mock('../../middleware/auth', () => ({
 jest.mock('../../services/ProxyUsageService', () => ({
   ...jest.requireActual('../../services/ProxyUsageService'),
   useProxyUsageRollup: jest.fn(),
+  useProxySourcesTable: jest.fn(),
 }));
 
 import request from 'supertest';
 import express from 'express';
 import proxyRoutes from '../proxy';
 import { query } from '../../config/database';
-import { useProxyUsageRollup } from '../../services/ProxyUsageService';
+import { useProxyUsageRollup, useProxySourcesTable } from '../../services/ProxyUsageService';
 
 const mockedQuery = jest.mocked(query);
 const mockedUse = jest.mocked(useProxyUsageRollup);
+const mockedSourcesTable = jest.mocked(useProxySourcesTable);
 
 const makeApp = () => {
   const app = express();
@@ -68,5 +70,22 @@ describe('GET /api/proxy/top', () => {
   it('still rejects an unknown tab or range', async () => {
     expect((await request(makeApp()).get('/api/proxy/top?by=nope')).status).toBe(400);
     expect((await request(makeApp()).get('/api/proxy/top?range=9y')).status).toBe(400);
+  });
+});
+
+describe('GET /api/proxy/sources', () => {
+  beforeEach(() => { mockedQuery.mockReset(); mockedSourcesTable.mockReset(); mockedQuery.mockResolvedValue([] as never); });
+
+  it('reads the small proxy_sources table once it has been filled', async () => {
+    mockedSourcesTable.mockResolvedValue(true);
+    expect((await request(makeApp()).get('/api/proxy/sources')).status).toBe(200);
+    expect(lastSql()).toContain('FROM proxy_sources');
+  });
+
+  it('falls back to the stored connections until the background backfill has finished', async () => {
+    mockedSourcesTable.mockResolvedValue(false);
+    await request(makeApp()).get('/api/proxy/sources');
+    expect(lastSql()).toContain('FROM proxy_connections');
+    expect(lastSql()).toContain('GROUP BY source, proxy_type, proxy_port');
   });
 });

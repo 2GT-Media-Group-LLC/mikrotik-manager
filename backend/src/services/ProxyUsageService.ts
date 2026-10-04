@@ -24,6 +24,8 @@ const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
 const READY_KEY = 'proxy_usage_ready';
 const ENABLED_KEY = 'proxy_usage_rollup';
+/** Set once proxy_sources has been filled from stored connections (see ProxyLogService). */
+export const SOURCES_READY_KEY = 'proxy_sources_ready';
 
 /** Hour boundary in UTC, independent of the session time zone. */
 const hourBucket = (col: string) => `(date_trunc('hour', ${col} AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
@@ -88,10 +90,32 @@ export async function rebuildProxyUsage(client: PoolClient, from: Date, to: Date
   }
 }
 
+const REBUILD_ATTEMPTS = 3;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * Build the rollup from stored connections once, a day at a time, then mark it ready.
- * Until then the rankings read proxy_connections. A failure leaves it unmarked, so
- * the next boot tries again.
+ * rebuildProxyUsage, retried: a rebuild that collides with a live log batch aborts and
+ * leaves the rollup untouched, and a second try a moment later normally succeeds.
+ */
+async function rebuildWithRetry(client: PoolClient, from: Date, to: Date): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await rebuildProxyUsage(client, from, to);
+      return;
+    } catch (err) {
+      if (attempt >= REBUILD_ATTEMPTS) throw err;
+      await sleep(200 * attempt);
+    }
+  }
+}
+
+/**
+ * Build the rollup from stored connections, a day at a time, then mark it ready. Until
+ * it is marked the rankings read proxy_connections. Runs in the background while new
+ * batches keep arriving (see ProxyBackfillService), which is safe: rebuilds are
+ * repeatable-read, so a batch that lands meanwhile either aborts the chunk (retried) or
+ * is invisible to it and added by its own upsert. The busy current hour is its own small
+ * chunk. A failure leaves it unmarked, so a later attempt starts over.
  */
 export async function backfillProxyUsage(client: PoolClient): Promise<number> {
   const done = await client.query('SELECT 1 FROM app_settings WHERE key = $1', [READY_KEY]);
@@ -100,12 +124,17 @@ export async function backfillProxyUsage(client: PoolClient): Promise<number> {
   const lo = (await client.query<{ lo: Date | null }>('SELECT MIN(event_time) AS lo FROM proxy_connections')).rows[0]?.lo;
   let chunks = 0;
   if (lo) {
-    // Through the end of the current hour: nothing else writes while migrations run.
-    const end = new Date(floorHour(new Date()).getTime() + HOUR_MS);
-    for (let a = floorHour(new Date(lo)); a < end; a = new Date(a.getTime() + DAY_MS)) {
-      await rebuildProxyUsage(client, a, new Date(Math.min(a.getTime() + DAY_MS, end.getTime())));
+    // Through the end of the current hour: rows stored before this process began writing
+    // the rollup can be as recent as that.
+    const hourStart = floorHour(new Date());
+    const end = new Date(hourStart.getTime() + HOUR_MS);
+    for (let a = floorHour(new Date(lo)); a < hourStart; a = new Date(a.getTime() + DAY_MS)) {
+      await rebuildWithRetry(client, a, new Date(Math.min(a.getTime() + DAY_MS, hourStart.getTime())));
       chunks++;
+      await sleep(50); // leave the pool and the disk to live traffic between chunks
     }
+    await rebuildWithRetry(client, hourStart, end);
+    chunks++;
   }
   await client.query(
     `INSERT INTO app_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
@@ -115,8 +144,6 @@ export async function backfillProxyUsage(client: PoolClient): Promise<number> {
 }
 
 const RECONCILE_CHUNK_HOURS = 6;
-const RECONCILE_ATTEMPTS = 3;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Recompute the last `hours` complete hours from raw, repairing any drift. Done in
@@ -133,15 +160,10 @@ export async function reconcileProxyUsage(hours = 48): Promise<void> {
   const client = await pool.connect();
   try {
     for (let a = start; a < end; a = new Date(a.getTime() + step)) {
-      const b = new Date(Math.min(a.getTime() + step, end.getTime()));
-      for (let attempt = 1; ; attempt++) {
-        try {
-          await rebuildProxyUsage(client, a, b);
-          break;
-        } catch {
-          if (attempt >= RECONCILE_ATTEMPTS) { failed.push(a.toISOString()); break; }
-          await sleep(200 * attempt);
-        }
+      try {
+        await rebuildWithRetry(client, a, new Date(Math.min(a.getTime() + step, end.getTime())));
+      } catch {
+        failed.push(a.toISOString());
       }
     }
   } finally {
@@ -150,18 +172,18 @@ export async function reconcileProxyUsage(hours = 48): Promise<void> {
   if (failed.length) throw new Error(`proxy usage reconcile gave up on ${failed.length} chunk(s) starting ${failed.join(', ')}`);
 }
 
-let settingsCache: { at: number; ready: boolean; enabled: boolean } | null = null;
+let settingsCache: { at: number; ready: boolean; enabled: boolean; sourcesReady: boolean } | null = null;
 const SETTINGS_TTL_MS = 30_000;
 
-async function readSettings(): Promise<{ ready: boolean; enabled: boolean }> {
+async function readSettings(): Promise<{ ready: boolean; enabled: boolean; sourcesReady: boolean }> {
   if (settingsCache && Date.now() - settingsCache.at < SETTINGS_TTL_MS) return settingsCache;
   const rows = await query<{ key: string; value: unknown }>(
-    'SELECT key, value FROM app_settings WHERE key IN ($1, $2)', [READY_KEY, ENABLED_KEY],
+    'SELECT key, value FROM app_settings WHERE key IN ($1, $2, $3)', [READY_KEY, ENABLED_KEY, SOURCES_READY_KEY],
   );
   const ready = rows.some((r) => r.key === READY_KEY);
   // On unless explicitly switched off, so it can be disabled without a deploy.
   const enabled = !rows.some((r) => r.key === ENABLED_KEY && (r.value === false || r.value === 'false'));
-  settingsCache = { at: Date.now(), ready, enabled };
+  settingsCache = { at: Date.now(), ready, enabled, sourcesReady: rows.some((r) => r.key === SOURCES_READY_KEY) };
   return settingsCache;
 }
 
@@ -169,6 +191,11 @@ async function readSettings(): Promise<{ ready: boolean; enabled: boolean }> {
 export async function useProxyUsageRollup(): Promise<boolean> {
   const s = await readSettings();
   return s.ready && s.enabled;
+}
+
+/** True once proxy_sources has been filled, so /sources can read it instead of proxy_connections. */
+export async function useProxySourcesTable(): Promise<boolean> {
+  return (await readSettings()).sourcesReady;
 }
 
 /** Test hook: forget the cached settings. */

@@ -1,6 +1,6 @@
 import {
   reconcileProxyUsage, aggregateSql, usageUpsertCtes, rebuildProxyUsage, backfillProxyUsage, useProxyUsageRollup,
-  resetProxyUsageSettingsCache, USAGE_KIND,
+  resetProxyUsageSettingsCache, useProxySourcesTable, USAGE_KIND,
 } from '../ProxyUsageService';
 import { query, pool } from '../../config/database';
 
@@ -98,6 +98,28 @@ describe('backfillProxyUsage', () => {
     expect(texts[texts.length - 1]).toContain('INSERT INTO app_settings');
   });
 
+  it('does the busy current hour as its own last chunk', async () => {
+    const lo = new Date(Date.now() - 2 * 86_400_000);
+    const c = fakeClient((t) => (t.includes('MIN(event_time)') ? { rows: [{ lo }] } : undefined));
+    await backfillProxyUsage(c as any);
+    const ranges = c.calls.filter(([t]) => t.startsWith('DELETE FROM proxy_usage_hourly')).map(([, p]) => p as string[]);
+    const last = ranges[ranges.length - 1];
+    expect(new Date(last[1]).getTime() - new Date(last[0]).getTime()).toBe(3_600_000);
+    // earlier chunks end where the final hour begins
+    expect(ranges[ranges.length - 2][1]).toBe(last[0]);
+  });
+
+  it('retries a chunk that collided with live traffic instead of starting over', async () => {
+    const lo = new Date(Date.now() - 3_600_000);
+    let failed = false;
+    const c = fakeClient((t) => {
+      if (t.includes('MIN(event_time)')) return { rows: [{ lo }] };
+      if (t.startsWith('DELETE FROM proxy_usage_hourly') && !failed) { failed = true; return new Error('could not serialize access'); }
+    });
+    await expect(backfillProxyUsage(c as any)).resolves.toBeGreaterThan(0);
+    expect(c.calls.some(([t]) => t.includes('INSERT INTO app_settings'))).toBe(true);
+  });
+
   it('leaves it unmarked when a chunk fails, so the next boot retries', async () => {
     const lo = new Date(Date.now() - 86_400_000);
     const c = fakeClient((t) => {
@@ -124,6 +146,12 @@ describe('useProxyUsageRollup', () => {
 
   it('can be switched off without a deploy', async () => {
     mockedQuery.mockResolvedValue([{ key: 'proxy_usage_ready', value: true }, { key: 'proxy_usage_rollup', value: false }]);
+    expect(await useProxyUsageRollup()).toBe(false);
+  });
+
+  it('tells the sources list apart from the rollup', async () => {
+    mockedQuery.mockResolvedValue([{ key: 'proxy_sources_ready', value: true }]);
+    expect(await useProxySourcesTable()).toBe(true);
     expect(await useProxyUsageRollup()).toBe(false);
   });
 

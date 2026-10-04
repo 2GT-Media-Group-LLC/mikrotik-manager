@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 import { query } from '../config/database';
 import { parseProxyLog, type ProxyConnection } from '../utils/proxyLog';
 import { logSafe } from '../utils/logSafe';
-import { usageUpsertCtes } from './ProxyUsageService';
+import { usageUpsertCtes, SOURCES_READY_KEY } from './ProxyUsageService';
 
 export interface ProxyLogInput {
   logId: string;
@@ -98,18 +98,25 @@ async function recordProxySources(
 }
 
 /**
- * Build proxy_sources from proxy_connections when it is empty (an upgrade, or after the
- * rows were removed). One aggregate scan, then nothing on later boots.
+ * Build proxy_sources from proxy_connections once, then mark it ready (until then
+ * /sources reads proxy_connections). Runs in the background while new batches keep
+ * arriving, so it merges instead of assuming an empty table: the later of the two
+ * last_seen values wins. One aggregate scan, then nothing on later starts.
  */
 export async function backfillProxySources(client: PoolClient): Promise<number> {
-  const have = await client.query('SELECT 1 FROM proxy_sources LIMIT 1');
-  if (have.rowCount) return 0;
+  const done = await client.query('SELECT 1 FROM app_settings WHERE key = $1', [SOURCES_READY_KEY]);
+  if (done.rowCount) return 0;
   const res = await client.query(
     `INSERT INTO proxy_sources (device_id, source, proxy_type, proxy_port, last_seen)
      SELECT device_id, source, proxy_type, COALESCE(proxy_port, 0), MAX(event_time)
        FROM proxy_connections
       GROUP BY device_id, source, proxy_type, COALESCE(proxy_port, 0)
-     ON CONFLICT DO NOTHING`,
+     ON CONFLICT (device_id, source, proxy_type, proxy_port)
+     DO UPDATE SET last_seen = GREATEST(proxy_sources.last_seen, EXCLUDED.last_seen)`,
+  );
+  await client.query(
+    `INSERT INTO app_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+    [SOURCES_READY_KEY, JSON.stringify(true)],
   );
   return res.rowCount ?? 0;
 }

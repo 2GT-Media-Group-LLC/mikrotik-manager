@@ -5,7 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { resolveProxyQuery } from '../utils/proxyQuery';
-import { USAGE_KIND, useProxyUsageRollup } from '../services/ProxyUsageService';
+import { USAGE_KIND, useProxyUsageRollup, useProxySourcesTable } from '../services/ProxyUsageService';
 
 const router = Router();
 router.use(requireAuth);
@@ -122,16 +122,25 @@ router.get('/top', async (req: Request, res: Response) => {
 
 // GET /api/proxy/sources — proxy instances seen in the last 30 days, for the selector.
 // Read from proxy_sources (one row per instance per device) rather than aggregating
-// proxy_connections, which meant scanning every stored connection.
+// proxy_connections, which meant scanning every stored connection. Until the background
+// backfill has filled it (a short window after an upgrade) the aggregate is used.
 router.get('/sources', async (req: Request, res: Response) => {
   const siteFilter = siteScopeByDevice(activeSite(req), 'device_id');
-  const rows = await query(
-    `SELECT source, proxy_type, NULLIF(proxy_port, 0) AS proxy_port
-       FROM proxy_sources
-      WHERE last_seen > NOW() - INTERVAL '30 days' ${siteFilter ? `AND ${siteFilter}` : ''}
-      GROUP BY source, proxy_type, NULLIF(proxy_port, 0)
-      ORDER BY MAX(last_seen) DESC, source, proxy_port`
-  );
+  const rows = await useProxySourcesTable()
+    ? await query(
+      `SELECT source, proxy_type, NULLIF(proxy_port, 0) AS proxy_port
+         FROM proxy_sources
+        WHERE last_seen > NOW() - INTERVAL '30 days' ${siteFilter ? `AND ${siteFilter}` : ''}
+        GROUP BY source, proxy_type, NULLIF(proxy_port, 0)
+        ORDER BY MAX(last_seen) DESC, source, proxy_port`
+    )
+    : await query(
+      `SELECT source, proxy_type, proxy_port
+         FROM proxy_connections
+        WHERE event_time > NOW() - INTERVAL '30 days' ${siteFilter ? `AND ${siteFilter}` : ''}
+        GROUP BY source, proxy_type, proxy_port
+        ORDER BY MAX(event_time) DESC, source, proxy_port`
+    );
   res.json(rows);
 });
 

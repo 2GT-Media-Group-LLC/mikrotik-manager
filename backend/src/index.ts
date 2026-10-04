@@ -18,6 +18,7 @@ import { pool, queryOne, query } from './config/database';
 import { initOuiDatabase } from './utils/oui';
 import { redis } from './config/redis';
 import { runMigrations } from './db/migrate';
+import { startProxyBackfillsInBackground } from './services/ProxyBackfillService';
 import { errorHandler } from './middleware/errorHandler';
 import { PollerService } from './services/PollerService';
 import { setSharedPollerService } from './services/pollerRef';
@@ -543,6 +544,11 @@ async function start(): Promise<void> {
   httpServer.listen(PORT, () => {
     console.log(`✓ Mikrotik Manager backend running on port ${PORT}`);
   });
+
+  // Scan-heavy proxy backfills (instance list, hourly rollup) run now that the server is
+  // up, so a large install does not hold up the health check; readers fall back to the
+  // raw rows until they finish.
+  void startProxyBackfillsInBackground();
 
   // Graceful shutdown
   const shutdown = async () => {

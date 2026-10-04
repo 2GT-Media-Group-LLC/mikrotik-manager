@@ -1,7 +1,6 @@
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
-import { backfillProxyConnections, backfillProxySources } from '../services/ProxyLogService';
-import { backfillProxyUsage } from '../services/ProxyUsageService';
+import { backfillProxyConnections } from '../services/ProxyLogService';
 
 const MIGRATION_SQL = `
 -- Users
@@ -1422,23 +1421,9 @@ export async function runMigrations(): Promise<void> {
       console.error('Proxy connection backfill failed (non-fatal):', err);
     }
 
-    // Build the hourly rollup from rows already stored, once. Until it is marked ready
-    // the rankings read proxy_connections, so a failure here only delays the speed-up.
-    try {
-      const n = await backfillProxyUsage(client);
-      if (n > 0) console.log(`Built the proxy usage rollup from ${n} day(s) of connections`);
-    } catch (err) {
-      console.error('Proxy usage rollup backfill failed (non-fatal):', err);
-    }
-
-    // Fill the instance list from rows already stored. Only does work while the list is
-    // empty, so it costs one scan on upgrade and nothing afterwards.
-    try {
-      const n = await backfillProxySources(client);
-      if (n > 0) console.log(`Recorded ${n} proxy instance(s) from existing connections`);
-    } catch (err) {
-      console.error('Proxy instance backfill failed (non-fatal):', err);
-    }
+    // The proxy_sources and proxy_usage_hourly backfills scan proxy_connections, which
+    // can take minutes on a large install, so they run in the background after startup
+    // (ProxyBackfillService) rather than holding up the health check here.
 
     console.log('Database migrations completed successfully');
   } finally {

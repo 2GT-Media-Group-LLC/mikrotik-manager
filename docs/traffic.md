@@ -99,9 +99,10 @@ The 24h, 7d and 30d rankings read an hourly rollup (`proxy_usage_hourly`, one ro
 device, proxy, port, client/user/destination and peer) that is updated as logs arrive, so
 they stay fast however many connections are stored; **1h** reads the stored connections and
 is exact to the minute. The rollup starts at the hour containing *now minus the range*, so
-a range can reach up to an hour further back. It is built from the stored connections on the
-first start after updating (until then the card reads them directly), and the last 48 hours
-are recomputed once a day to repair any drift. To go back to reading the stored connections,
+a range can reach up to an hour further back. It is built from the stored connections in the
+background after the first start following an update, so startup is not held up (until it
+finishes, the card reads the stored connections directly; the instance list is filled the
+same way), and the last 48 hours are recomputed once a day to repair any drift. To go back to reading the stored connections,
 set the app setting `proxy_usage_rollup` to `false`.
 
 ## If no data appears

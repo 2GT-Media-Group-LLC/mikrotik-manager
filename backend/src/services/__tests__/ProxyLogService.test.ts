@@ -102,20 +102,36 @@ describe('storeProxyConnections', () => {
 });
 
 describe('backfillProxySources', () => {
-  it('does nothing once the list has rows', async () => {
+  it('does nothing once marked ready', async () => {
     const c = { query: jest.fn(async () => ({ rowCount: 1, rows: [] })) };
     expect(await backfillProxySources(c as any)).toBe(0);
     expect(c.query).toHaveBeenCalledTimes(1);
   });
 
-  it('builds the list from stored connections when it is empty', async () => {
+  it('merges stored connections into the list, keeps the later last_seen, then marks it ready', async () => {
     const c = {
-      query: jest.fn(async (text: string) =>
-        text.includes('SELECT 1 FROM proxy_sources') ? { rowCount: 0, rows: [] } : { rowCount: 3, rows: [] }),
+      query: jest.fn(async (text: string, _params?: unknown[]) =>
+        text.includes('FROM app_settings') ? { rowCount: 0, rows: [] } : { rowCount: 3, rows: [] }),
     };
     expect(await backfillProxySources(c as any)).toBe(3);
     const insert = String(c.query.mock.calls[1][0]);
     expect(insert).toContain('FROM proxy_connections');
     expect(insert).toContain('COALESCE(proxy_port, 0)');
+    // New batches may have filled the list while this ran, so it merges rather than assuming empty.
+    expect(insert).toContain('GREATEST(proxy_sources.last_seen, EXCLUDED.last_seen)');
+    const mark = c.query.mock.calls[2] as [string, unknown[]];
+    expect(mark[0]).toContain('INSERT INTO app_settings');
+    expect(mark[1][0]).toBe('proxy_sources_ready');
+  });
+
+  it('leaves it unmarked when the scan fails, so a later attempt retries', async () => {
+    const c = {
+      query: jest.fn(async (text: string) => {
+        if (text.includes('FROM app_settings')) return { rowCount: 0, rows: [] };
+        throw new Error('boom');
+      }),
+    };
+    await expect(backfillProxySources(c as any)).rejects.toThrow('boom');
+    expect(c.query.mock.calls.some(([t]) => String(t).includes('INSERT INTO app_settings'))).toBe(false);
   });
 });
