@@ -1288,6 +1288,15 @@ lines exist. Parsed records are kept for <strong>Proxy log retention</strong> da
 lines.</p>
 <p><code>GET /api/proxy/top?by=client|user|destination|denied&amp;range=1h|24h|7d|30d</code> and
 <code>GET /api/proxy/sources</code> serve the card. Contributed by thanhtrung5763 in #177.</p>
+<p>The 24h, 7d and 30d rankings read an hourly rollup (<code>proxy_usage_hourly</code>, one row per hour,
+device, proxy, port, client/user/destination and peer) that is updated as logs arrive, so
+they stay fast however many connections are stored; <strong>1h</strong> reads the stored connections and
+is exact to the minute. The rollup starts at the hour containing <em>now minus the range</em>, so
+a range can reach up to an hour further back. It is built from the stored connections in the
+background after the first start following an update, so startup is not held up (until it
+finishes, the card reads the stored connections directly; the instance list is filled the
+same way), and the last 48 hours are recomputed once a day to repair any drift. To go back to reading the stored connections,
+set the app setting <code>proxy_usage_rollup</code> to <code>false</code>.</p>
 <h2 id="if-no-data-appears">If no data appears<a class="headerlink" href="#if-no-data-appears" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Is the collector enabled? <code>netflow_enabled</code> in <strong>Settings</strong>.</li>
