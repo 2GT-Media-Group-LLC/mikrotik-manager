@@ -8,6 +8,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts';
+import { chartTooltip } from '../common/chartTooltip';
 import { wirelessApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import RfHealth from '../wireless/RfHealth';
@@ -564,7 +565,7 @@ function SpectrumAnalyzer({ deviceId, ifaces }: { deviceId: number; ifaces: Wire
               <Tooltip
                 formatter={(value: number) => [`${value + SPECTRAL_BASELINE} dBm`, 'Power']}
                 labelFormatter={(label: number) => `${label} MHz`}
-                contentStyle={{ fontSize: 12 }}
+                {...chartTooltip}
               />
               <Bar dataKey="barValue" maxBarSize={8} isAnimationActive={false}>
                 {chartData.map((entry, index) => (

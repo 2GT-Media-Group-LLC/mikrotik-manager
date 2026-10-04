@@ -7,6 +7,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
+import { chartTooltip } from '../components/common/chartTooltip';
 import { Activity, ArrowDown, ArrowUp, BarChart3, Router as RouterIcon, Settings2, AlertTriangle } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
@@ -213,6 +214,7 @@ export default function TrafficAnalyticsPage() {
                 <Tooltip
                   labelFormatter={t => { try { return format(parseISO(String(t)), 'MMM d, HH:mm'); } catch { return String(t); } }}
                   formatter={(value: number, name: string) => [formatBytes(value), name === 'download' ? 'Download' : 'Upload']}
+                  {...chartTooltip}
                 />
                 <Legend formatter={(v: string) => (v === 'download' ? 'Download' : 'Upload')} />
                 <Area type="monotone" dataKey="download" stroke="#3b82f6" fill="url(#dl)" strokeWidth={2} />
@@ -238,6 +240,7 @@ export default function TrafficAnalyticsPage() {
                 <Tooltip
                   labelFormatter={t => { try { return format(parseISO(String(t)), 'MMM d, HH:mm'); } catch { return String(t); } }}
                   formatter={(value: number) => [`${formatCount(value)} pkts`, 'Inbound']}
+                  {...chartTooltip}
                 />
                 <Area type="monotone" dataKey="downloadPackets" stroke="#10b981" fill="url(#pktIn)" strokeWidth={2} />
               </AreaChart>
@@ -337,6 +340,7 @@ export default function TrafficAnalyticsPage() {
                               `${formatBytes(value)}${totalAppBytes > 0 ? ` · ${((value / totalAppBytes) * 100).toFixed(1)}%` : ''}`,
                               name,
                             ]}
+                            {...chartTooltip}
                           />
                         </PieChart>
                       </ResponsiveContainer>
