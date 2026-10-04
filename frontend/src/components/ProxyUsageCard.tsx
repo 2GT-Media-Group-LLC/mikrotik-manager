@@ -37,9 +37,10 @@ export default function ProxyUsageCard() {
       by, range, limit: 10,
       source: source || undefined, port: port ? Number(port) : undefined,
     }).then(r => r.data),
-    refetchInterval: 60_000,
+    // Starts alongside /sources instead of waiting for it, so the card takes as long as
+    // the slower of the two rather than their sum. It only keeps polling once proxies exist.
+    refetchInterval: sources.length > 0 ? 60_000 : false,
     placeholderData: keepPreviousData,
-    enabled: sources.length > 0,
   });
 
   if (sources.length === 0) return null;

@@ -1,6 +1,11 @@
-import { backfillProxyConnections } from '../ProxyLogService';
+import { backfillProxyConnections, backfillProxySources, collectProxySources, storeProxyConnections } from '../ProxyLogService';
+import { query } from '../../config/database';
 
 jest.mock('../../config/database', () => ({ query: jest.fn() }));
+
+const T = 'container,info,debug';
+const line = (name: string, type: string, port: number, unix: number) =>
+  `${name}: {"time_unix":${unix}, "proxy":{"type":"${type}", "port":${port}}, "error":{"code":"00000"}, "auth":{"user":"u"}, "client":{"ip":"10.0.0.1", "port":1}, "server":{"ip":"1.2.3.4", "port":443}, "bytes":{"sent":1, "received":2}, "request":{"hostname":"a.example"}, "message":"CONNECT a.example:443 HTTP/1.1"}`;
 
 type Call = [string, unknown[]?];
 
@@ -43,6 +48,90 @@ describe('backfillProxyConnections', () => {
       throw new Error('boom');
     });
     await expect(backfillProxyConnections(c as any)).rejects.toThrow('boom');
+    expect(c.query.mock.calls.some(([t]) => String(t).includes('INSERT INTO app_settings'))).toBe(false);
+  });
+});
+
+describe('collectProxySources', () => {
+  const conn = (source: string, proxyType: string, proxyPort: number | null, ms: number) =>
+    ({ c: { source, proxyType, proxyPort, eventTime: new Date(ms) } as any });
+
+  it('keeps one entry per instance with its latest event time', () => {
+    const out = collectProxySources([conn('3proxy', 'PROXY', 3128, 1000), conn('3proxy', 'PROXY', 3128, 5000), conn('3proxy', 'SOCKS', 1080, 2000)]);
+    expect(out).toHaveLength(2);
+    expect(out.find((s) => s.proxyType === 'PROXY')!.lastSeen.getTime()).toBe(5000);
+  });
+
+  it('uses port 0 where a line carried none', () => {
+    expect(collectProxySources([conn('squid', 'PROXY', null, 1)])[0].proxyPort).toBe(0);
+  });
+});
+
+describe('storeProxyConnections', () => {
+  const run = query as unknown as jest.Mock;
+  beforeEach(() => { run.mockReset(); run.mockResolvedValue([]); });
+
+  it('records the instances of a batch alongside the connections', async () => {
+    const n = await storeProxyConnections(7, [
+      { logId: '1', topics: T, message: line('3proxy-17', 'PROXY', 3128, 100) },
+      { logId: '2', topics: T, message: line('3proxy-18', 'PROXY', 3128, 200) },
+      { logId: '3', topics: T, message: line('3proxy-20', 'SOCKS', 1080, 150) },
+    ]);
+    expect(n).toBe(3);
+    expect(run).toHaveBeenCalledTimes(2);
+    const [sql, params] = run.mock.calls[1] as [string, unknown[]];
+    expect(sql).toContain('INSERT INTO proxy_sources');
+    expect(sql).toContain('GREATEST(proxy_sources.last_seen, EXCLUDED.last_seen)');
+    // device id, then 4 values for each of the two distinct instances
+    expect(params).toHaveLength(1 + 2 * 4);
+    expect(params[0]).toBe(7);
+  });
+
+  it('writes nothing when no line is a proxy log', async () => {
+    expect(await storeProxyConnections(7, [{ logId: '1', topics: 'system,info', message: 'hello' }])).toBe(0);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('still succeeds when recording the instances fails', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    run.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('boom'));
+    await expect(storeProxyConnections(7, [{ logId: '1', topics: T, message: line('3proxy-1', 'PROXY', 3128, 100) }])).resolves.toBe(1);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+});
+
+describe('backfillProxySources', () => {
+  it('does nothing once marked ready', async () => {
+    const c = { query: jest.fn(async () => ({ rowCount: 1, rows: [] })) };
+    expect(await backfillProxySources(c as any)).toBe(0);
+    expect(c.query).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges stored connections into the list, keeps the later last_seen, then marks it ready', async () => {
+    const c = {
+      query: jest.fn(async (text: string, _params?: unknown[]) =>
+        text.includes('FROM app_settings') ? { rowCount: 0, rows: [] } : { rowCount: 3, rows: [] }),
+    };
+    expect(await backfillProxySources(c as any)).toBe(3);
+    const insert = String(c.query.mock.calls[1][0]);
+    expect(insert).toContain('FROM proxy_connections');
+    expect(insert).toContain('COALESCE(proxy_port, 0)');
+    // New batches may have filled the list while this ran, so it merges rather than assuming empty.
+    expect(insert).toContain('GREATEST(proxy_sources.last_seen, EXCLUDED.last_seen)');
+    const mark = c.query.mock.calls[2] as [string, unknown[]];
+    expect(mark[0]).toContain('INSERT INTO app_settings');
+    expect(mark[1][0]).toBe('proxy_sources_ready');
+  });
+
+  it('leaves it unmarked when the scan fails, so a later attempt retries', async () => {
+    const c = {
+      query: jest.fn(async (text: string) => {
+        if (text.includes('FROM app_settings')) return { rowCount: 0, rows: [] };
+        throw new Error('boom');
+      }),
+    };
+    await expect(backfillProxySources(c as any)).rejects.toThrow('boom');
     expect(c.query.mock.calls.some(([t]) => String(t).includes('INSERT INTO app_settings'))).toBe(false);
   });
 });

@@ -6,6 +6,9 @@ import { siteScopeByNullableDevice } from '../utils/siteScope';
 import { activeSite, writableScope } from '../middleware/site';
 import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
 
+/** Most events the list's total counts; past it the page shows "N+". */
+export const EVENTS_COUNT_CAP = 100_000;
+
 const router = Router();
 router.use(requireAuth);
 
@@ -97,18 +100,30 @@ router.get('/', async (req: Request, res: Response) => {
 
   const where = filters.join(' AND ');
 
+  const rowsQuery = query(
+    `SELECT e.*, d.name as device_name
+     FROM events e
+     LEFT JOIN devices d ON d.id = e.device_id
+     WHERE ${where}
+     ORDER BY e.event_time DESC
+     LIMIT $${idx++} OFFSET $${idx++}`,
+    [...params, parseInt(String(limit), 10), parseInt(String(offset), 10)]
+  );
+
+  // ?counts=0 returns the rows alone. The dashboard shows five events and never reads
+  // the totals, and the total is a regex test over every stored event, several seconds
+  // on a large table that also slowed whatever else the database was doing.
+  if (req.query.counts === '0') {
+    res.json({ events: await rowsQuery });
+    return;
+  }
+
   const [events, totalResult, criticalCount] = await Promise.all([
-    query(
-      `SELECT e.*, d.name as device_name
-       FROM events e
-       LEFT JOIN devices d ON d.id = e.device_id
-       WHERE ${where}
-       ORDER BY e.event_time DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...params, parseInt(String(limit), 10), parseInt(String(offset), 10)]
-    ),
+    rowsQuery,
+    // Counted up to one past the cap, then stopped: an exact total meant testing every
+    // stored event (millions on a busy install), several seconds on every refresh.
     query<{ count: string }>(
-      `SELECT COUNT(*) as count FROM events e WHERE ${where}`,
+      `SELECT COUNT(*) as count FROM (SELECT 1 FROM events e WHERE ${where} LIMIT ${EVENTS_COUNT_CAP + 1}) c`,
       params
     ),
     query<{ count: string }>(
@@ -119,9 +134,12 @@ router.get('/', async (req: Request, res: Response) => {
     ),
   ]);
 
+  const counted = parseInt(totalResult[0]?.count || '0', 10);
   res.json({
     events,
-    total: parseInt(totalResult[0]?.count || '0', 10),
+    total: Math.min(counted, EVENTS_COUNT_CAP),
+    // True when there are more than EVENTS_COUNT_CAP matching events (total is the cap).
+    totalCapped: counted > EVENTS_COUNT_CAP,
     criticalCount: parseInt(criticalCount[0]?.count || '0', 10),
   });
 });

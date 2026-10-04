@@ -112,9 +112,11 @@ export class ReportService {
         `SELECT COUNT(*)::text AS n, COALESCE(SUM(${outageSecondsSql(`($1 || ' days')::interval`)}),0)::bigint::text AS secs
          FROM device_availability WHERE ${outageOverlapsSql(`($1 || ' days')::interval`)}`, [days]),
       query<{ errors: string; warnings: string }>(
+        // The severity test is in the WHERE too, so only error and warning rows are read
+        // rather than every (mostly info) event of the period.
         `SELECT COUNT(*) FILTER (WHERE severity='error')::text AS errors,
                 COUNT(*) FILTER (WHERE severity='warning')::text AS warnings
-         FROM events WHERE event_time > NOW() - ($1 || ' days')::interval`, [days]),
+         FROM events WHERE severity IN ('error','warning') AND event_time > NOW() - ($1 || ' days')::interval`, [days]),
       query<{ name: string; bytes: string }>(
         // One name per MAC: joining every client row multiplied a MAC's bytes
         // by the number of devices that had seen it.
