@@ -34,6 +34,9 @@ const DEFAULT_RULES = [
   // A serious RouterOS CVE affecting a version the fleet runs (#224). Off by
   // default; checked after the daily CVE feed refresh, once per CVE and version.
   { event_type: 'cve_active', enabled: false, threshold: null, cooldown_min: 1440 },
+  // A WireGuard peer whose last handshake is older than the threshold, in
+  // minutes (#208). Off by default; one alert per peer, per cooldown.
+  { event_type: 'wireguard_stale', enabled: false, threshold: 15, cooldown_min: 60 },
 ];
 
 /**

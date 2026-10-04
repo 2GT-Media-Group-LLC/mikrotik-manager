@@ -1335,6 +1335,23 @@ CREATE TABLE IF NOT EXISTS firmware_mirror_clients (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- WireGuard peers as last polled (#208): the last handshake, in seconds before
+-- updated_at (NULL: never), for the stale-peer alert.
+CREATE TABLE IF NOT EXISTS wireguard_peers (
+  device_id          INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  peer_id            VARCHAR(16) NOT NULL,
+  interface          VARCHAR(64),
+  name               VARCHAR(128),
+  public_key         VARCHAR(64),
+  endpoint           VARCHAR(128),
+  allowed_address    TEXT,
+  last_handshake_sec INTEGER,
+  disabled           BOOLEAN NOT NULL DEFAULT FALSE,
+  interface_disabled BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (device_id, peer_id)
+);
+
 -- Where a rollout's devices get their packages: 'mirror' or 'mikrotik'.
 ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS package_source VARCHAR(10) NOT NULL DEFAULT 'mikrotik';
 `;

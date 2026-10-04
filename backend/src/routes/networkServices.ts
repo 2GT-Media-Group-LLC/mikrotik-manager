@@ -3,7 +3,8 @@ import { deviceSiteAccess, deviceIdQuery } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromQuery } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import type { PlannedChange } from '../services/changeGuard/analyzeChange';
-import { query } from '../config/database';
+import { query, queryOne } from '../config/database';
+import { readManagementTunnel, peerRule, type ManagementTunnel, type TunnelVerdict } from '../services/changeGuard/wireguardPath';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { siteScopeDevices } from '../utils/siteScope';
@@ -409,16 +410,47 @@ router.get('/wireguard', async (req: Request, res: Response) => {
       collector.getWireGuardInterfaces(),
       collector.getWireGuardPeers(),
     ]);
+    // Which interface and peers carry the manager's own connection, so the
+    // page can mark them and not offer to delete or disable them (#205).
+    const device = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [deviceId]);
+    const tunnel = device ? await readManagementTunnel(device) : null;
     res.json({
       interfaces: interfaces.status === 'fulfilled' ? interfaces.value : [],
       peers: peers.status === 'fulfilled' ? peers.value : [],
+      management: tunnel?.interface
+        ? { interface: tunnel.interface, interface_id: tunnel.interfaceId, peer_ids: tunnel.peerIds, peer_certain: tunnel.peerCertain, reason: tunnel.reason }
+        : null,
     });
   });
 });
 
-// WireGuard writes run under Change Guard (outside review P2-8). Turning off or
-// deleting the tunnel the manager arrives through is predicted as a lockout;
-// the rest has no model, but is undone automatically if it cuts the manager off.
+// WireGuard writes run under Change Guard (outside review P2-8). On top of that,
+// the tunnel the manager arrives through is protected (#205): deleting or
+// disabling it, or the peer carrying the manager, is refused outright, and any
+// other change to them must be able to undo itself.
+
+const truthy = (v: unknown): boolean => v === true || v === 'true' || v === 'yes';
+
+/**
+ * Look up the management tunnel and apply a route's rule to it. Returns false
+ * when the change was refused (the 409 is already sent), else whether it has
+ * to run under auto-revert. A device that can't be read falls back to the
+ * ordinary Change Guard checks.
+ */
+async function tunnelGate(deviceId: number, res: Response, rule: (t: ManagementTunnel) => TunnelVerdict): Promise<false | { protect: boolean }> {
+  const device = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [deviceId]);
+  const tunnel = device ? await readManagementTunnel(device) : null;
+  if (!tunnel?.interface) return { protect: false };
+  const verdict = rule(tunnel);
+  if (verdict && 'refuse' in verdict) {
+    res.status(409).json({ lockout: true, reason: `${verdict.refuse} ${tunnel.reason}`, management_tunnel: true });
+    return false;
+  }
+  return { protect: !!verdict };
+}
+
+const isMgmtIface = (t: ManagementTunnel, idOrName: string) => idOrName === t.interfaceId || idOrName === t.interface;
+const elsewhere = 'Make this change on the device itself, or move management off this tunnel first.';
 
 // POST /api/network-services/wireguard?deviceId=X — add interface
 router.post('/wireguard', requireWrite, async (req: Request, res: Response) => {
@@ -433,8 +465,12 @@ router.put('/wireguard/toggle', requireWrite, async (req: Request, res: Response
   const { interfaceId, disabled } = req.body;
   if (!interfaceId) return res.status(400).json({ error: 'interfaceId is required' });
   if (typeof disabled !== 'boolean') return res.status(400).json({ error: 'disabled (boolean) is required' });
+  const gate = await tunnelGate(deviceId, res, (t) => isMgmtIface(t, String(interfaceId))
+    ? (disabled ? { refuse: `${t.interface} is the WireGuard tunnel the manager reaches this device through; turning it off would cut the manager off. ${elsewhere}` } : { protect: true })
+    : null);
+  if (!gate) return;
   await withGuardedChange(deviceId, req, res,
-    { kind: 'wireguard.toggle', summary: `${disabled ? 'Disable' : 'Enable'} WireGuard interface`,
+    { kind: 'wireguard.toggle', summary: `${disabled ? 'Disable' : 'Enable'} WireGuard interface`, protect: gate.protect,
       change: { kind: 'interface.disable', name: String(interfaceId), disabled } },
     async (c) => { await c.setWireGuardInterfaceDisabled(interfaceId, disabled); return { success: true }; });
 });
@@ -442,8 +478,14 @@ router.put('/wireguard/toggle', requireWrite, async (req: Request, res: Response
 // PUT /api/network-services/wireguard/:id?deviceId=X — update interface
 router.put('/wireguard/:id', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  const gate = await tunnelGate(deviceId, res, (t) => isMgmtIface(t, req.params.id)
+    ? (truthy(req.body?.disabled)
+      ? { refuse: `${t.interface} is the WireGuard tunnel the manager reaches this device through; turning it off would cut the manager off. ${elsewhere}` }
+      : { protect: true })
+    : null);
+  if (!gate) return;
   await withGuardedChange(deviceId, req, res,
-    { kind: 'wireguard.set', summary: 'Edit WireGuard interface',
+    { kind: 'wireguard.set', summary: 'Edit WireGuard interface', protect: gate.protect,
       change: { kind: 'path-object.change', name: String(req.body?.name ?? req.params.id), what: 'Changing this WireGuard interface' } },
     async (c) => { await c.updateWireGuardInterface(req.params.id, req.body); return { success: true }; });
 });
@@ -451,9 +493,13 @@ router.put('/wireguard/:id', requireWrite, async (req: Request, res: Response) =
 // DELETE /api/network-services/wireguard/:id?deviceId=X — delete interface
 router.delete('/wireguard/:id', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  const gate = await tunnelGate(deviceId, res, (t) => isMgmtIface(t, req.params.id)
+    ? { refuse: `${t.interface} is the WireGuard tunnel the manager reaches this device through; deleting it would cut the manager off. ${elsewhere}` }
+    : null);
+  if (!gate) return;
   await withGuardedChange(deviceId, req, res,
     // For reachability, a deleted tunnel is a disabled one.
-    { kind: 'wireguard.remove', summary: 'Delete WireGuard interface',
+    { kind: 'wireguard.remove', summary: 'Delete WireGuard interface', protect: gate.protect,
       change: { kind: 'interface.disable', name: req.params.id, disabled: true } },
     async (c) => { await c.removeWireGuardInterface(req.params.id); return { success: true }; });
 });
@@ -467,21 +513,27 @@ const peerChange = (req: Request): PlannedChange | undefined => {
 // POST /api/network-services/wireguard/peer?deviceId=X — add peer
 router.post('/wireguard/peer', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.add', summary: 'Add WireGuard peer', change: peerChange(req) },
+  const gate = await tunnelGate(deviceId, res, (t) => peerRule(t, null, req.body, 'add'));
+  if (!gate) return;
+  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.add', summary: 'Add WireGuard peer', change: peerChange(req), protect: gate.protect },
     async (c) => { await c.addWireGuardPeer(req.body); return { success: true }; });
 });
 
 // PUT /api/network-services/wireguard/peer/:id?deviceId=X — update peer
 router.put('/wireguard/peer/:id', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.set', summary: 'Edit WireGuard peer', change: peerChange(req) },
+  const gate = await tunnelGate(deviceId, res, (t) => peerRule(t, req.params.id, req.body, 'set'));
+  if (!gate) return;
+  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.set', summary: 'Edit WireGuard peer', change: peerChange(req), protect: gate.protect },
     async (c) => { await c.updateWireGuardPeer(req.params.id, req.body); return { success: true }; });
 });
 
 // DELETE /api/network-services/wireguard/peer/:id?deviceId=X — delete peer
 router.delete('/wireguard/peer/:id', requireWrite, async (req: Request, res: Response) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
-  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.remove', summary: 'Delete WireGuard peer' },
+  const gate = await tunnelGate(deviceId, res, (t) => peerRule(t, req.params.id, undefined, 'remove'));
+  if (!gate) return;
+  await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.remove', summary: 'Delete WireGuard peer', protect: gate.protect },
     async (c) => { await c.removeWireGuardPeer(req.params.id); return { success: true }; });
 });
 

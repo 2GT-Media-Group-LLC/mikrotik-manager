@@ -44,6 +44,7 @@ export const WEBHOOK_EVENTS = [
   'device_degraded', 'device_health_restored',
   'device_identity_changed',
   'cve_active',
+  'wireguard_stale',
 ] as const;
 export type WebhookEvent = typeof WEBHOOK_EVENTS[number] | 'test';
 

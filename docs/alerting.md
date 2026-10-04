@@ -19,6 +19,7 @@ cooldown that prevents a flapping device from flooding your channels.
 | `config_drift` | The device's configuration changed (off by default) |
 | `device_degraded` / `device_health_restored` | A power supply, fan or temperature problem appeared or cleared. See [Hardware health](devices.md#hardware-health) |
 | `device_identity_changed` | A device's API-SSL certificate, SSH host key or serial number changed, so the manager stopped connecting to it (on by default). See [Certificate, host key and serial number pinning](security.md#certificate-host-key-and-serial-number-pinning) |
+| `wireguard_stale` | A WireGuard peer's last handshake is older than the threshold, in minutes (default 15; off by default). WireGuard re-handshakes about every two minutes while traffic flows, so a much older handshake means the tunnel is down. Peers that have never connected, disabled peers and peers on a disabled interface are left out. Handshakes are read with the slow poll and checked every 5 minutes; the cooldown applies to each peer separately |
 
 Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
 Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
@@ -142,10 +143,10 @@ The token is sent in the `X-Gotify-Key` header, not the URL, so it doesn't end u
 
 ## Outbound webhooks
 
-Subscribe any URL to sixteen events: device up/down, log errors and warnings, high CPU, high
-memory, certificate expiry, device discovered, firmware update available, config drift,
+Subscribe any URL to seventeen events: device up/down, log errors and warnings, high CPU,
+high memory, certificate expiry, device discovered, firmware update available, config drift,
 firmware rollout completed/failed, hardware degraded/healthy again, a changed device
-certificate or host key, and a serious CVE affecting the fleet.
+certificate or host key, a serious CVE affecting the fleet, and a stale WireGuard peer.
 
 Deliveries are JSON `POST`s, **HMAC-SHA256 signed** in `X-MTM-Signature` when a secret is
 set. The secret is stored encrypted. Last-delivery status is tracked per webhook and there is a Send-test button.

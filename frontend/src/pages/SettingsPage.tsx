@@ -409,6 +409,7 @@ export default function SettingsPage() {
     config_drift: 'Configuration changed on a device',
     firmware_update_available: 'RouterOS update available',
     cve_active: 'Serious RouterOS CVE affects the fleet (exploited, critical or high)',
+    wireguard_stale: 'WireGuard peer stale: no handshake for longer than the threshold (minutes)',
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';
@@ -1751,7 +1752,7 @@ export default function SettingsPage() {
                         </button>
                       </td>
                       <td className="py-2.5 pr-4 text-center">
-                        {['high_cpu', 'high_memory', 'cert_expiry'].includes(rule.event_type) ? (
+                        {['high_cpu', 'high_memory', 'cert_expiry', 'wireguard_stale'].includes(rule.event_type) ? (
                           <NumberSetting
                             className="input w-20 text-center py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                             value={rule.threshold ?? ''}

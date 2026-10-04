@@ -4,8 +4,10 @@
  * with status code 500" (#180, where that was all the reporter could see).
  */
 export function apiErrorMessage(err: unknown, fallback = 'Request failed'): string {
-  const body = (err as { response?: { data?: { error?: unknown } } })?.response?.data;
+  const body = (err as { response?: { data?: { error?: unknown; reason?: unknown } } })?.response?.data;
   if (body && typeof body.error === 'string' && body.error) return body.error;
+  // Change Guard refusals explain themselves in `reason` (#205).
+  if (body && typeof body.reason === 'string' && body.reason) return body.reason;
   if (err instanceof Error && err.message) return err.message;
   return fallback;
 }

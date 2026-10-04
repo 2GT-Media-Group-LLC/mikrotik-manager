@@ -5,6 +5,7 @@ import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { verifyDeviceSerial, IdentityMismatchError } from '../identityPins';
 import { fit, normalizeMac } from '../../utils/fit';
+import { rosDurationSeconds } from '../../utils/rosDuration';
 import { guestSsidTag, legacyAuthTypes, legacyProfileName, legacyProfileParams } from './legacySecurity';
 import { decrypt } from '../../utils/crypto';
 import { lookupVendor } from '../../utils/oui';
@@ -284,10 +285,60 @@ export class DeviceCollector {
     await this.collectStp();
     await this.collectLte();
     if (this.modules.certificates) await this.collectCertificates();
+    await this.collectWireGuardPeers();
     if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
       await this.collectCapsman();
+    }
+  }
+
+  /**
+   * WireGuard peers and their last handshake, for the stale-peer alert (#208).
+   * A device without WireGuard (RouterOS 6, or no package) answers "no such
+   * command" and simply has none; a failed read keeps what was stored.
+   */
+  async collectWireGuardPeers(): Promise<void> {
+    let ifaces: Record<string, string>[];
+    let peers: Record<string, string>[];
+    try {
+      ifaces = await this.client.execute('/interface/wireguard/print');
+      peers = await this.client.execute('/interface/wireguard/peers/print', { detail: '' });
+    } catch (err) {
+      if (err instanceof RouterOSTrapError) {
+        await query(`DELETE FROM wireguard_peers WHERE device_id = $1`, [this.device.id]).catch(() => {});
+      }
+      return;
+    }
+    try {
+      const ifaceDisabled = new Map(ifaces.map((i) => [i['name'], i['disabled'] === 'true']));
+      const seen: string[] = [];
+      for (const p of peers) {
+        const id = p['.id'];
+        if (!id) continue;
+        seen.push(id);
+        const endpoint = p['current-endpoint-address'] || p['endpoint-address'] || '';
+        const port = p['current-endpoint-port'] || p['endpoint-port'] || '';
+        await query(
+          `INSERT INTO wireguard_peers (device_id, peer_id, interface, name, public_key, endpoint, allowed_address,
+                                        last_handshake_sec, disabled, interface_disabled, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+           ON CONFLICT (device_id, peer_id) DO UPDATE SET
+             interface = EXCLUDED.interface, name = EXCLUDED.name, public_key = EXCLUDED.public_key,
+             endpoint = EXCLUDED.endpoint, allowed_address = EXCLUDED.allowed_address,
+             last_handshake_sec = EXCLUDED.last_handshake_sec, disabled = EXCLUDED.disabled,
+             interface_disabled = EXCLUDED.interface_disabled, updated_at = NOW()`,
+          // RouterOS names peers peer1, peer2... by itself; a comment says more.
+          [this.device.id, fit(id, 16), fit(p['interface'] || null, 64),
+           fit((/^peer\d+$/.test(p['name'] || '') ? p['comment'] : '') || p['name'] || p['comment'] || null, 128),
+           fit(p['public-key'] || null, 64), fit(endpoint ? (port ? `${endpoint}:${port}` : endpoint) : null, 128),
+           p['allowed-address'] || null, rosDurationSeconds(p['last-handshake']),
+           p['disabled'] === 'true', ifaceDisabled.get(p['interface']) ?? false]
+        );
+      }
+      await query(`DELETE FROM wireguard_peers WHERE device_id = $1 AND NOT (peer_id = ANY($2::text[]))`, [this.device.id, seen]);
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to store WireGuard peers:`, (err as Error).message);
     }
   }
 

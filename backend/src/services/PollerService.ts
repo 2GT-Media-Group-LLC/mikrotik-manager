@@ -11,6 +11,7 @@ import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 import { cronMatches } from '../utils/cron';
 import { reconcileProxyUsage } from './ProxyUsageService';
+import { checkWireGuardStale } from './wireguardStale';
 import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
@@ -425,6 +426,15 @@ export class PollerService {
         await this.setTimestamp(certKey, now, 3_600_000);
         this.checkCertificateExpiry()
           .catch((e) => console.error('[Poller] Certificate expiry check failed:', e));
+      }
+
+      // Stale WireGuard peers (#208) — every 5 minutes, after slow polls have
+      // refreshed the handshakes. Does nothing while the rule is off.
+      const wgKey = 'task:wireguard_stale';
+      const lastWg = await this.getTimestamp(wgKey);
+      if (now - lastWg > 300_000) {
+        await this.setTimestamp(wgKey, now, 300_000);
+        checkWireGuardStale().catch((e) => console.error('[Poller] WireGuard stale check failed:', e));
       }
 
       // Stale pending sweep — every 5 minutes. Cheap when there is nothing to do,

@@ -21,7 +21,8 @@ export type AlertEventType =
   | 'device_degraded'
   | 'device_health_restored'
   | 'device_identity_changed'
-  | 'cve_active';
+  | 'cve_active'
+  | 'wireguard_stale';
 
 export interface AlertContext {
   deviceId?: number;
@@ -64,6 +65,7 @@ const EVENT_LABELS: Record<string, string> = {
   device_degraded:          'Device Degraded (Hardware)',
   device_health_restored:   'Device Hardware Healthy Again',
   device_identity_changed:  'Device Identity Changed (certificate, host key or serial)',
+  wireguard_stale:          'WireGuard Peer Stale',
 };
 
 const EVENT_EMOJI: Record<string, string> = {
@@ -80,6 +82,7 @@ const EVENT_EMOJI: Record<string, string> = {
   device_degraded:          '🟠',
   device_health_restored:   '🟢',
   device_identity_changed:  '🛑',
+  wireguard_stale:          '🔌',
 };
 
 export class AlertService {
