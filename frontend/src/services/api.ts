@@ -243,8 +243,8 @@ export interface SecurityCheck {
   title: string;
   detail: string;
   serviceId?: string;
-  /** A one-click fix the manager can apply (outside review P1-4). */
-  fix?: 'api-ssl';
+  /** A one-click fix the manager can apply (outside review P1-4; www-ssl #234). */
+  fix?: 'api-ssl' | 'www-ssl';
   /** Operator judged this inapplicable — still shown, but excluded from the score. */
   suppressed?: boolean;
   suppressed_scope?: 'device' | 'fleet';
@@ -742,6 +742,9 @@ export const devicesApi = {
   /** Enable API-SSL on the device and move the manager's connection to it. Signing a certificate can take a minute. */
   enableApiSsl: (id: number) =>
     api.post<ApiSslResult>(`/devices/${id}/api-ssl`, undefined, { timeout: 240_000 }),
+  /** WebFig over HTTPS (#234); plain www goes off only once HTTPS answers. Same result shape. */
+  enableWwwSsl: (id: number) =>
+    api.post<ApiSslResult & { url?: string }>(`/devices/${id}/www-ssl`, undefined, { timeout: 240_000 }),
   getSecurityPosture: (id: number) =>
     api.get<{ score: number; checks: SecurityCheck[] }>(`/devices/${id}/security-posture`),
   // Config Health — cached findings load instantly; the scan re-reads the device.

@@ -101,6 +101,35 @@ manager connects to them. Manage each device by its own address; two devices sha
 address (a VRRP address, for example) would look like one device whose certificate keeps
 changing.
 
+## WebFig over HTTPS
+
+Plain WebFig (the `www` service, port 80) sends whoever signs in to it, and everything they
+do, unencrypted. The manager never uses WebFig itself; this is for the people who do.
+
+The *Unencrypted WebFig (www) is enabled* finding on a device's **Security** tab has a
+**Switch to HTTPS** button. On the Security page, expand the same finding under **Common
+Findings** for **Switch all to HTTPS**, which does each listed device in turn. It does this
+on the device:
+
+1. Uses a working certificate already assigned to `www-ssl`. Otherwise it shares the one
+   `api-ssl` uses, and otherwise creates and signs the self-signed `mtm-api-ssl` certificate
+   described above.
+2. Enables `www-ssl` with that certificate, on the port it already has (443 by default). If
+   `www` only accepts certain addresses and `www-ssl` accepts any, `www-ssl` gets the same
+   list.
+3. Checks from the manager that WebFig answers over HTTPS. Only then does it turn plain
+   `www` off.
+
+If HTTPS doesn't answer, `www` is left on and the result says why. The usual cause is a
+firewall rule, or `www-ssl`'s *Available From* list, that lets port 80 in but not 443.
+
+The certificate is self-signed, so browsers warn the first time. A certificate from your own
+CA can be assigned to `www-ssl` on the device instead; a working one is kept from then on.
+
+A related finding, *HTTPS WebFig (www-ssl) has no certificate*, appears when `www-ssl` is
+enabled without one. It can't complete an HTTPS connection like that; the same button fixes
+it.
+
 ## RouterOS vulnerabilities
 
 Every RouterOS version in use in the current site is listed with the known vulnerabilities

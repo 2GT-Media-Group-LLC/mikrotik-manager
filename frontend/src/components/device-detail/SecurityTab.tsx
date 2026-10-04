@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import LoadError from '../common/LoadError';
-import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell, KeyRound } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell, KeyRound, Globe } from 'lucide-react';
 import { devicesApi, type ApiSslResult } from '../../services/api';
 import { activeChecks, mutedCount } from '../../utils/securityFindings';
 import type { SecurityCheck } from '../../services/api';
@@ -136,6 +136,17 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
     },
   });
 
+  // WebFig over HTTPS (#234). Same result box as API-SSL: what was done, and
+  // plainly when plain www was left on because HTTPS didn't answer.
+  const wwwSsl = useMutation({
+    mutationFn: () => devicesApi.enableWwwSsl(deviceId),
+    onSuccess: (res) => { setSslResult(res.data); setSslError(''); invalidate(); },
+    onError: (err: unknown) => {
+      setSslResult(null);
+      setSslError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not switch WebFig to HTTPS');
+    },
+  });
+
   const checks: SecurityCheck[] = posture?.checks ?? [];
 
   const activeCount = activeChecks(checks).length;
@@ -191,6 +202,12 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
               Enabling API-SSL on the device. Creating a certificate can take up to a minute on small devices…
             </div>
           )}
+          {wwwSsl.isPending && (
+            <div className="p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Switching WebFig to HTTPS. Creating a certificate can take up to a minute on small devices…
+            </div>
+          )}
           {sslError && (
             <div className="p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400">{sslError}</div>
           )}
@@ -242,6 +259,14 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                           className="btn-primary text-xs py-1 flex items-center gap-1.5">
                           {apiSsl.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
                           {apiSsl.isPending ? 'Switching…' : 'Switch to API-SSL'}
+                        </button>
+                      )}
+                      {canWrite && c.fix === 'www-ssl' && !c.suppressed && (
+                        <button onClick={() => wwwSsl.mutate()} disabled={wwwSsl.isPending}
+                          title="Enable www-ssl with a certificate, then turn plain www off once HTTPS answers"
+                          className="btn-primary text-xs py-1 flex items-center gap-1.5">
+                          {wwwSsl.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                          {wwwSsl.isPending ? 'Switching…' : 'Switch to HTTPS'}
                         </button>
                       )}
                       {canWrite && c.serviceId && !c.suppressed && (

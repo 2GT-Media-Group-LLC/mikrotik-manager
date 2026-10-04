@@ -48,19 +48,22 @@ const SIGN_WAIT_MS = 90_000;
 const isTrue = (v: string | undefined): boolean => v === 'true' || v === 'yes';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** What the certificate helpers need: anything that runs a RouterOS command (#234 shares them). */
+export type CommandRunner = Pick<RouterOSClient, 'execute'>;
+
 /** A certificate api-ssl can use: present, with its private key, not expired or revoked. */
-function usable(cert: Record<string, string> | undefined): boolean {
+export function usable(cert: Record<string, string> | undefined): boolean {
   if (!cert) return false;
   return isTrue(cert['private-key']) && !isTrue(cert['expired']) && !isTrue(cert['revoked']) && !isTrue(cert['invalid']);
 }
 
-async function certByName(client: RouterOSClient, name: string): Promise<Record<string, string> | undefined> {
+export async function certByName(client: CommandRunner, name: string): Promise<Record<string, string> | undefined> {
   const rows = await client.execute('/certificate/print', { detail: '' }, [`?name=${name}`]);
   return rows[0];
 }
 
 /** Create and sign the manager's self-signed certificate, replacing an unusable one. */
-async function ensureCertificate(client: RouterOSClient, device: ApiSslDevice, steps: string[]): Promise<string> {
+export async function ensureCertificate(client: CommandRunner, device: { name: string }, steps: string[]): Promise<string> {
   const existing = await certByName(client, MTM_CERT_NAME);
   if (usable(existing)) {
     steps.push(`Reused the certificate "${MTM_CERT_NAME}" already on the device`);

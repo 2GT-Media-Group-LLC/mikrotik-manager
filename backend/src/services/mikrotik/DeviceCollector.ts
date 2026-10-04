@@ -3439,6 +3439,14 @@ export class DeviceCollector {
     return this.client.execute('/ip/service/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
   }
 
+  /**
+   * This connection's command runner, for services that share helpers written
+   * against the raw client (the certificate steps of API-SSL and www-ssl, #234).
+   */
+  commandRunner(): Pick<RouterOSClient, 'execute'> {
+    return this.client;
+  }
+
   /** The local TCP port of this collector's own API connection. */
   apiLocalPort(): number | undefined {
     return this.client.localPort ?? undefined;

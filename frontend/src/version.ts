@@ -1,4 +1,4 @@
-export const APP_VERSION = 'v0.31.0 Beta';
+export const APP_VERSION = 'v0.32.0 Beta';
 
 /**
  * Documentation for *this* build.

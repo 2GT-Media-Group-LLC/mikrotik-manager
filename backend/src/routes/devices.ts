@@ -3,6 +3,7 @@ import { Router, Request, Response } from 'express';
 import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
 import { devicePins, pendingIdentityChanges, trustNewIdentity, IDENTITY_KINDS } from '../services/identityPins';
 import { enableApiSsl, type ApiSslDevice } from '../services/apiSsl';
+import { enableWwwSsl } from '../services/wwwSsl';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { randomUUID } from 'crypto';
 import { Client as SshClient } from 'ssh2';
@@ -1440,6 +1441,22 @@ router.post('/:id/api-ssl', requireWrite, async (req: Request, res: Response) =>
   }
 });
 
+// POST /api/devices/:id/www-ssl — WebFig over HTTPS (#234): certificate, www-ssl
+// on, and plain www off only once HTTPS answers.
+router.post('/:id/www-ssl', requireWrite, async (req: Request, res: Response) => {
+  try {
+    return res.json(await enableWwwSsl(parseInt(req.params.id, 10)));
+  } catch (err) {
+    const msg = (err as Error).message ?? String(err);
+    if (msg === 'Device not found') return res.status(404).json({ error: msg });
+    const connectionProblem = !!(err as NodeJS.ErrnoException).code
+      || /timeout|connection|invalid user name or password/i.test(msg);
+    return res.status(502).json({
+      error: `Could not switch WebFig to HTTPS: ${connectionProblem ? safeConnectionError('api', err) : msg}`,
+    });
+  }
+});
+
 // GET /api/devices/:id/security-posture — computes a hardening checklist.
 // Heuristic, not standards-based: graduated weighting that won't saturate to 0,
 // de-duplicated services, and it never proposes disabling the management
@@ -1470,7 +1487,7 @@ router.get('/:id/security-posture', async (req, res) => {
     const services = Array.from(new Map(servicesRaw.map(s => [s['name'] ?? s['.id'], s])).values());
 
     type Sev = 'high' | 'medium' | 'low';
-    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string; fix?: 'api-ssl' };
+    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string; fix?: 'api-ssl' | 'www-ssl' };
     const checks: Check[] = [];
 
     for (const s of services) {
@@ -1482,9 +1499,17 @@ router.get('/:id/security-posture', async (req, res) => {
           title: `Cleartext service "${name}" is enabled`,
           detail: `${name} sends credentials and data unencrypted. Disable it; use SSH/SFTP instead.` });
       } else if (name === 'www') {
-        checks.push({ id: 'service-www', severity: 'medium', serviceId: s['.id'],
+        checks.push({ id: 'service-www', severity: 'medium', serviceId: s['.id'], fix: 'www-ssl',
           title: 'Unencrypted WebFig (www) is enabled',
-          detail: 'The HTTP WebFig interface is unencrypted. Disable "www" and use "www-ssl" (HTTPS) instead.' });
+          detail: 'The HTTP WebFig interface is unencrypted. Switch to HTTPS: the manager enables "www-ssl" ' +
+            '(with a self-signed certificate if it has none) and turns "www" off only once HTTPS answers.' });
+      } else if (name === 'www-ssl' && (!s['certificate'] || s['certificate'] === 'none')) {
+        // Enabled without a certificate it can't complete a TLS handshake, so
+        // WebFig over HTTPS doesn't work at all (#234).
+        checks.push({ id: 'www-ssl-no-cert', severity: 'low', fix: 'www-ssl',
+          title: 'HTTPS WebFig (www-ssl) has no certificate',
+          detail: '"www-ssl" is enabled but has no certificate, so it can\u2019t answer HTTPS. Switching to HTTPS ' +
+            'assigns one (api-ssl\u2019s, or a new self-signed certificate).' });
       } else if (name === 'api' && mgmtService !== 'api') {
         // Plaintext API is on but the platform connects via api-ssl — safe to flag/disable.
         checks.push({ id: 'service-api', severity: 'medium', serviceId: s['.id'],

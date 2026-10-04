@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import LoadError from '../components/common/LoadError';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -14,6 +14,7 @@ import clsx from 'clsx';
 import CertificateList from '../components/CertificateList';
 import RouterOsCveCard from '../components/security/RouterOsCveCard';
 import ApiSslCard from '../components/security/ApiSslCard';
+import { useCanWrite } from '../hooks/useCanWrite';
 import { PendingIdentityCard } from '../components/security/IdentityChange';
 
 interface DevicePosture {
@@ -106,10 +107,11 @@ export default function SecurityPage() {
     // Device names, not just a tally. A count with no way to find out *which*
     // devices is a dead end — the card told you six devices needed an update and
     // then left you to work out which six (#158).
-    const m = new Map<string, { title: string; severity: string; devices: string[] }>();
+    const m = new Map<string, { title: string; severity: string; devices: string[]; deviceIds: number[]; fix?: SecurityCheck['fix'] }>();
     for (const f of fleet) for (const c of activeChecks(f.checks)) {
-      const e = m.get(c.title) ?? { title: c.title, severity: c.severity, devices: [] };
+      const e = m.get(c.title) ?? { title: c.title, severity: c.severity, devices: [], deviceIds: [], fix: c.fix };
       e.devices.push(f.name);
+      e.deviceIds.push(f.id);
       m.set(c.title, e);
     }
     return [...m.values()].sort(
@@ -118,6 +120,29 @@ export default function SecurityPage() {
   })();
 
   const goManage = (id: number) => navigate(`/devices/${id}?tab=security`);
+
+  // WebFig to HTTPS for every device a finding names (#234), one at a time:
+  // each may create and sign a certificate on its device.
+  const canWrite = useCanWrite();
+  const qc = useQueryClient();
+  const [httpsRun, setHttpsRun] = useState<{ running: boolean; results: { name: string; ok: boolean; message: string }[] } | null>(null);
+  const switchAllToHttps = async (ids: number[]) => {
+    const names = new Map(fleet.map((f) => [f.id, f.name.trim()]));
+    setHttpsRun({ running: true, results: [] });
+    for (const id of ids) {
+      let r: { name: string; ok: boolean; message: string };
+      try {
+        const res = await devicesApi.enableWwwSsl(id);
+        r = { name: names.get(id) ?? `#${id}`, ok: res.data.switched, message: res.data.message };
+      } catch (err) {
+        r = { name: names.get(id) ?? `#${id}`, ok: false,
+          message: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not switch WebFig to HTTPS' };
+      }
+      setHttpsRun((cur) => ({ running: true, results: [...(cur?.results ?? []), r] }));
+    }
+    setHttpsRun((cur) => ({ running: false, results: cur?.results ?? [] }));
+    void qc.invalidateQueries({ queryKey: ['security-fleet'] });
+  };
 
   return (
     <div className="space-y-6">
@@ -284,6 +309,20 @@ export default function SecurityPage() {
                       </span>
                     </button>
                     {/* Answers "which ones?", which the tally alone never did (#158). */}
+                    {open && c.fix === 'www-ssl' && canWrite && (
+                      <div className="px-5 pb-2 pl-12 space-y-1.5">
+                        <button className="btn-primary text-xs py-1" disabled={httpsRun?.running}
+                          title="Enable www-ssl with a certificate on each, then turn plain www off once HTTPS answers"
+                          onClick={() => { void switchAllToHttps(c.deviceIds); }}>
+                          {httpsRun?.running ? 'Switching…' : `Switch ${c.deviceIds.length === 1 ? 'it' : `all ${c.deviceIds.length}`} to HTTPS`}
+                        </button>
+                        {httpsRun && httpsRun.results.map((r, i) => (
+                          <p key={i} className={clsx('text-xs', r.ok ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
+                            {r.name}: {r.message}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     {open && (
                       <div className="px-5 pb-2.5 pl-12 flex flex-wrap gap-1.5">
                         {c.devices.map(n => (
