@@ -27,6 +27,40 @@ describe('prefixContains / allowedCovers', () => {
 });
 
 describe('managementTunnel (#205)', () => {
+  describe('IPv6-only tunnels', () => {
+    const peers6 = [
+      { '.id': '*61', interface: 'wg-mgmt', 'allowed-address': 'fd10:99::1/128', disabled: 'false' },
+      { '.id': '*62', interface: 'wg-mgmt', 'allowed-address': 'fd20::/48', disabled: 'false' },
+      { '.id': '*63', interface: 'wg-site', 'allowed-address': '::/0', disabled: 'false' },
+    ];
+    it('finds the tunnel by an IPv6 address, however it is written', () => {
+      const t = managementTunnel(base({
+        peers: peers6, deviceIp: 'FD10:99:0:0::7', managerIp: 'fd10:99::1',
+        addresses: [
+          { address: 'fe80::1/64', interface: 'wg-mgmt', disabled: 'false' },
+          { address: 'fd10:99::7/64', interface: 'wg-mgmt', 'actual-interface': 'wg-mgmt', disabled: 'false' },
+        ],
+      }));
+      expect(t).toMatchObject({ interface: 'wg-mgmt', via: 'address', peerIds: ['*61'], peerCertain: true });
+      expect(t.reason).toMatch(/fd10:99::7.*wg-mgmt/);
+    });
+    it('finds it from an IPv6 route back to the manager, including link-local gateways', () => {
+      const t = managementTunnel(base({
+        peers: peers6, deviceIp: '2001:db8::1', managerIp: 'fd20::5',
+        addresses: [{ address: '2001:db8::1/64', interface: 'ether1', disabled: 'false' }],
+        routes: [
+          { 'dst-address': '::/0', gateway: 'fe80::1%ether1', 'immediate-gw': 'fe80::1%ether1', active: 'true' },
+          { 'dst-address': 'fd20::/48', gateway: 'fe80::2%wg-mgmt', 'immediate-gw': 'fe80::2%wg-mgmt', active: 'true' },
+        ],
+      }));
+      expect(t).toMatchObject({ interface: 'wg-mgmt', via: 'route', peerIds: ['*62'], peerCertain: true });
+    });
+    it('finds an IPv4-mapped connection address', () => {
+      const t = managementTunnel(base({ deviceIp: '::ffff:10.99.0.7', addresses: [{ address: '10.99.0.7/24', interface: 'wg-mgmt', disabled: 'false' }] }));
+      expect(t.interface).toBe('wg-mgmt');
+    });
+  });
+
   it('finds the tunnel when the managed address sits on a WireGuard interface', () => {
     const t = managementTunnel(base({ addresses: [{ address: '10.99.0.7/24', interface: 'wg-mgmt', disabled: 'false' }] }));
     expect(t).toMatchObject({ interface: 'wg-mgmt', interfaceId: '*A', via: 'address', peerIds: ['*1'], peerCertain: true });

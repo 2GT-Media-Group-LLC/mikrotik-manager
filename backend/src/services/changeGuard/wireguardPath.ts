@@ -17,6 +17,7 @@
 import net from 'net';
 import { DeviceCollector, type DeviceRow } from '../mikrotik/DeviceCollector';
 import { managerIpFromConntrack, type DeviceSnapshot, type RosRow } from './pathModel';
+import { canonicalIp } from '../netflow/attribution';
 
 export interface TunnelState {
   addresses: RosRow[];
@@ -114,7 +115,10 @@ export function managementTunnel(s: TunnelState): ManagementTunnel {
 
   let name: string | null = null;
   let via: ManagementTunnel['via'] = null;
-  const addr = s.addresses.find((a) => !isTrue(a['disabled']) && stripCidr(a['address']) === s.deviceIp);
+  // Compared canonically: RouterOS and the manager can write the same IPv6
+  // address differently (case, zero compression).
+  const deviceIp = canonicalIp(s.deviceIp);
+  const addr = s.addresses.find((a) => !isTrue(a['disabled']) && canonicalIp(stripCidr(a['address'])) === deviceIp);
   const addrIface = addr ? (addr['actual-interface'] || addr['interface'] || '') : '';
   if (addrIface && wgNames.has(addrIface)) {
     name = addrIface;
@@ -131,7 +135,7 @@ export function managementTunnel(s: TunnelState): ManagementTunnel {
   const certain = !!s.managerIp;
   const peers = certain ? onIface.filter((p) => allowedCovers(p['allowed-address'], s.managerIp!)) : onIface;
   const how = via === 'address'
-    ? `the address the manager connects to (${s.deviceIp}) is on ${name}`
+    ? `the address the manager connects to (${deviceIp}) is on ${name}`
     : `the device's route back to the manager (${s.managerIp}) goes out through ${name}`;
   return {
     interface: name,
@@ -177,17 +181,27 @@ export async function readManagementTunnel(device: DeviceRow): Promise<Managemen
   try {
     await c.connect();
     const run = c.commandRunner();
-    const [addresses, routes, wgInterfaces, peers, conns] = await Promise.all([
+    // IPv4 and IPv6 both: tunnels can be IPv6-only. The IPv6 reads fail
+    // quietly where IPv6 is disabled.
+    const none = () => [] as RosRow[];
+    const [addresses, addresses6, routes, routes6, wgInterfaces, peers, conns, conns6] = await Promise.all([
       run.execute('/ip/address/print', { detail: '' }),
-      run.execute('/ip/route/print', { detail: '' }).catch(() => [] as RosRow[]),
+      run.execute('/ipv6/address/print', { detail: '' }).catch(none),
+      run.execute('/ip/route/print', { detail: '' }).catch(none),
+      run.execute('/ipv6/route/print', { detail: '' }).catch(none),
       c.getWireGuardInterfaces(),
       c.getWireGuardPeers(),
-      run.execute('/ip/firewall/connection/print', { detail: '' }).catch(() => [] as RosRow[]),
+      run.execute('/ip/firewall/connection/print', { detail: '' }).catch(none),
+      run.execute('/ipv6/firewall/connection/print', { detail: '' }).catch(none),
     ]);
-    const snap = { mgmtConnections: conns, managerLocalPort: c.apiLocalPort() ?? null } as unknown as DeviceSnapshot;
+    const snap = { mgmtConnections: [...conns, ...conns6], managerLocalPort: c.apiLocalPort() ?? null } as unknown as DeviceSnapshot;
     return managementTunnel({
-      addresses, routes, wgInterfaces, peers,
-      deviceIp: device.ip_address,
+      addresses: [...addresses, ...addresses6],
+      routes: [...routes, ...routes6],
+      wgInterfaces, peers,
+      // The address the connection actually reached, so a device added by
+      // hostname is still found; the configured address as a fallback.
+      deviceIp: c.apiRemoteAddress() || device.ip_address,
       managerIp: managerIpFromConntrack(snap, device.api_port),
     });
   } catch {

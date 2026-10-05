@@ -19,6 +19,7 @@
  * Capture and resolution are deliberately separate so resolution stays a pure
  * function over a snapshot and can be unit-tested against fixtures.
  */
+import { isIP } from 'net';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
 import { decrypt } from '../../utils/crypto';
 import { expandVlanIds } from '../../utils/vlan';
@@ -303,13 +304,40 @@ export function apiConnectionSources(snap: DeviceSnapshot, apiPort: number): { i
   const out: { ip: string; port: number }[] = [];
   for (const c of snap.mgmtConnections) {
     if ((c['protocol'] || '').toLowerCase() !== 'tcp') continue;
-    const dst = c['dst-address'] || '';
-    const port = dst.includes(':') ? parseInt(dst.split(':').pop() || '', 10) : NaN;
-    if (port !== apiPort) continue;
-    const [ip, srcPort] = (c['src-address'] || '').split(':');
-    if (ip) out.push({ ip, port: parseInt(srcPort || '', 10) });
+    // RouterOS 7.24 gives the ports their own fields (src-port, dst-port) and
+    // leaves the address bare, IPv4 and IPv6 alike; older versions wrote
+    // "address:port". Read the field when it's there, the suffix otherwise.
+    const dst = splitHostPort(c['dst-address'] || '');
+    const dstPort = c['dst-port'] ? parseInt(c['dst-port'], 10) : dst.port;
+    if (dstPort !== apiPort) continue;
+    const src = splitHostPort(c['src-address'] || '');
+    if (src.ip) out.push({ ip: src.ip, port: c['src-port'] ? parseInt(c['src-port'], 10) : src.port });
   }
   return out;
+}
+
+/**
+ * An address, and the port when it's written on, from the connection table:
+ * "10.0.0.1:443" (older RouterOS), a bare address (7.24, which has separate
+ * port fields), or "[fd00::1]:443" / "fd00::1.443". Splitting on ":" turned
+ * every IPv6 address into garbage (#205).
+ */
+export function splitHostPort(v: string): { ip: string; port: number } {
+  const s = v.trim();
+  const portOf = (p: string): number => (p !== '' && /^\d+$/.test(p) ? parseInt(p, 10) : NaN);
+  if (s.startsWith('[')) {
+    const close = s.indexOf(']');
+    if (close < 0) return { ip: '', port: NaN };
+    const ip = s.slice(1, close);
+    const rest = s.slice(close + 1);
+    return { ip: isIP(ip) === 6 ? ip : '', port: rest.startsWith(':') ? portOf(rest.slice(1)) : NaN };
+  }
+  if (isIP(s)) return { ip: s, port: NaN };
+  const colon = s.lastIndexOf(':');
+  if (colon > 0 && isIP(s.slice(0, colon)) === 4) return { ip: s.slice(0, colon), port: portOf(s.slice(colon + 1)) };
+  const dot = s.lastIndexOf('.');
+  if (dot > 0 && isIP(s.slice(0, dot)) === 6) return { ip: s.slice(0, dot), port: portOf(s.slice(dot + 1)) };
+  return { ip: '', port: NaN };
 }
 
 // ─── resolution ───────────────────────────────────────────────────────────────

@@ -105,6 +105,15 @@ export class RouterOSClient extends EventEmitter {
     return this.socket?.localPort ?? null;
   }
 
+  /**
+   * The address this connection actually reached. When the device was added by
+   * hostname, or as an IPv6 address written differently from how RouterOS
+   * prints it, this is the address to look for on the device (#205).
+   */
+  get remoteAddress(): string | null {
+    return this.socket?.remoteAddress ?? null;
+  }
+
   async connect(): Promise<void> {
     if (this.connected) return;
     // A fresh connection starts trusted, so a client that was abandoned earlier

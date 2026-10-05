@@ -62,7 +62,9 @@ manager's connection runs through, auto-revert becomes mandatory for it (see
 
 When the manager reaches a device through WireGuard, that tunnel is left alone from here
 (#205). It's the WireGuard interface that either holds the address the manager connects to,
-or carries the device's route back to the manager.
+or carries the device's route back to the manager. IPv4 and IPv6 both count, so an
+IPv6-only tunnel is found too, and so is a device added by hostname (the address the
+connection actually reached is the one looked for).
 
 - The WireGuard page marks it **Protected**, says why, and shows the interface and every
   peer on it read-only: no switching off, editing or deleting, and no adding peers. The peer

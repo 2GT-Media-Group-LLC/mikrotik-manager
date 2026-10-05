@@ -3510,6 +3510,11 @@ export class DeviceCollector {
     return this.client.localPort ?? undefined;
   }
 
+  /** The address this collector's API connection reached. */
+  apiRemoteAddress(): string | undefined {
+    return this.client.remoteAddress ?? undefined;
+  }
+
   /** Set a service's allowed addresses (empty = any), under this version's property name. */
   async setServiceAllowedFrom(id: string, key: 'available-from' | 'address', list: string[]): Promise<void> {
     await this.client.execute('/ip/service/set', { '.id': id, [key]: list.join(',') });
