@@ -11,6 +11,13 @@ describe('readOptic', () => {
       .toMatchObject({ rx_dbm: -5.22, tx_dbm: -5.792, temp_c: 33, voltage: 3.237, bias_ma: 2 });
   });
 
+  it("reads a CRS520's QSFP28 optic, which drops the sfp- prefix (#249, 7.24.5)", () => {
+    expect(readOptic({
+      name: 'qsfp28-2-1', status: 'link-ok', rate: '100Gbps', 'full-duplex': 'yes',
+      temperature: '41C', 'supply-voltage': '3.300V', 'tx-bias-current': '51mA', 'tx-power': '0.395dBm', 'rx-power': '-4.417dBm',
+    })).toEqual({ rx_dbm: -4.417, rx_lanes: [], tx_dbm: 0.395, temp_c: 41, bias_ma: 51, voltage: 3.3 });
+  });
+
   it('takes the weakest lane of a multi-lane module and keeps the lanes', () => {
     const r = readOptic({ 'sfp-module-present': 'true', 'sfp-rx-power': '-1.2dBm,-4.8dBm,-1.1dBm,-1.3dBm', 'sfp-tx-power': '-0.5 -0.7 -0.4 -0.6' });
     expect(r).toMatchObject({ rx_dbm: -4.8, rx_lanes: [-1.2, -4.8, -1.1, -1.3], tx_dbm: -0.7 });

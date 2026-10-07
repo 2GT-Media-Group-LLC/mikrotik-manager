@@ -462,7 +462,10 @@ function PortInfoCard({ deviceId, portName, errors, errorsPerMin = 10, flapsPerH
     );
   }
 
-  const isSfp = d['sfp-module-present'] === 'true';
+  // Diagnostics under either name: `sfp-rx-power` (MikroTik's manual) or plain
+  // `rx-power` (a CRS520's QSFP28 optic on 7.24.5, #249).
+  const ddm = (field: string): string | undefined => d[`sfp-${field}`] ?? d[field];
+  const isSfp = d['sfp-module-present'] === 'true' || ddm('rx-power') !== undefined;
 
   const infoRow = (label: string, value: string | undefined, valueColor?: string) => {
     if (!value || value === '' || value === 'none' || value === '0') return null;
@@ -527,11 +530,11 @@ function PortInfoCard({ deviceId, portName, errors, errorsPerMin = 10, flapsPerH
             {infoRow('Serial #', d['sfp-vendor-serial'])}
             {infoRow('Rev.', d['sfp-vendor-revision'])}
             {infoRow('Mfg. Date', d['sfp-manufacturing-date'])}
-            {infoRow('Temperature', d['sfp-temperature'] ? `${d['sfp-temperature']} °C` : undefined)}
-            {infoRow('Supply Volt.', d['sfp-supply-voltage'] ? `${d['sfp-supply-voltage']} V` : undefined)}
-            {infoRow('TX Bias', d['sfp-tx-bias-current'] ? `${d['sfp-tx-bias-current']} mA` : undefined)}
-            {infoRow('TX Power', d['sfp-tx-power'] ? `${d['sfp-tx-power']} dBm` : undefined)}
-            {infoRow('RX Power', d['sfp-rx-power'] ? `${d['sfp-rx-power']} dBm` : undefined)}
+            {infoRow('Temperature', ddm('temperature') ? `${parseFloat(ddm('temperature')!)} °C` : undefined)}
+            {infoRow('Supply Volt.', ddm('supply-voltage') ? `${parseFloat(ddm('supply-voltage')!)} V` : undefined)}
+            {infoRow('TX Bias', ddm('tx-bias-current') ? `${parseFloat(ddm('tx-bias-current')!)} mA` : undefined)}
+            {infoRow('TX Power', ddm('tx-power') ? `${ddm('tx-power')!.replace(/dBm/g, '')} dBm` : undefined)}
+            {infoRow('RX Power', ddm('rx-power') ? `${ddm('rx-power')!.replace(/dBm/g, '')} dBm` : undefined)}
             {infoRow('Cable (Cu)', d['sfp-link-length-copper'] ? `${d['sfp-link-length-copper']} m` : undefined)}
             {infoRow('Cable (MM)', d['sfp-link-length-multimode'] ? `${d['sfp-link-length-multimode']} m` : undefined)}
             {infoRow('Cable (SM)', d['sfp-link-length-singlemode'] ? `${d['sfp-link-length-singlemode']} km` : undefined)}

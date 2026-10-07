@@ -14,9 +14,16 @@ import { aggregateBridgeVlans, portVlanMembership, expandVlanIds, rosList } from
 import {
   classifyWifiRole, isCapsmanManaged, parseCapsmanStatus, parseCapStatus,
   normalizeRadios, macIndexKeys, parseRadioMonitor, resolveDatapath,
-  clientsPerRadio, buildMacIndex, matchRadiosToDevices,
+  clientsPerRadio, buildMacIndex, matchRadiosToDevices, lookupDeviceForMac,
+  legacyManagerEnabled, legacyCapInterfaces, legacyRadios,
   type WifiRole,
 } from './capsman';
+
+/**
+ * Version of the wireless role check. Devices classified by an older version
+ * are probed once more; 2 added legacy CAPsMAN (#250).
+ */
+const WIFI_ROLE_PROBE = 2;
 import {
   parseLteMonitor, overallQuality, detectChanges, type LteStatus,
 } from '../../utils/lte';
@@ -274,8 +281,11 @@ export class DeviceCollector {
    */
   private shouldCollectWireless(): boolean {
     if (this.device.device_type === 'wireless_ap') return true;
-    const role = (this.device as unknown as { wifi_role?: string | null }).wifi_role;
+    const d = this.device as unknown as { wifi_role?: string | null; wifi_role_probe?: number | null };
+    const role = d.wifi_role;
     if (role == null) return true;                 // never determined — probe once
+    // Classified by an older role check: look once more (legacy CAPsMAN, #250).
+    if ((d.wifi_role_probe ?? 0) < WIFI_ROLE_PROBE) return true;
     return role !== 'none' && role !== 'standalone';
   }
 
@@ -859,18 +869,36 @@ export class DeviceCollector {
       // A read that fails is null, not "none": with an empty list in its place,
       // a timeout made every client this device sees look gone (P2-21).
       const failed = () => null;
-      const [arpRead, dhcpRead, wirelessRead, bridgeRead] = await Promise.all([
+      // A legacy CAPsMAN controller lists its CAPs' clients in its own table;
+      // the CAPs' tables stay empty (#250). `stats` adds signal, rates, uptime
+      // and traffic; plain print is the fallback if a release refuses it.
+      const legacyController = (this.device as unknown as { capsman_flavor?: string | null }).capsman_flavor === 'legacy';
+      const legacyRegs = (): Promise<Record<string, string>[] | null> => legacyController
+        ? this.client.execute('/caps-man/registration-table/print', { stats: '' })
+          .catch(() => this.client.execute('/caps-man/registration-table/print'))
+          .catch(failed)
+        : Promise.resolve([] as Record<string, string>[]);
+      const [arpRead, dhcpRead, wirelessRead, bridgeRead, legacyRead] = await Promise.all([
         this.client.execute('/ip/arp/print').catch(failed),
         this.client.execute('/ip/dhcp-server/lease/print').catch(failed),
         wifiPkg === 'none'
           ? Promise.resolve([] as Record<string, string>[])
           : this.client.execute(regTableCmd).catch(failed),
         this.client.execute('/interface/bridge/host/print').catch(failed),
+        legacyRegs(),
       ]);
-      const complete = arpRead !== null && dhcpRead !== null && wirelessRead !== null && bridgeRead !== null;
+      const complete = arpRead !== null && dhcpRead !== null && wirelessRead !== null && bridgeRead !== null
+        && legacyRead !== null;
       const arpEntries = arpRead ?? [];
       const dhcpLeases = dhcpRead ?? [];
-      const wirelessClients = wirelessRead ?? [];
+      const wirelessClients = [...(wirelessRead ?? []), ...(legacyRead ?? [])];
+      // The name given to a client on the controller (the registration entry's
+      // comment), used when DHCP doesn't name it.
+      const regComments: Record<string, string> = {};
+      for (const r of legacyRead ?? []) {
+        const mac = (r['mac-address'] || '').toLowerCase();
+        if (mac && r['comment']) regComments[mac] = r['comment'];
+      }
       const bridgeHosts = bridgeRead ?? [];
 
       // DHCP hostname + IP lookup
@@ -889,25 +917,39 @@ export class DeviceCollector {
       //   legacy: signal-strength (e.g. "-65dBm"), bytes ("rx,tx" combined)
       //   new wifi pkg: signal (e.g. "-65"), tx-bytes / rx-bytes (separate fields)
       const wifiSignal: Record<string, number> = {};
+      // Wireless clients whose entry carries no signal at all (a legacy CAPsMAN
+      // table read without stats): stored as unknown, not as 0 dBm.
+      const noSignal = new Set<string>();
       const wifiInterface: Record<string, string> = {};
       const wifiTx: Record<string, number> = {};
+      const wifiLastIp: Record<string, string> = {};
       const wifiRx: Record<string, number> = {};
       for (const wc of wirelessClients) {
         const mac = (wc['mac-address'] || '').toLowerCase();
         if (!mac) continue;
         // Signal strength — strip any trailing unit suffix (e.g. "dBm")
-        const rawSignal = wc['signal-strength'] || wc['signal'] || '0';
+        // Legacy CAPsMAN calls it rx-signal.
+        const rawSignal = wc['signal-strength'] || wc['signal'] || wc['rx-signal'] || '0';
         wifiSignal[mac] = parseInt(rawSignal, 10) || 0;
+        if (wc['signal-strength'] === undefined && wc['signal'] === undefined && wc['rx-signal'] === undefined) noSignal.add(mac);
         wifiInterface[mac] = wc['interface'] || '';
-        // Traffic counters — new wifi pkg has separate fields; legacy combines as "rx,tx"
+        // Traffic counters — new wifi pkg has separate fields; legacy combines them in one
         if (wc['tx-bytes'] !== undefined || wc['rx-bytes'] !== undefined) {
           wifiTx[mac] = parseInt(wc['tx-bytes'] || '0', 10) || 0;
           wifiRx[mac] = parseInt(wc['rx-bytes'] || '0', 10) || 0;
         } else {
+          // "sent,received" from the access point's side, per MikroTik's docs, and
+          // borne out by #250: a streaming stick's first figure was 150 MB, its
+          // second 19 MB. This was read the other way round before, swapping TX
+          // and RX for every client of the legacy driver.
           const parts = (wc['bytes'] || '0,0').split(',');
-          wifiRx[mac] = parseInt(parts[0] || '0', 10) || 0;
-          wifiTx[mac] = parseInt(parts[1] || '0', 10) || 0;
+          wifiTx[mac] = parseInt(parts[0] || '0', 10) || 0;
+          wifiRx[mac] = parseInt(parts[1] || '0', 10) || 0;
         }
+        // The client's address as the access point last saw it (legacy driver
+        // and legacy CAPsMAN): the only one there is when the device running
+        // the table isn't the DHCP server.
+        if (wc['last-ip']) wifiLastIp[mac] = wc['last-ip'];
       }
 
       // ARP table — IP enrichment and activity validation.
@@ -991,13 +1033,13 @@ export class DeviceCollector {
             [
               this.device.id,
               mac,
-              fit(dhcpHostnames[mac] || null, 255),
-              fit(dhcpIPs[mac] || arpIPs[mac] || null, 45),
+              fit(dhcpHostnames[mac] || regComments[mac] || null, 255),
+              fit(dhcpIPs[mac] || arpIPs[mac] || wifiLastIp[mac] || null, 45),
               fit(interfaceName, 50),
               vlanId,
               wifiTx[mac] || 0,
               wifiRx[mac] || 0,
-              isWireless ? wifiSignal[mac] : null,
+              isWireless && !noSignal.has(mac) ? wifiSignal[mac] : null,
               isWireless ? 'wireless' : 'wired',
             ]
           );
@@ -1027,7 +1069,7 @@ export class DeviceCollector {
           .tag('mac_address', mac)
           .tag('device_id', String(this.device.id))
           .intField('online', 1);
-        if (mac in wifiSignal) {
+        if (mac in wifiSignal && !noSignal.has(mac)) {
           presencePoint.intField('signal_strength', wifiSignal[mac]);
           presencePoint.intField('tx_bytes', wifiTx[mac] ?? 0);
           presencePoint.intField('rx_bytes', wifiRx[mac] ?? 0);
@@ -2090,10 +2132,8 @@ export class DeviceCollector {
   async detectWifiRole(): Promise<WifiRole> {
     if (this.wifiRoleCache !== null) return this.wifiRoleCache;
     const pkg = await this.detectWifiPackage();
-    if (pkg !== 'wifi') {
-      // Legacy /caps-man is a separate API tree and is not covered yet; treat the
-      // old wireless package as standalone rather than guessing.
-      this.wifiRoleCache = pkg === 'none' ? 'none' : 'standalone';
+    if (pkg === 'none') {
+      this.wifiRoleCache = 'none';
       return this.wifiRoleCache;
     }
 
@@ -2105,15 +2145,34 @@ export class DeviceCollector {
       return null;
     };
     this.wifiRoleUncertain = false;
-    const [capsman, cap, ifaces] = await Promise.all([
-      this.client.execute('/interface/wifi/capsman/print').catch(absentOrUnknown),
-      this.client.execute('/interface/wifi/cap/print').catch(absentOrUnknown),
-      this.client.execute('/interface/wifi/print').catch(absentOrUnknown),
+    // Legacy CAPsMAN (#250) comes with the wireless package: /caps-man on a
+    // controller (a CHR can carry it alongside the wifi package), and
+    // /interface/wireless/cap on an access point that is one of its CAPs.
+    const [capsman, cap, ifaces, legacyMgr, legacyCap] = await Promise.all([
+      pkg === 'wifi' ? this.client.execute('/interface/wifi/capsman/print').catch(absentOrUnknown) : Promise.resolve(null),
+      pkg === 'wifi' ? this.client.execute('/interface/wifi/cap/print').catch(absentOrUnknown) : Promise.resolve(null),
+      pkg === 'wifi' ? this.client.execute('/interface/wifi/print').catch(absentOrUnknown) : Promise.resolve(null),
+      this.client.execute('/caps-man/manager/print').catch(absentOrUnknown),
+      pkg === 'wireless' ? this.client.execute('/interface/wireless/cap/print').catch(absentOrUnknown) : Promise.resolve(null),
     ]);
-    const role = classifyWifiRole(capsman, cap, (ifaces ?? []).length > 0);
+    const newController = !!capsman?.some((r) => r['enabled'] === 'true' || r['enabled'] === 'yes');
+    const legacyController = legacyManagerEnabled(legacyMgr);
+    this.capsmanFlavor = newController ? 'wifi' : legacyController ? 'legacy' : null;
+    this.legacyCapIfaces = legacyCapInterfaces(legacyCap);
+    const role = classifyWifiRole(
+      newController || legacyController ? [{ enabled: 'yes' }] : capsman,
+      this.legacyCapIfaces.length > 0 ? [{ enabled: 'yes' }] : cap,
+      // The wireless package was always treated as having radios (standalone).
+      pkg === 'wifi' ? (ifaces ?? []).length > 0 : true,
+    );
     if (!this.wifiRoleUncertain) this.wifiRoleCache = role;
     return role;
   }
+
+  /** Which CAPsMAN this device runs as a controller, set by detectWifiRole. */
+  private capsmanFlavor: 'wifi' | 'legacy' | null = null;
+  /** Interfaces this device hands to a legacy controller, when it is a legacy CAP (#250). */
+  private legacyCapIfaces: string[] = [];
 
   /**
    * Controller-side inventory: the radios it manages, the named configurations, and
@@ -2134,6 +2193,10 @@ export class DeviceCollector {
         await query(`DELETE FROM capsman_radios WHERE controller_device_id = $1`, [this.device.id]);
         await query(`DELETE FROM capsman_configurations WHERE controller_device_id = $1`, [this.device.id]);
         await query(`DELETE FROM capsman_provisioning WHERE controller_device_id = $1`, [this.device.id]);
+        return;
+      }
+      if (this.capsmanFlavor === 'legacy') {
+        await this.collectLegacyCapsman();
         return;
       }
 
@@ -2230,70 +2293,131 @@ export class DeviceCollector {
         );
       }
 
-      if (configRows !== null) {
-        const seen: string[] = [];
-        for (const cfg of configRows) {
-          const name = cfg['name'];
-          if (!name) continue;
-          seen.push(name);
-          await query(
-            `INSERT INTO capsman_configurations
-               (controller_device_id, name, ssid, mode, band, security, authentication_types, config_json, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
-             ON CONFLICT (controller_device_id, name) DO UPDATE SET
-               ssid=$3, mode=$4, band=$5, security=$6, authentication_types=$7,
-               config_json=$8, updated_at=NOW()`,
-            [
-              this.device.id, name,
-              cfg['ssid'] ?? null,
-              cfg['mode'] ?? null,
-              cfg['channel.band'] ?? cfg['band'] ?? null,
-              cfg['security'] ?? null,
-              cfg['security.authentication-types'] ?? null,
-              JSON.stringify(cfg),
-            ]
-          );
-        }
-        await query(
-          `DELETE FROM capsman_configurations WHERE controller_device_id = $1 AND NOT (name = ANY($2::text[]))`,
-          [this.device.id, seen]
-        );
-      }
-
-      if (provRows !== null) {
-        const seen: string[] = [];
-        for (const prov of provRows) {
-          const rosId = prov['.id'];
-          if (!rosId) continue;
-          seen.push(rosId);
-          await query(
-            `INSERT INTO capsman_provisioning
-               (controller_device_id, ros_id, action, master_configuration, slave_configurations,
-                radio_mac, comment, disabled, config_json, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
-             ON CONFLICT (controller_device_id, ros_id) DO UPDATE SET
-               action=$3, master_configuration=$4, slave_configurations=$5, radio_mac=$6,
-               comment=$7, disabled=$8, config_json=$9, updated_at=NOW()`,
-            [
-              this.device.id, rosId,
-              prov['action'] ?? null,
-              prov['master-configuration'] ?? null,
-              prov['slave-configurations'] ?? null,
-              (prov['radio-mac'] || '').toUpperCase() || null,
-              prov['comment'] ?? null,
-              prov['disabled'] === 'true',
-              JSON.stringify(prov),
-            ]
-          );
-        }
-        await query(
-          `DELETE FROM capsman_provisioning WHERE controller_device_id = $1 AND NOT (ros_id = ANY($2::text[]))`,
-          [this.device.id, seen]
-        );
-      }
+      if (configRows !== null) await this.storeCapsmanConfigurations(configRows);
+      if (provRows !== null) await this.storeCapsmanProvisioning(provRows);
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect CAPsMAN data:`, (err as Error).message);
     }
+  }
+
+
+  /**
+   * Legacy CAPsMAN controller (#250): its radios, configurations and
+   * provisioning, stored in the same tables as the newer CAPsMAN so the Wireless
+   * pages need no second code path. Every radio lives on a CAP, and is matched
+   * to the managed device carrying its MAC.
+   */
+  private async collectLegacyCapsman(): Promise<void> {
+    const failed = () => null;
+    const [ifaceRows, radioRows, capRows, configRows, provRows, regRows] = await Promise.all([
+      this.client.execute('/caps-man/interface/print', { detail: '' }).catch(failed),
+      this.client.execute('/caps-man/radio/print').catch(failed),
+      this.client.execute('/caps-man/remote-cap/print').catch(failed),
+      this.client.execute('/caps-man/configuration/print', { detail: '' }).catch(failed),
+      this.client.execute('/caps-man/provisioning/print', { detail: '' }).catch(failed),
+      this.client.execute('/caps-man/registration-table/print').catch(failed),
+    ]);
+
+    if (ifaceRows !== null) {
+      const radios = legacyRadios(ifaceRows, radioRows, capRows, configRows, regRows);
+      const macRows = await query<{ device_id: number; mac_address: string }>(
+        `SELECT device_id, mac_address FROM interfaces WHERE mac_address IS NOT NULL
+         UNION
+         SELECT device_id, mac_address FROM wireless_interfaces WHERE mac_address IS NOT NULL`
+      ).catch(() => []);
+      const macIndex = buildMacIndex(macRows);
+      const seen: string[] = [];
+      for (const r of radios) {
+        seen.push(r.radioMac);
+        await query(
+          `INSERT INTO capsman_radios
+             (controller_device_id, radio_mac, interface_name, local, hw_type,
+              current_channel, remote_cap_name, matched_device_id, config_json,
+              state, registered_peers, authorized_peers, tx_power, ssid, updated_at)
+           VALUES ($1,$2,$3,false,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+           ON CONFLICT (controller_device_id, radio_mac) DO UPDATE SET
+             interface_name=$3, local=false, hw_type=NULL, current_channel=$4,
+             remote_cap_name=$5, matched_device_id=$6, config_json=$7,
+             state=$8, registered_peers=$9, authorized_peers=$10, tx_power=$11,
+             ssid=$12, updated_at=NOW()`,
+          [
+            this.device.id, r.radioMac, r.interfaceName, r.channel, r.capIdentity,
+            lookupDeviceForMac(r.radioMac, macIndex, this.device.id),
+            JSON.stringify(r.raw), r.state, r.registeredPeers, r.authorizedPeers, r.txPower, r.ssid,
+          ]
+        );
+      }
+      await query(
+        `DELETE FROM capsman_radios WHERE controller_device_id = $1 AND NOT (radio_mac = ANY($2::text[]))`,
+        [this.device.id, seen]
+      );
+    }
+    if (configRows !== null) await this.storeCapsmanConfigurations(configRows);
+    if (provRows !== null) await this.storeCapsmanProvisioning(provRows);
+  }
+
+  /** Named CAPsMAN configurations, from either CAPsMAN (same field names). */
+  private async storeCapsmanConfigurations(configRows: Record<string, string>[]): Promise<void> {
+      const seen: string[] = [];
+      for (const cfg of configRows) {
+        const name = cfg['name'];
+        if (!name) continue;
+        seen.push(name);
+        await query(
+          `INSERT INTO capsman_configurations
+             (controller_device_id, name, ssid, mode, band, security, authentication_types, config_json, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+           ON CONFLICT (controller_device_id, name) DO UPDATE SET
+             ssid=$3, mode=$4, band=$5, security=$6, authentication_types=$7,
+             config_json=$8, updated_at=NOW()`,
+          [
+            this.device.id, name,
+            cfg['ssid'] ?? null,
+            cfg['mode'] ?? null,
+            cfg['channel.band'] ?? cfg['band'] ?? null,
+            cfg['security'] ?? null,
+            cfg['security.authentication-types'] ?? null,
+            JSON.stringify(cfg),
+          ]
+        );
+      }
+      await query(
+        `DELETE FROM capsman_configurations WHERE controller_device_id = $1 AND NOT (name = ANY($2::text[]))`,
+        [this.device.id, seen]
+      );
+  }
+
+  /** Provisioning rules, from either CAPsMAN (same field names). */
+  private async storeCapsmanProvisioning(provRows: Record<string, string>[]): Promise<void> {
+      const seen: string[] = [];
+      for (const prov of provRows) {
+        const rosId = prov['.id'];
+        if (!rosId) continue;
+        seen.push(rosId);
+        await query(
+          `INSERT INTO capsman_provisioning
+             (controller_device_id, ros_id, action, master_configuration, slave_configurations,
+              radio_mac, comment, disabled, config_json, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+           ON CONFLICT (controller_device_id, ros_id) DO UPDATE SET
+             action=$3, master_configuration=$4, slave_configurations=$5, radio_mac=$6,
+             comment=$7, disabled=$8, config_json=$9, updated_at=NOW()`,
+          [
+            this.device.id, rosId,
+            prov['action'] ?? null,
+            prov['master-configuration'] ?? null,
+            prov['slave-configurations'] ?? null,
+            (prov['radio-mac'] || '').toUpperCase() || null,
+            prov['comment'] ?? null,
+            prov['disabled'] === 'true',
+            JSON.stringify(prov),
+          ]
+        );
+      }
+      await query(
+        `DELETE FROM capsman_provisioning WHERE controller_device_id = $1 AND NOT (ros_id = ANY($2::text[]))`,
+        [this.device.id, seen]
+      );
   }
 
   // ─── Wifi package detection ───────────────────────────────────────────────
@@ -2341,7 +2465,6 @@ export class DeviceCollector {
   async collectWirelessInterfaces(): Promise<void> {
     try {
       const pkg = await this.detectWifiPackage();
-      if (pkg === 'none') return;
 
       // Recorded per device so the UI can explain a blank SSID as delegation to a
       // controller rather than leaving it looking like an unconfigured radio.
@@ -2349,12 +2472,15 @@ export class DeviceCollector {
       // The package is recorded alongside the role because TX-retry data only
       // exists on the legacy 'wireless' driver, and a panel that can never have
       // data on this fleet should not occupy space (issue #96). A role that is
-      // only a guess (a read timed out) isn't recorded.
+      // only a guess (a read timed out) isn't recorded. Recorded even with no
+      // wireless package, so the device isn't probed again on every poll.
       if (!this.wifiRoleUncertain) {
-        await query(`UPDATE devices SET wifi_role = $2, wifi_package = $3 WHERE id = $1`,
-                    [this.device.id, role, pkg])
-          .catch(() => { /* advisory; never fail collection over it */ });
+        await query(
+          `UPDATE devices SET wifi_role = $2, wifi_package = $3, capsman_flavor = $4, wifi_role_probe = $5 WHERE id = $1`,
+          [this.device.id, role, pkg, this.capsmanFlavor, WIFI_ROLE_PROBE]
+        ).catch(() => { /* advisory; never fail collection over it */ });
       }
+      if (pkg === 'none') return;
 
       // null = the fetch itself failed. Distinguished from an empty list (device
       // genuinely has no wireless interfaces) so a transient API error can never
@@ -2384,6 +2510,23 @@ export class DeviceCollector {
         }));
       }
 
+      // A legacy CAP keeps its old local settings on the interfaces it hands to
+      // the controller, which no longer apply. The controller's view of the radio
+      // (same MAC) has the SSID actually on the air (#250).
+      const controllerSsid = new Map<string, string>();
+      if (this.legacyCapIfaces.length > 0) {
+        const macs = wlans.filter((w) => this.legacyCapIfaces.includes(w['name']))
+          .map((w) => (w['mac-address'] || '').toUpperCase()).filter(Boolean);
+        if (macs.length > 0) {
+          const rows = await query<{ radio_mac: string; ssid: string | null }>(
+            `SELECT DISTINCT ON (radio_mac) radio_mac, ssid FROM capsman_radios
+              WHERE radio_mac = ANY($1::text[]) AND ssid IS NOT NULL ORDER BY radio_mac, updated_at DESC`,
+            [macs]
+          ).catch(() => []);
+          for (const r of rows) controllerSsid.set(r.radio_mac, r.ssid as string);
+        }
+      }
+
       for (const wlan of wlans) {
         const name = wlan['name'];
         if (!name) continue;
@@ -2391,7 +2534,8 @@ export class DeviceCollector {
         // status line is the only place an SSID or channel appears. Fall back to it
         // rather than storing nulls that render as an empty, broken-looking AP.
         const capsmanStatus = parseCapsmanStatus(wlan);
-        const managed = isCapsmanManaged(wlan, role);
+        // A legacy CAP names the interfaces it hands to its controller (#250).
+        const managed = isCapsmanManaged(wlan, role) || this.legacyCapIfaces.includes(name);
         const master = wlan['master-interface'];
         const liveF = liveFreq[name] ?? (master ? liveFreq[master] : undefined);
         const liveW = liveWidth[name] ?? (master ? liveWidth[master] : undefined);
@@ -2425,7 +2569,7 @@ export class DeviceCollector {
                capsman_controller_mac=$20, updated_at=NOW()`,
             [
               this.device.id, fit(name, 50),
-              fit(wlan['ssid'] || capsmanStatus?.ssid || null, 100),
+              fit(controllerSsid.get((wlan['mac-address'] || '').toUpperCase()) || wlan['ssid'] || capsmanStatus?.ssid || null, 100),
               fit(wlan['mode'] || capsmanStatus?.mode || null, 30),
               fit(bandStr || null, 50),
               !isNaN(effFreq) && effFreq > 0 ? effFreq : null,

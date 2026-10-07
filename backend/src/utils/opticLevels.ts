@@ -39,19 +39,26 @@ function numbers(v: string | undefined): number[] {
 
 const first = (v: string | undefined): number | null => numbers(v)[0] ?? null;
 
+/**
+ * A diagnostics field under either name. MikroTik's manual shows `sfp-rx-power`;
+ * a CRS520-4XS-16XQ on 7.24.5 reports a QSFP28 optic's as plain `rx-power`
+ * (#249). Read whichever is there.
+ */
+const ddm = (mon: Record<string, string>, field: string): string | undefined => mon[`sfp-${field}`] ?? mon[field];
+
 /** The reading in a monitor row, or null when the module reports no diagnostics. */
 export function readOptic(mon: Record<string, string>): OpticReading | null {
   if (mon['sfp-module-present'] !== undefined && !['true', 'yes'].includes(mon['sfp-module-present'])) return null;
-  const rxLanes = numbers(mon['sfp-rx-power']);
-  const txLanes = numbers(mon['sfp-tx-power']);
+  const rxLanes = numbers(ddm(mon, 'rx-power'));
+  const txLanes = numbers(ddm(mon, 'tx-power'));
   if (rxLanes.length === 0 && txLanes.length === 0) return null;
   return {
     rx_dbm: rxLanes.length ? Math.min(...rxLanes) : null,
     rx_lanes: rxLanes.length > 1 ? rxLanes : [],
     tx_dbm: txLanes.length ? Math.min(...txLanes) : null,
-    temp_c: first(mon['sfp-temperature']),
-    bias_ma: first(mon['sfp-tx-bias-current']),
-    voltage: first(mon['sfp-supply-voltage']),
+    temp_c: first(ddm(mon, 'temperature')),
+    bias_ma: first(ddm(mon, 'tx-bias-current')),
+    voltage: first(ddm(mon, 'supply-voltage')),
   };
 }
 

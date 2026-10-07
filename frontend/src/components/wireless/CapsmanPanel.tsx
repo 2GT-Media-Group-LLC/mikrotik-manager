@@ -39,7 +39,8 @@ function toRows(c: CapsmanController): Row[] {
         ssid: r.ssid,
         channel: r.current_channel,
         clients: r.registered_peers,
-        running: r.state === 'running',
+        // Legacy CAPsMAN reports 'running-ap' (#250).
+        running: (r.state ?? '').startsWith('running'),
       });
     }
   }

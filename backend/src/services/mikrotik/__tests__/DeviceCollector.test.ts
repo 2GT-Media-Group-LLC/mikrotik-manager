@@ -349,3 +349,103 @@ describe('legacy wireless security', () => {
     expect(iface.params).toMatchObject({ ssid: 'Guest', comment: 'mtm-guest:guest', 'security-profile': iface.params.name ? `mtm-${iface.params.name}` : '' });
   });
 });
+
+// ── Legacy CAPsMAN (#250) ────────────────────────────────────────────────────
+
+import { RouterOSTrapError } from '../RouterOSClient';
+import { legacyFixture } from '../__fixtures__/legacyCapsman';
+
+describe('legacy CAPsMAN (#250)', () => {
+  const noMenu = () => { throw Object.create(RouterOSTrapError.prototype, { message: { value: 'no such command' } }); };
+  const on = (responses: Record<string, Record<string, string>[] | (() => never)>, device: Partial<DeviceRow> = {}) => {
+    const collector = new DeviceCollector({ ...testDevice, ...device } as DeviceRow);
+    const calls: { cmd: string; params: Record<string, string> }[] = [];
+    (collector as unknown as { client: { execute: jest.Mock } }).client = {
+      execute: jest.fn(async (cmd: string, params: Record<string, string> = {}) => {
+        calls.push({ cmd, params });
+        const r = responses[cmd];
+        if (typeof r === 'function') return r();
+        return r ?? [];
+      }),
+    };
+    return { collector, calls };
+  };
+
+  beforeEach(() => { (query as jest.Mock).mockReset(); (query as jest.Mock).mockResolvedValue([]); });
+
+  it('classifies a CHR running legacy CAPsMAN as a controller, even with the wifi menu present', async () => {
+    const { collector } = on({ '/interface/wifi/print': [], '/caps-man/manager/print': legacyFixture.manager });
+    expect(await collector.detectWifiRole()).toBe('controller');
+    expect((collector as unknown as { capsmanFlavor: string }).capsmanFlavor).toBe('legacy');
+  });
+
+  it('classifies an RB951 handing wlan1 to a legacy controller as a CAP', async () => {
+    const { collector } = on({
+      '/interface/wifi/print': noMenu, '/interface/wireless/print': [{ name: 'wlan1' }],
+      '/caps-man/manager/print': [{ enabled: 'false' }], '/interface/wireless/cap/print': legacyFixture.cap,
+    });
+    expect(await collector.detectWifiRole()).toBe('cap');
+    expect((collector as unknown as { legacyCapIfaces: string[] }).legacyCapIfaces).toEqual(['wlan1']);
+  });
+
+  it('still calls a plain legacy-wireless AP standalone', async () => {
+    const { collector } = on({
+      '/interface/wifi/print': noMenu, '/interface/wireless/print': [{ name: 'wlan1' }],
+      '/caps-man/manager/print': [{ enabled: 'false' }], '/interface/wireless/cap/print': [{ enabled: 'false' }],
+    });
+    expect(await collector.detectWifiRole()).toBe('standalone');
+  });
+
+  it('leaves the newer CAPsMAN alone', async () => {
+    const { collector } = on({
+      '/interface/wifi/print': [{ name: 'wifi1' }], '/interface/wifi/capsman/print': [{ enabled: 'true' }],
+      '/caps-man/manager/print': noMenu,
+    });
+    expect(await collector.detectWifiRole()).toBe('controller');
+    expect((collector as unknown as { capsmanFlavor: string }).capsmanFlavor).toBe('wifi');
+  });
+
+  it('stores the radio against the RB951 by MAC, with its SSID, channel and clients', async () => {
+    const { collector } = on({
+      '/interface/wifi/print': [], '/caps-man/manager/print': legacyFixture.manager,
+      '/caps-man/interface/print': legacyFixture.interface, '/caps-man/remote-cap/print': legacyFixture.remoteCap,
+      '/caps-man/registration-table/print': legacyFixture.registrations,
+    });
+    (query as jest.Mock).mockImplementation(async (sql: string) =>
+      sql.includes('FROM interfaces WHERE mac_address') ? [{ device_id: 42, mac_address: 'D4:CA:6D:BB:0E:57' }, { device_id: 1, mac_address: '00:0C:29:00:00:01' }] : []);
+    await collector.collectCapsman();
+    const insert = (query as jest.Mock).mock.calls.find(([sql]) => String(sql).includes('INSERT INTO capsman_radios'));
+    expect(insert).toBeDefined();
+    const p = insert![1];
+    expect(p.slice(0, 6)).toEqual([1, 'D4:CA:6D:BB:0E:57', 'BonusRoom 2.4Ghz', '2412/20/gn', 'BonusRoom', 42]);
+    expect(p.slice(7)).toEqual(['running-ap', 3, 3, 30, 'Laney Legacy']);
+  });
+
+  it("lists the controller's clients, named by their registration comment", async () => {
+    const { collector, calls } = on({
+      '/interface/wifi/print': [], '/caps-man/registration-table/print': legacyFixture.registrations,
+    }, { capsman_flavor: 'legacy' } as Partial<DeviceRow>);
+    await collector.updateClients();
+    expect(calls.find((c) => c.cmd === '/caps-man/registration-table/print')?.params).toEqual({ stats: '' });
+    const inserts = (query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO clients'));
+    const iphone = inserts.find(([, params]) => params[1] === '38:9c:b2:3d:9b:19');
+    expect(iphone).toBeDefined();
+    expect(iphone![1][2]).toBe("Matt's iPhone 15");      // hostname
+    expect(iphone![1][4]).toBe('BonusRoom 2.4Ghz');       // interface
+    expect(iphone![1][8]).toBeNull();                     // no signal without stats
+  });
+
+  it('takes signal, address and traffic from the stats the reporter sent', async () => {
+    const { collector } = on({
+      '/interface/wifi/print': [], '/caps-man/registration-table/print': legacyFixture.registrationsStats,
+    }, { capsman_flavor: 'legacy' } as Partial<DeviceRow>);
+    await collector.updateClients();
+    const inserts = (query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO clients'));
+    const fireTv = inserts.find(([, params]) => params[1] === '9c:c8:e9:53:ba:f0')![1];
+    expect(fireTv[2]).toBe('BonusRoom FireTV Stick 4k Max');
+    expect(fireTv[3]).toBe('110.87.22.10');               // last-ip: the CHR isn't the DHCP server
+    expect(fireTv[6]).toBe(150684303);                    // tx: what the AP sent the streaming stick
+    expect(fireTv[7]).toBe(19365193);                     // rx
+    expect(fireTv[8]).toBe(-70);
+  });
+});

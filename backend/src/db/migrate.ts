@@ -1389,6 +1389,14 @@ CREATE TABLE IF NOT EXISTS optic_readings (
 );
 CREATE INDEX IF NOT EXISTS idx_optic_readings_port ON optic_readings (device_id, interface, at);
 CREATE INDEX IF NOT EXISTS idx_optic_readings_at ON optic_readings (at);
+
+-- Legacy CAPsMAN (#250). capsman_flavor says which CAPsMAN a controller runs:
+-- 'wifi' (/interface/wifi/capsman) or 'legacy' (/caps-man). wifi_role_probe is
+-- the version of the role check a device was last classified with; devices
+-- checked by an older version are probed once more, so a legacy controller
+-- recorded as 'none' before #250 is found.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS capsman_flavor VARCHAR(8);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_role_probe SMALLINT NOT NULL DEFAULT 0;
 `;
 
 const DEFAULT_SETTINGS = [

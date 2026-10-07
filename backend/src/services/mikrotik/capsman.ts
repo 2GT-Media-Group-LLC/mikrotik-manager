@@ -371,3 +371,116 @@ export function clientsPerRadio(
   }
   return counts;
 }
+
+// ─── Legacy CAPsMAN (/caps-man, the "wireless" package) — #250 ───────────────
+//
+// RouterOS 6 and the legacy wireless package on 7 run the original CAPsMAN under
+// its own menu tree. Older 802.11n/ac wave 1 access points (RB951, hAP ac lite,
+// cAP ac) can only be CAPs of this one. Field names below are as a CHR on 7.24.5
+// reports them (reporter's output in #250):
+//
+//   /caps-man/manager           → enabled
+//   /caps-man/remote-cap        → identity, address, board, base-mac, version, state
+//   /caps-man/interface         → radio-mac, master-interface ("none" on a radio),
+//                                 configuration, current-state,
+//                                 current-channel "2412/20/gn(30dBm)",
+//                                 current-registered-clients, current-authorized-clients
+//   /caps-man/registration-table → interface, ssid, mac-address, comment
+//   /interface/wireless/cap      → enabled, interfaces (on the CAP)
+//
+// Under legacy CAPsMAN the CAP's own registration table stays empty: clients are
+// listed on the controller only.
+
+/** Is legacy CAPsMAN switched on? `/caps-man/manager/print` returns one row. */
+export function legacyManagerEnabled(rows: Record<string, string>[] | null): boolean {
+  return !!rows?.some((r) => isYes(r['enabled']));
+}
+
+/** The interfaces a legacy CAP hands to its controller, from `/interface/wireless/cap/print`. */
+export function legacyCapInterfaces(rows: Record<string, string>[] | null): string[] {
+  const row = rows?.find((r) => isYes(r['enabled']));
+  if (!row) return [];
+  return (row['interfaces'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** "2412/20/gn(30dBm)" → channel "2412/20/gn", 30 dBm. */
+export function parseLegacyChannel(v: string | undefined): { channel: string | null; txPower: number | null } {
+  const s = (v || '').trim();
+  if (!s) return { channel: null, txPower: null };
+  const open = s.indexOf('(');
+  if (open < 0) return { channel: s, txPower: null };
+  const power = parseInt(s.slice(open + 1), 10);
+  return { channel: s.slice(0, open).trim() || null, txPower: Number.isFinite(power) ? power : null };
+}
+
+export interface LegacyRadio {
+  radioMac: string;
+  interfaceName: string | null;
+  state: string | null;
+  channel: string | null;
+  txPower: number | null;
+  registeredPeers: number | null;
+  authorizedPeers: number | null;
+  ssid: string | null;
+  /** Identity of the AP the radio lives on, when the controller says. */
+  capIdentity: string | null;
+  raw: Record<string, string>;
+}
+
+const num = (v: string | undefined): number | null => {
+  if (v == null || v === '') return null;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : null;
+};
+
+const isRadioRow = (r: Record<string, string>): boolean => {
+  const master = (r['master-interface'] || '').trim();
+  return !!r['radio-mac'] && (master === '' || master === 'none');
+};
+
+/**
+ * The radios a legacy controller manages, one per physical radio (virtual APs
+ * carry a master-interface and are folded into their radio's client count).
+ *
+ * The AP a radio lives on comes from /caps-man/radio when it was read, or else
+ * from /caps-man/remote-cap by MAC: a CAP's base MAC and its radio MACs share
+ * their first five octets (base D4:CA:6D:BB:0E:52, radio …:0E:57 in #250). That
+ * is only used when exactly one CAP matches.
+ */
+export function legacyRadios(
+  interfaces: Record<string, string>[],
+  radios: Record<string, string>[] | null,
+  remoteCaps: Record<string, string>[] | null,
+  configurations: Record<string, string>[] | null,
+  registrations: Record<string, string>[] | null,
+): LegacyRadio[] {
+  const counts = registrations ? clientsPerRadio(interfaces, registrations) : null;
+  const ssidOfConfig = new Map((configurations ?? []).filter((c) => c['name']).map((c) => [c['name'], c['ssid'] || null]));
+  const ssidSeen = new Map<string, string>();
+  for (const r of registrations ?? []) if (r['interface'] && r['ssid']) ssidSeen.set(r['interface'], r['ssid']);
+  const prefix = (mac: string) => mac.toUpperCase().split(':').slice(0, 5).join(':');
+
+  return interfaces.filter(isRadioRow).map((r) => {
+    const radioMac = r['radio-mac'].toUpperCase();
+    const { channel, txPower } = parseLegacyChannel(r['current-channel']);
+    const radio = radios?.find((x) => (x['radio-mac'] || '').toUpperCase() === radioMac);
+    let capIdentity = radio?.['remote-cap-identity'] || radio?.['remote-cap-name'] || null;
+    if (!capIdentity && remoteCaps) {
+      const hits = remoteCaps.filter((c) => c['base-mac'] && prefix(c['base-mac']) === prefix(radioMac));
+      if (hits.length === 1) capIdentity = hits[0]['identity'] || hits[0]['name'] || null;
+    }
+    const name = r['name'] || null;
+    return {
+      radioMac,
+      interfaceName: name,
+      state: r['current-state'] || null,
+      channel,
+      txPower,
+      registeredPeers: counts ? (counts.get(radioMac) ?? 0) : num(r['current-registered-clients']),
+      authorizedPeers: num(r['current-authorized-clients']),
+      ssid: r['configuration.ssid'] || ssidOfConfig.get(r['configuration'] || '') || (name ? ssidSeen.get(name) : undefined) || null,
+      capIdentity,
+      raw: r,
+    };
+  });
+}

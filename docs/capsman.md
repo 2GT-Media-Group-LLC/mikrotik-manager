@@ -10,8 +10,9 @@ The platform models the controller relationship instead.
 
 ## Device roles
 
-Every device is classified each poll from `/interface/wifi/capsman` and
-`/interface/wifi/cap`:
+Every device is classified from `/interface/wifi/capsman` and `/interface/wifi/cap`, and
+for legacy CAPsMAN from `/caps-man/manager` and `/interface/wireless/cap`
+(see [Legacy CAPsMAN](#legacy-capsman)):
 
 | Role | Meaning |
 |---|---|
@@ -80,8 +81,30 @@ simultaneously — the fleet-wide version of the failure [Change Guard](change-g
 exists to prevent. Those operations are held back until they carry the same
 prediction-and-revert protection that per-device changes do.
 
-Legacy `/caps-man` — the pre-RouterOS 7 controller — is a separate API tree and is not
-covered. The RouterOS 7 `wifi` stack is supported.
+## Legacy CAPsMAN
+
+The original CAPsMAN (`/caps-man`, from the `wireless` package) is supported too (#250).
+Older 802.11n and 802.11ac wave 1 access points (RB951, hAP ac lite, cAP ac and similar)
+can only be CAPs of this one, often managed from a CHR.
+
+- **Controller:** a device with `/caps-man manager` enabled is a controller, even when it
+  also has the newer `wifi` menu, as every RouterOS 7.24 device does.
+- **Radios and APs:** read from `/caps-man interface` and matched to access points by MAC,
+  the same way as the newer CAPsMAN. The Wireless page and the CAPsMAN panel show them
+  without any difference.
+- **Clients:** under legacy CAPsMAN only the controller lists the clients
+  (`/caps-man registration-table`); the access point's own table stays empty. They're
+  listed under the controller with their signal, traffic and last known address, named by
+  the comment given to them there when DHCP doesn't name them.
+- **The CAP:** an access point whose `/interface wireless cap` is enabled is a CAP. The
+  interfaces it hands to the controller are marked as managed by CAPsMAN and show the SSID
+  from the controller rather than the AP's own, unused settings.
+
+Devices classified before this was added are checked once more, so an existing legacy
+controller is found after upgrading.
+
+Developed against the #250 reporter's CHR and RB951Ui-2HnD output (RouterOS 7.24.5). It
+hasn't been run against RouterOS 6.
 
 ## Roaming history
 
