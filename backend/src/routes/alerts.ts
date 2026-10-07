@@ -37,6 +37,15 @@ const DEFAULT_RULES = [
   // A WireGuard peer whose last handshake is older than the threshold, in
   // minutes (#208). Off by default; one alert per peer, per cooldown.
   { event_type: 'wireguard_stale', enabled: false, threshold: 15, cooldown_min: 60 },
+  // Bad frames on a port whose link is still up (#249): the threshold is
+  // errors a minute, averaged over 5 minutes. Off by default; per port.
+  { event_type: 'interface_errors', enabled: false, threshold: 10, cooldown_min: 60 },
+  // A port whose link went down this many times in an hour (#249). Off by
+  // default; per port.
+  { event_type: 'interface_flapping', enabled: false, threshold: 3, cooldown_min: 60 },
+  // An optic's light this many dB below its usual level (the past week's
+  // median), or the module at 70 °C or more. Off by default; per port.
+  { event_type: 'optic_degraded', enabled: false, threshold: 3, cooldown_min: 360 },
 ];
 
 /**

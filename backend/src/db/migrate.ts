@@ -1354,6 +1354,41 @@ CREATE TABLE IF NOT EXISTS wireguard_peers (
 
 -- Where a rollout's devices get their packages: 'mirror' or 'mikrotik'.
 ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS package_source VARCHAR(10) NOT NULL DEFAULT 'mikrotik';
+
+-- Interface errors and link flaps (#249): one row per poll interval in which a
+-- port's error counters or link-downs grew. Quiet intervals aren't stored.
+CREATE TABLE IF NOT EXISTS interface_error_events (
+  id           BIGSERIAL PRIMARY KEY,
+  device_id    INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  interface    VARCHAR(64) NOT NULL,
+  at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  interval_sec INTEGER NOT NULL,
+  fcs          BIGINT NOT NULL DEFAULT 0,
+  align        BIGINT NOT NULL DEFAULT 0,
+  overflow     BIGINT NOT NULL DEFAULT 0,
+  other        BIGINT NOT NULL DEFAULT 0,
+  link_downs   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_interface_error_events_at ON interface_error_events (at);
+CREATE INDEX IF NOT EXISTS idx_interface_error_events_device ON interface_error_events (device_id, at);
+
+-- Optic light levels from each slow poll, for modules that report diagnostics
+-- (copper DAC cables don't). rx_lanes holds per-lane receive power when a
+-- module reports more than one. Kept two weeks.
+CREATE TABLE IF NOT EXISTS optic_readings (
+  id         BIGSERIAL PRIMARY KEY,
+  device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  interface  VARCHAR(64) NOT NULL,
+  at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  rx_dbm     REAL,
+  tx_dbm     REAL,
+  temp_c     REAL,
+  bias_ma    REAL,
+  voltage    REAL,
+  rx_lanes   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_optic_readings_port ON optic_readings (device_id, interface, at);
+CREATE INDEX IF NOT EXISTS idx_optic_readings_at ON optic_readings (at);
 `;
 
 const DEFAULT_SETTINGS = [

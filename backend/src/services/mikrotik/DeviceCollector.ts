@@ -62,6 +62,8 @@ import { usesRemoteLogFormat, toSyslogActionParams } from './syslogAction';
 import { configuredServices } from '../../utils/ipServices';
 import { isClockChangeLine } from '../../utils/clockLogLines';
 import { planNtpWrites, isLegacyClient, legacyServerList, type NtpForm } from './ntpSettings';
+import { recordInterfaceCounters } from '../interfaceErrors';
+import { recordOptics } from '../opticLevels';
 
 /** A RouterOS property name: lower-case words joined by '-' or '.', never '.id'. */
 const ROS_PROPERTY = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/;
@@ -483,8 +485,31 @@ export class DeviceCollector {
       }
 
       await writeApi.flush().catch((e) => console.error('InfluxDB flush error:', e));
+      await this.collectInterfaceErrors(stats);
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect interface traffic:`, err);
+    }
+  }
+
+  /** When this device's error counters were last read, for the interval. */
+  private static lastErrorPoll = new Map<number, number>();
+
+  /**
+   * Frame errors and link drops per Ethernet port (#249), from the same poll.
+   * One extra read; a device that can't answer it (no Ethernet ports, an old
+   * release) just has nothing recorded.
+   */
+  private async collectInterfaceErrors(ifaceStats: Record<string, string>[]): Promise<void> {
+    try {
+      const ethernet = await this.client.execute('/interface/ethernet/print', { stats: '' });
+      const linkDowns = new Map(ifaceStats.map((i) => [i['name'], i['link-downs']] as [string, string | undefined]));
+      const now = Date.now();
+      const last = DeviceCollector.lastErrorPoll.get(this.device.id);
+      DeviceCollector.lastErrorPoll.set(this.device.id, now);
+      const intervalSec = last ? Math.max(1, Math.round((now - last) / 1000)) : 0;
+      await recordInterfaceCounters(this.device.id, ethernet, linkDowns, intervalSec);
+    } catch (err) {
+      console.warn(`[${this.device.name}] Interface error counters not read:`, (err as Error).message);
     }
   }
 
@@ -583,6 +608,9 @@ export class DeviceCollector {
       const monitorByName = await this.collectEthernetMonitor(
         allEthernetNames(ifaces, bridgeNames, bondNames)
       );
+      // The same reading carries the optics' light levels and temperature.
+      await recordOptics(this.device.id, monitorByName)
+        .catch((e) => console.warn(`[${this.device.name}] Optic readings not stored:`, (e as Error).message));
 
       // Map bridge name → full bridge data (includes vlan-filtering, etc.)
       const bridgeDataMap = new Map<string, Record<string, string>>();

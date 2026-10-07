@@ -52,6 +52,8 @@ import { upgradeDecision } from '../utils/firmwarePlan';
 import { sshHostCheck, explainSshError } from '../services/sshHostCheck';
 import { presetCaller } from '../utils/presetAccess';
 import { parseAllowedList, configuredServices, allowedFromKey, managerPeer, addressAllowed } from '../utils/ipServices';
+import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
+import { opticStatuses, opticHistory, dropThreshold } from '../services/opticLevels';
 
 const router = Router();
 router.use(requireAuth);
@@ -668,6 +670,40 @@ router.get('/:id/interfaces', async (req: Request, res: Response) => {
     [req.params.id]
   );
   return res.json(ifaces);
+});
+
+// GET /api/devices/:id/interface-errors
+//
+// Ports with frame errors or link drops in the last hour (#249), with the
+// state used for the yellow/red markers and the thresholds behind it.
+router.get('/:id/interface-errors', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid device id' });
+  const [summaries, t] = await Promise.all([portErrorSummaries([id]), thresholds()]);
+  return res.json({
+    ports: summaries.get(id) ?? [],
+    errors_per_min: t.errorsPerMin,
+    flaps_per_hour: t.flapsPerHour,
+  });
+});
+
+// GET /api/devices/:id/optics
+//
+// Light levels and temperature of the optics that report them, each against
+// its usual level, for the port markers and the port card.
+router.get('/:id/optics', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid device id' });
+  const [statuses, dropDb] = await Promise.all([opticStatuses([id]), dropThreshold()]);
+  return res.json({ ports: statuses.get(id) ?? [], drop_db: dropDb });
+});
+
+// GET /api/devices/:id/optics/:port/history?days=7
+router.get('/:id/optics/:port/history', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid device id' });
+  const days = Math.min(14, Math.max(1, Number(req.query.days) || 7));
+  return res.json(await opticHistory(id, String(req.params.port), days));
 });
 
 // PUT /api/devices/:id/interfaces/:name

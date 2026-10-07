@@ -22,7 +22,10 @@ export type AlertEventType =
   | 'device_health_restored'
   | 'device_identity_changed'
   | 'cve_active'
-  | 'wireguard_stale';
+  | 'wireguard_stale'
+  | 'interface_errors'
+  | 'interface_flapping'
+  | 'optic_degraded';
 
 export interface AlertContext {
   deviceId?: number;
@@ -66,6 +69,9 @@ const EVENT_LABELS: Record<string, string> = {
   device_health_restored:   'Device Hardware Healthy Again',
   device_identity_changed:  'Device Identity Changed (certificate, host key or serial)',
   wireguard_stale:          'WireGuard Peer Stale',
+  interface_errors:         'Interface Errors',
+  interface_flapping:       'Interface Flapping',
+  optic_degraded:           'Optic Light Level Dropping',
 };
 
 const EVENT_EMOJI: Record<string, string> = {
@@ -83,6 +89,9 @@ const EVENT_EMOJI: Record<string, string> = {
   device_health_restored:   '🟢',
   device_identity_changed:  '🛑',
   wireguard_stale:          '🔌',
+  interface_errors:         '📉',
+  interface_flapping:       '🔁',
+  optic_degraded:           '🔦',
 };
 
 export class AlertService {

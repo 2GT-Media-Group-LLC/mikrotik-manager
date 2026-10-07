@@ -1,6 +1,6 @@
 {
   "name": "mikrotik-manager-backend",
-  "version": "0.35.2-beta",
+  "version": "0.36.0-beta",
   "description": "Mikrotik Network Management Platform - Backend API",
   "main": "dist/index.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "@influxdata/influxdb-client-apis": "^1.35.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.81.2",
-    "compression": "^1.7.4",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "dotenv": "^18.0.5",
     "express": "^4.18.2",

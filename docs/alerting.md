@@ -20,6 +20,9 @@ cooldown that prevents a flapping device from flooding your channels.
 | `device_degraded` / `device_health_restored` | A power supply, fan or temperature problem appeared or cleared. See [Hardware health](devices.md#hardware-health) |
 | `device_identity_changed` | A device's API-SSL certificate, SSH host key or serial number changed, so the manager stopped connecting to it (on by default). See [Certificate, host key and serial number pinning](security.md#certificate-host-key-and-serial-number-pinning) |
 | `wireguard_stale` | A WireGuard peer's last handshake is older than the threshold, in minutes (default 15; off by default). WireGuard re-handshakes about every two minutes while traffic flows, so a much older handshake means the tunnel is down. Peers that have never connected, disabled peers and peers on a disabled interface are left out. Handshakes are read with the slow poll and checked every 5 minutes; the cooldown applies to each peer separately |
+| `interface_errors` | Bad frames on a port: FCS, alignment, overflow and other receive errors, per minute, averaged over 5 minutes (default 10; off by default). Usually a failing optic or cable while the link stays up. See [Interface errors and flapping](#interface-errors-and-flapping); the cooldown applies to each port separately |
+| `interface_flapping` | A port's link went down at least the threshold number of times in the last hour (default 3; off by default). The cooldown applies to each port separately |
+| `optic_degraded` | An optic's receive or transmit light is at least the threshold in dB below the port's usual level (default 3 dB; off by default), or the module is at 70 °C or more. See [Optic light levels](#optic-light-levels); the cooldown applies to each port separately |
 
 Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
 Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
@@ -41,6 +44,59 @@ own logins. These lines are left out of Events and log alerts:
 The manager's address is learned from the device's list of active sessions. Until it's
 known, the login lines are kept. Anyone else's login, including with the same account from
 another address, is always kept.
+
+## Interface errors and flapping
+
+A failing optic, a dirty or damaged patch cable, or a problem at the far end often keeps
+the link up while it corrupts frames, so link state alone misses it (#249). Every fast
+poll (30 seconds) reads each Ethernet port's error counters and link-down count, and keeps
+only the intervals in which they grew, for a week.
+
+- **Counted:** FCS errors, alignment errors, receive overflow (a full receive buffer, which
+  is congestion rather than a bad link), and other physical-layer errors (fragments,
+  jabber, code, carrier, runts, late collisions). Oversized frames aren't counted; they
+  point to an MTU mismatch, not a bad link. Not every model reports every counter.
+- **Rates, not totals:** errors from before the manager started watching, or from a
+  problem that has stopped, don't count. A counter that goes backwards (a reboot or a
+  reset) only sets a new starting point.
+- **On the Ports tab**, a port with errors in the last 15 minutes gets a yellow outline and
+  a **!**. It turns red when it reaches the `interface_errors` rate or the
+  `interface_flapping` count. Hovering gives the counts, and the port's info card shows the
+  last hour broken down by kind.
+- **On the dashboard**, the Operations list names the affected ports per device.
+
+The markers use the alert rules' thresholds even when the alerts themselves are off, so
+setting a threshold also sets where red begins.
+
+RouterOS shows a port's FEC mode but keeps no count of corrected or uncorrected FEC
+errors, so FEC error rates can't be watched. Errors that FEC can't correct still show up as
+FCS errors.
+
+## Optic light levels
+
+Light that slowly fades is often the first sign of a failing optic, a dirty connector or a
+damaged fibre, before any frames go bad. The slow poll (every 5 minutes) already reads
+each SFP and QSFP port, and now keeps the optic's receive and transmit power, temperature,
+bias current and supply voltage for two weeks. Copper DAC cables and modules without
+diagnostics report none of these and are skipped.
+
+What counts as low depends on the optic and the length of the link, so each port is
+compared with **its own usual level**: the median of the past week, leaving out the last
+hour so a fresh drop doesn't hide itself. A port needs about three hours of readings
+before it's judged.
+
+- **Red** when the light is at least the `optic_degraded` threshold below usual (3 dB,
+  half the light, by default), or the module is at 70 °C or more, the limit for
+  commercial-grade optics.
+- **Yellow** at half the threshold.
+- On a multi-lane module (QSFP), the weakest lane counts, and the port card lists every
+  lane.
+- No light at all means the link is down, which the link-down and
+  [flapping](#interface-errors-and-flapping) checks already report.
+
+The port's info card on the Ports tab shows the light now, its usual level, how far below
+it is, and a chart of the past week. Ports past the threshold are also listed on the
+dashboard.
 
 ## Certificate expiry
 

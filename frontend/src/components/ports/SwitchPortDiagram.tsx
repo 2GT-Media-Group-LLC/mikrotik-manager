@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, X, Check, AlertCircle, Activity, Link2, Trash2, Network, Users, Wifi, ShieldCheck, AlertTriangle, LayoutGrid} from 'lucide-react';
-import { devicesApi, metricsApi } from '../../services/api';
+import { devicesApi, metricsApi, type PortErrorSummary, type OpticStatus } from '../../services/api';
+import { chartTooltip } from '../common/chartTooltip';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVerdictOf, type GuardResult, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
@@ -65,15 +66,33 @@ function portState(port: SwitchPort): 'up' | 'down' | 'disabled' {
   return 'down';
 }
 
+/** One line for a port's tooltip: what its error counters did this hour (#249). */
+function portErrorLine(e: PortErrorSummary): string {
+  const parts = [
+    e.hour.fcs ? `FCS ${e.hour.fcs}` : '', e.hour.align ? `alignment ${e.hour.align}` : '',
+    e.hour.overflow ? `overflow ${e.hour.overflow}` : '', e.hour.other ? `other ${e.hour.other}` : '',
+  ].filter(Boolean);
+  const errs = parts.length ? `errors this hour: ${parts.join(', ')} (${e.rate_per_min}/min now)` : '';
+  const flaps = e.hour.link_downs ? `link down ${e.hour.link_downs}× this hour` : '';
+  return [errs, flaps].filter(Boolean).join('; ');
+}
+
 function PortTile({
-  port, selected, hovered, isMember, watts,
+  port, selected, hovered, isMember, watts, errors, optic,
   onClick, onMouseEnter, onMouseLeave, onDoubleClick,
 }: {
   port: SwitchPort; selected: boolean; hovered: boolean; isMember?: boolean; watts?: number;
+  errors?: PortErrorSummary; optic?: OpticStatus;
   onClick: (e: React.MouseEvent) => void;
   onMouseEnter: () => void; onMouseLeave: () => void; onDoubleClick: () => void;
 }) {
   const state = portState(port);
+  // Errors outrank the up/down colours: a port can be up and failing (#249).
+  // Optics losing light count the same way (red past the threshold, yellow halfway).
+  const errTone = errors?.state === 'alert' || optic?.state === 'alert' ? 'var(--bad)'
+    : errors?.state === 'errors' || optic?.state === 'watch' ? 'var(--warn)' : null;
+  const problems = [errors?.state ? portErrorLine(errors) : '', optic?.state && optic.reason ? `optic: ${optic.reason}` : '']
+    .filter(Boolean).join('; ');
   const bg = selected ? 'var(--accent)' : state === 'up' ? 'var(--port-up-bg)' : state === 'down' ? 'var(--port-down-bg)' : 'var(--surface-3)';
   const border = isMember && !selected ? 'var(--warn)' : selected ? 'var(--accent)' : state === 'up' ? 'var(--port-up-border)' : state === 'down' ? 'var(--port-down-border)' : 'var(--line)';
   const textColor = selected ? '#ffffff' : state === 'up' ? 'var(--good)' : state === 'down' ? 'var(--bad)' : 'var(--ink-4)';
@@ -84,10 +103,10 @@ function PortTile({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onDoubleClick={onDoubleClick}
-      title={`${port.name}${port.comment ? ` — ${port.comment}` : ''}${port.link_rate || port.speed ? ` · ${port.link_rate || port.speed}` : ''}${watts && watts > 0 ? ` · ${watts.toFixed(1)}W PoE` : ''}`}
+      title={`${port.name}${port.comment ? ` — ${port.comment}` : ''}${port.link_rate || port.speed ? ` · ${port.link_rate || port.speed}` : ''}${watts && watts > 0 ? ` · ${watts.toFixed(1)}W PoE` : ''}${problems ? ` · ${problems}` : ''}`}
       style={{
         width: 46, height: 46, borderRadius: 4, position: 'relative', flexShrink: 0,
-        background: bg, border: `1px solid ${border}`,
+        background: bg, border: errTone && !selected ? `2px solid ${errTone}` : `1px solid ${border}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: 'pointer', color: textColor,
         fontFamily: 'Geist Mono, monospace', fontSize: 10, fontWeight: 600,
@@ -99,6 +118,12 @@ function PortTile({
         background: ledBg,
         boxShadow: state === 'up' && !selected ? '0 0 6px var(--accent)' : 'none',
       }} />
+      {errTone && (
+        <div aria-label="Port problem" style={{
+          position: 'absolute', top: 2, left: 3, fontSize: 9, fontWeight: 800, lineHeight: 1,
+          color: selected ? '#ffffff' : errTone,
+        }}>!</div>
+      )}
       <span>{portLabel(portBasis(port))}</span>
       {watts && watts > 0 ? (
         <span style={{
@@ -354,7 +379,66 @@ function PortPacketGraph({
 }
 
 
-function PortInfoCard({ deviceId, portName }: { deviceId: number; portName: string }) {
+/** Light levels now against the port's usual level, and the past week (optics only). */
+function OpticSection({ deviceId, portName, optic, dropDb }: {
+  deviceId: number; portName: string; optic: OpticStatus; dropDb: number;
+}) {
+  const { data: history = [] } = useQuery({
+    queryKey: ['optic-history', deviceId, portName],
+    queryFn: () => devicesApi.getOpticHistory(deviceId, portName, 7).then((r) => r.data),
+    refetchInterval: 300_000,
+  });
+  const tone = optic.state === 'alert' ? 'var(--bad)' : optic.state === 'watch' ? 'var(--warn)' : 'var(--accent)';
+  const dbm = (v: number | null) => (v === null ? '—' : `${v.toFixed(2)} dBm`);
+  const row = (label: string, value: string, color?: string) => (
+    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--line-soft)' }}>
+      <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>{label}</span>
+      <span className="mono" style={{ color: color ?? 'var(--ink-2)', fontSize: 12, textAlign: 'right' }}>{value}</span>
+    </div>
+  );
+  const dropColor = (d: number | null) => (d === null ? undefined : d >= dropDb ? 'var(--bad)' : d >= dropDb / 2 ? 'var(--warn)' : undefined);
+  const data = history.map((h) => ({
+    time: new Date(h.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    rx: h.rx_dbm, tx: h.tx_dbm,
+  }));
+  return (
+    <>
+      <div style={{ marginTop: 12, marginBottom: 8, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
+        <span className="mono text-[10px] uppercase tracking-widest" style={{ color: tone }}>Light level</span>
+      </div>
+      {row('RX now', optic.rx_lanes.length > 1 ? `${dbm(optic.rx_dbm)} (weakest of ${optic.rx_lanes.length})` : dbm(optic.rx_dbm))}
+      {row('RX usually', optic.usual_rx_dbm === null ? 'learning (first 3 h)' : dbm(optic.usual_rx_dbm))}
+      {optic.rx_drop_db !== null && row('RX below usual', `${optic.rx_drop_db.toFixed(1)} dB`, dropColor(optic.rx_drop_db))}
+      {row('TX now', dbm(optic.tx_dbm))}
+      {optic.tx_drop_db !== null && row('TX below usual', `${optic.tx_drop_db.toFixed(1)} dB`, dropColor(optic.tx_drop_db))}
+      {optic.rx_lanes.length > 1 && row('RX lanes', optic.rx_lanes.map((l) => l.toFixed(1)).join(' / '))}
+      {optic.reason && (
+        <p className="text-[11px] mt-2" style={{ color: tone }}>{optic.reason[0].toUpperCase() + optic.reason.slice(1)}.</p>
+      )}
+      {data.length > 1 && (
+        <div style={{ height: 110, marginTop: 8 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--line-soft)" />
+              <XAxis dataKey="time" hide />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--ink-3)' }} domain={['auto', 'auto']} width={36}
+                tickFormatter={(v: number) => v.toFixed(1)} />
+              <Tooltip {...chartTooltip} formatter={(v) => (typeof v === 'number' ? `${v.toFixed(2)} dBm` : String(v))} />
+              <Line type="monotone" dataKey="rx" name="RX" stroke="var(--accent)" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line type="monotone" dataKey="tx" name="TX" stroke="var(--ink-3)" dot={false} strokeWidth={1} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="mono text-[10px] text-center" style={{ color: 'var(--ink-4)' }}>past 7 days · RX (blue), TX (grey)</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PortInfoCard({ deviceId, portName, errors, errorsPerMin = 10, flapsPerHour = 3, optic, dropDb = 3 }: {
+  deviceId: number; portName: string; errors?: PortErrorSummary; errorsPerMin?: number; flapsPerHour?: number;
+  optic?: OpticStatus; dropDb?: number;
+}) {
   const { data: monitor, isLoading } = useQuery({
     queryKey: ['port-monitor', deviceId, portName],
     queryFn: () => devicesApi.getPortMonitor(deviceId, portName).then((r) => r.data),
@@ -405,6 +489,29 @@ function PortInfoCard({ deviceId, portName }: { deviceId: number; portName: stri
         {infoRow('RX Flow Ctrl', d['rx-flow-control'])}
         {infoRow('FEC Mode', d['fec-mode'])}
       </div>
+
+      {errors && (errors.state || errors.hour.link_downs > 0) && (
+        <>
+          <div style={{ marginTop: 12, marginBottom: 8, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
+            <span className="mono text-[10px] uppercase tracking-widest"
+              style={{ color: errors.state === 'alert' ? 'var(--bad)' : 'var(--warn)' }}>Errors, last hour</span>
+          </div>
+          <div>
+            {infoRow('FCS', errors.hour.fcs ? String(errors.hour.fcs) : undefined)}
+            {infoRow('Alignment', errors.hour.align ? String(errors.hour.align) : undefined)}
+            {infoRow('Overflow', errors.hour.overflow ? String(errors.hour.overflow) : undefined)}
+            {infoRow('Other', errors.hour.other ? String(errors.hour.other) : undefined)}
+            {infoRow('Rate now', `${errors.rate_per_min}/min`, errors.rate_per_min >= errorsPerMin ? 'var(--bad)' : undefined)}
+            {infoRow('Link drops', errors.hour.link_downs ? String(errors.hour.link_downs) : undefined, errors.flapping ? 'var(--bad)' : undefined)}
+          </div>
+          <p className="text-[11px] mt-2" style={{ color: 'var(--ink-3)' }}>
+            Bad frames on a link that stays up usually mean a failing optic, a dirty or damaged
+            cable, or a problem at the far end. Red above {errorsPerMin}/min or {flapsPerHour} link drops an hour.
+          </p>
+        </>
+      )}
+
+      {optic && <OpticSection deviceId={deviceId} portName={portName} optic={optic} dropDb={dropDb} />}
 
       {isSfp && (
         <>
@@ -625,6 +732,26 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     queryFn: () => metricsApi.devicePoe(deviceId).then((r) => r.data),
     refetchInterval: 30_000,
   });
+
+  // Frame errors and link drops in the last hour (#249).
+  const { data: portErrors } = useQuery({
+    queryKey: ['interface-errors', deviceId],
+    queryFn: () => devicesApi.getInterfaceErrors(deviceId).then((r) => r.data),
+    refetchInterval: 30_000,
+  });
+  const portErrMap: Record<string, PortErrorSummary> = Object.fromEntries(
+    (portErrors?.ports ?? []).map((p) => [p.interface, p])
+  );
+
+  // Optic light levels against each port's usual level.
+  const { data: optics } = useQuery({
+    queryKey: ['optics', deviceId],
+    queryFn: () => devicesApi.getOptics(deviceId).then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+  const opticMap: Record<string, OpticStatus> = Object.fromEntries(
+    (optics?.ports ?? []).map((o) => [o.interface, o])
+  );
 
   const poeWattsMap = Object.fromEntries(
     (poeMetrics?.ports ?? []).map(p => [p.port, p.watts])
@@ -1111,13 +1238,13 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                     <div key={bi} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <div style={{ display: 'flex', gap: 4 }}>
                         {bank.top.map(port => (
-                          <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                          <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
                         ))}
                       </div>
                       {bank.bottom.length > 0 && (
                         <div style={{ display: 'flex', gap: 4 }}>
                           {bank.bottom.map(port => (
-                            <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                            <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} isMember={bondMemberMap.has(port.name)} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
                           ))}
                         </div>
                       )}
@@ -1140,7 +1267,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                   {sfpRows.map((row, ri) => (
                     <div key={ri} style={{ display: 'flex', gap: 4 }}>
                       {row.map(port => (
-                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
                       ))}
                     </div>
                   ))}
@@ -1166,7 +1293,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                       const lane = isSingleMode ? cage.singlePort! : cage.lanes[li];
                       const visualPort: SwitchPort = (isSingleMode || isSingleCable) ? { ...refPort, running: refPort.running, disabled: refPort.disabled } : lane;
                       return (
-                        <PortTile key={li} port={visualPort} selected={selectedPorts.has(lane.name)} hovered={hoveredPort === lane.name} watts={poeWattsMap[lane.name]} onClick={e => togglePort(lane.name, e)} onMouseEnter={() => setHoveredPort(lane.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(lane)} />
+                        <PortTile key={li} port={visualPort} selected={selectedPorts.has(lane.name)} hovered={hoveredPort === lane.name} watts={poeWattsMap[lane.name]} errors={portErrMap[lane.name]} optic={opticMap[lane.name]} onClick={e => togglePort(lane.name, e)} onMouseEnter={() => setHoveredPort(lane.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(lane)} />
                       );
                     })}
                   </div>
@@ -1186,7 +1313,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                   {bridgeRows.map((row, ri) => (
                     <div key={ri} style={{ display: 'flex', gap: 4 }}>
                       {row.map(port => (
-                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
                       ))}
                     </div>
                   ))}
@@ -1202,7 +1329,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                   {bondRows.map((row, ri) => (
                     <div key={ri} style={{ display: 'flex', gap: 4 }}>
                       {row.map(port => (
-                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
                       ))}
                     </div>
                   ))}
@@ -1236,7 +1363,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                 />
               </div>
               <div className="md:col-span-1">
-                <PortInfoCard deviceId={deviceId} portName={portName} />
+                <PortInfoCard deviceId={deviceId} portName={portName} errors={portErrMap[portName]} errorsPerMin={portErrors?.errors_per_min} flapsPerHour={portErrors?.flaps_per_hour} optic={opticMap[portName]} dropDb={optics?.drop_db} />
               </div>
             </div>
             <PortClientsCard deviceId={deviceId} portName={portName} />

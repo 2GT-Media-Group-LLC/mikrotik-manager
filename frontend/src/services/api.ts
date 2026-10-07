@@ -675,6 +675,10 @@ export const devicesApi = {
     api.post<{ results?: Array<{ vlan_id: number; action: string; success: boolean; error?: string }>; guard?: { protected: boolean; confirmed: boolean; auto_reverting: boolean; unprotected_reason: string | null; revert_may_fire_at?: string | null }; message?: string }>(
       `/devices/${id}/vlans/copy`, { operations, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
   reboot: (id: number) => api.post<{ message: string }>(`/devices/${id}/reboot`),
+  getInterfaceErrors: (id: number) => api.get<InterfaceErrorsResponse>(`/devices/${id}/interface-errors`),
+  getOptics: (id: number) => api.get<OpticsResponse>(`/devices/${id}/optics`),
+  getOpticHistory: (id: number, port: string, days = 7) =>
+    api.get<OpticHistoryPoint[]>(`/devices/${id}/optics/${encodeURIComponent(port)}/history`, { params: { days } }),
   getPortMonitor: (id: number, name: string) =>
     api.get<PortMonitorData>(`/devices/${id}/ports/${encodeURIComponent(name)}/monitor`),
   getPortClients: (id: number, name: string, all = false) =>
@@ -2136,3 +2140,51 @@ export const proxyApi = {
     api.get<ProxyTopRow[]>('/proxy/top', { params }),
   sources: () => api.get<ProxySource[]>('/proxy/sources'),
 };
+
+/** Frame errors and link drops on one port over the last hour (#249). */
+export interface PortErrorSummary {
+  interface: string;
+  hour: { fcs: number; align: number; overflow: number; other: number; link_downs: number };
+  /** Errors a minute, averaged over the last 5 minutes. */
+  rate_per_min: number;
+  last_error_ago_sec: number | null;
+  /** 'alert': over a threshold (red). 'errors': errors still arriving, below it (yellow). */
+  state: 'alert' | 'errors' | null;
+  flapping: boolean;
+}
+
+export interface InterfaceErrorsResponse {
+  ports: PortErrorSummary[];
+  errors_per_min: number;
+  flaps_per_hour: number;
+}
+
+/** An optic's light levels against its usual level (the past week's median). */
+export interface OpticStatus {
+  interface: string;
+  rx_dbm: number | null;
+  tx_dbm: number | null;
+  temp_c: number | null;
+  bias_ma: number | null;
+  voltage: number | null;
+  rx_lanes: number[];
+  usual_rx_dbm: number | null;
+  usual_tx_dbm: number | null;
+  rx_drop_db: number | null;
+  tx_drop_db: number | null;
+  /** 'alert': at or past the threshold, or too hot (red). 'watch': halfway there (yellow). */
+  state: 'alert' | 'watch' | null;
+  reason: string | null;
+}
+
+export interface OpticsResponse {
+  ports: OpticStatus[];
+  drop_db: number;
+}
+
+export interface OpticHistoryPoint {
+  at: string;
+  rx_dbm: number | null;
+  tx_dbm: number | null;
+  temp_c: number | null;
+}

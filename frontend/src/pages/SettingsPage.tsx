@@ -410,6 +410,9 @@ export default function SettingsPage() {
     firmware_update_available: 'RouterOS update available',
     cve_active: 'Serious RouterOS CVE affects the fleet (exploited, critical or high)',
     wireguard_stale: 'WireGuard peer stale: no handshake for longer than the threshold (minutes)',
+    interface_errors: 'Interface errors: bad frames on a port, per minute averaged over 5 minutes (threshold)',
+    interface_flapping: 'Interface flapping: a port went down this many times in an hour (threshold)',
+    optic_degraded: "Optic light dropping: this many dB below the port's usual level, or the module at 70 °C (threshold, dB)",
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';
@@ -1752,7 +1755,7 @@ export default function SettingsPage() {
                         </button>
                       </td>
                       <td className="py-2.5 pr-4 text-center">
-                        {['high_cpu', 'high_memory', 'cert_expiry', 'wireguard_stale'].includes(rule.event_type) ? (
+                        {['high_cpu', 'high_memory', 'cert_expiry', 'wireguard_stale', 'interface_errors', 'interface_flapping', 'optic_degraded'].includes(rule.event_type) ? (
                           <NumberSetting
                             className="input w-20 text-center py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                             value={rule.threshold ?? ''}

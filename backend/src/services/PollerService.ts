@@ -11,6 +11,8 @@ import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 import { cronMatches } from '../utils/cron';
 import { reconcileProxyUsage } from './ProxyUsageService';
+import { checkInterfaceErrors, purgeInterfaceErrorEvents } from './interfaceErrors';
+import { checkOptics, purgeOpticReadings } from './opticLevels';
 import { checkWireGuardStale } from './wireguardStale';
 import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
@@ -435,6 +437,32 @@ export class PollerService {
       if (now - lastWg > 300_000) {
         await this.setTimestamp(wgKey, now, 300_000);
         checkWireGuardStale().catch((e) => console.error('[Poller] WireGuard stale check failed:', e));
+      }
+
+      // Interface errors and flapping (#249) — every minute, from what the
+      // fast polls recorded. Does nothing while both rules are off. The week-old
+      // rows are cleared once an hour.
+      const ifErrKey = 'task:interface_errors';
+      const lastIfErr = await this.getTimestamp(ifErrKey);
+      if (now - lastIfErr > 60_000) {
+        await this.setTimestamp(ifErrKey, now, 60_000);
+        checkInterfaceErrors().catch((e) => console.error('[Poller] Interface error check failed:', e));
+      }
+      const ifErrPurgeKey = 'task:interface_errors_purge';
+      const lastIfErrPurge = await this.getTimestamp(ifErrPurgeKey);
+      if (now - lastIfErrPurge > 3_600_000) {
+        await this.setTimestamp(ifErrPurgeKey, now, 3_600_000);
+        purgeInterfaceErrorEvents().catch((e) => console.error('[Poller] Interface error purge failed:', e));
+        purgeOpticReadings().catch((e) => console.error('[Poller] Optic reading purge failed:', e));
+      }
+
+      // Optic light levels — every 5 minutes, after slow polls have read them.
+      // Does nothing while the rule is off.
+      const opticKey = 'task:optic_degraded';
+      const lastOptic = await this.getTimestamp(opticKey);
+      if (now - lastOptic > 300_000) {
+        await this.setTimestamp(opticKey, now, 300_000);
+        checkOptics().catch((e) => console.error('[Poller] Optic check failed:', e));
       }
 
       // Stale pending sweep — every 5 minutes. Cheap when there is nothing to do,

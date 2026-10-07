@@ -14,7 +14,7 @@ const EVENT_LABEL: Record<string, string> = {
   log_error: 'Log error', log_warning: 'Log warning',
   high_cpu: 'High CPU', high_memory: 'High memory', cert_expiry: 'Cert expiry',
   device_discovered: 'Device discovered', firmware_update_available: 'Firmware update',
-  config_drift: 'Config drift', cve_active: 'Serious CVE affects the fleet', wireguard_stale: 'WireGuard peer stale', rollout_completed: 'Rollout completed', rollout_failed: 'Rollout failed',
+  config_drift: 'Config drift', cve_active: 'Serious CVE affects the fleet', wireguard_stale: 'WireGuard peer stale', interface_errors: 'Interface errors', interface_flapping: 'Interface flapping', optic_degraded: 'Optic light dropping', rollout_completed: 'Rollout completed', rollout_failed: 'Rollout failed',
   device_degraded: 'Device degraded', device_health_restored: 'Hardware healthy again',
   device_identity_changed: 'Certificate or host key changed',
 };

@@ -7,6 +7,10 @@ import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, type Si
 import { activeSite, writableScope } from '../middleware/site';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
 import { alertService } from '../services/AlertService';
+import { portErrorSummaries } from '../services/interfaceErrors';
+import type { PortErrorSummary } from '../utils/interfaceErrors';
+import { opticStatuses } from '../services/opticLevels';
+import type { OpticStatus } from '../utils/opticLevels';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { BackupService, BackupDevice } from '../services/BackupService';
 import { fluxString } from '@influxdata/influxdb-client';
@@ -280,6 +284,45 @@ router.get('/insights', async (req: Request, res: Response) => {
       title: `${o.name} had ${o.outages} outage${Number(o.outages) !== 1 ? 's' : ''} this week`,
       body: 'Recent connectivity flapping — worth checking power, uplink, or PoE.',
       action: 'View device', path: `/devices/${o.device_id}`,
+    });
+  }
+
+  // Ports with bad frames or link drops in the last hour (#249). Red when over
+  // the alert thresholds, yellow when errors are still arriving below them.
+  const portErrors = await portErrorSummaries(devices.map((d) => d.id)).catch(() => new Map());
+  for (const d of devices) {
+    const ports = (portErrors.get(d.id) ?? []).filter((p: PortErrorSummary) => p.state);
+    if (ports.length === 0) continue;
+    const bad = ports.filter((p: PortErrorSummary) => p.state === 'alert');
+    const list = (bad.length ? bad : ports).slice(0, 4).map((p: PortErrorSummary) =>
+      p.flapping && p.rate_per_min === 0
+        ? `${p.interface} (down ${p.hour.link_downs}× this hour)`
+        : `${p.interface} (${p.rate_per_min}/min${p.hour.link_downs ? `, down ${p.hour.link_downs}×` : ''})`);
+    const more = (bad.length ? bad : ports).length - list.length;
+    attention.push({
+      sev: bad.length ? 'error' : 'warn', category: 'reliability',
+      title: bad.length
+        ? `${d.name}: ${bad.length} port${bad.length !== 1 ? 's' : ''} with errors or flapping`
+        : `${d.name}: errors on ${ports.length} port${ports.length !== 1 ? 's' : ''}`,
+      body: `${list.join(', ')}${more > 0 ? ` and ${more} more` : ''}. Bad frames on a link that stays up usually mean a failing optic or cable.`,
+      action: 'View ports', path: `/devices/${d.id}?tab=ports`,
+    });
+  }
+
+  // Optics well below their usual light level, or running hot.
+  const optics = await opticStatuses(devices.map((d) => d.id)).catch(() => new Map());
+  for (const d of devices) {
+    const flagged = (optics.get(d.id) ?? []).filter((o: OpticStatus) => o.state);
+    if (flagged.length === 0) continue;
+    const bad = flagged.filter((o: OpticStatus) => o.state === 'alert');
+    const shown = (bad.length ? bad : flagged);
+    attention.push({
+      sev: bad.length ? 'error' : 'warn', category: 'reliability',
+      title: `${d.name}: optic${shown.length !== 1 ? 's' : ''} to check on ${shown.map((o: OpticStatus) => o.interface).slice(0, 3).join(', ')}${shown.length > 3 ? ` and ${shown.length - 3} more` : ''}`,
+      body: `${shown.slice(0, 3).map((o: OpticStatus) => `${o.interface}: ${o.reason}`).join('; ')}.`
+        + (shown.some((o: OpticStatus) => /light/.test(o.reason ?? '')) ? ' Fading light is often a dirty connector, a damaged fibre or an ageing optic.' : '')
+        + (shown.some((o: OpticStatus) => /°C/.test(o.reason ?? '')) ? ' A hot module needs better airflow.' : ''),
+      action: 'View ports', path: `/devices/${d.id}?tab=ports`,
     });
   }
 
