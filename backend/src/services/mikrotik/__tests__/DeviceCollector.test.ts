@@ -484,5 +484,7 @@ describe('legacy CAPsMAN (#250)', () => {
     expect(fireTv[6]).toBe(150684303);                    // tx: what the AP sent the streaming stick
     expect(fireTv[7]).toBe(19365193);                     // rx
     expect(fireTv[8]).toBe(-70);
+    expect(fireTv[10]).toBe(130_000_000);                 // tx rate "130Mbps-20MHz/2S" (#252)
+    expect(fireTv[11]).toBe(1_000_000);                   // rx rate "1Mbps"
   });
 });

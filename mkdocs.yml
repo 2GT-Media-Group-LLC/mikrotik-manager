@@ -76,6 +76,7 @@ nav:
   - Devices:
       - Wireless: wireless.md
       - Network services: network-services.md
+      - User Manager (RADIUS): user-manager.md
       - Cellular (LTE): cellular.md
       - CAPsMAN: capsman.md
   - Integration:

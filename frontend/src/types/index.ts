@@ -112,6 +112,8 @@ export interface Device {
   /** Detected wireless role: none | standalone | cap | controller | controller_cap. */
   wifi_role?: string | null;
   has_lte?: boolean;
+  /** Runs User Manager, RouterOS's RADIUS server (#251); null until checked. */
+  user_manager?: boolean | null;
   created_at: string;
   updated_at?: string;
   tags?: { id: number; name: string; color: string }[];
@@ -276,6 +278,9 @@ export interface Client {
   tx_bytes: number;
   rx_bytes: number;
   signal_strength?: number;
+  /** Link rates from the access point's side, bits per second (#252); wireless only. */
+  tx_rate_bps?: number | string | null;
+  rx_rate_bps?: number | string | null;
   client_type: 'wired' | 'wireless';
   active: boolean;
   last_seen?: string;

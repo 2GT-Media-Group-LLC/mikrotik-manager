@@ -17,6 +17,7 @@ import { CATEGORY_META, SELECTABLE_CATEGORIES } from '../utils/clientCategories'
 import type { ClientDetail } from '../services/api';
 import type { SignalPoint } from '../services/api';
 import clsx from 'clsx';
+import { formatRatePair } from '../utils/wifiRate';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -488,6 +489,14 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
             <span className={clsx('font-medium', signalColor(client.signal_strength))}>
               {client.signal_strength} dBm
               <span className="ml-1 font-normal opacity-75">({signalLabel(client.signal_strength)})</span>
+            </span>
+          </DetailRow>
+        )}
+
+        {formatRatePair(client.tx_rate_bps, client.rx_rate_bps) && (
+          <DetailRow label="Link rate">
+            <span title="From the access point's side: TX is towards the client, RX from it">
+              {formatRatePair(client.tx_rate_bps, client.rx_rate_bps)}
             </span>
           </DetailRow>
         )}

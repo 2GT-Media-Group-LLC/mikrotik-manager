@@ -15,6 +15,7 @@ import BackupsPage from './pages/BackupsPage';
 import FirmwarePage from './pages/FirmwarePage';
 import FirmwareHistoryPage from './pages/FirmwareHistoryPage';
 import FirmwareMirrorPage from './pages/FirmwareMirrorPage';
+import UserManagerPage from './pages/UserManagerPage';
 import CredentialsPage from './pages/CredentialsPage';
 import CommandsPage from './pages/CommandsPage';
 import TemplatesPage from './pages/TemplatesPage';
@@ -97,6 +98,7 @@ export default function App() {
           <Route path="wireless/settings" element={<WirelessSettingsPage />} />
           <Route path="wireless/guest" element={<GuestWifiPage />} />
           <Route path="network-services" element={<NetworkServicesOverviewPage />} />
+          <Route path="user-manager" element={<UserManagerPage />} />
           <Route path="network-services/dhcp" element={<NetworkServicesDHCPPage />} />
           <Route path="network-services/dns" element={<NetworkServicesDNSPage />} />
           <Route path="network-services/ntp" element={<NetworkServicesNTPPage />} />

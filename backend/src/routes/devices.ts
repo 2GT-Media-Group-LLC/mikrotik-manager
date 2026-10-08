@@ -375,7 +375,7 @@ router.get('/:id', async (req: Request, res: Response) => {
             location_address,
             location_lat::float8 AS location_lat,
             location_lng::float8 AS location_lng,
-            rack_name, rack_slot, wifi_role, has_lte, created_at, updated_at
+            rack_name, rack_slot, wifi_role, has_lte, user_manager, created_at, updated_at
      FROM devices WHERE id = $1`,
     [req.params.id]
   );
@@ -470,7 +470,7 @@ router.patch('/:id/location', requireWrite, async (req: Request, res: Response) 
             ssh_port, ssh_username, location_address,
             location_lat::float8 AS location_lat,
             location_lng::float8 AS location_lng,
-            rack_name, rack_slot, wifi_role, has_lte, created_at, updated_at
+            rack_name, rack_slot, wifi_role, has_lte, user_manager, created_at, updated_at
      FROM devices WHERE id = $1`,
     [req.params.id]
   );

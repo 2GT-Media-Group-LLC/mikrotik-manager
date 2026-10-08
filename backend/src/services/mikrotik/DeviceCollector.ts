@@ -80,6 +80,8 @@ import { configuredServices } from '../../utils/ipServices';
 import { isClockChangeLine } from '../../utils/clockLogLines';
 import { planNtpWrites, isLegacyClient, legacyServerList, type NtpForm } from './ntpSettings';
 import { recordInterfaceCounters } from '../interfaceErrors';
+import { parseRateBps } from '../../utils/wifiRate';
+import { probeUserManager, USER_MANAGER_RECHECK_MS } from '../userManager';
 import { recordOptics } from '../opticLevels';
 
 /** A RouterOS property name: lower-case words joined by '-' or '.', never '.id'. */
@@ -313,6 +315,22 @@ export class DeviceCollector {
       await this.collectSecurityProfiles();
       await this.collectCapsman();
     }
+    await this.checkUserManager();
+  }
+
+  /**
+   * Does this device run User Manager (#251)? Asked once a day, so a device
+   * that starts running it shows up on the Services page within a day, and
+   * the rest of the fleet pays one call a day.
+   */
+  private async checkUserManager(): Promise<void> {
+    const d = this.device as unknown as { user_manager_checked_at?: string | Date | null };
+    const last = d.user_manager_checked_at ? new Date(d.user_manager_checked_at).getTime() : 0;
+    if (Date.now() - last < USER_MANAGER_RECHECK_MS) return;
+    const running = await probeUserManager((cmd) => this.client.execute(cmd));
+    if (running === null) return;
+    await query(`UPDATE devices SET user_manager = $2, user_manager_checked_at = NOW() WHERE id = $1`, [this.device.id, running])
+      .catch(() => { /* advisory */ });
   }
 
   /**
@@ -934,6 +952,8 @@ export class DeviceCollector {
       const wifiInterface: Record<string, string> = {};
       const wifiTx: Record<string, number> = {};
       const wifiLastIp: Record<string, string> = {};
+      const wifiTxRate: Record<string, number | null> = {};
+      const wifiRxRate: Record<string, number | null> = {};
       const wifiRx: Record<string, number> = {};
       for (const wc of wirelessClients) {
         const mac = (wc['mac-address'] || '').toLowerCase();
@@ -944,15 +964,19 @@ export class DeviceCollector {
         wifiSignal[mac] = parseInt(rawSignal, 10) || 0;
         if (wc['signal-strength'] === undefined && wc['signal'] === undefined && wc['rx-signal'] === undefined) noSignal.add(mac);
         wifiInterface[mac] = wc['interface'] || '';
-        // Traffic counters — new wifi pkg has separate fields; legacy combines them in one
+        // Link rates (#252): a bare bit rate (wifi package) or "130Mbps-20MHz/2S".
+        wifiTxRate[mac] = parseRateBps(wc['tx-rate']);
+        wifiRxRate[mac] = parseRateBps(wc['rx-rate']);
+        // Traffic counters — some tables have separate fields, others combine them in one
         if (wc['tx-bytes'] !== undefined || wc['rx-bytes'] !== undefined) {
           wifiTx[mac] = parseInt(wc['tx-bytes'] || '0', 10) || 0;
           wifiRx[mac] = parseInt(wc['rx-bytes'] || '0', 10) || 0;
         } else {
           // "sent,received" from the access point's side, per MikroTik's docs, and
           // borne out by #250: a streaming stick's first figure was 150 MB, its
-          // second 19 MB. This was read the other way round before, swapping TX
-          // and RX for every client of the legacy driver.
+          // second 19 MB. This was read the other way round before 0.37.0,
+          // swapping TX and RX for every client of both the wifi package and the
+          // legacy driver, which both report a combined `bytes`.
           const parts = (wc['bytes'] || '0,0').split(',');
           wifiTx[mac] = parseInt(parts[0] || '0', 10) || 0;
           wifiRx[mac] = parseInt(parts[1] || '0', 10) || 0;
@@ -1027,8 +1051,8 @@ export class DeviceCollector {
         // leave every client after it stale.
         try {
           await query(
-            `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes, signal_strength, client_type, active, last_seen, first_seen)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,NOW(),NOW())
+            `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes, signal_strength, client_type, tx_rate_bps, rx_rate_bps, active, last_seen, first_seen)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,NOW(),NOW())
              ON CONFLICT (device_id, mac_address) DO UPDATE SET
                hostname=COALESCE($3, clients.hostname),
                ip_address=COALESCE(NULLIF($4,''), clients.ip_address),
@@ -1038,6 +1062,8 @@ export class DeviceCollector {
                rx_bytes=$8,
                signal_strength=$9,
                client_type=$10,
+               tx_rate_bps=$11,
+               rx_rate_bps=$12,
                active=TRUE,
                last_seen=NOW(),
                first_seen=COALESCE(clients.first_seen, NOW())`,
@@ -1052,6 +1078,8 @@ export class DeviceCollector {
               wifiRx[mac] || 0,
               isWireless && !noSignal.has(mac) ? wifiSignal[mac] : null,
               isWireless ? 'wireless' : 'wired',
+              isWireless ? wifiTxRate[mac] ?? null : null,
+              isWireless ? wifiRxRate[mac] ?? null : null,
             ]
           );
           seenMacs.push(mac);

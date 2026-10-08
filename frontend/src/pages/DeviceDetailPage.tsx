@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, RefreshCw, Activity, Cpu, MemoryStick, Clock, ExternalLink, TerminalSquare, ShieldCheck, Copy, Check,
@@ -186,6 +186,12 @@ export default function DeviceDetailPage() {
                   </span>
                 );
               })()}
+              {device.user_manager && (
+                <Link to={`/user-manager?device=${device.id}`} title="This device runs User Manager (RADIUS)"
+                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 hover:underline">
+                  User Manager
+                </Link>
+              )}
             </div>
             <p className="text-sm text-gray-500 dark:text-slate-400 font-mono truncate">
               {hostPort(device.ip_address, device.api_port)}

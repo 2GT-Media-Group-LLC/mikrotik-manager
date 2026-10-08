@@ -120,6 +120,8 @@ router.get('/', async (req: Request, res: Response) => {
     // in both directions. Signal is dBm, so descending is strongest first.
     ssid: `LOWER(NULLIF(deduped.ssid, ''))`,
     signal_strength: `deduped.signal_strength`,
+    // #252: link rate, from the access point's side (tx = towards the client).
+    tx_rate_bps: `deduped.tx_rate_bps`,
   };
   const sortExpr = SORT_EXPR[String(sort)] ?? SORT_EXPR.last_seen;
   const sortDir = String(dir).toLowerCase() === 'asc' ? 'ASC' : 'DESC';

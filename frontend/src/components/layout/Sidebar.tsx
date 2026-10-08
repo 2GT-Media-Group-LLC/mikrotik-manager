@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Router, Users, Bell, GitBranch, HardDrive,
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
   Server, Globe, Clock, Shield, FileText, Activity, BarChart3, Ticket, ArrowUpCircle, Radio,
-  LayoutGrid, TerminalSquare, KeyRound,
+  LayoutGrid, TerminalSquare, KeyRound, UserCheck,
 } from 'lucide-react';
 import clsx from 'clsx';
 import SiteSelector from './SiteSelector';
@@ -357,6 +357,8 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             )}
           </>
         )}
+        {/* RADIUS logins across the network (#251). */}
+        <NavItem to="/user-manager" icon={UserCheck} label="User Manager" isCollapsed={isCollapsed} onClick={handleNavClick} />
 
         {/* ── Operations ── */}
         <SectionLabel label="Operations" isCollapsed={isCollapsed} />

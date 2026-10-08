@@ -19,6 +19,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Alerting](alerting.md) | Alert rules, delivery channels, webhooks, scheduled reports, maintenance windows |
 | [Single sign-on (OIDC)](sso-oidc.md) | Identity provider setup, group-to-role mapping, break-glass behaviour |
 | [CAPsMAN](capsman.md) | How centrally provisioned access points are modelled, and current limits |
+| [User Manager](user-manager.md) | RouterOS's RADIUS server: sessions, users, groups and their attributes, and clearing a stuck session |
 | [Cellular (LTE)](cellular.md) | Signal, carriers, tower movement, and the data-cap reset SMS |
 | [SSH keys](ssh-keys.md) | Per-device keypairs, rotation, and what installing one costs |
 | [Bulk commands](commands.md) | Running one command across a fleet, in waves |

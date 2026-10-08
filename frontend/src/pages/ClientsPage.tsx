@@ -15,6 +15,7 @@ import { useSocket } from '../hooks/useSocket';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
 import { FilterBar, FilterSearch, FilterSelect, FilterSegment, FilterDivider } from '../components/common/FilterBar';
+import { formatRate, formatRatePair } from '../utils/wifiRate';
 
 
 const REFRESH_OPTIONS = [
@@ -471,7 +472,7 @@ export default function ClientsPage() {
             <table className="w-full text-sm table-fixed">
               <colgroup>
                 {(isWireless
-                  ? ['20%', '11%', '11%', '11%', '9%', '6%', '12%', '9%', '11%']
+                  ? ['18%', '10%', '10%', '10%', '12%', '8%', '5%', '10%', '8%', '9%']
                   : isWired
                     ? ['26%', '14%', '13%', '8%', '15%', '11%', '13%']
                     : ['22%', '12%', '13%', '11%', '7%', '13%', '10%', '12%']
@@ -489,6 +490,8 @@ export default function ClientsPage() {
                       ? [
                           { col: 'ssid',            label: 'SSID',   align: 'left' as const },
                           { col: 'signal_strength', label: 'Signal', align: 'left' as const },
+                          // #252: link rates, from the access point's side (TX = to the client).
+                          { col: 'tx_rate_bps',     label: 'Rate',   align: 'left' as const },
                         ]
                       : isWired ? [] : [{ col: 'client_type', label: 'Type', align: 'left' as const }]),
                     { col: 'interface_name', label: 'Port',                align: 'left'  },
@@ -573,6 +576,15 @@ export default function ClientsPage() {
                           ) : (
                             <span className="text-gray-400 dark:text-slate-500">—</span>
                           )}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs whitespace-nowrap text-gray-600 dark:text-slate-400"
+                          title="Link rate from the access point's side: TX is towards the client, RX from it">
+                          {formatRatePair(client.tx_rate_bps, client.rx_rate_bps) ? (
+                            <>
+                              <div>TX {formatRate(client.tx_rate_bps) ?? '—'}</div>
+                              <div>RX {formatRate(client.rx_rate_bps) ?? '—'}</div>
+                            </>
+                          ) : <span className="text-gray-400 dark:text-slate-500">—</span>}
                         </td>
                       </>
                     ) : isWired ? null : (

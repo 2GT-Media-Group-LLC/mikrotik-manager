@@ -22,8 +22,10 @@ device a client is connected to, VLAN, or signal range, in the same filter bar a
 list. Search matches hostname, MAC, IP address and vendor. **Refresh**, the automatic refresh
 interval and **Purge stale** sit beside the page title.
 
-Every column sorts. With **Wireless** selected, SSID and Signal replace the Type column and
-sort too; Signal sorts strongest first on the first click.
+Every column sorts. With **Wireless** selected, SSID, Signal and Rate replace the Type column and
+sort too; Signal sorts strongest first on the first click. **Rate** is the client's current link
+rate, seen from the access point: TX is towards the client, RX from it. It's also on the client's
+page, and comes from the newer Wi-Fi package, the legacy wireless driver and legacy CAPsMAN alike.
 
 **Active** means the client was present at the most recent poll of the device it is attached
 to. Clients that disappear are kept and marked inactive rather than deleted, so history

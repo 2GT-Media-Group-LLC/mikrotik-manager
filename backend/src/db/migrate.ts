@@ -1401,6 +1401,16 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_role_probe SMALLINT NOT NULL D
 -- The disk a mirror keeps its packages on (Discussion #85): a mount point such
 -- as sd1 or usb1. NULL: internal storage.
 ALTER TABLE firmware_mirrors ADD COLUMN IF NOT EXISTS disk VARCHAR(64);
+
+-- A Wi-Fi client's link rates (#252), bits per second, from the access point's
+-- side: tx is what it sends the client, rx what it receives. NULL for wired.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS tx_rate_bps BIGINT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS rx_rate_bps BIGINT;
+
+-- Does the device run User Manager, RouterOS's RADIUS server (#251)? NULL:
+-- not checked yet. Rechecked daily; what it holds is read live, not stored.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS user_manager BOOLEAN;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS user_manager_checked_at TIMESTAMPTZ;
 `;
 
 const DEFAULT_SETTINGS = [

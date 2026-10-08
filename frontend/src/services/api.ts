@@ -2196,3 +2196,22 @@ export interface OpticHistoryPoint {
   tx_dbm: number | null;
   temp_c: number | null;
 }
+
+// ─── User Manager (#251) ─────────────────────────────────────────────────────
+
+export type UmRow = Record<string, string>;
+export interface UserManagerServer { id: number; name: string; ip_address: string; status: string; model: string | null }
+export interface UserManagerView {
+  device: { id: number; name: string; ip_address: string };
+  settings: UmRow;
+  users: UmRow[];
+  groups: UmRow[];
+  routers: { row: UmRow; managed_device: { id: number; name: string } | null }[];
+  sessions: { active: UmRow[]; recent: UmRow[] };
+}
+export const userManagerApi = {
+  servers: () => api.get<{ servers: UserManagerServer[]; unchecked: number; oldest_check: string | null }>('/user-manager'),
+  get: (id: number) => api.get<UserManagerView>(`/user-manager/${id}`, { timeout: 45_000 }),
+  removeSession: (id: number, sid: string) => api.post<{ ok: boolean }>(`/user-manager/${id}/sessions/${encodeURIComponent(sid)}/remove`),
+  recheck: () => api.post<{ ok: boolean }>('/user-manager/recheck'),
+};
