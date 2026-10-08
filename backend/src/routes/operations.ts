@@ -10,6 +10,7 @@ import { alertService } from '../services/AlertService';
 import { portErrorSummaries } from '../services/interfaceErrors';
 import type { PortErrorSummary } from '../utils/interfaceErrors';
 import { opticStatuses } from '../services/opticLevels';
+import { poolState } from '../utils/dhcpPools';
 import type { OpticStatus } from '../utils/opticLevels';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { BackupService, BackupDevice } from '../services/BackupService';
@@ -323,6 +324,21 @@ router.get('/insights', async (req: Request, res: Response) => {
         + (shown.some((o: OpticStatus) => /light/.test(o.reason ?? '')) ? ' A light level on the move is often a dirty or damaged connector, a damaged fibre or an ageing optic.' : '')
         + (shown.some((o: OpticStatus) => /°C/.test(o.reason ?? '')) ? ' A hot module needs better airflow.' : ''),
       action: 'View ports', path: `/devices/${d.id}?tab=ports`,
+    });
+  }
+
+  // DHCP pools nearly full (#156): clients would connect and get no address.
+  const pools = await query<{ device_id: number; name: string; size: number | null; used: number }>(
+    `SELECT device_id, name, size, used FROM dhcp_pool_usage WHERE device_id = ANY($1::int[])`, [devices.map((d) => d.id)]).catch(() => []);
+  for (const p of pools) {
+    const st = poolState(p.used, p.size);
+    if (!st || !p.size) continue;
+    const dev = devices.find((d) => d.id === p.device_id);
+    attention.push({
+      sev: st === 'full' ? 'error' : 'warn', category: 'reliability',
+      title: `${dev?.name ?? 'A device'}: address pool "${p.name}" is ${Math.round((p.used / p.size) * 100)}% used`,
+      body: `${p.used} of ${p.size} addresses handed out. When it runs out, new clients connect but get no address; widen the range or shorten the lease time.`,
+      action: 'Open DHCP', path: '/network-services/dhcp',
     });
   }
 

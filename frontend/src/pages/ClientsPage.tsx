@@ -3,7 +3,7 @@ import LoadError from '../components/common/LoadError';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Wifi, Network, Users, X, Pencil, Trash2, ChevronUp, ChevronDown, ChevronsUpDown,
+  Wifi, Network, Users, X, Pencil, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, ListChecks,
   ChevronLeft, ChevronRight, RefreshCw,
 } from 'lucide-react';
 import { CATEGORY_META } from '../utils/clientCategories';
@@ -16,6 +16,7 @@ import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
 import { FilterBar, FilterSearch, FilterSelect, FilterSegment, FilterDivider } from '../components/common/FilterBar';
 import { formatRate, formatRatePair } from '../utils/wifiRate';
+import ClientAddressLists from '../components/clients/ClientAddressLists';
 
 
 const REFRESH_OPTIONS = [
@@ -237,6 +238,8 @@ export default function ClientsPage() {
   const deviceFilter = urlNum('device');
   const activeFilterCount = [vlanFilter, signalMin ?? signalMax, deviceFilter].filter(v => v !== undefined).length;
   const [page, setPage] = useState(0);
+  // Firewall address lists for one client (#145).
+  const [listsFor, setListsFor] = useState<Client | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [sortCol, setSortCol] = useState<string>('last_seen');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -339,6 +342,10 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-4">
+      {listsFor?.ip_address && (
+        <ClientAddressLists address={listsFor.ip_address} defaultDeviceId={listsFor.device_id}
+          clientName={listsFor.custom_name || listsFor.hostname || listsFor.mac_address} onClose={() => setListsFor(null)} />
+      )}
       {editingClient && (
         <ClientModal client={editingClient} onClose={() => setEditingClient(null)} />
       )}
@@ -549,6 +556,15 @@ export default function ClientsPage() {
                             title="Edit name"
                           >
                             <Pencil className="w-3 h-3 text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400" />
+                          </button>
+                        )}
+                        {canWrite && client.ip_address && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setListsFor(client); }}
+                            className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-slate-700 flex-shrink-0"
+                            title="Firewall address lists for this client's address"
+                          >
+                            <ListChecks className="w-3 h-3 text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400" />
                           </button>
                         )}
                       </div>

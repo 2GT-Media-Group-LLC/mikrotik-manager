@@ -141,8 +141,10 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
 router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   const {
     name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, devices, start,
-    wave_concurrency, package_source,
+    wave_concurrency, package_source, post_template_id,
   } = req.body as {
+    /** A command template to run on each device after its upgrade (#163). */
+    post_template_id?: number | null;
     /** 'mirror': devices set up for the local mirror pull from it (#193). */
     package_source?: string;
     name?: string; halt_on_failure?: boolean; pre_backup?: boolean; routerboot_after?: boolean; scheduled_at?: string | null;
@@ -152,6 +154,14 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
     wave_concurrency?: number;
   };
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+  // The template's command is copied into the rollout now (#163).
+  let post: { command: string; name: string } | null = null;
+  if (post_template_id != null) {
+    const t = await queryOne<{ command: string; name: string }>(`SELECT command, name FROM command_templates WHERE id = $1`, [Number(post_template_id)]);
+    if (!t) return res.status(400).json({ error: 'That command template no longer exists' });
+    if (!t.command.trim()) return res.status(400).json({ error: `Template "${t.name}" has no commands` });
+    post = t;
+  }
   if (!Array.isArray(devices) || devices.length === 0) return res.status(400).json({ error: 'devices array is required' });
   for (const d of devices) {
     if (!Number.isInteger(d.device_id) || !Number.isInteger(d.wave) || d.wave < 1 || d.wave > 9) {
@@ -203,11 +213,12 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   }
 
   const rollout = await queryOne<{ id: number }>(
-    `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, wave_concurrency, package_source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+    `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, wave_concurrency, package_source,
+                                    post_command, post_template_name)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
     [name.trim().slice(0, 100), halt_on_failure !== false, pre_backup !== false, routerboot_after === true,
      scheduled_at || null, scheduled_until || null, clampConcurrency(wave_concurrency ?? 1),
-     package_source === 'mirror' ? 'mirror' : 'mikrotik']);
+     package_source === 'mirror' ? 'mirror' : 'mikrotik', post?.command ?? null, post?.name ?? null]);
   for (const d of devices) {
     await query(
       `INSERT INTO firmware_rollout_devices (rollout_id, device_id, wave) VALUES ($1,$2,$3)`,

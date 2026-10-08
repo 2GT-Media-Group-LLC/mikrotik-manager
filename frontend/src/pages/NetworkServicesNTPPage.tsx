@@ -5,6 +5,9 @@ import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { apiErrorMessage } from '../utils/apiError';
+import ListInput from '../components/common/ListInput';
+import { splitList } from '../utils/ipPrefix';
+import { isValidIPv4, isValidIPv6, isValidHostname } from '../utils/deviceAddress';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -229,10 +232,12 @@ export default function NetworkServicesNTPPage() {
                   {(clientMode === 'unicast' || clientMode === 'manycast') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1">NTP Servers</label>
-                      <input type="text" className="input w-full max-w-sm" value={clientServers}
-                        onChange={e => { setClientServers(e.target.value); mark(); }}
-                        placeholder="pool.ntp.org,time.cloudflare.com" disabled={!canWrite || !clientEnabled} />
-                      <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Comma-separated list of NTP server addresses.</p>
+                      <div className="max-w-sm">
+                        <ListInput value={splitList(clientServers)} onChange={(v) => { setClientServers(v.join(',')); mark(); }}
+                          ariaLabel="NTP servers" placeholder="pool.ntp.org" disabled={!canWrite || !clientEnabled}
+                          validate={(e) => (isValidIPv4(e) || isValidIPv6(e) || isValidHostname(e) ? null : `${e} isn\u2019t an address or host name`)} />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">NTP server addresses or host names.</p>
                     </div>
                   )}
 

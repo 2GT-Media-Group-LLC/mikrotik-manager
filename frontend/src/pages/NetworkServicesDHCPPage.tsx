@@ -9,6 +9,7 @@ import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { apiErrorMessage } from '../utils/apiError';
 import { Link } from 'react-router-dom';
+import { DhcpPoolUsage } from '../components/wireless/RfHealth';
 
 type NS = Record<string, string>;
 
@@ -648,6 +649,9 @@ export default function NetworkServicesDHCPPage() {
           </button>
         )}
       </div>
+
+      {/* How full every pool is, across the fleet (#156) */}
+      <DhcpPoolUsage />
 
       {/* Device selector */}
       <div className="card p-4">

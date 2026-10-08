@@ -64,6 +64,11 @@ export default function RolloutPanel({ rolloutId, canWrite }: { rolloutId: numbe
           {rollout.pre_backup && <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />pre-backup</span>}
           {rollout.halt_on_failure && <span className="flex items-center gap-1"><ShieldAlert className="w-3 h-3" />halt on failure</span>}
           {rollout.routerboot_after && <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />+ RouterBOOT</span>}
+          {rollout.post_command && (
+            <span className="flex items-center gap-1" title={rollout.post_command}>
+              <Zap className="w-3 h-3" />then {rollout.post_template_name ? `"${rollout.post_template_name}"` : 'commands'}
+            </span>
+          )}
           {rollout.package_source === 'mirror' && <span className="flex items-center gap-1" title="Devices set up for the local mirror pulled from it"><Server className="w-3 h-3" />local mirror</span>}
           {(rollout.wave_concurrency ?? 1) > 1 && (
             <span className="flex items-center gap-1" title="Devices in a wave upgrading at once">
@@ -108,6 +113,12 @@ export default function RolloutPanel({ rolloutId, canWrite }: { rolloutId: numbe
                   {(d.to_version || d.status === 'success') && <><ChevronRight className="w-3 h-3" />{d.to_version || '?'}</>}
                 </span>
                 {d.error && <span className="text-xs text-red-500 truncate" title={d.error}>{d.error}</span>}
+                {d.post_status && (
+                  <span title={(d.post_status === 'ok' ? d.post_output : d.post_error) || undefined}
+                    className={clsx('text-xs flex-shrink-0', d.post_status === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500')}>
+                    {d.post_status === 'ok' ? 'commands ran' : 'commands failed'}
+                  </span>
+                )}
                 <span className="ml-auto text-[11px] text-gray-400 dark:text-slate-500 flex-shrink-0">
                   {d.finished_at ? formatDistanceToNow(new Date(d.finished_at), { addSuffix: true }) : ''}
                 </span>

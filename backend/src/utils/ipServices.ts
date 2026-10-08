@@ -104,3 +104,19 @@ export function managerPeer(rows: ServiceRow[], service: string, localPort?: num
   const ips = [...new Set(peers.map((p) => p.ip))];
   return ips.length === 1 ? ips[0] : null;
 }
+
+/**
+ * Who is connected to the plain API right now (#201): the remote address of
+ * every live connection RouterOS lists under /ip/service as a dynamic "api"
+ * row. When the manager itself uses API-SSL these are other tools, and turning
+ * plain API off would cut them off.
+ */
+export function plainApiUsers(rows: ServiceRow[]): string[] {
+  const out = new Set<string>();
+  for (const r of rows) {
+    if (r['dynamic'] !== 'true' || r['name'] !== 'api' || !r['remote']) continue;
+    const m = /^\[?(.+?)\]?:(\d+)$/.exec(r['remote']);
+    out.add(m ? m[1] : r['remote']);
+  }
+  return [...out];
+}

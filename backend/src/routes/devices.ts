@@ -1,4 +1,5 @@
 import { resolveAuth } from '../services/sshExec';
+import net from 'net';
 import { Router, Request, Response } from 'express';
 import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
 import { devicePins, pendingIdentityChanges, trustNewIdentity, IDENTITY_KINDS } from '../services/identityPins';
@@ -51,8 +52,9 @@ import { fluxString } from '@influxdata/influxdb-client';
 import { upgradeDecision } from '../utils/firmwarePlan';
 import { sshHostCheck, explainSshError } from '../services/sshHostCheck';
 import { presetCaller } from '../utils/presetAccess';
-import { parseAllowedList, configuredServices, allowedFromKey, managerPeer, addressAllowed } from '../utils/ipServices';
+import { parseAllowedList, configuredServices, allowedFromKey, managerPeer, addressAllowed, plainApiUsers } from '../utils/ipServices';
 import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
+import { clientAddressListView } from '../utils/addressLists';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
 const router = Router();
@@ -1332,6 +1334,30 @@ router.get('/:id/address-lists', async (req, res) => {
   await withCollector(req.params.id, res, (c) => c.getAddressLists());
 });
 
+// GET /api/devices/:id/address-lists/client?address=IP — one client's view
+// (#145): every list on this router, which the address is in (entries a
+// firewall rule added are marked dynamic and can't be changed), the lists
+// firewall rules reference (changing those runs through lockout prediction),
+// and whether the address is a static DHCP lease here (a dynamic one can move
+// to another device, and the list entry would follow the address).
+router.get('/:id/address-lists/client', async (req, res) => {
+  const address = String(req.query.address || '').trim();
+  if (!net.isIP(address)) return res.status(400).json({ error: 'address must be an IP address' });
+  await withCollector(req.params.id, res, async (c) => {
+    const run = c.commandRunner();
+    const none = () => [] as Record<string, string>[];
+    const [entries, filter, nat, mangle, raw, leases] = await Promise.all([
+      c.getAddressLists(),
+      run.execute('/ip/firewall/filter/print').catch(none),
+      run.execute('/ip/firewall/nat/print').catch(none),
+      run.execute('/ip/firewall/mangle/print').catch(none),
+      run.execute('/ip/firewall/raw/print').catch(none),
+      run.execute('/ip/dhcp-server/lease/print').catch(none),
+    ]);
+    return clientAddressListView(entries as Record<string, string>[], [...filter, ...nat, ...mangle, ...raw], leases, address);
+  });
+});
+
 // Address-list writes are guarded too: the manager may be accepted by a list,
 // and removing it from that list locks it out (P2-8).
 router.post('/:id/address-lists', requireWrite, async (req, res) => {
@@ -1535,6 +1561,51 @@ router.post('/:id/identity/:kind/trust', requireSiteAdmin, async (req: Request, 
   return res.json({ message });
 });
 
+// POST /api/devices/:id/plain-api/off — turn off the plain API once the
+// manager is on API-SSL (#201). Refused unless the device is managed over
+// API-SSL and a login over it works right now, and skipped while anything else
+// is connected to the plain API (a script or monitoring tool would be cut off).
+// The change itself runs under Change Guard.
+router.post('/:id/plain-api/off', requireWrite, async (req: Request, res: Response) => {
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const name = deviceRow.name.trim();
+  if (deviceRow.api_port !== 8729) {
+    return res.status(409).json({ error: `${name} is managed over the plain API. Switch it to API-SSL first; plain API can be turned off after that.` });
+  }
+  let serviceId: string | null = null;
+  const collector = new DeviceCollector(deviceRow);
+  try {
+    // A fresh login over API-SSL: proof the manager won't need plain API.
+    await collector.connect();
+    const rows = await collector.getServicesWithConnections();
+    const api = configuredServices(rows).find((s) => s['name'] === 'api');
+    if (!api || api['disabled'] === 'true') return res.json({ already: true, message: `Plain API is already off on ${name}` });
+    const users = plainApiUsers(rows);
+    if (users.length > 0) {
+      return res.status(409).json({
+        error: `Plain API is in use on ${name} right now, from ${users.join(', ')}. Move ` +
+          `${users.length === 1 ? 'it' : 'them'} to API-SSL (8729), then turn plain API off.`,
+        in_use_by: users,
+      });
+    }
+    serviceId = api['.id'];
+  } catch (err) {
+    return res.status(502).json({ error: `Couldn’t log in to ${name} over API-SSL just now, so plain API stays on: ${safeConnectionError('api-ssl', err)}` });
+  } finally {
+    collector.disconnect();
+  }
+
+  await withGuardedChange(
+    req.params.id, req, res,
+    { kind: 'service.toggle', summary: 'Turn off plain API (api); the manager uses API-SSL' },
+    async (c) => {
+      await c.setServiceDisabled(serviceId!, true);
+      return { message: `Plain API is off on ${name}; the manager keeps using API-SSL` };
+    },
+  );
+});
+
 // POST /api/devices/:id/api-ssl — turn on API-SSL on the device and move the
 // manager's connection to it once a login over it works (outside review P1-4).
 router.post('/:id/api-ssl', requireWrite, async (req: Request, res: Response) => {
@@ -1602,7 +1673,7 @@ router.get('/:id/security-posture', async (req, res) => {
     const services = Array.from(new Map(servicesRaw.map(s => [s['name'] ?? s['.id'], s])).values());
 
     type Sev = 'high' | 'medium' | 'low';
-    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string; fix?: 'api-ssl' | 'www-ssl' };
+    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string; fix?: 'api-ssl' | 'www-ssl' | 'api-off' };
     const checks: Check[] = [];
 
     for (const s of services) {
@@ -1627,9 +1698,10 @@ router.get('/:id/security-posture', async (req, res) => {
             'assigns one (api-ssl\u2019s, or a new self-signed certificate).' });
       } else if (name === 'api' && mgmtService !== 'api') {
         // Plaintext API is on but the platform connects via api-ssl — safe to flag/disable.
-        checks.push({ id: 'service-api', severity: 'medium', serviceId: s['.id'],
+        checks.push({ id: 'service-api', severity: 'medium', serviceId: s['.id'], fix: 'api-off',
           title: 'Unencrypted API (api) is enabled',
-          detail: 'The plaintext RouterOS API is exposed. Disable "api" and use "api-ssl" (8729).' });
+          detail: 'The plaintext RouterOS API is exposed, and the manager already uses API-SSL. Turn plain API off: ' +
+            'the manager first checks it can log in over API-SSL and that nothing else is connected to plain API.' });
       } else if (name === mgmtService && name === 'api') {
         // The platform is connected through cleartext API — advise, but do NOT
         // offer to disable it (that would cut MikroTik Manager off the device).

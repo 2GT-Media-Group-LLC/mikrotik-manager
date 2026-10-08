@@ -244,7 +244,7 @@ export interface SecurityCheck {
   detail: string;
   serviceId?: string;
   /** A one-click fix the manager can apply (outside review P1-4; www-ssl #234). */
-  fix?: 'api-ssl' | 'www-ssl';
+  fix?: 'api-ssl' | 'www-ssl' | 'api-off';
   /** Operator judged this inapplicable — still shown, but excluded from the score. */
   suppressed?: boolean;
   suppressed_scope?: 'device' | 'fleet';
@@ -714,6 +714,9 @@ export const devicesApi = {
     api.post<Record<string, string>[]>(`/devices/${id}/nat/move`, { id: ruleId, destination }),
   // Firewall address lists (reusable address objects)
   getAddressLists: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/address-lists`),
+  /** One client's view of this router's address lists (#145). */
+  clientAddressLists: (id: number, address: string) =>
+    api.get<ClientAddressListView>(`/devices/${id}/address-lists/client`, { params: { address } }),
   addAddressListEntry: (id: number, data: { list: string; address: string; comment?: string; timeout?: string; confirm_lockout?: boolean }) =>
     api.post(`/devices/${id}/address-lists`, data),
   updateAddressListEntry: (id: number, entryId: string, data: Record<string, unknown>) =>
@@ -749,6 +752,13 @@ export const devicesApi = {
   /** Enable API-SSL on the device and move the manager's connection to it. Signing a certificate can take a minute. */
   enableApiSsl: (id: number) =>
     api.post<ApiSslResult>(`/devices/${id}/api-ssl`, undefined, { timeout: 240_000 }),
+  /**
+   * Turn off plain API once the manager is on API-SSL (#201). Refused while
+   * anything else is connected to plain API (409 with in_use_by), and run
+   * under Change Guard (409 with a verdict asks to confirm).
+   */
+  disablePlainApi: (id: number, confirmLockout = false) =>
+    api.post<{ message: string; already?: boolean }>(`/devices/${id}/plain-api/off`, confirmLockout ? { confirm_lockout: true } : {}, { timeout: 120_000 }),
   /** WebFig over HTTPS (#234); plain www goes off only once HTTPS answers. Same result shape. */
   enableWwwSsl: (id: number) =>
     api.post<ApiSslResult & { url?: string }>(`/devices/${id}/www-ssl`, undefined, { timeout: 240_000 }),
@@ -1137,12 +1147,16 @@ export interface FirmwareRollout {
   scheduled_at: string | null; started_at: string | null; finished_at: string | null; created_at: string;
   /** Latest time a scheduled rollout may start; null means within an hour of scheduled_at. */
   scheduled_until?: string | null;
+  /** Command template run after each upgrade (#163), copied in at creation. */
+  post_command?: string | null; post_template_name?: string | null;
   device_count?: number; success_count?: number; failed_count?: number;
 }
 export interface FirmwareRolloutDevice {
   id: number; rollout_id: number; device_id: number; wave: number;
-  status: 'pending' | 'backing_up' | 'upgrading' | 'rebooting' | 'verifying' | 'success' | 'failed' | 'skipped';
+  status: 'pending' | 'backing_up' | 'upgrading' | 'rebooting' | 'verifying' | 'post_commands' | 'success' | 'failed' | 'skipped';
   from_version: string | null; to_version: string | null; error: string | null;
+  /** Post-upgrade commands (#163): 'ok' or 'failed', with what they printed. */
+  post_status?: 'ok' | 'failed' | null; post_output?: string | null; post_error?: string | null;
   started_at: string | null; finished_at: string | null;
   device_name: string; device_type: string; model: string | null;
 }
@@ -1164,6 +1178,8 @@ export const firmwareApi = {
     wave_concurrency?: number;
     /** 'mirror': devices set up for the local mirror pull from it (#193). */
     package_source?: 'mirror' | 'mikrotik';
+    /** A command template to run on each device after its upgrade (#163). */
+    post_template_id?: number | null;
     devices: { device_id: number; wave: number }[];
   }) => api.post<{ id: number }>('/firmware/rollouts', data),
   /** Advisory: selected devices that other selected devices depend on. */
@@ -1706,15 +1722,20 @@ export const wirelessApi = {
     api.get<import('../types').RfSignalRow[]>('/wireless/rf/signals', { params: { deviceId } }),
   getTxQuality: (deviceId?: number, range = '6h') =>
     api.get<import('../types').RfTxQualityRow[]>('/wireless/rf/tx-quality', { params: { deviceId, range } }),
-  getConnectivity: (deviceId?: number, range = '24h') =>
-    api.get<import('../types').RfConnectivity>('/wireless/rf/connectivity', { params: { deviceId, range } }),
 };
 
 // ─── Network Services ─────────────────────────────────────────────────────────
 
 type NS = Record<string, string>;
 
+/** How full one address pool is (#156); state 'warn' from 80%, 'full' from 95%. */
+export interface DhcpPoolUsageRow {
+  device_id: number; device_name: string; name: string; ranges: string | null;
+  size: number | null; used: number; updated_at: string; state: 'warn' | 'full' | null;
+}
+
 export const networkServicesApi = {
+  poolUsage: () => api.get<DhcpPoolUsageRow[]>('/network-services/dhcp/pool-usage'),
   // Overview
   overview: () =>
     api.get<Record<string, unknown>[]>('/network-services/overview', { timeout: 60_000 }),
@@ -2215,3 +2236,13 @@ export const userManagerApi = {
   removeSession: (id: number, sid: string) => api.post<{ ok: boolean }>(`/user-manager/${id}/sessions/${encodeURIComponent(sid)}/remove`),
   recheck: () => api.post<{ ok: boolean }>('/user-manager/recheck'),
 };
+
+/** A client's firewall address lists on one router (#145). */
+export interface ClientAddressListView {
+  address: string;
+  lists: string[];
+  member: { list: string; id: string; dynamic: boolean; disabled: boolean; comment: string | null; timeout: string | null }[];
+  /** Lists a firewall rule matches on. */
+  referenced: string[];
+  lease: { static: boolean; host: string | null } | null;
+}

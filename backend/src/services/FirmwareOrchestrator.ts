@@ -18,6 +18,8 @@ import { describeUpdateStatus, type UpdateStatus } from '../utils/updateStatus';
 import { upgradeDecision, verifyUpgrade, scheduleDecision } from '../utils/firmwarePlan';
 import { mirrorForDevice, newestCompleteVersion, type MirrorRow } from './firmwareMirror';
 import { matchLocalUpdate, packageFileName } from '../utils/firmwareMirror';
+import { runSshCommand, looksLikeFailure, type SshExecDevice } from './sshExec';
+import { withSafeApply, type GuardDevice } from './changeGuard/ChangeGuard';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 /**
@@ -82,6 +84,9 @@ interface RolloutRow {
   wave_concurrency: number;
   /** 'mirror': devices set up for the local mirror pull from it (#193). */
   package_source: string;
+  /** Commands to run on each device after its upgrade is verified (#163). */
+  post_command: string | null;
+  post_template_name: string | null;
 }
 
 /** The outcome of staging an image from the local mirror. */
@@ -630,12 +635,55 @@ export class FirmwareOrchestrator {
       }
     }
 
-    await this.setItem(item.id, { status: 'success', to_version: newVersion || null });
-    await query(`UPDATE firmware_rollout_devices SET finished_at=NOW() WHERE id=$1`, [item.id]);
     await query(`UPDATE devices SET ros_version=COALESCE(NULLIF($2,''), ros_version), firmware_update_available=FALSE, status='online', last_seen=NOW() WHERE id=$1`,
       [device.id, newVersion]);
     console.log(`[Firmware] ${device.name}: upgraded to ${newVersion || 'unknown'}`);
-    return true;
+
+    // 6. Post-upgrade commands (#163), only on a device that really upgraded
+    // and only once its new version is confirmed. A failure doesn't undo the
+    // upgrade, but it counts toward halt-on-failure: the same commands would
+    // likely fail on the next device too.
+    let postOk = true;
+    if (rollout.post_command) {
+      await this.setItem(item.id, { status: 'post_commands', to_version: newVersion || null });
+      const post = await this.runPostCommands(device, rollout);
+      postOk = post.ok;
+      await query(`UPDATE firmware_rollout_devices SET post_status=$2, post_output=$3, post_error=$4 WHERE id=$1`,
+        [item.id, post.ok ? 'ok' : 'failed', post.output, post.error]);
+    }
+
+    await this.setItem(item.id, {
+      status: 'success', to_version: newVersion || null,
+      error: postOk ? null : `Upgraded to ${newVersion || 'the new version'}, but the post-upgrade commands failed`,
+    });
+    await query(`UPDATE firmware_rollout_devices SET finished_at=NOW() WHERE id=$1`, [item.id]);
+    return postOk;
+  }
+
+  /**
+   * Run the rollout's post-upgrade commands on one device (#163), over SSH and
+   * under Change Guard, the same way a bulk command runs.
+   */
+  private async runPostCommands(device: DeviceRow, rollout: RolloutRow): Promise<{ ok: boolean; output: string | null; error: string | null }> {
+    const execute = async () => {
+      const { output } = await runSshCommand(device as unknown as SshExecDevice, rollout.post_command!);
+      if (looksLikeFailure(output)) throw new Error(output.slice(0, 500));
+      return output;
+    };
+    try {
+      const outcome = await withSafeApply(device as unknown as GuardDevice, {
+        kind: 'command.bulk',
+        summary: `Post-upgrade commands${rollout.post_template_name ? ` (${rollout.post_template_name})` : ''}`,
+        requireProtection: false,
+      }, execute);
+      if (outcome.autoReverting) {
+        return { ok: false, output: outcome.result ?? null, error: 'The device stopped responding after the commands and is restoring itself.' };
+      }
+      return { ok: true, output: outcome.result ?? null, error: null };
+    } catch (e) {
+      console.error(`[Firmware] ${device.name}: post-upgrade commands failed: ${(e as Error).message}`);
+      return { ok: false, output: null, error: (e as Error).message.slice(0, 1000) };
+    }
   }
 
   /**

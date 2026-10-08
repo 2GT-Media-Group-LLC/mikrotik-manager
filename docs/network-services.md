@@ -22,6 +22,12 @@ lists the rest.
 A DHCP server bound to an interface that later changes VLAN is a common way to hand out
 addresses on the wrong segment; the lease list is the quickest way to notice.
 
+**DHCP pool usage**, at the top of the page (and on Wireless → Overview), shows how full every
+IPv4 address pool across the fleet is, read on each slow poll (#156): yellow from 80%, red from
+95%. A pool that runs out is a quiet failure, since clients connect but get no address, so
+a nearly full pool is also listed on the dashboard. Widen the range or shorten the lease
+time.
+
 ## DNS
 
 The resolver configuration on each device, plus static entries.
@@ -33,6 +39,9 @@ The resolver configuration on each device, plus static entries.
   record wasn't created.
 - **Flush cache** clears the resolver cache on a device, which is worth doing after changing
   an upstream server or a static entry.
+- **Upstream DNS servers** are edited one entry at a time (#207): type an address and press
+  Enter, or paste a list; × removes one. Only IP addresses are accepted. A device's own DNS
+  servers, under its **Config** tab, work the same way.
 
 ## NTP
 
@@ -40,6 +49,9 @@ Client and server configuration. Worth more attention than it usually gets: a de
 wrong clock produces logs that cannot be correlated, certificates that appear
 invalid — see [Alerting](alerting.md#certificate-expiry) — and scheduled work that fires at
 the wrong time.
+
+**NTP servers** are edited one entry at a time, like the DNS servers; addresses and host names
+(`pool.ntp.org`) are both accepted.
 
 [Configuration templates](devices.md) can push the same NTP servers to many devices at once.
 

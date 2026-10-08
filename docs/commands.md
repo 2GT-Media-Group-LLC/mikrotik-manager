@@ -19,8 +19,9 @@ and NTP defaults, anything you would otherwise keep in a notes file.
   template** puts one back. Edit it there if needed; **Update** saves the edited version.
 
 Loading or running a template only fills the command box. It runs like any typed command, with
-the same waves, halt-on-failure and Change Guard. Templates will also be used for post-upgrade
-commands once that feature exists.
+the same waves, halt-on-failure and Change Guard. A template can also run on each device after
+a firmware upgrade: pick it under **Then run** when creating a rollout (see
+[Firmware rollouts](firmware.md#the-pipeline)).
 
 ### Config Templates
 

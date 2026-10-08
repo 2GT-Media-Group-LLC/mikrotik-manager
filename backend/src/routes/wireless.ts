@@ -1101,63 +1101,9 @@ router.get('/rf/tx-quality', async (req: Request, res: Response) => {
   }
 });
 
-// Classification of wireless/DHCP log lines into the connectivity funnel. These
-// are best-effort regexes over RouterOS log messages; the panel is explicitly
-// labelled as log-derived and approximate.
-// Whole words (outside review J7): "disconnected" and "deassigned" contain
-// "connected" and "assigned", so a disconnect counted as a successful
-// association and a released lease as a DHCP success.
-export const RE_ASSOC_OK   = /\b(connected|associated)\b/i;
-const RE_ASSOC_FAIL = /reject|deauth|disassoc|connection lost|connect failed/i;
-const RE_AUTH_FAIL  = /key exchange|handshake|authentication failed|auth failed|eap|radius.*(timeout|fail)/i;
-export const RE_DHCP_OK    = /\b(assigned|bound|leased|offering)\b/i;
-const RE_DHCP_FAIL  = /no.*address|declined|nak|offer.*fail|pool.*exhaust/i;
-
-// GET /api/wireless/rf/connectivity?range=24h — Association/Auth/DHCP success funnel
-router.get('/rf/connectivity', async (req: Request, res: Response) => {
-  const deviceId = deviceScope(req);
-  const siteFilter = siteScopeByDevice(activeSite(req), 'device_id');
-  const intervals: Record<string, string> = { '1h': '1 hour', '6h': '6 hours', '24h': '24 hours', '7d': '7 days' };
-  const interval = intervals[String(req.query.range || '24h')] || '24 hours';
-
-  const rows = await query<{ topic: string | null; message: string }>(`
-    SELECT topic, message FROM events
-    WHERE event_time > NOW() - INTERVAL '${interval}'
-      ${deviceId ? 'AND device_id = $1' : ''}
-      ${siteFilter ? `AND ${siteFilter}` : ''}
-      AND (topic ILIKE '%wireless%' OR topic ILIKE '%wifi%' OR topic ILIKE '%dhcp%')
-  `, deviceId ? [deviceId] : []);
-
-  let assocOk = 0, assocFail = 0, authFail = 0, dhcpOk = 0, dhcpFail = 0;
-  for (const r of rows) {
-    const topic = (r.topic || '').toLowerCase();
-    const msg = r.message || '';
-    const isDhcp = topic.includes('dhcp');
-    if (isDhcp) {
-      if (RE_DHCP_FAIL.test(msg)) dhcpFail++;
-      else if (RE_DHCP_OK.test(msg)) dhcpOk++;
-    } else {
-      // wireless / wifi
-      if (RE_AUTH_FAIL.test(msg)) authFail++;
-      else if (RE_ASSOC_FAIL.test(msg)) assocFail++;
-      else if (RE_ASSOC_OK.test(msg)) assocOk++;
-    }
-  }
-
-  const rate = (ok: number, fail: number): number | null =>
-    ok + fail > 0 ? Math.round((ok / (ok + fail)) * 1000) / 10 : null;
-
-  res.json({
-    range: String(req.query.range || '24h'),
-    log_derived: true,
-    stages: {
-      association:    { success: assocOk, failure: assocFail, pct: rate(assocOk, assocFail) },
-      // a successful association implies it passed the auth handshake
-      authentication: { success: assocOk, failure: authFail, pct: rate(assocOk, authFail) },
-      dhcp:           { success: dhcpOk,  failure: dhcpFail,  pct: rate(dhcpOk, dhcpFail) },
-    },
-  });
-});
+// The log-derived "WiFi Connectivity Success" funnel was removed (#156): it
+// counted ordinary disconnects as failures. DHCP pool usage replaced it (see
+// /api/network-services/dhcp/pool-usage).
 
 // ─── Rogue / neighbor AP detection ────────────────────────────────────────────
 

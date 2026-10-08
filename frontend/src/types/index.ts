@@ -543,21 +543,6 @@ export interface RfTxQualityRow {
   tx_retry_pct: number;
 }
 
-export interface RfConnectivityStage {
-  success: number;
-  failure: number;
-  pct: number | null;
-}
-
-export interface RfConnectivity {
-  range: string;
-  log_derived: boolean;
-  stages: {
-    association: RfConnectivityStage;
-    authentication: RfConnectivityStage;
-    dhcp: RfConnectivityStage;
-  };
-}
 
 export interface ConfigSnapshotMeta {
   id: number;

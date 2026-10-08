@@ -144,6 +144,31 @@ export default function SecurityPage() {
     void qc.invalidateQueries({ queryKey: ['security-fleet'] });
   };
 
+  // Turn plain API off across the fleet (#201), one device at a time. Each is
+  // checked first (API-SSL login works, nothing else on plain API); a device
+  // where Change Guard predicts trouble is skipped for doing by hand.
+  const [apiOffRun, setApiOffRun] = useState<{ running: boolean; results: { name: string; ok: boolean; message: string }[] } | null>(null);
+  const turnOffPlainApi = async (ids: number[]) => {
+    const names = new Map(fleet.map((f) => [f.id, f.name.trim()]));
+    setApiOffRun({ running: true, results: [] });
+    for (const id of ids) {
+      const name = names.get(id) ?? `#${id}`;
+      let r: { name: string; ok: boolean; message: string };
+      try {
+        const res = await devicesApi.disablePlainApi(id);
+        r = { name, ok: true, message: res.data.message };
+      } catch (err) {
+        const data = (err as { response?: { data?: { error?: string; reason?: string; verdict?: unknown } } })?.response?.data;
+        r = { name, ok: false, message: data?.verdict
+          ? 'Skipped: Change Guard predicts a problem with this one; turn it off from the device\u2019s Security tab to see why.'
+          : data?.error || data?.reason || 'Could not turn plain API off' };
+      }
+      setApiOffRun((cur) => ({ running: true, results: [...(cur?.results ?? []), r] }));
+    }
+    setApiOffRun((cur) => ({ running: false, results: cur?.results ?? [] }));
+    void qc.invalidateQueries({ queryKey: ['security-fleet'] });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -275,6 +300,20 @@ export default function SecurityPage() {
                         {c.devices.length} {c.devices.length === 1 ? 'device' : 'devices'}
                       </span>
                     </button>
+                    {open && c.fix === 'api-off' && canWrite && (
+                      <div className="px-5 pb-2 pl-12 space-y-1.5">
+                        <button className="btn-primary text-xs py-1" disabled={apiOffRun?.running}
+                          title="On each: check the manager can log in over API-SSL and nothing else uses plain API, then turn it off under Change Guard"
+                          onClick={() => { void turnOffPlainApi(c.deviceIds); }}>
+                          {apiOffRun?.running ? 'Turning off…' : `Turn off plain API on ${c.deviceIds.length === 1 ? 'it' : `all ${c.deviceIds.length}`}`}
+                        </button>
+                        {apiOffRun && apiOffRun.results.map((r, i) => (
+                          <p key={i} className={clsx('text-xs', r.ok ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
+                            {r.name}: {r.message}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     {/* Answers "which ones?", which the tally alone never did (#158). */}
                     {open && c.fix === 'www-ssl' && canWrite && (
                       <div className="px-5 pb-2 pl-12 space-y-1.5">

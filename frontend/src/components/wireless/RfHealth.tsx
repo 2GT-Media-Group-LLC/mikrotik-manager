@@ -3,9 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Radio, Signal, Activity, ShieldCheck, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
-import { wirelessApi } from '../../services/api';
+import { wirelessApi, networkServicesApi } from '../../services/api';
 import type {
-  RfChannelRow, RfSignalRow, RfTxQualityRow, RfConnectivity,
+  RfChannelRow, RfSignalRow, RfTxQualityRow,
   RfOverlapKind, RfBandRange,
 } from '../../types';
 import {
@@ -342,75 +342,52 @@ export function TxRetries({ deviceId }: { deviceId?: number }) {
   );
 }
 
-// ─── Connectivity Success funnel ────────────────────────────────────────────────
+// ─── DHCP pool usage (#156) ───────────────────────────────────────────────────
+// Replaced the log-derived "WiFi Connectivity Success" funnel, which counted
+// ordinary disconnects as failures. A full pool is the quiet failure: clients
+// connect and get no address.
 
-const STAGE_META: { key: keyof RfConnectivity['stages']; label: string }[] = [
-  { key: 'association', label: 'Association' },
-  { key: 'authentication', label: 'Authentication' },
-  { key: 'dhcp', label: 'DHCP' },
-];
-
-export function ConnectivitySuccess({ deviceId }: { deviceId?: number }) {
-  const [range, setRange] = useState('24h');
-  const { data } = useQuery({
-    queryKey: ['rf-connectivity', deviceId, range],
-    queryFn: () => wirelessApi.getConnectivity(deviceId, range).then(r => r.data),
-    refetchInterval: 60_000,
+export function DhcpPoolUsage() {
+  const { data: pools = [], isLoading } = useQuery({
+    queryKey: ['dhcp-pool-usage'],
+    queryFn: () => networkServicesApi.poolUsage().then((r) => r.data),
+    refetchInterval: 300_000,
   });
-
-  const stages = data?.stages;
-  const totalEvents = stages
-    ? STAGE_META.reduce((s, m) => s + stages[m.key].success + stages[m.key].failure, 0)
-    : 0;
-
   return (
     <div className="card p-5">
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-1">
         <ShieldCheck className="w-4 h-4 text-green-500" />
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">WiFi Connectivity Success</h2>
-        <div className="ml-auto flex gap-1">
-          {['1h', '24h', '7d'].map(r => (
-            <button key={r} onClick={() => setRange(r)}
-              className={clsx('px-2 py-0.5 rounded-md text-xs font-medium transition-colors',
-                range === r ? 'bg-blue-600 text-white' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700')}>
-              {r}
-            </button>
-          ))}
-        </div>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">DHCP pool usage</h2>
       </div>
-
-      {!stages || totalEvents === 0 ? (
-        <div className="py-6 text-center text-sm text-gray-400 dark:text-slate-500">
-          No connectivity events in this window. This funnel is derived from device
-          logs — enable wireless &amp; DHCP logging on the APs to populate it.
-        </div>
+      <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
+        How full each address pool is. When one runs out, clients connect but get no address. Yellow from 80%, red from 95%;
+        read every 5 minutes.
+      </p>
+      {isLoading ? null : pools.length === 0 ? (
+        <p className="py-4 text-center text-sm text-gray-400 dark:text-slate-500">No address pools on the devices in view.</p>
       ) : (
-        <>
-          <div className="space-y-3">
-            {STAGE_META.map(({ key, label }) => {
-              const s = stages[key];
-              const pct = s.pct;
-              const color = pct == null ? '#94a3b8' : pct >= 98 ? '#22c55e' : pct >= 90 ? '#84cc16' : pct >= 75 ? '#f59e0b' : '#ef4444';
-              return (
-                <div key={key}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="font-medium text-gray-600 dark:text-slate-300">{label}</span>
-                    <span className="text-gray-400 dark:text-slate-500">
-                      {pct == null ? '—' : `${pct}%`}
-                      <span className="ml-2 text-[10px]">({s.success} ok / {s.failure} fail)</span>
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
-                    <div className="h-full rounded-full transition-all" style={{ width: `${pct ?? 0}%`, backgroundColor: color }} />
-                  </div>
+        <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+          {pools.map((p) => {
+            const pct = p.size ? Math.min(100, Math.round((p.used / p.size) * 100)) : null;
+            const color = p.state === 'full' ? '#ef4444' : p.state === 'warn' ? '#f59e0b' : '#22c55e';
+            return (
+              <div key={`${p.device_id}-${p.name}`}>
+                <div className="flex items-center justify-between gap-3 text-xs mb-1">
+                  <span className="truncate">
+                    <span className="font-medium text-gray-800 dark:text-slate-200">{p.name}</span>
+                    <span className="text-gray-400 dark:text-slate-500"> · {p.device_name}{p.ranges ? ` · ${p.ranges}` : ''}</span>
+                  </span>
+                  <span className="mono flex-shrink-0" style={{ color: p.state ? color : undefined }}>
+                    {p.used}{p.size ? ` / ${p.size}` : ''}{pct !== null ? ` (${pct}%)` : ''}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-          <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3">
-            Approximate, derived from device logs. DNS success isn&apos;t observable on RouterOS and is omitted.
-          </p>
-        </>
+                <div className="h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${pct ?? 0}%`, background: color }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -441,7 +418,7 @@ export default function RfHealth({ deviceId }: { deviceId?: number }) {
       ) : (
         <RssiDensity deviceId={deviceId} />
       )}
-      <ConnectivitySuccess deviceId={deviceId} />
+      <DhcpPoolUsage />
     </div>
   );
 }

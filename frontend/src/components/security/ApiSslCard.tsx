@@ -9,7 +9,7 @@ import { unmutedForApiSslNotice } from '../../utils/apiSslNotice';
 
 const API_SSL_PORT = 8729;
 
-type Outcome = { state: 'working' } | { state: 'done'; result: ApiSslResult } | { state: 'error'; message: string };
+type Outcome = { state: 'working' } | { state: 'done'; result: ApiSslResult; plainApi?: { ok: boolean; message: string } } | { state: 'error'; message: string };
 
 /**
  * Devices the manager still reaches over the plain API, which sends each
@@ -22,6 +22,9 @@ export default function ApiSslCard() {
   const canWrite = useCanWrite();
   const [outcomes, setOutcomes] = useState<Record<number, Outcome>>({});
   const [runningAll, setRunningAll] = useState(false);
+  // #201: after a device has moved to API-SSL, also turn its plain API off
+  // (checked for anything else still using it). Off by default.
+  const [thenPlainOff, setThenPlainOff] = useState(false);
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices'],
@@ -42,7 +45,18 @@ export default function ApiSslCard() {
     setOutcomes((o) => ({ ...o, [d.id]: { state: 'working' } }));
     try {
       const res = await devicesApi.enableApiSsl(d.id);
-      setOutcomes((o) => ({ ...o, [d.id]: { state: 'done', result: res.data } }));
+      let plainApi: { ok: boolean; message: string } | undefined;
+      if (thenPlainOff && res.data.switched) {
+        try {
+          plainApi = { ok: true, message: (await devicesApi.disablePlainApi(d.id)).data.message };
+        } catch (e) {
+          const data = (e as { response?: { data?: { error?: string; verdict?: unknown } } })?.response?.data;
+          plainApi = { ok: false, message: data?.verdict
+            ? 'Plain API left on: Change Guard predicts a problem; turn it off from the device\u2019s Security tab to see why.'
+            : data?.error || 'Plain API left on: it couldn\u2019t be turned off' };
+        }
+      }
+      setOutcomes((o) => ({ ...o, [d.id]: { state: 'done', result: res.data, plainApi } }));
     } catch (err) {
       const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not enable API-SSL';
       setOutcomes((o) => ({ ...o, [d.id]: { state: 'error', message } }));
@@ -94,8 +108,15 @@ export default function ApiSslCard() {
               <p className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
                 The plain API (8728) sends each device&apos;s login in the clear on every poll. Switching enables
                 API-SSL on the device (with a self-signed certificate if it has none) and moves the manager over only
-                once it has logged in over it. The plain API stays on until you turn it off.
+                once it has logged in over it. The plain API stays on unless you tick the box.
               </p>
+            )}
+            {plain.length > 0 && canWrite && (
+              <label className="mt-1.5 flex items-center gap-2 text-xs text-amber-900 dark:text-amber-200 cursor-pointer">
+                <input type="checkbox" className="w-3.5 h-3.5 rounded" checked={thenPlainOff} disabled={runningAll}
+                  onChange={(e) => setThenPlainOff(e.target.checked)} />
+                Then turn off plain API on each (skipped where something else still uses it)
+              </label>
             )}
           </div>
         </div>
@@ -125,6 +146,11 @@ export default function ApiSslCard() {
                     o.result.switched ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
                     {o.result.switched ? <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />}
                     {o.result.message}
+                  </p>
+                )}
+                {o?.state === 'done' && o.plainApi && (
+                  <p className={clsx('text-xs mt-0.5', o.plainApi.ok ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
+                    {o.plainApi.message}
                   </p>
                 )}
                 {o?.state === 'error' && <p className="text-xs mt-1 text-red-600 dark:text-red-400">{o.message}</p>}

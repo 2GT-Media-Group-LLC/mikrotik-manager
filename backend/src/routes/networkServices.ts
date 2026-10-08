@@ -8,6 +8,7 @@ import { readManagementTunnel, tunnelWriteRule, type ManagementTunnel, type Tunn
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { siteScopeDevices } from '../utils/siteScope';
+import { poolState } from '../utils/dhcpPools';
 import { activeSite, writableScope } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
@@ -233,6 +234,18 @@ router.put('/dhcp/server', requireWrite, async (req: Request, res: Response) => 
     await collector.setDhcpServerDisabled(serverId, disabled, protocol as 'ipv4' | 'ipv6');
     res.json({ success: true });
   });
+});
+
+// GET /api/network-services/dhcp/pool-usage — how full each pool is, across
+// the devices in the active site (#156). From the slow poll, not live.
+router.get('/dhcp/pool-usage', async (req: Request, res: Response) => {
+  const scope = siteScopeDevices(activeSite(req), 'd');
+  const rows = await query<{ device_id: number; device_name: string; name: string; ranges: string | null; size: number | null; used: number; updated_at: string }>(
+    `SELECT p.device_id, d.name AS device_name, p.name, p.ranges, p.size, p.used, p.updated_at
+       FROM dhcp_pool_usage p JOIN devices d ON d.id = p.device_id
+      ${scope ? `WHERE ${scope}` : ''}
+      ORDER BY (p.used::float / NULLIF(p.size, 0)) DESC NULLS LAST, d.name, p.name`);
+  res.json(rows.map((r) => ({ ...r, device_name: r.device_name.trim(), state: poolState(r.used, r.size) })));
 });
 
 // GET /api/network-services/dhcp/pools?deviceId=X&protocol=X

@@ -28,8 +28,22 @@ than one is online) does this on the device:
 
 If the login over API-SSL fails, the device stays on 8728 and the card says why. The usual
 cause is a firewall rule, or the `api-ssl` service's *Available From* list, that lets 8728 in
-but not 8729. The plain `api` service is left running either way; once a device is on
-API-SSL, its **Security** tab offers to turn the plain API off.
+but not 8729. The plain `api` service is left running unless you tick **Then turn off plain
+API on each** before switching.
+
+### Turning the plain API off
+
+Once a device is on API-SSL, plain `api` is only an open door (#201). **Turn off plain API**
+(on the device's **Security** tab, or for every device at once under *Unencrypted API (api) is
+enabled* in Common Findings on the Security page) first checks two things:
+
+- the manager can log in over API-SSL right now, on a fresh connection;
+- nothing else is connected to plain API (a script or monitoring tool). If something is, the
+  device is skipped and the message names the addresses still using it, so they can be moved
+  to 8729 first.
+
+The change then runs under Change Guard. A device managed over the plain API is refused; switch
+it to API-SSL first.
 
 The same switch is on each device's **Security** tab, next to the *MikroTik Manager connects
 over the plain API* finding.

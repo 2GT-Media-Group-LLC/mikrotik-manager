@@ -1415,6 +1415,27 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS user_manager_checked_at TIMESTAMPTZ
 -- The router's own name (/system/identity), read every poll whether or not the
 -- manager's name is locked (#253), so a mismatch can be shown and fixed.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS ros_identity VARCHAR(255);
+
+-- How full each IPv4 address pool is (#156), from the slow poll. An exhausted
+-- pool is the quiet DHCP failure: clients connect and get no address.
+-- Post-upgrade commands (#163): a command template run on each device after
+-- its upgrade is verified. The command is copied in when the rollout is made,
+-- so editing the template later doesn't change a scheduled rollout.
+ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS post_command TEXT;
+ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS post_template_name VARCHAR(100);
+ALTER TABLE firmware_rollout_devices ADD COLUMN IF NOT EXISTS post_status VARCHAR(12);
+ALTER TABLE firmware_rollout_devices ADD COLUMN IF NOT EXISTS post_output TEXT;
+ALTER TABLE firmware_rollout_devices ADD COLUMN IF NOT EXISTS post_error TEXT;
+
+CREATE TABLE IF NOT EXISTS dhcp_pool_usage (
+  device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  name       VARCHAR(64) NOT NULL,
+  ranges     TEXT,
+  size       INTEGER,
+  used       INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (device_id, name)
+);
 `;
 
 const DEFAULT_SETTINGS = [

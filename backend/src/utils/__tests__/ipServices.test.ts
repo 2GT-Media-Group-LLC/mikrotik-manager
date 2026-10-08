@@ -42,3 +42,20 @@ describe('ip services (#192)', () => {
     expect(managerPeer(rows, 'api')).toBeNull();
   });
 });
+
+import { plainApiUsers } from '../ipServices';
+
+describe('plainApiUsers (#201)', () => {
+  it('lists who is connected to the plain API, not to API-SSL or the configured row', () => {
+    const rows: ServiceRow[] = [
+      { '.id': '*1', name: 'api', port: '8728', disabled: 'false' },
+      { '.id': '*2', name: 'api-ssl', port: '8729', disabled: 'false' },
+      { name: 'api-ssl', dynamic: 'true', remote: '192.168.0.76:51000' },
+      { name: 'api', dynamic: 'true', remote: '10.0.0.9:40112' },
+      { name: 'api', dynamic: 'true', remote: '10.0.0.9:40113' },
+      { name: 'api', dynamic: 'true', remote: '[fd00::5]:40114' },
+    ];
+    expect(plainApiUsers(rows)).toEqual(['10.0.0.9', 'fd00::5']);
+    expect(plainApiUsers(rows.slice(0, 3))).toEqual([]);
+  });
+});

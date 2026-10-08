@@ -82,6 +82,7 @@ import { planNtpWrites, isLegacyClient, legacyServerList, type NtpForm } from '.
 import { recordInterfaceCounters } from '../interfaceErrors';
 import { parseRateBps } from '../../utils/wifiRate';
 import { probeUserManager, USER_MANAGER_RECHECK_MS } from '../userManager';
+import { poolSize, usedPerPool } from '../../utils/dhcpPools';
 import { recordOptics } from '../opticLevels';
 
 /** A RouterOS property name: lower-case words joined by '-' or '.', never '.id'. */
@@ -316,6 +317,41 @@ export class DeviceCollector {
       await this.collectCapsman();
     }
     await this.checkUserManager();
+    await this.collectDhcpPools();
+  }
+
+  /**
+   * How full each IPv4 address pool is (#156). Two reads; a device without
+   * pools stores nothing. A failed read keeps what was stored.
+   */
+  private async collectDhcpPools(): Promise<void> {
+    try {
+      const pools = await this.client.execute('/ip/pool/print').catch(() => null);
+      if (pools === null) return;
+      // RouterOS 7 reports total and used on each pool; older releases need
+      // the used-address list, which can run to thousands of rows.
+      const reportsCounts = pools.every((p) => p['total'] !== undefined && p['used'] !== undefined);
+      const used = pools.length && !reportsCounts
+        ? await this.client.execute('/ip/pool/used/print', { '.proplist': 'pool' }).catch(() => null)
+        : [];
+      if (used === null) return;
+      const counts = usedPerPool(used);
+      const names: string[] = [];
+      for (const p of pools) {
+        const name = (p['name'] || '').slice(0, 64);
+        if (!name) continue;
+        names.push(name);
+        await query(
+          `INSERT INTO dhcp_pool_usage (device_id, name, ranges, size, used, updated_at) VALUES ($1,$2,$3,$4,$5,NOW())
+           ON CONFLICT (device_id, name) DO UPDATE SET ranges=$3, size=$4, used=$5, updated_at=NOW()`,
+          [this.device.id, name, p['ranges'] ?? null,
+           reportsCounts ? Number(p['total']) || poolSize(p['ranges']) : poolSize(p['ranges']),
+           reportsCounts ? Number(p['used']) || 0 : counts.get(p['name']) ?? 0]);
+      }
+      await query(`DELETE FROM dhcp_pool_usage WHERE device_id = $1 AND NOT (name = ANY($2::text[]))`, [this.device.id, names]);
+    } catch (err) {
+      console.warn(`[${this.device.name}] DHCP pools not read:`, (err as Error).message);
+    }
   }
 
   /**

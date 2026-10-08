@@ -72,6 +72,15 @@ table is one click away if you want it.
 
 ## Actions
 
+- **Address lists** (#145), on a client's page next to its IP address, or the list icon on its
+  row: the router's firewall address lists, ticked where the client's address is already a
+  member. Tick or untick, or type a new list name, then **Apply**. An address can be in several
+  lists at once.
+    - Entries a firewall rule added (dynamic) are shown but can't be changed here.
+    - Lists a firewall rule matches on are marked *used by rules*. Every change runs through
+      Change Guard, which asks before anything it predicts would lock the manager out.
+    - If the address is a **dynamic** DHCP lease, a warning says so: the lists follow the
+      address, not the device. Make the lease static to keep them together.
 - **Wake-on-LAN** sends a magic packet from the MikroTik nearest the client, not from the
   manager, so it reaches devices the manager cannot route to.
 - **Notes** are free text kept against the MAC.

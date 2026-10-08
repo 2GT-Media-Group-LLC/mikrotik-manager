@@ -14,6 +14,9 @@ import { changedFields } from '../../utils/formDiff';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangelogModal from '../ChangelogModal';
 import CertificateList from '../CertificateList';
+import ListInput from '../common/ListInput';
+import { splitList } from '../../utils/ipPrefix';
+import { isValidIPv4, isValidIPv6 } from '../../utils/deviceAddress';
 
 interface Props {
   deviceId: number;
@@ -423,13 +426,10 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
               </h4>
               <div className="space-y-2">
                 <div>
-                  <label className="label">DNS Servers (comma-separated)</label>
-                  <input
-                    className="input"
-                    value={sysForm.dns_servers}
-                    onChange={(e) => setSysForm((f) => ({ ...f, dns_servers: e.target.value }))}
-                    placeholder="8.8.8.8,8.8.4.4"
-                  />
+                  <label className="label">DNS Servers</label>
+                  <ListInput value={splitList(sysForm.dns_servers)} ariaLabel="DNS servers" placeholder="8.8.8.8"
+                    onChange={(v) => setSysForm((f) => ({ ...f, dns_servers: v.join(',') }))}
+                    validate={(e) => (isValidIPv4(e) || isValidIPv6(e) ? null : `${e} isn\u2019t an IP address`)} />
                 </div>
                 <div className="flex items-center gap-2">
                   <input

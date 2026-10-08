@@ -47,6 +47,13 @@ Each device goes through the same sequence:
 7. **RouterBOOT** (optional) — a second flash and a second reboot. It waits for the device
    to settle after the first reboot and retries its first connection, then proves the second
    reboot the same way as step 5 before reading the bootloader version
+8. **Post-upgrade commands** (optional, #163). **Then run** on the rollout picks a command
+   template from the Templates page; its commands are copied into the rollout when it's
+   created, so editing the template later doesn't change it. They run over SSH under Change
+   Guard, the same way a bulk command does, only on a device that actually upgraded (not one
+   skipped as already up to date), and only once its new version is verified. What they print
+   is kept on the device's line in the rollout. If they fail, the upgrade still counts as done,
+   but halt-on-failure applies: the same commands would likely fail on the next device too
 
 Steps 3 and 5 exist because of a specific failure. `/system/package/update/install`
 bundles download and reboot into one call whose progress cannot be observed, and a

@@ -7,6 +7,9 @@ import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { apiErrorMessage } from '../utils/apiError';
+import ListInput from '../components/common/ListInput';
+import { splitList } from '../utils/ipPrefix';
+import { isValidIPv4, isValidIPv6 } from '../utils/deviceAddress';
 
 type NS = Record<string, string>;
 
@@ -323,9 +326,13 @@ export default function NetworkServicesDNSPage() {
             <div className="p-5 space-y-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1">Upstream DNS Servers</label>
-                <input type="text" className="input w-full max-w-sm" value={serversInput}
-                  onChange={e => { setServersInput(e.target.value); mark(); }} placeholder="8.8.8.8,1.1.1.1" disabled={!canWrite} />
-                <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Comma-separated upstream resolver addresses.</p>
+                {/* One entry at a time rather than a comma-separated box (#207). */}
+                <div className="max-w-sm">
+                  <ListInput value={splitList(serversInput)} onChange={(v) => { setServersInput(v.join(',')); mark(); }}
+                    ariaLabel="Upstream DNS servers" placeholder="8.8.8.8" disabled={!canWrite}
+                    validate={(e) => (isValidIPv4(e) || isValidIPv6(e) ? null : `${e} isn\u2019t an IP address`)} />
+                </div>
+                <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Upstream resolver addresses, in the order they&apos;re tried.</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

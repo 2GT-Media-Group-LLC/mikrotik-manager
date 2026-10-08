@@ -116,6 +116,20 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
     },
   });
 
+  // Turn off plain API once the manager is on API-SSL (#201): checked first for
+  // a working API-SSL login and for anything else still using plain API.
+  const [plainApiNote, setPlainApiNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const plainApiOff = useMutation({
+    mutationFn: (confirm: boolean) => devicesApi.disablePlainApi(deviceId, confirm),
+    onSuccess: (res) => { setPlainApiNote({ ok: true, text: res.data.message }); setLockout(null); invalidate(); },
+    onError: (err: unknown) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) { setLockout({ verdict, retry: () => plainApiOff.mutate(true) }); return; }
+      const r = (err as { response?: { data?: { reason?: string; error?: string } } })?.response?.data;
+      setPlainApiNote({ ok: false, text: r?.reason || r?.error || 'Could not turn plain API off' });
+    },
+  });
+
   // Switch management to API-SSL (outside review P1-4). The result lists what
   // was done on the device, and says plainly if the manager stayed on 8728.
   const [sslResult, setSslResult] = useState<ApiSslResult | null>(null);
@@ -207,6 +221,13 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
               Switching WebFig to HTTPS. Creating a certificate can take up to a minute on small devices…
             </div>
           )}
+          {plainApiNote && (
+            <div className={plainApiNote.ok
+              ? 'p-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 text-sm text-green-700 dark:text-green-400'
+              : 'p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-700 dark:text-amber-400'}>
+              {plainApiNote.text}
+            </div>
+          )}
           {sslError && (
             <div className="p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400">{sslError}</div>
           )}
@@ -268,7 +289,15 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                           {wwwSsl.isPending ? 'Switching…' : 'Switch to HTTPS'}
                         </button>
                       )}
-                      {canWrite && c.serviceId && !c.suppressed && (
+                      {canWrite && c.fix === 'api-off' && !c.suppressed && (
+                        <button onClick={() => { setPlainApiNote(null); plainApiOff.mutate(false); }} disabled={plainApiOff.isPending}
+                          title="Checks the manager can log in over API-SSL and that nothing else uses plain API, then turns it off"
+                          className="btn-primary text-xs py-1 flex items-center gap-1.5">
+                          {plainApiOff.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Lock className="w-3 h-3" />}
+                          {plainApiOff.isPending ? 'Checking…' : 'Turn off plain API'}
+                        </button>
+                      )}
+                      {canWrite && c.serviceId && c.fix !== 'api-off' && !c.suppressed && (
                         <button onClick={() => toggleSvc.mutate({ id: c.serviceId!, disabled: true })} disabled={toggleSvc.isPending}
                           className="btn-secondary text-xs py-1 flex items-center gap-1.5"><Lock className="w-3 h-3" /> Disable</button>
                       )}

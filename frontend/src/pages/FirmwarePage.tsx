@@ -5,7 +5,7 @@ import {
   ArrowUpCircle, RefreshCw, CheckCircle, AlertTriangle, Clock, ShieldAlert, Rocket, Zap, HardDrive,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { firmwareApi } from '../services/api';
+import { firmwareApi, commandTemplatesApi } from '../services/api';
 import UpdateChannelCard from '../components/firmware/UpdateChannelCard';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { formatDistanceToNow } from 'date-fns';
@@ -26,6 +26,13 @@ export default function FirmwarePage() {
   const [haltOnFailure, setHaltOnFailure] = useState(true);
   // Off by default: it is a second flash and a second reboot per device (#113).
   const [routerbootAfter, setRouterbootAfter] = useState(false);
+  // A command template to run on each device after its upgrade (#163).
+  const [postTemplateId, setPostTemplateId] = useState<number | ''>('');
+  const { data: templates = [] } = useQuery({
+    queryKey: ['command-templates'],
+    queryFn: () => commandTemplatesApi.list().then((r) => r.data),
+    staleTime: 60_000,
+  });
   // 1 = sequential, the long-standing behaviour. Raising it trades canary
   // strictness for wall-clock time, which is the operator's call (#135).
   const [waveConcurrency, setWaveConcurrency] = useState(1);
@@ -95,6 +102,7 @@ export default function FirmwarePage() {
       halt_on_failure: haltOnFailure,
       pre_backup: preBackup,
       routerboot_after: routerbootAfter,
+      post_template_id: postTemplateId === '' ? null : postTemplateId,
       wave_concurrency: waveConcurrency,
       package_source: packageSource,
       scheduled_at: scheduleAt ? new Date(scheduleAt).toISOString() : null,
@@ -361,6 +369,17 @@ export default function FirmwarePage() {
               >
                 <input type="checkbox" className="w-4 h-4 rounded" checked={routerbootAfter} onChange={e => setRouterbootAfter(e.target.checked)} />
                 Then RouterBOOT
+              </label>
+              <label
+                className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300"
+                title="Run a command template on each device once its upgrade is verified, over SSH and under Change Guard. Not on devices that didn't upgrade. If it fails, the upgrade stands but halt-on-failure applies."
+              >
+                Then run
+                <select className="input py-1 text-xs w-auto max-w-[14rem]" value={postTemplateId}
+                  onChange={(e) => setPostTemplateId(e.target.value ? Number(e.target.value) : '')}>
+                  <option value="">nothing</option>
+                  {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
               </label>
               <label
                 className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300"

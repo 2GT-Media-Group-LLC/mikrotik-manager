@@ -22,14 +22,10 @@ count and signal distribution for that device alone.
 - **TX-retry histogram**, derived from per-client CCQ. This is only available on the legacy
   `wireless` driver; on an all-RouterOS-7 fleet the panel says so rather than showing an empty
   chart forever.
-- **Connectivity funnel** — association, authentication and DHCP success, derived from device
-  log lines.
-
-!!! warning "The connectivity funnel is approximate"
-    It is regex matching over RouterOS log messages, and it counts a disassociation as an
-    association failure. Clients leave healthy networks constantly, so a low association
-    percentage frequently means nothing at all. The DHCP stage is the most trustworthy of the
-    three. This panel's usefulness is under review (issue #156).
+- **DHCP pool usage**: how full each address pool is (see
+  [DHCP](network-services.md#dhcp)). It replaced the log-derived "WiFi Connectivity Success"
+  funnel, which counted ordinary disconnects as failures (#156). An exhausted pool is the
+  quiet failure worth watching: clients connect and get no address.
 
 ## Signal quality
 

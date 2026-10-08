@@ -18,6 +18,7 @@ import type { ClientDetail } from '../services/api';
 import type { SignalPoint } from '../services/api';
 import clsx from 'clsx';
 import { formatRatePair } from '../utils/wifiRate';
+import ClientAddressLists from '../components/clients/ClientAddressLists';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -306,6 +307,7 @@ function LimitBandwidth({ deviceId, ip, name }: { deviceId: number; ip: string; 
 }
 
 function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrite: boolean }) {
+  const [listsOpen, setListsOpen] = useState(false);
   const qc = useQueryClient();
   const [notes, setNotes] = useState(client.comment || '');
   const [notesChanged, setNotesChanged] = useState(false);
@@ -435,6 +437,15 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
 
         <DetailRow label="IP Address">
           <span className="font-mono">{client.ip_address || '—'}</span>
+          {/* Firewall address lists for this address (#145). */}
+          {canWrite && client.ip_address && (
+            <button type="button" onClick={() => setListsOpen(true)}
+              className="ml-2 text-xs text-blue-600 dark:text-blue-400 hover:underline">Address lists</button>
+          )}
+          {listsOpen && client.ip_address && (
+            <ClientAddressLists address={client.ip_address} defaultDeviceId={client.device_id}
+              clientName={client.custom_name || client.hostname || client.mac_address} onClose={() => setListsOpen(false)} />
+          )}
         </DetailRow>
 
         <DetailRow label="MAC Address">
