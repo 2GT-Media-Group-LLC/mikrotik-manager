@@ -59,6 +59,7 @@ export const NO_FIX_REASON: Record<string, string> = {
   'mgmt-vlan-dynamic-only': 'Making the management VLAN membership static touches the path the manager depends on; set it deliberately.',
   'port-in-no-vlan': 'Which VLAN the port belongs in is a choice only you can make.',
   'duplicate-address': 'Which device keeps the address is a choice only you can make.',
+  'l3-hw-offload-off': 'Offloaded routing bypasses the firewall, so turning it on is a choice to make on the device\u2019s L3 offload card, with the firewall in mind.',
   'device-mode-flagged': 'Device-mode can only be changed at the device itself (a button press or power cycle).',
   'device-mode-no-scheduler': 'Device-mode can only be changed at the device itself (a button press or power cycle).',
   'device-mode-blocks-features': 'Device-mode can only be changed at the device itself (a button press or power cycle).',

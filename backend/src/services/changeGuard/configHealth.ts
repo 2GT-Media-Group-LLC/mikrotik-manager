@@ -670,6 +670,44 @@ function ruleDeviceMode(snap: DeviceSnapshot): ConfigFinding[] {
   return out;
 }
 
+/**
+ * Routing between VLANs on the CPU of a switch that could do it in hardware
+ * (#254). A Marvell 98DX switch chip (CRS3xx, CRS5xx, CCR2116, CCR2216) can
+ * route between VLAN interfaces at wire speed with L3 hardware offloading;
+ * with it off, every routed packet goes through the CPU, a fraction of the
+ * ports' speed. Info rather than a warning: it isn't broken, and turning
+ * offloading on means routed traffic no longer passes the firewall.
+ */
+export function ruleL3HwOffloadOff(snap: DeviceSnapshot): ConfigFinding[] {
+  const chip = (snap.switches ?? []).find((s) => isL3HwChip(s['type']));
+  if (!chip || isTrue(chip['l3-hw-offloading'])) return [];
+  const vlanNames = new Set(snap.vlanInterfaces.filter((v) => !isTrue(v['disabled'])).map((v) => v['name']));
+  const routed = [...new Set(snap.addresses
+    .filter((a) => !isTrue(a['disabled']) && vlanNames.has(a['interface']))
+    .map((a) => a['interface']))].sort();
+  if (routed.length < 2) return [];
+  return [{
+    rule: 'l3-hw-offload-off',
+    // Per chip, not per VLAN set: adding a VLAN shouldn't make it a new finding.
+    fingerprint: `l3-hw-offload-off:${chip['name'] || 'switch1'}`,
+    severity: 'info',
+    title: `Routing between ${routed.length} VLANs runs on the CPU`,
+    detail: `${routed.join(', ')} have addresses, so this device routes between them, and its switch chip ` +
+      `(${chip['type']}) can do that in hardware, but L3 hardware offloading is off. Every routed packet ` +
+      `goes through the CPU, at a fraction of the ports' speed.`,
+    remediation: 'Turn on L3 hardware offloading from the device\u2019s L3 offload card (VLANs tab). Routed traffic then ' +
+      'bypasses the CPU, so firewall filter and NAT rules no longer apply to it: check that nothing relies on them first. ' +
+      'Only VLAN interfaces on a hardware-offloaded bridge with VLAN filtering are routed in hardware.',
+    objects: [chip['name'] || 'switch1', ...routed],
+    docUrl: 'https://help.mikrotik.com/docs/spaces/ROS/pages/62390319/L3+Hardware+Offloading',
+  }];
+}
+
+/** A switch chip that supports L3 hardware offloading: Marvell Prestera 98DX. */
+export function isL3HwChip(type: string | undefined): boolean {
+  return /^Marvell-98DX/i.test(type || '');
+}
+
 export function auditConfig(snap: DeviceSnapshot, device: GuardDevice): ConfigFinding[] {
   const findings = [
     ...ruleIpOnBridgePort(snap),
@@ -687,6 +725,7 @@ export function auditConfig(snap: DeviceSnapshot, device: GuardDevice): ConfigFi
     ...ruleStpDisabled(snap),
     ...ruleStpLegacyMode(snap),
     ...ruleDeviceMode(snap),
+    ...ruleL3HwOffloadOff(snap),
   ];
   return findings.sort(
     (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.rule.localeCompare(b.rule)

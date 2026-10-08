@@ -319,6 +319,7 @@ device-mode can only be changed at the device. Their advice is unchanged.
 | Multi-VLAN bridge entry with untagged ports | Ambiguous; RouterOS warns and applies it anyway |
 | PVID next to `frame-type=admit-only-vlan-tagged` | The PVID is stored but never applied |
 | Several bridges competing for hardware offload | One silently falls back to CPU forwarding |
+| Routing between VLANs on the CPU of a switch chip that can do it in hardware | Inter-VLAN traffic runs at a fraction of the ports' speed; see [Routing between VLANs in hardware](devices.md#routing-between-vlans-in-hardware) |
 | MTU above L2MTU | Large frames dropped without error |
 | Duplicate address on two interfaces | Only one can answer; which is not stated by the config |
 | Ingress port would reject the frames management arrives in | `admit-only-vlan-tagged` on a port carrying untagged management drops it at ingress, while every VLAN row still lists the port |

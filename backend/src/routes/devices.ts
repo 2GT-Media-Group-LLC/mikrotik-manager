@@ -55,6 +55,7 @@ import { presetCaller } from '../utils/presetAccess';
 import { parseAllowedList, configuredServices, allowedFromKey, managerPeer, addressAllowed, plainApiUsers } from '../utils/ipServices';
 import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
 import { clientAddressListView } from '../utils/addressLists';
+import { l3hwView } from '../utils/l3hw';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
 const router = Router();
@@ -1332,6 +1333,76 @@ router.post('/:id/config-health/scan', requireWrite, async (req: Request, res: R
 
 router.get('/:id/address-lists', async (req, res) => {
   await withCollector(req.params.id, res, (c) => c.getAddressLists());
+});
+
+// GET /api/devices/:id/l3hw — L3 hardware offloading on the switch chip
+// (#254), read live: whether it's supported and on, the VLANs routed, and the
+// firewall and NAT rules that would stop applying to routed traffic.
+router.get('/:id/l3hw', async (req, res) => {
+  await withCollector(req.params.id, res, async (c) => {
+    const run = c.commandRunner();
+    const none = () => [] as Record<string, string>[];
+    const [switches, ports, settings, vlans, addresses, filter, nat, bridges] = await Promise.all([
+      run.execute('/interface/ethernet/switch/print').catch(none),
+      run.execute('/interface/ethernet/switch/port/print').catch(none),
+      run.execute('/interface/ethernet/switch/l3hw-settings/print').catch(none),
+      run.execute('/interface/vlan/print').catch(none),
+      run.execute('/ip/address/print').catch(none),
+      run.execute('/ip/firewall/filter/print').catch(none),
+      run.execute('/ip/firewall/nat/print').catch(none),
+      run.execute('/interface/bridge/print').catch(none),
+    ]);
+    const chipOn = switches.some((s) => s['l3-hw-offloading'] === 'true');
+    const monitor = chipOn
+      ? (await run.execute('/interface/ethernet/switch/l3hw-settings/monitor', { once: '' }).catch(none))[0]
+      : undefined;
+    return l3hwView(switches, ports, settings[0], monitor, vlans, addresses, filter, nat, bridges);
+  });
+});
+
+// PUT /api/devices/:id/l3hw { enabled, acknowledge_firewall? } — turn L3
+// hardware offloading on or off (#254), under Change Guard: the switch chip
+// reprograms its tables, which can interrupt forwarding briefly. Turning it on
+// while forward-chain or NAT rules exist needs acknowledge_firewall, because
+// offloaded traffic no longer passes them.
+router.put('/:id/l3hw', requireWrite, async (req: Request, res: Response) => {
+  const enabled = req.body?.enabled;
+  if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) is required' });
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  let switchId: string;
+  const collector = new DeviceCollector(deviceRow);
+  try {
+    await collector.connect();
+    const run = collector.commandRunner();
+    const none = () => [] as Record<string, string>[];
+    const [switches, filter, nat] = await Promise.all([
+      run.execute('/interface/ethernet/switch/print').catch(none),
+      run.execute('/ip/firewall/filter/print').catch(none),
+      run.execute('/ip/firewall/nat/print').catch(none),
+    ]);
+    const view = l3hwView(switches, [], undefined, undefined, [], [], filter, nat);
+    if (!view.supported || !view.switch) return res.status(400).json({ error: 'This device has no switch chip that supports L3 hardware offloading' });
+    if (view.enabled === enabled) return res.json({ message: `L3 hardware offloading is already ${enabled ? 'on' : 'off'}`, already: true });
+    if (enabled && (view.forwardRules > 0 || view.natRules > 0) && req.body?.acknowledge_firewall !== true) {
+      return res.status(409).json({
+        needs_acknowledgement: true, forward_rules: view.forwardRules, nat_rules: view.natRules,
+        error: `${view.forwardRules} forward-chain firewall rule${view.forwardRules === 1 ? '' : 's'} and ${view.natRules} NAT rule${view.natRules === 1 ? '' : 's'} ` +
+          `would no longer apply to routed traffic once it's offloaded. Confirm you don't rely on them for traffic between these VLANs.`,
+      });
+    }
+    switchId = view.switch.id;
+  } catch (err) {
+    return res.status(502).json({ error: (err as Error).message });
+  } finally {
+    collector.disconnect();
+  }
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'l3hw.toggle', summary: `${enabled ? 'Turn on' : 'Turn off'} L3 hardware offloading` },
+    async (c) => {
+      await c.commandRunner().execute('/interface/ethernet/switch/set', { '.id': switchId, 'l3-hw-offloading': enabled ? 'yes' : 'no' });
+      return { message: `L3 hardware offloading is ${enabled ? 'on' : 'off'}` };
+    });
 });
 
 // GET /api/devices/:id/address-lists/client?address=IP — one client's view

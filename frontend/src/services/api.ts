@@ -714,6 +714,10 @@ export const devicesApi = {
     api.post<Record<string, string>[]>(`/devices/${id}/nat/move`, { id: ruleId, destination }),
   // Firewall address lists (reusable address objects)
   getAddressLists: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/address-lists`),
+  /** L3 hardware offloading on the switch chip (#254). */
+  getL3Hw: (id: number) => api.get<L3HwView>(`/devices/${id}/l3hw`),
+  setL3Hw: (id: number, enabled: boolean, acknowledgeFirewall = false) =>
+    api.put<{ message: string; already?: boolean }>(`/devices/${id}/l3hw`, { enabled, ...(acknowledgeFirewall ? { acknowledge_firewall: true } : {}) }, { timeout: 120_000 }),
   /** One client's view of this router's address lists (#145). */
   clientAddressLists: (id: number, address: string) =>
     api.get<ClientAddressListView>(`/devices/${id}/address-lists/client`, { params: { address } }),
@@ -2245,4 +2249,22 @@ export interface ClientAddressListView {
   /** Lists a firewall rule matches on. */
   referenced: string[];
   lease: { static: boolean; host: string | null } | null;
+}
+
+/** L3 hardware offloading on a device's switch chip (#254). */
+export interface L3HwView {
+  supported: boolean;
+  switch: { id: string; name: string; type: string } | null;
+  enabled: boolean;
+  portsOff: string[];
+  ipv6: boolean;
+  fasttrackHw: boolean | null;
+  routesHw: number | null;
+  routesCpu: number | null;
+  hostsHw: number | null;
+  routedVlans: string[];
+  forwardRules: number;
+  natRules: number;
+  /** Routed VLANs on a bridge without VLAN filtering: their routes stay on the CPU. */
+  notOffloadable: { vlan: string; bridge: string }[];
 }

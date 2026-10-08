@@ -7,6 +7,7 @@ import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import CopyVlanModal from './CopyVlanModal';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
+import L3HwCard from './L3HwCard';
 
 interface PortForm {
   tagged_ports: string;
@@ -151,6 +152,9 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
 
   return (
     <div className="space-y-4">
+      {/* Routing between VLANs in hardware or on the CPU (#254) */}
+      <L3HwCard deviceId={deviceId} />
+
       {/* VLAN Filtering warning */}
       {bridgesWithoutFiltering.length > 0 && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">

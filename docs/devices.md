@@ -303,6 +303,30 @@ entry on the VLANs tab to remove them.
     out of itself. Every VLAN change runs through [Change Guard](change-guard.md), which
     predicts lockout before applying and lets the device restore itself if contact is lost.
 
+## Routing between VLANs in hardware
+
+On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),
+the **VLANs** tab has an **L3 hardware offloading** card (#254). It shows:
+
+- whether offloading is on, and the switch chip;
+- which VLAN interfaces have addresses, so which VLANs the device routes between;
+- while it's on, how many hosts and routes the chip handles, and how many entries go to the CPU
+  (that count always includes the device's own addresses);
+- routed VLANs whose bridge doesn't have VLAN filtering on: only VLAN interfaces on a
+  hardware-offloaded, VLAN-filtering bridge are routed in hardware;
+- how many forward-chain firewall rules and NAT rules the device has.
+
+**Turn on** / **Turn off** sets `/interface/ethernet/switch l3-hw-offloading` under Change Guard,
+since the chip reprograms its tables and forwarding can stop briefly. Offloaded traffic
+bypasses the CPU, so **firewall filter and NAT rules no longer apply to traffic routed between
+the VLANs**. When the device has forward-chain or NAT rules, turning offloading on asks you to
+confirm that nothing relies on them for that traffic. FastTracked connections can still be
+offloaded on chips that support it.
+
+When a supported device routes between two or more VLANs with offloading off, Config Health
+reports *Routing between VLANs runs on the CPU*. There's no one-click fix: whether to trade the
+firewall for speed is your call.
+
 ## Tools
 
 All of these run **on the device**, not from the manager, so they see the network from where

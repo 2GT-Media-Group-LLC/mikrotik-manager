@@ -61,6 +61,8 @@ export interface DeviceSnapshot {
   managerLocalPort?: number | null;
   /** /system/device-mode; absent where unreadable (RouterOS 6, older 7) (#230). */
   deviceMode?: RosRow | null;
+  /** /interface/ethernet/switch: the switch chip(s) and their L3 offload setting (#254). */
+  switches?: RosRow[];
 }
 
 export type HopKind = 'address' | 'vlan-interface' | 'bridge' | 'bond' | 'port';
@@ -149,7 +151,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
     const [
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
       bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
-      interfaceLists, interfaceListMembers, deviceModeRows,
+      interfaceLists, interfaceListMembers, deviceModeRows, switches,
     ] = await Promise.all([
       run('/ip/address/print', { detail: '' }),
       run('/interface/print', { detail: '' }),
@@ -167,6 +169,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       run('/interface/list/print'),
       run('/interface/list/member/print'),
       optional('/system/device-mode/print'),
+      optional('/interface/ethernet/switch/print'),
     ]);
 
     // Only the lists the filter names, each on its own and time-boxed: a
@@ -193,6 +196,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       addressLists, addressListsRead, interfaceLists, interfaceListMembers,
       managerLocalPort: client.localPort,
       deviceMode: deviceModeRows[0] ?? null,
+      switches,
     };
   } finally {
     client.disconnect();
