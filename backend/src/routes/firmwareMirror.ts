@@ -11,11 +11,13 @@ import { query, queryOne } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { presetCaller, type PresetCaller } from '../utils/presetAccess';
 import {
-  getMirror, deployMirror, syncMirror, setClients, removeMirror, scopeDevices, latestVersion, type MirrorRow,
+  getMirror, deployMirror, syncMirror, setClients, removeMirror, scopeDevices, latestVersion, serverDisks, moveMirror, type MirrorRow,
 } from '../services/firmwareMirror';
 import {
   planFiles, isMirrorFolder, isMirrorVersion, clampKeepVersions, supportsLocalUpdate, DEFAULT_MIRROR_FOLDER,
+  isDiskName, mirrorPath, suggestDisk,
 } from '../utils/firmwareMirror';
+import type { DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { normalizeDeviceAddress } from '../utils/deviceAddress';
 import { logSafe } from '../utils/logSafe';
 
@@ -63,6 +65,8 @@ async function describe(m: MirrorRow, c: PresetCaller) {
     server: server ? { id: server.id, name: server.name.trim(), ip_address: server.ip_address, ros_version: server.ros_version } : null,
     site,
     folder: m.folder,
+    disk: m.disk,
+    path: mirrorPath(m.folder, m.disk),
     serve_address: m.serve_address,
     effective_address: (m.serve_address || server?.ip_address || '').trim(),
     username: m.username,
@@ -115,6 +119,22 @@ router.get('/:id/devices', async (req: Request, res: Response) => {
   }));
 });
 
+// GET /api/firmware/mirrors/disks?device_id= — where a mirror on this device
+// could keep its packages (Discussion #85), with the suggested one.
+router.get('/disks', async (req: Request, res: Response) => {
+  const c = caller(req);
+  const device = await queryOne<DeviceRow & { site_id: number | null }>(`SELECT * FROM devices WHERE id = $1`, [Number(req.query.device_id)]);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const allowed = c.fleetAdmin || (device.site_id != null && c.adminSites.includes(device.site_id));
+  if (!allowed) return res.status(403).json({ error: 'You can only use devices in sites you administer' });
+  try {
+    const disks = await serverDisks(device);
+    res.json({ disks, suggested: suggestDisk(disks) });
+  } catch (e) {
+    res.status(502).json({ error: `Couldn’t read ${device.name.trim()}’s disks: ${(e as Error).message}` });
+  }
+});
+
 // GET /api/firmware/mirrors/:id/plan?version= — what a sync would fetch
 router.get('/:id/plan', async (req: Request, res: Response) => {
   const m = await loadVisible(req, res, false);
@@ -132,7 +152,7 @@ router.get('/:id/plan', async (req: Request, res: Response) => {
 // POST /api/firmware/mirrors — choose a package server and set it up
 router.post('/', async (req: Request, res: Response) => {
   const c = caller(req);
-  const body = req.body as { device_id?: number; site_id?: number | null; folder?: string; serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string };
+  const body = req.body as { device_id?: number; site_id?: number | null; folder?: string; disk?: string | null; serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string };
   const siteId = body.site_id == null ? null : Number(body.site_id);
   if (siteId != null && !Number.isInteger(siteId)) return res.status(400).json({ error: 'site_id must be a site id or null' });
   if (!canManage(c, siteId)) return res.status(403).json({ error: siteId == null ? 'Only fleet administrators set up the fleet mirror' : 'Only this site’s administrators set up its mirror' });
@@ -146,14 +166,22 @@ router.post('/', async (req: Request, res: Response) => {
   if (!isMirrorFolder(folder)) return res.status(400).json({ error: 'The folder name can use letters, digits, - and _ only' });
   const serve = await parseServeAddress(body.serve_address);
   if (serve.error) return res.status(400).json({ error: serve.error });
+  const disk = body.disk ? String(body.disk).trim() : null;
+  if (disk) {
+    if (!isDiskName(disk)) return res.status(400).json({ error: 'That isn’t a disk name' });
+    const full = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [server.id]);
+    const disks = await serverDisks(full!).catch(() => null);
+    if (!disks) return res.status(502).json({ error: `Couldn’t read ${server.name.trim()}’s disks` });
+    if (!disks.some((d) => d.mount_point === disk)) return res.status(400).json({ error: `${server.name.trim()} has no writable disk ${disk}` });
+  }
   const channel = CHANNELS.has(body.channel || '') ? body.channel! : 'stable';
   const exists = await queryOne(`SELECT 1 FROM firmware_mirrors WHERE COALESCE(site_id, 0) = COALESCE($1::int, 0)`, [siteId]);
   if (exists) return res.status(409).json({ error: siteId == null ? 'The fleet already has a mirror' : 'This site already has a mirror' });
 
   const row = await queryOne<{ id: number }>(
-    `INSERT INTO firmware_mirrors (device_id, site_id, folder, serve_address, keep_versions, auto_sync, channel)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [server.id, siteId, folder, serve.value, clampKeepVersions(body.keep_versions ?? 3), body.auto_sync !== false, channel]);
+    `INSERT INTO firmware_mirrors (device_id, site_id, folder, disk, serve_address, keep_versions, auto_sync, channel)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+    [server.id, siteId, folder, disk, serve.value, clampKeepVersions(body.keep_versions ?? 3), body.auto_sync !== false, channel]);
   try {
     await deployMirror(row!.id);
   } catch (e) {
@@ -174,7 +202,17 @@ async function parseServeAddress(raw: unknown): Promise<{ value: string | null; 
 router.put('/:id', async (req: Request, res: Response) => {
   const m = await loadVisible(req, res, true);
   if (!m) return;
-  const body = req.body as { serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string };
+  const body = req.body as { serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string; disk?: string | null };
+  // Another disk: the old packages go and the next sync stocks the new one.
+  if (body.disk !== undefined) {
+    const disk = body.disk ? String(body.disk).trim() : null;
+    if (disk && !isDiskName(disk)) return res.status(400).json({ error: 'That isn’t a disk name' });
+    try {
+      await moveMirror(m.id, disk);
+    } catch (e) {
+      return res.status(400).json({ error: (e as Error).message });
+    }
+  }
   const sets: string[] = [];
   const vals: unknown[] = [m.id];
   if (body.keep_versions !== undefined) { vals.push(clampKeepVersions(body.keep_versions)); sets.push(`keep_versions = $${vals.length}`); }

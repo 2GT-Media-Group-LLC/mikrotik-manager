@@ -29,7 +29,8 @@ import { sshHostCheck, explainSshError } from './sshHostCheck';
 import { logSafe } from '../utils/logSafe';
 import {
   planFiles, versionsToPrune, parseNewest, parseSha256File, supportsLocalUpdate,
-  isMirrorVersion, newestCompleteFrom, MIRROR_GROUP, MIRROR_GROUP_POLICY, type FleetDevice, type NeededFile,
+  isMirrorVersion, newestCompleteFrom, MIRROR_GROUP, MIRROR_GROUP_POLICY, mirrorPath, mirrorDisks,
+  type FleetDevice, type NeededFile, type MirrorDisk,
 } from '../utils/firmwareMirror';
 
 const CACHE_ROOT = path.join(process.env.SECRETS_DIR || '/app/data', 'firmware-cache');
@@ -44,6 +45,8 @@ export interface MirrorRow {
   device_id: number;
   site_id: number | null;
   folder: string;
+  /** Mount point of the disk the packages are on; null: internal storage. */
+  disk: string | null;
   serve_address: string | null;
   username: string;
   password_encrypted: string | null;
@@ -291,6 +294,54 @@ async function setStatus(id: number, status: string, error: string | null): Prom
  * Prepare the package server: a login for the devices to use, in a group of
  * its own, with a password only the manager knows. Run again to rotate it.
  */
+/**
+ * Free and total space where the packages go: the chosen disk, or internal
+ * storage. A disk that has gone (card pulled, stick unplugged) is an error
+ * rather than a quiet fallback that would fill internal flash.
+ */
+async function storageSpace(c: DeviceCollector, mirror: MirrorRow, server: DeviceRow): Promise<{ free: number; total: number }> {
+  const [disks, res] = await Promise.all([mirror.disk ? c.getDisks() : Promise.resolve([]), c.getSystemResource()]);
+  const target = mirrorDisks(disks, res).find((d) => d.mount_point === (mirror.disk || null));
+  if (!target) throw new Error(`${server.name.trim()} has no disk ${mirror.disk} any more (removed, or not mounted); choose another in the mirror's settings`);
+  return { free: target.free_bytes, total: target.size_bytes };
+}
+
+/** Delete a mirror folder and everything in it. */
+async function removeMirrorFiles(c: DeviceCollector, folderPath: string): Promise<void> {
+  for (const f of await c.getFilesUnder(`${folderPath}/`)) if (f['.id']) await c.removeFileById(f['.id']);
+  const folder = (await c.getFilesUnder(folderPath)).find((f) => f['name'] === folderPath);
+  if (folder?.['.id']) await c.removeFileById(folder['.id']);
+}
+
+/** The disks a device could keep a mirror on, internal storage first. */
+export async function serverDisks(device: DeviceRow): Promise<MirrorDisk[]> {
+  return withCollector(device, async (c) => {
+    const [disks, res] = await Promise.all([c.getDisks(), c.getSystemResource()]);
+    return mirrorDisks(disks, res);
+  });
+}
+
+/**
+ * Move a mirror to another disk: the packages on the old one are deleted and
+ * the records cleared, so the next sync (automatic, or Sync now) stocks the new
+ * one. Devices keep the same address and login.
+ */
+export async function moveMirror(id: number, disk: string | null): Promise<void> {
+  const mirror = await getMirror(id);
+  if (!mirror) throw new Error('Mirror not found');
+  if ((mirror.disk || null) === (disk || null)) return;
+  const server = await serverDevice(mirror);
+  await withCollector(server, async (c) => {
+    if (disk) {
+      const found = mirrorDisks(await c.getDisks(), await c.getSystemResource()).find((d) => d.mount_point === disk);
+      if (!found) throw new Error(`${server.name.trim()} has no writable disk ${disk}`);
+    }
+    await removeMirrorFiles(c, mirrorPath(mirror.folder, mirror.disk)).catch(() => { /* old disk may be gone */ });
+  });
+  await query(`DELETE FROM firmware_mirror_files WHERE mirror_id = $1`, [id]);
+  await query(`UPDATE firmware_mirrors SET disk = $2, status = 'deployed', last_error = NULL WHERE id = $1`, [id, disk || null]);
+}
+
 export async function deployMirror(id: number): Promise<{ user: 'created' | 'updated' }> {
   const mirror = await getMirror(id);
   if (!mirror) throw new Error('Mirror not found');
@@ -333,13 +384,12 @@ export async function syncMirror(id: number, requested?: string): Promise<SyncRe
     for (const f of plan.files) cached.set(f.filename, { ...(await ensureCached(version, f.filename)), file: f });
 
     const server = await serverDevice(mirror);
-    const prefix = `${mirror.folder}/`;
+    const prefix = `${mirrorPath(mirror.folder, mirror.disk)}/`;
     const result: SyncResult = { version, uploaded: [], alreadyThere: [], pruned: [], skippedDevices: plan.skipped };
 
     const onServer = await withCollector(server, async (c) => {
       const files = await c.getFilesUnder(prefix);
-      const res = await c.getSystemResource();
-      return { files, free: Number(res['free-hdd-space'] || 0), total: Number(res['total-hdd-space'] || 0) };
+      return { files, ...(await storageSpace(c, mirror, server)) };
     });
     const present = new Map(onServer.files.map((f) => [f['name'].slice(prefix.length), Number(f['size'] || 0)]));
     const missing = [...cached.values()].filter((c) => present.get(c.file.filename) !== c.size);
@@ -363,8 +413,7 @@ export async function syncMirror(id: number, requested?: string): Promise<SyncRe
     // Confirm by size what is actually on the server now, and record it.
     const after = await withCollector(server, async (c) => {
       const files = await c.getFilesUnder(prefix);
-      const res = await c.getSystemResource();
-      return { files, free: Number(res['free-hdd-space'] || 0), total: Number(res['total-hdd-space'] || 0) };
+      return { files, ...(await storageSpace(c, mirror, server)) };
     });
     const sizes = new Map(after.files.map((f) => [f['name'].slice(prefix.length), Number(f['size'] || 0)]));
     for (const c of cached.values()) {
@@ -379,10 +428,10 @@ export async function syncMirror(id: number, requested?: string): Promise<SyncRe
     }
 
     result.pruned = await prune(mirror, server);
-    const final = await withCollector(server, (c) => c.getSystemResource()).catch(() => null);
+    const final = await withCollector(server, (c) => storageSpace(c, mirror, server)).catch(() => null);
     await query(
       `UPDATE firmware_mirrors SET status = 'ready', last_error = NULL, last_sync_at = NOW(), free_bytes = $2, total_bytes = $3 WHERE id = $1`,
-      [id, final ? Number(final['free-hdd-space'] || 0) : after.free, final ? Number(final['total-hdd-space'] || 0) : after.total]);
+      [id, final ? final.free : after.free, final ? final.total : after.total]);
     console.log(`[Mirror] #${id} synced ${logSafe(version)}: ${result.uploaded.length} uploaded, ${result.alreadyThere.length} already there, ${result.pruned.length} pruned`);
     return result;
   } catch (e) {
@@ -399,7 +448,7 @@ async function prune(mirror: MirrorRow, server: DeviceRow): Promise<string[]> {
     `SELECT DISTINCT version FROM firmware_mirror_files WHERE mirror_id = $1`, [mirror.id])).map((r) => r.version);
   const drop = versionsToPrune(versions, mirror.keep_versions);
   if (drop.length === 0) return [];
-  const prefix = `${mirror.folder}/`;
+  const prefix = `${mirrorPath(mirror.folder, mirror.disk)}/`;
   await withCollector(server, async (c) => {
     const files = await c.getFilesUnder(prefix);
     for (const f of files) {
@@ -492,9 +541,7 @@ export async function removeMirror(id: number): Promise<{ notes: string[] }> {
   try {
     const server = await serverDevice(mirror);
     await withCollector(server, async (c) => {
-      for (const f of await c.getFilesUnder(`${mirror.folder}/`)) if (f['.id']) await c.removeFileById(f['.id']);
-      const folder = (await c.getFilesUnder(mirror.folder)).find((f) => f['name'] === mirror.folder);
-      if (folder?.['.id']) await c.removeFileById(folder['.id']);
+      await removeMirrorFiles(c, mirrorPath(mirror.folder, mirror.disk));
       await c.removeUserByName(mirror.username);
       await c.removeUserGroup(MIRROR_GROUP);
     });

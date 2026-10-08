@@ -131,3 +131,50 @@ describe('newestCompleteFrom', () => {
   });
 });
 
+
+// ── Disks (Discussion #85) ─────────────────────────────────────────────────
+
+import { mirrorPath, mirrorDisks, suggestDisk, isDiskName } from '../firmwareMirror';
+
+describe('mirror disks', () => {
+  // A 64 MB RAM disk on a CRS309 (7.24.5), as /disk/print detail returns it.
+  const tmpfs = { '.id': '*1', type: 'tmpfs', slot: 'mtmtest', fs: 'tmpfs', model: 'tmpfs', size: '64000000', free: '64000000',
+    'mount-point': 'mtmtest', 'mount-filesystem': 'true', 'mount-read-only': 'false', interface: 'ram', mounted: 'true', disabled: 'false' };
+  const sd = { '.id': '*2', type: 'hardware', slot: 'sd1', fs: 'ext4', model: 'SD card', size: '7948206080', free: '7700000000',
+    'mount-point': 'sd1', 'mount-filesystem': 'true', 'mount-read-only': 'false', interface: 'sd', mounted: 'true', disabled: 'false' };
+  const resource = { 'free-hdd-space': '2981888', 'total-hdd-space': '16777216' };
+
+  it('puts the folder under the disk', () => {
+    expect(mirrorPath('mtm-packages', null)).toBe('mtm-packages');
+    expect(mirrorPath('mtm-packages', 'sd1')).toBe('sd1/mtm-packages');
+  });
+
+  it('lists internal storage first, then usable disks, marking RAM disks', () => {
+    const disks = mirrorDisks([tmpfs, sd], resource);
+    expect(disks.map((d) => [d.mount_point, d.free_bytes, d.ram])).toEqual([
+      [null, 2981888, false], ['mtmtest', 64000000, true], ['sd1', 7700000000, false],
+    ]);
+    expect(disks[1].label).toBe('mtmtest (RAM disk)');
+    expect(disks[2].label).toBe('sd1 (SD card, sd)');
+  });
+
+  it('leaves out read-only, unmounted, disabled and oddly named disks', () => {
+    const bad = [
+      { ...sd, 'mount-read-only': 'true' }, { ...sd, mounted: 'false' }, { ...sd, disabled: 'true' },
+      { ...sd, 'mount-point': '' }, { ...sd, 'mount-point': '../etc' },
+    ];
+    expect(mirrorDisks(bad, resource)).toHaveLength(1);
+  });
+
+  it('suggests the most free space, never a RAM disk', () => {
+    expect(suggestDisk(mirrorDisks([tmpfs, sd], resource))).toBe('sd1');
+    expect(suggestDisk(mirrorDisks([tmpfs], resource))).toBeNull(); // internal, not the bigger RAM disk
+  });
+
+  it('accepts only plain disk names', () => {
+    expect(isDiskName('sd1')).toBe(true);
+    expect(isDiskName('usb1-part1')).toBe(true);
+    expect(isDiskName('sd1/x')).toBe(false);
+    expect(isDiskName('')).toBe(false);
+  });
+});

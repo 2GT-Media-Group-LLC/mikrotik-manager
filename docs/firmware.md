@@ -82,9 +82,11 @@ Open it from **Firmware → Package mirror**.
    room for every architecture and package your devices run, roughly 10–25 MB per package
    file per version, so a CHR or a router with real storage is best. A 128 MB router can't
    hold one version for a mixed fleet.
-2. **Address devices reach it on.** Leave it blank to use the address the manager uses. Set
+2. **Store packages on.** Internal storage, or a disk the server has mounted: a microSD
+   card, USB stick or NVMe drive. See [Keeping packages on a disk](#keeping-packages-on-a-disk).
+3. **Address devices reach it on.** Leave it blank to use the address the manager uses. Set
    it when devices reach the server some other way (NAT, a VPN, another interface).
-3. **Versions kept** (1–5, default 3), the **release channel** (stable or long-term), and
+4. **Versions kept** (1–5, default 3), the **release channel** (stable or long-term), and
    whether new releases are fetched automatically.
 
 Setting it up creates a login named `mtm-mirror` on the server, with a password only the
@@ -123,6 +125,22 @@ Nothing on the server changes unless every file has been fetched and verified fi
 server is short of space the sync stops and says how much is needed.
 
 Removing the mirror takes the packages, the login and its group off the server again.
+
+### Keeping packages on a disk
+
+Many routers have only 16 MB of internal storage, too little for even one version, but take
+a microSD card or USB stick. When you choose the package server, its disks are listed with
+their free space, and the one with the most room is chosen for you. The packages then go in
+`<disk>/<folder>`, for example `sd1/mtm-packages`, and the free-space check before each sync
+looks at that disk.
+
+- **RAM disks** (`/disk add type=tmpfs`) are listed but never chosen for you: they're
+  emptied on every reboot, so the mirror would need a sync after each one.
+- **Changing the disk later**, in the mirror's settings, removes the packages from the old
+  one; the next sync, automatic or **Sync now**, puts them on the new one. Devices keep the
+  same address and login.
+- **A disk that disappears** (card pulled, stick unplugged) stops the sync with a message
+  naming it, rather than filling internal storage instead.
 
 ### Switching devices to the mirror
 

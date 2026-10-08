@@ -1078,6 +1078,10 @@ export interface FirmwareMirror {
   server: { id: number; name: string; ip_address: string; ros_version: string | null } | null;
   site: { id: number; name: string } | null;
   folder: string;
+  /** Mount point of the disk holding the packages; null: internal storage. */
+  disk: string | null;
+  /** Where the packages are: `mtm-packages` or `sd1/mtm-packages`. */
+  path: string;
   serve_address: string | null;
   effective_address: string;
   username: string;
@@ -1100,6 +1104,8 @@ export interface MirrorDevice {
   client: { mirror_id: number; this_mirror: boolean; status: string; error: string | null } | null;
 }
 export interface MirrorClientResult { device_id: number; name: string; ok: boolean; message: string }
+/** A place a mirror can keep packages (Discussion #85). */
+export interface MirrorDisk { mount_point: string | null; label: string; free_bytes: number; size_bytes: number; ram: boolean }
 
 export const mirrorApi = {
   list: () => api.get<{ mirrors: FirmwareMirror[]; can_create_fleet: boolean; admin_sites: number[] | null }>('/firmware/mirrors'),
@@ -1107,9 +1113,11 @@ export const mirrorApi = {
   plan: (id: number, version?: string) =>
     api.get<{ version: string; files: { package: string; architecture: string; filename: string }[]; skipped: { id: number; name: string; reason: string }[] }>(
       `/firmware/mirrors/${id}/plan`, { params: version ? { version } : {}, timeout: 30_000 }),
-  create: (data: { device_id: number; site_id: number | null; folder?: string; serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string }) =>
+  disks: (deviceId: number) =>
+    api.get<{ disks: MirrorDisk[]; suggested: string | null }>('/firmware/mirrors/disks', { params: { device_id: deviceId }, timeout: 30_000 }),
+  create: (data: { device_id: number; site_id: number | null; folder?: string; disk?: string | null; serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string }) =>
     api.post<FirmwareMirror>('/firmware/mirrors', data, { timeout: 60_000 }),
-  update: (id: number, data: { serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string }) =>
+  update: (id: number, data: { serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string; disk?: string | null }) =>
     api.put<{ mirror: FirmwareMirror; clients: MirrorClientResult[] | null }>(`/firmware/mirrors/${id}`, data, { timeout: 180_000 }),
   deploy: (id: number) =>
     api.post<{ user: string; clients: MirrorClientResult[]; mirror: FirmwareMirror }>(`/firmware/mirrors/${id}/deploy`, undefined, { timeout: 180_000 }),

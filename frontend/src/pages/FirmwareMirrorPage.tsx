@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, HardDrive, RefreshCw, Trash2, Server, AlertTriangle, CheckCircle, Settings2, Plus } from 'lucide-react';
@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import { formatDistanceToNow } from 'date-fns';
 import {
   mirrorApi, devicesApi, sitesApi,
-  type FirmwareMirror, type MirrorDevice, type MirrorClientResult,
+  type FirmwareMirror, type MirrorDevice, type MirrorClientResult, type MirrorDisk,
 } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
@@ -26,6 +26,52 @@ function mb(bytes: number | null | undefined): string {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
   return `${Math.round(bytes / 1048576)} MB`;
 }
+/**
+ * Where on the package server the packages go (Discussion #85): internal
+ * storage or a mounted disk such as an SD card. `value` undefined means "not
+ * chosen yet", and the suggestion (most free space, never a RAM disk) is taken.
+ */
+function DiskPicker({ deviceId, value, onChange }: {
+  deviceId: number; value: string | null | undefined; onChange: (disk: string | null) => void;
+}) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['fw-mirror-disks', deviceId],
+    queryFn: () => mirrorApi.disks(deviceId).then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const disks: MirrorDisk[] = data?.disks ?? [];
+  const current = value === undefined ? data?.suggested ?? null : value;
+  useEffect(() => {
+    if (value === undefined && data) onChange(data.suggested ?? null);
+  }, [value, data, onChange]);
+  const chosen = disks.find((d) => d.mount_point === current);
+  return (
+    <label className="space-y-1">
+      <span className="text-xs text-gray-500 dark:text-slate-400">Store packages on</span>
+      <select className="input w-full" value={current ?? ''} disabled={isLoading || isError}
+        onChange={(e) => onChange(e.target.value || null)}>
+        {isLoading && <option value="">Reading disks…</option>}
+        {isError && <option value="">Internal storage (couldn’t read its disks)</option>}
+        {disks.map((d) => (
+          <option key={d.mount_point ?? ''} value={d.mount_point ?? ''}>
+            {d.label}: {mb(d.free_bytes)} free of {mb(d.size_bytes)}{d.ram ? ' (emptied on every reboot)' : ''}
+          </option>
+        ))}
+      </select>
+      {chosen?.ram && (
+        <span className="block text-xs text-amber-600 dark:text-amber-400">
+          A RAM disk loses its contents on every reboot; the mirror would need a sync after each one.
+        </span>
+      )}
+      {data && disks.length === 1 && (
+        <span className="block text-xs text-gray-500 dark:text-slate-400">
+          No SD card, USB or other disk on this router; packages go on its internal storage.
+        </span>
+      )}
+    </label>
+  );
+}
+
 const errText = (e: unknown, fallback: string) =>
   (e as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
 
@@ -114,6 +160,8 @@ function SetupCard({ canAddFleet, siteChoices, onDone, onCancel }: {
   const [siteId, setSiteId] = useState<number | null>(canAddFleet ? null : siteChoices[0]?.id ?? null);
   const [deviceId, setDeviceId] = useState<number | ''>('');
   const [folder, setFolder] = useState('mtm-packages');
+  // undefined until the server's disks are read; the picker then fills in the suggestion.
+  const [disk, setDisk] = useState<string | null | undefined>(undefined);
   const [serveAddress, setServeAddress] = useState('');
   const [keep, setKeep] = useState(3);
   const [autoSync, setAutoSync] = useState(true);
@@ -127,7 +175,7 @@ function SetupCard({ canAddFleet, siteChoices, onDone, onCancel }: {
   const create = useMutation({
     meta: { inlineError: true },
     mutationFn: () => mirrorApi.create({
-      device_id: Number(deviceId), site_id: siteId, folder: folder.trim(),
+      device_id: Number(deviceId), site_id: siteId, folder: folder.trim(), disk: disk ?? null,
       serve_address: serveAddress.trim() || null, keep_versions: keep, auto_sync: autoSync, channel,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['fw-mirrors'] }); onDone(); },
@@ -148,7 +196,8 @@ function SetupCard({ canAddFleet, siteChoices, onDone, onCancel }: {
             It creates a login named <span className="font-mono">mtm-mirror</span> on that router, in a group of its own that can read
             files but not change anything. Because that login can read every file on the router, use a router that holds nothing
             sensitive. Packages go in a folder, never the top level, so the router never installs them itself. It needs room for every
-            architecture you run: a CHR or a router with real storage is best.
+            architecture you run: a CHR, a router with real storage, or one with an SD card or USB stick (choose it under
+            Store packages on).
           </p>
         </div>
       </div>
@@ -163,7 +212,7 @@ function SetupCard({ canAddFleet, siteChoices, onDone, onCancel }: {
         </label>
         <label className="space-y-1">
           <span className="text-xs text-gray-500 dark:text-slate-400">Package server</span>
-          <select className="input w-full" value={deviceId} onChange={(e) => setDeviceId(e.target.value ? Number(e.target.value) : '')}>
+          <select className="input w-full" value={deviceId} onChange={(e) => { setDeviceId(e.target.value ? Number(e.target.value) : ''); setDisk(undefined); }}>
             <option value="">Choose a router…</option>
             {candidates.map((d) => (
               <option key={d.id} value={d.id} disabled={!canServe(d.ros_version)}>
@@ -177,6 +226,7 @@ function SetupCard({ canAddFleet, siteChoices, onDone, onCancel }: {
           <input className="input w-full" value={serveAddress} onChange={(e) => setServeAddress(e.target.value)}
             placeholder={chosen ? `${chosen.ip_address} (its management address)` : 'Its management address'} />
         </label>
+        {deviceId !== '' && <DiskPicker deviceId={Number(deviceId)} value={disk} onChange={setDisk} />}
         <label className="space-y-1">
           <span className="text-xs text-gray-500 dark:text-slate-400">Folder on the router</span>
           <input className="input w-full font-mono" value={folder} onChange={(e) => setFolder(e.target.value)} />
@@ -246,7 +296,7 @@ function MirrorCard({ mirror: m }: { mirror: FirmwareMirror }) {
             {m.server?.name ?? 'Missing device'} <span className="font-normal text-gray-400 font-mono text-xs">{m.effective_address}</span>
           </div>
           <div className="text-xs text-gray-500 dark:text-slate-400">
-            {m.site ? `Site: ${m.site.name}` : 'Whole fleet'} · folder <span className="font-mono">{m.folder}/</span> · keeps {m.keep_versions} version{m.keep_versions === 1 ? '' : 's'} ·{' '}
+            {m.site ? `Site: ${m.site.name}` : 'Whole fleet'} · folder <span className="font-mono">{m.path}/</span> · keeps {m.keep_versions} version{m.keep_versions === 1 ? '' : 's'} ·{' '}
             {m.channel} · {m.auto_sync ? 'fetches new releases automatically' : 'synced by hand'}
           </div>
         </div>
@@ -344,10 +394,15 @@ function SettingsForm({ mirror: m, onDone }: { mirror: FirmwareMirror; onDone: (
   const [keep, setKeep] = useState(m.keep_versions);
   const [autoSync, setAutoSync] = useState(m.auto_sync);
   const [channel, setChannel] = useState(m.channel);
+  const [disk, setDisk] = useState<string | null>(m.disk);
+  const moving = (disk ?? null) !== (m.disk ?? null);
   const [notes, setNotes] = useState<MirrorClientResult[] | null>(null);
   const save = useMutation({
     meta: { inlineError: true },
-    mutationFn: () => mirrorApi.update(m.id, { serve_address: serveAddress.trim() || null, keep_versions: keep, auto_sync: autoSync, channel }),
+    mutationFn: () => mirrorApi.update(m.id, {
+      serve_address: serveAddress.trim() || null, keep_versions: keep, auto_sync: autoSync, channel,
+      ...(moving ? { disk } : {}),
+    }),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['fw-mirrors'] });
       const failed = (r.data.clients ?? []).filter((c) => !c.ok);
@@ -381,6 +436,17 @@ function SettingsForm({ mirror: m, onDone }: { mirror: FirmwareMirror; onDone: (
           </select>
         </label>
       </div>
+      {m.server && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+          <DiskPicker deviceId={m.server.id} value={disk} onChange={setDisk} />
+          {moving && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 self-end">
+              Saving removes the packages from {m.disk ?? 'internal storage'}; the next sync puts them on {disk ?? 'internal storage'}.
+              Devices keep using the same address.
+            </p>
+          )}
+        </div>
+      )}
       <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer">
         <input type="checkbox" className="w-4 h-4 rounded" checked={autoSync} onChange={(e) => setAutoSync(e.target.checked)} />
         Fetch new releases automatically

@@ -24,6 +24,16 @@ import {
  * are probed once more; 2 added legacy CAPsMAN (#250).
  */
 const WIFI_ROLE_PROBE = 2;
+
+/**
+ * What one CAPsMAN reported, by key, for removing what's gone afterwards; null
+ * where the read failed.
+ */
+interface CapsmanInventory {
+  radios: string[] | null;
+  configurations: string[] | null;
+  provisioning: string[] | null;
+}
 import {
   parseLteMonitor, overallQuality, detectChanges, type LteStatus,
 } from '../../utils/lte';
@@ -872,7 +882,8 @@ export class DeviceCollector {
       // A legacy CAPsMAN controller lists its CAPs' clients in its own table;
       // the CAPs' tables stay empty (#250). `stats` adds signal, rates, uptime
       // and traffic; plain print is the fallback if a release refuses it.
-      const legacyController = (this.device as unknown as { capsman_flavor?: string | null }).capsman_flavor === 'legacy';
+      const flavor = (this.device as unknown as { capsman_flavor?: string | null }).capsman_flavor;
+      const legacyController = flavor === 'legacy' || flavor === 'both';
       const legacyRegs = (): Promise<Record<string, string>[] | null> => legacyController
         ? this.client.execute('/caps-man/registration-table/print', { stats: '' })
           .catch(() => this.client.execute('/caps-man/registration-table/print'))
@@ -2157,7 +2168,9 @@ export class DeviceCollector {
     ]);
     const newController = !!capsman?.some((r) => r['enabled'] === 'true' || r['enabled'] === 'yes');
     const legacyController = legacyManagerEnabled(legacyMgr);
-    this.capsmanFlavor = newController ? 'wifi' : legacyController ? 'legacy' : null;
+    // Both can be on at once: a CHR serving newer APs and legacy ones (#250).
+    this.capsmanFlavor = newController && legacyController ? 'both'
+      : newController ? 'wifi' : legacyController ? 'legacy' : null;
     this.legacyCapIfaces = legacyCapInterfaces(legacyCap);
     const role = classifyWifiRole(
       newController || legacyController ? [{ enabled: 'yes' }] : capsman,
@@ -2170,7 +2183,7 @@ export class DeviceCollector {
   }
 
   /** Which CAPsMAN this device runs as a controller, set by detectWifiRole. */
-  private capsmanFlavor: 'wifi' | 'legacy' | null = null;
+  private capsmanFlavor: 'wifi' | 'legacy' | 'both' | null = null;
   /** Interfaces this device hands to a legacy controller, when it is a legacy CAP (#250). */
   private legacyCapIfaces: string[] = [];
 
@@ -2195,11 +2208,21 @@ export class DeviceCollector {
         await query(`DELETE FROM capsman_provisioning WHERE controller_device_id = $1`, [this.device.id]);
         return;
       }
-      if (this.capsmanFlavor === 'legacy') {
-        await this.collectLegacyCapsman();
-        return;
-      }
+      // Each CAPsMAN in use is read and stored; what no longer exists is removed
+      // afterwards, against what both found. Removing per CAPsMAN deleted the
+      // other one's radios when a controller ran both (#250). Anything that
+      // couldn't be read stops the removal, so a timeout never wipes inventory.
+      const parts: CapsmanInventory[] = [];
+      if (this.capsmanFlavor !== 'legacy') parts.push(await this.collectWifiCapsman());
+      if (this.capsmanFlavor === 'legacy' || this.capsmanFlavor === 'both') parts.push(await this.collectLegacyCapsman());
+      await this.pruneCapsman(parts);
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to collect CAPsMAN data:`, (err as Error).message);
+    }
+  }
 
+  /** The newer CAPsMAN (/interface/wifi/capsman). */
+  private async collectWifiCapsman(): Promise<CapsmanInventory> {
       const [radioRows, configRows, provRows, ifaceRows, regRows] = await Promise.all([
         this.client.execute('/interface/wifi/radio/print').catch(() => null),
         this.client.execute('/interface/wifi/configuration/print', { detail: '' }).catch(() => null),
@@ -2224,6 +2247,7 @@ export class DeviceCollector {
       ).catch(() => []);
       const macIndex = buildMacIndex(macRows);
 
+      let radiosSeen: string[] | null = null;
       if (radioRows !== null) {
         const radios = normalizeRadios(radioRows);
 
@@ -2287,17 +2311,14 @@ export class DeviceCollector {
             ]
           );
         }
-        await query(
-          `DELETE FROM capsman_radios WHERE controller_device_id = $1 AND NOT (radio_mac = ANY($2::text[]))`,
-          [this.device.id, seen]
-        );
+        radiosSeen = seen;
       }
 
-      if (configRows !== null) await this.storeCapsmanConfigurations(configRows);
-      if (provRows !== null) await this.storeCapsmanProvisioning(provRows);
-    } catch (err) {
-      console.error(`[${this.device.name}] Failed to collect CAPsMAN data:`, (err as Error).message);
-    }
+      return {
+        radios: radiosSeen,
+        configurations: configRows !== null ? await this.storeCapsmanConfigurations(configRows) : null,
+        provisioning: provRows !== null ? await this.storeCapsmanProvisioning(provRows, '') : null,
+      };
   }
 
 
@@ -2307,7 +2328,7 @@ export class DeviceCollector {
    * pages need no second code path. Every radio lives on a CAP, and is matched
    * to the managed device carrying its MAC.
    */
-  private async collectLegacyCapsman(): Promise<void> {
+  private async collectLegacyCapsman(): Promise<CapsmanInventory> {
     const failed = () => null;
     const [ifaceRows, radioRows, capRows, configRows, provRows, regRows] = await Promise.all([
       this.client.execute('/caps-man/interface/print', { detail: '' }).catch(failed),
@@ -2318,6 +2339,7 @@ export class DeviceCollector {
       this.client.execute('/caps-man/registration-table/print').catch(failed),
     ]);
 
+    let radiosSeen: string[] | null = null;
     if (ifaceRows !== null) {
       const radios = legacyRadios(ifaceRows, radioRows, capRows, configRows, regRows);
       const macRows = await query<{ device_id: number; mac_address: string }>(
@@ -2347,17 +2369,37 @@ export class DeviceCollector {
           ]
         );
       }
-      await query(
-        `DELETE FROM capsman_radios WHERE controller_device_id = $1 AND NOT (radio_mac = ANY($2::text[]))`,
-        [this.device.id, seen]
-      );
+      radiosSeen = seen;
     }
-    if (configRows !== null) await this.storeCapsmanConfigurations(configRows);
-    if (provRows !== null) await this.storeCapsmanProvisioning(provRows);
+    return {
+      radios: radiosSeen,
+      configurations: configRows !== null ? await this.storeCapsmanConfigurations(configRows) : null,
+      // Rule ids restart at *1 in each menu tree, so the legacy ones are kept
+      // apart with a prefix.
+      provisioning: provRows !== null ? await this.storeCapsmanProvisioning(provRows, 'legacy:') : null,
+    };
+  }
+
+  /** Remove what no CAPsMAN reported any more, unless a read failed. */
+  private async pruneCapsman(parts: CapsmanInventory[]): Promise<void> {
+    const all = <K extends keyof CapsmanInventory>(k: K): string[] | null =>
+      parts.some((p) => p[k] === null) ? null : parts.flatMap((p) => p[k] as string[]);
+    const radios = all('radios');
+    if (radios) await query(
+      `DELETE FROM capsman_radios WHERE controller_device_id = $1 AND NOT (radio_mac = ANY($2::text[]))`,
+      [this.device.id, radios]);
+    const configs = all('configurations');
+    if (configs) await query(
+      `DELETE FROM capsman_configurations WHERE controller_device_id = $1 AND NOT (name = ANY($2::text[]))`,
+      [this.device.id, configs]);
+    const prov = all('provisioning');
+    if (prov) await query(
+      `DELETE FROM capsman_provisioning WHERE controller_device_id = $1 AND NOT (ros_id = ANY($2::text[]))`,
+      [this.device.id, prov]);
   }
 
   /** Named CAPsMAN configurations, from either CAPsMAN (same field names). */
-  private async storeCapsmanConfigurations(configRows: Record<string, string>[]): Promise<void> {
+  private async storeCapsmanConfigurations(configRows: Record<string, string>[]): Promise<string[]> {
       const seen: string[] = [];
       for (const cfg of configRows) {
         const name = cfg['name'];
@@ -2381,17 +2423,14 @@ export class DeviceCollector {
           ]
         );
       }
-      await query(
-        `DELETE FROM capsman_configurations WHERE controller_device_id = $1 AND NOT (name = ANY($2::text[]))`,
-        [this.device.id, seen]
-      );
+      return seen;
   }
 
   /** Provisioning rules, from either CAPsMAN (same field names). */
-  private async storeCapsmanProvisioning(provRows: Record<string, string>[]): Promise<void> {
+  private async storeCapsmanProvisioning(provRows: Record<string, string>[], idPrefix: string): Promise<string[]> {
       const seen: string[] = [];
       for (const prov of provRows) {
-        const rosId = prov['.id'];
+        const rosId = prov['.id'] ? `${idPrefix}${prov['.id']}` : '';
         if (!rosId) continue;
         seen.push(rosId);
         await query(
@@ -2414,10 +2453,7 @@ export class DeviceCollector {
           ]
         );
       }
-      await query(
-        `DELETE FROM capsman_provisioning WHERE controller_device_id = $1 AND NOT (ros_id = ANY($2::text[]))`,
-        [this.device.id, seen]
-      );
+      return seen;
   }
 
   // ─── Wifi package detection ───────────────────────────────────────────────
@@ -4904,6 +4940,11 @@ export class DeviceCollector {
   }
 
   /** Every file on the device, for confirming a download landed. */
+  /** Disks (SD, USB, NVMe, RAM) and their mount points; none on a device without any. */
+  async getDisks(): Promise<Record<string, string>[]> {
+    return this.client.execute('/disk/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+  }
+
   async getFiles(): Promise<Record<string, string>[]> {
     return this.client.execute('/file/print');
   }

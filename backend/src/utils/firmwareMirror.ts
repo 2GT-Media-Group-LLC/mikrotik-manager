@@ -193,3 +193,69 @@ export function newestCompleteFrom(
   return complete[0] ?? null;
 }
 
+
+// ─── Where the packages go (Discussion #85) ─────────────────────────────────
+//
+// Many devices have 16 MB of flash, too little for more than one version, and
+// some carry a microSD card or USB stick. A mirror can keep its packages on any
+// mounted, writable disk instead of internal storage. RouterOS shows a disk in
+// the file tree under its mount point (sd1/, usb1/), so the folder becomes
+// `<mount-point>/<folder>`.
+
+const DISK_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+
+export function isDiskName(d: string): boolean {
+  return DISK_RE.test(d);
+}
+
+/** Where the packages live on the server: `mtm-packages` or `sd1/mtm-packages`. */
+export function mirrorPath(folder: string, disk: string | null | undefined): string {
+  return disk ? `${disk}/${folder}` : folder;
+}
+
+export interface MirrorDisk {
+  /** Mount point (the top-level name in the file tree); null for internal storage. */
+  mount_point: string | null;
+  label: string;
+  free_bytes: number;
+  size_bytes: number;
+  /** A RAM disk (tmpfs): emptied on every reboot. */
+  ram: boolean;
+}
+
+const bytes = (v: string | undefined): number => {
+  const n = Number(String(v ?? '').replace(/\s/g, ''));
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+};
+
+/**
+ * Disks a mirror can use, from `/disk/print detail`: mounted, writable, with a
+ * mount point that is a plain name. Internal storage comes first, from
+ * `/system/resource` (free-hdd-space).
+ */
+export function mirrorDisks(disks: Record<string, string>[], resource: Record<string, string> | undefined): MirrorDisk[] {
+  const out: MirrorDisk[] = [{
+    mount_point: null,
+    label: 'Internal storage',
+    free_bytes: bytes(resource?.['free-hdd-space']),
+    size_bytes: bytes(resource?.['total-hdd-space']),
+    ram: false,
+  }];
+  for (const d of disks) {
+    const mp = (d['mount-point'] || '').trim();
+    const mounted = d['mount-filesystem'] !== 'false' && d['mount-filesystem'] !== 'no'
+      && d['mounted'] !== 'false' && d['disabled'] !== 'true';
+    const readOnly = d['mount-read-only'] === 'true' || d['mount-read-only'] === 'yes';
+    if (!mp || !mounted || readOnly || !isDiskName(mp)) continue;
+    const ram = d['type'] === 'tmpfs' || d['fs'] === 'tmpfs';
+    const kind = ram ? 'RAM disk' : [d['model'], d['interface']].filter((x) => x && x !== 'tmpfs').join(', ') || d['type'] || 'disk';
+    out.push({ mount_point: mp, label: `${mp} (${kind})`, free_bytes: bytes(d['free']), size_bytes: bytes(d['size']), ram });
+  }
+  return out;
+}
+
+/** The suggested disk: the most free space, never a RAM disk. */
+export function suggestDisk(disks: MirrorDisk[]): string | null {
+  const best = disks.filter((d) => !d.ram).sort((a, b) => b.free_bytes - a.free_bytes)[0];
+  return best?.mount_point ?? null;
+}

@@ -1397,6 +1397,10 @@ CREATE INDEX IF NOT EXISTS idx_optic_readings_at ON optic_readings (at);
 -- recorded as 'none' before #250 is found.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS capsman_flavor VARCHAR(8);
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_role_probe SMALLINT NOT NULL DEFAULT 0;
+
+-- The disk a mirror keeps its packages on (Discussion #85): a mount point such
+-- as sd1 or usb1. NULL: internal storage.
+ALTER TABLE firmware_mirrors ADD COLUMN IF NOT EXISTS disk VARCHAR(64);
 `;
 
 const DEFAULT_SETTINGS = [

@@ -88,7 +88,9 @@ Older 802.11n and 802.11ac wave 1 access points (RB951, hAP ac lite, cAP ac and 
 can only be CAPs of this one, often managed from a CHR.
 
 - **Controller:** a device with `/caps-man manager` enabled is a controller, even when it
-  also has the newer `wifi` menu, as every RouterOS 7.24 device does.
+  also has the newer `wifi` menu, as every RouterOS 7.24 device does. A controller can run
+  both CAPsMANs at once (newer APs on one, legacy APs on the other); both are read, and
+  their radios and clients are listed together.
 - **Radios and APs:** read from `/caps-man interface` and matched to access points by MAC,
   the same way as the newer CAPsMAN. The Wireless page and the CAPsMAN panel show them
   without any difference.

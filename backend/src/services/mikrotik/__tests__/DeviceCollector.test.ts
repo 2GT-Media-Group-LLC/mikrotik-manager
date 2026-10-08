@@ -421,6 +421,43 @@ describe('legacy CAPsMAN (#250)', () => {
     expect(p.slice(7)).toEqual(['running-ap', 3, 3, 30, 'Laney Legacy']);
   });
 
+  it('reads both when a CHR runs the newer and the legacy CAPsMAN together', async () => {
+    const both = {
+      '/interface/wifi/print': [], '/interface/wifi/capsman/print': [{ enabled: 'true' }],
+      '/interface/wifi/radio/print': [{ 'radio-mac': '48:A9:8A:00:00:01', interface: 'cap-wifi1', local: 'false' }],
+      '/interface/wifi/provisioning/print': [{ '.id': '*1', action: 'create-enabled' }],
+      '/caps-man/manager/print': legacyFixture.manager,
+      '/caps-man/interface/print': legacyFixture.interface, '/caps-man/remote-cap/print': legacyFixture.remoteCap,
+      '/caps-man/registration-table/print': legacyFixture.registrations,
+      '/caps-man/provisioning/print': [{ '.id': '*1', action: 'create-dynamic-enabled' }],
+    };
+    const { collector } = on(both);
+    expect(await collector.detectWifiRole()).toBe('controller');
+    expect((collector as unknown as { capsmanFlavor: string }).capsmanFlavor).toBe('both');
+    await collector.collectCapsman();
+    const calls = (query as jest.Mock).mock.calls;
+    const radioMacs = calls.filter(([sql]) => String(sql).includes('INSERT INTO capsman_radios')).map(([, p]) => p[1]);
+    expect(radioMacs.sort()).toEqual(['48:A9:8A:00:00:01', 'D4:CA:6D:BB:0E:57']);
+    // One removal, against both lists — not one per CAPsMAN deleting the other's.
+    const prunes = calls.filter(([sql]) => String(sql).includes('DELETE FROM capsman_radios'));
+    expect(prunes).toHaveLength(1);
+    expect([...prunes[0][1][1]].sort()).toEqual(['48:A9:8A:00:00:01', 'D4:CA:6D:BB:0E:57']);
+    // Rule ids restart at *1 in each tree.
+    const provIds = calls.filter(([sql]) => String(sql).includes('INSERT INTO capsman_provisioning')).map(([, p]) => p[1]);
+    expect(provIds.sort()).toEqual(['*1', 'legacy:*1']);
+  });
+
+  it('removes nothing when one of the two could not be read', async () => {
+    const { collector } = on({
+      '/interface/wifi/print': [], '/interface/wifi/capsman/print': [{ enabled: 'true' }],
+      '/interface/wifi/radio/print': [{ 'radio-mac': '48:A9:8A:00:00:01', interface: 'cap-wifi1', local: 'false' }],
+      '/caps-man/manager/print': legacyFixture.manager,
+      '/caps-man/interface/print': () => { throw new Error('timeout'); },
+    });
+    await collector.collectCapsman();
+    expect((query as jest.Mock).mock.calls.some(([sql]) => String(sql).includes('DELETE FROM capsman_radios'))).toBe(false);
+  });
+
   it("lists the controller's clients, named by their registration comment", async () => {
     const { collector, calls } = on({
       '/interface/wifi/print': [], '/caps-man/registration-table/print': legacyFixture.registrations,
