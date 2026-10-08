@@ -472,6 +472,9 @@ export class DeviceCollector {
           gmt_offset = COALESCE($8, gmt_offset),
           architecture = COALESCE($9, architecture),
           installed_packages = COALESCE($10::text[], installed_packages),
+          -- The router's own name, kept even while the manager's name is
+          -- locked, so the two can be compared (#253).
+          ros_identity = COALESCE($11, ros_identity),
           -- An update that has landed is no longer pending. The dedicated
           -- firmware check only runs once a day, so without this a device stays
           -- flagged "update available" for up to 24 hours after it has already
@@ -488,7 +491,8 @@ export class DeviceCollector {
         // this whole update, and the time zone was then never stored.
         [fit(identityName, 100), fit(model, 100), fit(serial, 50), fit(firmware, 50), fit(rosVersion, 20), this.device.id,
          fit(clock[0]?.['time-zone-name'] || null, 64), fit(clock[0]?.['gmt-offset'] || null, 16),
-         fit(info['architecture-name'] || null, 32), installedPackages && installedPackages.length ? installedPackages : null]
+         fit(info['architecture-name'] || null, 32), installedPackages && installedPackages.length ? installedPackages : null,
+         fit(identity[0]?.['name'] || null, 255)]
       );
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect system info:`, err);

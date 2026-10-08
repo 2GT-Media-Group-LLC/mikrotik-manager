@@ -412,7 +412,7 @@ export default function SettingsPage() {
     wireguard_stale: 'WireGuard peer stale: no handshake for longer than the threshold (minutes)',
     interface_errors: 'Interface errors: bad frames on a port, per minute averaged over 5 minutes (threshold)',
     interface_flapping: 'Interface flapping: a port went down this many times in an hour (threshold)',
-    optic_degraded: "Optic light dropping: this many dB below the port's usual level, or the module at 70 °C (threshold, dB)",
+    optic_degraded: "Optic light level: this many dB away from the port's usual level either way, past a receive limit below, or the module at 70 °C (threshold, dB)",
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';
@@ -1781,6 +1781,23 @@ export default function SettingsPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Optional fixed receive limits for optics (#249). */}
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-700 text-sm">
+              <p className="font-medium text-gray-900 dark:text-white">Optic receive limits</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 mb-2">
+                Optional. A port turns red, and alerts under &quot;Optic light level&quot;, when its receive light goes under
+                the low limit or over the high one. Leave empty for off. Each port is always also judged against its own usual
+                level. The right limits depend on the optics: for 100G optics around -8 and +2 dBm, but a 10G LR link runs fine
+                near -12 dBm, so set them for the optics you run.
+              </p>
+              <div className="flex flex-wrap items-center gap-4">
+                <DbmLimit label="Low limit" placeholder="-8" value={settings['optic_rx_low_dbm']} disabled={!isAdmin}
+                  onCommit={(v) => updateSettingsMutation.mutate({ optic_rx_low_dbm: v })} />
+                <DbmLimit label="High limit" placeholder="2" value={settings['optic_rx_high_dbm']} disabled={!isAdmin}
+                  onCommit={(v) => updateSettingsMutation.mutate({ optic_rx_high_dbm: v })} />
+              </div>
+            </div>
           </div>
 
           {/* Alert Channels */}
@@ -2283,5 +2300,31 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** A dBm limit: decimals allowed, empty means off (#249). Saves on blur or Enter. */
+function DbmLimit({ label, value, placeholder, disabled, onCommit }: {
+  label: string; value: unknown; placeholder: string; disabled?: boolean; onCommit: (v: number | null) => void;
+}) {
+  const saved = value === null || value === undefined || value === '' ? '' : String(value);
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const t = draft.trim();
+    setDraft(null);
+    if (t === '') { if (saved !== '') onCommit(null); return; }
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < -40 || n > 10) return;
+    if (String(n) !== saved) onCommit(n);
+  };
+  return (
+    <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
+      {label}
+      <input className="input w-20 text-center py-1 text-xs" inputMode="decimal" placeholder={placeholder} disabled={disabled}
+        value={draft ?? saved} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+      dBm
+    </label>
   );
 }

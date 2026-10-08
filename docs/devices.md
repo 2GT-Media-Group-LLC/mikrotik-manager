@@ -177,6 +177,10 @@ Device** that differs from the router's identity, or rename a device in **Edit D
 name then stays put whatever the identity says, and Edit Device shows "Set manually". Click
 **Use the router's identity** there to go back to following it.
 
+When the two differ, the device's **System Information** shows both: **Name** (in the
+manager) and **Identity on the router**. **Use this name** beside the identity switches to it
+straight away and follows it from then on (#253).
+
 A device added without a name (from a CSV row with no `name`, or **Try All**) starts out named
 after its address, and switches to its identity at the first poll.
 

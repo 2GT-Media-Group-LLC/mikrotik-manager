@@ -320,7 +320,7 @@ router.get('/insights', async (req: Request, res: Response) => {
       sev: bad.length ? 'error' : 'warn', category: 'reliability',
       title: `${d.name}: optic${shown.length !== 1 ? 's' : ''} to check on ${shown.map((o: OpticStatus) => o.interface).slice(0, 3).join(', ')}${shown.length > 3 ? ` and ${shown.length - 3} more` : ''}`,
       body: `${shown.slice(0, 3).map((o: OpticStatus) => `${o.interface}: ${o.reason}`).join('; ')}.`
-        + (shown.some((o: OpticStatus) => /light/.test(o.reason ?? '')) ? ' Fading light is often a dirty connector, a damaged fibre or an ageing optic.' : '')
+        + (shown.some((o: OpticStatus) => /light/.test(o.reason ?? '')) ? ' A light level on the move is often a dirty or damaged connector, a damaged fibre or an ageing optic.' : '')
         + (shown.some((o: OpticStatus) => /°C/.test(o.reason ?? '')) ? ' A hot module needs better airflow.' : ''),
       action: 'View ports', path: `/devices/${d.id}?tab=ports`,
     });

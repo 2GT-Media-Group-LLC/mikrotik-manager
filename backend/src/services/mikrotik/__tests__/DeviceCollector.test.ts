@@ -151,6 +151,16 @@ describe('collectSystemInfo', () => {
     const device: DeviceRow = { ...testDevice, name: testDevice.ip_address, name_locked: true };
     expect(await collectedName(device, 'Core-Switch')).toBe(testDevice.ip_address);
   });
+
+  it("stores the router's identity even while the name is locked, so a mismatch can be shown (#253)", async () => {
+    const collector = new DeviceCollector({ ...testDevice, name: 'Office router', name_locked: true });
+    (collector as unknown as { client: { execute: jest.Mock } }).client.execute = mockExecute('MikroTik');
+    await collector.collectSystemInfo();
+    const [sql, params] = (query as jest.Mock).mock.calls[0];
+    expect(sql).toContain('ros_identity = COALESCE($11, ros_identity)');
+    expect(params[0]).toBe('Office router');
+    expect(params[10]).toBe('MikroTik');
+  });
 });
 
 // ── setSnmpConfig: fleet changes touch only what was chosen (P1-11, P2-13) ──

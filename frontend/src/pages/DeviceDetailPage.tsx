@@ -84,6 +84,16 @@ export default function DeviceDetailPage() {
     refetchInterval: 60_000,
   });
 
+  // "Use this name": take the router's identity and follow it from now on (#253).
+  const adoptIdentity = useMutation({
+    meta: { inlineError: true },
+    mutationFn: () => devicesApi.update(deviceId, { unlock_name: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device', deviceId] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+    },
+  });
+
   const syncMutation = useMutation({
     mutationFn: () => devicesApi.sync(deviceId),
     onSuccess: () => {
@@ -382,8 +392,27 @@ export default function DeviceDetailPage() {
               System Information
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              {[
-                ['Name', device.name],
+              <div className="flex justify-between py-1 border-b border-gray-100 dark:border-slate-700">
+                <span className="text-gray-500 dark:text-slate-400" title="The name shown in the manager">Name</span>
+                <span className="font-medium text-gray-900 dark:text-white text-right">{device.name}</span>
+              </div>
+              {/* The router's own name, when it differs from the manager's (#253). */}
+              {device.ros_identity && device.ros_identity.trim() !== device.name.trim() && (
+                <div className="flex justify-between items-center gap-2 py-1 border-b border-gray-100 dark:border-slate-700">
+                  <span className="text-gray-500 dark:text-slate-400" title="The name set on the router itself (/system identity)">Identity on the router</span>
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="font-medium text-gray-900 dark:text-white truncate">{device.ros_identity}</span>
+                    {canWrite && (
+                      <button type="button" disabled={adoptIdentity.isPending} onClick={() => adoptIdentity.mutate()}
+                        title="Show the router's own name here, and follow it if it changes"
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex-shrink-0 disabled:opacity-50">
+                        {adoptIdentity.isPending ? 'Switching…' : 'Use this name'}
+                      </button>
+                    )}
+                  </span>
+                </div>
+              )}
+              {([
                 ['IP Address', device.ip_address],
                 ['Model', device.model || '—'],
                 ['Serial Number', device.serial_number || '—'],
@@ -393,7 +422,7 @@ export default function DeviceDetailPage() {
                 ['API Port', String(device.api_port)],
                 ['Added', new Date(device.created_at).toLocaleDateString()],
                 ['Last Seen', device.last_seen ? new Date(device.last_seen).toLocaleString() : '—'],
-              ].map(([k, v]) => (
+              ] as [string, string][]).map(([k, v]) => (
                 <div key={k} className="flex justify-between py-1 border-b border-gray-100 dark:border-slate-700">
                   <span className="text-gray-500 dark:text-slate-400">{k}</span>
                   <span className="font-medium text-gray-900 dark:text-white text-right">{v}</span>

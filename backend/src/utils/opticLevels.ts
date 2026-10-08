@@ -27,6 +27,16 @@ export interface OpticReading {
 export const NO_LIGHT_DBM = -30;
 /** Commercial-grade optics are rated to a 70 °C case temperature. */
 export const HOT_C = 70;
+/** Above this, airflow is likely poor or a fan has failed (#249); laser aging speeds up. */
+export const WARM_C = 60;
+
+/**
+ * Optional fixed receive limits (#249), off unless set: below `rxLow` the
+ * signal nears the receiver's sensitivity, above `rxHigh` it nears saturation.
+ * Off by default because the right values depend on the optic: a 10G LR link
+ * runs happily at -12 dBm, far below a 100G optic's floor.
+ */
+export interface RxLimits { rxLow: number | null; rxHigh: number | null }
 export const DEFAULT_DROP_DB = 3;
 /** The usual level needs this many readings (5-minute slow polls) to count. */
 export const MIN_BASELINE_READINGS = 24;
@@ -73,7 +83,7 @@ export interface OpticStatus {
   /** Median of the past week, before the last hour; null until there's enough history. */
   usual_rx_dbm: number | null;
   usual_tx_dbm: number | null;
-  /** How far below its usual level, in dB (positive = weaker). */
+  /** How far from its usual level, in dB: positive weaker, negative stronger. */
   rx_drop_db: number | null;
   tx_drop_db: number | null;
   /** 'alert': at or past the threshold, or too hot. 'watch': halfway there. */
@@ -93,25 +103,35 @@ export interface Usual { rx: number | null; tx: number | null; readings: number 
  */
 export function opticStatus(
   name: string, cur: OpticReading, usual: Usual | null, dropDb = DEFAULT_DROP_DB,
+  limits: RxLimits = { rxLow: null, rxHigh: null },
 ): OpticStatus {
   const threshold = Math.max(0.5, dropDb);
   const enough = !!usual && usual.readings >= MIN_BASELINE_READINGS;
   const lit = cur.rx_dbm !== null && cur.rx_dbm > NO_LIGHT_DBM;
+  // Positive: weaker than usual; negative: stronger. Both count (#249): light
+  // that rises can mean a failing sensor, reflection off a damaged end face,
+  // or the optic's power control misbehaving.
   const rxDrop = enough && lit && usual!.rx !== null ? round1(usual!.rx - cur.rx_dbm!) : null;
   const txDrop = enough && cur.tx_dbm !== null && usual!.tx !== null && cur.tx_dbm > NO_LIGHT_DBM
     ? round1(usual!.tx - cur.tx_dbm) : null;
-  const hot = cur.temp_c !== null && cur.temp_c >= HOT_C;
 
   const reasons: string[] = [];
-  let state: OpticStatus['state'] = null;
-  const consider = (drop: number | null, what: string) => {
-    if (drop === null) return;
-    if (drop >= threshold) { state = 'alert'; reasons.push(`${what} ${drop} dB below its usual level`); }
-    else if (drop >= threshold / 2) { if (!state) state = 'watch'; reasons.push(`${what} ${drop} dB below its usual level`); }
+  let level = 0; // 0 quiet, 1 watch, 2 alert
+  const raise = (to: 1 | 2, why: string) => { level = Math.max(level, to); reasons.push(why); };
+  const consider = (shift: number | null, what: string) => {
+    if (shift === null || shift === 0) return;
+    const size = Math.abs(shift);
+    const why = `${what} ${size} dB ${shift > 0 ? 'below' : 'above'} its usual level`;
+    if (size >= threshold) raise(2, why);
+    else if (size >= threshold / 2) raise(1, why);
   };
   consider(rxDrop, 'receive light');
   consider(txDrop, 'transmit light');
-  if (hot) { state = 'alert'; reasons.push(`module at ${cur.temp_c} °C`); }
+  if (lit && limits.rxLow !== null && cur.rx_dbm! < limits.rxLow) raise(2, `receive light ${round1(cur.rx_dbm!)} dBm, under the ${limits.rxLow} dBm limit`);
+  if (lit && limits.rxHigh !== null && cur.rx_dbm! > limits.rxHigh) raise(2, `receive light ${round1(cur.rx_dbm!)} dBm, over the ${limits.rxHigh} dBm limit`);
+  if (cur.temp_c !== null && cur.temp_c >= HOT_C) raise(2, `module at ${cur.temp_c} °C`);
+  else if (cur.temp_c !== null && cur.temp_c >= WARM_C) raise(1, `module at ${cur.temp_c} °C`);
+  const state: OpticStatus['state'] = level === 2 ? 'alert' : level === 1 ? 'watch' : null;
 
   return {
     interface: name,

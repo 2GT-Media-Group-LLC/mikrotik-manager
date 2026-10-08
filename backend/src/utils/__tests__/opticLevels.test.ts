@@ -61,4 +61,29 @@ describe('opticStatus', () => {
   it('alerts on a hot module even without history', () => {
     expect(opticStatus('p', cur(-5, -2, 72), null, 3)).toMatchObject({ state: 'alert', reason: 'module at 72 °C' });
   });
+
+  // #249: from devaux's 100G MLAG, where a failing optic's RX rose before the link failed.
+  it('flags light that rises above its usual level too', () => {
+    const s = opticStatus('qsfp28-3-1', cur(0.2), usual(-4.4), 3);
+    expect(s).toMatchObject({ state: 'alert', rx_drop_db: -4.6 });
+    expect(s.reason).toBe('receive light 4.6 dB above its usual level');
+    expect(opticStatus('p', cur(-2.9), usual(-4.4), 3).state).toBe('watch');
+  });
+
+  it('watches a warm module from 60 °C and alerts from 70 °C', () => {
+    expect(opticStatus('p', cur(-5, -2, 59), null, 3).state).toBeNull();
+    expect(opticStatus('p', cur(-5, -2, 61), null, 3)).toMatchObject({ state: 'watch', reason: 'module at 61 °C' });
+    expect(opticStatus('p', cur(-5, -2, 70), null, 3).state).toBe('alert');
+  });
+
+  it('applies the optional fixed receive limits, and only when set', () => {
+    const limits = { rxLow: -8, rxHigh: 2 };
+    expect(opticStatus('p', cur(-8.6), null, 3, limits)).toMatchObject({ state: 'alert', reason: 'receive light -8.6 dBm, under the -8 dBm limit' });
+    expect(opticStatus('p', cur(2.3), null, 3, limits)).toMatchObject({ state: 'alert', reason: 'receive light 2.3 dBm, over the 2 dBm limit' });
+    expect(opticStatus('p', cur(-7.9), null, 3, limits).state).toBeNull();
+    // Off by default: a 10G LR link at -12 dBm is healthy.
+    expect(opticStatus('p', cur(-12), null, 3).state).toBeNull();
+    // No light at all is the link-down check's, not a limit breach.
+    expect(opticStatus('p', cur(-40), null, 3, limits).state).toBeNull();
+  });
 });

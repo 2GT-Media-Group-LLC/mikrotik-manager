@@ -71,7 +71,7 @@ const EVENT_LABELS: Record<string, string> = {
   wireguard_stale:          'WireGuard Peer Stale',
   interface_errors:         'Interface Errors',
   interface_flapping:       'Interface Flapping',
-  optic_degraded:           'Optic Light Level Dropping',
+  optic_degraded:           'Optic Light Level',
 };
 
 const EVENT_EMOJI: Record<string, string> = {

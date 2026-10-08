@@ -407,7 +407,9 @@ function OpticSection({ deviceId, portName, optic, dropDb, chartHeight = 110 }: 
       <span className="mono" style={{ color: color ?? 'var(--ink-2)', fontSize: 12, textAlign: 'right' }}>{value}</span>
     </div>
   );
-  const dropColor = (d: number | null) => (d === null ? undefined : d >= dropDb ? 'var(--bad)' : d >= dropDb / 2 ? 'var(--warn)' : undefined);
+  // Either direction counts (#249): weaker or stronger than usual.
+  const dropColor = (d: number | null) => (d === null ? undefined : Math.abs(d) >= dropDb ? 'var(--bad)' : Math.abs(d) >= dropDb / 2 ? 'var(--warn)' : undefined);
+  const vsUsual = (d: number) => (d === 0 ? 'same' : `${Math.abs(d).toFixed(1)} dB ${d > 0 ? 'below' : 'above'}`);
   const data = history.map((h) => ({
     time: new Date(h.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     rx: h.rx_dbm, tx: h.tx_dbm,
@@ -419,9 +421,9 @@ function OpticSection({ deviceId, portName, optic, dropDb, chartHeight = 110 }: 
       </div>
       {row('RX now', optic.rx_lanes.length > 1 ? `${dbm(optic.rx_dbm)} (weakest of ${optic.rx_lanes.length})` : dbm(optic.rx_dbm))}
       {row('RX usually', optic.usual_rx_dbm === null ? 'learning (first 3 h)' : dbm(optic.usual_rx_dbm))}
-      {optic.rx_drop_db !== null && row('RX below usual', `${optic.rx_drop_db.toFixed(1)} dB`, dropColor(optic.rx_drop_db))}
+      {optic.rx_drop_db !== null && row('RX vs usual', vsUsual(optic.rx_drop_db), dropColor(optic.rx_drop_db))}
       {row('TX now', dbm(optic.tx_dbm))}
-      {optic.tx_drop_db !== null && row('TX below usual', `${optic.tx_drop_db.toFixed(1)} dB`, dropColor(optic.tx_drop_db))}
+      {optic.tx_drop_db !== null && row('TX vs usual', vsUsual(optic.tx_drop_db), dropColor(optic.tx_drop_db))}
       {optic.rx_lanes.length > 1 && row('RX lanes', optic.rx_lanes.map((l) => l.toFixed(1)).join(' / '))}
       {optic.reason && (
         <p className="text-[11px] mt-2" style={{ color: tone }}>{optic.reason[0].toUpperCase() + optic.reason.slice(1)}.</p>

@@ -1411,6 +1411,10 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS rx_rate_bps BIGINT;
 -- not checked yet. Rechecked daily; what it holds is read live, not stored.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS user_manager BOOLEAN;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS user_manager_checked_at TIMESTAMPTZ;
+
+-- The router's own name (/system/identity), read every poll whether or not the
+-- manager's name is locked (#253), so a mismatch can be shown and fixed.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS ros_identity VARCHAR(255);
 `;
 
 const DEFAULT_SETTINGS = [

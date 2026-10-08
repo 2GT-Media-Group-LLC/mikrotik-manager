@@ -32,7 +32,7 @@ it('alerts per port with the reading and the usual level', async () => {
   const [type, msg, ctx] = dispatch.mock.calls[0];
   expect(type).toBe('optic_degraded');
   expect(msg).toMatch(/sfp28-3 on Edge: receive light 4\.1 dB below its usual level\. Now receive -9\.1 dBm \(usually -5\)/);
-  expect(msg).toMatch(/Clean the connectors, check the fibre and the far end, or replace the optic\.$/);
+  expect(msg).toMatch(/Clean and inspect the connectors, check the fibre and the far end, or replace the optic\.$/);
   expect(ctx.cooldownKey).toBe('optic_degraded:5:sfp28-3');
 });
 

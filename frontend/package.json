@@ -1,6 +1,6 @@
 {
   "name": "mikrotik-manager-frontend",
-  "version": "0.39.2-beta",
+  "version": "0.39.3-beta",
   "private": true,
   "type": "module",
   "scripts": {

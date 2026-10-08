@@ -22,7 +22,7 @@ cooldown that prevents a flapping device from flooding your channels.
 | `wireguard_stale` | A WireGuard peer's last handshake is older than the threshold, in minutes (default 15; off by default). WireGuard re-handshakes about every two minutes while traffic flows, so a much older handshake means the tunnel is down. Peers that have never connected, disabled peers and peers on a disabled interface are left out. Handshakes are read with the slow poll and checked every 5 minutes; the cooldown applies to each peer separately |
 | `interface_errors` | Bad frames on a port: FCS, alignment, overflow and other receive errors, per minute, averaged over 5 minutes (default 10; off by default). Usually a failing optic or cable while the link stays up. See [Interface errors and flapping](#interface-errors-and-flapping); the cooldown applies to each port separately |
 | `interface_flapping` | A port's link went down at least the threshold number of times in the last hour (default 3; off by default). The cooldown applies to each port separately |
-| `optic_degraded` | An optic's receive or transmit light is at least the threshold in dB below the port's usual level (default 3 dB; off by default), or the module is at 70 °C or more. See [Optic light levels](#optic-light-levels); the cooldown applies to each port separately |
+| `optic_degraded` | An optic's receive or transmit light is at least the threshold in dB away from the port's usual level, either way (default 3 dB; off by default), its receive light crosses an optional fixed limit, or the module is at 70 °C or more. See [Optic light levels](#optic-light-levels); the cooldown applies to each port separately |
 
 Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
 Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
@@ -85,10 +85,17 @@ compared with **its own usual level**: the median of the past week, leaving out 
 hour so a fresh drop doesn't hide itself. A port needs about three hours of readings
 before it's judged.
 
-- **Red** when the light is at least the `optic_degraded` threshold below usual (3 dB,
-  half the light, by default), or the module is at 70 °C or more, the limit for
-  commercial-grade optics.
-- **Yellow** at half the threshold.
+- **Red** when the light is at least the `optic_degraded` threshold away from usual, in
+  either direction (3 dB by default), or the module is at 70 °C or more, the limit for
+  commercial-grade optics. Light that drops usually means a dirty connector, a damaged
+  fibre or an ageing laser; light that rises can mean a failing sensor in the optic,
+  reflection off a damaged end face, or its power control misbehaving (#249).
+- **Yellow** at half the threshold, or from 60 °C, which usually means poor airflow or a
+  failed fan.
+- **Optional fixed limits:** under Settings → Alerting, **Optic receive limits** sets a low
+  and a high receive level (dBm). Crossing either turns the port red and alerts. They're off
+  until set, because the right values depend on the optics: around -8 and +2 dBm suits 100G
+  optics, but a 10G LR link runs fine near -12 dBm.
 - On a multi-lane module (QSFP), the weakest lane counts, and the port card lists every
   lane.
 - No light at all means the link is down, which the link-down and

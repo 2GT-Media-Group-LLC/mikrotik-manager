@@ -53,7 +53,7 @@ import { sshHostCheck, explainSshError } from '../services/sshHostCheck';
 import { presetCaller } from '../utils/presetAccess';
 import { parseAllowedList, configuredServices, allowedFromKey, managerPeer, addressAllowed } from '../utils/ipServices';
 import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
-import { opticStatuses, opticHistory, dropThreshold } from '../services/opticLevels';
+import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
 const router = Router();
 router.use(requireAuth);
@@ -608,7 +608,10 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 
   await query(
     `UPDATE devices SET
-       name=COALESCE($1,name), name_locked=COALESCE($2,name_locked),
+       -- "Use the router's identity" switches the name at once to the identity
+       -- last read (#253), rather than leaving the old one until the resync.
+       name=CASE WHEN $2::boolean IS FALSE AND ros_identity IS NOT NULL THEN ros_identity ELSE COALESCE($1,name) END,
+       name_locked=COALESCE($2,name_locked),
        ip_address=COALESCE($3,ip_address),
        api_port=COALESCE($4,api_port),
        api_username=COALESCE($5,api_username), api_password_encrypted=$6,
@@ -694,8 +697,8 @@ router.get('/:id/interface-errors', async (req: Request, res: Response) => {
 router.get('/:id/optics', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid device id' });
-  const [statuses, dropDb] = await Promise.all([opticStatuses([id]), dropThreshold()]);
-  return res.json({ ports: statuses.get(id) ?? [], drop_db: dropDb });
+  const [statuses, dropDb, limits] = await Promise.all([opticStatuses([id]), dropThreshold(), rxLimits()]);
+  return res.json({ ports: statuses.get(id) ?? [], drop_db: dropDb, rx_low_dbm: limits.rxLow, rx_high_dbm: limits.rxHigh });
 });
 
 // GET /api/devices/:id/optics/:port/history?days=7

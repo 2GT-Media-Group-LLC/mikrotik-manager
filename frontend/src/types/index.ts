@@ -68,6 +68,8 @@ export interface Device {
    * Device) and it stays put until "Use the router's identity" clears this.
    */
   name_locked?: boolean;
+  /** The router's own name (/system identity), read every poll (#253). */
+  ros_identity?: string | null;
   ip_address: string;
   api_port: number;
   api_username: string;

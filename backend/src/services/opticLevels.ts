@@ -9,7 +9,7 @@
  */
 import { query } from '../config/database';
 import { alertService } from './AlertService';
-import { readOptic, opticStatus, DEFAULT_DROP_DB, HOT_C, type OpticStatus, type Usual } from '../utils/opticLevels';
+import { readOptic, opticStatus, DEFAULT_DROP_DB, type OpticStatus, type Usual, type RxLimits } from '../utils/opticLevels';
 
 /** Store one slow poll's readings. */
 export async function recordOptics(deviceId: number, monitor: Map<string, Record<string, string>>): Promise<void> {
@@ -41,6 +41,18 @@ interface LatestRow {
  * pulled drops out) and its usual level: the median over the past week,
  * leaving out the last hour so a fresh drop doesn't drag its own baseline.
  */
+/** The optional fixed receive limits (#249), from settings; null where unset. */
+export async function rxLimits(): Promise<RxLimits> {
+  const rows = await query<{ key: string; value: unknown }>(
+    `SELECT key, value FROM app_settings WHERE key IN ('optic_rx_low_dbm', 'optic_rx_high_dbm')`).catch(() => []);
+  const get = (k: string): number | null => {
+    const v = rows.find((r) => r.key === k)?.value;
+    const n = v === null || v === undefined || v === '' ? NaN : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  return { rxLow: get('optic_rx_low_dbm'), rxHigh: get('optic_rx_high_dbm') };
+}
+
 export async function opticStatuses(deviceIds?: number[]): Promise<Map<number, OpticStatus[]>> {
   const params: unknown[] = [];
   let scope = '';
@@ -67,6 +79,7 @@ export async function opticStatuses(deviceIds?: number[]): Promise<Map<number, O
     ),
     dropThreshold(),
   ]);
+  const limits = await rxLimits();
   const out = new Map<number, OpticStatus[]>();
   for (const r of rows) {
     const n = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -74,7 +87,7 @@ export async function opticStatuses(deviceIds?: number[]): Promise<Map<number, O
     const status = opticStatus(r.interface, {
       rx_dbm: n(r.rx_dbm), tx_dbm: n(r.tx_dbm), temp_c: n(r.temp_c), bias_ma: n(r.bias_ma), voltage: n(r.voltage),
       rx_lanes: r.rx_lanes ? r.rx_lanes.split(',').map(Number) : [],
-    }, usual, threshold);
+    }, usual, threshold, limits);
     const list = out.get(r.device_id) ?? [];
     list.push(status);
     out.set(r.device_id, list);
@@ -97,7 +110,7 @@ export async function opticHistory(deviceId: number, iface: string, days: number
 export async function checkOptics(): Promise<void> {
   const rule = await alertService.getRule('optic_degraded');
   if (!rule?.enabled) return;
-  const [statuses, threshold] = await Promise.all([opticStatuses(), dropThreshold()]);
+  const statuses = await opticStatuses();
   const ids = [...statuses.keys()];
   if (ids.length === 0) return;
   const names = new Map(
@@ -112,10 +125,11 @@ export async function checkOptics(): Promise<void> {
         p.rx_dbm !== null ? `receive ${p.rx_dbm} dBm${p.usual_rx_dbm !== null ? ` (usually ${p.usual_rx_dbm})` : ''}` : '',
         p.tx_dbm !== null ? `transmit ${p.tx_dbm} dBm${p.usual_tx_dbm !== null ? ` (usually ${p.usual_tx_dbm})` : ''}` : '',
       ].filter(Boolean).join(', ');
-      const losingLight = (p.rx_drop_db ?? 0) >= threshold || (p.tx_drop_db ?? 0) >= threshold;
-      const hot = p.temp_c !== null && p.temp_c >= HOT_C;
+      // Light that moved either way, or crossed a limit; a hot module (#249).
+      const lightIssue = /light/.test(p.reason ?? '');
+      const hot = /°C/.test(p.reason ?? '');
       const advice = [
-        losingLight ? 'clean the connectors, check the fibre and the far end' : '',
+        lightIssue ? 'clean and inspect the connectors, check the fibre and the far end' : '',
         hot ? 'check the airflow around the switch' : '',
       ].filter(Boolean).join('; ');
       await alertService.dispatch(
