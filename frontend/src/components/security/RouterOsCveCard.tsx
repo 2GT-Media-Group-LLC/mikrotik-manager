@@ -132,8 +132,10 @@ export default function RouterOsCveCard() {
                   )}
                 </button>
                 {isOpen && (
-                  <div className="px-5 pb-3 pl-12 space-y-2">
-                    <div className="flex flex-wrap gap-1.5">
+                  // Capped: a version can run on hundreds of devices and carry
+                  // dozens of CVEs.
+                  <div className="px-5 pb-3 pl-12 space-y-2 max-h-[420px] overflow-y-auto">
+                    <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto">
                       {v.devices.map((d) => (
                         <Link key={d.id} to={`/devices/${d.id}`} className="mono text-[11px] px-1.5 py-0.5 rounded hover:underline"
                               style={{ background: 'var(--surface-2)', color: 'var(--ink-2)' }}>{d.name}</Link>

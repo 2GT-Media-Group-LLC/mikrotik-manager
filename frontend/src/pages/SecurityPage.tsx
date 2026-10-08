@@ -177,11 +177,12 @@ export default function SecurityPage() {
 
       <RouterOsCveCard />
 
-      {/* Main: posture list (wide) + common findings (narrow) */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+      {/* Every card the full width, one per row. Long lists are capped and scroll
+          inside their card, so a fleet of hundreds doesn't stretch the page. */}
+      <div className="space-y-6">
         {/* Fleet posture */}
-        <div className="card overflow-hidden xl:col-span-2">
-          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
+        <div className="card overflow-hidden flex flex-col max-h-[560px]">
+          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 shrink-0">
             <ShieldCheck className="w-4 h-4 text-green-500" />
             <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Fleet Security Posture</h2>
           </div>
@@ -190,7 +191,7 @@ export default function SecurityPage() {
           ) : online.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">No online devices to scan.</div>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-slate-700">
+            <div className="divide-y divide-gray-100 dark:divide-slate-700 flex-1 min-h-0 overflow-y-auto">
               {fleet.map(f => {
                 const open = expanded === f.id;
                 const { high: highs, medium: meds, low: lows } = countFindings(f.checks);
@@ -240,43 +241,9 @@ export default function SecurityPage() {
           )}
         </div>
 
-        {/* Certificates across the fleet (#143) */}
-        <div className="card overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 flex-wrap">
-            <KeyRound className="w-4 h-4 text-indigo-500" />
-            <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Certificates</h2>
-            {certData && (
-              <span className="text-xs text-gray-400 dark:text-slate-500">
-                {certData.certificates.length} across the fleet
-                {certData.alertingEnabled
-                  ? ` · alerting ${certData.warnDays} days ahead`
-                  : ' · expiry alerting is off'}
-              </span>
-            )}
-            {/* Counted, not just listed: "two expiring" is the number worth seeing
-                without reading every row. */}
-            {certData && (badCount > 0) && (
-              <span className="ml-auto text-xs font-medium text-amber-600 dark:text-amber-400">
-                {badCount} need attention
-              </span>
-            )}
-          </div>
-          <div className="p-2">
-            {certLoading
-              ? <p className="p-6 text-center text-sm text-gray-400">Loading…</p>
-              : certError ? <LoadError what="certificates" error={certErr} />
-              : <CertificateList
-                  certificates={certData?.certificates ?? []}
-                  showDevice
-                  storageKey="fleet"
-                  emptyText="No certificates collected yet — they are read on each slow poll."
-                />}
-          </div>
-        </div>
-
         {/* Common findings across the fleet */}
-        <div className="card overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
+        <div className="card overflow-hidden flex flex-col max-h-[560px]">
+          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 shrink-0">
             <ListChecks className="w-4 h-4 text-indigo-500" />
             <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Common Findings</h2>
           </div>
@@ -291,7 +258,7 @@ export default function SecurityPage() {
                   : <span className="inline-flex items-center gap-1.5 text-green-600 dark:text-green-400"><ShieldCheck className="w-4 h-4" /> No issues across the fleet</span>}
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 dark:divide-slate-700">
+            <div className="divide-y divide-gray-100 dark:divide-slate-700 flex-1 min-h-0 overflow-y-auto">
               {commonFindings.map(c => {
                 const open = expandedFinding === c.title;
                 return (
@@ -303,7 +270,7 @@ export default function SecurityPage() {
                       {open ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                             : <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
                       <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', SEV_DOT[c.severity])} />
-                      <span className="text-sm text-gray-700 dark:text-slate-300 flex-1 min-w-0 truncate" title={c.title}>{c.title}</span>
+                      <span className="text-sm text-gray-700 dark:text-slate-300 flex-1 min-w-0">{c.title}</span>
                       <span className="text-xs text-gray-400 dark:text-slate-500 flex-shrink-0">
                         {c.devices.length} {c.devices.length === 1 ? 'device' : 'devices'}
                       </span>
@@ -340,6 +307,43 @@ export default function SecurityPage() {
           )}
         </div>
       </div>
+
+      {/* Certificates across the fleet (#143): the full width, because it's a
+          table; in a third of the page its columns were crushed. */}
+      <div className="card overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 flex-wrap">
+            <KeyRound className="w-4 h-4 text-indigo-500" />
+            <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Certificates</h2>
+            {certData && (
+              <span className="text-xs text-gray-400 dark:text-slate-500">
+                {certData.certificates.length} across the fleet
+                {certData.alertingEnabled
+                  ? ` · alerting ${certData.warnDays} days ahead`
+                  : ' · expiry alerting is off'}
+              </span>
+            )}
+            {/* Counted, not just listed: "two expiring" is the number worth seeing
+                without reading every row. */}
+            {certData && (badCount > 0) && (
+              <span className="ml-auto text-xs font-medium text-amber-600 dark:text-amber-400">
+                {badCount} need attention
+              </span>
+            )}
+          </div>
+          <div className="p-2">
+            {certLoading
+              ? <p className="p-6 text-center text-sm text-gray-400">Loading…</p>
+              : certError ? <LoadError what="certificates" error={certErr} />
+              : <CertificateList
+                  certificates={certData?.certificates ?? []}
+                  showDevice
+                  storageKey="fleet"
+                  emptyText="No certificates collected yet — they are read on each slow poll."
+                  maxHeight={480}
+                />}
+          </div>
+        </div>
+
     </div>
   );
 }

@@ -42,6 +42,8 @@ interface Props {
    * page each remember the toggle separately.
    */
   storageKey?: string;
+  /** Cap the list at this height (px) and scroll inside it, header kept in view. */
+  maxHeight?: number;
 }
 
 /**
@@ -74,7 +76,7 @@ function useStoredFlag(key: string, fallback: boolean): [boolean, (v: boolean) =
 }
 
 export default function CertificateList({
-  certificates, showDevice, emptyText, storageKey = 'default',
+  certificates, showDevice, emptyText, storageKey = 'default', maxHeight,
 }: Props) {
   const [hideExpired, setHideExpired] = useHideExpired(storageKey);
   // CAPsMAN's own certificates (valid until 2038) are hidden by default (#197).
@@ -137,9 +139,9 @@ export default function CertificateList({
           {certificates.length} certificate{certificates.length === 1 ? ' is' : 's are'} hidden by the filters above.
         </p>
       ) : (
-      <div className="overflow-x-auto">
+      <div className={clsx('overflow-x-auto', maxHeight && 'overflow-y-auto')} style={maxHeight ? { maxHeight } : undefined}>
       <table className="w-full text-sm">
-        <thead>
+        <thead className={clsx(maxHeight && 'sticky top-0 z-[1]')} style={maxHeight ? { background: 'var(--surface)' } : undefined}>
           <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
             {showDevice && <th className="px-3 py-2 font-medium">Device</th>}
             <th className="px-3 py-2 font-medium">Certificate</th>

@@ -108,7 +108,9 @@ export default function ApiSslCard() {
         )}
       </div>
 
-      <ul className="divide-y divide-amber-200/70 dark:divide-amber-800/50 border-t border-amber-200 dark:border-amber-800 bg-white/60 dark:bg-slate-900/30">
+      {/* Capped: "show all" on a fleet of hundreds scrolls here rather than
+          pushing the rest of the page down. */}
+      <ul className="divide-y divide-amber-200/70 dark:divide-amber-800/50 border-t border-amber-200 dark:border-amber-800 bg-white/60 dark:bg-slate-900/30 max-h-[420px] overflow-y-auto">
         {visible.map((d) => {
           const o = outcomes[d.id];
           return (
