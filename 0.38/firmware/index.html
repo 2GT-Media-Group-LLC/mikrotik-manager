@@ -1,0 +1,1705 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Self-hosted management for MikroTik fleets">
+      
+      
+      
+      
+        <link rel="prev" href="../commands/">
+      
+      
+        <link rel="next" href="../backups/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.44">
+    
+    
+      
+        <title>Firmware rollouts - MikroTik Manager</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.0253249f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#firmware-rollouts" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="MikroTik Manager" class="md-header__button md-logo" aria-label="MikroTik Manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MikroTik Manager
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Firmware rollouts
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    2GT-Media-Group-LLC/mikrotik-manager
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="MikroTik Manager" class="md-nav__button md-logo" aria-label="MikroTik Manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    MikroTik Manager
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    2GT-Media-Group-LLC/mikrotik-manager
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operating
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Operating
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../devices/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../clients/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Clients
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adoption/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adopting devices
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sites/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Sites
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../topology/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Topology
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../traffic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Traffic analytics
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change-guard/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Change Guard and Config Health
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Security page
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scaling/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Polling and scaling
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../alerting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Alerting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ssh-keys/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    SSH keys
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commands/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Bulk commands
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Firmware rollouts
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Firmware rollouts
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-firmware-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      The Firmware page
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      Timeouts
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      The pipeline
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-package-mirror" class="md-nav__link">
+    <span class="md-ellipsis">
+      Local package mirror
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Local package mirror">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setting-it-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setting it up
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syncing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Syncing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keeping-packages-on-a-disk" class="md-nav__link">
+    <span class="md-ellipsis">
+      Keeping packages on a disk
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#switching-devices-to-the-mirror" class="md-nav__link">
+    <span class="md-ellipsis">
+      Switching devices to the mirror
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rollouts-from-the-mirror" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rollouts from the mirror
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#waves" class="md-nav__link">
+    <span class="md-ellipsis">
+      Waves
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Waves">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waves-from-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      Waves from tags
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#update-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update channels
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#upgrading-several-devices-at-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      Upgrading several devices at once
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduling-and-cancelling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Scheduling and cancelling
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#if-the-manager-restarts-mid-rollout" class="md-nav__link">
+    <span class="md-ellipsis">
+      If the manager restarts mid-rollout
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-it-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      When it fails
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backups/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Backups
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wireless/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Wireless
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-services/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network services
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cellular/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Cellular (LTE)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capsman/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CAPsMAN
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Integration
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Integration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    API and automation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sso-oidc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Single sign-on (OIDC)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Contributing
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-firmware-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      The Firmware page
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      Timeouts
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      The pipeline
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-package-mirror" class="md-nav__link">
+    <span class="md-ellipsis">
+      Local package mirror
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Local package mirror">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#setting-it-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setting it up
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syncing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Syncing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keeping-packages-on-a-disk" class="md-nav__link">
+    <span class="md-ellipsis">
+      Keeping packages on a disk
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#switching-devices-to-the-mirror" class="md-nav__link">
+    <span class="md-ellipsis">
+      Switching devices to the mirror
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rollouts-from-the-mirror" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rollouts from the mirror
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#waves" class="md-nav__link">
+    <span class="md-ellipsis">
+      Waves
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Waves">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waves-from-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      Waves from tags
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#update-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      Update channels
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#upgrading-several-devices-at-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      Upgrading several devices at once
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduling-and-cancelling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Scheduling and cancelling
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#if-the-manager-restarts-mid-rollout" class="md-nav__link">
+    <span class="md-ellipsis">
+      If the manager restarts mid-rollout
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-it-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      When it fails
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="firmware-rollouts">Firmware rollouts<a class="headerlink" href="#firmware-rollouts" title="Permanent link">&para;</a></h1>
+<p><a href="../">← Documentation index</a></p>
+<p>Upgrade RouterOS across a fleet in waves, with a verified pipeline per device and
+a stopping point before a bad build reaches everything.</p>
+<h2 id="the-firmware-page">The Firmware page<a class="headerlink" href="#the-firmware-page" title="Permanent link">&para;</a></h2>
+<p><strong>Fleet versions</strong> lists each device's RouterOS, the latest on its channel, and RouterBOOT.
+Devices with nothing to install are hidden by default; <strong>Show up-to-date (N)</strong> brings them
+back, and the choice is remembered.</p>
+<p>The page shows the running or latest rollout and the five before it. <strong>All upgrade history</strong>
+opens every rollout, newest first, 25 to a page; click one to see its devices and steps.</p>
+<h2 id="timeouts">Timeouts<a class="headerlink" href="#timeouts" title="Permanent link">&para;</a></h2>
+<p>Two settings, both in minutes, changed without a restart:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>firmware_download_timeout_min</code></td>
+<td>10</td>
+<td>Waiting for the image to land on the device</td>
+</tr>
+<tr>
+<td><code>firmware_reboot_timeout_min</code></td>
+<td>12</td>
+<td>Waiting for the device to come back after the flash</td>
+</tr>
+</tbody>
+</table>
+<p>Both are clamped to 1–120 minutes.</p>
+<p>Raise the reboot timeout for slow hardware. CRS switches have been reported taking a full
+twelve minutes to return, which is exactly the old fixed ceiling — so a slow board could fail
+at the boundary through no fault of the upgrade. Raise the download timeout if MikroTik's
+servers are stalling for you; a device that fails to download is not rebooted, so this is a
+delay rather than a risk.</p>
+<h2 id="the-pipeline">The pipeline<a class="headerlink" href="#the-pipeline" title="Permanent link">&para;</a></h2>
+<p>Each device goes through the same sequence:</p>
+<ol>
+<li><strong>Pre-upgrade backup</strong> (optional, on by default)</li>
+<li><strong>Check for updates</strong> — a device already on the target version is <em>skipped</em>, not failed.
+   So is one whose channel offers an <strong>older</strong> version (a stable device pointed at long-term,
+   say): nothing is downgraded automatically, even though RouterOS calls that release "New
+   version is available". The device's <strong>Install</strong> button follows the same rule</li>
+<li><strong>Download the image, and confirm it landed</strong></li>
+<li><strong>Reboot</strong></li>
+<li><strong>Prove the reboot happened</strong> — uptime must have gone <em>backwards</em></li>
+<li><strong>Verify the version</strong> — the device must report exactly the version that was installed</li>
+<li><strong>RouterBOOT</strong> (optional) — a second flash and a second reboot. It waits for the device
+   to settle after the first reboot and retries its first connection, then proves the second
+   reboot the same way as step 5 before reading the bootloader version</li>
+</ol>
+<p>Steps 3 and 5 exist because of a specific failure. <code>/system/package/update/install</code>
+bundles download and reboot into one call whose progress cannot be observed, and a
+CCR2216 was seen to accept it, do neither, and report nothing. That surfaced as
+"rebooted but still reports 7.24.1", because nothing could tell a device that never
+restarted from one that restarted unchanged.</p>
+<p>Downloading first makes success verifiable <em>before</em> anything reboots, so a device is
+never restarted for an image it does not have.</p>
+<div class="admonition note">
+<p class="admonition-title">Downloads are slow, and that is normal</p>
+<p><code>/system/package/update/download</code> blocks until the image has landed — a minute or
+more on an ordinary link. It is given a ten-minute budget. If the command does not
+return cleanly the device is asked again on a fresh connection what actually
+happened, rather than being declared failed: a slow download is not a broken one.</p>
+</div>
+<h2 id="local-package-mirror">Local package mirror<a class="headerlink" href="#local-package-mirror" title="Permanent link">&para;</a></h2>
+<p>By default each device downloads RouterOS from MikroTik's servers itself. On a big fleet a
+device or two in every dozen can fail to download, and the rollout stops at them. A local
+mirror moves that download to one place: the manager keeps a router you choose stocked with
+the packages, and devices pull from it instead.</p>
+<p>It uses RouterOS's own local update feature (<code>/system/package/local-update</code>), so devices
+need <strong>RouterOS 7.17 or later</strong>. Older devices, and devices not set up for the mirror, keep
+downloading from MikroTik.</p>
+<p>Open it from <strong>Firmware → Package mirror</strong>.</p>
+<h3 id="setting-it-up">Setting it up<a class="headerlink" href="#setting-it-up" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Choose the package server.</strong> Any RouterOS 7.17+ device the manager manages. It needs
+   room for every architecture and package your devices run, roughly 10–25 MB per package
+   file per version, so a CHR or a router with real storage is best. A 128 MB router can't
+   hold one version for a mixed fleet.</li>
+<li><strong>Store packages on.</strong> Internal storage, or a disk the server has mounted: a microSD
+   card, USB stick or NVMe drive. See <a href="#keeping-packages-on-a-disk">Keeping packages on a disk</a>.</li>
+<li><strong>Address devices reach it on.</strong> Leave it blank to use the address the manager uses. Set
+   it when devices reach the server some other way (NAT, a VPN, another interface).</li>
+<li><strong>Versions kept</strong> (1–5, default 3), the <strong>release channel</strong> (stable or long-term), and
+   whether new releases are fetched automatically.</li>
+</ol>
+<p>Setting it up creates a login named <code>mtm-mirror</code> on the server, with a password only the
+manager knows, in a group of its own (also <code>mtm-mirror</code>). Devices use it to fetch packages
+over Winbox (TCP 8291), so they need a route to the server on that port.</p>
+<p>The group has RouterOS's built-in read permissions plus <code>ftp</code>. Local update lists packages
+with read access but downloads them as files, and the built-in read group has no file access,
+so with it devices see the packages and every download quietly fails. The login can't change
+anything, but it can read every file on the server, so <strong>use a package server that holds
+nothing sensitive</strong>, ideally one dedicated to the job, rather than a router with backups or
+exports on it.</p>
+<p>There's one mirror for the whole fleet, and optionally one per site, so a remote site can
+pull from something local. A site's mirror serves that site's devices; the fleet mirror
+serves the rest. Fleet administrators manage the fleet mirror; a site's administrators
+manage its mirror.</p>
+<h3 id="syncing">Syncing<a class="headerlink" href="#syncing" title="Permanent link">&para;</a></h3>
+<p><strong>Sync now</strong> fetches the latest release on the mirror's channel. With automatic fetching on,
+the manager checks every six hours and syncs a new release by itself. A sync:</p>
+<ul>
+<li>Works out which files the devices it serves need: every installed package (routeros,
+  wifi-qcom, container and so on) for every architecture in use, and nothing else.</li>
+<li>Downloads each file once from <code>download.mikrotik.com</code> over HTTPS, checks it against
+  MikroTik's published SHA-256, and keeps it in the manager's data volume.</li>
+<li>Checks the server has room, then uploads what's missing over SFTP into the mirror's
+  folder (<code>mtm-packages</code> by default) and confirms each file's size on the server.</li>
+<li>Removes versions beyond the number kept, from the server and the manager.</li>
+</ul>
+<p>Packages go in a folder, never the server's top level, because RouterOS installs any
+<code>.npk</code> file in its top level the next time it reboots. In a folder they're only ever served.</p>
+<p>Nothing on the server changes unless every file has been fetched and verified first. If the
+server is short of space the sync stops and says how much is needed.</p>
+<p>Removing the mirror takes the packages, the login and its group off the server again.</p>
+<h3 id="keeping-packages-on-a-disk">Keeping packages on a disk<a class="headerlink" href="#keeping-packages-on-a-disk" title="Permanent link">&para;</a></h3>
+<p>Many routers have only 16 MB of internal storage, too little for even one version, but take
+a microSD card or USB stick. When you choose the package server, its disks are listed with
+their free space, and the one with the most room is chosen for you. The packages then go in
+<code>&lt;disk&gt;/&lt;folder&gt;</code>, for example <code>sd1/mtm-packages</code>, and the free-space check before each sync
+looks at that disk.</p>
+<ul>
+<li><strong>RAM disks</strong> (<code>/disk add type=tmpfs</code>) are listed but never chosen for you: they're
+  emptied on every reboot, so the mirror would need a sync after each one.</li>
+<li><strong>Changing the disk later</strong>, in the mirror's settings, removes the packages from the old
+  one; the next sync, automatic or <strong>Sync now</strong>, puts them on the new one. Devices keep the
+  same address and login.</li>
+<li><strong>A disk that disappears</strong> (card pulled, stick unplugged) stops the sync with a message
+  naming it, rather than filling internal storage instead.</li>
+</ul>
+<h3 id="switching-devices-to-the-mirror">Switching devices to the mirror<a class="headerlink" href="#switching-devices-to-the-mirror" title="Permanent link">&para;</a></h3>
+<p>The <strong>Devices</strong> table lists the devices a mirror serves. Select some and choose <strong>Use this
+mirror</strong>: the manager adds the package server to each device's local update sources. <strong>Stop
+using it</strong> removes it again. Devices older than 7.17 can't be selected.</p>
+<h3 id="rollouts-from-the-mirror">Rollouts from the mirror<a class="headerlink" href="#rollouts-from-the-mirror" title="Permanent link">&para;</a></h3>
+<p>When any selected device uses a mirror, the rollout bar offers <strong>Packages from: Local mirror</strong>
+(the default) or <strong>MikroTik</strong>. With the mirror chosen, each of those devices:</p>
+<ol>
+<li>Is upgraded to the newest version the mirror holds <strong>every one of its packages</strong> for.
+   Upgrading routeros alone would leave, say, wifi-qcom at the old version, and RouterOS
+   disables a mismatched package on reboot, so an access point would come back with no
+   wireless. A device whose packages aren't all on the mirror fails before anything changes.</li>
+<li>Is checked for free space against the size of those packages.</li>
+<li>Asks the mirror for them and downloads them through local update.</li>
+<li>Is confirmed to have every file, at the size the mirror recorded, before it reboots.
+   RouterOS's download runs in the background and can fail without saying so, so the files
+   themselves are the proof. If they don't all arrive, the ones that did are removed (a
+   partial set would be installed by the next reboot) and nothing is rebooted.</li>
+</ol>
+<p>From there the pipeline is the same: reboot, prove it, verify the version, RouterBOOT.
+Devices in the same rollout that don't use a mirror download from MikroTik as before.</p>
+<p>The <strong>Fleet versions</strong> table shows a mirror device's newest available version under
+<strong>Latest</strong>, and offers it for upgrade when it's newer than what the device runs, even if the
+device hasn't asked MikroTik.</p>
+<h2 id="waves">Waves<a class="headerlink" href="#waves" title="Permanent link">&para;</a></h2>
+<p>Waves are the point. Devices are assigned to waves 1 to 9, and <strong>waves run strictly
+in sequence</strong>. Wave 1 is your canary: put one device in it, let it finish, and the
+rest of the fleet is still untouched if it goes wrong.</p>
+<p><strong>Halt on failure</strong> stops the rollout rather than continuing into the next wave.
+Devices never reached are marked <code>skipped</code>, not <code>failed</code> — they did not run.</p>
+<p>A device counts as upgraded only when it comes back reporting the exact version that was
+installed. Coming back on the old version, on some other version, or with a version that
+can't be read is a failure. RouterBOOT is checked against its target version the same way.</p>
+<h3 id="waves-from-tags">Waves from tags<a class="headerlink" href="#waves-from-tags" title="Permanent link">&para;</a></h3>
+<p><a href="../devices/">Tags</a> are how devices are grouped. Next to <strong>Select all updatable</strong> there is a
+chip for each tag in use. Clicking one adds that tag's updatable devices as the next wave. A
+typical rollout is one canary device in wave 1, then <code>lab</code>, then <code>branch</code>, then <code>core</code>.</p>
+<h2 id="update-channels">Update channels<a class="headerlink" href="#update-channels" title="Permanent link">&para;</a></h2>
+<p>RouterOS checks for updates on a channel: <code>stable</code>, <code>long-term</code>, <code>testing</code> or <code>development</code>.
+The <strong>Update channel</strong> card sets it.</p>
+<ul>
+<li><strong>Fleet default</strong> applies to every device. <em>Leave each device on its own channel</em> means the manager never changes a
+  device's channel.</li>
+<li><strong>Overrides</strong> pick a tag or a single device and give it a different channel, or set it back
+  to <em>follow fleet default</em>. A device override wins over the fleet default.</li>
+<li>Devices with an override are <strong>listed</strong> under the card, with the channel each one reports now.
+  <strong>Clear</strong> removes one override, <strong>Clear all</strong> removes them all. With no fleet default set, a
+  cleared device stays on whatever channel it is on.</li>
+</ul>
+<p>The channel is written to the device (<code>/system/package/update/set channel=...</code>) the next time
+the manager checks it for updates, and only if it differs. The card also shows the channel
+each device last reported.</p>
+<div class="admonition note">
+<p class="admonition-title">RouterOS v6 to v7</p>
+<p>Moving a v6 device to v7 is not the same as changing channel and is not supported yet.</p>
+</div>
+<h2 id="upgrading-several-devices-at-once">Upgrading several devices at once<a class="headerlink" href="#upgrading-several-devices-at-once" title="Permanent link">&para;</a></h2>
+<p>By default the devices inside a wave upgrade <strong>one at a time</strong>. That is safe and slow:
+a CRS switch can take five minutes to reboot, so ten of them is most of an hour spent
+waiting.</p>
+<p>The <strong>At once</strong> control raises how many devices in the same wave may upgrade
+simultaneously. Waves remain sequential either way, so the canary still gates
+everything after it.</p>
+<p>There are two costs, and both are worth understanding before you raise it.</p>
+<p><strong>Halting becomes less precise.</strong> A failure stops any further device from <em>starting</em>,
+immediately — but devices already running finish, because interrupting one mid-write is
+how you brick it. So with <strong>At once</strong> set to five, up to five devices can carry a bad
+build before anything stops. At the default of 1 nothing else has started, so a failure
+stops the rollout exactly as it always has.</p>
+<p><strong>Devices reboot together.</strong> That is fine for independent routers. It is not fine for
+a switch that the others are reached <em>through</em>: rebooting it alongside them cuts the
+path to devices that are mid-upgrade. Change Guard does not cover this — it protects
+configuration, and a device that is unreachable because its uplink rebooted has no
+configuration change to revert.</p>
+<p>The rollout builder warns when it can see that one selected device carries another's
+traffic. That warning is deliberately conservative: it fires only when a link is the
+device's spanning-tree root port <em>and</em> that port resolves to exactly one neighbour.
+Discovered topology is often ambiguous — a trunk port can resolve to several
+neighbours at once — and naming the wrong switch would be worse than saying nothing.
+<strong>Absence of a warning is not proof that it is safe to reboot everything together.</strong></p>
+<p>A reasonable pattern for a large fleet on a well-known patch release:</p>
+<table>
+<thead>
+<tr>
+<th>Wave</th>
+<th>Devices</th>
+<th>At once</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>one representative device</td>
+<td>1</td>
+</tr>
+<tr>
+<td>2</td>
+<td>the access layer</td>
+<td>5–10</td>
+</tr>
+<tr>
+<td>3</td>
+<td>anything upstream of wave 2</td>
+<td>1</td>
+</tr>
+</tbody>
+</table>
+<h2 id="scheduling-and-cancelling">Scheduling and cancelling<a class="headerlink" href="#scheduling-and-cancelling" title="Permanent link">&para;</a></h2>
+<p>A rollout can be scheduled; pair it with a maintenance window by scheduling inside
+one. One rollout runs at a time.</p>
+<p>A scheduled rollout only starts inside its window: from its scheduled time until <strong>Don't
+start after</strong>, or an hour later if that's left blank. If the manager can't start it in time
+(it was down, or an earlier rollout ran long) the rollout is marked <strong>missed</strong> and nothing is
+upgraded; schedule it again when it suits. Before 0.24.39 a late rollout started whenever the
+manager got to it, which could mean rebooting devices in the middle of the day.</p>
+<p>Devices already belonging to an unfinished rollout are refused by name when you try
+to create another for them, before anything is written.</p>
+<p><strong>Cancelling never interrupts an in-flight flash.</strong> It stops before the <em>next</em> device,
+because interrupting a device mid-write is how you brick it. The UI says so when you
+press the button — the currently upgrading device will finish first.</p>
+<h2 id="if-the-manager-restarts-mid-rollout">If the manager restarts mid-rollout<a class="headerlink" href="#if-the-manager-restarts-mid-rollout" title="Permanent link">&para;</a></h2>
+<p>The active rollout is tracked in memory, so a manager restart — a crash, an OOM kill,
+or pulling a new image — ends it. Nothing resumes automatically: a device may have been
+mid-reboot, and continuing an upgrade from an unknown state is how hardware gets
+bricked.</p>
+<p>On startup any rollout still marked running is closed out and reported honestly:</p>
+<ul>
+<li>devices it never reached are <strong>skipped</strong> — "not reached"</li>
+<li>a device that was mid-upgrade is <strong>failed</strong>, saying its real state is unknown and to
+  check it before re-running</li>
+<li>devices that already finished keep their result</li>
+</ul>
+<p>This matters beyond tidiness. An unfinished rollout blocks its devices from joining a
+new one, which is right while it is genuinely running and wrong for one that can never
+finish — without this, an interrupted rollout left its devices permanently unable to be
+upgraded.</p>
+<h2 id="when-it-fails">When it fails<a class="headerlink" href="#when-it-fails" title="Permanent link">&para;</a></h2>
+<p>Failure messages name the mechanism rather than the symptom. "Device did not finish
+downloading within ten minutes. Nothing was rebooted. The device reports 91.6 MB free"
+tells you where to look; "upgrade failed" does not.</p>
+<p>If a rollout reports a device stuck at the old version, check the device's own
+<code>/system/package/update</code> state before re-running — it may have the image already.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.instant", "navigation.top", "navigation.sections", "content.code.copy", "search.highlight"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.83f73b43.min.js"></script>
+      
+    
+  </body>
+</html>
