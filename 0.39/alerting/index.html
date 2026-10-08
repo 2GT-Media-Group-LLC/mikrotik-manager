@@ -1363,7 +1363,7 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 </tr>
 <tr>
 <td><code>optic_degraded</code></td>
-<td>An optic's receive or transmit light is at least the threshold in dB below the port's usual level (default 3 dB; off by default), or the module is at 70 °C or more. See <a href="#optic-light-levels">Optic light levels</a>; the cooldown applies to each port separately</td>
+<td>An optic's receive or transmit light is at least the threshold in dB away from the port's usual level, either way (default 3 dB; off by default), its receive light crosses an optional fixed limit, or the module is at 70 °C or more. See <a href="#optic-light-levels">Optic light levels</a>; the cooldown applies to each port separately</td>
 </tr>
 </tbody>
 </table>
@@ -1420,10 +1420,17 @@ compared with <strong>its own usual level</strong>: the median of the past week,
 hour so a fresh drop doesn't hide itself. A port needs about three hours of readings
 before it's judged.</p>
 <ul>
-<li><strong>Red</strong> when the light is at least the <code>optic_degraded</code> threshold below usual (3 dB,
-  half the light, by default), or the module is at 70 °C or more, the limit for
-  commercial-grade optics.</li>
-<li><strong>Yellow</strong> at half the threshold.</li>
+<li><strong>Red</strong> when the light is at least the <code>optic_degraded</code> threshold away from usual, in
+  either direction (3 dB by default), or the module is at 70 °C or more, the limit for
+  commercial-grade optics. Light that drops usually means a dirty connector, a damaged
+  fibre or an ageing laser; light that rises can mean a failing sensor in the optic,
+  reflection off a damaged end face, or its power control misbehaving (#249).</li>
+<li><strong>Yellow</strong> at half the threshold, or from 60 °C, which usually means poor airflow or a
+  failed fan.</li>
+<li><strong>Optional fixed limits:</strong> under Settings → Alerting, <strong>Optic receive limits</strong> sets a low
+  and a high receive level (dBm). Crossing either turns the port red and alerts. They're off
+  until set, because the right values depend on the optics: around -8 and +2 dBm suits 100G
+  optics, but a 10G LR link runs fine near -12 dBm.</li>
 <li>On a multi-lane module (QSFP), the weakest lane counts, and the port card lists every
   lane.</li>
 <li>No light at all means the link is down, which the link-down and
