@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, X, Check, AlertCircle, Activity, Link2, Trash2, Network, Users, Wifi, ShieldCheck, AlertTriangle, LayoutGrid} from 'lucide-react';
+import { RefreshCw, X, Check, AlertCircle, Activity, Link2, Trash2, Network, Users, Wifi, ShieldCheck, AlertTriangle, LayoutGrid, ExternalLink } from 'lucide-react';
 import { devicesApi, metricsApi, type PortErrorSummary, type OpticStatus } from '../../services/api';
 import { chartTooltip } from '../common/chartTooltip';
+import FloatingWindow from '../common/FloatingWindow';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVerdictOf, type GuardResult, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
@@ -278,7 +279,11 @@ function PortTrafficGraph({
           No traffic data for {portName} in this range
         </div>
       ) : (
-        <div className="flex-1 min-h-[160px]">
+        // Positioned absolutely so the chart fills the card without its own
+        // size feeding back into the row height: otherwise a taller neighbour
+        // stretched it, and it never shrank back.
+        <div className="flex-1 min-h-[160px] relative">
+          <div className="absolute inset-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trafficData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" opacity={0.5} />
@@ -299,6 +304,7 @@ function PortTrafficGraph({
               <Line type="monotone" dataKey="tx" stroke="var(--violet)" name="TX" dot={false} strokeWidth={1.6} />
             </LineChart>
           </ResponsiveContainer>
+          </div>
         </div>
       )}
     </div>
@@ -352,7 +358,11 @@ function PortPacketGraph({
           No packet data yet for {portName} in the selected range
         </div>
       ) : (
-        <div className="flex-1 min-h-[200px]">
+        // Positioned absolutely so the chart fills the card without its own
+        // size feeding back into the row height: otherwise a taller neighbour
+        // stretched it, and it never shrank back.
+        <div className="flex-1 min-h-[200px] relative">
+          <div className="absolute inset-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={packetData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -372,6 +382,7 @@ function PortPacketGraph({
               <Line type="monotone" dataKey="tx" stroke="#f59e0b" name="TX packets" dot={false} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
+          </div>
         </div>
       )}
     </div>
@@ -380,8 +391,8 @@ function PortPacketGraph({
 
 
 /** Light levels now against the port's usual level, and the past week (optics only). */
-function OpticSection({ deviceId, portName, optic, dropDb }: {
-  deviceId: number; portName: string; optic: OpticStatus; dropDb: number;
+function OpticSection({ deviceId, portName, optic, dropDb, chartHeight = 110 }: {
+  deviceId: number; portName: string; optic: OpticStatus; dropDb: number; chartHeight?: number;
 }) {
   const { data: history = [] } = useQuery({
     queryKey: ['optic-history', deviceId, portName],
@@ -403,7 +414,7 @@ function OpticSection({ deviceId, portName, optic, dropDb }: {
   }));
   return (
     <>
-      <div style={{ marginTop: 12, marginBottom: 8, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
+      <div style={{ marginBottom: 8 }}>
         <span className="mono text-[10px] uppercase tracking-widest" style={{ color: tone }}>Light level</span>
       </div>
       {row('RX now', optic.rx_lanes.length > 1 ? `${dbm(optic.rx_dbm)} (weakest of ${optic.rx_lanes.length})` : dbm(optic.rx_dbm))}
@@ -416,7 +427,7 @@ function OpticSection({ deviceId, portName, optic, dropDb }: {
         <p className="text-[11px] mt-2" style={{ color: tone }}>{optic.reason[0].toUpperCase() + optic.reason.slice(1)}.</p>
       )}
       {data.length > 1 && (
-        <div style={{ height: 110, marginTop: 8 }}>
+        <div style={{ height: chartHeight, marginTop: 8 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--line-soft)" />
@@ -439,6 +450,9 @@ function PortInfoCard({ deviceId, portName, errors, errorsPerMin = 10, flapsPerH
   deviceId: number; portName: string; errors?: PortErrorSummary; errorsPerMin?: number; flapsPerHour?: number;
   optic?: OpticStatus; dropDb?: number;
 }) {
+  // The module's details and light levels open in a window of their own, so
+  // this card stays the height of the graphs beside it.
+  const [moduleWindow, setModuleWindow] = useState(false);
   const { data: monitor, isLoading } = useQuery({
     queryKey: ['port-monitor', deviceId, portName],
     queryFn: () => devicesApi.getPortMonitor(deviceId, portName).then((r) => r.data),
@@ -514,12 +528,45 @@ function PortInfoCard({ deviceId, portName, errors, errorsPerMin = 10, flapsPerH
         </>
       )}
 
-      {optic && <OpticSection deviceId={deviceId} portName={portName} optic={optic} dropDb={dropDb} />}
+      {(optic || isSfp) && (
+        <div className="flex items-center justify-between gap-2"
+          style={{ marginTop: 12, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
+          <span className="mono text-[10px] uppercase tracking-widest flex-shrink-0"
+            style={{ color: optic?.state === 'alert' ? 'var(--bad)' : optic?.state === 'watch' ? 'var(--warn)' : 'var(--accent)' }}>
+            SFP module
+          </span>
+          <span className="flex items-center gap-2 min-w-0 text-[11px]" style={{ color: 'var(--ink-3)' }}>
+            <span className="mono truncate">
+              {[d['sfp-vendor-part-number'],
+                (optic?.rx_dbm ?? (ddm('rx-power') ? parseFloat(ddm('rx-power')!) : null)) != null
+                  ? `RX ${(optic?.rx_dbm ?? parseFloat(ddm('rx-power')!)).toFixed(1)} dBm` : null,
+              ].filter(Boolean).join(' · ')}
+            </span>
+            {optic?.state && (
+              <span title={optic.reason ?? undefined} className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ background: optic.state === 'alert' ? 'var(--bad)' : 'var(--warn)' }} />
+            )}
+            <button type="button" onClick={() => setModuleWindow(true)}
+              className="inline-flex items-center gap-1 flex-shrink-0 hover:underline" style={{ color: 'var(--accent)' }}>
+              Details <ExternalLink className="w-3 h-3" />
+            </button>
+          </span>
+        </div>
+      )}
+
+      {moduleWindow && (
+        <FloatingWindow
+          title={`${portName} · SFP module${d['sfp-vendor-part-number'] ? ` · ${d['sfp-vendor-part-number']}` : ''}`}
+          icon={<Activity className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent)' }} />}
+          onClose={() => setModuleWindow(false)}
+          height={optic ? 680 : 520}
+        >
+      {optic && <OpticSection deviceId={deviceId} portName={portName} optic={optic} dropDb={dropDb} chartHeight={220} />}
 
       {isSfp && (
         <>
-          <div style={{ marginTop: 12, marginBottom: 8, paddingTop: 8, borderTop: '1px solid var(--line)' }}>
-            <span className="mono text-[10px] uppercase tracking-widest" style={{ color: 'var(--accent)' }}>SFP Optic</span>
+          <div style={{ marginTop: optic ? 16 : 0, marginBottom: 8 }}>
+            <span className="mono text-[10px] uppercase tracking-widest" style={{ color: 'var(--accent)' }}>Module details</span>
           </div>
           <div className="space-y-0">
             {infoRow('Type', d['sfp-type'])}
@@ -540,6 +587,8 @@ function PortInfoCard({ deviceId, portName, errors, errorsPerMin = 10, flapsPerH
             {infoRow('Cable (SM)', d['sfp-link-length-singlemode'] ? `${d['sfp-link-length-singlemode']} km` : undefined)}
           </div>
         </>
+      )}
+        </FloatingWindow>
       )}
     </div>
   );
