@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ReviewChangesButton from '../components/common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Clock, RefreshCw, AlertTriangle, Save } from 'lucide-react';
 import clsx from 'clsx';
@@ -94,12 +95,13 @@ export default function NetworkServicesNTPPage() {
     }
   }, [ntp]);
 
-  const save = useMutation({
-    meta: { inlineError: true },
-    mutationFn: () => networkServicesApi.setNtp(deviceId, {
+  const saveRequest = () => networkServicesApi.setNtp(deviceId, {
       server_enabled: serverEnabled, server_broadcast: serverBroadcast, server_manycast: serverManycast,
       client_enabled: clientEnabled, client_mode: clientMode, client_servers: clientServers,
-    }),
+    });
+  const save = useMutation({
+    meta: { inlineError: true },
+    mutationFn: saveRequest,
     onSuccess: () => {
       setDirty(false);
       qc.invalidateQueries({ queryKey: ['ns-ntp', deviceId] });
@@ -275,6 +277,7 @@ export default function NetworkServicesNTPPage() {
                 className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
                 <Save className="w-3.5 h-3.5" />{save.isPending ? 'Saving…' : 'Save Changes'}
               </button>
+              <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={save.isPending} />
               <button onClick={() => {
                 if (ntp) {
                   setServerEnabled(ntp.server?.['enabled'] === 'yes');

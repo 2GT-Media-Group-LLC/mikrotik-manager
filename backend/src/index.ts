@@ -84,6 +84,7 @@ import certificatesRoutes from './routes/certificates';
 import cveRoutes from './routes/cves';
 import adoptionRoutes, { setPollerService as setAdoptionPoller } from './routes/adoption';
 import { siteContext } from './middleware/site';
+import { changePreview } from './middleware/changePreview';
 import { auditMiddleware } from './middleware/auditMiddleware';
 import { sshHostCheck, explainSshError } from './services/sshHostCheck';
 
@@ -388,6 +389,8 @@ app.use(auditMiddleware);
 app.use('/api', rateLimitRedis({ windowSec: 60, max: 120, keyPrefix: 'api-global' }));
 // Resolve the active site once, before any route reads it (issue #130).
 app.use('/api', siteContext);
+// "Review changes" (#255): an edit request with X-Preview-Changes runs without applying.
+app.use('/api', changePreview);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Pencil, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield,
@@ -161,10 +162,10 @@ function EndpointPicker({
 
 // ─── Firewall Rule Modal ──────────────────────────────────────────────────────
 function RuleModal({
-  title, form, setForm, onSave, onClose, isPending, error, lists,
+  title, form, setForm, onSave, onReview, onClose, isPending, error, lists,
 }: {
   title: string; form: RuleForm; setForm: React.Dispatch<React.SetStateAction<RuleForm>>;
-  onSave: () => void; onClose: () => void; isPending: boolean; error: string; lists: string[];
+  onSave: () => void; onReview?: () => Promise<unknown>; onClose: () => void; isPending: boolean; error: string; lists: string[];
 }) {
   const set = (k: keyof RuleForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   const toggleState = (s: string) => {
@@ -283,6 +284,7 @@ function RuleModal({
           )}
           <div className="flex items-center justify-end gap-3 pt-2">
             <button onClick={onClose} className="btn-secondary">Cancel</button>
+            {onReview && <ReviewChangesButton request={onReview} onApply={onSave} applyLabel="Save Rule" disabled={isPending} />}
             <button onClick={onSave} disabled={isPending} className="btn-primary flex items-center gap-2">
               {isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Save Rule
             </button>
@@ -379,6 +381,8 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
               <div className="flex justify-end gap-2">
                 <button onClick={() => { setAdding(false); setErr(''); }} className="btn-secondary text-xs py-1">Cancel</button>
                 <button onClick={add} disabled={!list || !address || addMut.isPending} className="btn-primary text-xs py-1">Add Entry</button>
+                <ReviewChangesButton className="text-xs py-1" deviceName={deviceName} applyLabel="Add Entry" onApply={add} disabled={!list || !address || addMut.isPending}
+                  request={() => devicesApi.addAddressListEntry(deviceId, { list, address, comment: comment || undefined })} />
               </div>
             </div>
           ) : (
@@ -517,9 +521,9 @@ function natPayload(f: NatForm, forEdit = false): Record<string, unknown> {
   return p;
 }
 
-function NatModal({ title, form, setForm, onSave, onClose, isPending, error }: {
+function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, error }: {
   title: string; form: NatForm; setForm: React.Dispatch<React.SetStateAction<NatForm>>;
-  onSave: () => void; onClose: () => void; isPending: boolean; error: string;
+  onSave: () => void; onReview?: () => Promise<unknown>; onClose: () => void; isPending: boolean; error: string;
 }) {
   const set = (k: keyof NatForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   const setPattern = (pattern: NatPattern) => setForm(f => {
@@ -626,6 +630,7 @@ function NatModal({ title, form, setForm, onSave, onClose, isPending, error }: {
           )}
           <div className="flex items-center justify-end gap-3 pt-2">
             <button onClick={onClose} className="btn-secondary">Cancel</button>
+            {onReview && <ReviewChangesButton request={onReview} onApply={onSave} applyLabel="Save Rule" disabled={isPending} />}
             <button onClick={onSave} disabled={isPending} className="btn-primary flex items-center gap-2">
               {isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Save Rule
             </button>
@@ -680,9 +685,9 @@ function NatCard({ deviceId }: { deviceId: number }) {
             onToggle={r => toggleMut.mutate({ id: r['.id'], disabled: !(r.disabled === 'true') })}
             onDelete={r => { if (confirm('Delete this NAT rule?')) delMut.mutate(r['.id']); }} onMove={onMove} />}
       {showAdd && <NatModal title="Add NAT Rule" form={form} setForm={setForm} isPending={addMut.isPending} error={err}
-        onClose={() => setShowAdd(false)} onSave={() => addMut.mutate(natPayload(form))} />}
+        onClose={() => setShowAdd(false)} onSave={() => addMut.mutate(natPayload(form))} onReview={() => devicesApi.addNatRule(deviceId, natPayload(form))} />}
       {editing && <NatModal title="Edit NAT Rule" form={form} setForm={setForm} isPending={updMut.isPending} error={err}
-        onClose={() => setEditing(null)} onSave={() => updMut.mutate({ id: editing['.id'], d: natPayload(form, true) })} />}
+        onClose={() => setEditing(null)} onSave={() => updMut.mutate({ id: editing['.id'], d: natPayload(form, true) })} onReview={() => devicesApi.updateNatRule(deviceId, editing['.id'], natPayload(form, true))} />}
     </div>
   );
 }
@@ -804,9 +809,9 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
             onDelete={r => { if (confirm('Delete this firewall rule?')) remove(r['.id']); }} onMove={onMove} />}
 
       {showAdd && <RuleModal title="Add Firewall Rule" form={form} setForm={setForm} isPending={addMut.isPending} error={err} lists={listNames}
-        onClose={() => setShowAdd(false)} onSave={submitAdd} />}
+        onClose={() => setShowAdd(false)} onSave={submitAdd} onReview={() => devicesApi.addFirewallRule(deviceId, fwPayload(form))} />}
       {editing && <RuleModal title="Edit Firewall Rule" form={form} setForm={setForm} isPending={updMut.isPending} error={err} lists={listNames}
-        onClose={() => setEditing(null)} onSave={submitEdit} />}
+        onClose={() => setEditing(null)} onSave={submitEdit} onReview={() => devicesApi.updateFirewallRule(deviceId, editing['.id'], fwPayload(form, false, true))} />}
 
       {/* NAT is available on all RouterOS devices */}
       <div className="border-t border-gray-200 dark:border-slate-700 pt-2" />

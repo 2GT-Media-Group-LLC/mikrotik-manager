@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Pencil, RefreshCw, Check, X, Gauge, AlertCircle } from 'lucide-react';
 import { devicesApi } from '../../services/api';
@@ -26,9 +27,9 @@ const EMPTY: QForm = { name: '', target: '', up: '10M', down: '50M', comment: ''
 
 const RATE_PRESETS = ['1M', '5M', '10M', '25M', '50M', '100M'];
 
-function QueueModal({ title, form, setForm, onSave, onClose, isPending, error }: {
+function QueueModal({ title, form, setForm, onSave, onReview, onClose, isPending, error }: {
   title: string; form: QForm; setForm: React.Dispatch<React.SetStateAction<QForm>>;
-  onSave: () => void; onClose: () => void; isPending: boolean; error: string;
+  onSave: () => void; onReview?: () => Promise<unknown>; onClose: () => void; isPending: boolean; error: string;
 }) {
   const set = (k: keyof QForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   return (
@@ -69,6 +70,7 @@ function QueueModal({ title, form, setForm, onSave, onClose, isPending, error }:
           )}
           <div className="flex items-center justify-end gap-3 pt-1">
             <button onClick={onClose} className="btn-secondary">Cancel</button>
+            {onReview && <ReviewChangesButton request={onReview} onApply={onSave} applyLabel="Save" disabled={isPending || !form.name || !form.target} />}
             <button onClick={onSave} disabled={isPending || !form.name || !form.target} className="btn-primary flex items-center gap-2">
               {isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Save
             </button>
@@ -157,8 +159,8 @@ export default function QueuesTab({ deviceId }: { deviceId: number }) {
           </div>
         )}
 
-      {showAdd && <QueueModal title="Add Bandwidth Queue" form={form} setForm={setForm} isPending={addMut.isPending} error={err} onClose={() => setShowAdd(false)} onSave={() => addMut.mutate()} />}
-      {editing && <QueueModal title="Edit Bandwidth Queue" form={form} setForm={setForm} isPending={updMut.isPending} error={err} onClose={() => setEditing(null)} onSave={() => updMut.mutate(editing['.id'])} />}
+      {showAdd && <QueueModal title="Add Bandwidth Queue" form={form} setForm={setForm} isPending={addMut.isPending} error={err} onClose={() => setShowAdd(false)} onSave={() => addMut.mutate()} onReview={() => devicesApi.addQueue(deviceId, payload(form))} />}
+      {editing && <QueueModal title="Edit Bandwidth Queue" form={form} setForm={setForm} isPending={updMut.isPending} error={err} onClose={() => setEditing(null)} onSave={() => updMut.mutate(editing['.id'])} onReview={() => devicesApi.updateQueue(deviceId, editing['.id'], payload(form, true))} />}
     </div>
   );
 }

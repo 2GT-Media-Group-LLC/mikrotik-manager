@@ -1,5 +1,6 @@
 import ConfigHealthCard from './ConfigHealthCard';
 import { useState, useEffect } from 'react';
+import ReviewChangesButton from '../common/ReviewChangesButton';
 import SshKeyCard from './SshKeyCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -120,9 +121,10 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
   // Predicted lockout (409 + verdict) plus the retry that confirms it.
   const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
+  const addIpRequest = (confirm: boolean) =>
+    devicesApi.addIpAddress(deviceId, confirm ? { ...newIp, confirm_lockout: true } : newIp);
   const addIpMutation = useMutation({
-    mutationFn: (confirm: boolean) =>
-      devicesApi.addIpAddress(deviceId, confirm ? { ...newIp, confirm_lockout: true } : newIp),
+    mutationFn: addIpRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ip-addresses', deviceId] });
       setNewIp({ address: '', interface: '' });
@@ -589,6 +591,8 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
               <Plus className="w-4 h-4" />
               Add
             </button>
+            <ReviewChangesButton request={() => addIpRequest(false)} onApply={() => addIpMutation.mutate(false)} applyLabel="Add"
+              deviceName={device.name} disabled={!newIp.address || !newIp.interface || addIpMutation.isPending} />
           </div>
           {ipError && (
             <div className="flex items-center gap-2 mt-2 text-sm text-red-500">

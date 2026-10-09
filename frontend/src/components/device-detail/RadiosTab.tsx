@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Wifi, Activity, Users, Radio, RefreshCw, Pencil, ChevronDown, ChevronRight,
@@ -187,6 +188,9 @@ function RadioEditModal({
           )}
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <ReviewChangesButton applyLabel="Save" disabled={mutation.isPending}
+              request={() => wirelessApi.updateInterface(deviceId, iface.name, changedFields(loaded, form))}
+              onApply={() => mutation.mutate(changedFields(loaded, form))} />
             <button type="submit" className="btn-primary" disabled={mutation.isPending}>
               {mutation.isPending ? 'Saving…' : 'Save'}
             </button>

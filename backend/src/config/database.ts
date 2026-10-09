@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
+import { previewContext } from '../utils/previewContext';
+import { isDbWrite } from '../utils/changePreview';
 
 dotenv.config();
 
@@ -32,6 +34,13 @@ export async function query<T = Record<string, unknown>>(
   text: string,
   params?: unknown[]
 ): Promise<T[]> {
+  // During "Review changes" (#255) nothing is applied, so nothing is recorded
+  // either: writes are skipped and reads see the database as it is.
+  const preview = previewContext();
+  if (preview && isDbWrite(text)) {
+    preview.skippedDbWrites++;
+    return [];
+  }
   const client = await pool.connect();
   try {
     const result = await client.query(text, params);
@@ -56,7 +65,8 @@ export async function transaction<T>(
   try {
     await client.query('BEGIN');
     const result = await fn(client);
-    await client.query('COMMIT');
+    // A preview's transaction is always undone.
+    await client.query(previewContext() ? 'ROLLBACK' : 'COMMIT');
     return result;
   } catch (err) {
     await client.query('ROLLBACK');

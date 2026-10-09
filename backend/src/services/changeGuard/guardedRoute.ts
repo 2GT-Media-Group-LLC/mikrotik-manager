@@ -12,6 +12,7 @@ import { captureSnapshot } from './pathModel';
 import { analyzeChange, type PlannedChange } from './analyzeChange';
 import { withSafeApply, GuardRequiredError, type GuardDevice } from './ChangeGuard';
 import { logSafe } from '../../utils/logSafe';
+import { previewContext } from '../../utils/previewContext';
 
 /**
  * Run a device mutation under the Change Guard safety net (see
@@ -49,6 +50,32 @@ export async function withGuardedChange<T>(
   // body, so it can come as ?confirm_lockout=true.
   const confirmedLockout = req.body?.confirm_lockout === true || req.body?.force === true
     || req.query?.confirm_lockout === 'true';
+
+  // "Review changes" (#255): predict as usual but report it rather than refuse,
+  // and record the writes without arming a revert, since nothing is applied.
+  const preview = previewContext();
+  if (preview) {
+    if (meta.change) {
+      try {
+        const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);
+        const v = analyzeChange(snap, deviceRow as unknown as GuardDevice, meta.change);
+        preview.verdict = { severity: v.severity, headline: v.headline, violations: v.violations, warnings: v.warnings };
+      } catch (err) {
+        preview.verdict = { severity: 'unknown', headline: `Change Guard couldn't analyse this change: ${(err as Error).message}`, violations: [], warnings: [] };
+      }
+    }
+    const pc = new DeviceCollector(deviceRow);
+    try {
+      await pc.connect();
+      const result = await fn(pc);
+      res.json(typeof result === 'object' && result !== null ? result : { result });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    } finally {
+      try { pc.disconnect(); } catch { /* ignore */ }
+    }
+    return;
+  }
   let requireProtection = confirmedLockout;
   if (meta.change && !confirmedLockout) {
     try {

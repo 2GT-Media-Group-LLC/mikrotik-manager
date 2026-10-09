@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ReviewChangesButton from '../components/common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Server, RefreshCw, AlertTriangle, Power, Plus, Pencil, Trash2,
@@ -71,16 +72,17 @@ function ServerForm({ protocol, existing, pools, interfaces, deviceId, onClose, 
     return i['comment'] ? `${base}  —  ${i['comment']}` : base;
   }
 
-  const save = useMutation({
-    meta: { inlineError: true },
-    mutationFn: () => {
+  const saveRequest = () => {
       const body: NS & { protocol: 'ipv4' | 'ipv6' } = {
         protocol, name, interface: iface, 'address-pool': pool, 'lease-time': leaseTime,
       };
       return existing?.['.id']
         ? networkServicesApi.updateDhcpServer(deviceId, existing['.id'], body)
         : networkServicesApi.addDhcpServer(deviceId, body);
-    },
+    };
+  const save = useMutation({
+    meta: { inlineError: true },
+    mutationFn: saveRequest,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ns-dhcp', deviceId] }); onClose(); },
   });
 
@@ -168,6 +170,7 @@ function ServerForm({ protocol, existing, pools, interfaces, deviceId, onClose, 
             <Check className="w-3.5 h-3.5" />
             {save.isPending ? 'Saving…' : 'Save'}
           </button>
+          <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={!name || !iface || save.isPending} />
           <button onClick={onClose} className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700">Cancel</button>
           {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
@@ -190,14 +193,15 @@ function PoolForm({ protocol, deviceId, onClose }: PoolFormProps) {
   const [ranges, setRanges] = useState('');
   const [prefix, setPrefix] = useState('');
 
-  const save = useMutation({
-    meta: { inlineError: true },
-    mutationFn: () => {
+  const saveRequest = () => {
       const params: NS & { protocol: 'ipv4' | 'ipv6' } = { protocol, name };
       if (protocol === 'ipv4') params['ranges'] = ranges;
       else params['prefix'] = prefix;
       return networkServicesApi.addDhcpPool(deviceId, params);
-    },
+    };
+  const save = useMutation({
+    meta: { inlineError: true },
+    mutationFn: saveRequest,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ns-dhcp', deviceId] }); onClose(); },
   });
 
@@ -236,6 +240,7 @@ function PoolForm({ protocol, deviceId, onClose }: PoolFormProps) {
             <Check className="w-3.5 h-3.5" />
             {save.isPending ? 'Adding…' : 'Add Pool'}
           </button>
+          <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={!name || save.isPending} />
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
           {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
@@ -260,16 +265,17 @@ function StaticLeaseForm({ protocol, servers, deviceId, onClose }: StaticLeaseFo
   const [server, setServer] = useState(servers[0]?.['name'] || '');
   const [comment, setComment] = useState('');
 
-  const save = useMutation({
-    meta: { inlineError: true },
-    mutationFn: () => {
+  const saveRequest = () => {
       const body: NS & { protocol: 'ipv4' | 'ipv6' } = {
         // An IPv6 binding is keyed by the client's DUID; RouterOS has no
         // mac-address on it (outside review C7).
         protocol, [protocol === 'ipv4' ? 'mac-address' : 'duid']: mac, address, comment, server,
       };
       return networkServicesApi.addStaticLease(deviceId, body);
-    },
+    };
+  const save = useMutation({
+    meta: { inlineError: true },
+    mutationFn: saveRequest,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ns-leases', deviceId, protocol] }); onClose(); },
   });
 
@@ -311,6 +317,7 @@ function StaticLeaseForm({ protocol, servers, deviceId, onClose }: StaticLeaseFo
             <Check className="w-3.5 h-3.5" />
             {save.isPending ? 'Adding…' : 'Add Lease'}
           </button>
+          <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={!mac || !address || save.isPending} />
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
           {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>

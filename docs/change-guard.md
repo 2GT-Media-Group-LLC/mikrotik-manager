@@ -280,6 +280,46 @@ Undo is therefore real but **untargeted**, and it cannot replace auto-revert: a 
 switch has to fire once the manager has already lost contact, and issuing an undo requires
 the contact that was just lost. Binary restore remains the default.
 
+## Reviewing a change before applying it
+
+Most edit forms have a **Review changes** button next to Save (#255). It's optional: Save
+works exactly as before, and the review only appears when you ask for it.
+
+Review changes runs the form through the same code as Save, against the live device, but
+nothing is sent: every write is recorded instead, and nothing is saved in the manager either.
+A window then shows:
+
+- **Changes**: each item that would be added, changed or removed. A change lists each
+  setting with its current value and the new one. A removal shows the item being removed.
+  Settings the device already has are listed as "Already set" rather than as changes.
+- **Commands**: the same writes as RouterOS terminal commands, with a Copy button. Items are
+  selected by name, or by their internal id where the menu has no names, never by comment.
+- **Change Guard's prediction**: a warning or a predicted lockout appears at the top, the same
+  verdict Save would give you, without the change being refused.
+
+Passphrases, keys and passwords are shown as *(hidden)*, both as values and in the commands.
+The window's apply button, labelled like the form's own (**Add VLAN**, **Save Rule**), applies
+through the normal Save, with Change Guard as usual.
+Close it to go back to the form.
+
+The review is available on:
+- **VLANs:** add and edit.
+- **Ports:** the port editor (link settings and VLAN role).
+- **IP addresses and routes.**
+- **Routing:** OSPF instances and areas, BGP connections, route filters, routing tables.
+- **Firewall:** filter and NAT rules, and address lists.
+- **Bandwidth queues.**
+- **DHCP:** servers, pools and static leases.
+- **DNS:** settings and static records.
+- **NTP and WireGuard:** NTP settings, and WireGuard interfaces and peers.
+- **Wireless:** interface settings on one AP.
+
+Bulk commands and templates already show their commands before they run, and so do Config
+Health fixes.
+
+A preview is recorded in the audit log as `PREVIEW` followed by the request, so it isn't
+mistaken for a change.
+
 ## Config Health
 
 A scheduled, read-only audit for configurations RouterOS accepts without complaint and

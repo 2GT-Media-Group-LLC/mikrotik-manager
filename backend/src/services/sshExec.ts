@@ -11,6 +11,7 @@
  * devices without one (#110).
  */
 import { Client as SSHClient } from 'ssh2';
+import { previewContext } from '../utils/previewContext';
 import { queryOne } from '../config/database';
 import { decrypt } from '../utils/crypto';
 import { preferredAuth, type KeyStatus } from '../utils/sshKeys';
@@ -92,6 +93,8 @@ export async function runSshCommand(
   command: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<SshExecResult> {
+  // A preview (#255) only intercepts the RouterOS API; never run SSH under one.
+  if (previewContext()) throw new Error('This change runs over SSH, so it can\'t be previewed');
   const { username, auth, kind } = await resolveAuth(device);
 
   return new Promise<SshExecResult>((resolve, reject) => {

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { query } from '../config/database';
 import { verifyToken } from './auth';
 import { logSafe } from '../utils/logSafe';
+import { outsidePreview } from '../utils/previewContext';
 
 function extractEntity(path: string): { entityType: string | null; entityId: number | null } {
   // e.g. /api/devices/42/interfaces → 'device', 42
@@ -53,14 +54,15 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
   res.on('finish', () => {
     const { entityType, entityId } = extractEntity(fullPath);
     const { userId, username } = extractUser(req);
-    const summary = `${req.method} ${fullPath}`;
+    // A "Review changes" preview (#255) applied nothing; say so in the log.
+    const summary = `${req.get('x-preview-changes') === '1' ? 'PREVIEW ' : ''}${req.method} ${fullPath}`;
     const ip = (req.ip ?? '').replace(/^::ffff:/, '');
 
-    query(
+    outsidePreview(() => query(
       `INSERT INTO audit_log (user_id, username, method, path, entity_type, entity_id, summary, ip_address, status_code)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [userId, username?.slice(0, 150) ?? null, req.method, fullPath, entityType, entityId, summary, ip, res.statusCode]
-    ).catch((err) => {
+    )).catch((err) => {
       // A failed insert is a write with no audit trail, so it must at least be
       // visible. It used to be swallowed: long API token names overflowed the
       // username column and those writes went unrecorded without a trace.

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ReviewChangesButton from '../components/common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Shield, RefreshCw, AlertTriangle, Power, Plus, Pencil, Trash2,
@@ -62,14 +63,15 @@ function IfaceForm({ deviceId, existing, onClose }: IfaceFormProps) {
   const [mtu, setMtu]               = useState(existing?.['mtu'] || '1420');
   const [disabled, setDisabled]     = useState(existing?.['disabled'] === 'true');
 
-  const save = useMutation({
-    meta: { inlineError: true },
-    mutationFn: () => {
+  const saveRequest = () => {
       const body: NS = { name, 'listen-port': listenPort, mtu, disabled: disabled ? 'yes' : 'no' };
       return existing?.['.id']
         ? networkServicesApi.updateWireGuardInterface(deviceId, existing['.id'], body)
         : networkServicesApi.addWireGuardInterface(deviceId, body);
-    },
+    };
+  const save = useMutation({
+    meta: { inlineError: true },
+    mutationFn: saveRequest,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ns-wireguard', deviceId] }); onClose(); },
   });
 
@@ -111,6 +113,7 @@ function IfaceForm({ deviceId, existing, onClose }: IfaceFormProps) {
             className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
             <Check className="w-3.5 h-3.5" />{save.isPending ? 'Saving…' : 'Save'}
           </button>
+          <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={!name || save.isPending} />
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
           {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
@@ -139,9 +142,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
   const [keepalive, setKeepalive]   = useState(String(rosDurationSeconds(existing?.['persistent-keepalive']) ?? ''));
   const [presharedKey, setPresharedKey] = useState('');
 
-  const save = useMutation({
-    meta: { inlineError: true },
-    mutationFn: () => {
+  const saveRequest = () => {
       const body: NS = {
         interface: ifaceName,
         'public-key': pubKey,
@@ -167,7 +168,10 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
       return existing?.['.id']
         ? networkServicesApi.updateWireGuardPeer(deviceId, existing['.id'], body)
         : networkServicesApi.addWireGuardPeer(deviceId, body);
-    },
+    };
+  const save = useMutation({
+    meta: { inlineError: true },
+    mutationFn: saveRequest,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ns-wireguard', deviceId] }); onClose(); },
   });
 
@@ -218,6 +222,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
             className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
             <Check className="w-3.5 h-3.5" />{save.isPending ? 'Saving…' : 'Save Peer'}
           </button>
+          <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={!pubKey || allowedAddr.length === 0 || save.isPending} />
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
           {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>

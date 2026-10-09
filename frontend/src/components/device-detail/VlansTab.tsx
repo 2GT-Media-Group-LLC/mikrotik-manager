@@ -7,6 +7,7 @@ import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import CopyVlanModal from './CopyVlanModal';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
+import ReviewChangesButton from '../common/ReviewChangesButton';
 import L3HwCard from './L3HwCard';
 
 interface PortForm {
@@ -67,18 +68,19 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
   ].filter(Boolean))];
 
   // ── Mutations ──
+  const addRequest = (confirm: boolean) => {
+    const tagged = addForm.tagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
+    const untagged = addForm.untagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
+    return devicesApi.addVlan(deviceId, {
+      bridge: addForm.bridge,
+      vlan_id: parseInt(addForm.vlan_id, 10),
+      tagged_ports: tagged,
+      untagged_ports: untagged,
+      ...(confirm ? { confirm_lockout: true } : {}),
+    });
+  };
   const addMutation = useMutation({
-    mutationFn: (confirm: boolean) => {
-      const tagged = addForm.tagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
-      const untagged = addForm.untagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
-      return devicesApi.addVlan(deviceId, {
-        bridge: addForm.bridge,
-        vlan_id: parseInt(addForm.vlan_id, 10),
-        tagged_ports: tagged,
-        untagged_ports: untagged,
-        ...(confirm ? { confirm_lockout: true } : {}),
-      });
-    },
+    mutationFn: addRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vlans', deviceId] });
       setAddForm({ vlan_id: '', bridge: bridgeOptions[0] || '', tagged_ports: '', untagged_ports: '' });
@@ -94,17 +96,18 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
     },
   });
 
+  const updateRequest = (confirm: boolean) => {
+    if (!editingVlan) throw new Error('No VLAN selected');
+    const tagged = editForm.tagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
+    const untagged = editForm.untagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
+    return devicesApi.updateVlan(deviceId, editingVlan.id, {
+      tagged_ports: tagged,
+      untagged_ports: untagged,
+      ...(confirm ? { confirm_lockout: true } : {}),
+    });
+  };
   const updateMutation = useMutation({
-    mutationFn: (confirm: boolean) => {
-      if (!editingVlan) throw new Error('No VLAN selected');
-      const tagged = editForm.tagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
-      const untagged = editForm.untagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
-      return devicesApi.updateVlan(deviceId, editingVlan.id, {
-        tagged_ports: tagged,
-        untagged_ports: untagged,
-        ...(confirm ? { confirm_lockout: true } : {}),
-      });
-    },
+    mutationFn: updateRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vlans', deviceId] });
       setEditingVlan(null);
@@ -118,6 +121,17 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
       setEditError(msg || 'Failed to update VLAN');
     },
   });
+
+  const submitAdd = () => {
+    // A whole number from 1 to 4094; parseInt read "10.5" as VLAN 10 (U14).
+    const id = addForm.vlan_id.trim();
+    if (!/^\d+$/.test(id) || Number(id) < 1 || Number(id) > 4094) {
+      setAddError('VLAN ID must be a whole number from 1 to 4094.');
+      return;
+    }
+    if (!addForm.bridge) { setAddError('Choose a bridge.'); return; }
+    addMutation.mutate(false);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: ({ vlanDbId, confirm = false }: { vlanDbId: number; confirm?: boolean }) =>
@@ -285,22 +299,15 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
           )}
           <div className="flex gap-2">
             <button
-              onClick={() => {
-                // A whole number from 1 to 4094; parseInt read "10.5" as VLAN 10 (U14).
-                const id = addForm.vlan_id.trim();
-                if (!/^\d+$/.test(id) || Number(id) < 1 || Number(id) > 4094) {
-                  setAddError('VLAN ID must be a whole number from 1 to 4094.');
-                  return;
-                }
-                if (!addForm.bridge) { setAddError('Choose a bridge.'); return; }
-                addMutation.mutate(false);
-              }}
+              onClick={submitAdd}
               disabled={!addForm.vlan_id || !addForm.bridge || addMutation.isPending}
               className="btn-primary flex items-center gap-2 text-sm"
             >
               {addMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
               Add VLAN
             </button>
+            <ReviewChangesButton request={() => addRequest(false)} onApply={submitAdd} applyLabel="Add VLAN"
+              deviceName={deviceName} disabled={!addForm.vlan_id || !addForm.bridge || addMutation.isPending} />
             <button onClick={() => setShowAdd(false)} className="btn-secondary text-sm">Cancel</button>
           </div>
         </div>
@@ -363,6 +370,8 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
                 : <Check className="w-3.5 h-3.5" />}
               Save Changes
             </button>
+            <ReviewChangesButton request={() => updateRequest(false)} onApply={() => updateMutation.mutate(false)}
+              applyLabel="Save changes" deviceName={deviceName} disabled={updateMutation.isPending} />
             <button onClick={() => setEditingVlan(null)} className="btn-secondary text-sm">Cancel</button>
           </div>
         </div>

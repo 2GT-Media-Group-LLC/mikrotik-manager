@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ReviewChangesButton from '../components/common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Pencil, Trash2, RefreshCw, ChevronDown, ChevronRight,
@@ -364,17 +365,14 @@ function SsidModal({
 
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (!form.ssid.trim()) { setError('SSID name is required'); return; }
+  /** What a save would send, or why it can't be saved; null when nothing changed. */
+  const savePayload = (): { data: Record<string, unknown> } | { error: string } | null => {
+    if (!form.ssid.trim()) return { error: 'SSID name is required' };
     if (!isEdit && form.authentication_types.length > 0 && !form.passphrase.trim()) {
-      setError('Passphrase is required when authentication types are selected');
-      return;
+      return { error: 'Passphrase is required when authentication types are selected' };
     }
     if (!isEdit && deployToApIds.length === 0) {
-      setError('Select at least one AP to deploy to');
-      return;
+      return { error: 'Select at least one AP to deploy to' };
     }
     const build = (f: SsidForm): Record<string, unknown> => {
     const data: Record<string, unknown> = {
@@ -406,9 +404,18 @@ function SsidModal({
       data = Object.fromEntries(Object.entries(data).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(before[k])));
       // A frequency that was cleared means "automatic" again.
       if (loadedForm.frequency && !form.frequency) data.frequency = 'auto';
-      if (!Object.keys(data).length) { onClose(); return; }
+      if (!Object.keys(data).length) return null;
     }
+    return { data };
+  };
 
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setError('');
+    const p = savePayload();
+    if (p === null) { onClose(); return; }
+    if ('error' in p) { setError(p.error); return; }
+    const { data } = p;
     if (isBulk) {
       bulkMutation.mutate(data);
     } else {
@@ -637,6 +644,20 @@ function SsidModal({
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            {/* One AP only: a bulk deploy has its own per-AP results. */}
+            {!isBulk && (
+              <ReviewChangesButton applyLabel={isEdit ? 'Save Changes' : 'Create SSID'}
+                disabled={mutation.isPending || bulkMutation.isPending}
+                onApply={() => handleSubmit()}
+                request={() => {
+                  const p = savePayload();
+                  if (p && 'error' in p) return Promise.reject(new Error(p.error));
+                  const data = p?.data ?? {};
+                  return isEdit
+                    ? wirelessApi.updateInterface(apId, existing!.name, data)
+                    : wirelessApi.createInterface(deployToApIds[0] ?? apId, data);
+                }} />
+            )}
             <button type="submit" className="btn-primary" disabled={mutation.isPending || bulkMutation.isPending}>
               {(mutation.isPending || bulkMutation.isPending)
                 ? 'Saving…'

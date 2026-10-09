@@ -126,6 +126,46 @@ of `applied`, `reverting`, `nothing_applied` or `partial`, with a `message`. The
 come with HTTP 422, plus `failedLine` and `error` saying where RouterOS stopped. See
 [Backups → Restoring](backups.md#restoring).
 
+## Previewing a change
+
+Send an edit request with the header `X-Preview-Changes: 1` to see what it would do without
+applying it. This is what the [Review changes](change-guard.md#reviewing-a-change-before-applying-it)
+button uses. The request is validated and run against the live device as usual, but no
+RouterOS write is sent and nothing is saved. The reply is:
+
+```json
+{
+  "preview": {
+    "steps": [
+      {
+        "action": "set",
+        "path": "/ip/dns",
+        "host": "192.168.0.51",
+        "params": { "servers": "1.1.1.1,9.9.9.9" },
+        "target": { "servers": "172.24.1.15,172.24.1.16", "allow-remote-requests": "false" },
+        "changes": [{ "field": "servers", "from": "172.24.1.15,172.24.1.16", "to": "1.1.1.1,9.9.9.9" }],
+        "unchanged": [],
+        "cli": "/ip dns set servers=1.1.1.1,9.9.9.9"
+      }
+    ],
+    "verdict": null
+  }
+}
+```
+
+`verdict` carries Change Guard's lockout prediction for the changes it analyses, including a
+`critical` one, which a preview reports rather than refusing. Secrets come back as
+`(hidden)`. An invalid request returns its usual error. Requests that can't be previewed,
+because they act rather than configure (reboot, flush, tools) or don't go through the
+RouterOS API, return 400 with `code: "preview_unsupported"`.
+
+```bash
+curl -sk -X PUT 'https://manager.example.com/api/network-services/dns?deviceId=8' \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H 'X-Preview-Changes: 1' \
+  -d '{"servers":["1.1.1.1","9.9.9.9"]}'
+```
+
 ## Webhooks
 
 For push rather than poll, see [Alerting → outbound webhooks](alerting.md#outbound-webhooks).

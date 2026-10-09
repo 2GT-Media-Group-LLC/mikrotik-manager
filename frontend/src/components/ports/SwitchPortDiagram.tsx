@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import ReviewChangesButton from '../common/ReviewChangesButton';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, X, Check, AlertCircle, Activity, Link2, Trash2, Network, Users, Wifi, ShieldCheck, AlertTriangle, LayoutGrid, ExternalLink } from 'lucide-react';
@@ -1062,11 +1063,8 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     });
   };
 
-  const handleSave = async (confirmLockout = false) => {
-    if (!editingPort) return;
-    setSaveError('');
-    setSaveNotice('');
-
+  /** What a save sends: the link settings, then the port's VLAN role when set. */
+  const portSavePlan = (confirmLockout = false) => {
     const ifaceUpdates: Record<string, unknown> = {
       disabled: editForm.disabled,
       comment: editForm.comment,
@@ -1086,12 +1084,8 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     }
 
     if (confirmLockout) ifaceUpdates.confirm_lockout = true;
-    try {
-      await updateInterfaceMutation.mutateAsync({ name: editingPort.name, updates: ifaceUpdates });
-    } catch {
-      return; // onError has shown the problem, or opened the lockout dialog
-    }
 
+    let vlanData: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk'; replace_tagged?: boolean } | null = null;
     if (editForm.vlan_mode !== 'none') {
       // parseVlanList understands ranges. The previous split-and-parseInt read
       // "10-12" as 10 and saved the wrong VLANs without complaint. The native
@@ -1100,12 +1094,27 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
 
       // mode is sent explicitly so the server sets frame-types and
       // ingress-filtering to match, rather than only the PVID (#151).
-      const vlanData = editForm.vlan_mode === 'access'
+      vlanData = editForm.vlan_mode === 'access'
         ? { pvid: editForm.pvid, untagged_vlans: [editForm.pvid], tagged_vlans: [], mode: 'access' as const }
         // replace_tagged: the list is the port's whole tagged set, so an
         // unticked VLAN is removed rather than quietly left in place (#165).
         : { pvid: editForm.pvid, tagged_vlans: taggedList, untagged_vlans: [], mode: 'trunk' as const, replace_tagged: true };
+    }
+    return { ifaceUpdates, vlanData };
+  };
 
+  const handleSave = async (confirmLockout = false) => {
+    if (!editingPort) return;
+    setSaveError('');
+    setSaveNotice('');
+    const { ifaceUpdates, vlanData } = portSavePlan(confirmLockout);
+    try {
+      await updateInterfaceMutation.mutateAsync({ name: editingPort.name, updates: ifaceUpdates });
+    } catch {
+      return; // onError has shown the problem, or opened the lockout dialog
+    }
+
+    if (vlanData) {
       const res = await updateVlanMutation.mutateAsync({ name: editingPort.name, data: vlanData });
       const notRemoved = (res?.data as { not_removed?: number[] } | undefined)?.not_removed ?? [];
       if (notRemoved.length) {
@@ -1841,6 +1850,18 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
 
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button onClick={() => setEditingPort(null)} className="btn-secondary">Cancel</button>
+                <ReviewChangesButton
+                  deviceName={deviceName} disabled={isPending} applyLabel="Apply"
+                  onApply={() => { void handleSave(); }}
+                  requests={() => {
+                    const name = editingPort.name;
+                    const { ifaceUpdates, vlanData } = portSavePlan();
+                    return [
+                      () => devicesApi.updateInterface(deviceId, name, ifaceUpdates),
+                      ...(vlanData ? [() => devicesApi.configurePortVlan(deviceId, name, vlanData)] : []),
+                    ];
+                  }}
+                />
                 <button
                   onClick={() => { void handleSave(); }}
                   disabled={isPending}

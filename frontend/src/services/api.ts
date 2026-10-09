@@ -33,7 +33,74 @@ const api = axios.create({
   timeout: 30000,
 });
 
+// ─── Review changes (#255) ──────────────────────────────────────────────────
+/** One write the preview recorded, with the item it acts on as it is now. */
+export interface PreviewStep {
+  action: string;
+  path: string;
+  host: string;
+  params: Record<string, string>;
+  target: Record<string, string> | null;
+  changes: { field: string; from: string | null; to: string }[];
+  unchanged: string[];
+  cli: string;
+}
+export interface ChangePreview {
+  steps: PreviewStep[];
+  verdict: { severity: string; headline: string; violations: { id: string; title: string; detail?: string; severity: string }[]; warnings: string[] } | null;
+}
+
+let previewDepth = 0;
+let previewStamped = 0;
+
+/**
+ * Run an edit call as a preview: the server goes through the same route but
+ * records what it would send to the device instead of sending it. `call` must
+ * issue its request straight away (every devicesApi/networkServicesApi method
+ * does); the header is added synchronously, so a call that waits before
+ * sending is refused here rather than sent for real.
+ */
+export async function previewChanges(call: () => Promise<unknown>): Promise<ChangePreview> {
+  const before = previewStamped;
+  let pending: Promise<unknown>;
+  previewDepth++;
+  try {
+    pending = call();
+  } finally {
+    previewDepth--;
+  }
+  if (previewStamped === before) {
+    // Nothing was sent. A form that refused its own input says why.
+    await pending;
+    throw new Error('This form can\'t be previewed');
+  }
+  const r = (await pending) as { data?: { preview?: ChangePreview } };
+  if (!r?.data?.preview) throw new Error('The server didn\'t return a preview');
+  return r.data.preview;
+}
+
+const SEVERITY = ['safe', 'unknown', 'warning', 'critical'];
+
+/** Several edit calls a form makes in turn, previewed as one review. */
+export async function previewAll(calls: (() => Promise<unknown>)[]): Promise<ChangePreview> {
+  const out: ChangePreview = { steps: [], verdict: null };
+  for (const call of calls) {
+    const p = await previewChanges(call);
+    out.steps.push(...p.steps);
+    if (p.verdict && (!out.verdict || SEVERITY.indexOf(p.verdict.severity) > SEVERITY.indexOf(out.verdict.severity))) {
+      out.verdict = p.verdict;
+    }
+  }
+  return out;
+}
+
 api.interceptors.request.use((config) => {
+  // Synchronous (see the options below), so a preview's header is set while
+  // previewChanges() is still on the stack.
+  if (previewDepth > 0 && (config.method ?? 'get').toLowerCase() !== 'get') {
+    config.headers['X-Preview-Changes'] = '1';
+    previewStamped++;
+  }
   const token = useAuthStore.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   // Active site travels with every request (issue #130). Injecting it here
@@ -43,7 +110,7 @@ api.interceptors.request.use((config) => {
   const siteId = useSiteStore.getState().currentSiteId;
   if (siteId != null) config.headers['X-Site-Id'] = String(siteId);
   return config;
-});
+}, undefined, { synchronous: true });
 
 api.interceptors.response.use(
   (r) => r,

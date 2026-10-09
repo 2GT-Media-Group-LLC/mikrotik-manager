@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ReviewChangesButton from '../components/common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Globe, RefreshCw, AlertTriangle, Save, Trash2, Plus, Pencil, X, Check, Eraser,
@@ -45,9 +46,7 @@ function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
   const [ttl, setTtl] = useState(existing?.['ttl'] || '');
   const [disabled, setDisabled] = useState(existing?.['disabled'] === 'true');
 
-  const save = useMutation({
-    meta: { inlineError: true },
-    mutationFn: () => {
+  const saveRequest = () => {
       const body: NS = { name, type };
       if (type === 'A' || type === 'AAAA') body['address'] = address;
       else if (type === 'CNAME') body['cname'] = cname;
@@ -66,7 +65,10 @@ function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
       return existing?.['.id']
         ? networkServicesApi.updateDnsStatic(deviceId, existing['.id'], body)
         : networkServicesApi.addDnsStatic(deviceId, body);
-    },
+    };
+  const save = useMutation({
+    meta: { inlineError: true },
+    mutationFn: saveRequest,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['ns-dns', deviceId] }); onClose(); },
   });
 
@@ -158,6 +160,7 @@ function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
             <Check className="w-3.5 h-3.5" />
             {save.isPending ? 'Saving…' : 'Save'}
           </button>
+          <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={!name || (type === 'SRV' && !srvPort) || save.isPending} />
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
           {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
         </div>
@@ -223,12 +226,13 @@ export default function NetworkServicesDNSPage() {
     return (d['dns'] as unknown as { allow_remote: boolean } | null)?.allow_remote;
   });
 
-  const saveSettings = useMutation({
-    meta: { inlineError: true },
-    mutationFn: () => networkServicesApi.setDns(deviceId, {
+  const saveSettingsRequest = () => networkServicesApi.setDns(deviceId, {
       servers: serversInput, allow_remote_requests: allowRemote,
       max_udp_packet_size: maxUdpSize, cache_size: cacheSize, cache_max_ttl: cacheMaxTtl,
-    }),
+    });
+  const saveSettings = useMutation({
+    meta: { inlineError: true },
+    mutationFn: saveSettingsRequest,
     onSuccess: () => { setSettingsDirty(false); qc.invalidateQueries({ queryKey: ['ns-dns', deviceId] }); qc.invalidateQueries({ queryKey: ['network-services-overview'] }); },
   });
 
@@ -377,6 +381,7 @@ export default function NetworkServicesDNSPage() {
                     className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
                     <Save className="w-3.5 h-3.5" />{saveSettings.isPending ? 'Saving…' : 'Save Changes'}
                   </button>
+                  <ReviewChangesButton request={saveSettingsRequest} onApply={() => saveSettings.mutate()} applyLabel="Save" disabled={saveSettings.isPending} />
                   <button onClick={() => {
                     const s = dns.settings;
                     setServersInput(s['servers'] || ''); setAllowRemote(s['allow-remote-requests'] === 'yes');

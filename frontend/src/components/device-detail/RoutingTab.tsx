@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ReviewChangesButton from '../common/ReviewChangesButton';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
@@ -94,14 +95,15 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
   // 409 + verdict from the lockout predictor, with the retry that confirms it.
   const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
+  const addRequest = (confirm: boolean) => devicesApi.addRoute(deviceId, {
+    dst_address: form.dst_address,
+    gateway: form.gateway,
+    distance: form.distance ? parseInt(form.distance, 10) : undefined,
+    comment: form.comment || undefined,
+    ...(confirm ? { confirm_lockout: true } : {}),
+  });
   const addMutation = useMutation({
-    mutationFn: (confirm: boolean) => devicesApi.addRoute(deviceId, {
-      dst_address: form.dst_address,
-      gateway: form.gateway,
-      distance: form.distance ? parseInt(form.distance, 10) : undefined,
-      comment: form.comment || undefined,
-      ...(confirm ? { confirm_lockout: true } : {}),
-    }),
+    mutationFn: addRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['routing', deviceId] });
       setForm({ dst_address: '', gateway: '', distance: '1', comment: '' });
@@ -179,6 +181,8 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
             <button onClick={() => addMutation.mutate(false)} disabled={!form.dst_address || !form.gateway || addMutation.isPending} className="btn-primary flex items-center gap-2 text-sm">
               {addMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add Route
             </button>
+            <ReviewChangesButton request={() => addRequest(false)} onApply={() => addMutation.mutate(false)} applyLabel="Add Route"
+              deviceName={deviceName} disabled={!form.dst_address || !form.gateway || addMutation.isPending} />
             <button onClick={() => setShowAdd(false)} className="btn-secondary text-sm">Cancel</button>
           </div>
         </div>
@@ -271,8 +275,9 @@ function OspfSubTab({ deviceId }: { deviceId: number }) {
   const [areaForm, setAreaForm] = useState({ name: '', area: '0.0.0.0', instance: '' });
   const [error, setError] = useState('');
 
+  const addInstanceRequest = () => dApi.addOspfInstance(deviceId, instanceForm);
   const addInstanceMutation = useMutation({
-    mutationFn: () => dApi.addOspfInstance(deviceId, instanceForm),
+    mutationFn: addInstanceRequest,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['routing-ospf', deviceId] }); setShowAddInstance(false); setInstanceForm({ name: '', 'router-id': '' }); setError(''); },
     onError: (err: unknown) => setError(errMsg(err)),
   });
@@ -283,9 +288,10 @@ function OspfSubTab({ deviceId }: { deviceId: number }) {
     onError: (err: unknown) => setError(errMsg(err)),
   });
 
+  const addAreaRequest = () => dApi.addOspfArea(deviceId, { name: areaForm.name, 'area-id': areaForm.area, ...(areaForm.instance ? { instance: areaForm.instance } : {}) });
   const addAreaMutation = useMutation({
     // RouterOS names the property area-id (outside review C7).
-    mutationFn: () => dApi.addOspfArea(deviceId, { name: areaForm.name, 'area-id': areaForm.area, ...(areaForm.instance ? { instance: areaForm.instance } : {}) }),
+    mutationFn: addAreaRequest,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['routing-ospf', deviceId] }); setShowAddArea(false); setAreaForm({ name: '', area: '0.0.0.0', instance: '' }); setError(''); },
     onError: (err: unknown) => setError(errMsg(err)),
   });
@@ -322,6 +328,7 @@ function OspfSubTab({ deviceId }: { deviceId: number }) {
                   <button onClick={() => addInstanceMutation.mutate()} disabled={!instanceForm.name || addInstanceMutation.isPending} className="btn-primary text-sm flex items-center gap-1.5">
                     {addInstanceMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add
                   </button>
+                  <ReviewChangesButton request={addInstanceRequest} onApply={() => addInstanceMutation.mutate()} applyLabel="Add" disabled={!instanceForm.name || addInstanceMutation.isPending} />
                   <button onClick={() => setShowAddInstance(false)} className="btn-secondary text-sm">Cancel</button>
                 </div>
               </div>
@@ -372,6 +379,7 @@ function OspfSubTab({ deviceId }: { deviceId: number }) {
                   <button onClick={() => addAreaMutation.mutate()} disabled={!areaForm.name || addAreaMutation.isPending} className="btn-primary text-sm flex items-center gap-1.5">
                     {addAreaMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add
                   </button>
+                  <ReviewChangesButton request={addAreaRequest} onApply={() => addAreaMutation.mutate()} applyLabel="Add" disabled={!areaForm.name || addAreaMutation.isPending} />
                   <button onClick={() => setShowAddArea(false)} className="btn-secondary text-sm">Cancel</button>
                 </div>
               </div>
@@ -437,8 +445,9 @@ function BgpSubTab({ deviceId }: { deviceId: number }) {
   const [form, setForm] = useState({ name: '', 'remote.address': '', 'remote.as': '', 'local.role': 'ebgp' });
   const [error, setError] = useState('');
 
+  const addRequest = () => dApi.addBgpConnection(deviceId, form);
   const addMutation = useMutation({
-    mutationFn: () => dApi.addBgpConnection(deviceId, form),
+    mutationFn: addRequest,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['routing-bgp', deviceId] }); setShowAdd(false); setForm({ name: '', 'remote.address': '', 'remote.as': '', 'local.role': 'ebgp' }); setError(''); },
     onError: (err: unknown) => setError(errMsg(err)),
   });
@@ -480,6 +489,7 @@ function BgpSubTab({ deviceId }: { deviceId: number }) {
                   <button onClick={() => addMutation.mutate()} disabled={!form.name || !form['remote.address'] || addMutation.isPending} className="btn-primary text-sm flex items-center gap-1.5">
                     {addMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add
                   </button>
+                  <ReviewChangesButton request={addRequest} onApply={() => addMutation.mutate()} applyLabel="Add" disabled={!form.name || !form['remote.address'] || addMutation.isPending} />
                   <button onClick={() => setShowAdd(false)} className="btn-secondary text-sm">Cancel</button>
                 </div>
               </div>
@@ -541,8 +551,9 @@ function RouteFiltersSubTab({ deviceId }: { deviceId: number }) {
   const [form, setForm] = useState({ chain: '', action: 'accept', prefix: '', comment: '' });
   const [error, setError] = useState('');
 
+  const addRequest = () => dApi.addFilterRule(deviceId, { ...form, prefix: form.prefix || undefined });
   const addMutation = useMutation({
-    mutationFn: () => dApi.addFilterRule(deviceId, { ...form, prefix: form.prefix || undefined }),
+    mutationFn: addRequest,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['routing-filters', deviceId] }); setShowAdd(false); setForm({ chain: '', action: 'accept', prefix: '', comment: '' }); setError(''); },
     onError: (err: unknown) => setError(errMsg(err)),
   });
@@ -583,6 +594,7 @@ function RouteFiltersSubTab({ deviceId }: { deviceId: number }) {
                 <button onClick={() => addMutation.mutate()} disabled={!form.chain || addMutation.isPending} className="btn-primary text-sm flex items-center gap-1.5">
                   {addMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add Rule
                 </button>
+                <ReviewChangesButton request={addRequest} onApply={() => addMutation.mutate()} applyLabel="Add Rule" disabled={!form.chain || addMutation.isPending} />
                 <button onClick={() => setShowAdd(false)} className="btn-secondary text-sm">Cancel</button>
               </div>
             </div>
@@ -642,8 +654,9 @@ function TablesSubTab({ deviceId }: { deviceId: number }) {
   const [form, setForm] = useState({ name: '', fib: false });
   const [error, setError] = useState('');
 
+  const addRequest = () => dApi.addRoutingTable(deviceId, form);
   const addMutation = useMutation({
-    mutationFn: () => dApi.addRoutingTable(deviceId, form),
+    mutationFn: addRequest,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['routing-tables', deviceId] }); setShowAdd(false); setForm({ name: '', fib: false }); setError(''); },
     onError: (err: unknown) => setError(errMsg(err)),
   });
@@ -676,6 +689,7 @@ function TablesSubTab({ deviceId }: { deviceId: number }) {
                 <button onClick={() => addMutation.mutate()} disabled={!form.name || addMutation.isPending} className="btn-primary text-sm flex items-center gap-1.5">
                   {addMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add Table
                 </button>
+                <ReviewChangesButton request={addRequest} onApply={() => addMutation.mutate()} applyLabel="Add Table" disabled={!form.name || addMutation.isPending} />
                 <button onClick={() => setShowAdd(false)} className="btn-secondary text-sm">Cancel</button>
               </div>
             </div>

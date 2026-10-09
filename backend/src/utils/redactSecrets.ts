@@ -36,6 +36,11 @@ const SECRET_KEYS = new Set([
  */
 const NOT_SECRET = new Set(['', 'true', 'false', 'yes', 'no']);
 
+/** Does this attribute name hold a secret (a passphrase, key or password)? */
+export function isSecretKey(key: string): boolean {
+  return SECRET_KEYS.has(key);
+}
+
 export function canSeeDeviceSecrets(user?: { role?: string }): boolean {
   return user?.role === 'admin' || user?.role === 'operator';
 }

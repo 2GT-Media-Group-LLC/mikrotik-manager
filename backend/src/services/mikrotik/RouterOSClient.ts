@@ -2,6 +2,8 @@ import * as net from 'net';
 import * as tls from 'tls';
 import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
+import { previewContext, type PreviewContext } from '../../utils/previewContext';
+import { isReadCommand, targetQuery, describeWrite } from '../../utils/changePreview';
 
 /**
  * Key under which repeated attributes from one sentence are preserved as JSON.
@@ -233,6 +235,14 @@ export class RouterOSClient extends EventEmitter {
     queries: string[] = [],
     opts: { timeoutMs?: number } = {}
   ): Promise<Record<string, string>[]> {
+    // "Review changes" (#255): while a preview runs, a write is recorded with
+    // the item it would change, and nothing is sent. Reads still go to the
+    // device, so the route behaves as it would for real up to each write.
+    const preview = previewContext();
+    if (preview && !isReadCommand(command, params)) {
+      return this.recordPreviewWrite(preview, command, params);
+    }
+
     let result!: Record<string, string>[];
     let error!: Error;
 
@@ -249,6 +259,22 @@ export class RouterOSClient extends EventEmitter {
 
     if (error) throw error;
     return result;
+  }
+
+  /** Record a write a preview would have sent, with the item as it is now. */
+  private async recordPreviewWrite(
+    preview: PreviewContext,
+    command: string,
+    params: Record<string, string>
+  ): Promise<Record<string, string>[]> {
+    const q = targetQuery(command, params);
+    let target: Record<string, string> | null = null;
+    if (q) {
+      target = (await this.execute(q.print, {}, q.queries).catch(() => []))[0] ?? null;
+    }
+    preview.steps.push(describeWrite(this.host, command, params, target));
+    // An add's reply carries no rows here either (the new id is on !done).
+    return [];
   }
 
   private async _executeRaw(
@@ -638,6 +664,7 @@ export class RouterOSClient extends EventEmitter {
     params: Record<string, string> = {},
     maxDurationMs = 30_000
   ): Promise<Record<string, string>[]> {
+    if (previewContext()) throw new RouterOSError('This action runs a tool on the device, so it can\'t be previewed');
     let result!: Record<string, string>[];
     let error!: Error;
 
