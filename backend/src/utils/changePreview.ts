@@ -53,9 +53,18 @@ const HIDDEN = '(hidden)';
 
 /** Parameters with secrets replaced; the review modal never shows a key or passphrase. */
 export function hideSecrets(params: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(params)) out[k] = isSecretKey(k) && v !== '' ? HIDDEN : v;
-  return out;
+  return Object.fromEntries(safeEntries(params).map(([k, v]) => [k, isSecretKey(k) && v !== '' ? HIDDEN : v]));
+}
+
+/**
+ * Keys that would reach Object.prototype if written as properties. RouterOS
+ * has no such parameters, and the names come from request bodies, so they are
+ * dropped; the copies are built with Object.fromEntries, never `out[k] =`.
+ */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function safeEntries<T>(o: Record<string, T>): [string, T][] {
+  return Object.entries(o).filter(([k]) => !UNSAFE_KEYS.has(k));
 }
 
 /** A value quoted the way the RouterOS terminal needs it. */
@@ -104,9 +113,7 @@ function sameValue(current: string | undefined, next: string): boolean {
  * array a route passes (DNS servers) goes out comma-joined.
  */
 export function wireParams(params: Record<string, unknown>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(params)) out[k] = String(v);
-  return out;
+  return Object.fromEntries(safeEntries(params).map(([k, v]) => [k, String(v)]));
 }
 
 /** Counters and live state: they describe the moment, not the configuration. */
@@ -114,9 +121,7 @@ const LIVE_FIELD = /(byte|packet|drop|-time$|^running$|^actual-|^current-|^manag
 
 /** The item as the review shows it: its configuration, without counters. */
 export function trimTarget(row: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(row)) if (!LIVE_FIELD.test(k)) out[k] = v;
-  return out;
+  return Object.fromEntries(safeEntries(row).filter(([k]) => !LIVE_FIELD.test(k)));
 }
 
 /** Describe one recorded write, given the item it acts on as it is now. */

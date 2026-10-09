@@ -137,3 +137,14 @@ describe('wire form and trimming', () => {
     expect(s.target).toEqual({ '.id': '*9', name: 'vlan9', mtu: '1500' });
   });
 });
+
+describe('untrusted keys', () => {
+  it('drops prototype keys rather than writing them', () => {
+    const params = JSON.parse('{"__proto__": {"polluted": "yes"}, "constructor": "x", "name": "vlan9"}');
+    const s = describeWrite('h', '/interface/vlan/add', params, null);
+    expect(s.params).toEqual({ name: 'vlan9' });
+    expect(Object.getPrototypeOf(s.params)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(s.cli).toBe('/interface vlan add name=vlan9');
+  });
+});
