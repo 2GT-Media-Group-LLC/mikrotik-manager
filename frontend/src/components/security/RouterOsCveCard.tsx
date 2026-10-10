@@ -160,7 +160,16 @@ export default function RouterOsCveCard() {
                         {c.uncertain && (
                           <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">May not apply: {c.uncertain}.</p>
                         )}
-                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 line-clamp-2">{c.summary}</p>
+                        {c.release_note && (
+                          <p className="text-xs text-gray-600 dark:text-slate-300 mt-0.5">
+                            MikroTik&apos;s release notes for {c.release_note.version}: <span className="italic">&ldquo;{c.release_note.line}&rdquo;</span>
+                          </p>
+                        )}
+                        {c.summary
+                          ? <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 line-clamp-2">{c.summary}</p>
+                          : c.source === 'release_notes' && (
+                            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">NVD has no details for it yet, so it isn&apos;t rated.</p>
+                          )}
                       </div>
                     ))}
                     {v.corrected.map((c) => (
@@ -174,7 +183,8 @@ export default function RouterOsCveCard() {
             );
           })}
           <p className="px-5 py-2.5 text-[11px] text-gray-400 dark:text-slate-500">
-            From NIST&apos;s National Vulnerability Database, with CISA&apos;s list of actively exploited ones; checked{' '}
+            From NIST&apos;s National Vulnerability Database, with CISA&apos;s list of actively exploited ones and the CVEs
+            MikroTik&apos;s release notes name as fixed; checked{' '}
             {new Date(data.fetched_at).toLocaleString()}. Matched by version only: many need a particular service
             (SSH, winbox, btest) reachable, so read each one before acting.
             {data.unranged > 0 && ` ${data.unranged} CVE${data.unranged === 1 ? ' is' : 's are'} listed without a version range and can’t be matched.`}

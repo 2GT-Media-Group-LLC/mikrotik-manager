@@ -1424,6 +1424,29 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS ssh_only BOOLEAN NOT NULL DEFAULT F
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS api_checked_at TIMESTAMPTZ;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS api_check_error TEXT;
 
+-- RouterOS release notes, read for the CVEs they name (discussion #85). NVD can
+-- take weeks to give a new CVE its affected versions; MikroTik's notes say which
+-- release fixed it at once. A release's notes never change, so found ones are
+-- read once; a missing one (not released yet) is tried again the next day.
+CREATE TABLE IF NOT EXISTS ros_release_notes (
+  version     VARCHAR(20) PRIMARY KEY,
+  found       BOOLEAN NOT NULL,
+  cves        JSONB NOT NULL DEFAULT '[]',
+  fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- NVD's entry for a CVE only the release notes name, looked up by id: it often
+-- has a description and score well before it lists affected versions.
+CREATE TABLE IF NOT EXISTS ros_cve_details (
+  cve_id      VARCHAR(32) PRIMARY KEY,
+  found       BOOLEAN NOT NULL,
+  summary     TEXT,
+  score       NUMERIC(3,1),
+  severity    VARCHAR(16),
+  published   TIMESTAMPTZ,
+  fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- How full each IPv4 address pool is (#156), from the slow poll. An exhausted
 -- pool is the quiet DHCP failure: clients connect and get no address.
 -- Post-upgrade commands (#163): a command template run on each device after

@@ -5,6 +5,8 @@ import {
   parseNvdResponse, parseKevResponse, affects, fixedIn, severityRank, correctedAway, matchUncertainty,
   type ParsedCve, type VersionRange,
 } from '../utils/cveMatch';
+import { releaseNoteFixes } from '../utils/releaseNoteCves';
+import { refreshReleaseNotes, refreshCveDetails, storedReleaseNotes, storedCveDetails } from './releaseNotes';
 
 /**
  * Known RouterOS vulnerabilities for the versions in the fleet (#175).
@@ -49,6 +51,9 @@ async function feedEnabled(): Promise<boolean> {
 /** Fetch both lists and replace the stored copy. Throws on failure, and records it. */
 export async function refreshCveFeed(): Promise<{ count: number; exploited: number }> {
   if (!(await feedEnabled())) throw new Error('The vulnerability list is turned off in Dark Site Mode');
+  // MikroTik's release notes first (discussion #85): they name a fixed CVE long
+  // before NVD lists its versions, and an NVD outage shouldn't hold them up.
+  await refreshReleaseNotes().catch((e) => console.warn(`[cveFeed] release notes: ${(e as Error).message}`));
   try {
     const cves = parseNvdResponse(await getJson(NVD_URL));
     // A failed KEV fetch shouldn't cost the whole list; the flags just stay off.
@@ -77,6 +82,8 @@ export async function refreshCveFeed(): Promise<{ count: number; exploited: numb
     }
     await setSetting(FETCHED_KEY, new Date().toISOString());
     await setSetting(ERROR_KEY, null);
+    // NVD's entry for CVEs only the release notes name, now ros_cves is current.
+    await refreshCveDetails().catch((e) => console.warn(`[cveFeed] CVE details: ${(e as Error).message}`));
     return { count: cves.length, exploited: cves.filter((c) => kev.has(c.id)).length };
   } catch (err) {
     await setSetting(ERROR_KEY, (err as Error).message).catch(() => {});
@@ -103,6 +110,10 @@ export interface FleetCveReport {
       published: string | null; summary: string; fixed_in: string | null; hardware_specific: boolean;
       /** Why this match may not really apply (see matchUncertainty); null when it's listed for this line. */
       uncertain: string | null;
+      /** Where the match came from: NVD's affected versions, or MikroTik's release notes. */
+      source: 'nvd' | 'release_notes';
+      /** The release whose notes say it fixes this CVE, and the line saying so (#85). */
+      release_note: { version: string; line: string } | null;
     }[];
     /** Matches a known correction removed, with the reason. */
     corrected: { id: string; reason: string }[];
@@ -112,7 +123,7 @@ export interface FleetCveReport {
 /** Every RouterOS version in the site, with the stored CVEs that list it. */
 export async function fleetCveReport(siteId: SiteScope | undefined): Promise<FleetCveReport> {
   const siteFilter = siteScopeDevices(siteId ?? null);
-  const [devices, stored, settings, enabled] = await Promise.all([
+  const [devices, stored, settings, enabled, notes, details] = await Promise.all([
     query<{ id: number; name: string; ros_version: string | null }>(
       `SELECT id, name, ros_version FROM devices WHERE ros_version IS NOT NULL AND ros_version <> ''
          ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
@@ -122,6 +133,8 @@ export async function fleetCveReport(siteId: SiteScope | undefined): Promise<Fle
       `SELECT key, value FROM app_settings WHERE key IN ($1, $2)`, [FETCHED_KEY, ERROR_KEY]
     ),
     feedEnabled(),
+    storedReleaseNotes().catch(() => []),
+    storedCveDetails().catch(() => new Map()),
   ]);
   const setting = (k: string) => settings.find((r) => r.key === k)?.value;
 
@@ -139,26 +152,58 @@ export async function fleetCveReport(siteId: SiteScope | undefined): Promise<Fle
     known_exploited: r.known_exploited,
   }));
 
+  const byId = new Map(cves.map((c) => [c.id, c]));
   const versions = [...byVersion.entries()].map(([version, devs]) => {
     const matched = cves.filter((c) => affects(c, version));
+    // CVEs a later release of this major version says it fixes (#85).
+    const fixes = releaseNoteFixes(version, notes);
+    const fromNvd = matched
+      .filter((c) => !correctedAway(c.id, version) || fixes.has(c.id))
+      .map((c) => {
+        const note = fixes.get(c.id);
+        return {
+          id: c.id, severity: c.severity, score: c.score, known_exploited: c.known_exploited,
+          published: c.published || null, summary: c.summary, fixed_in: fixedIn(c, version) ?? note?.fixedIn ?? null,
+          hardware_specific: c.hardwareSpecific,
+          // An exploited CVE is never played down, however vague its range,
+          // and MikroTik naming its fix for this line settles it.
+          uncertain: c.known_exploited || note ? null : matchUncertainty(c, version),
+          source: 'nvd' as const,
+          release_note: note ? { version: note.fixedIn, line: note.line } : null,
+        };
+      });
+    const listed = new Set(fromNvd.map((c) => c.id));
+    const fromNotes = [...fixes.entries()]
+      .filter(([id]) => !listed.has(id))
+      .map(([id, note]) => {
+        // NVD may know it without listing this version (its range says v7, say), or only by id.
+        const nvd = byId.get(id);
+        const d = details.get(id);
+        return {
+          id,
+          severity: nvd?.severity ?? d?.severity ?? null,
+          score: nvd?.score ?? d?.score ?? null,
+          known_exploited: nvd?.known_exploited ?? false,
+          published: (nvd?.published || d?.published) ?? null,
+          summary: nvd?.summary || d?.summary || '',
+          fixed_in: note.fixedIn,
+          hardware_specific: nvd?.hardwareSpecific ?? false,
+          uncertain: null,
+          source: 'release_notes' as const,
+          release_note: { version: note.fixedIn, line: note.line },
+        };
+      });
     return {
       version,
       devices: devs,
-      cves: matched
-        .filter((c) => !correctedAway(c.id, version))
-        .map((c) => ({
-          id: c.id, severity: c.severity, score: c.score, known_exploited: c.known_exploited,
-          published: c.published || null, summary: c.summary, fixed_in: fixedIn(c, version),
-          hardware_specific: c.hardwareSpecific,
-          // An exploited CVE is never played down, however vague its range.
-          uncertain: c.known_exploited ? null : matchUncertainty(c, version),
-        }))
+      cves: [...fromNvd, ...fromNotes]
         .sort((a, b) =>
           Number(!!a.uncertain) - Number(!!b.uncertain)
           || Number(b.known_exploited) - Number(a.known_exploited)
           || severityRank(b.severity) - severityRank(a.severity)
           || (b.score ?? 0) - (a.score ?? 0)),
       corrected: matched
+        .filter((c) => !fixes.has(c.id))
         .map((c) => ({ id: c.id, reason: correctedAway(c.id, version) }))
         .filter((c): c is { id: string; reason: string } => !!c.reason),
     };

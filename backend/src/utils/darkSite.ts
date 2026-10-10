@@ -48,7 +48,7 @@ export const DARK_SITE_FEATURES: DarkSiteFeature[] = [
     key: 'firmware_changelog_enabled',
     label: 'RouterOS changelogs',
     destination: 'download.mikrotik.com',
-    cost: 'Release notes are not shown in the firmware page.',
+    cost: 'Release notes are not shown in the firmware page, and the vulnerability list no longer picks up CVEs that MikroTik\'s release notes name before NVD lists them.',
   },
   {
     key: 'oui_download_enabled',

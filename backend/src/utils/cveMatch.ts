@@ -138,6 +138,36 @@ export function fixedIn(cve: Pick<ParsedCve, 'ranges'>, version: string): string
   return hit?.endExcluding ?? null;
 }
 
+/** The newest CVSS score NVD gives a CVE (4.0, then 3.1, 3.0, 2.0). */
+function scoreOf(c: Json): { score: number | null; severity: string | null; cvssVersion: string | null } {
+  const metrics = obj(c['metrics']);
+  for (const [key, ver] of METRIC_ORDER) {
+    const first = obj(arr(metrics[key])[0]);
+    const data = obj(first['cvssData']);
+    if (typeof data['baseScore'] === 'number') {
+      return { score: data['baseScore'] as number, severity: str(data['baseSeverity']) ?? str(first['baseSeverity']) ?? null, cvssVersion: ver };
+    }
+  }
+  return { score: null, severity: null, cvssVersion: null };
+}
+
+function summaryOf(c: Json): string {
+  return str(obj(arr(c['descriptions']).find((d) => obj(d)['lang'] === 'en'))['value']) ?? '';
+}
+
+/**
+ * One CVE looked up by id (?cveId=), for one only the release notes name. Null
+ * when NVD doesn't have it yet. Its affected versions don't matter here: the
+ * release notes already say which release fixed it.
+ */
+export function parseNvdCveDetail(body: unknown): { id: string; summary: string; score: number | null; severity: string | null; published: string | null } | null {
+  const c = obj(obj(arr(obj(body)['vulnerabilities'])[0])['cve']);
+  const id = str(c['id']);
+  if (!id) return null;
+  const { score, severity } = scoreOf(c);
+  return { id, summary: summaryOf(c).trim(), score, severity: severity?.toUpperCase() ?? null, published: str(c['published']) ?? null };
+}
+
 /** The NVD 2.0 API response, reduced to what matching needs. */
 export function parseNvdResponse(body: unknown): ParsedCve[] {
   const out: ParsedCve[] = [];
@@ -161,22 +191,8 @@ export function parseNvdResponse(body: unknown): ParsedCve[] {
     }
     if (!ranges.length && !unranged) continue;
 
-    let score: number | null = null;
-    let severity: string | null = null;
-    let cvssVersion: string | null = null;
-    const metrics = obj(c['metrics']);
-    for (const [key, ver] of METRIC_ORDER) {
-      const first = obj(arr(metrics[key])[0]);
-      const data = obj(first['cvssData']);
-      if (typeof data['baseScore'] === 'number') {
-        score = data['baseScore'] as number;
-        severity = str(data['baseSeverity']) ?? str(first['baseSeverity']) ?? null;
-        cvssVersion = ver;
-        break;
-      }
-    }
-
-    const summary = str(obj(arr(c['descriptions']).find((d) => obj(d)['lang'] === 'en'))['value']) ?? '';
+    const { score, severity, cvssVersion } = scoreOf(c);
+    const summary = summaryOf(c);
     out.push({
       id,
       published: str(c['published']) ?? '',

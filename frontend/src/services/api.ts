@@ -2127,6 +2127,10 @@ export interface FleetCve {
   published: string | null; summary: string; fixed_in: string | null; hardware_specific: boolean;
   /** Why the match may not really apply (an open-ended "before 7.x" entry on v6); null when sure. */
   uncertain: string | null;
+  /** NVD's affected versions, or MikroTik's release notes (discussion #85). */
+  source?: 'nvd' | 'release_notes';
+  /** The release whose notes say it fixes this CVE, and the line saying so. */
+  release_note?: { version: string; line: string } | null;
 }
 export interface FleetCveReport {
   enabled: boolean;

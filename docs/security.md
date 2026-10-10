@@ -162,6 +162,22 @@ RouterOS, with CISA's Known Exploited Vulnerabilities catalogue marking the expl
 The manager downloads both once a day (one request to each), and **Check now** fetches them
 on demand. An NVD API key is optional; set `NVD_API_KEY` to use one.
 
+**MikroTik's release notes.** NVD can take weeks to list the versions a new CVE affects, and
+until it does, the CVE can't be matched. MikroTik's release notes name the fix straight away,
+for example "system - improve stability (includes CVE-2026-84411)" in 6.49.23. So the manager
+also reads the release notes of each release between a version you run and the newest one
+known for that major version, including releases in between. A CVE a release says it fixes
+counts against every earlier version of the same major version. It shows as **Fixed in** that
+release, with MikroTik's line quoted.
+
+- **Fetching:** release notes never change, so each one is read once.
+- **When NVD has the CVE:** if it has the CVE but doesn't list your version, the match still
+  shows. A *may not apply* match is confirmed when the release notes for your line name the CVE.
+- **Description and rating:** for a CVE that NVD's RouterOS list doesn't have yet, the manager
+  looks it up in NVD by id, a few a day. If NVD has no entry yet, the CVE shows as *unrated*.
+- **Alerts:** the [CVE alert](alerting.md) fires for these too, once they're rated critical or
+  high.
+
 **What a match means.** A match says the version is *listed* as affected. It doesn't say the
 device can be attacked: many CVEs need a particular service (SSH, winbox, btest, the web
 interface, hotspot) to be reachable. Read each one before acting. A few NVD entries give no
@@ -178,7 +194,8 @@ but RouterOS 6 has no VXLAN. If you find another, please
 [open an issue](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues) with the CVE id.
 
 **Dark Site Mode.** The download is listed under **Settings → Dark Site Mode** as
-*RouterOS vulnerability list*. Turned off, nothing is fetched and the card says so.
+*RouterOS vulnerability list*. Turned off, nothing is fetched and the card says so. The release
+notes also follow the *RouterOS changelogs* switch.
 
 | Method | Path | Purpose |
 |---|---|---|
