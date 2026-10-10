@@ -1,7 +1,7 @@
 import {
   classifyWifiRole, parseCapsmanStatus, parseCapStatus, isCapsmanManaged,
   normalizeRadios, matchRadiosToDevices, lookupDeviceForMac, macIndexKeys, buildMacIndex,
-  hasRadios, wirelessDeviceSql,
+  hasRadios, wirelessDeviceSql, chooseWifiPackage,
 } from '../capsman';
 
 describe('classifyWifiRole', () => {
@@ -418,5 +418,23 @@ describe('radios on any device type (hAP ac² added as a router)', () => {
   it('calls a device standalone only when it lists radios', () => {
     expect(classifyWifiRole(null, null, true)).toBe('standalone');
     expect(classifyWifiRole(null, null, false)).toBe('none');
+  });
+});
+
+describe('chooseWifiPackage', () => {
+  it("finds a hAP ac2's legacy radios although the wifi menu answers (RouterOS 7.13+)", () => {
+    expect(chooseWifiPackage(0, 2)).toBe('wireless');
+  });
+  it('picks the wifi package when it has the radios', () => {
+    expect(chooseWifiPackage(7, null)).toBe('wifi');
+  });
+  it('keeps a radio-less device on the built-in wifi menu (CAPsMAN capable)', () => {
+    expect(chooseWifiPackage(0, null)).toBe('wifi');
+    expect(chooseWifiPackage(0, 0)).toBe('wifi');
+  });
+  it('handles RouterOS 6 (no wifi menu) and devices with neither', () => {
+    expect(chooseWifiPackage(null, 1)).toBe('wireless');
+    expect(chooseWifiPackage(null, 0)).toBe('wireless');
+    expect(chooseWifiPackage(null, null)).toBe('none');
   });
 });

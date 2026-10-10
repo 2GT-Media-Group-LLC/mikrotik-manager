@@ -16,7 +16,7 @@ import {
   classifyWifiRole, isCapsmanManaged, parseCapsmanStatus, parseCapStatus,
   normalizeRadios, macIndexKeys, parseRadioMonitor, resolveDatapath,
   clientsPerRadio, buildMacIndex, matchRadiosToDevices, lookupDeviceForMac,
-  legacyManagerEnabled, legacyCapInterfaces, legacyRadios, hasRadios,
+  legacyManagerEnabled, legacyCapInterfaces, legacyRadios, hasRadios, chooseWifiPackage,
   type WifiRole,
 } from './capsman';
 
@@ -26,7 +26,9 @@ import {
  */
 // 3: the legacy wireless package counts as radios only when it lists some, so an
 // all-in-one router (hAP ac²) is standalone and a router without radios isn't.
-const WIFI_ROLE_PROBE = 3;
+// 4: the package is the one whose menu lists radios; the wifi menu answers on
+// every RouterOS 7.13+ device, which hid a hAP ac²'s legacy radios.
+const WIFI_ROLE_PROBE = 4;
 
 /**
  * What one CAPsMAN reported, by key, for removing what's gone afterwards; null
@@ -2550,20 +2552,15 @@ export class DeviceCollector {
 
   async detectWifiPackage(): Promise<'wifi' | 'wireless' | 'none'> {
     if (this.wifiPackageCache !== null) return this.wifiPackageCache;
-    // Try RouterOS 7 "wifi" package first (Wi-Fi 6/7 hardware — wlan names are wifi1, wifi2)
-    try {
-      await this.client.execute('/interface/wifi/print');
-      this.wifiPackageCache = 'wifi';
-      return 'wifi';
-    } catch { /* fall through */ }
-    // Try legacy "wireless" package (RouterOS 6.x / older 7.x hardware)
-    try {
-      await this.client.execute('/interface/wireless/print');
-      this.wifiPackageCache = 'wireless';
-      return 'wireless';
-    } catch { /* fall through */ }
-    this.wifiPackageCache = 'none';
-    return 'none';
+    // Both menus, because the wifi one answers on every RouterOS 7.13+ device
+    // (CAPsMAN is built in) even when the radios are on the legacy wireless
+    // package, as on a hAP ac². See chooseWifiPackage.
+    const [wifi, wireless] = await Promise.all([
+      this.client.execute('/interface/wifi/print').catch(() => null),
+      this.client.execute('/interface/wireless/print').catch(() => null),
+    ]);
+    this.wifiPackageCache = chooseWifiPackage(wifi?.length ?? null, wireless?.length ?? null);
+    return this.wifiPackageCache;
   }
 
   // Normalize RouterOS 7 wifi package dot-notation fields to flat keys

@@ -36,6 +36,25 @@ export const RADIO_ROLES: readonly WifiRole[] = ['standalone', 'cap', 'controlle
 /** Roles the wireless pages cover: radios of its own, or a CAPsMAN controller. */
 export const WIRELESS_ROLES: readonly WifiRole[] = [...RADIO_ROLES, 'controller'];
 
+/**
+ * Which wireless package drives this device, from how many interfaces each
+ * menu lists (null: the menu doesn't exist).
+ *
+ * Since RouterOS 7.13 the /interface/wifi menu is in the base system on every
+ * device, for CAPsMAN, so it answers even with no Wi-Fi package installed. A
+ * hAP ac² (RBD52G) on the legacy wireless package lists its radios under
+ * /interface/wireless and nothing under /interface/wifi. So the menu with
+ * radios wins; without radios, an existing wifi menu still means the device
+ * can be a CAPsMAN controller.
+ */
+export function chooseWifiPackage(wifiCount: number | null, wirelessCount: number | null): 'wifi' | 'wireless' | 'none' {
+  if (wifiCount !== null && wifiCount > 0) return 'wifi';
+  if (wirelessCount !== null && wirelessCount > 0) return 'wireless';
+  if (wifiCount !== null) return 'wifi';
+  if (wirelessCount !== null) return 'wireless';
+  return 'none';
+}
+
 /** Does this device have radios, whatever type it was added as? */
 export function hasRadios(d: { device_type?: string; wifi_role?: string | null }): boolean {
   return d.device_type === 'wireless_ap' || RADIO_ROLES.includes((d.wifi_role ?? 'none') as WifiRole);
