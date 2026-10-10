@@ -16,7 +16,7 @@ import {
   classifyWifiRole, isCapsmanManaged, parseCapsmanStatus, parseCapStatus,
   normalizeRadios, macIndexKeys, parseRadioMonitor, resolveDatapath,
   clientsPerRadio, buildMacIndex, matchRadiosToDevices, lookupDeviceForMac,
-  legacyManagerEnabled, legacyCapInterfaces, legacyRadios,
+  legacyManagerEnabled, legacyCapInterfaces, legacyRadios, hasRadios,
   type WifiRole,
 } from './capsman';
 
@@ -24,7 +24,9 @@ import {
  * Version of the wireless role check. Devices classified by an older version
  * are probed once more; 2 added legacy CAPsMAN (#250).
  */
-const WIFI_ROLE_PROBE = 2;
+// 3: the legacy wireless package counts as radios only when it lists some, so an
+// all-in-one router (hAP ac²) is standalone and a router without radios isn't.
+const WIFI_ROLE_PROBE = 3;
 
 /**
  * What one CAPsMAN reported, by key, for removing what's gone afterwards; null
@@ -272,7 +274,9 @@ export class DeviceCollector {
     await this.collectInterfaceTraffic();
     await this.collectResourceUsage();
     if (this.modules.clients) await this.updateClients();
-    if (this.device.device_type === 'wireless_ap') {
+    // Radios of its own, whatever it was added as: an all-in-one router such
+    // as the hAP ac² is an access point too.
+    if (hasRadios(this.device as unknown as { device_type: string; wifi_role?: string | null })) {
       await this.collectWirelessStats();
     }
     if (this.device.device_type === 'switch') {
@@ -313,7 +317,8 @@ export class DeviceCollector {
     if (role == null) return true;                 // never determined — probe once
     // Classified by an older role check: look once more (legacy CAPsMAN, #250).
     if ((d.wifi_role_probe ?? 0) < WIFI_ROLE_PROBE) return true;
-    return role !== 'none' && role !== 'standalone';
+    // 'standalone' is a device with its own radios (an all-in-one router, say).
+    return role !== 'none';
   }
 
   async collectSlow(): Promise<void> {
@@ -2244,7 +2249,9 @@ export class DeviceCollector {
     const [capsman, cap, ifaces, legacyMgr, legacyCap] = await Promise.all([
       pkg === 'wifi' ? this.client.execute('/interface/wifi/capsman/print').catch(absentOrUnknown) : Promise.resolve(null),
       pkg === 'wifi' ? this.client.execute('/interface/wifi/cap/print').catch(absentOrUnknown) : Promise.resolve(null),
-      pkg === 'wifi' ? this.client.execute('/interface/wifi/print').catch(absentOrUnknown) : Promise.resolve(null),
+      // Both packages: whether the device really has radios. The wireless
+      // package is installed on many RouterOS 6 routers that have none.
+      this.client.execute(pkg === 'wifi' ? '/interface/wifi/print' : '/interface/wireless/print').catch(absentOrUnknown),
       this.client.execute('/caps-man/manager/print').catch(absentOrUnknown),
       pkg === 'wireless' ? this.client.execute('/interface/wireless/cap/print').catch(absentOrUnknown) : Promise.resolve(null),
     ]);
@@ -2257,8 +2264,7 @@ export class DeviceCollector {
     const role = classifyWifiRole(
       newController || legacyController ? [{ enabled: 'yes' }] : capsman,
       this.legacyCapIfaces.length > 0 ? [{ enabled: 'yes' }] : cap,
-      // The wireless package was always treated as having radios (standalone).
-      pkg === 'wifi' ? (ifaces ?? []).length > 0 : true,
+      (ifaces ?? []).length > 0,
     );
     if (!this.wifiRoleUncertain) this.wifiRoleCache = role;
     return role;

@@ -1,6 +1,7 @@
 import {
   classifyWifiRole, parseCapsmanStatus, parseCapStatus, isCapsmanManaged,
   normalizeRadios, matchRadiosToDevices, lookupDeviceForMac, macIndexKeys, buildMacIndex,
+  hasRadios, wirelessDeviceSql,
 } from '../capsman';
 
 describe('classifyWifiRole', () => {
@@ -403,5 +404,19 @@ describe('legacy CAPsMAN (#250)', () => {
     );
     expect(r.capIdentity).toBe('BonusRoom-radio');
     expect(r.registeredPeers).toBe(4);
+  });
+});
+
+describe('radios on any device type (hAP ac² added as a router)', () => {
+  it('counts a standalone router as having radios, and a controller as wireless only', () => {
+    expect(hasRadios({ device_type: 'router', wifi_role: 'standalone' })).toBe(true);
+    expect(hasRadios({ device_type: 'router', wifi_role: 'controller' })).toBe(false);
+    expect(hasRadios({ device_type: 'router', wifi_role: 'none' })).toBe(false);
+    expect(hasRadios({ device_type: 'wireless_ap', wifi_role: null })).toBe(true);
+    expect(wirelessDeviceSql('d')).toBe("(d.device_type = 'wireless_ap' OR d.wifi_role IN ('standalone','cap','controller_cap','controller'))");
+  });
+  it('calls a device standalone only when it lists radios', () => {
+    expect(classifyWifiRole(null, null, true)).toBe('standalone');
+    expect(classifyWifiRole(null, null, false)).toBe('none');
   });
 });

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isWirelessDevice } from '../../utils/wireless';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -180,7 +181,8 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
   const hasSwitches  = devices.some(d => d.device_type === 'switch');
   const hasRouters   = devices.some(d => d.device_type === 'router');
-  const hasWireless  = devices.some(d => d.device_type === 'wireless_ap');
+  // Radios of their own count too: an all-in-one router added as a router is an AP as well.
+  const hasWireless  = devices.some(isWirelessDevice);
 
   const onlineCount = devices.filter(d => d.status === 'online').length;
 

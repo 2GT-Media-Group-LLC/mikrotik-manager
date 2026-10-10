@@ -3,6 +3,14 @@
 Radios, SSIDs, RF health and guest access. Both the RouterOS 7 `wifi` package and the legacy
 `wlan` package are supported; the platform detects which a device uses.
 
+**Which devices count.** The wireless pages cover any device with radios of its own,
+whatever type it was added as. All-in-one routers such as the hAP ac² (RBD52G) are
+usually added as routers, and they get their **Radios** tab, a place on the wireless
+pages, and live radio stats like any access point. CAPsMAN controllers are covered too. The
+manager checks once whether a device has radios: with the legacy package, only devices
+that list wireless interfaces count, since many RouterOS 6 routers have that package and no
+radios.
+
 ## Radios and SSIDs
 
 **Wireless → Radios & SSIDs** manages wireless interfaces and security profiles: create, edit,

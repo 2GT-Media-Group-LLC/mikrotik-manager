@@ -1,4 +1,5 @@
 import { Queue, Worker, Job } from 'bullmq';
+import { hasRadios } from './mikrotik/capsman';
 import { checkApi, promoteToApi, recordApiCheck, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
 import { apiCheckIntervalMs } from '../utils/sshOnly';
 import { createRedisConnection } from '../config/redis';
@@ -366,8 +367,8 @@ export class PollerService {
           }
         }
 
-        // Spectral scan — wireless_ap only, user-configured interval (default 24h)
-        if (spectralEnabled && device.device_type === 'wireless_ap') {
+        // Spectral scan — devices with radios (an all-in-one router too), user-configured interval (default 24h)
+        if (spectralEnabled && hasRadios(device as DeviceRow & { wifi_role?: string | null })) {
           const spectralKey = `poll:spectral:${device.id}`;
           const lastSpectral = await this.getTimestamp(spectralKey);
           if (now - lastSpectral > spectralIntervalHours * 3_600_000) {
@@ -376,8 +377,8 @@ export class PollerService {
           }
         }
 
-        // AP scan — wireless_ap only, user-configured interval (default 24h)
-        if (apScanEnabled && device.device_type === 'wireless_ap') {
+        // AP scan — devices with radios, user-configured interval (default 24h)
+        if (apScanEnabled && hasRadios(device as DeviceRow & { wifi_role?: string | null })) {
           const apScanKey = `poll:apscan:${device.id}`;
           const lastApScan = await this.getTimestamp(apScanKey);
           if (now - lastApScan > apScanIntervalHours * 3_600_000) {

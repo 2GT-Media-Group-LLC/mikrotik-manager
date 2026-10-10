@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { hasRadios } from '../utils/wireless';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Ticket, Wifi, Users, Globe, Power, Trash2, RefreshCw, Plus, Printer,
@@ -415,7 +416,7 @@ export default function GuestWifiPage() {
           <select className="input w-auto" value={devId} onChange={e => setDeviceId(parseInt(e.target.value))}>
             {online.map(d => (
               <option key={d.id} value={d.id}>
-                {d.name} ({d.device_type === 'wireless_ap' ? 'AP' : 'Router'})
+                {d.name} ({d.device_type === 'wireless_ap' ? 'AP' : hasRadios(d) ? 'Router with Wi-Fi' : 'Router'})
               </option>
             ))}
           </select>
@@ -434,7 +435,7 @@ export default function GuestWifiPage() {
       ) : !hasServer ? (
         canWrite
           ? <SetupWizard deviceId={devId} interfaces={overview?.interfaces ?? []}
-              isAP={online.find(d => d.id === devId)?.device_type === 'wireless_ap'} onDone={invalidateAll} />
+              isAP={(() => { const d = online.find(x => x.id === devId); return !!d && hasRadios(d); })()} onDone={invalidateAll} />
           : <div className="card p-10 text-center text-sm text-gray-400 dark:text-slate-500">No guest network configured on this device.</div>
       ) : (
         <>

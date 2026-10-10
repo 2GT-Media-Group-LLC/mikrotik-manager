@@ -27,6 +27,7 @@ import clsx from 'clsx';
 import { displayState, STATE_LABEL } from '../utils/deviceState';
 import DeviceHealthCard from '../components/device-detail/DeviceHealthCard';
 import { DeviceIdentityBanner } from '../components/security/IdentityChange';
+import { isWirelessDevice } from '../utils/wireless';
 import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
 
 type TabKey = 'overview' | 'ports' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
@@ -126,8 +127,7 @@ export default function DeviceDetailPage() {
   // Show the Radios tab when the device actually has radios, not when someone
   // tagged it "wireless_ap". A router can carry radios, and a CAPsMAN controller is
   // normally tagged a router — both had no way to reach this tab (#94).
-  const isWirelessAP = device.device_type === 'wireless_ap'
-    || (device.wifi_role != null && device.wifi_role !== 'none');
+  const isWirelessAP = isWirelessDevice(device);
 
   const allTabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },

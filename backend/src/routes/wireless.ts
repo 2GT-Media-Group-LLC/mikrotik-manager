@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { wirelessDeviceSql } from '../services/mikrotik/capsman';
 import { deviceSiteAccess, deviceIdParam, deviceIdQuery, devicesDenied } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
@@ -28,7 +29,7 @@ router.use(deviceWriteLock(deviceIdFromPath));
 
 async function getAP(id: number): Promise<DeviceRow | null> {
   const rows = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE id = $1 AND (device_type = 'wireless_ap' OR wifi_role IN ('cap','controller','controller_cap'))`,
+    `SELECT * FROM devices WHERE id = $1 AND ${wirelessDeviceSql()}`,
     [id]
   );
   return rows[0] ?? null;
@@ -53,7 +54,7 @@ router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
 
   const placeholders = apIds.map((_, i) => `$${i + 1}`).join(',');
   const aps = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE id IN (${placeholders}) AND (device_type = 'wireless_ap' OR wifi_role IN ('cap','controller','controller_cap'))`,
+    `SELECT * FROM devices WHERE id IN (${placeholders}) AND ${wirelessDeviceSql()}`,
     apIds
   );
 
@@ -165,7 +166,7 @@ router.get('/', async (req: Request, res: Response) => {
            )                                              AS ssid_count
     FROM devices d
     LEFT JOIN wireless_interfaces wi ON wi.device_id = d.id
-    WHERE (d.device_type = 'wireless_ap' OR d.wifi_role IN ('cap','controller','controller_cap'))
+    WHERE ${wirelessDeviceSql('d')}
       ${siteFilter ? `AND ${siteFilter}` : ''}
     GROUP BY d.id
     ORDER BY d.name ASC
@@ -940,7 +941,7 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
     LEFT JOIN capsman_radios cr ON cr.matched_device_id = wi.device_id
                                AND cr.radio_mac = wi.radio_mac
     LEFT JOIN devices cd ON cd.id = cr.controller_device_id
-    WHERE (d.device_type = 'wireless_ap' OR d.wifi_role IN ('cap','controller','controller_cap'))
+    WHERE ${wirelessDeviceSql('d')}
       AND wi.disabled = FALSE
       AND (wi.config_json->>'master-interface') IS NULL
       AND (

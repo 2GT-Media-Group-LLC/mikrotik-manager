@@ -27,6 +27,26 @@
 
 export type WifiRole = 'none' | 'standalone' | 'cap' | 'controller' | 'controller_cap';
 
+/**
+ * Roles with radios of their own. 'standalone' is a device running its own
+ * Wi-Fi, which includes all-in-one routers such as the hAP ac² (RBD52G): added
+ * as a router, it is still an access point.
+ */
+export const RADIO_ROLES: readonly WifiRole[] = ['standalone', 'cap', 'controller_cap'];
+/** Roles the wireless pages cover: radios of its own, or a CAPsMAN controller. */
+export const WIRELESS_ROLES: readonly WifiRole[] = [...RADIO_ROLES, 'controller'];
+
+/** Does this device have radios, whatever type it was added as? */
+export function hasRadios(d: { device_type?: string; wifi_role?: string | null }): boolean {
+  return d.device_type === 'wireless_ap' || RADIO_ROLES.includes((d.wifi_role ?? 'none') as WifiRole);
+}
+
+/** SQL: a device the wireless pages cover. `alias` is the devices table alias, if any. */
+export function wirelessDeviceSql(alias = ''): string {
+  const a = alias ? `${alias}.` : '';
+  return `(${a}device_type = 'wireless_ap' OR ${a}wifi_role IN (${WIRELESS_ROLES.map((r) => `'${r}'`).join(',')}))`;
+}
+
 export interface CapsmanStatus {
   /** MAC of the controller managing this radio, when it could be read. */
   controllerMac: string | null;

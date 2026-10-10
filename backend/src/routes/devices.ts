@@ -83,7 +83,7 @@ router.get('/', async (req: Request, res: Response) => {
             latest_ros_version, firmware_update_available,
             routerboard_upgrade_available, upgrade_firmware_version,
             location_address, location_lat::float8 AS location_lat, location_lng::float8 AS location_lng,
-            rack_name, rack_slot, created_at
+            rack_name, rack_slot, wifi_role, created_at
      FROM devices ${where} ORDER BY name ASC`
   );
 
