@@ -1185,6 +1185,13 @@
 <h1 id="wireless">Wireless<a class="headerlink" href="#wireless" title="Permanent link">&para;</a></h1>
 <p>Radios, SSIDs, RF health and guest access. Both the RouterOS 7 <code>wifi</code> package and the legacy
 <code>wlan</code> package are supported; the platform detects which a device uses.</p>
+<p><strong>Which devices count.</strong> The wireless pages cover any device with radios of its own,
+whatever type it was added as. All-in-one routers such as the hAP ac² (RBD52G) are
+usually added as routers, and they get their <strong>Radios</strong> tab, a place on the wireless
+pages, and live radio stats like any access point. CAPsMAN controllers are covered too. The
+manager checks once whether a device has radios: with the legacy package, only devices
+that list wireless interfaces count, since many RouterOS 6 routers have that package and no
+radios.</p>
 <h2 id="radios-and-ssids">Radios and SSIDs<a class="headerlink" href="#radios-and-ssids" title="Permanent link">&para;</a></h2>
 <p><strong>Wireless → Radios &amp; SSIDs</strong> manages wireless interfaces and security profiles: create, edit,
 enable, disable and remove SSIDs, with WPA2 and WPA3 profiles. An SSID can be deployed across
