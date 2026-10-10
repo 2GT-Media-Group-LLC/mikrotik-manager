@@ -56,6 +56,7 @@ or 2FA changes.
 | `POST /api/devices/:id/change-guard/check` | Can this device arm auto-revert right now? (`ready`, `reason`) |
 | `POST /api/devices/:id/change-guard/probe` | Report which safety mechanisms the device supports |
 | `GET /api/devices/:id/config-health` | Latest standing-audit findings |
+| `POST /api/devices/:id/check-api` | For a device added over SSH only: does the API answer now? If so it becomes an ordinary device (`api: true`); otherwise `reason` says why |
 | `GET /api/devices/:id/l3hw` | L3 hardware offloading state, routed VLANs and chip counters (`supported: false` on devices without a capable chip) |
 | `PUT /api/devices/:id/l3hw` | Turn offloading on or off (`{"enabled": true}`) under Change Guard; returns 409 with `needs_acknowledgement` when forward or NAT rules would be bypassed, so resend with `"acknowledge_firewall": true` |
 | `GET /api/topology` | Graph of devices, links, external nodes, and distrusted identifiers |

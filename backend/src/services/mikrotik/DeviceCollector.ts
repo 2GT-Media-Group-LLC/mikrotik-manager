@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { ApiNotEnabledError } from '../../utils/sshOnly';
 import { RouterOSClient, RouterOSTrapError } from './RouterOSClient';
 import { query, queryOne } from '../../config/database';
 import { getWriteApi } from '../../config/influxdb';
@@ -163,6 +164,8 @@ export interface DeviceRow {
   ros_version?: string;
   device_type: string;
   status: string;
+  /** Added over SSH only; the API isn't enabled yet (#174). */
+  ssh_only?: boolean;
 }
 
 /** Physical ethernet names, which is all `monitor` will accept. */
@@ -202,6 +205,17 @@ export class DeviceCollector {
 
   async connect(): Promise<void> {
     if (this.aborted) throw new Error('Poll cancelled: it ran past its time limit');
+    // Added over SSH only (#174): nothing here works until the API is on. Many
+    // routes load only a few columns, so the flag is looked up when it's missing.
+    let sshOnly = this.device.ssh_only;
+    let name = this.device.name;
+    if (sshOnly === undefined && this.device.id) {
+      const row = await queryOne<{ ssh_only: boolean; name: string }>(
+        `SELECT ssh_only, name FROM devices WHERE id = $1`, [this.device.id]).catch(() => null);
+      sshOnly = row?.ssh_only;
+      name = name ?? row?.name;
+    }
+    if (sshOnly) throw new ApiNotEnabledError(name ?? `Device ${this.device.id}`);
     await this.client.connect();
     await this.verifySerial();
   }

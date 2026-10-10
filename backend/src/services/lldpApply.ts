@@ -20,7 +20,7 @@ export { LLDP_DEVICE_TYPES, parseDeviceTypes } from '../utils/lldpTargets';
 async function onlineDevices(types: LldpDeviceType[], siteId: SiteScope | undefined): Promise<DeviceRow[]> {
   const siteFilter = siteScopeDevices(siteId ?? null);
   return query<DeviceRow>(
-    `SELECT * FROM devices WHERE device_type::text = ANY($1::text[]) AND status = 'online'
+    `SELECT * FROM devices WHERE device_type::text = ANY($1::text[]) AND status = 'online' AND NOT ssh_only
        ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`,
     [types]
   );

@@ -128,7 +128,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.post('/discover', requireWrite, async (req: Request, res: Response) => {
   // Only the devices in view: a site-scoped account can't trigger polls of other sites (P1-7).
   const scope = siteScopeDevices(writableScope(req));
-  const devices = await query<{ id: number }>(`SELECT id FROM devices WHERE status='online' ${scope ? `AND ${scope}` : ''}`);
+  const devices = await query<{ id: number }>(`SELECT id FROM devices WHERE status='online' AND NOT ssh_only ${scope ? `AND ${scope}` : ''}`);
   if (pollerService) {
     for (const d of devices) {
       await pollerService.scheduleDeviceSync(d.id, 'slow');

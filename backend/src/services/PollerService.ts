@@ -1,4 +1,6 @@
 import { Queue, Worker, Job } from 'bullmq';
+import { checkApi, promoteToApi, recordApiCheck, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
+import { apiCheckIntervalMs } from '../utils/sshOnly';
 import { createRedisConnection } from '../config/redis';
 import { query, queryOne } from '../config/database';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
@@ -91,7 +93,7 @@ function withTimeout<T>(work: Promise<T>, ms: number, label: string, onTimeout?:
 
 interface PollJob {
   deviceId: number;
-  type: 'fast' | 'slow' | 'logs' | 'full' | 'macscan' | 'spectral' | 'apscan' | 'configsnap' | 'confighealth';
+  type: 'fast' | 'slow' | 'logs' | 'full' | 'macscan' | 'spectral' | 'apscan' | 'configsnap' | 'confighealth' | 'sshcheck';
 }
 
 export class PollerService {
@@ -252,6 +254,8 @@ export class PollerService {
       await this.logsQueue.add('device-logs-poll', jobData, periodic);
     } else if (type === 'macscan') {
       await this.fastQueue.add('device-macscan', jobData, periodic);
+    } else if (type === 'sshcheck') {
+      await this.fastQueue.add('device-sshcheck', jobData, periodic);
     } else if (type === 'spectral') {
       await this.slowQueue.add('device-spectral', jobData, periodic);
     } else if (type === 'apscan') {
@@ -314,6 +318,25 @@ export class PollerService {
 
       const now = Date.now();
       for (const device of devices) {
+        // Added over SSH only (#174): no API polling. A check every minute reads
+        // the basics over SSH and retries the API; config history still works,
+        // since it is an SSH export.
+        if (device.ssh_only) {
+          const sshKey = `poll:sshcheck:${device.id}`;
+          if (now - (await this.getTimestamp(sshKey)) > 60_000) {
+            await this.scheduleDeviceSync(device.id, 'sshcheck');
+            await this.setTimestamp(sshKey, now, 60_000);
+          }
+          if (configSnapEnabled) {
+            const configKey = `poll:configsnap:${device.id}`;
+            if (now - (await this.getTimestamp(configKey)) > configSnapIntervalMin * 60_000) {
+              await this.scheduleDeviceSync(device.id, 'configsnap');
+              await this.setTimestamp(configKey, now, configSnapIntervalMin * 60_000);
+            }
+          }
+          continue;
+        }
+
         // Fast poll every 30s
         await this.scheduleDeviceSync(device.id, 'fast');
 
@@ -483,7 +506,8 @@ export class PollerService {
       // isolated network it can only fail, once a day, on every device.
       if (appSettings['device_update_check_enabled'] !== false && now - lastFirmware > 86_400_000) {
         await this.setTimestamp(firmwareKey, now, 86_400_000);
-        this.checkAllDevicesFirmware(devices).catch((e) =>
+        // Over the API; an SSH-only device (#174) has none yet.
+        this.checkAllDevicesFirmware(devices.filter((d) => !d.ssh_only)).catch((e) =>
           console.error('[Poller] Firmware check error:', e)
         );
       }
@@ -1076,6 +1100,12 @@ export class PollerService {
   private async processPollJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
+    // Whatever was asked for (a full sync after adding, say), a device without
+    // its API yet gets the SSH check (#174).
+    if (device.ssh_only) {
+      await this.processSshOnlyJob(device);
+      return;
+    }
     const pollModules = resolveModules(await this.getAppSettings());
 
     const prevStatus = device.status; // capture before poll
@@ -1095,33 +1125,7 @@ export class PollerService {
         await collector.collectFast();
       }
 
-      // Any open outage ends with a successful poll, whatever the status said
-      // before it. Keyed on the pre-poll status, an outage opened while this
-      // poll was running (a timeout) was never closed, and the device's uptime
-      // kept falling while it was up.
-      query(
-        `UPDATE device_availability
-         SET came_back_online_at = NOW(),
-             duration_seconds = EXTRACT(EPOCH FROM (NOW() - went_offline_at))::INTEGER
-         WHERE device_id = $1 AND came_back_online_at IS NULL`,
-        [device.id]
-      ).catch(() => {});
-
-      // Device came online (first poll after add, or recovery from offline)
-      if (prevStatus !== 'online') {
-        // Intermittent devices (#168) only announce recovery if their
-        // long-offline alert went out; otherwise they came and went quietly.
-        const d = device as DeviceRow & { intermittent?: boolean; intermittent_alerted_at?: string | null };
-        if (recoveryAlert(!!d.intermittent, !!d.intermittent_alerted_at)) {
-          alertService.dispatch('device_online', `${device.name} is back online`, {
-            deviceId: device.id,
-            deviceName: device.name,
-          }).catch(() => {});
-        }
-        if (d.intermittent_alerted_at) {
-          query(`UPDATE devices SET intermittent_alerted_at = NULL WHERE id = $1`, [device.id]).catch(() => {});
-        }
-      }
+      this.recordPollSuccess(device, prevStatus);
 
       void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
       void this.emitForDevice('clients:updated', { deviceId: device.id }, device.id);
@@ -1130,6 +1134,65 @@ export class PollerService {
       // sees timeouts. Recording it here as well counted every failure twice.
       collector.disconnect();
     }
+  }
+
+  /** A poll reached the device: close any open outage, and announce a recovery. */
+  private recordPollSuccess(device: DeviceRow, prevStatus: string): void {
+    // Any open outage ends with a successful poll, whatever the status said
+    // before it. Keyed on the pre-poll status, an outage opened while this
+    // poll was running (a timeout) was never closed, and the device's uptime
+    // kept falling while it was up.
+    query(
+      `UPDATE device_availability
+       SET came_back_online_at = NOW(),
+           duration_seconds = EXTRACT(EPOCH FROM (NOW() - went_offline_at))::INTEGER
+       WHERE device_id = $1 AND came_back_online_at IS NULL`,
+      [device.id]
+    ).catch(() => {});
+
+    // Device came online (first poll after add, or recovery from offline)
+    if (prevStatus !== 'online') {
+      // Intermittent devices (#168) only announce recovery if their
+      // long-offline alert went out; otherwise they came and went quietly.
+      const d = device as DeviceRow & { intermittent?: boolean; intermittent_alerted_at?: string | null };
+      if (recoveryAlert(!!d.intermittent, !!d.intermittent_alerted_at)) {
+        alertService.dispatch('device_online', `${device.name} is back online`, {
+          deviceId: device.id,
+          deviceName: device.name,
+        }).catch(() => {});
+      }
+      if (d.intermittent_alerted_at) {
+        query(`UPDATE devices SET intermittent_alerted_at = NULL WHERE id = $1`, [device.id]).catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * A device added over SSH only (#174). Tries the API when it is due (every
+   * minute, every 15 after a refused login) and, when it answers, makes the
+   * device an ordinary one and starts a full sync. Otherwise reads the basics
+   * over SSH; a failure there throws, and is recorded as offline as usual.
+   */
+  private async processSshOnlyJob(device: DeviceRow): Promise<void> {
+    const dev = device as unknown as SshOnlyDevice;
+    const prevStatus = device.status;
+    const now = Date.now();
+    const gate = `poll:apicheck:${device.id}`;
+    if (now >= (await this.getTimestamp(gate))) {
+      const check = await checkApi(dev);
+      if (check.ok) {
+        await promoteToApi(dev, check);
+        await this.scheduleDeviceSync(device.id, 'full');
+        void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
+        return;
+      }
+      await recordApiCheck(device.id, check.message);
+      const wait = apiCheckIntervalMs(check.kind);
+      await this.setTimestamp(gate, now + wait, wait);
+    }
+    await refreshOverSsh(dev);
+    this.recordPollSuccess(device, prevStatus);
+    void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
   }
 
   private static aggregateSpectralRows(
@@ -1284,7 +1347,8 @@ export class PollerService {
 
     const collector = new DeviceCollector(device);
     try {
-      await collector.connect();
+      // The snapshot is an SSH export; only an ordinary device opens the API session too.
+      if (!device.ssh_only) await collector.connect();
       await collector.snapshotConfig('scheduled');
     } catch (err) {
       console.error(`[Poller] Config snapshot failed for ${device.name}:`, (err as Error).message);

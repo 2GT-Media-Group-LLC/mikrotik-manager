@@ -44,6 +44,8 @@ export default function AddDeviceModal({
     notes: '',
   });
   const [presetId, setPresetId] = useState<number | null>(null);
+  // The API isn't enabled on the device yet (#174): add it over SSH.
+  const [sshOnly, setSshOnly] = useState(false);
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -88,6 +90,7 @@ export default function AddDeviceModal({
       combine_with_device_id: opts.combineWithDeviceId,
       force_replace_existing_by_serial: opts.forceReplace,
       ...(tagIds.length ? { tag_ids: tagIds } : {}),
+      ...(sshOnly ? { ssh_only: true } : {}),
     };
     if (selectedPreset) {
       return {
@@ -102,12 +105,13 @@ export default function AddDeviceModal({
     return {
       name: form.name,
       ip_address: form.ip_address,
-      api_port: form.api_port.trim() === '' ? undefined : parsePort(form.api_port, 8728),
+      // SSH only: one login, used for SSH now and tried on the API later.
+      api_port: sshOnly || form.api_port.trim() === '' ? undefined : parsePort(form.api_port, 8728),
       api_username: form.api_username,
       api_password: form.api_password,
       ssh_port: parsePort(form.ssh_port, 22),
-      ssh_username: form.ssh_username || undefined,
-      ssh_password: form.ssh_password || undefined,
+      ssh_username: sshOnly ? undefined : form.ssh_username || undefined,
+      ssh_password: sshOnly ? undefined : form.ssh_password || undefined,
       device_type: form.device_type as import('../../types').DeviceType,
       notes: form.notes,
       ...extra,
@@ -240,6 +244,17 @@ export default function AddDeviceModal({
               Credentials
             </h3>
 
+            <label className="flex items-start gap-2 mb-3 p-2.5 rounded-lg border border-gray-200 dark:border-slate-700 cursor-pointer">
+              <input type="checkbox" className="mt-0.5 w-4 h-4 rounded" checked={sshOnly} onChange={(e) => setSshOnly(e.target.checked)} />
+              <span className="text-sm text-gray-700 dark:text-slate-200">
+                The API isn&apos;t enabled on this device yet
+                <span className="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                  Adds it over SSH. Bulk commands, templates, the terminal and backups work straight away, so you can
+                  turn on api-ssl; the manager switches to the API by itself once it answers.
+                </span>
+              </span>
+            </label>
+
             {presets.length > 0 && (
               <div className="mb-3">
                 <label className="label">Use a saved preset</label>
@@ -264,7 +279,7 @@ export default function AddDeviceModal({
                     {selectedPreset.has_ssh_password && selectedPreset.ssh_username
                       ? ' and SSH credentials'
                       : ''}
-                    {' '}from this preset.
+                    {' '}from this preset{sshOnly ? '; its SSH login (or its API login, when it has none) is used for SSH' : ''}.
                   </p>
                 )}
               </div>
@@ -274,7 +289,7 @@ export default function AddDeviceModal({
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label">RouterOS Username *</label>
+                    <label className="label">{sshOnly ? 'SSH Username *' : 'RouterOS Username *'}</label>
                     <input
                       className="input"
                       value={form.api_username}
@@ -282,6 +297,18 @@ export default function AddDeviceModal({
                       placeholder="admin"
                     />
                   </div>
+                  {sshOnly ? (
+                    <div>
+                      <label className="label">SSH Port</label>
+                      <input
+                        className="input"
+                        type="number"
+                        value={form.ssh_port}
+                        onChange={(e) => set('ssh_port', e.target.value)}
+                        placeholder="22"
+                      />
+                    </div>
+                  ) : (
                   <div>
                     <label className="label">API Port</label>
                     <input
@@ -293,20 +320,27 @@ export default function AddDeviceModal({
                     />
                     <p className="text-[11px] text-gray-400 mt-1">Blank tries API-SSL (8729), then 8728.</p>
                   </div>
+                  )}
                   <div className="col-span-2">
-                    <label className="label">RouterOS Password *</label>
+                    <label className="label">{sshOnly ? 'SSH Password *' : 'RouterOS Password *'}</label>
                     <input
                       className="input"
                       type="password"
                       value={form.api_password}
                       onChange={(e) => set('api_password', e.target.value)}
-                      placeholder="RouterOS API password"
+                      placeholder={sshOnly ? 'SSH password' : 'RouterOS API password'}
                       autoComplete="new-password"
                     />
+                    {sshOnly && (
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        The same login is tried on the API once it&apos;s enabled. To use another one, change the API login in Edit Device later.
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 {/* SSH credentials (optional) */}
+                {!sshOnly && (
                 <details className="group mt-3">
                   <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider select-none">
                     SSH Credentials (optional, for backup/restore)
@@ -343,6 +377,7 @@ export default function AddDeviceModal({
                     </div>
                   </div>
                 </details>
+                )}
               </>
             )}
           </div>
@@ -393,7 +428,7 @@ export default function AddDeviceModal({
             <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
               <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
               <p className="text-sm text-blue-600 dark:text-blue-400">
-                Testing connection and collecting device data...
+                {sshOnly ? 'Trying the API, then logging in over SSH...' : 'Testing connection and collecting device data...'}
               </p>
             </div>
           )}

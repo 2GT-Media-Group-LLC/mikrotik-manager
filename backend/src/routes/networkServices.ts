@@ -116,7 +116,7 @@ router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
 router.get('/overview', async (req: Request, res: Response) => {
   const siteFilter = siteScopeDevices(activeSite(req));
   const devices = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE status = 'online'
+    `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only
        ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
   );
 
@@ -660,7 +660,7 @@ router.get('/netflow/fleet', async (req: Request, res: Response) => {
   const statsByDevice = new Map(stats.exporters.map((e) => [e.deviceId, e]));
   const siteFilter = siteScopeDevices(activeSite(req));
   const devices = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE status = 'online'
+    `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only
        ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
   );
 

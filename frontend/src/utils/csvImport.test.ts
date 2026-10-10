@@ -130,7 +130,7 @@ describe('parseDeviceCsv', () => {
   it('skips example rows left in from the template instead of importing them', () => {
     const r = parseDeviceCsv(buildCsvTemplate('Default') + 'real-sw,10.0.0.9,switch,Default\r\n', presets);
     const examples = r.rows.filter((x) => x.item?.ip_address?.startsWith('192.0.2.'));
-    expect(examples).toHaveLength(3);
+    expect(examples).toHaveLength(4);
     expect(examples.every((x) => x.skip && x.warnings.some((w) => /Example row/.test(w)))).toBe(true);
     const real = r.rows.find((x) => x.item?.ip_address === '10.0.0.9');
     expect(real?.skip).toBe(false);
@@ -192,5 +192,32 @@ describe('CSV import edge cases', () => {
     const r = parseDeviceCsv('ip,address,username,password\n10.0.0.1,10.0.0.9,admin,x\n', []);
     expect(r.rows).toHaveLength(0);
     expect(r.fileErrors.join(' ')).toMatch(/"ip" and "address" mean the same thing/);
+  });
+});
+
+describe('ssh_only column (#174)', () => {
+  it('marks rows to add over SSH and accepts an SSH-only login', () => {
+    const r = parseDeviceCsv(
+      'ip,username,password,ssh_username,ssh_password,ssh_only\n'
+      + '10.0.0.1,admin,pw,,,yes\n'
+      + '10.0.0.2,,,mtm,sshpw,true\n'
+      + '10.0.0.3,admin,pw,,,no\n'
+      + '10.0.0.4,,,,,yes\n'
+      + '10.0.0.5,admin,pw,,,maybe\n',
+      [],
+    );
+    expect(r.rows[0].item).toMatchObject({ ip_address: '10.0.0.1', ssh_only: true, api_username: 'admin' });
+    expect(r.rows[1].item).toMatchObject({ ip_address: '10.0.0.2', ssh_only: true, ssh_username: 'mtm' });
+    expect(r.rows[2].item?.ssh_only).toBeUndefined();
+    expect(r.rows[3].errors[0]).toMatch(/SSH username and password/);
+    expect(r.rows[4].errors[0]).toMatch(/yes or no/);
+  });
+
+  it('is in the template', () => {
+    const t = buildCsvTemplate();
+    expect(t.split('\r\n')[0]).toContain('ssh_only');
+    const parsed = parseDeviceCsv(t, []);
+    expect(parsed.fileErrors).toEqual([]);
+    expect(parsed.rows.every((row) => row.errors.length === 0)).toBe(true);
   });
 });

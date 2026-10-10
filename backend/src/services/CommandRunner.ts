@@ -155,7 +155,7 @@ export class CommandRunner {
   private async runOne(run: RunRow, item: RunDeviceRow): Promise<boolean> {
     const device = await queryOne<DeviceRow>(
       `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted,
-              ssh_port, ssh_username, ssh_password_encrypted
+              ssh_port, ssh_username, ssh_password_encrypted, ssh_only
          FROM devices WHERE id = $1`,
       [item.device_id]
     );
@@ -182,6 +182,16 @@ export class CommandRunner {
         const output = await execute();
         await this.finish(item.id, 'success', output, null);
         return true;
+      }
+
+      // Change Guard arms its auto-revert over the API, which a device added
+      // over SSH only doesn't have yet (#174). Said plainly, not as the
+      // connection error arming would give.
+      if ((device as { ssh_only?: boolean }).ssh_only) {
+        await this.finish(item.id, 'failed', null,
+          'Change Guard needs the RouterOS API, which isn\'t enabled on this device yet (it was added over SSH only). '
+          + 'Run the command without Change Guard, for example to turn on api-ssl.');
+        return false;
       }
 
       // The operator chose Change Guard for this run, so a device that cannot

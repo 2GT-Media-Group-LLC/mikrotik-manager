@@ -1,5 +1,6 @@
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useState } from 'react';
+import type { Device } from '../types';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban, Download } from 'lucide-react';
@@ -99,6 +100,7 @@ export default function CommandsPage() {
   // Guards off on a command that can sever management is the one combination
   // worth insisting the operator states out loud.
   const needsAck = risky && !useGuard;
+  const sshOnlySelected = (devices as Device[]).filter((d) => d.ssh_only && selected.includes(d.id));
   // Not until the preview for exactly this command is in: running ahead of it
   // skipped the risk check and its acknowledgement (outside review U3).
   const previewCurrent = !!preview && !previewLoading && preview.command === command;
@@ -207,6 +209,15 @@ export default function CommandsPage() {
             </span>
           </label>
         </div>
+
+        {/* Change Guard arms over the API, which an SSH-only device lacks (#174). */}
+        {useGuard && sshOnlySelected.length > 0 && (
+          <p className="text-xs rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/20 dark:text-amber-300">
+            {sshOnlySelected.length === 1 ? `${sshOnlySelected[0].name.trim()} was` : `${sshOnlySelected.length} selected devices were`} added
+            over SSH only. Change Guard needs the RouterOS API, so with it on {sshOnlySelected.length === 1 ? 'that device fails' : 'they fail'}.
+            To turn the API on (<span className="mono">/ip service enable api-ssl</span>), run without Change Guard.
+          </p>
+        )}
 
         {needsAck && (
           <label className="flex items-start gap-2 text-xs rounded-lg border border-red-300 bg-red-50 p-3 dark:border-red-700/60 dark:bg-red-900/20">

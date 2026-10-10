@@ -27,6 +27,42 @@ given. The plain API sends the login unencrypted on every poll, so a device that
 8728 is listed on the [Security page](security.md#encrypted-management-api-ssl), where it
 can be switched over. Choosing 8728 for a public address still shows a warning.
 
+### Devices without the API enabled (SSH only)
+
+Many fleets start with the RouterOS API services (`api`, `api-ssl`) turned off. Tick **The API
+isn't enabled on this device yet** in Add Device, or put `yes` in the `ssh_only` column of a
+[CSV import](#importing-from-csv) (#174).
+
+The manager tries the API briefly first, and if it answers, the device is added normally. If
+it doesn't, the manager logs in over SSH instead. That reads the device's identity, model,
+RouterOS version and serial number (the serial still catches duplicates), and pins its SSH host
+key. The same login is used for SSH now and tried on the API later. A credential preset works
+too: its SSH login is used, or its API login when it has no SSH one.
+
+The device is listed as **SSH ONLY** in the API column. Until the API is on:
+
+- **These work:** bulk commands, command templates, the terminal, backups and config history.
+  The manager checks over SSH every minute that the device is up. An outage alerts as usual,
+  and the name, version and model stay current.
+- **These wait for the API:** live status and graphs, clients, ports, VLANs and the other device
+  tabs, firmware upgrades, and Change Guard. The device page shows only Overview and Config
+  History, with a note explaining why.
+
+To turn the API on, run a bulk command or template on these devices with **Change Guard
+off**, since Change Guard needs the API itself. For example:
+
+```
+/ip service enable api-ssl
+```
+
+You can also create a separate user for the manager at the same time. If you do, set it as the
+device's API login in Edit Device.
+
+The manager tries the API every minute, or every 15 minutes after a refused login, so a wrong
+password doesn't fill the router's log. Once the API answers, the device becomes an ordinary
+one: API-SSL is preferred, its certificate is pinned, a full sync starts, and an event is
+logged. **Check API** on the device page tries straight away and says why it failed, if it did.
+
 ### IPv6 addresses
 
 Enter an IPv6 address with or without brackets: `2001:db8::1` and `[2001:db8::1]` both work,
@@ -109,12 +145,14 @@ closed browser tab and reports progress and failures per device.
 | `preset` | Login | The name of a saved [credential preset](#device-credentials) |
 | `username`, `password` | Login | The RouterOS login, if not using a preset |
 | `ssh_username`, `ssh_password` | Optional | Only if SSH uses a different login. Blank uses the one above |
+| `ssh_only` | Optional | `yes` when the API isn't enabled yet; see [SSH only](#devices-without-the-api-enabled-ssh-only) |
 | `tags` | Optional | Existing tags. Create them under Settings → Tags first |
 | `notes` | Optional | Anything you like |
 
 For several tags on one device, separate them with a vertical bar: `branch|lab`.
 
-Each device needs a login: a preset, or a username and password. `port` and `ssh_port` can
+Each device needs a login: a preset, or a username and password. An `ssh_only` row can use
+`ssh_username` and `ssh_password` instead. `port` and `ssh_port` can
 be added as extra columns if yours aren't the defaults (8728 and 22).
 
 The file is checked before anything is sent. Each row shows as ready, skipped or a problem,

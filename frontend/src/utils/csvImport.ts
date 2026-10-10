@@ -36,6 +36,8 @@ const COLUMNS: Record<string, keyof RowFields> = {
   ssh_username: 'ssh_username', ssh_user: 'ssh_username',
   ssh_password: 'ssh_password', ssh_pass: 'ssh_password',
   ssh_port: 'ssh_port',
+  // The API isn't enabled yet (#174): yes/true/1 adds the device over SSH.
+  ssh_only: 'ssh_only', sshonly: 'ssh_only', api_off: 'ssh_only', no_api: 'ssh_only',
   // Several tags in one cell, separated by | or ; (or commas, inside quotes).
   tags: 'tags', tag: 'tags', groups: 'tags', group: 'tags',
   notes: 'notes', note: 'notes', comment: 'notes',
@@ -52,6 +54,7 @@ interface RowFields {
   ssh_username?: string;
   ssh_password?: string;
   ssh_port?: string;
+  ssh_only?: string;
   tags?: string;
   notes?: string;
 }
@@ -228,12 +231,22 @@ export function parseDeviceCsv(
       if (!deviceType) errors.push(`Unknown type "${f.device_type}". Use router, switch, ap or other.`);
     }
 
+    let sshOnly = false;
+    if (f.ssh_only) {
+      if (/^(yes|y|true|1|x|ssh|ssh[-_ ]?only)$/i.test(f.ssh_only)) sshOnly = true;
+      else if (!/^(no|n|false|0|-)$/i.test(f.ssh_only)) errors.push(`ssh_only "${f.ssh_only}" should be yes or no.`);
+    }
+
     let presetId: number | undefined;
     if (f.credential_preset) {
       presetId = presetByName.get(f.credential_preset.trim().toLowerCase());
       if (presetId === undefined) errors.push(`No credential preset called "${f.credential_preset}".`);
+    } else if (sshOnly && f.ssh_username && f.ssh_password && !f.api_username && !f.api_password) {
+      // SSH only with just an SSH login: it is tried on the API later too.
     } else if (!f.api_username || !f.api_password) {
-      errors.push('Needs a credential preset, or both username and password.');
+      errors.push(sshOnly
+        ? 'Needs a credential preset, a username and password, or an SSH username and password.'
+        : 'Needs a credential preset, or both username and password.');
     }
 
     const portOf = (v: string | undefined, label: string): number | undefined => {
@@ -277,6 +290,7 @@ export function parseDeviceCsv(
       ...(presetId === undefined && sshPort ? { ssh_port: sshPort } : {}),
       ...(tagIds.length ? { tag_ids: tagIds } : {}),
       ...(f.notes ? { notes: f.notes } : {}),
+      ...(sshOnly ? { ssh_only: true } : {}),
     };
     rows.push({ line, item, errors, warnings, skip });
   }
@@ -301,16 +315,18 @@ export function parseDeviceCsv(
 export function buildCsvTemplate(presetName?: string, tagName?: string): string {
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const rows: string[][] = [
-    ['name', 'ip_address', 'type', 'preset', 'username', 'password', 'ssh_username', 'ssh_password', 'tags', 'notes'],
+    ['name', 'ip_address', 'type', 'preset', 'username', 'password', 'ssh_username', 'ssh_password', 'ssh_only', 'tags', 'notes'],
   ];
   const tag = tagName ?? '';
   if (presetName) {
-    rows.push(['example-switch', '192.0.2.10', 'switch', presetName, '', '', '', '', tag,
+    rows.push(['example-switch', '192.0.2.10', 'switch', presetName, '', '', '', '', '', tag,
       'Example: logs in with a saved credential preset. Replace these rows with your devices.']);
   }
-  rows.push(['example-router', '192.0.2.1', 'router', '', 'admin', 'your-password', '', '', tag,
+  rows.push(['example-router', '192.0.2.1', 'router', '', 'admin', 'your-password', '', '', '', tag,
     'Example: username and password instead of a preset.']);
-  rows.push(['example-ap', '192.0.2.20', 'ap', '', 'admin', 'your-password', 'backup', 'ssh-password', '',
+  rows.push(['example-ap', '192.0.2.20', 'ap', '', 'admin', 'your-password', 'backup', 'ssh-password', '', '',
     'Example: separate SSH login. Leave SSH blank to use the same login.']);
+  rows.push(['example-no-api', '192.0.2.30', 'router', '', 'admin', 'your-password', '', '', 'yes', '',
+    'Example: API not enabled yet. Added over SSH; switches to the API once it answers.']);
   return rows.map((r) => r.map(q).join(',')).join('\r\n') + '\r\n';
 }

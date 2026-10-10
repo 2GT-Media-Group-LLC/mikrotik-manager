@@ -1,4 +1,6 @@
 import { resolveAuth } from '../services/sshExec';
+import { readSshInfo, refreshOverSsh, checkApi, promoteToApi, recordApiCheck, type SshOnlyDevice } from '../services/sshOnly';
+import { describeSshFailure } from '../utils/sshOnly';
 import net from 'net';
 import { Router, Request, Response } from 'express';
 import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
@@ -515,8 +517,12 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
     api_password_encrypted: string;
     ssh_port: number | null;
     site_id: number | null;
+    ssh_only: boolean;
+    ssh_username: string | null;
+    ssh_password_encrypted: string | null;
   }>(
-    `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted, ssh_port, site_id
+    `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted, ssh_port, site_id,
+            ssh_only, ssh_username, ssh_password_encrypted
        FROM devices WHERE id = $1`,
     [req.params.id]
   );
@@ -586,7 +592,24 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
     });
   }
 
-  if (ipChanged || portChanged || userChanged || api_password || presetReplacesApiCreds) {
+  // Added over SSH only (#174): there is no API to log in to yet, so a new
+  // address or SSH login is checked over SSH instead.
+  const sshLoginChanged = (typeof ssh_username === 'string' && ssh_username !== '' && ssh_username !== existing.ssh_username)
+    || !!ssh_password || ssh_port !== (existing.ssh_port ?? 22);
+  if (existing.ssh_only && (ipChanged || sshLoginChanged || presetReplacesApiCreds)) {
+    try {
+      await readSshInfo({
+        id: existing.id, name: existing.name,
+        ip_address: ip_address ?? existing.ip_address,
+        ssh_port,
+        ssh_username: ssh_username || existing.ssh_username || existing.api_username,
+        ssh_password_encrypted: ssh_password ? encrypt(ssh_password)
+          : existing.ssh_password_encrypted || existing.api_password_encrypted,
+      });
+    } catch (err) {
+      return res.status(422).json({ error: describeSshFailure(err, ssh_port) });
+    }
+  } else if (!existing.ssh_only && (ipChanged || portChanged || userChanged || api_password || presetReplacesApiCreds)) {
     const testIp = ip_address ?? existing.ip_address;
     const testPort = api_port;
     const testUser = api_username ?? existing.api_username;
@@ -656,6 +679,16 @@ router.post('/:id/sync', requireWrite, async (req: Request, res: Response) => {
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
 
+  // Without its API yet (#174), a sync is the SSH read the poller does.
+  if (deviceRow.ssh_only) {
+    try {
+      await refreshOverSsh(deviceRow as unknown as SshOnlyDevice);
+      return res.json({ message: 'Read over SSH. The API is not enabled yet, so only the basics are available.' });
+    } catch (err) {
+      return res.status(500).json({ error: `Sync failed: ${describeSshFailure(err, deviceRow.ssh_port ?? 22)}` });
+    }
+  }
+
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
@@ -667,6 +700,26 @@ router.post('/:id/sync', requireWrite, async (req: Request, res: Response) => {
   } finally {
     collector.disconnect();
   }
+});
+
+// POST /api/devices/:id/check-api — for a device added over SSH only (#174):
+// does the API answer now? If it does, the device is managed over the API from
+// now on and a full sync starts. The poller checks too, every minute.
+router.post('/:id/check-api', requireWrite, async (req: Request, res: Response) => {
+  const device = await queryOne<SshOnlyDevice & { ssh_only: boolean }>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  if (!device.ssh_only) return res.json({ api: true, message: 'This device is already managed over the API.' });
+  const check = await checkApi(device);
+  if (!check.ok) {
+    await recordApiCheck(device.id, check.message);
+    return res.json({ api: false, reason: check.message });
+  }
+  await promoteToApi(device, check);
+  if (pollerService) await pollerService.scheduleDeviceSync(device.id, 'full');
+  return res.json({
+    api: true, port: check.port,
+    message: `The API answers on port ${check.port}${check.port === 8729 ? ' (api-ssl)' : ''}. ${device.name.trim()} is now managed over the API; a full sync has started.`,
+  });
 });
 
 // GET /api/devices/:id/interfaces

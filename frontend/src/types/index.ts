@@ -70,6 +70,14 @@ export interface Device {
   name_locked?: boolean;
   /** The router's own name (/system identity), read every poll (#253). */
   ros_identity?: string | null;
+  /**
+   * Added over SSH only (#174): the RouterOS API isn't enabled yet. Reached
+   * over SSH; the API is retried and the flag clears once it answers.
+   */
+  ssh_only?: boolean;
+  /** When the API was last tried, and why it didn't work (SSH-only devices). */
+  api_checked_at?: string | null;
+  api_check_error?: string | null;
   ip_address: string;
   api_port: number;
   api_username: string;

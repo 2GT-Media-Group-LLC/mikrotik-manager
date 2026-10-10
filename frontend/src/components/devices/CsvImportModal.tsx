@@ -139,6 +139,7 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
                     : 'A saved credential preset, by name. You have none yet; use username and password.'],
                   ['username, password', 'Login', 'The RouterOS login, if you are not using a preset.'],
                   ['ssh_username, ssh_password', 'Optional', 'Only if SSH uses a different login. Blank uses the one above.'],
+                  ['ssh_only', 'Optional', 'yes when the API isn\'t enabled yet. The device is added over SSH and switches to the API once it answers.'],
                   ['tags', 'Optional', tags.length
                     ? `Existing tags, separated by | (yours: ${tags.map((x) => x.name).join(', ')}).`
                     : 'Existing tags, separated by |. You have none yet; create them under Settings → Tags.'],

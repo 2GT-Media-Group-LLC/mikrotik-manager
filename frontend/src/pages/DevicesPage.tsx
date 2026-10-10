@@ -89,7 +89,8 @@ function LoadSparkline({ data }: { data: number[] }) {
 
 /** How the manager reaches a device (#199). */
 type LoginKind = 'password' | 'key' | 'both';
-const apiKind = (d: Device): 'ssl' | 'plain' => (d.api_port === 8729 ? 'ssl' : 'plain');
+// SSH only (#174): added before its API was enabled.
+const apiKind = (d: Device): 'ssl' | 'plain' | 'ssh' => (d.ssh_only ? 'ssh' : d.api_port === 8729 ? 'ssl' : 'plain');
 /** Stored password, verified SSH key, or both. */
 const loginKind = (d: Device): LoginKind =>
   d.has_ssh_key ? (d.has_password === false ? 'key' : 'both') : 'password';
@@ -122,7 +123,7 @@ export default function DevicesPage() {
   const [rackFilter, setRackFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   // How the manager reaches each device (#199).
-  const [apiFilter, setApiFilter] = useState<'' | 'ssl' | 'plain'>('');
+  const [apiFilter, setApiFilter] = useState<'' | 'ssl' | 'plain' | 'ssh'>('');
   const [loginFilter, setLoginFilter] = useState<'' | LoginKind>('');
   const [discoveredSort, setDiscoveredSort] = useState<{ key: DiscoveredSortKey; dir: SortDir }>({
     key: 'discovered_at',
@@ -393,10 +394,11 @@ export default function DevicesPage() {
             {locationOptions.map(l => <option key={l} value={l}>{l}</option>)}
           </FilterSelect>
         )}
-        <FilterSelect value={apiFilter} onChange={v => setApiFilter(v as '' | 'ssl' | 'plain')} title="How the manager connects to the device">
+        <FilterSelect value={apiFilter} onChange={v => setApiFilter(v as '' | 'ssl' | 'plain' | 'ssh')} title="How the manager connects to the device">
           <option value="">Any API</option>
           <option value="ssl">API-SSL</option>
           <option value="plain">Plain API</option>
+          <option value="ssh">SSH only (API off)</option>
         </FilterSelect>
         <FilterSelect value={loginFilter} onChange={v => setLoginFilter(v as '' | LoginKind)} title="Which credentials the manager has for the device">
           <option value="">Any login</option>
@@ -600,7 +602,10 @@ export default function DevicesPage() {
                         <span className="mono num-tab text-[12px]" style={{ color: 'var(--ink-2)' }}>{device.ip_address}</span>
                       </td>
                       <td className="px-4 py-[12px]">
-                        {apiKind(device) === 'ssl'
+                        {device.ssh_only
+                          ? <span className="mono text-[11px]" style={{ color: 'var(--warn)' }}
+                              title={`Added over SSH only: the API isn't enabled yet.${device.api_check_error ? ` ${device.api_check_error}` : ''}`}>SSH ONLY</span>
+                          : apiKind(device) === 'ssl'
                           ? <span className="mono text-[11px]" style={{ color: 'var(--ok, #16a34a)' }} title="Managed over API-SSL (8729)">SSL</span>
                           : <span className="mono text-[11px]" style={{ color: 'var(--warn)' }} title="Managed over the plain, unencrypted API">PLAIN</span>}
                       </td>

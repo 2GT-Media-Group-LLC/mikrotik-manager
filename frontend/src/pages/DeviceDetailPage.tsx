@@ -27,6 +27,7 @@ import clsx from 'clsx';
 import { displayState, STATE_LABEL } from '../utils/deviceState';
 import DeviceHealthCard from '../components/device-detail/DeviceHealthCard';
 import { DeviceIdentityBanner } from '../components/security/IdentityChange';
+import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
 
 type TabKey = 'overview' | 'ports' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
 
@@ -75,7 +76,8 @@ export default function DeviceDetailPage() {
     queryKey: ['device-resources-live', deviceId],
     queryFn: () => devicesApi.getResources(deviceId).then((r) => r.data),
     refetchInterval: 30_000,
-    enabled: device?.status === 'online',
+    // Read over the API, which an SSH-only device doesn't have yet (#174).
+    enabled: device?.status === 'online' && !device?.ssh_only,
   });
 
   const { data: availability } = useQuery({
@@ -127,7 +129,7 @@ export default function DeviceDetailPage() {
   const isWirelessAP = device.device_type === 'wireless_ap'
     || (device.wifi_role != null && device.wifi_role !== 'none');
 
-  const tabs: { key: TabKey; label: string }[] = [
+  const allTabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'ports', label: 'Ports' },
     { key: 'vlans', label: 'VLANs' },
@@ -148,6 +150,10 @@ export default function DeviceDetailPage() {
     ...(device.has_lte ? [{ key: 'lte' as TabKey, label: 'LTE' }] : []),
     { key: 'tools', label: 'Tools' },
   ];
+  // Added over SSH only (#174): only what works without the API.
+  const tabs = allTabs.filter((t) => !device.ssh_only || t.key === 'overview' || t.key === 'config-history');
+  // A tab that isn't offered (an SSH-only device, or a link to one) shows the overview.
+  const shownTab: TabKey = tabs.some((t) => t.key === activeTab) ? activeTab : 'overview';
 
   const cpuLoad = parseInt(resources?.['cpu-load'] || '0', 10);
   const memTotal = parseInt(resources?.['total-memory'] || '0', 10);
@@ -204,7 +210,8 @@ export default function DeviceDetailPage() {
               )}
             </div>
             <p className="text-sm text-gray-500 dark:text-slate-400 font-mono truncate">
-              {hostPort(device.ip_address, device.api_port)}
+              {/* An SSH-only device is reached on its SSH port (#174). */}
+              {device.ssh_only ? `${hostPort(device.ip_address, device.ssh_port ?? 22)} (SSH)` : hostPort(device.ip_address, device.api_port)}
               <button type="button" title="Copy the address for Winbox" aria-label="Copy the address for Winbox"
                 onClick={() => { void navigator.clipboard.writeText(winboxAddress(device.ip_address)).then(() => { setAddrCopied(true); setTimeout(() => setAddrCopied(false), 1500); }); }}
                 className="inline-flex align-middle ml-1.5 p-0.5 rounded text-gray-400 hover:text-blue-600 dark:hover:text-blue-400">
@@ -252,6 +259,7 @@ export default function DeviceDetailPage() {
 
       {/* A changed certificate or host key stops the manager connecting (P1-4). */}
       <DeviceIdentityBanner deviceId={deviceId} deviceName={device.name} />
+      {device.ssh_only && <SshOnlyBanner device={device} />}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 dark:border-slate-700 overflow-x-auto">
@@ -261,7 +269,7 @@ export default function DeviceDetailPage() {
             onClick={() => setActiveTab(tab.key)}
             className={clsx(
               'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap',
-              activeTab === tab.key
+              shownTab === tab.key
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
             )}
@@ -272,9 +280,10 @@ export default function DeviceDetailPage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'overview' && (
+      {shownTab === 'overview' && (
         <div className="space-y-4">
-          {/* Resource stats */}
+          {/* Resource stats (read over the API; none for an SSH-only device, #174) */}
+          {!device.ssh_only && (
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="card p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -335,6 +344,7 @@ export default function DeviceDetailPage() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Availability card */}
           <div className="card p-4">
@@ -419,7 +429,7 @@ export default function DeviceDetailPage() {
                 ['RouterOS Version', device.ros_version || '—'],
                 ['Firmware', device.firmware_version || '—'],
                 ['Type', device.device_type],
-                ['API Port', String(device.api_port)],
+                ['API Port', device.ssh_only ? 'Not enabled yet' : String(device.api_port)],
                 ['Added', new Date(device.created_at).toLocaleDateString()],
                 ['Last Seen', device.last_seen ? new Date(device.last_seen).toLocaleString() : '—'],
               ] as [string, string][]).map(([k, v]) => (
@@ -439,7 +449,7 @@ export default function DeviceDetailPage() {
         </div>
       )}
 
-      {activeTab === 'ports' && (
+      {shownTab === 'ports' && (
         <SwitchPortDiagram
           deviceId={deviceId}
           deviceName={device?.name}
@@ -447,7 +457,7 @@ export default function DeviceDetailPage() {
           onBridgeOpened={() => setAutoOpenBridge(null)}
         />
       )}
-      {activeTab === 'vlans' && (
+      {shownTab === 'vlans' && (
         <VlansTab
           deviceId={deviceId}
           deviceName={device?.name}
@@ -455,17 +465,17 @@ export default function DeviceDetailPage() {
           onGoToPorts={(bridgeName) => { setAutoOpenBridge(bridgeName); setActiveTab('ports'); }}
         />
       )}
-      {activeTab === 'routing' && <RoutingTab deviceId={deviceId} deviceName={device.name} />}
-      {activeTab === 'firewall' && <FirewallTab deviceId={deviceId} deviceName={device.name} />}
-      {activeTab === 'security' && <SecurityTab deviceId={deviceId} deviceName={device.name} />}
-      {activeTab === 'queues' && <QueuesTab deviceId={deviceId} />}
-      {activeTab === 'connections' && <ConnectionsTab deviceId={deviceId} />}
-      {activeTab === 'config' && <SystemConfigTab deviceId={deviceId} device={device} />}
-      {activeTab === 'config-history' && <ConfigHistoryTab deviceId={deviceId} />}
-      {activeTab === 'hardware' && <HardwareTab deviceId={deviceId} />}
-      {activeTab === 'radios' && <RadiosTab deviceId={deviceId} deviceStatus={device.status} />}
-      {activeTab === 'lte' && <LteTab deviceId={deviceId} />}
-      {activeTab === 'tools' && <ToolsTab deviceId={deviceId} />}
+      {shownTab === 'routing' && <RoutingTab deviceId={deviceId} deviceName={device.name} />}
+      {shownTab === 'firewall' && <FirewallTab deviceId={deviceId} deviceName={device.name} />}
+      {shownTab === 'security' && <SecurityTab deviceId={deviceId} deviceName={device.name} />}
+      {shownTab === 'queues' && <QueuesTab deviceId={deviceId} />}
+      {shownTab === 'connections' && <ConnectionsTab deviceId={deviceId} />}
+      {shownTab === 'config' && <SystemConfigTab deviceId={deviceId} device={device} />}
+      {shownTab === 'config-history' && <ConfigHistoryTab deviceId={deviceId} />}
+      {shownTab === 'hardware' && <HardwareTab deviceId={deviceId} />}
+      {shownTab === 'radios' && <RadiosTab deviceId={deviceId} deviceStatus={device.status} />}
+      {shownTab === 'lte' && <LteTab deviceId={deviceId} />}
+      {shownTab === 'tools' && <ToolsTab deviceId={deviceId} />}
 
       {showTerminal && (
         <TerminalModal

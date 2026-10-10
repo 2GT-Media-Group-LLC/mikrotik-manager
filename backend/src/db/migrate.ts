@@ -1416,6 +1416,14 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS user_manager_checked_at TIMESTAMPTZ
 -- manager's name is locked (#253), so a mismatch can be shown and fixed.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS ros_identity VARCHAR(255);
 
+-- Added over SSH only (#174): the RouterOS API isn't enabled on the device yet.
+-- It is reached over SSH, the API is retried, and once it answers the flag is
+-- cleared and the device is polled normally. api_check_error says why the last
+-- check failed.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS ssh_only BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS api_checked_at TIMESTAMPTZ;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS api_check_error TEXT;
+
 -- How full each IPv4 address pool is (#156), from the slow poll. An exhausted
 -- pool is the quiet DHCP failure: clients connect and get no address.
 -- Post-upgrade commands (#163): a command template run on each device after

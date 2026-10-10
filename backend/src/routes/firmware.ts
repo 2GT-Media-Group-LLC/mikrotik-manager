@@ -112,7 +112,7 @@ router.get('/overview', async (req: Request, res: Response) => {
 router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
   const siteFilter = siteScopeDevices(writableScope(req));
   const devices = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE status='online' ${siteFilter ? `AND ${siteFilter}` : ''}`
+    `SELECT * FROM devices WHERE status='online' AND NOT ssh_only ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
   const settled = await Promise.allSettled(devices.map(async (d) => {
     const c = new DeviceCollector(d);

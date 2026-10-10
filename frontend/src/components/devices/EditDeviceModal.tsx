@@ -298,6 +298,12 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
             <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">
               RouterOS API Credentials
             </h3>
+            {device.ssh_only && (
+              <p className="text-xs text-amber-700 dark:text-amber-400 -mt-1 mb-3">
+                This device was added over SSH only. This is the login tried on the API once it&apos;s enabled; the manager
+                connects over SSH until then, and checks a new address or SSH login over SSH when you save.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">Username *</label>
@@ -334,8 +340,8 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
             </div>
           </div>
 
-          {/* SSH credentials (optional) */}
-          <details className="group">
+          {/* SSH credentials (optional; what an SSH-only device is reached with, #174) */}
+          <details className="group" open={device.ssh_only || undefined}>
             <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider select-none">
               SSH Credentials (optional, for backup/restore)
             </summary>

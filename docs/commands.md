@@ -85,6 +85,11 @@ to save a backup) is marked **failed** rather than run without protection, and t
 toward halt-on-failure. A device where the revert couldn't be confirmed removed is marked
 successful, with a note giving the time it may still revert.
 
+Change Guard arms its auto-revert over the RouterOS API, so it can't protect a device
+[added over SSH only](devices.md#devices-without-the-api-enabled-ssh-only). With the guard
+on, such a device fails with a note saying so, and the form warns before you start. Run the
+command that turns the API on (`/ip service enable api-ssl`) with Change Guard off.
+
 It is **one click to turn off**. You may know exactly why you are running something that
 will drop a device, and a tool that refuses to cut is not a sharp tool.
 

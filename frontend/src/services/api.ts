@@ -260,6 +260,8 @@ export interface BulkAddDeviceItem {
   ssh_port?: number;
   /** Existing tags to apply once added (#161). */
   tag_ids?: number[];
+  /** The API isn't enabled yet: add over SSH if it doesn't answer (#174). */
+  ssh_only?: boolean;
 }
 
 export interface BulkAddJobResponse {
@@ -671,6 +673,9 @@ export const devicesApi = {
   ) => api.put<Device>(`/devices/${id}`, data),
   delete: (id: number) => api.delete(`/devices/${id}`),
   sync: (id: number) => api.post(`/devices/${id}/sync`, undefined, { timeout: 60_000 }),
+  /** SSH-only device (#174): does the API answer now? It becomes an ordinary device if so. */
+  checkApi: (id: number) =>
+    api.post<{ api: boolean; port?: number; message?: string; reason?: string }>(`/devices/${id}/check-api`, undefined, { timeout: 30_000 }),
   test: (id: number) => api.post<{ success: boolean; identity?: string; error?: string }>(`/devices/${id}/test`),
   getInterfaces: (id: number) => api.get<Interface[]>(`/devices/${id}/interfaces`),
   updateInterface: (id: number, name: string, data: Partial<Interface>) =>

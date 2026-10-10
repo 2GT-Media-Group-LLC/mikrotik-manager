@@ -80,7 +80,7 @@ export async function applySnmpConfig(
 
   const siteFilter = siteScopeDevices(siteId ?? null, 'd');
   const params: unknown[] = [];
-  const where: string[] = [`d.status = 'online'`];
+  const where: string[] = [`d.status = 'online'`, 'NOT d.ssh_only'];
   if ('deviceIds' in target) {
     params.push(target.deviceIds);
     where.push(`d.id = ANY($${params.length}::int[])`);
@@ -181,7 +181,7 @@ async function saveSnmpTemplates(config: SnmpConfigInput): Promise<void> {
 export async function getSnmpStatuses(siteId: SiteScope | undefined, deviceTypes?: string[]) {
   const siteFilter = siteScopeDevices(siteId ?? null);
   const params: unknown[] = [];
-  const where = [`status = 'online'`];
+  const where = [`status = 'online'`, 'NOT ssh_only'];
   if (deviceTypes?.length) { params.push(deviceTypes); where.push(`device_type = ANY($1::text[])`); }
   if (siteFilter) where.push(siteFilter);
   const devices = await query<DeviceRow>(

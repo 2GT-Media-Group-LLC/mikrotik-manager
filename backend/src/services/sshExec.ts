@@ -16,6 +16,7 @@ import { queryOne } from '../config/database';
 import { decrypt } from '../utils/crypto';
 import { preferredAuth, type KeyStatus } from '../utils/sshKeys';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
+import { sshHostKeyFingerprint } from './identityPins';
 
 export interface SshExecDevice {
   id: number;
@@ -92,6 +93,8 @@ export async function runSshCommand(
   device: SshExecDevice,
   command: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  /** Sees the host key's fingerprint, e.g. to pin it while adding a device (#174). */
+  opts: { onHostKey?: (fingerprint: string) => void } = {},
 ): Promise<SshExecResult> {
   // A preview (#255) only intercepts the RouterOS API; never run SSH under one.
   if (previewContext()) throw new Error('This change runs over SSH, so it can\'t be previewed');
@@ -129,10 +132,23 @@ export async function runSshCommand(
       port: device.ssh_port ?? 22,
       username,
       readyTimeout: Math.min(timeoutMs, 20_000),
-      ...sshHostCheck(device.ip_address, device.ssh_port ?? 22),
+      ...withHostKeyHook(sshHostCheck(device.ip_address, device.ssh_port ?? 22), opts.onHostKey),
       ...auth,
     });
   });
+}
+
+function withHostKeyHook(
+  check: ReturnType<typeof sshHostCheck>,
+  onHostKey?: (fingerprint: string) => void,
+): ReturnType<typeof sshHostCheck> {
+  if (!onHostKey) return check;
+  return {
+    hostVerifier: (key, verify) => {
+      onHostKey(sshHostKeyFingerprint(key));
+      check.hostVerifier(key, verify);
+    },
+  };
 }
 
 /**
