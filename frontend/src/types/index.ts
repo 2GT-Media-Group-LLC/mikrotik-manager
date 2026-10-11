@@ -347,6 +347,47 @@ export interface TopologyLink {
   discovered_at: string;
 }
 
+/** A node the manager doesn't manage, added by hand (#147): ISP modem, server, NAS... */
+export interface TopologyNode {
+  id: number;
+  site_id: number | null;
+  name: string;
+  kind: string;
+  address: string | null;
+  notes: string | null;
+}
+
+/** One end of a hand-drawn link: a managed device, your own node, or a discovered neighbour. */
+export interface HandLinkEnd {
+  kind: 'device' | 'node' | 'external';
+  /** Device or node id, or the neighbour's map id ("ext-…"). */
+  ref: number | string;
+  /** For a neighbour: its name when the link was drawn, in case discovery stops seeing it. */
+  name?: string | null;
+}
+
+/** A link drawn by hand (#147). */
+export interface HandLink {
+  id: number;
+  label: string | null;
+  a: HandLinkEnd;
+  b: HandLinkEnd;
+}
+
+/** A client device, attached where it really connects (#147). */
+export interface TopologyClient {
+  mac: string;
+  name: string;
+  ip: string | null;
+  deviceId: number;
+  interface: string | null;
+  wireless: boolean;
+  /** False when only ARP or an uplink saw it, so the attachment is a guess. */
+  portKnown: boolean;
+  /** Seen on a port facing an unmanaged neighbour: drawn behind that neighbour. */
+  behindNeighbour?: boolean;
+}
+
 export interface ExternalTopologyNode {
   id: string;
   name: string;

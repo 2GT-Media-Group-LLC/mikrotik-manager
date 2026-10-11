@@ -1425,7 +1425,7 @@ export const metricsApi = {
 
 // ─── Topology ────────────────────────────────────────────────────────────────
 export const topologyApi = {
-  get: () =>
+  get: (withClients = false) =>
     api.get<{
       devices: Device[];
       links: import('../types').TopologyLink[];
@@ -1439,15 +1439,33 @@ export const topologyApi = {
         confidence: 'resolved' | 'is-root' | 'external-root' | 'ambiguous' | 'unknown';
         rootBridgeId: string | null;
       }[];
-      segConns: { src: string; dst: string; port: string }[];
-      manualLinkIds: { id: number; from_device_id: number; to_device_id: number }[];
-    }>('/topology'),
+      /** Nodes added by hand, and links drawn by hand (#147). */
+      nodes: import('../types').TopologyNode[];
+      handLinks: import('../types').HandLink[];
+      /** How the map has been arranged by hand: node positions and link sides. */
+      layout: {
+        positions: Record<string, { x: number; y: number }>;
+        anchors: Record<string, { sourceHandle: 't' | 'b' | 'l' | 'r' | null; targetHandle: 't' | 'b' | 'l' | 'r' | null }>;
+      };
+      /** Only with withClients: client devices and where they connect. */
+      clients?: import('../types').TopologyClient[];
+    }>('/topology', { params: withClients ? { clients: 1 } : undefined }),
   discover: () => api.post('/topology/discover'),
-  createManualLink: (from_device_id: number, to_device_id: number, label?: string) =>
-    api.post<{ id: number; from_device_id: number; to_device_id: number; label: string | null }>(
-      '/topology/manual-links', { from_device_id, to_device_id, label }
-    ),
-  deleteManualLink: (id: number) => api.delete(`/topology/manual-links/${id}`),
+  createHandLink: (a: import('../types').HandLinkEnd, b: import('../types').HandLinkEnd, label?: string) =>
+    api.post<import('../types').HandLink>('/topology/hand-links', { a, b, label }),
+  deleteHandLink: (id: number) => api.delete(`/topology/hand-links/${id}`),
+  /** Save node positions and link sides; merged into what's saved. A null anchor goes back to automatic. */
+  saveLayout: (data: {
+    positions?: Record<string, { x: number; y: number }>;
+    anchors?: Record<string, { sourceHandle: string | null; targetHandle: string | null } | null>;
+  }) => api.put('/topology/layout', data),
+  /** Forget the arrangement of these nodes and links, so they're laid out automatically again. */
+  resetLayout: (keys: string[], edges: string[]) => api.post('/topology/layout/reset', { keys, edges }),
+  createNode: (data: { name: string; kind: string; address?: string | null; notes?: string | null }) =>
+    api.post<import('../types').TopologyNode>('/topology/nodes', data),
+  updateNode: (id: number, data: { name?: string; kind?: string; address?: string | null; notes?: string | null }) =>
+    api.put<import('../types').TopologyNode>(`/topology/nodes/${id}`, data),
+  deleteNode: (id: number) => api.delete(`/topology/nodes/${id}`),
 };
 
 // ─── Search ──────────────────────────────────────────────────────────────────

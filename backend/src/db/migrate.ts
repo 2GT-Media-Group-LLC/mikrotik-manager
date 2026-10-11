@@ -440,16 +440,8 @@ CREATE TABLE IF NOT EXISTS device_availability (
 CREATE INDEX IF NOT EXISTS idx_device_availability_device ON device_availability(device_id, went_offline_at DESC);
 
 -- Manual topology links — user-drawn connections for devices with no auto-discovery
-CREATE TABLE IF NOT EXISTS manual_topology_links (
-  id               SERIAL PRIMARY KEY,
-  from_device_id   INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  to_device_id     INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  label            VARCHAR(100),
-  created_at       TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(from_device_id, to_device_id)
-);
-CREATE INDEX IF NOT EXISTS idx_manual_topology_links_from ON manual_topology_links(from_device_id);
-CREATE INDEX IF NOT EXISTS idx_manual_topology_links_to   ON manual_topology_links(to_device_id);
+-- manual_topology_links (links between two managed devices) was replaced by
+-- topology_hand_links (#147); its rows are copied there below.
 
 -- Configuration templates (reusable config sets pushed to devices or groups)
 CREATE TABLE IF NOT EXISTS config_templates (
@@ -1433,6 +1425,80 @@ CREATE TABLE IF NOT EXISTS ros_release_notes (
   found       BOOLEAN NOT NULL,
   cves        JSONB NOT NULL DEFAULT '[]',
   fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Your own topology nodes (#147): an ISP modem, a server, a NAS, an unmanaged
+-- switch... anything the manager doesn't manage but belongs on the map. Linked
+-- to a managed device or to another node; deleting either removes the link.
+CREATE TABLE IF NOT EXISTS topology_nodes (
+  id          SERIAL PRIMARY KEY,
+  site_id     INTEGER REFERENCES sites(id) ON DELETE CASCADE,
+  name        VARCHAR(100) NOT NULL,
+  kind        VARCHAR(20) NOT NULL DEFAULT 'other',
+  address     VARCHAR(255),
+  notes       TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+-- Links drawn by hand (#147). Each end is a managed device, one of your nodes,
+-- or a neighbour discovery saw but the manager doesn't manage (by the id the map
+-- gives it, with its name kept in case discovery stops seeing it). Deleting a
+-- device or node removes its links.
+CREATE TABLE IF NOT EXISTS topology_hand_links (
+  id              SERIAL PRIMARY KEY,
+  site_id         INTEGER REFERENCES sites(id) ON DELETE CASCADE,
+  a_device_id     INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+  a_node_id       INTEGER REFERENCES topology_nodes(id) ON DELETE CASCADE,
+  a_external      VARCHAR(160),
+  a_external_name VARCHAR(255),
+  b_device_id     INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+  b_node_id       INTEGER REFERENCES topology_nodes(id) ON DELETE CASCADE,
+  b_external      VARCHAR(160),
+  b_external_name VARCHAR(255),
+  label           VARCHAR(100),
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (num_nonnulls(a_device_id, a_node_id, a_external) = 1),
+  CHECK (num_nonnulls(b_device_id, b_node_id, b_external) = 1)
+);
+-- One link per pair of ends, whichever way round it was drawn.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_topology_hand_links_pair ON topology_hand_links (
+  LEAST(COALESCE('d' || a_device_id::text, 'n' || a_node_id::text, 'e' || a_external),
+        COALESCE('d' || b_device_id::text, 'n' || b_node_id::text, 'e' || b_external)),
+  GREATEST(COALESCE('d' || a_device_id::text, 'n' || a_node_id::text, 'e' || a_external),
+           COALESCE('d' || b_device_id::text, 'n' || b_node_id::text, 'e' || b_external))
+);
+-- Carry over links drawn before, then retire the old tables.
+DO $$ BEGIN
+  IF to_regclass('public.manual_topology_links') IS NOT NULL THEN
+    INSERT INTO topology_hand_links (site_id, a_device_id, b_device_id, label, created_at)
+      SELECT d.site_id, ml.from_device_id, ml.to_device_id, ml.label, ml.created_at
+        FROM manual_topology_links ml JOIN devices d ON d.id = ml.from_device_id
+      ON CONFLICT DO NOTHING;
+    DROP TABLE manual_topology_links;
+  END IF;
+  IF to_regclass('public.topology_node_links') IS NOT NULL THEN
+    INSERT INTO topology_hand_links (site_id, a_node_id, b_device_id, b_node_id, label, created_at)
+      SELECT n.site_id, nl.node_id, nl.device_id, nl.other_node_id, nl.label, nl.created_at
+        FROM topology_node_links nl JOIN topology_nodes n ON n.id = nl.node_id
+      ON CONFLICT DO NOTHING;
+    DROP TABLE topology_node_links;
+  END IF;
+END $$;
+
+-- Where each node sits on the topology map, and which side of a node each link
+-- attaches to, when someone has arranged it (#147). Shared by everyone: the map
+-- is the network's drawing, not a personal view. Keyed by the ids the map uses
+-- ("12", "node-3", "ext-…", "cable:…"); a missing entry is placed automatically.
+CREATE TABLE IF NOT EXISTS topology_positions (
+  node_key    VARCHAR(200) PRIMARY KEY,
+  x           DOUBLE PRECISION NOT NULL,
+  y           DOUBLE PRECISION NOT NULL,
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS topology_edge_anchors (
+  edge_key       VARCHAR(400) PRIMARY KEY,
+  source_handle  VARCHAR(8),
+  target_handle  VARCHAR(8),
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- NVD's entry for a CVE only the release notes name, looked up by id: it often

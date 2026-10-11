@@ -87,28 +87,6 @@ describe('buildTopology — disconnected segments reusing addresses (#90)', () =
     expect(resolved).toHaveLength(0);   // never silently becomes gamma or delta
   });
 
-  it('does not join two segments into one shared segment', () => {
-    const links = [
-      // alpha's trunk port sees two unresolved neighbours in segment 1
-      link({ from_device_id: 1, from_interface: 'ether1', neighbor_address: '10.2.0.1' }),
-      link({ from_device_id: 1, from_interface: 'ether1', neighbor_address: '10.2.0.2' }),
-      // delta's trunk port sees two unresolved neighbours in segment 3,
-      // which happen to carry the very same addresses
-      link({ from_device_id: 4, from_interface: 'ether1', neighbor_address: '10.2.0.1' }),
-      link({ from_device_id: 4, from_interface: 'ether1', neighbor_address: '10.2.0.2' }),
-    ];
-    const graph = buildTopology(segmentedFleet(), links, []);
-
-    const segments = graph.externalNodes.filter((n) => n.caps === 'segment');
-    expect(segments).toHaveLength(2);   // one per port group, NOT merged into one
-
-    // No segment may be attached to both alpha and delta.
-    for (const seg of segments) {
-      const attached = graph.segConns.filter((c) => c.dst === seg.id).map((c) => c.src);
-      expect(attached).not.toEqual(expect.arrayContaining(['1', '4']));
-    }
-  });
-
   it('keeps same-addressed neighbours in different segments as separate nodes', () => {
     const graph = buildTopology(segmentedFleet(), [
       link({ from_device_id: 1, from_interface: 'ether1', neighbor_address: '10.2.0.9', neighbor_identity: 'switch' }),
@@ -118,21 +96,6 @@ describe('buildTopology — disconnected segments reusing addresses (#90)', () =
     // so they must not collapse into a single external node bridging the segments.
     const ext = graph.externalNodes.filter((n) => n.caps !== 'segment');
     expect(ext).toHaveLength(2);
-  });
-
-  it('still merges genuinely identical neighbours when a MAC proves identity', () => {
-    const links = [
-      link({ from_device_id: 1, from_interface: 'ether1', neighbor_mac: 'AA:BB:CC:00:00:01', neighbor_address: '10.2.0.1' }),
-      link({ from_device_id: 1, from_interface: 'ether1', neighbor_mac: 'AA:BB:CC:00:00:02', neighbor_address: '10.2.0.2' }),
-      link({ from_device_id: 2, from_interface: 'ether5', neighbor_mac: 'AA:BB:CC:00:00:01', neighbor_address: '10.2.0.1' }),
-      link({ from_device_id: 2, from_interface: 'ether5', neighbor_mac: 'AA:BB:CC:00:00:02', neighbor_address: '10.2.0.2' }),
-    ];
-    const graph = buildTopology(segmentedFleet(), links, []);
-    const segments = graph.externalNodes.filter((n) => n.caps === 'segment');
-    // Same MACs on both ports: this really is one shared segment.
-    expect(segments).toHaveLength(1);
-    const attached = graph.segConns.filter((c) => c.dst === segments[0].id).map((c) => c.src).sort();
-    expect(attached).toEqual(expect.arrayContaining(['1', '2']));
   });
 
   it('reports which identifiers it distrusted', () => {
@@ -322,16 +285,6 @@ describe('buildTopology physical links and views', () => {
     expect(graph.externalNodes.some((n) => n.name === 'sw2')).toBe(true);
   });
 
-  it('connects managed devices behind a shared segment to it', () => {
-    const four = [...pair, dev(3, 'sw3', '192.168.0.3'), dev(4, 'sw4', '192.168.0.4')];
-    const graph = buildTopology(four, [
-      link({ from_device_id: 1, from_interface: 'e1', to_device_id: 3, link_type: 'mndp' }),
-      link({ from_device_id: 1, from_interface: 'e1', to_device_id: 4, link_type: 'mndp' }),
-    ], []);
-    const seg = graph.externalNodes.find((n) => n.caps === 'segment')!;
-    const into = graph.segConns.filter((c) => c.dst === seg.id).map((c) => c.src).sort();
-    expect(into).toEqual(['1', '3', '4']);
-  });
 });
 
 describe('buildTopology LLDP port names', () => {
@@ -341,5 +294,46 @@ describe('buildTopology LLDP port names', () => {
       link({ from_device_id: 7, from_interface: 'sfp28-2', to_device_id: 1, to_interface: 'bridge/sfp28-2', link_type: 'lldp' }),
     ], []);
     expect(graph.links).toHaveLength(1);
+  });
+});
+
+describe('spanning-tree role of a merged cable (#147)', () => {
+  const devices = [dev(1, 'core', '10.0.0.1'), dev(2, 'access', '10.0.0.2')];
+  it('keeps a blocked port reported by the end that is merged away', () => {
+    const g = buildTopology(devices, [
+      link({ link_type: 'lldp', from_device_id: 1, to_device_id: 2, from_interface: 'sfp9', to_interface: 'sfp2', stp_role: 'designated' }),
+      link({ link_type: 'lldp', from_device_id: 2, to_device_id: 1, from_interface: 'sfp2', to_interface: 'sfp9', stp_role: 'alternate', stp_state: 'blocking' }),
+    ], [], []);
+    const lldp = g.links.filter((l) => l.link_type === 'lldp');
+    expect(lldp).toHaveLength(1);
+    expect(lldp[0]).toMatchObject({ stp_role: 'alternate', stp_state: 'blocking' });
+  });
+  it('shows the uplink end of a forwarding cable', () => {
+    const g = buildTopology(devices, [
+      link({ link_type: 'lldp', from_device_id: 1, to_device_id: 2, from_interface: 'sfp2', to_interface: 'sfp1', stp_role: 'designated' }),
+      link({ link_type: 'lldp', from_device_id: 2, to_device_id: 1, from_interface: 'sfp1', to_interface: 'sfp2', stp_role: 'root' }),
+    ], [], []);
+    expect(g.links.filter((l) => l.link_type === 'lldp')[0].stp_role).toBe('root');
+  });
+});
+
+describe('no shared segments (#147)', () => {
+  const devices = [dev(1, 'core', '10.0.0.1'), dev(2, 'sw', '10.0.0.2')];
+  it('draws nothing for a port where MNDP sees half the LAN, and lists no stray neighbours', () => {
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'ether1', neighbor_mac: 'AA:00:00:00:00:01', neighbor_identity: 'a' }),
+      link({ from_device_id: 1, from_interface: 'ether1', neighbor_mac: 'AA:00:00:00:00:02', neighbor_identity: 'b' }),
+      link({ from_device_id: 1, from_interface: 'ether1', neighbor_mac: 'AA:00:00:00:00:03', neighbor_identity: 'c' }),
+    ], [], []);
+    expect(g.links).toHaveLength(0);
+    expect(g.externalNodes).toHaveLength(0);
+    expect(g.segConns).toHaveLength(0);
+  });
+  it('still draws a port with a single MNDP neighbour', () => {
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'ether5', neighbor_mac: 'AA:00:00:00:00:09', neighbor_identity: 'printer-switch' }),
+    ], [], []);
+    expect(g.links).toHaveLength(1);
+    expect(g.externalNodes.map((n) => n.name)).toEqual(['printer-switch']);
   });
 });

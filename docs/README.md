@@ -8,7 +8,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Configuration](configuration.md) | Environment variables, secret management and key rotation |
 | [Devices](devices.md) | The device list, the tabs on a device, ports and VLANs, and the per-device tools |
 | [Clients](clients.md) | Where client data comes from, identification, history, and per-port clients |
-| [Topology](topology.md) | How links are discovered, spanning-tree resolution, manual links |
+| [Topology](topology.md) | How links are discovered, spanning-tree resolution, client devices, your own nodes and hand-drawn links |
 | [Traffic analytics](traffic.md) | The NetFlow collector, top talkers, application breakdown, retention |
 | [Wireless](wireless.md) | Radios and SSIDs, RF health, signal bands, rogue APs, guest WiFi |
 | [Network services](network-services.md) | DHCP, DNS, NTP, WireGuard, logging, discovery and SNMP |

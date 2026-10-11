@@ -1,683 +1,328 @@
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ReactFlow,
   MiniMap,
   Controls,
   Background,
-  Handle,
-  Position,
   useNodesState,
   useEdgesState,
-  addEdge,
-  EdgeLabelRenderer,
-  BaseEdge,
-  getStraightPath,
   type Node,
   type Edge,
   type Connection,
-  type EdgeProps,
+  type ReactFlowInstance,
   BackgroundVariant,
-  MarkerType,
+  ConnectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RefreshCw, GitBranch, Link2, Link2Off, X, AlertCircle } from 'lucide-react';
+import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw } from 'lucide-react';
 import { topologyApi } from '../services/api';
-import type { TopologyDevice, TopologyLink, ExternalTopologyNode } from '../types';
+import type { TopologyDevice, TopologyNode, HandLinkEnd } from '../types';
 import clsx from 'clsx';
 import { useThemeStore } from '../store/themeStore';
-import { layoutTree } from '../utils/topologyLayout';
-import { resolveStpRoot, type BridgeInfo, type RootVerdict } from '../utils/stpRoot';
+import { buildTopologyGraph, endFor, type GraphEdge, type StpUpstream } from '../utils/topologyGraph';
+import type { BridgeInfo } from '../utils/stpRoot';
+import type { Side } from '../utils/topologyGeometry';
+import { nodeTypes, statusColor } from '../components/topology/nodes';
+import TopoEdge, { type TopoEdgeData } from '../components/topology/TopoEdge';
+import EdgeMenu from '../components/topology/EdgeMenu';
+import NodeEditor from '../components/topology/NodeEditor';
+import HandLinksTable from '../components/topology/HandLinksTable';
 
-/** Upstream verdict as returned by /api/topology; resolved server-side. */
-interface StpUpstream {
-  deviceId: number;
-  bridgeName: string;
-  upstreamDeviceId: number | null;
-  confidence: 'resolved' | 'is-root' | 'external-root' | 'ambiguous' | 'unknown';
-  rootBridgeId: string | null;
+const edgeTypes = { topo: TopoEdge };
+const SHOW_CLIENTS_KEY = 'topology.showClients';
+
+type Anchors = Record<string, { sourceHandle: Side | null; targetHandle: Side | null }>;
+
+/** React Flow edge for a graph edge: the colour says what kind of link it is. */
+function toFlowEdge(e: GraphEdge, anchors: Anchors, onDelete: (e: GraphEdge) => void, canWrite: boolean): Edge {
+  const sides = anchors[e.id];
+  const data: TopoEdgeData = { label: e.label, parallel: e.parallel, sourceSide: sides?.sourceHandle ?? null, targetSide: sides?.targetHandle ?? null };
+  if (e.kind === 'hand') {
+    return {
+      id: e.id, source: e.source, target: e.target, type: 'topo',
+      data: { ...data, hand: true, onDelete: canWrite && e.deleteId != null ? () => onDelete(e) : undefined },
+      style: { stroke: '#8b5cf6', strokeWidth: 2, strokeDasharray: '6,3' },
+    };
+  }
+  if (e.kind === 'client') {
+    return { id: e.id, source: e.source, target: e.target, type: 'topo', data: { ...data, label: undefined }, style: { stroke: '#7dd3fc', strokeWidth: 1 } };
+  }
+  const look = e.role === 'root' ? { stroke: '#3b82f6' }
+    : e.role === 'designated' ? { stroke: '#22c55e' }
+      : e.role === 'blocked' ? { stroke: '#ef4444', strokeDasharray: '6,3' }
+        : { stroke: '#94a3b8' };
+  return {
+    id: e.id, source: e.source, target: e.target, type: 'topo',
+    data: { ...data, label: e.label ? `${e.label}${e.role === 'blocked' ? ' [blocked]' : ''}` : (e.role === 'blocked' ? 'blocked' : undefined) },
+    className: 'topology-edge',
+    style: { strokeWidth: 2, ...look },
+    animated: e.role === 'root',
+  };
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const statusColor: Record<string, string> = {
-  online: '#22c55e',
-  offline: '#ef4444',
-  unknown: '#94a3b8',
-};
-
-const deviceIcon: Record<string, string> = {
-  router: '⇌',
-  switch: '⊞',
-  wireless_ap: '⊙',
-  other: '◈',
-};
-
-function capsLabel(caps: string | undefined): string {
-  if (!caps) return '';
-  const c = caps.toLowerCase();
-  if (c.includes('bridge'))   return 'Switch';
-  if (c.includes('router'))   return 'Router';
-  if (c.includes('wlan-ap'))  return 'AP';
-  if (c.includes('telephone')) return 'Phone';
-  return '';
-}
-
-const handleStyle = { opacity: 0, width: 10, height: 10, zIndex: 50 };
-const handleStyleVisible = { width: 12, height: 12, background: '#3b82f6', border: '2px solid #fff', zIndex: 50, cursor: 'crosshair' };
-
-// ─── Node components ──────────────────────────────────────────────────────────
-
-function DeviceNode({ data }: { data: Record<string, unknown> }) {
-  const device  = data as unknown as TopologyDevice & { isRootBridge: boolean; connectMode: boolean; orphan: boolean };
-  const hStyle  = device.connectMode ? handleStyleVisible : handleStyle;
-  return (
-    <div
-      className={clsx('card px-3 py-2 min-w-[148px] text-xs shadow-md select-none', device.orphan && 'opacity-60')}
-      style={{
-        borderColor: device.isRootBridge ? '#f59e0b' : statusColor[device.status] ?? '#94a3b8',
-        borderWidth: device.isRootBridge ? 2 : 1,
-      }}
-    >
-      <Handle type="target" position={Position.Top}    isConnectable={!!device.connectMode} style={hStyle} />
-      <Handle type="target" position={Position.Left}   isConnectable={!!device.connectMode} style={hStyle} />
-      <Handle type="source" position={Position.Bottom} isConnectable={!!device.connectMode} style={hStyle} />
-      <Handle type="source" position={Position.Right}  isConnectable={!!device.connectMode} style={hStyle} />
-      <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-base leading-none">{deviceIcon[device.device_type] || '◈'}</span>
-        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: statusColor[device.status] ?? '#94a3b8' }} />
-        <span className="font-semibold truncate text-gray-900 dark:text-white">{device.name}</span>
-        {device.isRootBridge && <span title="Root Bridge" className="ml-auto text-amber-500 font-bold">★</span>}
-      </div>
-      <div className="font-mono text-gray-400 dark:text-slate-500">{device.ip_address}</div>
-      {device.model && <div className="text-gray-400 dark:text-slate-500 truncate">{device.model}</div>}
-      {device.orphan && <div className="mt-1 text-orange-400 dark:text-orange-500 text-[10px]">No known connections</div>}
-    </div>
-  );
-}
-
-function ExternalNode({ data }: { data: Record<string, unknown> }) {
-  const node = data as unknown as ExternalTopologyNode & { connectMode: boolean };
-  if (node.caps === 'segment') {
-    return (
-      <div className="px-3 py-2 min-w-[140px] text-xs rounded-lg bg-amber-50 dark:bg-amber-900/20 shadow-sm select-none" style={{ border: '2px dashed #f59e0b' }}>
-        <Handle type="target" position={Position.Top}    isConnectable={false} style={handleStyle} />
-        <Handle type="target" position={Position.Left}   isConnectable={false} style={handleStyle} />
-        <Handle type="source" position={Position.Bottom} isConnectable={false} style={handleStyle} />
-        <Handle type="source" position={Position.Right}  isConnectable={false} style={handleStyle} />
-        <div className="font-semibold text-amber-700 dark:text-amber-400 mb-0.5">⊕ Shared Segment</div>
-        {node.platform && <div className="text-amber-600 dark:text-amber-500">{node.platform}</div>}
-        <div className="text-amber-400 dark:text-amber-600 mt-0.5 text-[10px]">Unmanaged L2 switch / hub</div>
-      </div>
-    );
-  }
-  const cl = capsLabel(node.caps);
-  return (
-    <div className="px-3 py-2 min-w-[130px] text-xs rounded-lg bg-gray-100 dark:bg-slate-700/60 shadow-sm select-none" style={{ border: '1.5px dashed #94a3b8' }}>
-      <Handle type="target" position={Position.Top}    isConnectable={false} style={handleStyle} />
-      <Handle type="target" position={Position.Left}   isConnectable={false} style={handleStyle} />
-      <Handle type="source" position={Position.Bottom} isConnectable={false} style={handleStyle} />
-      <Handle type="source" position={Position.Right}  isConnectable={false} style={handleStyle} />
-      <div className="flex items-center gap-1.5 mb-1">
-        <span className="text-base leading-none text-gray-400">◌</span>
-        <span className="font-semibold truncate text-gray-600 dark:text-slate-300">{node.name}{cl ? ` (${cl})` : ''}</span>
-      </div>
-      {node.address && <div className="font-mono text-gray-400 dark:text-slate-500">{node.address}</div>}
-      {node.platform && <div className="text-gray-400 dark:text-slate-500 truncate">{node.platform}</div>}
-      <div className="text-gray-300 dark:text-slate-600 mt-0.5">External</div>
-    </div>
-  );
-}
-
-// ─── Manual Edge with delete button ──────────────────────────────────────────
-
-function ManualEdge({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps) {
-  const [edgePath, labelX, labelY] = getStraightPath({ sourceX, sourceY, targetX, targetY });
-  const onDelete = (data as { onDelete?: (id: string) => void } | undefined)?.onDelete;
-
-  return (
-    <>
-      <BaseEdge id={id} path={edgePath} style={{ stroke: '#8b5cf6', strokeWidth: 2, strokeDasharray: '6,3' }} />
-      <EdgeLabelRenderer>
-        <div
-          className="absolute pointer-events-all flex items-center gap-1"
-          style={{ transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)` }}
-        >
-          <span className="text-[9px] bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1 rounded">manual</span>
-          {onDelete && (
-            <button
-              className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
-              style={{ fontSize: 8, lineHeight: 1 }}
-              onClick={() => onDelete(id)}
-              title="Remove this manual connection"
-            >
-              <X className="w-2.5 h-2.5" />
-            </button>
-          )}
-        </div>
-      </EdgeLabelRenderer>
-    </>
-  );
-}
-
-const nodeTypes = { deviceNode: DeviceNode, externalNode: ExternalNode };
-const edgeTypes = { manualEdge: ManualEdge };
-
-// ─── Layout constants ──────────────────────────────────────────────────────────
-
-const NODE_W = 160;
-const NODE_H = 80;
-const NODE_LAYOUT_W = 220;
-const NODE_LAYOUT_H = 110;
-const H_GAP = 60;
-const V_GAP = 90;
-const COMPONENT_GAP = 140;
-const NODE_SLOT = NODE_LAYOUT_W + H_GAP;
-const OVERLAP_SEP = 16;
-const ORPHAN_ROW_GAP = 160;
-
-// ─── Layout helpers ───────────────────────────────────────────────────────────
-
-function rectsOverlap(
-  a: { x: number; y: number; w: number; h: number },
-  b: { x: number; y: number; w: number; h: number }
-): boolean {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
-
-function resolveOverlaps(positions: Map<string, { x: number; y: number }>, maxIt = 100): void {
-  const ids = [...positions.keys()];
-  if (ids.length < 2) return;
-  const w = NODE_LAYOUT_W, h = NODE_LAYOUT_H;
-  for (let round = 0; round < maxIt; round++) {
-    let moved = false;
-    const boxes = ids.map((id) => { const p = positions.get(id)!; return { id, x: p.x, y: p.y, w, h }; });
-    boxes.sort((a, b) => a.y === b.y ? a.x - b.x : a.y - b.y);
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const A = boxes[i], B = boxes[j];
-        if (!rectsOverlap(A, B)) continue;
-        const dx = Math.abs((B.x + B.w / 2) - (A.x + A.w / 2));
-        const dy = Math.abs((B.y + B.h / 2) - (A.y + A.h / 2));
-        if (dy <= dx * 0.85) {
-          const ny = A.y + A.h + OVERLAP_SEP;
-          if (ny !== B.y) { positions.set(B.id, { x: B.x, y: ny }); B.y = ny; moved = true; }
-        } else {
-          const shift = B.x >= A.x ? 1 : -1;
-          const nx = B.x + shift * (Math.min(w, h) / 2 + OVERLAP_SEP);
-          if (nx !== B.x) { positions.set(B.id, { x: nx, y: B.y }); B.x = nx; moved = true; }
-        }
-      }
-    }
-    if (!moved) break;
-  }
-}
-
-// ─── Graph builder ────────────────────────────────────────────────────────────
-
-function buildGraph(
-  devices: TopologyDevice[],
-  externalNodes: ExternalTopologyNode[],
-  links: TopologyLink[],
-  bridges: BridgeInfo[],
-  upstreams: StpUpstream[],
-  segConns: { src: string; dst: string; port: string }[],
-  manualLinkIds: { id: number; from_device_id: number; to_device_id: number }[],
-  connectMode: boolean,
-  onDeleteManual: (edgeId: string) => void,
-): { nodes: Node[]; edges: Edge[] } {
-
-  const manualLinks  = links.filter((l) => l.link_type === 'manual');
-  const activeLinks  = links.filter((l) => l.link_type !== 'manual');
-  const allExtNodes  = externalNodes;
-
-  // ── Build adjacency (for layout) ────────────────────────────────────────────
-  const deviceIds = new Set(devices.map((d) => String(d.id)));
-  const adj = new Map<string, Set<string>>();
-  for (const d of devices)    adj.set(String(d.id), new Set());
-  for (const e of allExtNodes) adj.set(e.id, new Set());
-
-  const linkToExtId = new Map<number, string>();
-  for (const link of activeLinks) {
-    if (!link.from_device_id) continue;
-    const src = String(link.from_device_id);
-    let dst: string | null = null;
-    if (link.to_device_id) {
-      dst = String(link.to_device_id);
-    } else {
-      const ext = allExtNodes.find(
-        (e) => (link.neighbor_address && e.address === link.neighbor_address) ||
-               (link.neighbor_mac && e.mac === link.neighbor_mac) ||
-               (!link.neighbor_address && !link.neighbor_mac && link.neighbor_identity && e.name === link.neighbor_identity)
-      );
-      if (ext) { dst = ext.id; linkToExtId.set(link.id, ext.id); }
-    }
-    if (dst && adj.has(src) && adj.has(dst)) {
-      adj.get(src)!.add(dst); adj.get(dst)!.add(src);
-    }
-  }
-  for (const { src, dst } of segConns) {
-    if (adj.has(src) && adj.has(dst)) {
-      adj.get(src)!.add(dst); adj.get(dst)!.add(src);
-    }
-  }
-  // Manual links also participate in layout so they don't stay visually orphaned
-  for (const ml of manualLinks) {
-    const src = String(ml.from_device_id);
-    const dst = String(ml.to_device_id);
-    if (adj.has(src) && adj.has(dst)) {
-      adj.get(src)!.add(dst); adj.get(dst)!.add(src);
-    }
-  }
-
-  // ── STP root detection ───────────────────────────────────────────────────────
-  //
-  // Resolved from what each bridge reports, not inferred from port roles. The
-  // old inference compared against a role of 'root' while RouterOS reports
-  // 'root-port', so it never matched anything and the first device in the list
-  // was crowned every time (#131).
-  const hasStp = bridges.length > 0;
-
-  // Device -> its upstream, for the confident answers only. Resolved server-side
-  // so the diagram and the rollout warning cannot disagree about the hierarchy.
-  const stpParent = new Map<string, string>();
-  for (const u of upstreams) {
-    if (u.confidence === 'resolved' && u.upstreamDeviceId != null) {
-      stpParent.set(String(u.deviceId), String(u.upstreamDeviceId));
-    }
-  }
-  const rootVerdicts = new Map<string, RootVerdict>();
-  const stpRootIds = new Set<string>();
-
-  function pickRoot(componentIds: string[]): string {
-    const managed = componentIds.filter((id) => deviceIds.has(id));
-    if (hasStp && managed.length > 0) {
-      const verdict = resolveStpRoot(managed, bridges);
-      for (const id of componentIds) rootVerdicts.set(id, verdict);
-      if (verdict.deviceId && managed.includes(verdict.deviceId)) {
-        stpRootIds.add(verdict.deviceId);
-        return verdict.deviceId;
-      }
-      // An external or unknown root leaves the drawing to connectivity, but the
-      // crown is withheld rather than handed to an arbitrary device.
-    }
-    const inComp = new Set(componentIds);
-    let best = componentIds[0], bestScore = -1;
-    for (const id of componentIds) {
-      const n = [...(adj.get(id) || [])].filter((x) => inComp.has(x)).length;
-      const score = (deviceIds.has(id) ? 1000 : 0) + n;
-      if (score > bestScore) { best = id; bestScore = score; }
-    }
-    return best;
-  }
-
-  // ── Connected components ─────────────────────────────────────────────────────
-  const allIds = [...devices.map((d) => String(d.id)), ...allExtNodes.map((e) => e.id)];
-  const visited = new Set<string>();
-  const components: string[][] = [];
-  for (const id of allIds) {
-    if (visited.has(id)) continue;
-    const stack = [id], comp: string[] = [];
-    while (stack.length) {
-      const n = stack.pop()!;
-      if (visited.has(n)) continue;
-      visited.add(n); comp.push(n);
-      for (const m of adj.get(n) || []) if (!visited.has(m)) stack.push(m);
-    }
-    components.push(comp);
-  }
-  components.sort((a, b) => b.length - a.length);
-
-  // Identify singleton device nodes (orphans) — separate them into an "orphan row"
-  const orphanIds = new Set<string>(
-    components.filter((c) => c.length === 1 && deviceIds.has(c[0])).map((c) => c[0])
-  );
-  const connectedComponents = components.filter((c) => c.length > 1 || !deviceIds.has(c[0]));
-  const orphanComponents    = components.filter((c) => c.length === 1 && deviceIds.has(c[0]));
-
-  // ── Tidy-tree layout ─────────────────────────────────────────────────────────
-  const positions = new Map<string, { x: number; y: number }>();
-  let componentOffsetX = 0;
-  let globalMaxDepth = 0;
-
-  for (const comp of connectedComponents) {
-    if (!comp.length) continue;
-    const compSet = new Set(comp);
-    const rootId  = pickRoot(comp);
-
-    const depth    = new Map<string, number>();
-    const children = new Map<string, string[]>();
-    const bfs = [rootId];
-    depth.set(rootId, 0);
-    children.set(rootId, []);
-
-    // Where spanning tree named a definite upstream, that is the parent.
-    //
-    // Breadth-first over discovered adjacency attaches a node to whichever
-    // neighbour it happened to reach first, and a trunk port routinely resolves
-    // to several neighbours at once — so the drawn hierarchy could differ from
-    // the one the switches are actually using. STP knows which neighbour is
-    // upstream; this defers to it and falls back to adjacency for the rest.
-    while (bfs.length) {
-      const curr = bfs.shift()!;
-      for (const n of adj.get(curr) || []) {
-        if (!compSet.has(n) || depth.has(n)) continue;
-        const realParent = stpParent.get(n);
-        // Someone else is its real parent — leave it for them to claim.
-        if (realParent && realParent !== curr && compSet.has(realParent)) continue;
-        depth.set(n, depth.get(curr)! + 1);
-        children.set(n, []);
-        children.get(curr)!.push(n);
-        bfs.push(n);
-      }
-    }
-
-    // Anything whose STP parent was never reached (a cable STP does not agree
-    // with, or a parent outside this component) still has to be drawn.
-    let stragglers = comp.filter((id) => !depth.has(id));
-    while (stragglers.length) {
-      const before = stragglers.length;
-      for (const id of [...stragglers]) {
-        const attach = [...(adj.get(id) || [])].find((n) => depth.has(n));
-        if (attach === undefined) continue;
-        depth.set(id, depth.get(attach)! + 1);
-        children.set(id, []);
-        children.get(attach)!.push(id);
-        stragglers = stragglers.filter((x) => x !== id);
-      }
-      if (stragglers.length === before) break;   // unreachable; leave them out
-    }
-
-    for (const kids of children.values()) {
-      kids.sort((a, b) => {
-        const da = deviceIds.has(a) ? 0 : 1, db = deviceIds.has(b) ? 0 : 1;
-        if (da !== db) return da - db;
-        return (adj.get(b)?.size || 0) - (adj.get(a)?.size || 0);
-      });
-    }
-
-    // Layout runs in slots and rows; pixels are this file's business. Wide groups
-    // of sibling leaves become blocks rather than one enormous row — see
-    // utils/topologyLayout for why breadth must stop meaning width (#115).
-    const laid = layoutTree(rootId, children, depth);
-    for (const [id, p] of laid.positions) {
-      positions.set(id, {
-        x: componentOffsetX + (p.x + 0.5) * NODE_SLOT - NODE_W / 2,
-        y: p.y * (NODE_H + V_GAP),
-      });
-    }
-
-    globalMaxDepth = Math.max(globalMaxDepth, laid.maxRow);
-    componentOffsetX += laid.widthSlots * NODE_SLOT + COMPONENT_GAP;
-  }
-
-  // ── Orphan row at the bottom ─────────────────────────────────────────────────
-  const orphanY = (globalMaxDepth + 1) * (NODE_H + V_GAP) + ORPHAN_ROW_GAP;
-  let orphanX   = 0;
-  for (const [oc] of orphanComponents.map((c) => [c[0]])) {
-    positions.set(oc, { x: orphanX, y: orphanY });
-    orphanX += NODE_SLOT;
-  }
-
-  // Center horizontally
-  if (positions.size) {
-    const xs = [...positions.values()].map((p) => p.x);
-    const shift = (Math.min(...xs) + Math.max(...xs)) / 2;
-    for (const [id, p] of positions) positions.set(id, { x: p.x - shift, y: p.y });
-  }
-
-  resolveOverlaps(positions);
-
-  // ── React Flow nodes ─────────────────────────────────────────────────────────
-  const nodes: Node[] = [
-    ...devices.map((d) => ({
-      id: String(d.id),
-      type: 'deviceNode',
-      position: positions.get(String(d.id)) ?? { x: 0, y: 0 },
-      data: { ...d, isRootBridge: stpRootIds.has(String(d.id)), connectMode, orphan: orphanIds.has(String(d.id)) } as unknown as Record<string, unknown>,
-    })),
-    ...allExtNodes.map((e) => ({
-      id: e.id,
-      type: 'externalNode',
-      position: positions.get(e.id) ?? { x: 0, y: orphanY },
-      data: { ...e, connectMode } as unknown as Record<string, unknown>,
-    })),
-  ];
-
-  // ── React Flow edges ─────────────────────────────────────────────────────────
-  const seen = new Set<string>();
-  const edges: Edge[] = [];
-
-  for (const link of activeLinks) {
-    if (!link.from_device_id) continue;
-    const src = String(link.from_device_id);
-    const dst = link.to_device_id ? String(link.to_device_id) : (linkToExtId.get(link.id) ?? null);
-    if (!dst) continue;
-
-    const edgeKey = [src, dst].sort().join('--');
-    if (seen.has(edgeKey)) continue;
-    seen.add(edgeKey);
-
-    let stroke = '#94a3b8', strokeDasharray: string | undefined, animated = false;
-    if (link.stp_role === 'root')      { stroke = '#3b82f6'; animated = true; }
-    else if (link.stp_role === 'designated') { stroke = '#22c55e'; }
-    else if (link.stp_role === 'alternate' || link.stp_role === 'backup') {
-      stroke = '#ef4444'; strokeDasharray = '6,3';
-    }
-
-    const stpLabel  = link.stp_role ? ` [${link.stp_role}]` : '';
-    const portLabel = link.from_interface
-      ? (link.to_interface ? `${link.from_interface} ↔ ${link.to_interface}` : link.from_interface)
-      : (link.to_interface ?? '');
-
-    edges.push({
-      id: `edge-${link.id}`,
-      source: src,
-      target: dst,
-      label: (portLabel + stpLabel) || undefined,
-      labelStyle: { fontSize: 10, fill: 'var(--topology-edge-label, #64748b)' },
-      className: 'topology-edge',
-      style: { stroke, strokeWidth: 2, strokeDasharray },
-      animated,
-    });
-  }
-
-  // Shared-segment edges
-  for (const { src, dst, port } of segConns) {
-    const edgeKey = [src, dst].sort().join('--');
-    if (seen.has(edgeKey)) continue;
-    seen.add(edgeKey);
-    if (!adj.has(src) || !adj.has(dst)) continue;
-    edges.push({
-      id: `segedge-${src}-${dst}`,
-      source: src,
-      target: dst,
-      label: port || undefined,
-      labelStyle: { fontSize: 10, fill: '#b45309' },
-      className: 'topology-edge topology-edge--segment',
-      style: { stroke: '#f59e0b', strokeWidth: 2, strokeDasharray: '5,3' },
-      animated: false,
-    });
-  }
-
-  // Manual edges
-  for (const ml of manualLinks) {
-    const src = String(ml.from_device_id);
-    const dst = String(ml.to_device_id);
-    const edgeKey = [src, dst].sort().join('--');
-    if (seen.has(edgeKey)) continue;
-    seen.add(edgeKey);
-
-    // Find the real manual link id (positive int) for deletion
-    const realId = manualLinkIds.find(
-      (m) => (m.from_device_id === ml.from_device_id && m.to_device_id === ml.to_device_id) ||
-             (m.from_device_id === ml.to_device_id  && m.to_device_id === ml.from_device_id)
-    )?.id;
-
-    edges.push({
-      id: `manual-${src}-${dst}`,
-      source: src,
-      target: dst,
-      type: 'manualEdge',
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#8b5cf6' },
-      data: { onDelete: realId !== undefined ? () => onDeleteManual(String(realId)) : undefined },
-    });
-  }
-
-  return { nodes, edges };
-}
-
-// ─── Main page component ──────────────────────────────────────────────────────
 
 export default function TopologyPage() {
   const theme = useThemeStore((s) => s.theme);
   const queryClient = useQueryClient();
-  // Discover and manual links need write access on the server (U10).
+  const navigate = useNavigate();
+  // Discover, links, nodes and the arrangement need write access on the server (U10).
   const canWrite = useCanWrite();
   const [connectMode, setConnectMode] = useState(false);
-  const pendingEdgeRef = useRef<{ from_device_id: number; to_device_id: number } | null>(null);
+  const [showClients, setShowClients] = useState(() => {
+    try { return localStorage.getItem(SHOW_CLIENTS_KEY) === '1'; } catch { return false; }
+  });
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [hover, setHover] = useState<string | null>(null);
+  const [editing, setEditing] = useState<TopologyNode | 'new' | null>(null);
+  const [linkError, setLinkError] = useState('');
+  const [menu, setMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
+  const [anchorEdits, setAnchorEdits] = useState<Anchors>({});
+  const rf = useRef<ReactFlowInstance | null>(null);
+  /** Set by Reset layout: the next placement uses the automatic positions, then refits. */
+  const resetting = useRef(false);
+  /** Client cards moved by hand; others follow their chip and aren't saved. */
+  const movedClients = useRef(new Set<string>());
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['topology'],
-    queryFn: () => topologyApi.get().then((r) => r.data),
+    queryKey: ['topology', showClients],
+    queryFn: () => topologyApi.get(showClients).then((r) => r.data),
   });
+  const invalidate = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['topology'] }); }, [queryClient]);
+
+  const anchors: Anchors = useMemo(() => ({ ...(data?.layout?.anchors ?? {}), ...anchorEdits }), [data, anchorEdits]);
 
   const discoverMutation = useMutation({
     mutationFn: () => topologyApi.discover(),
     onSuccess: () => setTimeout(() => refetch(), 3000),
   });
+  const deleteMutate = useMutation({
+    mutationFn: (id: number) => topologyApi.deleteHandLink(id),
+    onSuccess: invalidate,
+  }).mutate;
+  // Confirmed first: a hand-drawn link can't be rebuilt from discovery (U10).
+  const onDeleteEdge = useCallback((e: GraphEdge) => {
+    if (e.deleteId != null && window.confirm('Remove this hand-drawn link?')) deleteMutate(e.deleteId);
+  }, [deleteMutate]);
 
-  const createManualLinkMutation = useMutation({
-    mutationFn: ({ from_device_id, to_device_id }: { from_device_id: number; to_device_id: number }) =>
-      topologyApi.createManualLink(from_device_id, to_device_id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['topology'] }),
-  });
-
-  const deleteManualLinkMutation = useMutation({
-    mutationFn: (id: number) => topologyApi.deleteManualLink(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['topology'] }),
-  });
-
-  // Depend on the stable `.mutate` function rather than the whole mutation object.
-  // TanStack Query recreates the mutation result object on every render but keeps
-  // `.mutate` referentially stable, so this keeps handleDeleteManual stable too.
-  // Depending on the whole object would make handleDeleteManual — and therefore the
-  // `graph` memo and the node/edge sync effect below — re-run on every render,
-  // causing an infinite setNodes/setEdges loop (React error #185).
-  const deleteManualLinkMutate = deleteManualLinkMutation.mutate;
-  const handleDeleteManual = useCallback((edgeId: string) => {
-    const id = parseInt(edgeId);
-    // Confirmed first: a manual link can't be rebuilt from discovery (U10).
-    if (!isNaN(id) && window.confirm('Delete this manually drawn link?')) deleteManualLinkMutate(id);
-  }, [deleteManualLinkMutate]);
+  const graph = useMemo(() => {
+    if (!data) return null;
+    return buildTopologyGraph({
+      devices: (data.devices as TopologyDevice[]) || [],
+      externalNodes: data.externalNodes || [],
+      links: data.links || [],
+      bridges: (data.bridges as BridgeInfo[]) || [],
+      upstreams: (data.upstreams as StpUpstream[]) || [],
+      nodes: data.nodes || [],
+      handLinks: data.handLinks || [],
+      clients: showClients ? data.clients ?? [] : null,
+      expandedClients: expanded,
+      saved: data.layout?.positions ?? {},
+    });
+  }, [data, showClients, expanded]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const nodesRef = useRef<Node[]>([]);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
 
-  const graph = useMemo(() => {
-    if (!data) return { nodes: [] as Node[], edges: [] as Edge[] };
-    return buildGraph(
-      (data.devices as TopologyDevice[]) || [],
-      (data.externalNodes as ExternalTopologyNode[]) || [],
-      (data.links as TopologyLink[]) || [],
-      (data.bridges as BridgeInfo[]) || [],
-      (data.upstreams as StpUpstream[]) || [],
-      (data.segConns as { src: string; dst: string; port: string }[]) || [],
-      (data.manualLinkIds as { id: number; from_device_id: number; to_device_id: number }[]) || [],
-      connectMode,
-      handleDeleteManual,
-    );
-  }, [data, connectMode, handleDeleteManual]);
+  // Cards already on screen keep where they are, whatever changed: a new link,
+  // a new node or a refresh must not rearrange the map. Only new cards take the
+  // position the graph gives them (next to what they hang from).
+  useEffect(() => {
+    if (!graph) return;
+    const fresh = resetting.current;
+    setNodes((prev) => {
+      const here = new Map(prev.map((n) => [n.id, n.position]));
+      return graph.nodes.map((n) => ({
+        id: n.id, type: n.kind,
+        position: (!fresh && here.get(n.id)) || { x: n.x, y: n.y },
+        data: { ...n.data, connectMode: connectMode && (n.kind === 'device' || n.kind === 'manual' || n.kind === 'external') },
+      }));
+    });
+    if (fresh) {
+      resetting.current = false;
+      setTimeout(() => rf.current?.fitView({ padding: 0.12, duration: 300 }), 80);
+    }
+  }, [graph, connectMode, setNodes]);
 
   useEffect(() => {
-    setNodes(graph.nodes);
-    setEdges(graph.edges);
-  }, [graph, setNodes, setEdges]);
+    if (!graph) return;
+    setEdges(graph.edges.map((e) => toFlowEdge(e, anchors, onDeleteEdge, canWrite)));
+  }, [graph, anchors, onDeleteEdge, canWrite, setEdges]);
 
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      const srcId = parseInt(connection.source ?? '');
-      const dstId = parseInt(connection.target ?? '');
-      if (isNaN(srcId) || isNaN(dstId) || srcId === dstId) return;
+  /**
+   * Save where every card is, so the arrangement holds for everyone and after a
+   * reload. Called on any edit, not only a drag: drawing a link or adding a
+   * node is when an unsaved map would otherwise be laid out afresh.
+   */
+  const saveArrangement = useCallback(async () => {
+    if (!canWrite) return;
+    const positions: Record<string, { x: number; y: number }> = {};
+    for (const n of nodesRef.current) {
+      if (n.type === 'client' && !movedClients.current.has(n.id)) continue;
+      positions[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+    }
+    await topologyApi.saveLayout({ positions }).catch(() => { /* the map still works; it just isn't saved */ });
+  }, [canWrite]);
 
-      // Optimistically add the edge so the user sees it immediately
-      setEdges((eds) => addEdge({
-        ...connection,
-        id: `manual-${srcId}-${dstId}-pending`,
-        type: 'manualEdge',
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#8b5cf6' },
-        data: { onDelete: undefined },
-      }, eds));
+  const onNodeDragStop = useCallback((_: unknown, _node: Node, moved: Node[]) => {
+    for (const n of moved) if (n.type === 'client') movedClients.current.add(n.id);
+    void saveArrangement();
+  }, [saveArrangement]);
 
-      pendingEdgeRef.current = { from_device_id: srcId, to_device_id: dstId };
-      createManualLinkMutation.mutate({ from_device_id: srcId, to_device_id: dstId });
+  const linkMutation = useMutation({
+    mutationFn: async (c: { a: HandLinkEnd; b: HandLinkEnd }) => {
+      await saveArrangement();
+      return topologyApi.createHandLink(c.a, c.b);
     },
-    [setEdges, createManualLinkMutation]
-  );
+    onSuccess: () => { setLinkError(''); invalidate(); },
+    onError: (e: unknown) => setLinkError((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Couldn’t connect them'),
+  });
+
+  const setSides = useCallback((edgeId: string, source: Side | null, target: Side | null) => {
+    setAnchorEdits((a) => ({ ...a, [edgeId]: { sourceHandle: source, targetHandle: target } }));
+    void topologyApi.saveLayout({ anchors: { [edgeId]: source || target ? { sourceHandle: source, targetHandle: target } : null } });
+  }, []);
+
+  const resetLayout = useCallback(async () => {
+    if (!window.confirm('Lay the map out automatically again? Where cards were moved to, and which sides links attach to, is forgotten for everything in view.')) return;
+    await topologyApi.resetLayout(nodesRef.current.map((n) => n.id), edges.map((e) => e.id));
+    movedClients.current.clear();
+    setAnchorEdits(Object.fromEntries(edges.map((e) => [e.id, { sourceHandle: null, targetHandle: null }])));
+    resetting.current = true;
+    invalidate();
+  }, [edges, invalidate]);
+
+  // Hovering a node lights up its connections and dims the rest of the map.
+  const lit = useMemo(() => {
+    if (!hover) return null;
+    const ids = new Set([hover]);
+    const edgeIds = new Set<string>();
+    for (const e of edges) if (e.source === hover || e.target === hover) { ids.add(e.source); ids.add(e.target); edgeIds.add(e.id); }
+    return { ids, edgeIds };
+  }, [hover, edges]);
+  const shownNodes = lit ? nodes.map((n) => ({ ...n, style: { ...n.style, opacity: lit.ids.has(n.id) ? 1 : 0.3 } })) : nodes;
+  const shownEdges = lit ? edges.map((e) => ({ ...e, style: { ...e.style, opacity: lit.edgeIds.has(e.id) ? 1 : 0.12 } })) : edges;
+
+  const nameOfNode = useCallback((id: string) => String(graph?.nodes.find((n) => n.id === id)?.data.name ?? id), [graph]);
+
+  const onConnect = useCallback((c: Connection) => {
+    if (!c.source || !c.target || c.source === c.target) return;
+    const a = endFor(c.source, nameOfNode(c.source));
+    const b = endFor(c.target, nameOfNode(c.target));
+    if (!a || !b) return;
+    linkMutation.mutate({ a, b });
+  }, [linkMutation, nameOfNode]);
+
+  // Clicking a link opens its menu: where it attaches, and removing a hand-drawn one.
+  const onEdgeClick = useCallback((ev: React.MouseEvent, edge: Edge) => {
+    setMenu({ x: ev.clientX, y: ev.clientY, edgeId: edge.id });
+  }, []);
+  const menuEdge = menu ? graph?.edges.find((e) => e.id === menu.edgeId) : undefined;
+
+  const onNodeClick = useCallback((_: unknown, n: Node) => {
+    if (connectMode) return;
+    if (n.type === 'clientGroup') {
+      const dev = String((n.data as { deviceId: string }).deviceId);
+      setExpanded((s) => { const next = new Set(s); if (next.has(dev)) next.delete(dev); else next.add(dev); return next; });
+    } else if (n.type === 'client') {
+      navigate(`/clients/${encodeURIComponent((n.data as { mac: string }).mac)}`);
+    } else if (n.type === 'manual' && canWrite) {
+      const node = (data?.nodes || []).find((x) => `node-${x.id}` === n.id);
+      if (node) setEditing(node);
+    }
+  }, [connectMode, navigate, canWrite, data]);
+
+  // Double-click opens a device's page; a single click is for arranging.
+  const onNodeDoubleClick = useCallback((_: unknown, n: Node) => {
+    if (n.type === 'device') navigate(`/devices/${n.id}`);
+  }, [navigate]);
+
+  const toggleClients = () => {
+    const next = !showClients;
+    setShowClients(next);
+    setExpanded(new Set());
+    try { localStorage.setItem(SHOW_CLIENTS_KEY, next ? '1' : '0'); } catch { /* private mode */ }
+  };
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-96 text-gray-400">Loading topology…</div>;
   }
 
   const hasData = (data?.devices?.length ?? 0) > 0;
-  const hasStp  = (data?.links as TopologyLink[])?.some((l) => l.stp_role);
-  const links   = (data?.links as TopologyLink[]) ?? [];
-  const orphanCount = (data?.devices?.length ?? 0) > 0
-    ? (data!.devices as TopologyDevice[]).filter((d) => {
-        const id = String(d.id);
-        return !links.some((l) => String(l.from_device_id) === id || String(l.to_device_id) === id) &&
-               !((data!.manualLinkIds ?? []) as { from_device_id: number; to_device_id: number }[]).some(
-                 (m) => m.from_device_id === d.id || m.to_device_id === d.id
-               );
-      }).length
-    : 0;
+  const links = data?.links ?? [];
+  const hasStp = links.some((l) => l.stp_role);
+  const discovered = links.filter((l) => l.link_type !== 'manual');
 
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">Network Topology</h1>
-        {canWrite && <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
           <button
-            onClick={() => setConnectMode((v) => !v)}
-            className={clsx(
-              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors',
-              connectMode
-                ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-500'
-                : 'border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/40'
-            )}
-            title={connectMode ? 'Exit connect mode' : 'Enable connect mode to manually draw links between devices'}
+            onClick={toggleClients}
+            className={clsx('flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors',
+              showClients ? 'bg-sky-600 text-white border-sky-700 hover:bg-sky-500'
+                : 'border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/40')}
+            title="Show client devices under the switch port or access point they connect through"
           >
-            {connectMode ? <Link2Off className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
-            {connectMode ? 'Exit Connect Mode' : 'Connect Mode'}
+            <Users className="w-4 h-4" />{showClients ? 'Hide clients' : 'Show clients'}
           </button>
-          <button
-            onClick={() => discoverMutation.mutate()}
-            disabled={discoverMutation.isPending}
-            className="btn-secondary flex items-center gap-2"
-          >
-            <RefreshCw className={clsx('w-4 h-4', discoverMutation.isPending && 'animate-spin')} />
-            Discover
-          </button>
-        </div>}
+          {showClients && expanded.size > 0 && (
+            <button className="text-sm text-sky-700 dark:text-sky-300 hover:underline flex items-center gap-1" onClick={() => setExpanded(new Set())}>
+              <ChevronUp className="w-3.5 h-3.5" />Collapse clients
+            </button>
+          )}
+          {canWrite && <>
+            <button onClick={() => { void saveArrangement(); setEditing('new'); }} className="btn-secondary flex items-center gap-2" title="Add something the manager doesn't manage: ISP modem, server, unmanaged switch">
+              <Plus className="w-4 h-4" />Add node
+            </button>
+            <button
+              onClick={() => setConnectMode((v) => !v)}
+              className={clsx(
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors',
+                connectMode
+                  ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-500'
+                  : 'border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/40'
+              )}
+              title={connectMode ? 'Exit connect mode' : 'Draw links between devices and your own nodes'}
+            >
+              {connectMode ? <Link2Off className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
+              {connectMode ? 'Exit Connect Mode' : 'Connect Mode'}
+            </button>
+            <button
+              onClick={() => discoverMutation.mutate()}
+              disabled={discoverMutation.isPending}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <RefreshCw className={clsx('w-4 h-4', discoverMutation.isPending && 'animate-spin')} />
+              Discover
+            </button>
+            <button onClick={resetLayout} className="text-sm text-gray-500 hover:text-gray-800 dark:text-slate-400 dark:hover:text-white flex items-center gap-1"
+              title="Forget where things were moved to and lay the map out automatically again">
+              <RotateCcw className="w-3.5 h-3.5" />Reset layout
+            </button>
+          </>}
+        </div>
       </div>
 
-      {/* Connect mode hint */}
       {connectMode && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 text-sm text-purple-700 dark:text-purple-300">
           <Link2 className="w-4 h-4 flex-shrink-0" />
-          Drag from any device&apos;s blue handle to another device to manually draw a connection.
-          Click the red × on a purple dashed edge to remove it.
+          Drag from any blue handle to another node to draw a link: devices, your own nodes and neighbours discovery found can all be linked.
+          Click any link to choose which side of each card it attaches to, or to remove a hand-drawn one.
+          {linkError && <span className="ml-auto text-red-600 dark:text-red-400">{linkError}</span>}
         </div>
       )}
 
-      {/* Orphan warning */}
-      {orphanCount > 0 && !connectMode && (
+      {graph && graph.orphanCount > 0 && !connectMode && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-sm text-orange-700 dark:text-orange-300">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {orphanCount} device{orphanCount !== 1 ? 's have' : ' has'} no discovered connections.
-          Use <strong className="mx-1">Connect Mode</strong> to draw links manually, or run <strong className="mx-1">Discover</strong> to re-scan.
+          {graph.orphanCount} device{graph.orphanCount !== 1 ? 's have' : ' has'} no discovered connections.
+          Use <strong className="mx-1">Connect Mode</strong> to draw links, or run <strong className="mx-1">Discover</strong> to re-scan.
         </div>
       )}
 
@@ -697,18 +342,27 @@ export default function TopologyPage() {
         </div>
       ) : (
         <>
-          <div className="card overflow-hidden" style={{ height: 'min(620px, 65vh)' }}>
+          <div className="card overflow-hidden" style={{ height: 'max(520px, calc(100vh - 260px))' }}>
             <ReactFlow
-              nodes={nodes}
-              edges={edges}
+              nodes={shownNodes}
+              edges={shownEdges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={connectMode && canWrite ? onConnect : undefined}
+              connectionMode={ConnectionMode.Loose}
+              onEdgeClick={onEdgeClick}
+              onNodeDragStop={onNodeDragStop}
+              onPaneClick={() => setMenu(null)}
+              onNodeClick={onNodeClick}
+              onNodeDoubleClick={onNodeDoubleClick}
+              onNodeMouseEnter={(_, n) => setHover(n.id)}
+              onNodeMouseLeave={() => setHover(null)}
+              onInit={(i) => { rf.current = i; }}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               fitView
-              fitViewOptions={{ padding: 0.15, includeHiddenNodes: false }}
-              minZoom={0.15}
+              fitViewOptions={{ padding: 0.12, includeHiddenNodes: false }}
+              minZoom={0.08}
               maxZoom={2.5}
               deleteKeyCode={null}
               className={clsx(
@@ -720,10 +374,13 @@ export default function TopologyPage() {
               <Controls className="topology-controls !shadow-md" />
               <MiniMap
                 className="!shadow-md"
+                pannable
+                zoomable
                 nodeColor={(n) => {
-                  if (n.type === 'externalNode') return '#94a3b8';
-                  const d = n.data as unknown as TopologyDevice;
-                  return statusColor[d.status] || '#94a3b8';
+                  if (n.type === 'device') return statusColor[(n.data as unknown as TopologyDevice).status] || '#94a3b8';
+                  if (n.type === 'manual') return '#8b5cf6';
+                  if (n.type === 'client' || n.type === 'clientGroup') return '#7dd3fc';
+                  return '#94a3b8';
                 }}
               />
               <Background variant={BackgroundVariant.Dots} color="#94a3b8" gap={20} />
@@ -732,57 +389,38 @@ export default function TopologyPage() {
 
           {/* Legend */}
           <div className="card px-4 py-3 flex flex-wrap gap-4 text-xs text-gray-500 dark:text-slate-400">
-            <div className="flex items-center gap-1.5">
-              <div className="w-4 h-0.5 bg-gray-400" />
-              <span>LLDP (direct, point-to-point)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div style={{ width: 16, borderTop: '2px dashed #f59e0b' }} />
-              <span>Shared segment (CDP/MNDP)</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div style={{ width: 16, borderTop: '2px dashed #8b5cf6' }} />
-              <span>Manual link (user-drawn)</span>
-            </div>
+            <div className="flex items-center gap-1.5"><div className="w-4 h-0.5 bg-gray-400" /><span>Discovered (LLDP/CDP/MNDP)</span></div>
+            <div className="flex items-center gap-1.5"><div style={{ width: 16, borderTop: '2px dashed #8b5cf6' }} /><span>Drawn by hand</span></div>
             {hasStp && (
               <>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-4 h-0.5 bg-blue-500" />
-                  <span>Root port (uplink)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-4 h-0.5 bg-green-500" />
-                  <span>Designated port</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div style={{ width: 16, borderTop: '2px dashed #ef4444' }} />
-                  <span>Alternate/Backup (blocked)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-amber-500 font-bold">★</span>
-                  <span>Root Bridge</span>
-                </div>
+                <div className="flex items-center gap-1.5"><div className="w-4 h-0.5 bg-blue-500" /><span>Root port (uplink)</span></div>
+                <div className="flex items-center gap-1.5"><div className="w-4 h-0.5 bg-green-500" /><span>Designated port</span></div>
+                <div className="flex items-center gap-1.5"><div style={{ width: 16, borderTop: '2px dashed #ef4444' }} /><span>Blocked by spanning tree</span></div>
+                <div className="flex items-center gap-1.5"><span className="text-amber-500 font-bold">★</span><span>Root bridge</span></div>
               </>
             )}
-            <div className="flex items-center gap-1.5">
-              <div className="w-4 h-4 rounded border-dashed border border-gray-400" />
-              <span>External (unmanaged)</span>
-            </div>
+            <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded border-dashed border border-gray-400" /><span>Seen by discovery, not managed</span></div>
+            <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded border-dashed border border-violet-500" /><span>Your own node</span></div>
+            {showClients && <div className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-sky-500" /><span>Clients (click to show each)</span></div>}
+            <span className="ml-auto text-gray-400">Drag cards to arrange the map (saved for everyone) · click a link to choose where it attaches · hover a device to light up its links</span>
           </div>
         </>
       )}
 
+      {/* Links drawn by hand, removable from here as well as on the map */}
+      {(data?.handLinks?.length ?? 0) > 0 && (
+        <HandLinksTable links={data!.handLinks} graph={graph} canWrite={canWrite} onRemove={(id) => { if (window.confirm('Remove this hand-drawn link?')) deleteMutate(id); }} />
+      )}
+
       {/* Discovered links table */}
-      {links.filter((l) => l.link_type !== 'manual').length > 0 && (
+      {discovered.length > 0 && (
         <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-              Discovered Links ({links.filter((l) => l.link_type !== 'manual').length})
-            </h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Discovered Links ({discovered.length})</h3>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 bg-white dark:bg-slate-800">
                 <tr className="border-b border-gray-100 dark:border-slate-700">
                   <th className="table-header px-4 py-2.5 text-left">From Device</th>
                   <th className="table-header px-4 py-2.5 text-left">Local Port</th>
@@ -794,7 +432,7 @@ export default function TopologyPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
-                {links.filter((l) => l.link_type !== 'manual').map((link) => (
+                {discovered.map((link) => (
                   <tr key={link.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
                     <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-white">{link.from_device_name || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400">{link.from_interface || '—'}</td>
@@ -830,6 +468,26 @@ export default function TopologyPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {menu && menuEdge && (
+        <EdgeMenu
+          at={menu}
+          title={`${nameOfNode(menuEdge.source)} ↔ ${nameOfNode(menuEdge.target)}`}
+          ports={menuEdge.kind === 'discovered' ? menuEdge.label : undefined}
+          sourceName={nameOfNode(menuEdge.source)}
+          targetName={nameOfNode(menuEdge.target)}
+          sourceSide={anchors[menuEdge.id]?.sourceHandle ?? null}
+          targetSide={anchors[menuEdge.id]?.targetHandle ?? null}
+          canWrite={canWrite}
+          onSides={(src, dst) => setSides(menuEdge.id, src, dst)}
+          onRemove={menuEdge.kind === 'hand' ? () => { setMenu(null); onDeleteEdge(menuEdge); } : undefined}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      {editing && (
+        <NodeEditor node={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={invalidate} />
       )}
     </div>
   );

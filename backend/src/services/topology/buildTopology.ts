@@ -339,6 +339,14 @@ export function buildTopology(
     const canonical = { ...forward };
     if (!canonical.to_interface && other?.from_interface) canonical.to_interface = other.from_interface;
     if (!canonical.from_interface && other?.to_interface) canonical.from_interface = other.to_interface;
+    // The cable's spanning-tree role is the more telling of its two ends: a port
+    // that blocks is on one side only, and it was lost whenever that side was
+    // the one merged away, so a redundant cable showed as forwarding (#147).
+    const roles = [forward.stp_role, other?.stp_role];
+    const blocked = roles.find((r) => r === 'alternate' || r === 'backup');
+    if (blocked) { canonical.stp_role = blocked; canonical.stp_state = 'blocking'; }
+    else if (roles.includes('root')) canonical.stp_role = 'root';
+    else canonical.stp_role = canonical.stp_role ?? other?.stp_role ?? null;
     canonicalLldp.push(canonical);
   }
 
@@ -364,104 +372,24 @@ export function buildTopology(
     }
   }
 
-  // ── Step 6: Shared-segment detection ───────────────────────────────────────
+  // ── Step 6: Direct links only ──────────────────────────────────────────────
+  // A port where CDP or MNDP sees several neighbours used to become a "shared
+  // segment" node joined to all of them. MNDP is a broadcast, so on an ordinary
+  // LAN one port sees half the network: the node described the broadcast
+  // domain, not cabling, and tied the map in knots (#147). Only a port with a
+  // single such neighbour is drawn as a link; anything else can be linked by hand.
   const lldpLinks = links.filter((l) => l.link_type === 'lldp');
   const nonLldpLinks = links.filter((l) => l.link_type !== 'lldp' && !!l.from_device_id);
-
   const portGroupMap = new Map<string, LinkRow[]>();
   for (const link of nonLldpLinks) {
     const pk = `${link.from_device_id}::${link.from_interface ?? ''}`;
     if (!portGroupMap.has(pk)) portGroupMap.set(pk, []);
     portGroupMap.get(pk)!.push(link);
   }
-
-  const sharedPortKeys = [...portGroupMap.keys()].filter((pk) => portGroupMap.get(pk)!.length >= 2);
   const soloNonLldp = [...portGroupMap.values()].filter((g) => g.length < 2).flat();
-
-  // Union-find to merge port groups sharing a common neighbour. Merging asserts two
-  // ports face the same physical segment, so it may only rest on an identifier that
-  // is unique fleet-wide — a device-scoped key can never match another device's.
-  const ufParent = new Map<string, string>(sharedPortKeys.map((k) => [k, k]));
-  const ufFind = (k: string): string => {
-    if (ufParent.get(k) !== k) ufParent.set(k, ufFind(ufParent.get(k)!));
-    return ufParent.get(k)!;
-  };
-  const ufUnion = (a: string, b: string) => ufParent.set(ufFind(a), ufFind(b));
-
-  const pkNeighborSets = new Map<string, Set<string>>();
-  for (const pk of sharedPortKeys) {
-    pkNeighborSets.set(
-      pk,
-      new Set(portGroupMap.get(pk)!.map(neighborKey).filter((k): k is string => k !== null))
-    );
-  }
-  for (let i = 0; i < sharedPortKeys.length; i++) {
-    for (let j = i + 1; j < sharedPortKeys.length; j++) {
-      const setA = pkNeighborSets.get(sharedPortKeys[i])!;
-      for (const n of pkNeighborSets.get(sharedPortKeys[j])!) {
-        if (setA.has(n)) { ufUnion(sharedPortKeys[i], sharedPortKeys[j]); break; }
-      }
-    }
-  }
-
-  const segGroups = new Map<string, string[]>();
-  for (const pk of sharedPortKeys) {
-    const root = ufFind(pk);
-    if (!segGroups.has(root)) segGroups.set(root, []);
-    segGroups.get(root)!.push(pk);
-  }
-
-  const segNodes: ExternalNode[] = [];
   const segConns: SegConn[] = [];
-
-  for (const [root, pks] of segGroups) {
-    const segId = `seg-${root.replace(/[^a-z0-9]/gi, '')}`;
-    // Every port into the segment, and every managed device behind it (J6):
-    // a map keyed by device kept one port per device, and managed devices
-    // reached through the segment were counted but never connected to it.
-    const srcDevPorts: Array<[string, string]> = [];
-    const allDevIds = new Set<string>();
-    const destinations = new Map<string, string>();
-    const extKeys = new Set<string>();
-
-    for (const pk of pks) {
-      const colonIdx = pk.indexOf('::');
-      const devId = pk.slice(0, colonIdx);
-      const port = pk.slice(colonIdx + 2);
-      srcDevPorts.push([devId, port]);
-      allDevIds.add(devId);
-      for (const link of portGroupMap.get(pk)!) {
-        if (link.to_device_id) {
-          allDevIds.add(String(link.to_device_id));
-          if (!destinations.has(String(link.to_device_id))) destinations.set(String(link.to_device_id), link.to_interface ?? '');
-        } else {
-          const k = neighborKey(link);
-          if (k) extKeys.add(k);
-        }
-      }
-    }
-    const sourceIds = new Set(srcDevPorts.map(([d]) => d));
-
-    segNodes.push({
-      id: segId,
-      name: 'Shared Segment',
-      address: '',
-      platform: `${allDevIds.size} devices`,
-      mac: '',
-      caps: 'segment',
-    });
-
-    for (const [devId, port] of srcDevPorts) segConns.push({ src: devId, dst: segId, port });
-    for (const [devId, port] of destinations) {
-      if (!sourceIds.has(devId)) segConns.push({ src: devId, dst: segId, port });
-    }
-    // Direct key lookup — Step 5 keys the map by the same function, so no
-    // reconstruct-and-compare guesswork.
-    for (const k of extKeys) {
-      const ext = externalMap.get(k);
-      if (ext) segConns.push({ src: ext.id, dst: segId, port: '' });
-    }
-  }
+  // Neighbours no remaining link reaches would float unconnected.
+  const reached = new Set([...lldpLinks, ...soloNonLldp].filter((l) => !l.to_device_id).map(neighborKey).filter(Boolean) as string[]);
 
   // ── Step 7: Manual links as synthetic rows ─────────────────────────────────
   const manualAsLinks: LinkRow[] = manualLinks.map((ml) => ({
@@ -486,7 +414,7 @@ export function buildTopology(
 
   return {
     links: [...lldpLinks, ...soloNonLldp, ...manualAsLinks],
-    externalNodes: [...externalMap.values(), ...segNodes],
+    externalNodes: [...externalMap.entries()].filter(([k]) => reached.has(k)).map(([, n]) => n),
     segConns,
     ambiguous: { addresses: [...amb.addresses], identities: [...amb.identities] },
   };

@@ -83,6 +83,16 @@ describe('resolveStpRoot — separate spanning trees', () => {
     ];
     expect(resolveStpRoot(['1', '2', '3'], fleet).deviceId).toBe('1');
   });
+
+  it('does not let a claimant win by pointing at itself and coming first', () => {
+    // A wAP running its own bridge listed before the core switch.
+    const fleet = [
+      b(2, AP_A, true, AP_A),
+      b(1, RB4011, true, RB4011),
+      b(3, AP_B, false, RB4011),
+    ];
+    expect(resolveStpRoot(['2', '1', '3'], fleet).deviceId).toBe('1');
+  });
 });
 
 describe('resolveStpRoot — degraded input', () => {

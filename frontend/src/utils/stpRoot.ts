@@ -79,8 +79,13 @@ export function resolveStpRoot(
   // point at; that is the tree the component is really hanging from.
   const pointedAt = new Set(local.map((b) => norm(b.root_bridge_id)).filter(Boolean));
   if (claims.length > 1) {
-    const agreed = claims.find((b) => pointedAt.has(norm(b.bridge_id)));
-    const chosen = agreed ?? claims[0];
+    // Every claimant points at itself, so only other bridges' votes count: an
+    // AP running its own bridge claims the crown too, and must not win just by
+    // coming first in the list.
+    const votes = (c: BridgeInfo) => local.filter((b) => b !== c && norm(b.root_bridge_id) === norm(c.bridge_id)).length;
+    const ranked = [...claims].sort((a, b) => votes(b) - votes(a));
+    const chosen = ranked[0];
+    const agreed = votes(chosen) > 0;
     return { deviceId: String(chosen.device_id), confidence: agreed ? 'reported' : 'matched', rootBridgeId: chosen.bridge_id };
   }
 
