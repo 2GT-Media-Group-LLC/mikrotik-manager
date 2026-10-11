@@ -1,0 +1,1988 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Self-hosted management for MikroTik fleets">
+      
+      
+      
+      
+        <link rel="prev" href="../configuration/">
+      
+      
+        <link rel="next" href="../clients/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.44">
+    
+    
+      
+        <title>Devices - MikroTik Manager</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.0253249f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#devices" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="MikroTik Manager" class="md-header__button md-logo" aria-label="MikroTik Manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MikroTik Manager
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Devices
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    2GT-Media-Group-LLC/mikrotik-manager
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="MikroTik Manager" class="md-nav__button md-logo" aria-label="MikroTik Manager" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    MikroTik Manager
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81"/></svg>
+  </div>
+  <div class="md-source__repository">
+    2GT-Media-Group-LLC/mikrotik-manager
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting started
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Getting started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuration
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operating
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Operating
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#adding-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adding devices
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding devices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#devices-without-the-api-enabled-ssh-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      Devices without the API enabled (SSH only)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ipv6-addresses" class="md-nav__link">
+    <span class="md-ellipsis">
+      IPv6 addresses
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#importing-from-csv" class="md-nav__link">
+    <span class="md-ellipsis">
+      Importing from CSV
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#device-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device credentials
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-device-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      The device list
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The device list">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#device-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device names
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      Status colours
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Status colours">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hardware-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hardware health
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#devices-that-go-offline-on-purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      Devices that go offline on purpose
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#device-tabs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device tabs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Device tabs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#editing-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Editing settings
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ports-and-the-faceplate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ports and the faceplate
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ports and the faceplate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changing-a-ports-vlan" class="md-nav__link">
+    <span class="md-ellipsis">
+      Changing a port's VLAN
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routing-between-vlans-in-hardware" class="md-nav__link">
+    <span class="md-ellipsis">
+      Routing between VLANs in hardware
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tools
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#terminal" class="md-nav__link">
+    <span class="md-ellipsis">
+      Terminal
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#syncing-and-polling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Syncing and polling
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../clients/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Clients
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adoption/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adopting devices
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sites/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Sites
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../topology/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Topology
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../traffic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Traffic analytics
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change-guard/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Change Guard and Config Health
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Security page
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scaling/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Polling and scaling
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../alerting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Alerting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ssh-keys/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    SSH keys
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../commands/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Bulk commands
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../firmware/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Firmware rollouts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backups/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Backups
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Devices
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wireless/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Wireless
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-services/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network services
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    User Manager (RADIUS)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cellular/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Cellular (LTE)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../capsman/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CAPsMAN
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Integration
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Integration
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    API and automation
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sso-oidc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Single sign-on (OIDC)
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Contributing
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Contributing
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#adding-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adding devices
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding devices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#devices-without-the-api-enabled-ssh-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      Devices without the API enabled (SSH only)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ipv6-addresses" class="md-nav__link">
+    <span class="md-ellipsis">
+      IPv6 addresses
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#importing-from-csv" class="md-nav__link">
+    <span class="md-ellipsis">
+      Importing from CSV
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#device-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device credentials
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-device-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      The device list
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The device list">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#device-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device names
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      Status colours
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Status colours">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hardware-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hardware health
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#devices-that-go-offline-on-purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      Devices that go offline on purpose
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#device-tabs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device tabs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Device tabs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#editing-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Editing settings
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ports-and-the-faceplate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ports and the faceplate
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ports and the faceplate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changing-a-ports-vlan" class="md-nav__link">
+    <span class="md-ellipsis">
+      Changing a port's VLAN
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routing-between-vlans-in-hardware" class="md-nav__link">
+    <span class="md-ellipsis">
+      Routing between VLANs in hardware
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tools
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#terminal" class="md-nav__link">
+    <span class="md-ellipsis">
+      Terminal
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#syncing-and-polling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Syncing and polling
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="devices">Devices<a class="headerlink" href="#devices" title="Permanent link">&para;</a></h1>
+<p>The device list is the front door to everything else. This page covers getting devices in,
+what each tab of a device does, and the parts that write to hardware.</p>
+<h2 id="adding-devices">Adding devices<a class="headerlink" href="#adding-devices" title="Permanent link">&para;</a></h2>
+<p><strong>Devices → Discover</strong> finds MikroTik hardware your managed devices can already see, over
+LLDP, CDP and MNDP. Each discovered device offers one button, <strong>Adopt Device</strong>, and the
+platform decides what that means — a factory-default unit is configured first, an already
+configured one is simply registered. See <a href="../adoption/">Adopting devices</a>.</p>
+<p><strong>+ Add Device</strong> is the manual route when discovery cannot see it: address, credentials, and
+optionally a <a href="#device-credentials">credential preset</a> so the same username and password are not
+retyped per device.</p>
+<p>The address can be a LAN IP, a public IP, an IPv6 address, or a hostname (a local DNS name, or
+a router's own <code>/ip cloud</code> DDNS name). Pasting a full URL like <code>https://203.0.113.5:8729/</code>
+works too — the port is pulled out into the API Port field automatically. The same goes for an
+address with a port sent through the API: it is used as the API port, and refused if a
+different port is also given.</p>
+<p>Leave <strong>API Port</strong> blank and the manager tries <strong>API-SSL (8729) first</strong>, falling back to the
+plain API (8728) if the device doesn't offer it. Both are tried at once, so a device without
+API-SSL isn't slower to add. A port you enter, or one in the credential preset, is used as
+given. The plain API sends the login unencrypted on every poll, so a device that ended up on
+8728 is listed on the <a href="../security/#encrypted-management-api-ssl">Security page</a>, where it
+can be switched over. Choosing 8728 for a public address still shows a warning.</p>
+<h3 id="devices-without-the-api-enabled-ssh-only">Devices without the API enabled (SSH only)<a class="headerlink" href="#devices-without-the-api-enabled-ssh-only" title="Permanent link">&para;</a></h3>
+<p>Many fleets start with the RouterOS API services (<code>api</code>, <code>api-ssl</code>) turned off. Tick <strong>The API
+isn't enabled on this device yet</strong> in Add Device, or put <code>yes</code> in the <code>ssh_only</code> column of a
+<a href="#importing-from-csv">CSV import</a> (#174).</p>
+<p>The manager tries the API briefly first, and if it answers, the device is added normally. If
+it doesn't, the manager logs in over SSH instead. That reads the device's identity, model,
+RouterOS version and serial number (the serial still catches duplicates), and pins its SSH host
+key. The same login is used for SSH now and tried on the API later. A credential preset works
+too: its SSH login is used, or its API login when it has no SSH one.</p>
+<p>The device is listed as <strong>SSH ONLY</strong> in the API column. Until the API is on:</p>
+<ul>
+<li><strong>These work:</strong> bulk commands, command templates, the terminal, backups and config history.
+  The manager checks over SSH every minute that the device is up. An outage alerts as usual,
+  and the name, version and model stay current.</li>
+<li><strong>These wait for the API:</strong> live status and graphs, clients, ports, VLANs and the other device
+  tabs, firmware upgrades, and Change Guard. The device page shows only Overview and Config
+  History, with a note explaining why.</li>
+</ul>
+<p>To turn the API on, run a bulk command or template on these devices with <strong>Change Guard
+off</strong>, since Change Guard needs the API itself. For example:</p>
+<div class="highlight"><pre><span></span><code>/ip service enable api-ssl
+</code></pre></div>
+<p>You can also create a separate user for the manager at the same time. If you do, set it as the
+device's API login in Edit Device.</p>
+<p>The manager tries the API every minute, or every 15 minutes after a refused login, so a wrong
+password doesn't fill the router's log. Once the API answers, the device becomes an ordinary
+one: API-SSL is preferred, its certificate is pinned, a full sync starts, and an event is
+logged. <strong>Check API</strong> on the device page tries straight away and says why it failed, if it did.</p>
+<h3 id="ipv6-addresses">IPv6 addresses<a class="headerlink" href="#ipv6-addresses" title="Permanent link">&para;</a></h3>
+<p>Enter an IPv6 address with or without brackets: <code>2001:db8::1</code> and <code>[2001:db8::1]</code> both work,
+and <code>[2001:db8::1]:8729</code> puts 8729 in the API Port field.</p>
+<p>Reaching IPv6 devices is <strong>off by default</strong>, because it changes how Docker sets up the
+host's networking. Turn it on only if you have devices you can reach only over IPv6.</p>
+<p><strong>Before you turn it on</strong>, check the host:</p>
+<ul>
+<li><strong>It has IPv6 itself.</strong> If <code>curl -6 https://ipv6.google.com</code> fails on the host, the
+  manager can't reach IPv6 devices either.</li>
+<li><strong>Docker 27 or later.</strong> Check with <code>docker version</code>.</li>
+<li><strong><code>accept_ra=2</code> on its network interface.</strong> Docker enables IPv6 forwarding when it creates
+  an IPv6 network, and most Linux distributions then stop accepting router advertisements.
+  A host that gets its IPv6 address and default route automatically can lose its own IPv6
+  connectivity. Setting <code>accept_ra</code> to 2 keeps it, for example for <code>eth0</code>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="nb">echo</span><span class="w"> </span><span class="s1">'net.ipv6.conf.eth0.accept_ra = 2'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/sysctl.d/99-docker-ipv6.conf
+sudo<span class="w"> </span>sysctl<span class="w"> </span>--system
+</code></pre></div>
+<p>Hosts with a static IPv6 address and gateway don't need this.</p>
+<p><strong>To turn it on</strong>, add this line to <code>.env</code> next to your compose file:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">ENABLE_IPV6</span><span class="o">=</span><span class="nb">true</span>
+</code></pre></div>
+<p>then recreate the stack. Your data is kept, and the manager is down for about a minute:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>down
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<p>With the pre-built images, add <code>-f docker-compose.ghcr.yml</code> to both commands.</p>
+<p>To turn it off, remove the line and run the same two commands.</p>
+<p>The web UI (nginx) and the backend listen on both IPv4 and IPv6 inside their containers
+whenever the host's kernel has IPv6, whether or not this setting is on. With it on, they
+accept IPv6 connections directly, including from a reverse proxy of your own. On a host
+booted with IPv6 disabled they listen on IPv4 only.</p>
+<p>Use <code>down</code> then <code>up</code> rather than just <code>up -d</code>. Docker has to rebuild the network when this
+setting changes. Recent Compose versions do that on a plain <code>up -d</code>, but older ones can keep
+the old network and not apply the change. <code>down</code> then <code>up</code> works on all of them.</p>
+<p>IPv4 devices work the same either way.</p>
+<div class="admonition note">
+<p class="admonition-title">Reachable over a VPN but not over its public IP?</p>
+<p>RouterOS's own <code>IP → Services</code> list restricts each service (<code>api</code>, <code>api-ssl</code>) by an
+<strong>"Available From"</strong> address list. It accepts the TCP connection from anywhere, then
+silently drops it mid-login if the source isn't on that list — which shows up here as
+"The device closed the connection during login," not a normal refused/timed-out error.
+If a device connects fine over WireGuard (or another VPN) but not from its public IP,
+check that field: either add the reachable range, or leave it restricted and keep using
+the VPN, which is the safer choice for internet-facing management anyway.</p>
+</div>
+<p><strong>Try All</strong> runs a bulk add across every discovered device as a server-side job. It survives a
+closed browser tab and reports progress and failures per device.</p>
+<h3 id="importing-from-csv">Importing from CSV<a class="headerlink" href="#importing-from-csv" title="Permanent link">&para;</a></h3>
+<p><strong>Import CSV</strong> on the Devices page adds up to 500 devices from a spreadsheet.</p>
+<ol>
+<li>In the import dialog, click <strong>Download template</strong>.</li>
+<li>Open it in Excel or Google Sheets. It has one column per field and a few example rows.</li>
+<li>Replace the example rows with your devices, one per row, and save as CSV.</li>
+<li>Choose the file in the same dialog.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Needed</th>
+<th>What to put in it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ip_address</code></td>
+<td>Required</td>
+<td>The device's IP address or hostname</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>Optional</td>
+<td>What to call it. Blank uses the address</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>Optional</td>
+<td><code>router</code>, <code>switch</code>, <code>ap</code> or <code>other</code>. Blank means router</td>
+</tr>
+<tr>
+<td><code>preset</code></td>
+<td>Login</td>
+<td>The name of a saved <a href="#device-credentials">credential preset</a></td>
+</tr>
+<tr>
+<td><code>username</code>, <code>password</code></td>
+<td>Login</td>
+<td>The RouterOS login, if not using a preset</td>
+</tr>
+<tr>
+<td><code>ssh_username</code>, <code>ssh_password</code></td>
+<td>Optional</td>
+<td>Only if SSH uses a different login. Blank uses the one above</td>
+</tr>
+<tr>
+<td><code>ssh_only</code></td>
+<td>Optional</td>
+<td><code>yes</code> when the API isn't enabled yet; see <a href="#devices-without-the-api-enabled-ssh-only">SSH only</a></td>
+</tr>
+<tr>
+<td><code>tags</code></td>
+<td>Optional</td>
+<td>Existing tags. Create them under Settings → Tags first</td>
+</tr>
+<tr>
+<td><code>notes</code></td>
+<td>Optional</td>
+<td>Anything you like</td>
+</tr>
+</tbody>
+</table>
+<p>For several tags on one device, separate them with a vertical bar: <code>branch|lab</code>.</p>
+<p>Each device needs a login: a preset, or a username and password. An <code>ssh_only</code> row can use
+<code>ssh_username</code> and <code>ssh_password</code> instead. <code>port</code> and <code>ssh_port</code> can
+be added as extra columns if yours aren't the defaults (8728 and 22).</p>
+<p>The file is checked before anything is sent. Each row shows as ready, skipped or a problem,
+with the reason. Skipped rows are:</p>
+<ul>
+<li>devices that are already managed</li>
+<li>the template's example rows, if they were left in (they use <code>192.0.2.x</code>, an address range
+  reserved for examples)</li>
+</ul>
+<p>Columns can be separated by commas, semicolons (which Excel uses in many countries) or tabs.
+Unknown columns are listed and ignored.</p>
+<p>The import runs as the same server-side job as <strong>Try All</strong>, so the tab can be closed.</p>
+<div class="admonition note">
+<p class="admonition-title">Credentials are stored encrypted</p>
+<p>API passwords are encrypted at rest with the key from <code>ENCRYPTION_KEY</code>. Losing that key
+means re-entering every device password; see <a href="../configuration/">Configuration</a>.</p>
+</div>
+<h2 id="device-credentials">Device credentials<a class="headerlink" href="#device-credentials" title="Permanent link">&para;</a></h2>
+<p><strong>Operations → Credentials</strong> holds credential presets: a RouterOS username and password (and
+optionally SSH login) saved once and picked when adding devices. Passwords are encrypted and
+never sent back to the browser.</p>
+<p>A preset is either <strong>fleet-wide</strong> or belongs to <strong>one site</strong>:</p>
+<ul>
+<li>Fleet admins manage every preset. A site admin manages the presets of the sites they
+  administer.</li>
+<li>A site's preset is only offered, and only accepted, for devices in that site. The Add
+  Device, CSV import and Try All dialogs list fleet-wide presets and those of the site the
+  new device joins (the selected site, or the default site when none is).</li>
+<li><strong>Operator access</strong> off makes a preset usable by admins only: fleet admins for fleet-wide
+  presets, and that site's admins for a site's preset.</li>
+<li>Names are unique within a site, so CSV import matches a preset name against that site's
+  presets and the fleet-wide ones.</li>
+</ul>
+<p>Before 0.30.0 presets were fleet-wide only and lived under Settings.</p>
+<h2 id="the-device-list">The device list<a class="headerlink" href="#the-device-list" title="Permanent link">&para;</a></h2>
+<p>Filter by status, type, tag, rack or location, and sort by any column. The search box matches
+name, address, serial and MAC.</p>
+<p>Two columns show how the manager reaches each device, and each has a filter:</p>
+<ul>
+<li><strong>API</strong>: <strong>SSL</strong> for API-SSL (8729), <strong>PLAIN</strong> for the unencrypted API (8728). See
+  <a href="../security/#encrypted-management-api-ssl">Encrypted management</a>.</li>
+<li><strong>Login</strong>: <strong>PW</strong> when the manager has only the password, <strong>PW+KEY</strong> when it also has a
+  verified <a href="../ssh-keys/">SSH key</a> (SSH then uses the key), <strong>KEY</strong> for a key without a password.</li>
+</ul>
+<p>The list updates by itself as polls finish; there is no need to reload.</p>
+<h3 id="device-names">Device names<a class="headerlink" href="#device-names" title="Permanent link">&para;</a></h3>
+<p>A device's name follows its RouterOS identity (<code>/system identity</code>): rename a router on the
+device, or from its System tab here, and the new name shows up at the next poll.</p>
+<p>A name you choose yourself is kept instead. That happens when you type a name in <strong>Add
+Device</strong> that differs from the router's identity, or rename a device in <strong>Edit Device</strong>. The
+name then stays put whatever the identity says, and Edit Device shows "Set manually". Click
+<strong>Use the router's identity</strong> there to go back to following it.</p>
+<p>When the two differ, the device's <strong>System Information</strong> shows both: <strong>Name</strong> (in the
+manager) and <strong>Identity on the router</strong>. <strong>Use this name</strong> beside the identity switches to it
+straight away and follows it from then on (#253).</p>
+<p>A device added without a name (from a CSV row with no <code>name</code>, or <strong>Try All</strong>) starts out named
+after its address, and switches to its identity at the first poll.</p>
+<p>Tags appear beside the device name. They are the only grouping that crosses both sites and
+device types — see <a href="../commands/">Bulk commands</a> for selecting a fleet by tag.</p>
+<p>To tag many devices at once, tick them in the list (the box in the header selects every device
+the current filters show), then choose <strong>Add tag…</strong> or <strong>Remove tag…</strong> in the bar that appears.
+Tags can also be picked when adding a device, and set per row in a <a href="#importing-from-csv">CSV import</a>.
+Tags themselves are created under <strong>Settings → Tags</strong>.</p>
+<h2 id="status-colours">Status colours<a class="headerlink" href="#status-colours" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Colour</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Green</td>
+<td>Online</td>
+</tr>
+<tr>
+<td>Amber</td>
+<td><strong>Degraded</strong>: online, but a power supply or fan reports a failure, or a temperature is at or over the limit</td>
+</tr>
+<tr>
+<td>Red</td>
+<td>Offline</td>
+</tr>
+<tr>
+<td>Grey</td>
+<td>Unknown, or offline when the device is marked as expected to drop out</td>
+</tr>
+</tbody>
+</table>
+<h3 id="hardware-health">Hardware health<a class="headerlink" href="#hardware-health" title="Permanent link">&para;</a></h3>
+<p>The manager reads <code>/system/health</code> every few minutes, and on <strong>Sync</strong>. A device is degraded
+when:</p>
+<ul>
+<li>a power supply state (<code>psu1-state</code>, <code>psu2-state</code>, …) is anything other than <code>ok</code></li>
+<li><code>fan-state</code> is anything other than <code>ok</code> (a fan speed of 0 on its own is not a failure, as
+  some models stop their fans when cool)</li>
+<li>any temperature reaches the limit, 85 °C by default, set under <strong>Settings → Alerting</strong></li>
+</ul>
+<p>Voltages are not judged, since normal ranges depend on the model and power source.</p>
+<p>The device's Overview tab lists the problem. If it is deliberate, for example a dual-supply
+switch fed from one supply, click <strong>Ignore on this device</strong> and that reading no longer counts.
+Ignored readings stay listed so they aren't forgotten.</p>
+<p>Becoming degraded, and recovering, raise the <code>device_degraded</code> and <code>device_health_restored</code>
+alerts, and are written to the device's event log.</p>
+<h3 id="devices-that-go-offline-on-purpose">Devices that go offline on purpose<a class="headerlink" href="#devices-that-go-offline-on-purpose" title="Permanent link">&para;</a></h3>
+<p>On a device's Overview tab, tick <strong>Expected to go offline at times</strong> for solar or battery
+powered devices, or anything else that drops out normally. Such a device:</p>
+<ul>
+<li>shows grey rather than red when offline, and isn't counted as unreachable on the dashboard</li>
+<li>sends no offline alert when it drops out</li>
+<li>alerts once if it stays offline longer than its limit (24 hours by default; 0 means never),
+  and then sends a recovery alert when it returns</li>
+</ul>
+<h2 id="device-tabs">Device tabs<a class="headerlink" href="#device-tabs" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>What it is for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Overview</strong></td>
+<td>Status, uptime, model, firmware, resource graphs, location</td>
+</tr>
+<tr>
+<td><strong>Ports</strong></td>
+<td>The switch faceplate, per-port configuration, bonds, VLAN membership</td>
+</tr>
+<tr>
+<td><strong>VLANs</strong></td>
+<td>The bridge VLAN table, and copying VLANs between switches</td>
+</tr>
+<tr>
+<td><strong>Radios</strong></td>
+<td>Wireless interfaces, SSIDs, channels, connected clients</td>
+</tr>
+<tr>
+<td><strong>Firewall</strong></td>
+<td>Filter, NAT and mangle rules, with reordering and counters</td>
+</tr>
+<tr>
+<td><strong>Routing</strong></td>
+<td>Routes, OSPF, BGP, routing tables and filters</td>
+</tr>
+<tr>
+<td><strong>Queues</strong></td>
+<td>Traffic shaping</td>
+</tr>
+<tr>
+<td><strong>Connections</strong></td>
+<td>The live connection tracking table</td>
+</tr>
+<tr>
+<td><strong>Hardware</strong></td>
+<td>Health sensors, PoE, SFP module detail</td>
+</tr>
+<tr>
+<td><strong>LTE</strong></td>
+<td>Signal, carrier, bands and the data cap — see <a href="../cellular/">Cellular</a></td>
+</tr>
+<tr>
+<td><strong>Security</strong></td>
+<td>Baseline hardening checks and the posture score</td>
+</tr>
+<tr>
+<td><strong>Config</strong></td>
+<td>System settings, certificates, SSH keys, clock</td>
+</tr>
+<tr>
+<td><strong>Config History</strong></td>
+<td>Snapshots of <code>/export</code>, diffs, and rollback (<a href="../backups/#restoring">what rollback can do</a>)</td>
+</tr>
+<tr>
+<td><strong>Tools</strong></td>
+<td>Ping, traceroute, IP scan, Wake-on-LAN, packet capture, bandwidth test</td>
+</tr>
+</tbody>
+</table>
+<p>Tabs appear only where they apply: a switch has no Radios tab, a device without a modem has no
+LTE tab.</p>
+<h3 id="editing-settings">Editing settings<a class="headerlink" href="#editing-settings" title="Permanent link">&para;</a></h3>
+<p>A save changes only what you changed. The Config tab, radio settings and SSIDs send just the
+fields you edited, so renaming a device no longer resets its clock to the time the form was
+opened, and editing an SSID no longer pins a radio set to choose its channel automatically.
+The Config tab edits the first two NTP servers and keeps any others the device has.</p>
+<p>Clearing a field clears it on the device. Emptying a firewall or NAT rule's address, port or
+comment, a queue's comment, or a WireGuard peer's endpoint removes that setting from the item.
+Switching a rule's source or destination between an address and an address list removes the
+other one. Before 0.24.39 an emptied field was left out of the save and the device kept the old
+value, while the page showed it gone.</p>
+<p>On a switch port, changing flow control in one direction leaves the other direction alone.</p>
+<h2 id="ports-and-the-faceplate">Ports and the faceplate<a class="headerlink" href="#ports-and-the-faceplate" title="Permanent link">&para;</a></h2>
+<p>The faceplate mirrors the physical front panel — copper staggered odd above even as the
+hardware is, SFP cages and QSFP breakout lanes grouped separately, bridges and bonds alongside.</p>
+<p>Ports are identified by RouterOS's <strong>factory name</strong>, not their display name, so renaming a port
+to something useful does not move it into the wrong group or cost it its label or position.
+Where a port has been renamed, the factory name is shown beneath it.</p>
+<p>Negotiated link rate and SFP module details — type, connector, vendor part number — are read
+from the device rather than guessed from the port's name, which also distinguishes an empty
+cage from a copper port.</p>
+<p>Use <strong>ports per row</strong> in the faceplate header if the default does not suit your hardware;
+the setting is remembered.</p>
+<h3 id="changing-a-ports-vlan">Changing a port's VLAN<a class="headerlink" href="#changing-a-ports-vlan" title="Permanent link">&para;</a></h3>
+<p>Selecting a port and setting it to <strong>access</strong> or <strong>trunk</strong> writes three things: the PVID, the
+bridge VLAN membership, and frame admission (<code>frame-types</code> and <code>ingress-filtering</code>).</p>
+<p>For a trunk, tick the tagged VLANs. The native VLAN (PVID) is greyed out because it is carried
+untagged. The text box below the checkboxes holds the same list, for copying between switches,
+and accepts ranges such as <code>10,20,100-110</code>. A VLAN typed there that the switch does not have
+yet is created on the bridge when you save.</p>
+<p>Unticking a VLAN removes the port from it. One exception: if the switch holds several VLANs
+in one bridge VLAN entry (for example <code>vlan-ids=100-110</code>) and the port keeps some of them,
+that entry is left alone and the editor tells you which VLANs are still tagged. Split the
+entry on the VLANs tab to remove them.</p>
+<div class="admonition warning">
+<p class="admonition-title">This is a guarded change</p>
+<p>Moving the port that carries management traffic is the most common way to lock a MikroTik
+out of itself. Every VLAN change runs through <a href="../change-guard/">Change Guard</a>, which
+predicts lockout before applying and lets the device restore itself if contact is lost.</p>
+</div>
+<h2 id="routing-between-vlans-in-hardware">Routing between VLANs in hardware<a class="headerlink" href="#routing-between-vlans-in-hardware" title="Permanent link">&para;</a></h2>
+<p>On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),
+the <strong>VLANs</strong> tab has an <strong>L3 hardware offloading</strong> card (#254). It shows:</p>
+<ul>
+<li>whether offloading is on, and the switch chip;</li>
+<li>which VLAN interfaces have addresses, so which VLANs the device routes between;</li>
+<li>while it's on, how many hosts and routes the chip handles, and how many entries go to the CPU
+  (that count always includes the device's own addresses);</li>
+<li>routed VLANs whose bridge doesn't have VLAN filtering on: only VLAN interfaces on a
+  hardware-offloaded, VLAN-filtering bridge are routed in hardware;</li>
+<li>how many forward-chain firewall rules and NAT rules the device has.</li>
+</ul>
+<p><strong>Turn on</strong> / <strong>Turn off</strong> sets <code>/interface/ethernet/switch l3-hw-offloading</code> under Change Guard,
+since the chip reprograms its tables and forwarding can stop briefly. Offloaded traffic
+bypasses the CPU, so <strong>firewall filter and NAT rules no longer apply to traffic routed between
+the VLANs</strong>. When the device has forward-chain or NAT rules, turning offloading on asks you to
+confirm that nothing relies on them for that traffic. FastTracked connections can still be
+offloaded on chips that support it.</p>
+<p>When a supported device routes between two or more VLANs with offloading off, Config Health
+reports <em>Routing between VLANs runs on the CPU</em>. There's no one-click fix: whether to trade the
+firewall for speed is your call.</p>
+<h2 id="tools">Tools<a class="headerlink" href="#tools" title="Permanent link">&para;</a></h2>
+<p>All of these run <strong>on the device</strong>, not from the manager, so they see the network from where
+the device sits.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ping</td>
+<td>Reachability with RTT and loss</td>
+</tr>
+<tr>
+<td>Traceroute</td>
+<td>Hop-by-hop path</td>
+</tr>
+<tr>
+<td>IP Scan</td>
+<td>ARP sweep of a subnet</td>
+</tr>
+<tr>
+<td>Wake-on-LAN</td>
+<td>Magic packet sent from the device</td>
+</tr>
+<tr>
+<td>Packet capture</td>
+<td>5–60s sniff, downloaded as <code>.pcap</code>. Requires SSH</td>
+</tr>
+<tr>
+<td>Bandwidth test</td>
+<td>Between two managed devices; the target's test server is enabled and disabled for you</td>
+</tr>
+</tbody>
+</table>
+<h3 id="terminal">Terminal<a class="headerlink" href="#terminal" title="Permanent link">&para;</a></h3>
+<p>The terminal opens an SSH shell on the device, for operators and admins in the device's site.
+The audit log records each session's start, who opened it, from which address, and when it
+was refused (for example by the rate limit). <strong>What is typed in the shell is not recorded.</strong>
+If you need a record of commands, turn on logging on the device itself (<code>/system logging</code>), or
+use bulk commands, whose commands and output are kept.</p>
+<p>Before 0.24.49 the address recorded was the manager's own proxy, not the user's.</p>
+<h2 id="syncing-and-polling">Syncing and polling<a class="headerlink" href="#syncing-and-polling" title="Permanent link">&para;</a></h2>
+<p>Devices are polled on three cadences — see <a href="../scaling/">Polling and scaling</a> for the model and
+for switching individual collectors off.</p>
+<p><strong>Sync</strong> forces a full collection immediately rather than waiting for the next cycle. It
+honours the collector settings, so a collector you have switched off stays off.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.instant", "navigation.top", "navigation.sections", "content.code.copy", "search.highlight"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.83f73b43.min.js"></script>
+      
+    
+  </body>
+</html>
