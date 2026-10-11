@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { decodedPath } from '../utils/requestPath';
 import { resourceSiteAccess } from '../utils/siteAccess';
 import { query } from '../config/database';
 import { requireAuth, requireWrite, requireAdmin } from '../middleware/auth';
@@ -8,9 +9,12 @@ router.use(requireAuth);
 // Tagging devices, or reading one device's tags, is limited to the account's
 // own sites for a site-scoped account (P1-7).
 router.use(resourceSiteAccess(async (req) => {
-  const one = /^\/device\/(\d+)(?:\/|$)/.exec(req.path);
+  // Decoded, as the handlers' params are (GHSA-6xq3-q9m5-7hxp); undecodable is refused.
+  const path = decodedPath(req);
+  if (path === null) return [];
+  const one = /^\/device\/(\d+)(?:\/|$)/.exec(path);
   if (one) return [parseInt(one[1], 10)];
-  if (req.method === 'POST' && /^\/\d+\/devices\/?$/.test(req.path)) {
+  if (req.method === 'POST' && /^\/\d+\/devices\/?$/.test(path)) {
     const ids = (req.body as { deviceIds?: unknown })?.deviceIds;
     return Array.isArray(ids) ? ids.map(Number) : null;
   }

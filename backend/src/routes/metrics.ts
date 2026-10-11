@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { decodedPath } from '../utils/requestPath';
 import { outageLengthSeconds, outageOverlapsSql, outageSecondsInWindow, outageSecondsSql } from '../utils/outageWindow';
 import { deviceSiteAccess } from '../utils/siteAccess';
 import { getQueryApi, bucket } from '../config/influxdb';
@@ -12,7 +13,10 @@ const router = Router();
 router.use(requireAuth);
 // Per-device metrics: a site-scoped account only reaches its own sites' devices (P1-7).
 router.use(deviceSiteAccess((req) => {
-  const m = /^\/(?:interface|device)\/(\d+)(?:\/|$)/.exec(req.path);
+  // Decoded, as the handler's :id is (GHSA-6xq3-q9m5-7hxp); NaN is refused.
+  const path = decodedPath(req);
+  if (path === null) return NaN;
+  const m = /^\/(?:interface|device)\/(\d+)(?:\/|$)/.exec(path);
   return m ? parseInt(m[1], 10) : null;
 }));
 

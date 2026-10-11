@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { decodedPath } from '../utils/requestPath';
 import * as dgram from 'dgram';
 import { query } from '../config/database';
 import { logSafe } from '../utils/logSafe';
@@ -31,7 +32,10 @@ router.use(requireAuth);
 // its devices (P1-7). The per-client queries below are site-filtered as well.
 router.use(async (req: Request, res: Response, next) => {
   const scoped = req.user?.siteRoles;
-  const m = /^\/([0-9A-Fa-f:.-]{12,17})(?:\/|$)/.exec(req.path);
+  // Decoded, as the handler's :mac is (GHSA-6xq3-q9m5-7hxp); undecodable is refused.
+  const path = decodedPath(req);
+  if (scoped && path === null) return res.status(400).json({ error: 'Malformed request path' });
+  const m = /^\/([0-9A-Fa-f:.-]{12,17})(?:\/|$)/.exec(path ?? '');
   if (!scoped || !m) return next();
   const seen = siteScopeByDevice(Object.keys(scoped).map(Number), 'device_id');
   const rows = await query(`SELECT 1 FROM clients WHERE LOWER(mac_address) = LOWER($1) AND ${seen} LIMIT 1`, [m[1]]).catch(() => []);

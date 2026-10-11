@@ -7,6 +7,7 @@
  * can't see, so it can't learn which ids exist elsewhere.
  */
 import type { Request, Response, NextFunction } from 'express';
+import { decodedPath } from './requestPath';
 import { query, queryOne } from '../config/database';
 import type { AuthPayload } from '../middleware/auth';
 
@@ -56,6 +57,7 @@ export function deviceSiteAccess(getDeviceId: (req: Request) => number | null) {
     const user = req.user;
     if (!user?.siteRoles) { next(); return; }
     const deviceId = getDeviceId(req);
+    if (Number.isNaN(deviceId)) { res.status(400).json({ error: 'Malformed request path' }); return; }
     if (!deviceId) { next(); return; }
     try {
       const role = await roleOnDevice(user, deviceId);
@@ -68,9 +70,16 @@ export function deviceSiteAccess(getDeviceId: (req: Request) => number | null) {
   };
 }
 
-/** Device id from `/:id/...` on the devices and wireless routers (any method). */
+/**
+ * Device id from `/:id/...` on the devices and wireless routers (any method),
+ * read from the decoded path so it is the id the route handler receives
+ * (GHSA-6xq3-q9m5-7hxp). NaN for a path that can't be decoded: the caller
+ * refuses it rather than treating it as a route with no device.
+ */
 export function deviceIdParam(req: Request): number | null {
-  const m = /^\/(\d+)(?:\/|$)/.exec(req.path);
+  const path = decodedPath(req);
+  if (path === null) return NaN;
+  const m = /^\/(\d+)(?:\/|$)/.exec(path);
   return m ? parseInt(m[1], 10) : null;
 }
 

@@ -12,6 +12,7 @@
  * the lock is recognised through AsyncLocalStorage rather than acquired twice.
  */
 import { AsyncLocalStorage } from 'async_hooks';
+import { decodedPath } from '../../utils/requestPath';
 import { randomBytes } from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { redis } from '../../config/redis';
@@ -116,9 +117,12 @@ const UNLOCKED_DEVICE_ROUTES: RegExp[] = [
 
 /** Device id from `/:id/...` paths on the devices and wireless routers. */
 export function deviceIdFromPath(req: Request): number | null {
-  const m = /^\/(\d+)(?:\/|$)/.exec(req.path);
+  // Decoded, so the lock is taken on the device the handler will act on.
+  const path = decodedPath(req);
+  if (path === null) return null;
+  const m = /^\/(\d+)(?:\/|$)/.exec(path);
   if (!m) return null;
-  if (UNLOCKED_DEVICE_ROUTES.some((re) => re.test(req.path))) return null;
+  if (UNLOCKED_DEVICE_ROUTES.some((re) => re.test(path))) return null;
   return parseInt(m[1], 10);
 }
 

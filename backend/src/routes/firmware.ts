@@ -1,4 +1,5 @@
 import { loadBondMembers } from '../services/topology/bondMembers';
+import { decodedPath } from '../utils/requestPath';
 import { Router, Request, Response } from 'express';
 import { resourceSiteAccess } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
@@ -21,20 +22,23 @@ router.use(requireAuth);
 // A site-scoped account reaches only rollouts and devices in its own sites
 // (P1-7): a rollout by its id, or the devices named in the request.
 router.use(resourceSiteAccess(async (req) => {
-  const rollout = req.path.match(/^\/rollouts\/(\d+)(?:\/|$)/);
+  // Decoded, as the handlers' params are (GHSA-6xq3-q9m5-7hxp); undecodable is refused.
+  const path = decodedPath(req);
+  if (path === null) return [];
+  const rollout = path.match(/^\/rollouts\/(\d+)(?:\/|$)/);
   if (rollout) {
     const rows = await query<{ device_id: number }>(`SELECT device_id FROM firmware_rollout_devices WHERE rollout_id = $1`, [rollout[1]]);
     return rows.map((r) => r.device_id);
   }
-  if (req.method === 'POST' && req.path === '/rollouts') {
+  if (req.method === 'POST' && path === '/rollouts') {
     const devices = (req.body as { devices?: { device_id: number }[] })?.devices;
     return Array.isArray(devices) ? devices.map((d) => Number(d.device_id)) : null;
   }
-  if (req.method === 'PUT' && req.path === '/channel') {
+  if (req.method === 'PUT' && path === '/channel') {
     const ids = (req.body as { deviceIds?: unknown })?.deviceIds;
     return Array.isArray(ids) ? ids.map(Number) : null;
   }
-  if (req.path === '/rollouts/upstream-check') {
+  if (path === '/rollouts/upstream-check') {
     const ids = String(req.query.ids || '').split(',').map((v) => parseInt(v, 10)).filter(Number.isInteger);
     return ids.length ? ids : null;
   }

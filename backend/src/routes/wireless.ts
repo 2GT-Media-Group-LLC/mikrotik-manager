@@ -17,6 +17,13 @@ const router = Router();
 router.use(requireAuth);
 // A site-scoped account only reaches devices in its own sites, with its role there (P1-7).
 router.use(deviceSiteAccess(deviceIdParam));
+
+// The :id a handler acts on must be the plain number the site check read
+// (GHSA-6xq3-q9m5-7hxp); anything else is answered as not found.
+router.param('id', (_req, res, next, id) => {
+  if (!/^\d{1,10}$/.test(String(id))) { res.status(404).json({ error: 'Device not found' }); return; }
+  next();
+});
 // The fleet RF views also take ?deviceId=.
 router.use(deviceSiteAccess(deviceIdQuery));
 // Viewers and read-only tokens never receive device secrets (Wi-Fi keys,

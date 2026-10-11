@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { decodedPath } from '../utils/requestPath';
 import { resourceSiteAccess } from '../utils/siteAccess';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -32,13 +33,16 @@ const MAX_BULK_DELETE = 200;
 // A site-scoped account reaches only backups of devices in its sites (P1-7):
 // by backup id for /:id and /:fromId/diff/:toId, by deviceId when creating one.
 router.use(resourceSiteAccess(async (req) => {
-  const ids = req.path.match(/^\/(\d+)(?:\/diff\/(\d+))?(?:\/|$)/);
+  // Decoded, as the handlers' params are (GHSA-6xq3-q9m5-7hxp); undecodable is refused.
+  const path = decodedPath(req);
+  if (path === null) return [];
+  const ids = path.match(/^\/(\d+)(?:\/diff\/(\d+))?(?:\/|$)/);
   if (ids) {
     const backupIds = [ids[1], ids[2]].filter(Boolean).map(Number);
     const rows = await query<{ device_id: number }>(`SELECT device_id FROM backups WHERE id = ANY($1::int[])`, [backupIds]);
     return rows.length === backupIds.length ? rows.map((r) => r.device_id) : [];
   }
-  if (req.method === 'POST' && req.path === '/' && req.body?.deviceId != null) return [Number(req.body.deviceId)];
+  if (req.method === 'POST' && path === '/' && req.body?.deviceId != null) return [Number(req.body.deviceId)];
   return null;
 }, 'Backup not found'));
 

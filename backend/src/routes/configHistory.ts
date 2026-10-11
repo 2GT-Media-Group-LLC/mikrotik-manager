@@ -10,6 +10,17 @@ router.use(requireAuth);
 // Every route starts with the device id; a site-scoped account only reaches its own sites' devices (P1-7).
 router.use(deviceSiteAccess(deviceIdParam));
 
+// The :id a handler acts on must be the plain number the site check read
+// (GHSA-6xq3-q9m5-7hxp); anything else is answered as not found.
+router.param('deviceId', (_req, res, next, id) => {
+  if (!/^\d{1,10}$/.test(String(id))) { res.status(404).json({ error: 'Device not found' }); return; }
+  next();
+});
+router.param('id', (_req, res, next, id) => {
+  if (!/^\d{1,10}$/.test(String(id))) { res.status(404).json({ error: 'Device not found' }); return; }
+  next();
+});
+
 const backupService = new BackupService();
 
 const SECTIONS = ['interfaces', 'vlans', 'routes', 'firewall', 'dhcp', 'dns'] as const;
