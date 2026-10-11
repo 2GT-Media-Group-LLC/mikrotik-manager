@@ -33,6 +33,15 @@ const api = axios.create({
   timeout: 30000,
 });
 
+/**
+ * For changes that run under Change Guard: a restore point is saved, the change
+ * applied, the device checked and the guard disarmed, and on a slow device that
+ * passes 30 seconds. Giving up earlier reported a change as failed while it was
+ * still finishing, and the next change met the device lock (#258). nginx allows
+ * the API 120 seconds.
+ */
+export const GUARDED = { timeout: 120_000 };
+
 // ─── Review changes (#255) ──────────────────────────────────────────────────
 /** One write the preview recorded, with the item it acts on as it is now. */
 export interface PreviewStep {
@@ -681,7 +690,7 @@ export const devicesApi = {
   test: (id: number) => api.post<{ success: boolean; identity?: string; error?: string }>(`/devices/${id}/test`),
   getInterfaces: (id: number) => api.get<Interface[]>(`/devices/${id}/interfaces`),
   updateInterface: (id: number, name: string, data: Partial<Interface>) =>
-    api.put(`/devices/${id}/interfaces/${encodeURIComponent(name)}`, data),
+    api.put(`/devices/${id}/interfaces/${encodeURIComponent(name)}`, data, GUARDED),
   getVlans: (id: number) => api.get<Vlan[]>(`/devices/${id}/vlans`),
   getPorts: (id: number) =>
     api.get<{ ports: SwitchPort[]; vlans: Vlan[] }>(`/devices/${id}/ports`),
@@ -695,7 +704,7 @@ export const devicesApi = {
     api.delete(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`, confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
   getResources: (id: number) => api.get<Record<string, string>>(`/devices/${id}/resources`),
   configurePortVlan: (id: number, name: string, data: PortVlanConfig & { confirm_lockout?: boolean }) =>
-    api.put(`/devices/${id}/ports/${encodeURIComponent(name)}/vlan`, data),
+    api.put(`/devices/${id}/ports/${encodeURIComponent(name)}/vlan`, data, GUARDED),
   getSystemConfig: (id: number) => api.get<SystemConfig>(`/devices/${id}/system-config`),
   updateSystemConfig: (id: number, data: Partial<{
     identity: string;
@@ -761,25 +770,25 @@ export const devicesApi = {
     name: string; mode: string; slaves: string[];
     lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number;
     confirm_lockout?: boolean;
-  }) => api.post(`/devices/${id}/bonds`, data),
+  }) => api.post(`/devices/${id}/bonds`, data, GUARDED),
   updateBond: (id: number, bondName: string, data: {
     mode: string; slaves: string[];
     lacp_rate?: string; transmit_hash_policy?: string; mtu?: number; min_links?: number; confirm_lockout?: boolean;
-  }) => api.put(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`, data),
+  }) => api.put(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`, data, GUARDED),
   deleteBond: (id: number, bondName: string, confirmLockout = false) =>
     api.delete(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`,
-      confirmLockout ? { data: { confirm_lockout: true } } : undefined),
+      { ...GUARDED, ...(confirmLockout ? { data: { confirm_lockout: true } } : {}) }),
   /** Ports into a bridge (created if asked), or out of any bridge with `bridge: null` (#258). */
   moveBridgePorts: (id: number, data: {
     ports: string[]; bridge: string | null; create_bridge?: boolean;
     confirm_addresses?: boolean; confirm_lockout?: boolean;
-  }) => api.post<BridgeMoveResult>(`/devices/${id}/bridge-ports/move`, data),
+  }) => api.post<BridgeMoveResult>(`/devices/${id}/bridge-ports/move`, data, GUARDED),
   deleteBridge: (id: number, bridgeName: string, confirmLockout = false) =>
     api.delete(`/devices/${id}/bridges/${encodeURIComponent(bridgeName)}`,
-      confirmLockout ? { data: { confirm_lockout: true } } : undefined),
+      { ...GUARDED, ...(confirmLockout ? { data: { confirm_lockout: true } } : {}) }),
   setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`,
-      { enabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
+      { enabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
   getNat: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/nat`),
   addNatRule: (id: number, data: Record<string, unknown>) =>
     api.post<Record<string, string>[]>(`/devices/${id}/nat`, data),

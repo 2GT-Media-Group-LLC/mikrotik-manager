@@ -11,6 +11,7 @@ import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVe
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
 import { classifyPort, portBasis, portLabel, portSortKey } from '../../utils/portClass';
 import { parseVlanList, toggleVlan, formatVlanList } from '../../utils/vlanList';
+import { changeErrorText } from '../../utils/changeError';
 import {
   staggerBlocks, chunkRows, resolveColumns,
   DENSITY_OPTIONS, parseDensity, densityLabel, type Density,
@@ -28,6 +29,7 @@ const NO_BRIDGE = '\u0000none';
 
 /** CRS1xx and CRS2xx hardware-switch several bridges; other MikroTik switch chips one. */
 const multipleOffloadedBridges = (model?: string | null) => /^CRS[12]\d\d/i.test((model || '').trim());
+
 
 interface Props {
   deviceId: number;
@@ -860,8 +862,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         setLockout({ verdict, retry: () => { setLockout(null); void handleSave(true); } });
         return;
       }
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setSaveError(msg || 'Failed to update interface');
+      setSaveError(changeErrorText(err, 'Failed to update interface'));
     },
   });
 
@@ -879,8 +880,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         setLockout({ verdict, retry: () => updateVlanMutation.mutate({ ...vars, confirm: true }) });
         return;
       }
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setSaveError(msg || 'Failed to apply VLAN config');
+      setSaveError(changeErrorText(err, 'Failed to apply VLAN config'));
     },
   });
 
@@ -900,8 +900,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         setLockout({ verdict, retry: () => createBondMutation.mutate({ ...vars, confirm_lockout: true }) });
         return;
       }
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setBondError(msg || 'Failed to create bond');
+      setBondError(changeErrorText(err, 'Failed to create bond'));
     },
   });
 
@@ -920,8 +919,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         setLockout({ verdict, retry: () => updateBondMutation.mutate({ name: vars.name, d: { ...vars.d, confirm_lockout: true } }) });
         return;
       }
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setBondError(msg || 'Failed to update bond');
+      setBondError(changeErrorText(err, 'Failed to update bond'));
     },
   });
 
@@ -947,8 +945,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         setLockout({ verdict, retry: () => deleteBondMutation.mutate({ name: vars.name, confirm: true }) });
         return;
       }
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setBondError(msg || 'Failed to delete bond');
+      setBondError(changeErrorText(err, 'Failed to delete bond'));
     },
   });
 
@@ -974,10 +971,15 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         });
         return;
       }
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setBridgeError(msg || 'Failed to update VLAN filtering');
+      setBridgeError(changeErrorText(err, 'Failed to update VLAN filtering'));
     },
   });
+
+  // After a change whose outcome is unknown: show what the device has now.
+  const refreshPortsSoon = () => {
+    queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
+    setTimeout(() => queryClient.invalidateQueries({ queryKey: ['ports', deviceId] }), 15_000);
+  };
 
   const showGuardNotice = (text: string, guard: GuardResult | undefined, warn = false) => {
     const g = guardOutcomeMessage(guard);
@@ -1011,7 +1013,8 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
       }
       const d = (err as { response?: { data?: { error?: string; code?: string; details?: string[] } } })?.response?.data;
       if (d?.code === 'ports_have_addresses') { setAddressWarning(d.details?.length ? d.details : [d.error ?? '']); return; }
-      setMoveError(d?.error || 'Failed to move the ports');
+      setMoveError(changeErrorText(err, 'Failed to move the ports'));
+      refreshPortsSoon();
     },
   });
 
@@ -1032,8 +1035,8 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         setLockout({ verdict, retry: () => deleteBridgeMutation.mutate({ ...vars, confirm: true }) });
         return;
       }
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setBridgeError(msg || 'Failed to delete the bridge');
+      setBridgeError(changeErrorText(err, 'Failed to delete the bridge'));
+      refreshPortsSoon();
     },
   });
 
