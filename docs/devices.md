@@ -351,6 +351,37 @@ entry on the VLANs tab to remove them.
     out of itself. Every VLAN change runs through [Change Guard](change-guard.md), which
     predicts lockout before applying and lets the device restore itself if contact is lost.
 
+### Moving ports between bridges
+
+Select one or more ports on the faceplate (shift-click for several) and choose **Move to
+bridge** (#258). Pick an existing bridge, **New bridge…** to create one (RSTP, VLAN filtering
+off), or **No bridge** to take the ports out, for a routed port with an address of its own. A
+bond moves as one; its member ports, and ports a service such as CAPsMAN added to a bridge by
+itself, can't be moved by hand.
+
+A port's VLAN settings belong to its old bridge, so after the move its PVID is 1 and it admits
+all frames, and the old bridge's VLAN table no longer lists it. Set its VLANs again in the new
+bridge if it uses VLAN filtering.
+
+If a port being moved into a bridge has an IP address or a DHCP client, the move stops and
+says so: an address on a port stops working once the port is in a bridge, which is how a
+router's WAN port gets cut off. You can still go ahead with **Move anyway**.
+
+The **Bridge** column of the port table shows each port's bridge, marked **HW** when the
+switch chip forwards its traffic and **CPU** when the CPU does. Apart from CRS1xx and CRS2xx,
+MikroTik switch chips hardware-switch only one bridge, so ports in a second bridge are usually
+switched by the CPU: slower, and CPU load grows with traffic. The move dialog warns when that
+looks likely, and the result says which moved ports ended up on the CPU. To keep networks apart
+on a switch, VLANs on one bridge keep hardware switching; on a router, a separate bridge for a
+guest or IoT network is common, and usually carries little traffic.
+
+To delete a bridge, double-click it on the faceplate and choose **Delete bridge**. Only a bridge
+with no ports, addresses, VLAN interfaces or DHCP server can be deleted.
+
+Moving ports and deleting bridges run through [Change Guard](change-guard.md): moving the port
+management traffic arrives on out of its bridge is predicted as a lockout before anything is
+applied.
+
 ## Routing between VLANs in hardware
 
 On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),

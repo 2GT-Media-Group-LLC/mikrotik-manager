@@ -22,9 +22,18 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
 
+/** Move-dialog targets that aren't bridge names (#258). */
+const NEW_BRIDGE = '\u0000new';
+const NO_BRIDGE = '\u0000none';
+
+/** CRS1xx and CRS2xx hardware-switch several bridges; other MikroTik switch chips one. */
+const multipleOffloadedBridges = (model?: string | null) => /^CRS[12]\d\d/i.test((model || '').trim());
+
 interface Props {
   deviceId: number;
   deviceName?: string;
+  /** For the hardware-switching warning when moving ports between bridges (#258). */
+  deviceModel?: string | null;
   autoOpenBridge?: string;
   onBridgeOpened?: () => void;
 }
@@ -727,7 +736,7 @@ function PortClientsCard({ deviceId, portName }: { deviceId: number; portName: s
   );
 }
 
-export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge, onBridgeOpened }: Props) {
+export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, autoOpenBridge, onBridgeOpened }: Props) {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [selectedPorts, setSelectedPorts] = useState<Set<string>>(new Set());
@@ -740,6 +749,13 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   const [editingBond, setEditingBond] = useState<SwitchPort | null>(null);
   const [confirmDestroyBond, setConfirmDestroyBond] = useState<string | null>(null);
   const [guardNotice, setGuardNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
+  // Moving ports between bridges (#258). The target is a bridge name, NEW_BRIDGE or NO_BRIDGE.
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveTarget, setMoveTarget] = useState('');
+  const [newBridgeName, setNewBridgeName] = useState('');
+  const [moveError, setMoveError] = useState('');
+  const [addressWarning, setAddressWarning] = useState<string[] | null>(null);
+  const [confirmDeleteBridge, setConfirmDeleteBridge] = useState<string | null>(null);
   // Predicted lockout (409 + verdict) and the retry that re-sends with confirm_lockout.
   const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
   const [editForm, setEditForm] = useState<PortEditForm>({
@@ -963,8 +979,71 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
     },
   });
 
+  const showGuardNotice = (text: string, guard: GuardResult | undefined, warn = false) => {
+    const g = guardOutcomeMessage(guard);
+    const tone = warn || g?.tone === 'warn' ? 'warn' : 'ok';
+    setGuardNotice({ tone, text: g?.tone === 'warn' ? `${text} ${g.text}` : text });
+    if (tone === 'ok') setTimeout(() => setGuardNotice(null), 6000);
+  };
+
+  const moveBridgeMutation = useMutation({
+    meta: { inlineError: true },
+    mutationFn: (d: Parameters<typeof devicesApi.moveBridgePorts>[1]) => devicesApi.moveBridgePorts(deviceId, d),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
+      queryClient.invalidateQueries({ queryKey: ['vlans', deviceId] });
+      setMoveOpen(false);
+      setSelectedPorts(new Set());
+      setLockout(null);
+      setAddressWarning(null);
+      const r = res.data;
+      // Read back from the device: the prediction in the dialog is only that.
+      const cpu = Object.entries(r.offload ?? {}).filter(([, hw]) => !hw).map(([p]) => p);
+      const text = `${r.message}.` + (cpu.length
+        ? ` ${cpu.join(', ')} ${cpu.length === 1 ? 'is' : 'are'} switched by the CPU, not the switch chip.` : '');
+      showGuardNotice(text, r.guard as GuardResult | undefined, cpu.length > 0);
+    },
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => moveBridgeMutation.mutate({ ...vars, confirm_lockout: true }) });
+        return;
+      }
+      const d = (err as { response?: { data?: { error?: string; code?: string; details?: string[] } } })?.response?.data;
+      if (d?.code === 'ports_have_addresses') { setAddressWarning(d.details?.length ? d.details : [d.error ?? '']); return; }
+      setMoveError(d?.error || 'Failed to move the ports');
+    },
+  });
+
+  const deleteBridgeMutation = useMutation({
+    meta: { inlineError: true },
+    mutationFn: ({ name, confirm = false }: { name: string; confirm?: boolean }) => devicesApi.deleteBridge(deviceId, name, confirm),
+    onSuccess: (res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
+      setEditingBridge(null);
+      setConfirmDeleteBridge(null);
+      setLockout(null);
+      showGuardNotice(`Bridge ${vars.name} deleted.`, (res?.data as { guard?: GuardResult } | undefined)?.guard);
+    },
+    onError: (err: unknown, vars) => {
+      setConfirmDeleteBridge(null);
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => deleteBridgeMutation.mutate({ ...vars, confirm: true }) });
+        return;
+      }
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setBridgeError(msg || 'Failed to delete the bridge');
+    },
+  });
+
   const ports: SwitchPort[] = data?.ports ?? [];
   const vlans: Vlan[] = data?.vlans ?? [];
+
+  // Bridge membership as RouterOS printed it (#258).
+  const bridgeOf = (p: SwitchPort): string | null => p.bridgeInfo?.bridge || null;
+  const hwOffloaded = (p: SwitchPort): boolean => p.bridgeInfo?.config_json?.['hw-offload'] === 'true';
+  const dynamicBridgePort = (p: SwitchPort): boolean => p.bridgeInfo?.config_json?.['dynamic'] === 'true';
 
   const isBridge = (p: SwitchPort) => p.type === 'bridge';
 
@@ -1193,6 +1272,8 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
         const singlePort = selectedPorts.size === 1 ? ports.find(p => p.name === Array.from(selectedPorts)[0]) : null;
         const selArr = Array.from(selectedPorts).map(n => ports.find(p => p.name === n)).filter((p): p is SwitchPort => !!p);
         const allEligible = selArr.every(p => !isBridge(p) && !isBond(p) && !bondMemberMap.has(p.name));
+        // Bonds move as one; their members, bridges and ports a service bridged don't (#258).
+        const moveEligible = selArr.length > 0 && selArr.every(p => !isBridge(p) && !bondMemberMap.has(p.name) && !dynamicBridgePort(p));
         return (
           <div style={{
             background: 'var(--accent-soft)', border: '1px solid var(--accent)',
@@ -1232,6 +1313,24 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                 }}
               >
                 <Link2 className="w-3 h-3" /> Create Trunk
+              </button>
+            )}
+            {canWrite && moveEligible && (
+              <button
+                className="btn-secondary text-[11px] flex items-center gap-[6px]"
+                style={{ padding: '5px 10px' }}
+                onClick={() => {
+                  const current = [...new Set(selArr.map(bridgeOf))];
+                  const firstOther = bridgePorts.map((b) => b.name).find((b) => !current.includes(b));
+                  setMoveTarget(firstOther ?? NEW_BRIDGE);
+                  setNewBridgeName('');
+                  setMoveError('');
+                  setAddressWarning(null);
+                  setLockout(null);
+                  setMoveOpen(true);
+                }}
+              >
+                <Network className="w-3 h-3" /> Move to bridge
               </button>
             )}
           </div>
@@ -1440,7 +1539,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                {['PORT', 'STATUS', 'SPEED', 'MTU', 'PVID', 'MAC', 'COMMENT', ''].map((h, i) => (
+                {['PORT', 'STATUS', 'SPEED', 'MTU', 'PVID', 'BRIDGE', 'MAC', 'COMMENT', ''].map((h, i) => (
                   <th key={i} className="table-header px-4 py-[10px] text-left">{h}</th>
                 ))}
               </tr>
@@ -1508,6 +1607,18 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                     </td>
                     <td className="px-4 py-[10px]"><span className="mono num-tab text-[11.5px]" style={{ color: 'var(--ink-3)' }}>{port.mtu || '—'}</span></td>
                     <td className="px-4 py-[10px]"><span className="mono num-tab text-[11.5px]" style={{ color: 'var(--ink-3)' }}>{port.bridgeInfo?.pvid ?? '—'}</span></td>
+                    <td className="px-4 py-[10px]">
+                      {bridgeOf(port) ? (
+                        <span className="inline-flex items-center gap-[6px]">
+                          <span className="mono text-[11.5px]" style={{ color: 'var(--ink-3)' }}>{bridgeOf(port)}</span>
+                          {hwOffloaded(port)
+                            ? <span className="mono text-[9.5px] px-[5px] py-[1px] rounded" style={{ background: 'var(--good-bg)', color: 'var(--good)' }}
+                                title="Hardware offloaded: switched by the switch chip">HW</span>
+                            : <span className="mono text-[9.5px] px-[5px] py-[1px] rounded" style={{ background: 'var(--surface-2)', color: 'var(--ink-4)' }}
+                                title="Not hardware offloaded: traffic between this port and the rest of the bridge goes through the CPU">CPU</span>}
+                        </span>
+                      ) : <span className="mono text-[11.5px]" style={{ color: 'var(--ink-4)' }}>—</span>}
+                    </td>
                     <td className="px-4 py-[10px]"><span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>{port.mac_address || '—'}</span></td>
                     <td className="px-4 py-[10px]"><span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>{port.comment || '—'}</span></td>
                     <td className="px-4 py-[10px]">
@@ -2197,6 +2308,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
           editingBridge.config_json?.['vlan-filtering'] === 'true' ||
           editingBridge.config_json?.['vlan-filtering'] === 'yes';
         const isPending = setBridgeVlanFilteringMutation.isPending;
+        const members = ports.filter((p) => bridgeOf(p) === editingBridge.name);
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -2252,6 +2364,24 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                   </div>
                 </div>
 
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                    Ports
+                  </h4>
+                  {members.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {members.map((p) => (
+                        <span key={p.name} className="mono text-[11px] px-2 py-[3px] rounded border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-200"
+                          title={hwOffloaded(p) ? 'Hardware offloaded' : 'Switched by the CPU'}>
+                          {p.name}{hwOffloaded(p) ? '' : ' · CPU'}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-slate-400">No ports. Select ports on the faceplate and use Move to bridge.</p>
+                  )}
+                </div>
+
                 {bridgeError && (
                   <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                     <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
@@ -2259,7 +2389,17 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                   </div>
                 )}
 
-                <div className="flex justify-end pt-1">
+                <div className="flex items-center justify-between pt-1">
+                  {canWrite ? (
+                    <button
+                      onClick={() => { setBridgeError(''); setConfirmDeleteBridge(editingBridge.name); }}
+                      disabled={members.length > 0 || deleteBridgeMutation.isPending}
+                      title={members.length > 0 ? 'Move its ports out first' : undefined}
+                      className="btn-secondary text-red-600 dark:text-red-400 flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete bridge
+                    </button>
+                  ) : <span />}
                   <button onClick={() => setEditingBridge(null)} className="btn-secondary">
                     Close
                   </button>
@@ -2269,6 +2409,131 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
           </div>
         );
       })()}
+
+      {/* Move ports to a bridge (#258) */}
+      {moveOpen && (() => {
+        const moving = Array.from(selectedPorts).map((n) => ports.find((p) => p.name === n)).filter((p): p is SwitchPort => !!p);
+        const creating = moveTarget === NEW_BRIDGE;
+        const target = moveTarget === NO_BRIDGE ? null : creating ? newBridgeName.trim() : moveTarget;
+        // A prediction from what RouterOS reports now; the result is read back after.
+        const offloadedElsewhere = [...new Set(ports.filter((p) => hwOffloaded(p) && bridgeOf(p) && bridgeOf(p) !== target).map((p) => bridgeOf(p)!))];
+        const targetOffloaded = !creating && !!target && ports.some((p) => bridgeOf(p) === target && hwOffloaded(p));
+        const hwWarn = !!target && !multipleOffloadedBridges(deviceModel) && !targetOffloaded && offloadedElsewhere.length > 0;
+        const payload = {
+          ports: moving.map((p) => p.name),
+          bridge: target,
+          ...(creating ? { create_bridge: true } : {}),
+        };
+        const canSubmit = moving.length > 0 && moveTarget !== '' && (!creating || target !== '');
+        const pending = moveBridgeMutation.isPending;
+        const submit = (confirmAddresses = false) => {
+          setMoveError('');
+          moveBridgeMutation.mutate({ ...payload, ...(confirmAddresses ? { confirm_addresses: true } : {}) });
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="card w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
+                <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Network className="w-4 h-4 text-blue-500" />
+                  Move to bridge
+                </h3>
+                <button onClick={() => setMoveOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">Ports</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {moving.map((p) => (
+                      <span key={p.name} className="mono text-[11px] px-2 py-[3px] rounded border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-200">
+                        {p.name}<span className="text-gray-400 dark:text-slate-500"> · {bridgeOf(p) ?? 'no bridge'}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Move to</label>
+                  <select className="input" value={moveTarget} onChange={(e) => { setMoveTarget(e.target.value); setAddressWarning(null); setMoveError(''); }}>
+                    {bridgePorts.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+                    <option value={NEW_BRIDGE}>New bridge…</option>
+                    <option value={NO_BRIDGE}>No bridge (take them out)</option>
+                  </select>
+                </div>
+                {creating && (
+                  <div>
+                    <label className="label">New bridge name</label>
+                    <input className="input" value={newBridgeName} maxLength={32} placeholder="bridge-iot"
+                      onChange={(e) => setNewBridgeName(e.target.value)} />
+                    <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">Created with RSTP and VLAN filtering off.</p>
+                  </div>
+                )}
+                {moveTarget === NO_BRIDGE && (
+                  <p className="text-xs text-gray-600 dark:text-slate-300">
+                    Out of every bridge, a port stops switching with the others. That’s what you want for a routed port with an address of its own, such as a WAN port.
+                  </p>
+                )}
+                {hwWarn && (
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      The switch chip on this device hardware-switches one bridge, and that’s {offloadedElsewhere.join(', ')}.
+                      Ports in {target || 'the new bridge'} will most likely be switched by the CPU: slower, with CPU load rising with traffic.
+                      To keep networks apart on one switch chip, VLANs on a single bridge keep hardware switching.
+                    </p>
+                  </div>
+                )}
+                {addressWarning && (
+                  <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                      <div className="text-xs text-red-700 dark:text-red-300">
+                        {addressWarning.map((w) => <div key={w}>{w}.</div>)}
+                        <div className="mt-1">An address on a port stops working once the port is in a bridge. On a router this is how a WAN port ends up cut off.</div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button className="btn-danger text-xs" disabled={pending} onClick={() => submit(true)}>Move anyway</button>
+                    </div>
+                  </div>
+                )}
+                {moveError && (
+                  <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                    <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-red-600 dark:text-red-400">{moveError}</p>
+                  </div>
+                )}
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button onClick={() => setMoveOpen(false)} className="btn-secondary">Cancel</button>
+                  <ReviewChangesButton
+                    deviceName={deviceName} disabled={pending || !canSubmit} applyLabel="Move"
+                    onApply={() => submit()}
+                    request={() => devicesApi.moveBridgePorts(deviceId, { ...payload, confirm_addresses: true })}
+                  />
+                  <button className="btn-primary flex items-center gap-2" disabled={pending || !canSubmit || !!addressWarning} onClick={() => submit()}>
+                    {pending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Move
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {confirmDeleteBridge && (
+        <ChangeGuardDialog
+          deviceId={deviceId}
+          title="Delete bridge?"
+          description={`Bridge "${confirmDeleteBridge}" will be removed. It has no ports, addresses, VLAN interfaces or DHCP server.`}
+          reason="Only an empty bridge can be deleted here, so nothing that forwards traffic goes with it."
+          confirmLabel="Delete bridge"
+          pending={deleteBridgeMutation.isPending}
+          onConfirm={() => deleteBridgeMutation.mutate({ name: confirmDeleteBridge })}
+          onCancel={() => setConfirmDeleteBridge(null)}
+        />
+      )}
 
       {confirmDestroyBond && (
         <ChangeGuardDialog
@@ -2294,6 +2559,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
           pending={
             updateVlanMutation.isPending || createBondMutation.isPending
             || deleteBondMutation.isPending || setBridgeVlanFilteringMutation.isPending
+            || moveBridgeMutation.isPending || deleteBridgeMutation.isPending
           }
           onConfirm={lockout.retry}
           onCancel={() => setLockout(null)}

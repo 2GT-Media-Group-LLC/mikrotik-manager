@@ -31,6 +31,10 @@ export type PlannedChange =
   | { kind: 'ip.remove'; addressId: string }
   | { kind: 'interface.disable'; name: string; disabled: boolean }
   | { kind: 'bond.delete'; name: string }
+  /** Ports into a bridge, or out of any bridge with `bridge: null` (#258). */
+  | { kind: 'bridge-port.move'; ports: string[]; bridge: string | null }
+  /** Delete a bridge; only empty ones are, but the model doesn't assume it. */
+  | { kind: 'bridge.delete'; bridge: string }
   | { kind: 'route.remove'; routeId: string }
   | { kind: 'service.toggle'; serviceId: string; disabled: boolean }
   /**
@@ -190,6 +194,44 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
       // By name, or by RouterOS id for callers that only have that (WireGuard).
       const iface = s.interfaces.find((i) => i['name'] === change.name || i['.id'] === change.name);
       if (iface) iface['disabled'] = change.disabled ? 'true' : 'false';
+      break;
+    }
+
+    // What moveBridgePorts does: a port in a bridge moves with its row (PVID and
+    // frame admission back to the defaults), one that isn't gets a new row, and
+    // the old bridges' static VLAN rows stop listing it.
+    case 'bridge-port.move': {
+      for (const port of change.ports) {
+        const row = s.bridgePorts.find((p) => p['interface'] === port);
+        const from = row?.['bridge'];
+        if (from === (change.bridge ?? undefined)) continue;
+        if (from) {
+          for (const v of s.bridgeVlans) {
+            if (v['bridge'] !== from || isDynamic(v)) continue;
+            const tagged = csv(v['current-tagged'] ?? v['tagged']);
+            const untagged = csv(v['current-untagged'] ?? v['untagged']);
+            if (!tagged.includes(port) && !untagged.includes(port)) continue;
+            setMembership(v, tagged.filter((m) => m !== port), untagged.filter((m) => m !== port));
+          }
+        }
+        if (!change.bridge) {
+          s.bridgePorts = s.bridgePorts.filter((p) => p['interface'] !== port);
+        } else if (row) {
+          row['bridge'] = change.bridge;
+          row['pvid'] = '1';
+          row['frame-types'] = 'admit-all';
+        } else {
+          s.bridgePorts.push({ interface: port, bridge: change.bridge, pvid: '1', 'frame-types': 'admit-all', disabled: 'false' });
+        }
+      }
+      break;
+    }
+
+    case 'bridge.delete': {
+      s.bridges = s.bridges.filter((b) => b['name'] !== change.bridge);
+      s.interfaces = s.interfaces.filter((i) => i['name'] !== change.bridge);
+      s.bridgePorts = s.bridgePorts.filter((p) => p['bridge'] !== change.bridge);
+      s.addresses = s.addresses.filter((a) => a['interface'] !== change.bridge);
       break;
     }
 

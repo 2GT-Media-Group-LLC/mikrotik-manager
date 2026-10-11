@@ -39,6 +39,7 @@ applied; the rest are protected by auto-revert alone.
 | Firewall filter | add, edit, enable/disable, move, delete | Yes, in rule order (see [Firewall rules](#firewall-rules)) |
 | Firewall address lists | add, edit, remove | Yes |
 | Bridge | VLAN filtering toggle | Yes |
+| Bridge | move ports between bridges, create a bridge with the move, delete an empty bridge | Yes |
 | Ports | PVID and tagged/untagged membership | Yes |
 | Ports | enable/disable | Yes |
 | Ports | MTU, FEC, flow control, speed, PoE | Flagged when the port carries management |

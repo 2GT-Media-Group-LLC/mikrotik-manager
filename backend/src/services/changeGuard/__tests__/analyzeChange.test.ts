@@ -458,3 +458,45 @@ describe('P2-7 management paths', () => {
     });
   });
 });
+
+// ── #258: moving ports between bridges ──────────────────────────────────────
+describe('analyzeChange — bridge-port.move and bridge.delete', () => {
+  const withGuest = (): DeviceSnapshot => baseSnapshot({
+    interfaces: [
+      { name: 'bridge', type: 'bridge', disabled: 'false' },
+      { name: 'guest', type: 'bridge', disabled: 'false' },
+      { name: 'sfp28-1', type: 'ether', disabled: 'false' },
+      { name: 'ether1', type: 'ether', disabled: 'false' },
+    ],
+    bridges: [{ name: 'bridge', 'vlan-filtering': 'true', pvid: '1' }, { name: 'guest', 'vlan-filtering': 'false', pvid: '1' }],
+  });
+
+  it('flags moving the port management arrives on into another bridge', () => {
+    const v = analyzeChange(withGuest(), device, { kind: 'bridge-port.move', ports: ['sfp28-1'], bridge: 'guest' });
+    expect(v.severity).toBe('critical');
+    expect(v.violations.map((x) => x.id)).toContain('ingress-port-member');
+  });
+
+  it('flags taking it out of any bridge', () => {
+    const v = analyzeChange(withGuest(), device, { kind: 'bridge-port.move', ports: ['sfp28-1'], bridge: null });
+    expect(v.severity).toBe('critical');
+  });
+
+  it('allows moving an unrelated port, and drops it from the old VLAN rows', () => {
+    const snap = withGuest();
+    const v = analyzeChange(snap, device, { kind: 'bridge-port.move', ports: ['ether1'], bridge: 'guest' });
+    expect(v.severity).toBe('safe');
+    const after = simulate(snap, { kind: 'bridge-port.move', ports: ['ether1'], bridge: 'guest' });
+    expect(after.bridgePorts.find((p) => p['interface'] === 'ether1')).toMatchObject({ bridge: 'guest', pvid: '1' });
+    expect(after.bridgeVlans[0]['untagged']).toBe('bridge,sfp28-1');
+  });
+
+  it('flags deleting the bridge management runs on', () => {
+    const v = analyzeChange(withGuest(), device, { kind: 'bridge.delete', bridge: 'bridge' });
+    expect(v.severity).toBe('critical');
+  });
+
+  it('allows deleting another bridge', () => {
+    expect(analyzeChange(withGuest(), device, { kind: 'bridge.delete', bridge: 'guest' }).severity).toBe('safe');
+  });
+});

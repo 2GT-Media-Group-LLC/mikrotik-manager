@@ -16,6 +16,7 @@ import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { encrypt, decrypt } from '../utils/crypto';
 import { RouterOSClient } from '../services/mikrotik/RouterOSClient';
 import { usesApiTls, managementService, parseApiTls, checkPort } from '../utils/apiTls';
+import { planBridgePortMove, addressesOnPorts, bridgeDeleteRefusal } from '../utils/bridgePortMove';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { PollerService } from '../services/PollerService';
 import { createDeviceFromBody, loadCredentialPreset, type CreateDeviceInput } from '../services/deviceCreation';
@@ -2825,6 +2826,95 @@ router.put('/:id/bridge/:bridgeName/vlan-filtering', requireWrite, async (req: R
       return { success: true, vlan_filtering: enabled };
     },
     async (c) => { await c.collectInterfaces(); }
+  );
+});
+
+// ─── Bridge membership for any port (#258) ──────────────────────────────────
+
+/** Reads the device's bridge state for a pre-flight check; null when it answered with an error. */
+async function bridgeStateFor(id: string, res: Response) {
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]);
+  if (!deviceRow) { res.status(404).json({ error: 'Device not found' }); return null; }
+  const c = new DeviceCollector(deviceRow);
+  try {
+    await c.connect();
+    return await c.readBridgeState();
+  } catch (err) {
+    res.status(502).json({ error: `Couldn't read the device's bridges: ${(err as Error).message}` });
+    return null;
+  } finally {
+    c.disconnect();
+  }
+}
+
+/** An interface name as RouterOS allows it, without commas (list separators) or control characters. */
+const IFACE_NAME = { test: (v: string): boolean => v.length >= 1 && v.length <= 64 && ![...v].some((ch) => ch === ',' || ch.charCodeAt(0) < 32) };
+
+// POST /api/devices/:id/bridge-ports/move — put ports into a bridge (creating
+// it if asked), or take them out of any bridge. Guarded: moving the port the
+// manager arrives on out of its bridge cuts it off, and Change Guard predicts it.
+router.post('/:id/bridge-ports/move', requireWrite, async (req: Request, res: Response) => {
+  const { ports, bridge, create_bridge, confirm_addresses } = req.body ?? {};
+  if (!Array.isArray(ports) || ports.length === 0 || ports.length > 128
+    || !ports.every((p) => typeof p === 'string' && IFACE_NAME.test(p))) {
+    return res.status(400).json({ error: 'ports must be a list of interface names.' });
+  }
+  if (bridge !== null && (typeof bridge !== 'string' || !IFACE_NAME.test(bridge))) {
+    return res.status(400).json({ error: 'bridge must be a bridge name, or null for no bridge.' });
+  }
+  const create = create_bridge === true;
+
+  const state = await bridgeStateFor(req.params.id, res);
+  if (!state) return;
+  const planned = planBridgePortMove({
+    ports, target: bridge, createTarget: create,
+    bridgePorts: state.bridgePorts, interfaces: state.interfaces, bridgeVlans: state.bridgeVlans,
+  });
+  if (!planned.ok) return res.status(400).json({ error: planned.error });
+  const moving = planned.plan.ops.map((o) => o.port);
+
+  if (bridge && confirm_addresses !== true) {
+    const found = addressesOnPorts(moving, state.addresses, state.dhcpClients);
+    if (found.length) {
+      return res.status(409).json({
+        code: 'ports_have_addresses',
+        error: `${found.join('; ')}. An address on a port stops working once the port is in a bridge.`,
+        details: found,
+      });
+    }
+  }
+
+  const list = moving.join(', ');
+  const summary = !bridge ? `Take ${list} out of their bridge`
+    : create ? `Create bridge '${bridge}' and move ${list} into it`
+      : `Move ${list} to bridge '${bridge}'`;
+  await withGuardedChange(
+    req.params.id, req, res,
+    { kind: 'bridge-port.move', summary, change: { kind: 'bridge-port.move', ports: moving, bridge: bridge ?? null } },
+    async (c) => {
+      const r = await c.moveBridgePorts(ports, bridge ?? null, { create });
+      return { message: summary, ...r };
+    },
+    async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); },
+  );
+});
+
+// DELETE /api/devices/:id/bridges/:bridgeName — only an empty, unused bridge.
+router.delete('/:id/bridges/:bridgeName', requireWrite, async (req: Request, res: Response) => {
+  const name = req.params.bridgeName;
+  if (!IFACE_NAME.test(name)) return res.status(400).json({ error: 'Invalid bridge name.' });
+  const state = await bridgeStateFor(req.params.id, res);
+  if (!state) return;
+  if (!state.interfaces.some((i) => i['name'] === name && i['type'] === 'bridge')) {
+    return res.status(404).json({ error: `There is no bridge called ${name} on this device.` });
+  }
+  const refusal = bridgeDeleteRefusal(name, state);
+  if (refusal) return res.status(409).json({ error: refusal });
+  await withGuardedChange(
+    req.params.id, req, res,
+    { kind: 'bridge.delete', summary: `Delete bridge '${name}'`, change: { kind: 'bridge.delete', bridge: name } },
+    async (c) => { await c.deleteBridge(name); return { message: `Bridge ${name} deleted` }; },
+    async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); },
   );
 });
 

@@ -198,6 +198,8 @@ export interface BridgeVlanEntry {
   untagged_vlan_ids?: string[];
   /** True when the port is a tagged member of at least one VLAN (i.e. a trunk). */
   tagged: boolean;
+  /** The bridge-port row as RouterOS printed it: `hw-offload`, `dynamic` and the rest. */
+  config_json?: Record<string, string> | null;
 }
 
 export interface SwitchPort extends Interface {

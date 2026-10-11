@@ -76,6 +76,7 @@ import { readRevocation } from '../../utils/certRecord';
 import { managerAddressFromActive, stripOwnSessionNoise } from '../../utils/logNoise';
 import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
 import { planVlanWrite, frameTypesFor, planTaggedRemovals } from '../../utils/bridgeVlanPlan';
+import { planBridgePortMove, bridgeDeleteRefusal } from '../../utils/bridgePortMove';
 import { normalizeHealth, evaluateHealth, type HealthVerdict, type HealthIssue } from '../../utils/deviceHealth';
 import { resolveChannel } from '../../utils/updateChannel';
 import { registerPollSession } from '../../utils/pollJobContext';
@@ -2973,6 +2974,108 @@ export class DeviceCollector {
         interface: ifaceName, bridge, ...extra,
       });
     }
+  }
+
+  // ─── Bridge membership for any port (#258) ─────────────────────────────────
+
+  /** Everything the bridge-port checks read, in one round of queries. */
+  async readBridgeState(): Promise<{
+    bridgePorts: Record<string, string>[]; interfaces: Record<string, string>[];
+    bridgeVlans: Record<string, string>[]; addresses: Record<string, string>[];
+    dhcpClients: Record<string, string>[]; vlanInterfaces: Record<string, string>[];
+    dhcpServers: Record<string, string>[];
+  }> {
+    const [bridgePorts, interfaces, bridgeVlans, addresses, dhcpClients, vlanInterfaces, dhcpServers] = await Promise.all([
+      this.client.execute('/interface/bridge/port/print', { detail: '' }),
+      this.client.execute('/interface/print'),
+      this.client.execute('/interface/bridge/vlan/print'),
+      this.client.execute('/ip/address/print'),
+      this.client.execute('/ip/dhcp-client/print').catch(() => [] as Record<string, string>[]),
+      this.client.execute('/interface/vlan/print').catch(() => [] as Record<string, string>[]),
+      this.client.execute('/ip/dhcp-server/print').catch(() => [] as Record<string, string>[]),
+    ]);
+    return { bridgePorts, interfaces, bridgeVlans, addresses, dhcpClients, vlanInterfaces, dhcpServers };
+  }
+
+  /**
+   * Move ports into a bridge, optionally creating it, or out of any bridge.
+   * Planned afresh from the device's state (see planBridgePortMove). Returns
+   * whether each moved port ended up hardware switched, read back from the
+   * device: most switch chips offload one bridge only.
+   */
+  async moveBridgePorts(ports: string[], target: string | null, opts: { create?: boolean } = {}): Promise<{
+    moved: string[]; unchanged: string[]; created: boolean; offload: Record<string, boolean>;
+  }> {
+    const state = await this.readBridgeState();
+    const planned = planBridgePortMove({
+      ports, target, createTarget: opts.create,
+      bridgePorts: state.bridgePorts, interfaces: state.interfaces, bridgeVlans: state.bridgeVlans,
+    });
+    if (!planned.ok) throw new Error(planned.error);
+    const { plan } = planned;
+
+    const done: string[] = [];
+    const where = target ? `into ${target}` : 'out of their bridge';
+    const fail = (step: string, err: unknown): never => {
+      throw new Error(
+        `${step} failed: ${(err as Error).message}.`
+        + (done.length ? ` Already moved ${where}: ${done.join(', ')}.` : ' Nothing was moved.'),
+        { cause: err },
+      );
+    };
+
+    if (plan.createBridge) {
+      await this.client.execute('/interface/bridge/add', { name: plan.createBridge, 'protocol-mode': 'rstp' })
+        .catch((e) => fail(`Creating bridge ${plan.createBridge}`, e));
+    }
+    // The old bridges stop listing the ports first: an entry naming a port
+    // that has left is invalid, and would apply again if the port came back.
+    for (const e of plan.vlanEdits) {
+      await this.client.execute('/interface/bridge/vlan/set', {
+        '.id': e.id, tagged: e.tagged.join(','), untagged: e.untagged.join(','),
+      }).catch((err) => fail(`Removing the ports from VLAN ${e.vlanIds} on ${e.bridge}`, err));
+    }
+    for (const op of plan.ops) {
+      try {
+        if (op.action === 'remove') {
+          await this.client.execute('/interface/bridge/port/remove', { '.id': op.id! });
+        } else if (op.action === 'set') {
+          // VLAN settings belonged to the old bridge.
+          await this.client.execute('/interface/bridge/port/set', {
+            '.id': op.id!, bridge: target!, pvid: '1', 'frame-types': 'admit-all',
+          });
+        } else {
+          await this.client.execute('/interface/bridge/port/add', { interface: op.port, bridge: target! });
+        }
+        done.push(op.port);
+      } catch (err) {
+        fail(`Moving ${op.port}`, err);
+      }
+    }
+
+    // The H flag settles a moment after the port joins.
+    const offload: Record<string, boolean> = {};
+    if (target) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const after = await this.client.execute('/interface/bridge/port/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+      for (const port of done) {
+        const row = after.find((p) => p['interface'] === port);
+        if (row) offload[port] = row['hw-offload'] === 'true';
+      }
+    }
+    return { moved: done, unchanged: plan.unchanged, created: !!plan.createBridge, offload };
+  }
+
+  /** Delete a bridge that has no ports, addresses, VLAN interfaces or DHCP server. */
+  async deleteBridge(name: string): Promise<void> {
+    const state = await this.readBridgeState();
+    const bridge = state.interfaces.find((i) => i['name'] === name && i['type'] === 'bridge');
+    if (!bridge) throw new Error(`There is no bridge called ${name} on this device.`);
+    const refusal = bridgeDeleteRefusal(name, state);
+    if (refusal) throw new Error(refusal);
+    const rows = await this.client.execute('/interface/bridge/print', {}, [`?name=${name}`]);
+    if (!rows[0]?.['.id']) throw new Error(`There is no bridge called ${name} on this device.`);
+    await this.client.execute('/interface/bridge/remove', { '.id': rows[0]['.id'] });
   }
 
   // ─── Live wireless interface list (enriched with bridge port data) ─────────

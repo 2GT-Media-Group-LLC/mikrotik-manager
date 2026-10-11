@@ -769,6 +769,14 @@ export const devicesApi = {
   deleteBond: (id: number, bondName: string, confirmLockout = false) =>
     api.delete(`/devices/${id}/bonds/${encodeURIComponent(bondName)}`,
       confirmLockout ? { data: { confirm_lockout: true } } : undefined),
+  /** Ports into a bridge (created if asked), or out of any bridge with `bridge: null` (#258). */
+  moveBridgePorts: (id: number, data: {
+    ports: string[]; bridge: string | null; create_bridge?: boolean;
+    confirm_addresses?: boolean; confirm_lockout?: boolean;
+  }) => api.post<BridgeMoveResult>(`/devices/${id}/bridge-ports/move`, data),
+  deleteBridge: (id: number, bridgeName: string, confirmLockout = false) =>
+    api.delete(`/devices/${id}/bridges/${encodeURIComponent(bridgeName)}`,
+      confirmLockout ? { data: { confirm_lockout: true } } : undefined),
   setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`,
       { enabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
@@ -2363,4 +2371,14 @@ export interface L3HwView {
   natRules: number;
   /** Routed VLANs on a bridge without VLAN filtering: their routes stay on the CPU. */
   notOffloadable: { vlan: string; bridge: string }[];
+}
+
+/** What a bridge move did (#258). `offload` is read back from the device per moved port. */
+export interface BridgeMoveResult {
+  message: string;
+  moved: string[];
+  unchanged: string[];
+  created: boolean;
+  offload: Record<string, boolean>;
+  guard?: unknown;
 }
