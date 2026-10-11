@@ -9,6 +9,7 @@ import type { PollerService } from './PollerService';
 import type { CredentialPresetRow } from '../routes/credentialPresets';
 import { DEVICE_BASE_COLUMNS } from './deviceColumns';
 import { connectPreferringSsl, API_SSL_PORT } from './mikrotik/apiConnect';
+import { usesApiTls, parseApiTls, checkPort } from '../utils/apiTls';
 import { pinIdentity } from './identityPins';
 import { presetUseRefusal, type PresetCaller } from '../utils/presetAccess';
 import { fit } from '../utils/fit';
@@ -104,6 +105,11 @@ export interface CreateDeviceInput {
    * add the device over SSH. A form checkbox, or an ssh_only CSV column.
    */
   ssh_only?: unknown;
+  /**
+   * The API port runs api-ssl (#257). Unset, the port decides: TLS on 8729,
+   * and with no port either, API-SSL is tried first.
+   */
+  api_tls?: unknown;
 }
 
 export type CreateDeviceResult =
@@ -209,6 +215,13 @@ async function createDevice(
     };
   }
 
+  // Out-of-range ports used to be stored as given (#257).
+  for (const [value, label] of [[input.api_port, 'API port'], [input.ssh_port, 'SSH port']] as const) {
+    const pc = checkPort(value, label);
+    if (!pc.ok) return { ok: false, status: 400, body: { error: pc.error } };
+  }
+  const apiTls = parseApiTls(input.api_tls);
+
   // Accepts an IPv4/IPv6 literal or a hostname (DDNS name, public FQDN, etc.),
   // not only a LAN IP — connecting still happens by resolving at connect time,
   // so a DDNS name that moves keeps working without editing the device.
@@ -220,11 +233,19 @@ async function createDevice(
   const portCheck = reconcileAddressPort(normalizedAddress.port, preset?.api_port ?? input.api_port);
   if (!portCheck.ok) return { ok: false, status: 400, body: { error: portCheck.reason } };
   if (portCheck.port) api_port = portCheck.port;
+  if (!Number.isInteger(api_port) || api_port < 1 || api_port > 65535) {
+    return { ok: false, status: 400, body: { error: 'API port must be a number from 1 to 65535.' } };
+  }
 
   // No port chosen anywhere (form, preset, or written into the address): try
   // API-SSL first and fall back to the plain API (outside review P1-4). A port
-  // that was chosen is used as given.
-  const portChosen = preset?.api_port != null || (input.api_port != null && input.api_port !== '') || !!portCheck.port;
+  // that was chosen is used as given, and so is an explicit API-SSL choice
+  // (#257), on the port that goes with it when none was given.
+  const portChosen = preset?.api_port != null || (input.api_port != null && input.api_port !== '') || !!portCheck.port
+    || apiTls !== null;
+  if (apiTls !== null && preset?.api_port == null && (input.api_port == null || input.api_port === '') && !portCheck.port) {
+    api_port = apiTls ? API_SSL_PORT : 8728;
+  }
   let testClient: RouterOSClient | undefined;
   let sslFallbackReason: string | undefined;
   let detectedSerial: string | null;
@@ -235,7 +256,8 @@ async function createDevice(
   let apiUnavailable: string | undefined;
   try {
     if (portChosen) {
-      testClient = new RouterOSClient(address, api_port, api_username, api_password, sshOnlyRequested ? 6_000 : 10_000);
+      testClient = new RouterOSClient(address, api_port, api_username, api_password, sshOnlyRequested ? 6_000 : 10_000,
+        30_000, usesApiTls({ api_port, api_tls: apiTls }));
       await testClient.connect();
     } else {
       const chosen = await connectPreferringSsl(address, api_username, api_password,
@@ -288,7 +310,7 @@ async function createDevice(
   const addedOverSsh = sshInfo !== null;
   const connection = addedOverSsh
     ? { ssh_only: true, api_unavailable: apiUnavailable }
-    : { api_ssl: api_port === API_SSL_PORT, port: api_port, ...(sslFallbackReason ? { ssl_unavailable: sslFallbackReason } : {}),
+    : { api_ssl: usesApiTls({ api_port, api_tls: apiTls }), port: api_port, ...(sslFallbackReason ? { ssl_unavailable: sslFallbackReason } : {}),
         ...(sshOnlyRequested ? { api_answered: true } : {}) };
   // An SSH-only device keeps its SSH login explicitly (config history needs it).
   const sshUserToStore = addedOverSsh ? (ssh_username || api_username) : ssh_username;
@@ -355,6 +377,7 @@ async function createDevice(
            device_type=COALESCE($10,device_type),
            notes=COALESCE($11,notes),
            ssh_only=$13,
+           api_tls=$14,
            updated_at=NOW()
          WHERE id = $12`,
         [
@@ -371,6 +394,7 @@ async function createDevice(
           notes || null,
           existingBySerial.id,
           addedOverSsh,
+          apiTls,
         ]
       );
 
@@ -413,17 +437,17 @@ async function createDevice(
       `INSERT INTO devices (name, name_locked, ip_address, api_port, api_username, api_password_encrypted,
                             ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status,
                             site_id, serial_number, ssh_only, last_seen, model, ros_version, firmware_version,
-                            architecture, ros_identity, api_checked_at, api_check_error)
+                            architecture, ros_identity, api_checked_at, api_check_error, api_tls)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, CASE WHEN $14::boolean THEN 'online' ELSE 'unknown' END,
                COALESCE($12::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)), $13,
                $14::boolean, CASE WHEN $14::boolean THEN NOW() END, $15, $16, $17, $18, $19,
-               CASE WHEN $14::boolean THEN NOW() END, $20)
+               CASE WHEN $14::boolean THEN NOW() END, $20, $21)
        RETURNING id`,
       [name, nameLocked, address, api_port, api_username, encryptedPass,
        ssh_port, sshUserToStore || null, encryptedSshPass, device_type, notes || null,
        ctx?.siteId ?? null, detectedSerial, addedOverSsh,
        fit(sshInfo?.model, 100), fit(sshInfo?.rosVersion, 20), fit(sshInfo?.firmware, 50),
-       fit(sshInfo?.architecture, 32), fit(sshInfo?.identity, 255), addedOverSsh ? apiUnavailable ?? null : null]
+       fit(sshInfo?.architecture, 32), fit(sshInfo?.identity, 255), addedOverSsh ? apiUnavailable ?? null : null, apiTls]
     );
   } catch (err) {
     if ((err as { code?: string }).code === '23505' && /serial/i.test(String((err as { constraint?: string }).constraint ?? ''))) {

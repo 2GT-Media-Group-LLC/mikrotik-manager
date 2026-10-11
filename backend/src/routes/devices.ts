@@ -15,6 +15,7 @@ import { requireAuth, requireWrite, requireAdmin, requireSiteAdmin, isSiteScoped
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { encrypt, decrypt } from '../utils/crypto';
 import { RouterOSClient } from '../services/mikrotik/RouterOSClient';
+import { usesApiTls, managementService, parseApiTls, checkPort } from '../utils/apiTls';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { PollerService } from '../services/PollerService';
 import { createDeviceFromBody, loadCredentialPreset, type CreateDeviceInput } from '../services/deviceCreation';
@@ -520,6 +521,7 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
     name: string;
     ip_address: string;
     api_port: number;
+    api_tls: boolean | null;
     api_username: string;
     api_password_encrypted: string;
     ssh_port: number | null;
@@ -528,7 +530,7 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
     ssh_username: string | null;
     ssh_password_encrypted: string | null;
   }>(
-    `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted, ssh_port, site_id,
+    `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted, ssh_port, site_id,
             ssh_only, ssh_username, ssh_password_encrypted
        FROM devices WHERE id = $1`,
     [req.params.id]
@@ -560,6 +562,12 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
     return res.status(status).json({ error: (err as Error).message });
   }
 
+  // Out-of-range ports used to be stored as given (#257).
+  for (const [field, label] of [['api_port', 'API port'], ['ssh_port', 'SSH port']] as const) {
+    const pc = checkPort(req.body[field], label);
+    if (!pc.ok) return res.status(400).json({ error: pc.error });
+  }
+
   // When a preset is applied, its values take precedence over anything else
   // in the body so "apply preset" has a single unambiguous meaning.
   const portCheck = reconcileAddressPort(addressPort, preset?.api_port ?? req.body.api_port);
@@ -582,6 +590,12 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
   // otherwise we could silently brick the device record.
   const ipChanged = typeof ip_address === 'string' && ip_address && ip_address !== existing.ip_address;
   const portChanged = typeof api_port === 'number' && api_port !== existing.api_port;
+  // api-ssl on any port (#257): an explicit choice is kept; a new port without
+  // one goes back to the default for that port (TLS on 8729).
+  const api_tls: boolean | null = Object.prototype.hasOwnProperty.call(req.body, 'api_tls')
+    ? parseApiTls(req.body.api_tls)
+    : portChanged ? null : existing.api_tls;
+  const tlsChanged = usesApiTls({ api_port, api_tls }) !== usesApiTls(existing);
   const userChanged = typeof api_username === 'string' && api_username && api_username !== existing.api_username;
   const presetReplacesApiCreds = !!preset;
 
@@ -616,12 +630,12 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
     } catch (err) {
       return res.status(422).json({ error: describeSshFailure(err, ssh_port) });
     }
-  } else if (!existing.ssh_only && (ipChanged || portChanged || userChanged || api_password || presetReplacesApiCreds)) {
+  } else if (!existing.ssh_only && (ipChanged || portChanged || tlsChanged || userChanged || api_password || presetReplacesApiCreds)) {
     const testIp = ip_address ?? existing.ip_address;
     const testPort = api_port;
     const testUser = api_username ?? existing.api_username;
     const testPass = api_password ? api_password : decrypt(existing.api_password_encrypted);
-    const testClient = new RouterOSClient(testIp, testPort, testUser, testPass, 10_000);
+    const testClient = new RouterOSClient(testIp, testPort, testUser, testPass, 10_000, 30_000, usesApiTls({ api_port, api_tls }));
     try {
       await testClient.connect();
       testClient.disconnect();
@@ -652,9 +666,10 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
        ssh_username=CASE WHEN $13 THEN $8 ELSE COALESCE($8,ssh_username) END,
        ssh_password_encrypted=CASE WHEN $13 THEN $9 ELSE COALESCE($9,ssh_password_encrypted) END,
        device_type=COALESCE($10,device_type), notes=COALESCE($11,notes),
+       api_tls=$14,
        updated_at=NOW()
      WHERE id = $12`,
-    [name, nameLockedUpdate, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id, replaceSsh]
+    [name, nameLockedUpdate, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id, replaceSsh, api_tls]
   );
 
   // Unlocking asks to follow the router's identity again — resync promptly
@@ -725,7 +740,7 @@ router.post('/:id/check-api', requireWrite, async (req: Request, res: Response) 
   if (pollerService) await pollerService.scheduleDeviceSync(device.id, 'full');
   return res.json({
     api: true, port: check.port,
-    message: `The API answers on port ${check.port}${check.port === 8729 ? ' (api-ssl)' : ''}. ${device.name.trim()} is now managed over the API; a full sync has started.`,
+    message: `The API answers on port ${check.port}${usesApiTls({ api_port: check.port, api_tls: device.api_tls }) ? ' (api-ssl)' : ''}. ${device.name.trim()} is now managed over the API; a full sync has started.`,
   });
 });
 
@@ -902,7 +917,7 @@ router.get('/:id/vlans', async (req: Request, res: Response) => {
 // GET /api/devices/:id/ports/:name/monitor — live ethernet monitor + SFP DDM
 router.get('/:id/ports/:name/monitor', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<{ id: number; ip_address: string; api_port: number; api_username: string; api_password_encrypted: string }>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -1004,7 +1019,7 @@ router.get('/:id/ports', async (req: Request, res: Response) => {
 // GET /api/devices/:id/routing
 router.get('/:id/routing', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<{ id: number; ip_address: string; api_port: number; api_username: string; api_password_encrypted: string }>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -1022,7 +1037,7 @@ router.get('/:id/routing', async (req: Request, res: Response) => {
 // GET /api/devices/:id/firewall
 router.get('/:id/firewall', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -1580,7 +1595,7 @@ router.put('/:id/services/:serviceId', requireWrite, async (req, res) => {
   // self-lockout — and unlike other changes there is no legitimate way to do it
   // from here, so it is refused outright rather than merely guarded.
   if (req.body.disabled === true) {
-    const mgmtService = deviceRow.api_port === 8729 ? 'api-ssl' : 'api';
+    const mgmtService = managementService(deviceRow);
     const collector = new DeviceCollector(deviceRow);
     try {
       await collector.connect();
@@ -1622,7 +1637,7 @@ async function setServiceAllowedFrom(req: Request, res: Response) {
 
   const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
-  const mgmtService = deviceRow.api_port === 8729 ? 'api-ssl' : 'api';
+  const mgmtService = managementService(deviceRow);
 
   let key: 'available-from' | 'address';
   const collector = new DeviceCollector(deviceRow);
@@ -1701,7 +1716,7 @@ router.post('/:id/plain-api/off', requireWrite, async (req: Request, res: Respon
   const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
   const name = deviceRow.name.trim();
-  if (deviceRow.api_port !== 8729) {
+  if (!usesApiTls(deviceRow)) {
     return res.status(409).json({ error: `${name} is managed over the plain API. Switch it to API-SSL first; plain API can be turned off after that.` });
   }
   let serviceId: string | null = null;
@@ -1741,7 +1756,7 @@ router.post('/:id/plain-api/off', requireWrite, async (req: Request, res: Respon
 // manager's connection to it once a login over it works (outside review P1-4).
 router.post('/:id/api-ssl', requireWrite, async (req: Request, res: Response) => {
   const device = await queryOne<ApiSslDevice>(
-    `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`, [req.params.id]);
+    `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`, [req.params.id]);
   if (!device) return res.status(404).json({ error: 'Device not found' });
   try {
     const result = await enableApiSsl(device);
@@ -1788,8 +1803,8 @@ router.get('/:id/security-posture', async (req, res) => {
   }>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!device) return res.status(404).json({ error: 'Device not found' });
   // Which RouterOS service the platform uses to reach this device. Default api
-  // (8728); api-ssl is 8729. We must never offer to disable this one.
-  const mgmtService = device.api_port === 8729 ? 'api-ssl' : 'api';
+  // (8728), or api-ssl where the device uses it (8729 or as set, #257). Never offered for disabling.
+  const mgmtService = managementService(device);
   const isRouter = device.device_type === 'router';
 
   await withCollector(req.params.id, res, async (c) => {
@@ -1919,7 +1934,7 @@ router.get('/:id/security-posture', async (req, res) => {
 // GET /api/devices/:id/resources (live resource usage)
 router.get('/:id/resources', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -1937,7 +1952,7 @@ router.get('/:id/resources', async (req: Request, res: Response) => {
 // GET /api/devices/:id/system-config
 router.get('/:id/system-config', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -1955,7 +1970,7 @@ router.get('/:id/system-config', async (req: Request, res: Response) => {
 // PUT /api/devices/:id/system-config
 router.put('/:id/system-config', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -1993,7 +2008,7 @@ router.put('/:id/system-config', requireWrite, async (req: Request, res: Respons
 // GET /api/devices/:id/ip-addresses
 router.get('/:id/ip-addresses', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -2058,7 +2073,7 @@ router.delete('/:id/ip-addresses/:addrId', requireWrite, async (req: Request, re
 // POST /api/devices/:id/check-update
 router.post('/:id/check-update', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -2286,7 +2301,7 @@ router.post('/:id/install-update', requireWrite, async (req: Request, res: Respo
 // POST /api/devices/:id/check-routerboard
 router.post('/:id/check-routerboard', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -2356,7 +2371,7 @@ router.post('/:id/install-routerboard', requireWrite, async (req: Request, res: 
 // POST /api/devices/:id/reboot
 router.post('/:id/reboot', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -2374,7 +2389,7 @@ router.post('/:id/reboot', requireWrite, async (req: Request, res: Response) => 
 // GET /api/devices/:id/clock
 router.get('/:id/clock', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -2392,7 +2407,7 @@ router.get('/:id/clock', async (req: Request, res: Response) => {
 // PUT /api/devices/:id/clock
 router.put('/:id/clock', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -2816,7 +2831,7 @@ router.put('/:id/bridge/:bridgeName/vlan-filtering', requireWrite, async (req: R
 // GET /api/devices/:id/hardware (live health: temps, voltages, fans, PSU)
 router.get('/:id/hardware', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT id, ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
@@ -3257,14 +3272,14 @@ router.get('/:id/wireless/metrics', async (req: Request, res: Response) => {
 // POST /api/devices/:id/test
 router.post('/:id/test', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(
-    `SELECT ip_address, api_port, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+    `SELECT ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
 
   const client = new RouterOSClient(
     deviceRow.ip_address, deviceRow.api_port,
-    deviceRow.api_username, decrypt(deviceRow.api_password_encrypted), 8000
+    deviceRow.api_username, decrypt(deviceRow.api_password_encrypted), 8000, 30000, usesApiTls(deviceRow),
   );
   try {
     await client.connect();
@@ -3292,7 +3307,8 @@ function makeToolClient(device: DeviceRow): RouterOSClient {
     device.ip_address, device.api_port, device.api_username,
     decrypt(device.api_password_encrypted),
     15_000,   // connect timeout
-    120_000   // read timeout — traceroute/ip-scan can take a while
+    120_000,  // read timeout — traceroute/ip-scan can take a while
+    usesApiTls(device),
   );
 }
 
@@ -3582,7 +3598,7 @@ router.post('/:id/tools/btest', requireWrite, async (req: Request, res: Response
     targetUser = target.api_username;
     targetPassword = decrypt(target.api_password_encrypted);
     serverClient = new RouterOSClient(
-      target.ip_address, target.api_port, target.api_username, targetPassword, 15_000, 20_000
+      target.ip_address, target.api_port, target.api_username, targetPassword, 15_000, 20_000, usesApiTls(target),
     );
   }
 
@@ -3590,7 +3606,8 @@ router.post('/:id/tools/btest', requireWrite, async (req: Request, res: Response
     device.ip_address, device.api_port, device.api_username,
     decrypt(device.api_password_encrypted),
     15_000,
-    (testSec + 15) * 1000
+    (testSec + 15) * 1000,
+    usesApiTls(device),
   );
 
   let serverPrior: { enabled: string; authenticate: string } | null = null;

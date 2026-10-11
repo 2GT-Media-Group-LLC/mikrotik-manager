@@ -20,6 +20,7 @@
 import { query } from '../config/database';
 import { decrypt } from '../utils/crypto';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
+import { usesApiTls } from '../utils/apiTls';
 import { API_SSL_PORT } from './mikrotik/apiConnect';
 import { forgetIdentity } from './identityPins';
 import { configuredServices, allowedFrom, allowedFromKey } from '../utils/ipServices';
@@ -31,6 +32,7 @@ export interface ApiSslDevice {
   name: string;
   ip_address: string;
   api_port: number;
+  api_tls?: boolean | null;
   api_username: string;
   api_password_encrypted: string;
 }
@@ -118,12 +120,12 @@ async function tryApiSsl(device: ApiSslDevice): Promise<string | null> {
 }
 
 export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> {
-  if (device.api_port === API_SSL_PORT) {
+  if (usesApiTls(device)) {
     return { switched: false, steps: [], message: `${device.name} is already managed over API-SSL.` };
   }
   const steps: string[] = [];
   const client = new RouterOSClient(
-    device.ip_address, device.api_port, device.api_username, decrypt(device.api_password_encrypted), 15_000, 30_000);
+    device.ip_address, device.api_port, device.api_username, decrypt(device.api_password_encrypted), 15_000, 30_000, false);
   try {
     await client.connect();
     // Configured rows only: a live api-ssl session is printed as another
@@ -186,7 +188,7 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
         `the api-ssl service's "available from" list, allowing 8728 but not 8729.`,
     };
   }
-  await query(`UPDATE devices SET api_port = $1 WHERE id = $2`, [API_SSL_PORT, device.id]);
+  await query(`UPDATE devices SET api_port = $1, api_tls = NULL WHERE id = $2`, [API_SSL_PORT, device.id]);
   steps.push(`Logged in over API-SSL and moved the manager's connection to port ${API_SSL_PORT}`);
   return {
     switched: true,

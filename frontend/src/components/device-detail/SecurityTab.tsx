@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usesApiTls } from '../../utils/apiTls';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import LoadError from '../common/LoadError';
 import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell, KeyRound, Globe } from 'lucide-react';
@@ -49,7 +50,7 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
     queryKey: ['device', deviceId],
     queryFn: () => devicesApi.get(deviceId).then(r => r.data),
   });
-  const mgmtService = device?.api_port === 8729 ? 'api-ssl' : 'api';
+  const mgmtService = usesApiTls(device) ? 'api-ssl' : 'api';
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['security-posture', deviceId] });

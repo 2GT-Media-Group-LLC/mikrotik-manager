@@ -46,6 +46,58 @@ else
     echo "set \$https_port_suffix \":$HTTPS_PORT\";" > /var/cache/nginx/https-port.conf
 fi
 
+# TLS_MODE (#256): "https" (the default) redirects port 80 to HTTPS; "proxy"
+# serves the app over plain HTTP on port 80, for a reverse proxy in front that
+# terminates TLS with your own certificate.
+TLS_MODE="${TLS_MODE:-https}"
+case "$TLS_MODE" in
+    https|proxy) ;;
+    *) echo "[entrypoint] warning: TLS_MODE '$TLS_MODE' isn't https or proxy; using https"; TLS_MODE=https ;;
+esac
+if [ "$TLS_MODE" = "proxy" ]; then
+    echo 'include /etc/nginx/mtm-app.conf;' > /var/cache/nginx/http-mode.conf
+    echo "[entrypoint] TLS_MODE=proxy: serving the app over plain HTTP on port 80 for a reverse proxy."
+    echo "[entrypoint] Keep port ${HTTP_PORT:-80} reachable only by the proxy (BIND_ADDRESS, or a firewall), since logins cross it unencrypted."
+else
+    printf '%s\n' 'include /var/cache/nginx/https-port.conf;' 'return 301 https://$host$https_port_suffix$request_uri;' > /var/cache/nginx/http-mode.conf
+fi
+
+# TRUSTED_PROXIES (#256): reverse proxies whose X-Forwarded-For and
+# X-Forwarded-Proto are believed, as addresses or CIDR ranges separated by
+# commas or spaces. Anything else is ignored with a warning, so only address
+# characters can reach the nginx config. Unset, no forwarded header from
+# outside is trusted and a proxy's requests are logged as the proxy.
+TRUST_FILE=/var/cache/nginx/proxy-trust.conf
+TRUSTED=""
+for p in $(echo "${TRUSTED_PROXIES:-}" | tr ',' ' '); do
+    case "$p" in
+        *[!0-9a-fA-F:./]*) echo "[entrypoint] warning: ignoring TRUSTED_PROXIES entry '$p' (not an address or range)" ;;
+        *) TRUSTED="$TRUSTED $p" ;;
+    esac
+done
+if [ -n "$TRUSTED" ]; then
+    {
+        for p in $TRUSTED; do echo "set_real_ip_from $p;"; done
+        echo 'real_ip_header X-Forwarded-For;'
+        echo 'real_ip_recursive on;'
+        echo 'geo $realip_remote_addr $mtm_from_trusted_proxy {'
+        echo '    default 0;'
+        for p in $TRUSTED; do echo "    $p 1;"; done
+        echo '}'
+        echo 'map "$mtm_from_trusted_proxy:$http_x_forwarded_proto" $fwd_proto {'
+        echo '    default $scheme;'
+        echo '    "1:https" https;'
+        echo '    "1:http" http;'
+        echo '}'
+    } > "$TRUST_FILE"
+    echo "[entrypoint] Trusting forwarded client address and scheme from:$TRUSTED"
+else
+    echo 'map $scheme $fwd_proto { default $scheme; }' > "$TRUST_FILE"
+    if [ "$TLS_MODE" = "proxy" ]; then
+        echo "[entrypoint] warning: TLS_MODE=proxy without TRUSTED_PROXIES: every request will be logged as coming from the proxy, and per-address login limits apply to all users together. Set TRUSTED_PROXIES to the proxy's address."
+    fi
+fi
+
 # IPv6 listeners (#231), only where the kernel has IPv6: on a host booted with
 # it disabled, listening on [::] would stop nginx starting. Same test the
 # official nginx image uses.

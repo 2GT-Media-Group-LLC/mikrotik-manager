@@ -134,6 +134,51 @@ describe('createDeviceFromBody (name_locked wiring)', () => {
   });
 });
 
+/** api-ssl on a port other than 8729 (#257). */
+describe('createDeviceFromBody (API-SSL on any port)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (RouterOSClient as unknown as jest.Mock).mockImplementation(() => ({
+      connect: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn(),
+      execute: jest.fn().mockResolvedValue([]),
+    }));
+    (queryOne as jest.Mock).mockResolvedValueOnce(null);
+    (query as jest.Mock).mockResolvedValue([{ id: 50 }]);
+    (queryOne as jest.Mock).mockResolvedValueOnce({ id: 50, name: 'nat' });
+  });
+  // The refused-port case returns before reading these; don't leak them onward.
+  afterEach(() => { (queryOne as jest.Mock).mockReset(); (query as jest.Mock).mockReset(); });
+
+  const base = { name: 'nat', ip_address: '203.0.113.5', api_username: 'admin', api_password: 'secret' };
+  /** RouterOSClient(host, port, user, pass, connectMs, readMs, useTls). */
+  const ctorArgs = () => (RouterOSClient as unknown as jest.Mock).mock.calls[0];
+  const insertParams = () => (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql))![1];
+
+  it('connects with TLS on a custom port when asked, and stores the choice', async () => {
+    const result = await createDeviceFromBody({ ...base, api_port: '18729', api_tls: true }, null);
+    expect(result.ok).toBe(true);
+    expect(ctorArgs()[1]).toBe(18729);
+    expect(ctorArgs()[6]).toBe(true);
+    expect(insertParams()[insertParams().length - 1]).toBe(true);
+    expect((result as unknown as { body: { connection: { api_ssl: boolean } } }).body.connection.api_ssl).toBe(true);
+  });
+
+  it('keeps the old rule without a choice: plain on a custom port, nothing stored', async () => {
+    await createDeviceFromBody({ ...base, api_port: 18728 }, null);
+    expect(ctorArgs()[6]).toBe(false);
+    expect(insertParams()[insertParams().length - 1]).toBeNull();
+  });
+
+  it('refuses a port out of range before connecting', async () => {
+    for (const api_port of ['-1', '70000', '0']) {
+      const result = await createDeviceFromBody({ ...base, api_port }, null);
+      expect(result).toMatchObject({ ok: false, status: 400 });
+    }
+    expect(RouterOSClient).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * Admin-only credential presets. The bulk-add worker used to pass no role, and
  * the check only stopped callers whose role was exactly "operator", so a bulk

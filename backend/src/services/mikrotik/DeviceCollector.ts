@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
 import { RouterOSClient, RouterOSTrapError } from './RouterOSClient';
+import { usesApiTls } from '../../utils/apiTls';
 import { query, queryOne } from '../../config/database';
 import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
@@ -159,6 +160,7 @@ export interface DeviceRow {
   name_locked?: boolean;
   ip_address: string;
   api_port: number;
+  api_tls?: boolean | null;
   ssh_port?: number;
   api_username: string;
   api_password_encrypted: string;
@@ -198,7 +200,10 @@ export class DeviceCollector {
       device.ip_address,
       device.api_port,
       device.api_username,
-      decrypt(device.api_password_encrypted)
+      decrypt(device.api_password_encrypted),
+      15000,
+      30000,
+      usesApiTls(device),
     );
     // Lets the poller cancel this session if its job runs out of time.
     registerPollSession(this);

@@ -18,6 +18,7 @@ import {
   generateDeviceKeyPair, keyFileName, keyComment, isUsablePrivateKey, keyTypeForVersion, importRejection, type KeyStatus,
 } from '../utils/sshKeys';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
+import { usesApiTls } from '../utils/apiTls';
 import { resolveKeyCredentials } from '../utils/sshKeyCredentials';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
 
@@ -26,7 +27,7 @@ const CONNECT_TIMEOUT_MS = 20_000;
 /** The device columns an SshTarget needs. */
 export const SSH_TARGET_COLS =
   `id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
-   api_port, api_username, api_password_encrypted`;
+   api_port, api_tls, api_username, api_password_encrypted`;
 
 export interface SshTarget {
   id: number;
@@ -37,6 +38,7 @@ export interface SshTarget {
   ssh_password_encrypted: string | null;
   /** The binary API is the recovery path: it is unaffected by SSH key state. */
   api_port: number | null;
+  api_tls?: boolean | null;
   api_username: string | null;
   api_password_encrypted: string | null;
 }
@@ -135,6 +137,7 @@ export class SshKeyService {
     const client = new RouterOSClient(
       target.ip_address, target.api_port ?? 8728,
       target.api_username, decrypt(target.api_password_encrypted),
+      15000, 30000, usesApiTls(target),
     );
     // RouterOS keeps the key comment in `info`, not `key-owner` — matching the
     // latter silently matched nothing and left every rotation's old key behind.
@@ -196,6 +199,7 @@ export class SshKeyService {
     const client = new RouterOSClient(
       target.ip_address, target.api_port ?? 8728,
       target.api_username, decrypt(target.api_password_encrypted),
+      15000, 30000, usesApiTls(target),
     );
     try {
       await client.connect();
@@ -330,6 +334,7 @@ export class SshKeyService {
     const client = new RouterOSClient(
       target.ip_address, target.api_port ?? 8728,
       target.api_username, decrypt(target.api_password_encrypted),
+      15000, 30000, usesApiTls(target),
     );
     try {
       await client.connect();

@@ -21,6 +21,7 @@
  */
 import { isIP } from 'net';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
+import { usesApiTls } from '../../utils/apiTls';
 import { decrypt } from '../../utils/crypto';
 import { expandVlanIds } from '../../utils/vlan';
 import type { GuardDevice } from './ChangeGuard';
@@ -140,7 +141,8 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
     device.api_username,
     decrypt(device.api_password_encrypted),
     15_000,
-    30_000
+    30_000,
+    usesApiTls(device),
   );
   try {
     await client.connect();

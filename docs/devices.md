@@ -27,6 +27,13 @@ given. The plain API sends the login unencrypted on every poll, so a device that
 8728 is listed on the [Security page](security.md#encrypted-management-api-ssl), where it
 can be switched over. Choosing 8728 for a public address still shows a warning.
 
+When you enter a port, an **API-SSL (encrypted)** box appears under it. It is ticked for 8729
+and clear for any other port. Tick it when api-ssl runs on another port: a port forwarded
+through NAT to reach several devices behind one address, say, or a network where 8729 is
+blocked (#257). The box is in Edit Device too. Before 0.46.0, any port other than 8729 was
+taken to be the plain API, and the device logged TLS errors. Ports outside 1–65535 are
+refused.
+
 ### Devices without the API enabled (SSH only)
 
 Many fleets start with the RouterOS API services (`api`, `api-ssl`) turned off. Tick **The API
@@ -144,6 +151,8 @@ closed browser tab and reports progress and failures per device.
 | `type` | Optional | `router`, `switch`, `ap` or `other`. Blank means router |
 | `preset` | Login | The name of a saved [credential preset](#device-credentials) |
 | `username`, `password` | Login | The RouterOS login, if not using a preset |
+| `port` | Optional | The API port. Blank tries API-SSL (8729), then 8728 |
+| `api_ssl` | Optional | `yes` when `port` runs api-ssl on a port other than 8729, `no` for the plain API on 8729 |
 | `ssh_username`, `ssh_password` | Optional | Only if SSH uses a different login. Blank uses the one above |
 | `ssh_only` | Optional | `yes` when the API isn't enabled yet; see [SSH only](#devices-without-the-api-enabled-ssh-only) |
 | `tags` | Optional | Existing tags. Create them under Settings → Tags first |
@@ -198,7 +207,8 @@ name, address, serial and MAC.
 
 Two columns show how the manager reaches each device, and each has a filter:
 
-- **API**: **SSL** for API-SSL (8729), **PLAIN** for the unencrypted API (8728). See
+- **API**: **SSL** for API-SSL (8729, or another port set to API-SSL), **PLAIN** for the
+  unencrypted API (8728). See
   [Encrypted management](security.md#encrypted-management-api-ssl).
 - **Login**: **PW** when the manager has only the password, **PW+KEY** when it also has a
   verified [SSH key](ssh-keys.md) (SSH then uses the key), **KEY** for a key without a password.

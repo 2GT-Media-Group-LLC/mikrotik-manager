@@ -255,6 +255,8 @@ export interface BulkAddDeviceItem {
   api_username?: string;
   api_password?: string;
   api_port?: number;
+  /** The API port runs api-ssl (#257); unset, the port decides (TLS on 8729). */
+  api_tls?: boolean;
   ssh_username?: string;
   ssh_password?: string;
   ssh_port?: number;

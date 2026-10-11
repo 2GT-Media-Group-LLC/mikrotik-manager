@@ -2,6 +2,7 @@ import { query, queryOne } from '../config/database';
 import { decrypt } from '../utils/crypto';
 import { logSafe } from '../utils/logSafe';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
+import { usesApiTls } from '../utils/apiTls';
 import { createDeviceFromBody } from './deviceCreation';
 import type { PollerService } from './PollerService';
 import {
@@ -115,7 +116,7 @@ export class DeviceAdoptionService {
   /** Free/in-use verdict for one address, seen from a managed device. */
   async checkAddress(jumpHostId: number, address: string): Promise<{ free: boolean; reason?: string }> {
     const jump = await queryOne<DeviceRow>(
-      `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted
+      `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted
          FROM devices WHERE id = $1`, [jumpHostId]
     );
     if (!jump) return { free: false, reason: 'jump host not found' };
@@ -133,7 +134,7 @@ export class DeviceAdoptionService {
   /** Remove temporary addresses a previous run failed to clean up. */
   async cleanupOrphans(): Promise<number> {
     const devices = await query<DeviceRow>(
-      `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted FROM devices`
+      `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices`
     );
     let removed = 0;
     for (const d of devices) {
@@ -177,7 +178,7 @@ export class DeviceAdoptionService {
     }
 
     const jump = await queryOne<DeviceRow>(
-      `SELECT id, name, ip_address, api_port, api_username, api_password_encrypted
+      `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted
          FROM devices WHERE id = $1`, [req.jumpHostId]
     );
     if (!jump) return { ok: false, steps, error: 'Jump host not found' };
@@ -552,7 +553,7 @@ export class DeviceAdoptionService {
   private async connect(d: DeviceRow): Promise<RouterOSClient> {
     const c = new RouterOSClient(
       d.ip_address, d.api_port || 8728, d.api_username,
-      decrypt(d.api_password_encrypted), 15000
+      decrypt(d.api_password_encrypted), 15000, 30000, usesApiTls(d),
     );
     await c.connect();
     return c;
@@ -564,6 +565,7 @@ interface DeviceRow {
   name: string;
   ip_address: string;
   api_port: number;
+  api_tls?: boolean | null;
   api_username: string;
   api_password_encrypted: string;
 }

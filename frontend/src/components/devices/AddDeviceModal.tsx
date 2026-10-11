@@ -8,6 +8,7 @@ import {
 } from '../../services/api';
 import ConfirmDuplicateModal from './ConfirmDuplicateModal';
 import { parsePort } from '../../utils/parsePort';
+import { API_SSL_PORT, portFieldError } from '../../utils/apiTls';
 import { isValidDeviceAddress, classifyAddress, addressFieldValue } from '../../utils/deviceAddress';
 import { useSitePresets } from '../../hooks/useSitePresets';
 
@@ -46,6 +47,9 @@ export default function AddDeviceModal({
   const [presetId, setPresetId] = useState<number | null>(null);
   // The API isn't enabled on the device yet (#174): add it over SSH.
   const [sshOnly, setSshOnly] = useState(false);
+  // api-ssl on a port of the user's choosing (#257). Null follows the port:
+  // ticked for 8729, unticked otherwise, until the user changes it.
+  const [apiSslChoice, setApiSslChoice] = useState<boolean | null>(null);
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -78,10 +82,12 @@ export default function AddDeviceModal({
   // Plaintext RouterOS API (port 8728) sending credentials over the internet
   // is worth a nudge; a LAN address or an already-TLS port (8729) is not.
   // Left blank, API-SSL is tried first, so only a chosen plain port is flagged.
+  const portGiven = form.api_port.trim() !== '';
+  const apiSsl = apiSslChoice ?? parsePort(form.api_port, 8728) === API_SSL_PORT;
   const showPlaintextWarning =
     addressTrimmed.length > 0 && !addressInvalid &&
     classifyAddress(addressTrimmed) !== 'private' &&
-    form.api_port.trim() !== '' && parsePort(form.api_port, 8728) !== 8729;
+    portGiven && !apiSsl;
 
   const createPayload = (
     opts: { combineWithDeviceId?: number; forceReplace?: boolean } = {}
@@ -106,7 +112,8 @@ export default function AddDeviceModal({
       name: form.name,
       ip_address: form.ip_address,
       // SSH only: one login, used for SSH now and tried on the API later.
-      api_port: sshOnly || form.api_port.trim() === '' ? undefined : parsePort(form.api_port, 8728),
+      api_port: sshOnly || !portGiven ? undefined : parsePort(form.api_port, 8728),
+      ...(!sshOnly && portGiven ? { api_tls: apiSsl } : {}),
       api_username: form.api_username,
       api_password: form.api_password,
       ssh_port: parsePort(form.ssh_port, 22),
@@ -130,6 +137,12 @@ export default function AddDeviceModal({
     }
     if (!selectedPreset && (!form.api_username || !form.api_password)) {
       setError('Either pick a credential preset or enter username and password');
+      return;
+    }
+    const portError = selectedPreset ? null
+      : portFieldError(form.api_port, 'API port') ?? portFieldError(form.ssh_port, 'SSH port');
+    if (portError) {
+      setError(portError);
       return;
     }
 
@@ -303,6 +316,8 @@ export default function AddDeviceModal({
                       <input
                         className="input"
                         type="number"
+                        min={1}
+                        max={65535}
                         value={form.ssh_port}
                         onChange={(e) => set('ssh_port', e.target.value)}
                         placeholder="22"
@@ -314,11 +329,21 @@ export default function AddDeviceModal({
                     <input
                       className="input"
                       type="number"
+                      min={1}
+                      max={65535}
                       value={form.api_port}
                       onChange={(e) => set('api_port', e.target.value)}
                       placeholder="Auto"
                     />
-                    <p className="text-[11px] text-gray-400 mt-1">Blank tries API-SSL (8729), then 8728.</p>
+                    {portGiven ? (
+                      <label className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-slate-200 mt-1.5 cursor-pointer"
+                        title="Tick when this port runs api-ssl, for example a forwarded port behind NAT">
+                        <input type="checkbox" className="w-3.5 h-3.5 rounded" checked={apiSsl} onChange={(e) => setApiSslChoice(e.target.checked)} />
+                        API-SSL (encrypted)
+                      </label>
+                    ) : (
+                      <p className="text-[11px] text-gray-400 mt-1">Blank tries API-SSL (8729), then 8728.</p>
+                    )}
                   </div>
                   )}
                   <div className="col-span-2">
@@ -360,6 +385,8 @@ export default function AddDeviceModal({
                       <input
                         className="input"
                         type="number"
+                        min={1}
+                        max={65535}
                         value={form.ssh_port}
                         onChange={(e) => set('ssh_port', e.target.value)}
                         placeholder="22"

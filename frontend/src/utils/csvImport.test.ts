@@ -221,3 +221,23 @@ describe('ssh_only column (#174)', () => {
     expect(parsed.rows.every((row) => row.errors.length === 0)).toBe(true);
   });
 });
+
+describe('api_ssl column (#257)', () => {
+  it('marks a custom port as api-ssl, and leaves it unset when blank', () => {
+    const r = parseDeviceCsv(
+      'ip,username,password,port,api_ssl\n'
+      + '203.0.113.5,admin,a,18729,yes\n'
+      + '203.0.113.6,admin,a,18730,\n'
+      + '203.0.113.7,admin,a,8729,no\n',
+      presets,
+    );
+    expect(r.rows[0].item).toMatchObject({ api_port: 18729, api_tls: true });
+    expect(r.rows[1].item?.api_tls).toBeUndefined();
+    expect(r.rows[2].item).toMatchObject({ api_port: 8729, api_tls: false });
+  });
+  it('refuses a value it cannot read, and a port out of range', () => {
+    const r = parseDeviceCsv('ip,username,password,port,api_ssl\n10.0.0.1,admin,a,8729,maybe\n10.0.0.2,admin,a,70000,\n', presets);
+    expect(r.rows[0].errors.join(' ')).toMatch(/api_ssl/);
+    expect(r.rows[1].errors.join(' ')).toMatch(/Port/);
+  });
+});

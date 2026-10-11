@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { usesApiTls } from '../utils/apiTls';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -90,7 +91,7 @@ function LoadSparkline({ data }: { data: number[] }) {
 /** How the manager reaches a device (#199). */
 type LoginKind = 'password' | 'key' | 'both';
 // SSH only (#174): added before its API was enabled.
-const apiKind = (d: Device): 'ssl' | 'plain' | 'ssh' => (d.ssh_only ? 'ssh' : d.api_port === 8729 ? 'ssl' : 'plain');
+const apiKind = (d: Device): 'ssl' | 'plain' | 'ssh' => (d.ssh_only ? 'ssh' : usesApiTls(d) ? 'ssl' : 'plain');
 /** Stored password, verified SSH key, or both. */
 const loginKind = (d: Device): LoginKind =>
   d.has_ssh_key ? (d.has_password === false ? 'key' : 'both') : 'password';
@@ -606,7 +607,7 @@ export default function DevicesPage() {
                           ? <span className="mono text-[11px]" style={{ color: 'var(--warn)' }}
                               title={`Added over SSH only: the API isn't enabled yet.${device.api_check_error ? ` ${device.api_check_error}` : ''}`}>SSH ONLY</span>
                           : apiKind(device) === 'ssl'
-                          ? <span className="mono text-[11px]" style={{ color: 'var(--ok, #16a34a)' }} title="Managed over API-SSL (8729)">SSL</span>
+                          ? <span className="mono text-[11px]" style={{ color: 'var(--ok, #16a34a)' }} title={`Managed over API-SSL (port ${device.api_port})`}>SSL</span>
                           : <span className="mono text-[11px]" style={{ color: 'var(--warn)' }} title="Managed over the plain, unencrypted API">PLAIN</span>}
                       </td>
                       <td className="px-4 py-[12px]">

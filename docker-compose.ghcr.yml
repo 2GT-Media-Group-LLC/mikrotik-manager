@@ -29,6 +29,11 @@ services:
     environment:
       # The redirect from HTTP keeps a non-default HTTPS port (outside review O5).
       HTTPS_PORT: ${HTTPS_PORT:-443}
+      # Behind your own reverse proxy that terminates TLS (#256): TLS_MODE=proxy
+      # serves the app over plain HTTP on HTTP_PORT, and TRUSTED_PROXIES names the
+      # proxy (address or CIDR) whose X-Forwarded-For / -Proto are believed.
+      TLS_MODE: ${TLS_MODE:-https}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     volumes:
       - certs_data:/certs
     depends_on:

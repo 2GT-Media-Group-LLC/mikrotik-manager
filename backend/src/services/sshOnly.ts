@@ -12,6 +12,7 @@ import { fit } from '../utils/fit';
 import { logSafe } from '../utils/logSafe';
 import { runSshCommand, type SshExecDevice } from './sshExec';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
+import { usesApiTls } from '../utils/apiTls';
 import { connectPreferringSsl, API_PORT, API_SSL_PORT } from './mikrotik/apiConnect';
 import { pinIdentity } from './identityPins';
 import {
@@ -21,6 +22,7 @@ import {
 
 export interface SshOnlyDevice extends SshExecDevice {
   api_port: number;
+  api_tls?: boolean | null;
   api_username: string;
   api_password_encrypted: string;
   name_locked?: boolean;
@@ -45,7 +47,7 @@ export type ApiCheck =
 
 /**
  * Can the manager log in to the API now? Tries API-SSL then the plain API,
- * unless the device was given another port. Short timeouts: on a fleet where
+ * unless the device was given another port or an explicit API-SSL choice. Short timeouts: on a fleet where
  * the API is firewalled every attempt waits the full time.
  */
 export async function checkApi(device: SshOnlyDevice): Promise<ApiCheck> {
@@ -53,8 +55,9 @@ export async function checkApi(device: SshOnlyDevice): Promise<ApiCheck> {
   let client: RouterOSClient | undefined;
   try {
     let port: number;
-    if (device.api_port && device.api_port !== API_PORT && device.api_port !== API_SSL_PORT) {
-      client = new RouterOSClient(device.ip_address, device.api_port, device.api_username, password, 6_000);
+    // A port of its own, or an explicit API-SSL choice (#257), is used as given.
+    if (device.api_port && (typeof device.api_tls === 'boolean' || (device.api_port !== API_PORT && device.api_port !== API_SSL_PORT))) {
+      client = new RouterOSClient(device.ip_address, device.api_port, device.api_username, password, 6_000, 30_000, usesApiTls(device));
       await client.connect();
       port = device.api_port;
     } else {

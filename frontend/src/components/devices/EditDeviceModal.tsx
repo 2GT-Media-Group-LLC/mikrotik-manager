@@ -4,6 +4,7 @@ import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network, RotateCcw
 import { devicesApi } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
+import { API_SSL_PORT, portFieldError } from '../../utils/apiTls';
 import { isValidDeviceAddress, classifyAddress, addressFieldValue, sameAddress } from '../../utils/deviceAddress';
 import type { Device, DeviceType, IpAddress } from '../../types';
 
@@ -49,6 +50,11 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  // api-ssl on this port (#257). Null follows the port (TLS on 8729) until
+  // the user ticks or unticks it, and is then sent with the save.
+  const [apiSslChoice, setApiSslChoice] = useState<boolean | null>(
+    typeof device.api_tls === 'boolean' ? device.api_tls : null);
+  const apiSsl = apiSslChoice ?? parsePort(form.api_port, 8728) === API_SSL_PORT;
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -86,7 +92,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   const showPlaintextWarning =
     addressTrimmed.length > 0 && !addressInvalid &&
     classifyAddress(addressTrimmed) !== 'private' &&
-    parsePort(form.api_port, 8728) !== 8729;
+    !apiSsl;
 
   // Live IPs from the router itself — useful so you can change the
   // management IP to something the device actually owns instead of guessing.
@@ -129,6 +135,11 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
       setError(`"${addressTrimmed}" is not a valid IP address or hostname`);
       return;
     }
+    const portError = portFieldError(form.api_port, 'API port') ?? portFieldError(form.ssh_port, 'SSH port');
+    if (portError) {
+      setError(portError);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -142,6 +153,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
         device_type: form.device_type as DeviceType,
         notes: form.notes,
       };
+      if (apiSslChoice !== null) payload.api_tls = apiSslChoice;
       if (form.api_password) payload.api_password = form.api_password;
       if (form.ssh_password) payload.ssh_password = form.ssh_password;
       await devicesApi.update(device.id, payload);
@@ -318,9 +330,16 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                 <input
                   className="input"
                   type="number"
+                  min={1}
+                  max={65535}
                   value={form.api_port}
                   onChange={(e) => set('api_port', e.target.value)}
                 />
+                <label className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-slate-200 mt-1.5 cursor-pointer"
+                  title="Tick when this port runs api-ssl, for example a forwarded port behind NAT">
+                  <input type="checkbox" className="w-3.5 h-3.5 rounded" checked={apiSsl} onChange={(e) => setApiSslChoice(e.target.checked)} />
+                  API-SSL (encrypted)
+                </label>
               </div>
               <div className="col-span-2">
                 <label className="label">
@@ -359,6 +378,8 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                 <input
                   className="input"
                   type="number"
+                  min={1}
+                  max={65535}
                   value={form.ssh_port}
                   onChange={(e) => set('ssh_port', e.target.value)}
                 />

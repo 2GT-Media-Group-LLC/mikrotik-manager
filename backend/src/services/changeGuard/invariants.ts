@@ -16,6 +16,7 @@
 import { evaluateInputChain } from './firewallPath';
 import { vlanMembership, type DeviceSnapshot, type ManagementPath } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
+import { managementService } from '../../utils/apiTls';
 
 export interface InvariantResult {
   ok: boolean;
@@ -334,7 +335,7 @@ export const INVARIANTS: Invariant[] = [
     id: 'mgmt-service-open',
     title: 'The API service the manager uses stays enabled on its port',
     check(snap, path, device) {
-      const wanted = device.api_port === 8729 ? 'api-ssl' : 'api';
+      const wanted = managementService(device);
       const svc = snap.services.find((s) => s['name'] === wanted);
       if (!svc) return ok();
       if (isTrue(svc['disabled'])) {

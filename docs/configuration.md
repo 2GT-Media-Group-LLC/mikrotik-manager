@@ -18,10 +18,12 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `INFLUXDB_ADMIN_PASSWORD` | `admin_password_123` | InfluxDB admin UI password |
 | `REDIS_PASSWORD` | *none* | Makes Redis require a password. Can be set or changed at any time |
 | `PASSWORD_LOGIN` | `true` | `false` makes sign-in SSO-only. See [SSO-only sign-in](sso-oidc.md#behaviour-and-safety) |
-| `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS) |
+| `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS, or serves the app with `TLS_MODE=proxy`) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
+| `TLS_MODE` | `https` | `proxy` when your own reverse proxy terminates TLS. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
+| `TRUSTED_PROXIES` | *none* | Your reverse proxy's address or range, so the client address it forwards is believed. |
 
 > Never commit `.env`. It is already listed in `.gitignore`.
 
@@ -278,6 +280,82 @@ redirects HTTP to HTTPS.
 Before 0.24.37 both failed with "permission denied": the certificate volume was owned by
 root and the backend runs as a normal user. The nginx container now hands the volume to the
 backend user (uid 100, gid 101) at every start, which also fixes existing installs.
+
+## Behind a reverse proxy
+
+If you already run a reverse proxy (Nginx Proxy Manager, Traefik, Caddy, HAProxy) that holds
+your certificates, let it terminate TLS and hand plain HTTP to the manager (#256). Set in
+`.env`:
+
+```
+TLS_MODE=proxy
+TRUSTED_PROXIES=10.0.0.5
+CORS_ORIGIN=https://mtm.example.com
+```
+
+Then `docker compose up -d`.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `TLS_MODE` | `https` | `proxy` serves the app over plain HTTP on `HTTP_PORT` instead of redirecting it to HTTPS. HTTPS on `HTTPS_PORT` keeps working with the manager's own certificate. |
+| `TRUSTED_PROXIES` | *none* | Your proxy's address or range (CIDR), comma-separated, IPv4 or IPv6. Only requests from these addresses may say who the client is (`X-Forwarded-For`) and that the browser used HTTPS (`X-Forwarded-Proto`). |
+| `CORS_ORIGIN` | | The address people type in the browser, as the proxy serves it. The browser sends it with every request, and the API refuses origins not on the list. |
+
+Point the proxy at `http://<manager host>:<HTTP_PORT>`, and turn on WebSocket support: live
+updates and the device terminal run over `/socket.io/`.
+
+**Keep the plain HTTP port for the proxy only.** Anyone else who can reach it talks to the
+manager unencrypted. If the proxy runs on the same host, `BIND_ADDRESS=127.0.0.1` keeps both
+ports off the network; otherwise use one of the options in
+[Network exposure](#network-exposure).
+
+**Why `TRUSTED_PROXIES` matters.** Without it every request appears to come from the proxy:
+the audit log shows the proxy's address, and the per-address limit on sign-in attempts counts
+all your users as one, so a busy morning or a few typos can stop everyone signing in for a
+while. Headers from anyone
+else are ignored, so a client can't claim to be somewhere else by sending its own
+`X-Forwarded-For`. The nginx container logs a warning at start if `TLS_MODE=proxy` is set
+without it.
+
+Not sure which address the proxy arrives from? Leave `TRUSTED_PROXIES` unset, sign in once
+through the proxy, and look at the **IP** column of the newest entry under **Settings →
+Audit Log**. A proxy on the same host usually arrives from the Docker network's gateway
+(such as `172.18.0.1`), not `127.0.0.1`.
+
+**A proxy in Docker** can join the manager's network instead of going through a published
+port. Its upstream is then `http://nginx:80`, and `TRUSTED_PROXIES` is the proxy container's
+address, or the network's range such as `172.18.0.0/16`.
+
+**SSO** builds its redirect address from the host and scheme the proxy forwards, so it works
+as long as `TRUSTED_PROXIES` is right. If your provider still rejects the callback, set
+**Public base URL** in the SSO settings (see [SSO](sso-oidc.md)).
+
+### Examples
+
+Nginx Proxy Manager: a proxy host with scheme `http`, the manager's address and `HTTP_PORT`,
+**Websockets Support** on, and your certificate on the SSL tab.
+
+Caddy:
+
+```
+mtm.example.com {
+    reverse_proxy 10.0.0.20:80
+}
+```
+
+Traefik, with the manager's nginx service on Traefik's network:
+
+```yaml
+labels:
+  - traefik.enable=true
+  - traefik.http.routers.mtm.rule=Host(`mtm.example.com`)
+  - traefik.http.routers.mtm.entrypoints=websecure
+  - traefik.http.routers.mtm.tls=true
+  - traefik.http.services.mtm.loadbalancer.server.port=80
+```
+
+Caddy and Traefik send `X-Forwarded-For` and `X-Forwarded-Proto` and pass WebSockets through
+by default.
 
 ## Updating and image versions
 

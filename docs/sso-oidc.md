@@ -95,6 +95,7 @@ password, so the app refuses to turn SSO off, or to point it at a different prov
 that session: it would lock them out at their next sign-in. Make that change from a local
 admin account.
 
-**Behind a reverse proxy.** The redirect URI is derived from the request host. If your
-external URL differs from what the backend sees — a proxy, a custom domain, a tunnel —
+**Behind a reverse proxy.** The redirect URI is derived from the host and scheme of the
+request. Behind a proxy set up as in [Behind a reverse proxy](configuration.md#behind-a-reverse-proxy)
+that is your external URL. If it still differs (a tunnel, a proxy that rewrites the host),
 set **Public base URL** to pin it, or the provider will reject the callback.

@@ -23,6 +23,7 @@
  */
 import { randomBytes } from 'crypto';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
+import { usesApiTls } from '../../utils/apiTls';
 import { decrypt } from '../../utils/crypto';
 import { query, queryOne } from '../../config/database';
 import { redis } from '../../config/redis';
@@ -35,6 +36,7 @@ export interface GuardDevice {
   name: string;
   ip_address: string;
   api_port: number;
+  api_tls?: boolean | null;
   api_username: string;
   api_password_encrypted: string;
 }
@@ -94,7 +96,8 @@ function newClient(device: GuardDevice, connectTimeoutMs = 15_000): RouterOSClie
     device.api_username,
     decrypt(device.api_password_encrypted),
     connectTimeoutMs,
-    30_000
+    30_000,
+    usesApiTls(device),
   );
 }
 

@@ -80,6 +80,8 @@ export interface Device {
   api_check_error?: string | null;
   ip_address: string;
   api_port: number;
+  /** api-ssl on this port (#257). Null: TLS exactly when the port is 8729. */
+  api_tls?: boolean | null;
   api_username: string;
   ssh_port?: number;
   ssh_username?: string;

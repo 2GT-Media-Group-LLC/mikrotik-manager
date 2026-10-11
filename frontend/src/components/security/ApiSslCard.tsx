@@ -6,8 +6,8 @@ import { useCanWrite } from '../../hooks/useCanWrite';
 import type { Device } from '../../types';
 import clsx from 'clsx';
 import { unmutedForApiSslNotice } from '../../utils/apiSslNotice';
+import { usesApiTls } from '../../utils/apiTls';
 
-const API_SSL_PORT = 8729;
 
 type Outcome = { state: 'working' } | { state: 'done'; result: ApiSslResult; plainApi?: { ok: boolean; message: string } } | { state: 'error'; message: string };
 
@@ -39,7 +39,7 @@ export default function ApiSslCard() {
     queryFn: () => devicesApi.listSecuritySuppressions().then((r) => r.data),
   });
   const { mutedFleetWide, devices: all } = unmutedForApiSslNotice(devices as Device[], suppressions);
-  const plain = all.filter((d) => d.api_port !== API_SSL_PORT);
+  const plain = all.filter((d) => !usesApiTls(d));
 
   const switchOne = async (d: Device): Promise<void> => {
     setOutcomes((o) => ({ ...o, [d.id]: { state: 'working' } }));
@@ -83,7 +83,7 @@ export default function ApiSslCard() {
 
   // Devices switched in this visit stay listed with their outcome until the
   // list refreshes, so the result can be read.
-  const shown = all.filter((d) => d.api_port !== API_SSL_PORT || outcomes[d.id]);
+  const shown = all.filter((d) => !usesApiTls(d) || outcomes[d.id]);
   const [expanded, setExpanded] = useState(false);
 
   // Only a prompt to act: nothing is shown while every device is on API-SSL,

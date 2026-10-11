@@ -31,6 +31,8 @@ const COLUMNS: Record<string, keyof RowFields> = {
   username: 'api_username', user: 'api_username', api_username: 'api_username',
   password: 'api_password', api_password: 'api_password',
   port: 'api_port', api_port: 'api_port',
+  // The port runs api-ssl (#257). Only needed on a port other than 8729.
+  api_ssl: 'api_ssl', ssl: 'api_ssl', api_tls: 'api_ssl', tls: 'api_ssl',
   // SSH is optional. Left blank, SSH (backups, bulk commands, key deployment)
   // uses the API username and password, which is the usual case.
   ssh_username: 'ssh_username', ssh_user: 'ssh_username',
@@ -51,6 +53,7 @@ interface RowFields {
   api_username?: string;
   api_password?: string;
   api_port?: string;
+  api_ssl?: string;
   ssh_username?: string;
   ssh_password?: string;
   ssh_port?: string;
@@ -237,6 +240,13 @@ export function parseDeviceCsv(
       else if (!/^(no|n|false|0|-)$/i.test(f.ssh_only)) errors.push(`ssh_only "${f.ssh_only}" should be yes or no.`);
     }
 
+    let apiSsl: boolean | undefined;
+    if (f.api_ssl) {
+      if (/^(yes|y|true|1|x|ssl|tls|api[-_ ]?ssl)$/i.test(f.api_ssl)) apiSsl = true;
+      else if (/^(no|n|false|0|-|plain|api)$/i.test(f.api_ssl)) apiSsl = false;
+      else errors.push(`api_ssl "${f.api_ssl}" should be yes or no.`);
+    }
+
     let presetId: number | undefined;
     if (f.credential_preset) {
       presetId = presetByName.get(f.credential_preset.trim().toLowerCase());
@@ -286,6 +296,7 @@ export function parseDeviceCsv(
         api_username: f.api_username, api_password: f.api_password,
       }),
       ...(port ? { api_port: port } : {}),
+      ...(apiSsl !== undefined ? { api_tls: apiSsl } : {}),
       ...(presetId === undefined && hasSsh ? { ssh_username: f.ssh_username, ssh_password: f.ssh_password } : {}),
       ...(presetId === undefined && sshPort ? { ssh_port: sshPort } : {}),
       ...(tagIds.length ? { tag_ids: tagIds } : {}),

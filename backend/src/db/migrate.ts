@@ -1416,6 +1416,10 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS ssh_only BOOLEAN NOT NULL DEFAULT F
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS api_checked_at TIMESTAMPTZ;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS api_check_error TEXT;
 
+-- api-ssl on a port other than 8729 (#257): behind NAT, or where 8729 is
+-- blocked. NULL keeps the old rule, TLS exactly when the port is 8729.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS api_tls BOOLEAN;
+
 -- RouterOS release notes, read for the CVEs they name (discussion #85). NVD can
 -- take weeks to give a new CVE its affected versions; MikroTik's notes say which
 -- release fixed it at once. A release's notes never change, so found ones are
