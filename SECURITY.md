@@ -48,6 +48,11 @@ and report what they found.
   with certificate and host-key pinning, Change Guard refusing what it can't protect, honest
   restore results and signed, digest-pinned images, among much else. Novus Insight supports
   schools, municipalities and non-profit organizations, and runs MikroTik throughout.
+- **Artur Chlebicki ([@Artur12555](https://github.com/Artur12555))** found that a user limited
+  to one site could reach devices on other sites through the way device ids were read from the
+  request path
+  ([GHSA-6xq3-q9m5-7hxp](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-6xq3-q9m5-7hxp)).
+  Fixed in 0.45.1.
 
 ## Security Considerations for Self-Hosted Deployments
 
