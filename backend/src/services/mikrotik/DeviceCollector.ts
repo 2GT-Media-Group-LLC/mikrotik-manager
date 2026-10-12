@@ -92,6 +92,14 @@ import { probeUserManager, USER_MANAGER_RECHECK_MS } from '../userManager';
 import { poolSize, usedPerPool } from '../../utils/dhcpPools';
 import { recordOptics } from '../opticLevels';
 
+/** The device tables the bridge-port checks read (#258). */
+export interface BridgeState {
+  bridgePorts: Record<string, string>[]; interfaces: Record<string, string>[];
+  bridgeVlans: Record<string, string>[]; addresses: Record<string, string>[];
+  dhcpClients: Record<string, string>[]; vlanInterfaces: Record<string, string>[];
+  dhcpServers: Record<string, string>[];
+}
+
 /** How long to look for the hardware-offload flag where it is expected after a bridge move. */
 const OFFLOAD_WAIT_MS = 12_000;
 
@@ -2981,21 +2989,24 @@ export class DeviceCollector {
 
   // ─── Bridge membership for any port (#258) ─────────────────────────────────
 
-  /** Everything the bridge-port checks read, in one round of queries. */
-  async readBridgeState(): Promise<{
-    bridgePorts: Record<string, string>[]; interfaces: Record<string, string>[];
-    bridgeVlans: Record<string, string>[]; addresses: Record<string, string>[];
-    dhcpClients: Record<string, string>[]; vlanInterfaces: Record<string, string>[];
-    dhcpServers: Record<string, string>[];
-  }> {
+  /**
+   * Everything the bridge-port checks read, in one round of queries, asking
+   * only for the properties they use. A full print of every port and
+   * interface, status and counters included, took a CRS112 nine seconds
+   * (#258). The VLAN-interface and DHCP-server tables only matter for
+   * deleting a bridge.
+   */
+  async readBridgeState(opts: { forDelete?: boolean } = {}): Promise<BridgeState> {
+    const none = [] as Record<string, string>[];
+    const pl = (props: string) => ({ '.proplist': props });
     const [bridgePorts, interfaces, bridgeVlans, addresses, dhcpClients, vlanInterfaces, dhcpServers] = await Promise.all([
-      this.client.execute('/interface/bridge/port/print', { detail: '' }),
-      this.client.execute('/interface/print'),
-      this.client.execute('/interface/bridge/vlan/print'),
-      this.client.execute('/ip/address/print'),
-      this.client.execute('/ip/dhcp-client/print').catch(() => [] as Record<string, string>[]),
-      this.client.execute('/interface/vlan/print').catch(() => [] as Record<string, string>[]),
-      this.client.execute('/ip/dhcp-server/print').catch(() => [] as Record<string, string>[]),
+      this.client.execute('/interface/bridge/port/print', pl('.id,interface,bridge,dynamic,hw-offload')),
+      this.client.execute('/interface/print', pl('.id,name,type,slave')),
+      this.client.execute('/interface/bridge/vlan/print', pl('.id,bridge,vlan-ids,tagged,untagged,dynamic')),
+      this.client.execute('/ip/address/print', pl('.id,address,interface,dynamic')),
+      this.client.execute('/ip/dhcp-client/print', pl('.id,interface')).catch(() => none),
+      opts.forDelete ? this.client.execute('/interface/vlan/print', pl('.id,name,interface')).catch(() => none) : none,
+      opts.forDelete ? this.client.execute('/ip/dhcp-server/print', pl('.id,name,interface')).catch(() => none) : none,
     ]);
     return { bridgePorts, interfaces, bridgeVlans, addresses, dhcpClients, vlanInterfaces, dhcpServers };
   }
@@ -3006,12 +3017,20 @@ export class DeviceCollector {
    * whether each moved port ended up hardware switched, read back from the
    * device: most switch chips offload one bridge only.
    */
-  async moveBridgePorts(ports: string[], target: string | null, opts: { create?: boolean } = {}): Promise<{
+  async moveBridgePorts(ports: string[], target: string | null, opts: {
+    create?: boolean;
+    /**
+     * The state the route already read for its checks. The device lock keeps
+     * other writes out in between, and reading it again cost a slow switch
+     * another eight seconds (#258).
+     */
+    state?: BridgeState;
+  } = {}): Promise<{
     moved: string[]; unchanged: string[]; created: boolean; offload: Record<string, boolean>;
     /** Hardware switching was expected but not yet reported; the flag may still change. */
     offloadPending: boolean;
   }> {
-    const state = await this.readBridgeState();
+    const state = opts.state ?? await this.readBridgeState();
     const planned = planBridgePortMove({
       ports, target, createTarget: opts.create,
       bridgePorts: state.bridgePorts, interfaces: state.interfaces, bridgeVlans: state.bridgeVlans,
@@ -3073,7 +3092,8 @@ export class DeviceCollector {
       const deadline = Date.now() + (expected ? OFFLOAD_WAIT_MS : 0);
       for (;;) {
         await new Promise((r) => setTimeout(r, 1500));
-        const after = await this.client.execute('/interface/bridge/port/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+        const after = await this.client.execute('/interface/bridge/port/print', { '.proplist': 'interface,hw-offload' })
+          .catch(() => [] as Record<string, string>[]);
         for (const port of done) {
           const row = after.find((p) => p['interface'] === port);
           if (row) offload[port] = row['hw-offload'] === 'true';
@@ -3086,8 +3106,8 @@ export class DeviceCollector {
   }
 
   /** Delete a bridge that has no ports, addresses, VLAN interfaces or DHCP server. */
-  async deleteBridge(name: string): Promise<void> {
-    const state = await this.readBridgeState();
+  async deleteBridge(name: string, opts: { state?: BridgeState } = {}): Promise<void> {
+    const state = opts.state ?? await this.readBridgeState({ forDelete: true });
     const bridge = state.interfaces.find((i) => i['name'] === name && i['type'] === 'bridge');
     if (!bridge) throw new Error(`There is no bridge called ${name} on this device.`);
     const refusal = bridgeDeleteRefusal(name, state);

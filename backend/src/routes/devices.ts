@@ -2832,13 +2832,13 @@ router.put('/:id/bridge/:bridgeName/vlan-filtering', requireWrite, async (req: R
 // ─── Bridge membership for any port (#258) ──────────────────────────────────
 
 /** Reads the device's bridge state for a pre-flight check; null when it answered with an error. */
-async function bridgeStateFor(id: string, res: Response) {
+async function bridgeStateFor(id: string, res: Response, opts: { forDelete?: boolean } = {}) {
   const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]);
   if (!deviceRow) { res.status(404).json({ error: 'Device not found' }); return null; }
   const c = new DeviceCollector(deviceRow);
   try {
     await c.connect();
-    return await c.readBridgeState();
+    return await c.readBridgeState(opts);
   } catch (err) {
     res.status(502).json({ error: `Couldn't read the device's bridges: ${(err as Error).message}` });
     return null;
@@ -2894,7 +2894,7 @@ router.post('/:id/bridge-ports/move', requireWrite, async (req: Request, res: Re
     req.params.id, req, res,
     { kind: 'bridge-port.move', summary, change: { kind: 'bridge-port.move', ports: moving, bridge: bridge ?? null } },
     async (c) => {
-      const r = await c.moveBridgePorts(ports, bridge ?? null, { create });
+      const r = await c.moveBridgePorts(ports, bridge ?? null, { create, state });
       return { message: summary, ...r };
     },
     async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); },
@@ -2905,7 +2905,7 @@ router.post('/:id/bridge-ports/move', requireWrite, async (req: Request, res: Re
 router.delete('/:id/bridges/:bridgeName', requireWrite, async (req: Request, res: Response) => {
   const name = req.params.bridgeName;
   if (!IFACE_NAME.test(name)) return res.status(400).json({ error: 'Invalid bridge name.' });
-  const state = await bridgeStateFor(req.params.id, res);
+  const state = await bridgeStateFor(req.params.id, res, { forDelete: true });
   if (!state) return;
   if (!state.interfaces.some((i) => i['name'] === name && i['type'] === 'bridge')) {
     return res.status(404).json({ error: `There is no bridge called ${name} on this device.` });
@@ -2915,7 +2915,7 @@ router.delete('/:id/bridges/:bridgeName', requireWrite, async (req: Request, res
   await withGuardedChange(
     req.params.id, req, res,
     { kind: 'bridge.delete', summary: `Delete bridge '${name}'`, change: { kind: 'bridge.delete', bridge: name } },
-    async (c) => { await c.deleteBridge(name); return { message: `Bridge ${name} deleted` }; },
+    async (c) => { await c.deleteBridge(name, { state }); return { message: `Bridge ${name} deleted` }; },
     async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); },
   );
 });
