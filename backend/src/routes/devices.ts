@@ -5,6 +5,8 @@ import net from 'net';
 import { Router, Request, Response } from 'express';
 import { deviceSiteAccess, deviceIdParam, devicesDenied } from '../utils/siteAccess';
 import { bulkUpdateCredentials } from '../services/bulkCredentials';
+import { deviceSettings } from '../services/pollSettings';
+import { validateOverrides } from '../utils/pollOverrides';
 import { devicePins, pendingIdentityChanges, trustNewIdentity, IDENTITY_KINDS } from '../services/identityPins';
 import { enableApiSsl, type ApiSslDevice } from '../services/apiSsl';
 import { enableWwwSsl } from '../services/wwwSsl';
@@ -2860,6 +2862,27 @@ router.put('/:id/bridge/:bridgeName/vlan-filtering', requireWrite, async (req: R
     },
     async (c) => { await c.collectInterfaces(); }
   );
+});
+
+// ─── Settings this device overrides (#261) ──────────────────────────────────
+// GET shows each setting's effective value and where it comes from (device,
+// site, global); PUT sets or (with null) clears the device's own overrides.
+
+router.get('/:id/poll-settings', async (req: Request, res: Response) => {
+  const s = await deviceSettings(Number(req.params.id));
+  if (!s) return res.status(404).json({ error: 'Device not found' });
+  return res.json({ overrides: s.device, site: { id: s.siteId, name: s.siteName, overrides: s.site }, effective: s.effective });
+});
+
+router.put('/:id/poll-settings', requireSiteAdmin, async (req: Request, res: Response) => {
+  const current = await deviceSettings(Number(req.params.id));
+  if (!current) return res.status(404).json({ error: 'Device not found' });
+  const v = validateOverrides(current.device, req.body);
+  if (!v.ok) return res.status(400).json({ error: v.error });
+  await query(`UPDATE devices SET poll_overrides = $2, updated_at = NOW() WHERE id = $1`,
+    [Number(req.params.id), Object.keys(v.value).length ? JSON.stringify(v.value) : null]);
+  const s = await deviceSettings(Number(req.params.id));
+  return res.json({ overrides: s!.device, site: { id: s!.siteId, name: s!.siteName, overrides: s!.site }, effective: s!.effective });
 });
 
 // ─── Bridge membership for any port (#258) ──────────────────────────────────

@@ -2,6 +2,7 @@ import { Queue, Worker, Job } from 'bullmq';
 import { hasRadios } from './mikrotik/capsman';
 import { checkApi, promoteToApi, recordApiCheck, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
 import { apiCheckIntervalMs } from '../utils/sshOnly';
+import { cleanOverrides, effectiveValues } from '../utils/pollOverrides';
 import { createRedisConnection } from '../config/redis';
 import { query, queryOne } from '../config/database';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
@@ -63,7 +64,10 @@ const STALE_WAIT_MS: Record<string, number> = {
 const POLL_CONCURRENCY = Math.max(1, Number(process.env.POLLER_CONCURRENCY || 12));
 
 /** Scheduler tick — one fast poll per device per interval. */
-const POLL_INTERVAL_MS = Math.max(10_000, Number(process.env.POLLER_INTERVAL_MS || 30_000));
+// How often the scheduler looks at what's due. Each device's fast, slow and
+// log polls have their own intervals (Settings, overridable per site and per
+// device, #261), so this only needs to be as short as the shortest of them.
+const POLL_INTERVAL_MS = Math.max(10_000, Number(process.env.POLLER_INTERVAL_MS || 10_000));
 
 /**
  * Hard ceiling on a single poll.
@@ -297,8 +301,6 @@ export class PollerService {
   private async schedulePollCycle(): Promise<void> {
     try {
       const appSettings = await this.getAppSettings();
-      const macScanEnabled  = appSettings['mac_scan_enabled']  !== false;
-      const macScanInterval = (appSettings['mac_scan_interval'] as number) || 300;
       const reverseDnsEnabled = appSettings['reverse_dns_enabled'] === true;
       const spectralEnabled       = appSettings['spectral_scan_enabled'] === true;
       const spectralIntervalHours = (appSettings['spectral_scan_interval_hours'] as number) || 24;
@@ -308,17 +310,25 @@ export class PollerService {
       const backupScheduleCron    = (appSettings['backup_schedule_cron'] as string) || '0 2 * * *';
       // Schedules are the operator's local time, not the container's (#117).
       const appTimezone           = (appSettings['app_timezone'] as string) || 'UTC';
-      const configSnapEnabled      = appSettings['config_snapshot_enabled'] !== false;
-      const configSnapIntervalMin  = (appSettings['config_snapshot_interval_min'] as number) || 60;
       const configHealthEnabled     = appSettings['config_health_enabled'] !== false;
       const configHealthIntervalMin = (appSettings['config_health_interval_min'] as number) || 60;
 
-      const devices = await query<DeviceRow>(
+      const devices = await query<DeviceRow & { poll_overrides?: unknown; site_id?: number | null }>(
         `SELECT * FROM devices WHERE status != 'disabled'`
       );
+      // Per-site and per-device overrides (#261). The global intervals in
+      // Settings used to be saved and never read: polls ran every 30 s, 5 min
+      // and 1 min whatever they said.
+      const siteRows = await query<{ id: number; poll_overrides: unknown }>(`SELECT id, poll_overrides FROM sites`).catch(() => []);
+      const siteOverrides = new Map(siteRows.map((r) => [r.id, cleanOverrides(r.poll_overrides)]));
+      const slowWindows = new Map<number, number>();
 
       const now = Date.now();
       for (const device of devices) {
+        const eff = effectiveValues(appSettings, siteOverrides.get(device.site_id ?? -1) ?? null, cleanOverrides(device.poll_overrides));
+        const configSnapEnabled = eff.configSnapEnabled;
+        const configSnapIntervalMin = eff.configSnapMin;
+        slowWindows.set(device.id, eff.slowSec);
         // Added over SSH only (#174): no API polling. A check every minute reads
         // the basics over SSH and retries the API; config history still works,
         // since it is an SSH export.
@@ -338,33 +348,20 @@ export class PollerService {
           continue;
         }
 
-        // Fast poll every 30s
-        await this.scheduleDeviceSync(device.id, 'fast');
+        // Fast, slow and log polls, each at the device's own interval. A small
+        // allowance absorbs scheduler jitter, so a 30 s poll doesn't slip to 40.
+        const due = async (key: string, ms: number): Promise<boolean> => {
+          if (now - (await this.getTimestamp(key)) <= ms - POLL_INTERVAL_MS / 2) return false;
+          await this.setTimestamp(key, now, ms);
+          return true;
+        };
+        if (await due(`poll:fast:${device.id}`, eff.fastSec * 1000)) await this.scheduleDeviceSync(device.id, 'fast');
+        if (await due(`poll:slow:${device.id}`, eff.slowSec * 1000)) await this.scheduleDeviceSync(device.id, 'slow');
+        if (await due(`poll:logs:${device.id}`, eff.logsSec * 1000)) await this.scheduleDeviceSync(device.id, 'logs');
 
-        // Slow poll every 5min (300s)
-        const slowKey = `poll:slow:${device.id}`;
-        const lastSlow = await this.getTimestamp(slowKey);
-        if (now - lastSlow > 300_000) {
-          await this.scheduleDeviceSync(device.id, 'slow');
-          await this.setTimestamp(slowKey, now, 300_000);
-        }
-
-        // Logs poll every 60s
-        const logsKey = `poll:logs:${device.id}`;
-        const lastLogs = await this.getTimestamp(logsKey);
-        if (now - lastLogs > 60_000) {
-          await this.scheduleDeviceSync(device.id, 'logs');
-          await this.setTimestamp(logsKey, now, 60_000);
-        }
-
-        // MAC scan — switches only, user-configured interval
-        if (macScanEnabled && device.device_type === 'switch') {
-          const macKey = `poll:macscan:${device.id}`;
-          const lastMac = await this.getTimestamp(macKey);
-          if (now - lastMac > macScanInterval * 1_000) {
-            await this.scheduleDeviceSync(device.id, 'macscan');
-            await this.setTimestamp(macKey, now, macScanInterval * 1_000);
-          }
+        // MAC scan — switches only
+        if (eff.macScanEnabled && device.device_type === 'switch') {
+          if (await due(`poll:macscan:${device.id}`, eff.macScanSec * 1000)) await this.scheduleDeviceSync(device.id, 'macscan');
         }
 
         // Spectral scan — devices with radios (an all-in-one router too), user-configured interval (default 24h)
@@ -433,7 +430,18 @@ export class PollerService {
       const lastStaleLinks = await this.getTimestamp(staleLinksKey);
       if (now - lastStaleLinks > 900_000) {
         await this.setTimestamp(staleLinksKey, now, 900_000);
-        query(`DELETE FROM topology_links WHERE discovered_at < NOW() - INTERVAL '20 minutes'`)
+        // Four missed slow polls, at each device's own slow interval (at least
+        // 20 minutes): a site polled every 30 minutes keeps its links (#261).
+        const ids = [...slowWindows.keys()];
+        query(
+          `DELETE FROM topology_links tl
+            USING (SELECT unnest($1::int[]) AS id, unnest($2::int[]) AS secs) w
+            WHERE tl.from_device_id = w.id
+              AND tl.discovered_at < NOW() - make_interval(secs => GREATEST(1200, w.secs * 4))`,
+          [ids, ids.map((id) => slowWindows.get(id)!)])
+          .then(() => query(
+            `DELETE FROM topology_links WHERE discovered_at < NOW() - INTERVAL '20 minutes'
+               AND NOT (from_device_id = ANY($1::int[]))`, [ids]))
           .catch((e) => console.error('[Poller] Stale topology-link cleanup error:', e));
       }
 
@@ -974,9 +982,21 @@ export class PollerService {
       console.error('[Poller] Health: timing query failed:', (e as Error).message);
     }
 
-    // Can the workers keep up? Arrival is one fast poll per device per cycle.
+    // Can the workers keep up? Arrival is each device's fast poll at its own
+    // interval (#261): the global one, or its site's or its own override.
     const avgSec = (timing?.avg_ms || 0) / 1000;
-    const arrivalPerSec = deviceCount / (POLL_INTERVAL_MS / 1000);
+    const appSettings = await this.getAppSettings();
+    const globalFastSec = effectiveValues(appSettings, null, null).fastSec;
+    let arrivalPerSec = deviceCount / globalFastSec;
+    try {
+      const rows = await query<{ dev: unknown; site: unknown }>(
+        `SELECT d.poll_overrides AS dev, s.poll_overrides AS site
+           FROM devices d LEFT JOIN sites s ON s.id = d.site_id WHERE d.status != 'disabled'`);
+      if (rows.length) {
+        arrivalPerSec = rows.reduce((sum, r) =>
+          sum + 1 / effectiveValues(appSettings, cleanOverrides(r.site), cleanOverrides(r.dev)).fastSec, 0);
+      }
+    } catch { /* fall back to the global interval for every device */ }
     const servicePerSec = avgSec > 0 ? POLL_CONCURRENCY / avgSec : null;
 
     const headroom = servicePerSec == null || arrivalPerSec === 0
@@ -1007,6 +1027,8 @@ export class PollerService {
         concurrency: POLL_CONCURRENCY,
         job_timeout_ms: JOB_TIMEOUT_MS,
         poll_interval_ms: POLL_INTERVAL_MS,
+        /** The global fast-poll interval; sites and devices may override it (#261). */
+        fast_interval_sec: globalFastSec,
       },
       capacity: {
         devices: deviceCount,

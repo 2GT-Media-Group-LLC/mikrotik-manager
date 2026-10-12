@@ -6,6 +6,8 @@ import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
 import { query } from '../config/database';
 import { DARK_SITE_FEATURES, DARK_SITE_KEYS, internetAllowed } from '../utils/darkSite';
 import type { PollerService } from '../services/PollerService';
+import { globalSettings } from '../services/pollSettings';
+import { cleanOverrides, effectiveValues } from '../utils/pollOverrides';
 
 const router = Router();
 router.use(requireAuth);
@@ -72,18 +74,28 @@ router.get('/poller', fleetOnly, async (_req: Request, res: Response) => {
     // Stale-device listing is a nicety; never let it take the whole payload down.
     let stale: unknown[] = [];
     try {
-      stale = await query(
+      // Stale means three missed fast polls at the device's own interval (at
+      // least 3 minutes): a device polled every 10 minutes isn't stale at 4 (#261).
+      const global = await globalSettings();
+      const rows = await query<Record<string, unknown> & { seconds_since_success: number | null; dev_ov: unknown; site_ov: unknown }>(
       `SELECT d.id, d.name, d.status, s.kind,
               s.last_attempt_at, s.last_success_at, s.last_duration_ms, s.last_error,
               s.attempts, s.failures,
-              EXTRACT(EPOCH FROM (NOW() - s.last_success_at))::int AS seconds_since_success
+              EXTRACT(EPOCH FROM (NOW() - s.last_success_at))::int AS seconds_since_success,
+              d.poll_overrides AS dev_ov, si.poll_overrides AS site_ov
          FROM devices d
          JOIN device_poll_stats s ON s.device_id = d.id AND s.kind = 'fast'
+         LEFT JOIN sites si ON si.id = d.site_id
         WHERE d.status != 'disabled'
           AND (s.last_success_at IS NULL OR s.last_success_at < NOW() - INTERVAL '3 minutes')
         ORDER BY s.last_success_at ASC NULLS FIRST
-        LIMIT 50`
+        LIMIT 500`
       );
+      stale = rows
+        .filter((r) => r.seconds_since_success == null
+          || r.seconds_since_success > Math.max(180, 3 * effectiveValues(global, cleanOverrides(r.site_ov), cleanOverrides(r.dev_ov)).fastSec))
+        .slice(0, 50)
+        .map(({ dev_ov: _d, site_ov: _s, ...rest }) => rest);
     } catch (e) {
       console.error('Poller health: stale-device query failed:', (e as Error).message);
     }

@@ -560,7 +560,10 @@ export default function SettingsPage() {
           </div>
 
           <div className="card p-5">
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Polling Intervals</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Polling Intervals</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
+              The defaults. A site (Sites → edit) or a device (its Overview tab) can override them.
+            </p>
             <div className="space-y-3">
               {[
                 { key: 'polling_fast_interval', label: 'Fast poll (interface stats, clients)', unit: 'sec' },

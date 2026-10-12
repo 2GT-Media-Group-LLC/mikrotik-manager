@@ -1505,6 +1505,11 @@ CREATE TABLE IF NOT EXISTS topology_edge_anchors (
   updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Settings a site or a device overrides (#261): poll intervals, MAC scan,
+-- config snapshots, secrets in backups. Global, then site, then device.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS poll_overrides JSONB;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS poll_overrides JSONB;
+
 -- Editing the map by hand (#260): a name and type for a neighbour discovery
 -- found (a PC it labelled a switch), the ports at each end of a hand-drawn
 -- link, and a colour for any link.

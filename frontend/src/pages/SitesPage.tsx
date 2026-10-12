@@ -9,6 +9,7 @@ import { useSiteStore, type Site } from '../store/siteStore';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { geocodeAddress, OSM_TILE_URL, OSM_ATTRIBUTION } from '../utils/geocode';
 import { escapeHtml } from '../utils/escapeHtml';
+import PollOverridesCard from '../components/common/PollOverridesCard';
 
 /** World map with one pin per site that has coordinates. */
 function SitesMap({ sites, onSelect }: { sites: Site[]; onSelect: (id: number) => void }) {
@@ -179,7 +180,7 @@ export default function SitesPage() {
       {(adding || editing) && (
         <div className="card p-4 space-y-3">
           <div className="text-sm font-semibold text-gray-900 dark:text-white">
-            {editing ? `Rename “${editing.name}”` : 'New site'}
+            {editing ? `Edit “${editing.name}”` : 'New site'}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <input
@@ -216,6 +217,9 @@ export default function SitesPage() {
           </div>
         </div>
       )}
+
+      {/* Poll intervals and backups for the site's devices (#261) */}
+      {editing && <PollOverridesCard scope="site" id={editing.id} siteId={editing.id} />}
 
       {mapsEnabled && sites.length > 0 && <SitesMap sites={sites} onSelect={openSite} />}
 

@@ -9,6 +9,7 @@ import { withSafeApply, type GuardDevice, type GuardOutcome } from './changeGuar
 import { resolveAuth, type SshExecDevice } from './sshExec';
 import { parseImportOutput, type ImportResult } from '../utils/importResult';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
+import { deviceValues } from './pollSettings';
 
 const BACKUPS_DIR = process.env.BACKUPS_DIR || '/app/backups';
 
@@ -102,12 +103,16 @@ export class BackupService {
     return run(sshUser, { password: sshPass });
   }
 
-  /** Whether backups should include passwords and keys (Settings, admin only). */
-  async includeSecretsSetting(): Promise<boolean> {
-    const [row] = await query<{ value: unknown }>(
-      `SELECT value FROM app_settings WHERE key = 'backup_include_secrets'`
-    ).catch(() => []);
-    return row?.value === true;
+  /**
+   * Whether a device's backups include passwords and keys: the global setting,
+   * or its site's or its own override (#261).
+   */
+  async includeSecretsSetting(deviceId: number): Promise<boolean> {
+    try {
+      return (await deviceValues(deviceId)).backupIncludeSecrets;
+    } catch {
+      return false;
+    }
   }
 
   /** A backup's text, decrypted when it was stored encrypted. */
@@ -149,7 +154,7 @@ export class BackupService {
   }
 
   async createBackup(device: BackupDevice, notes?: string, type: string = 'manual'): Promise<number> {
-    const { text, containsSecrets } = await this.exportConfig(device, { includeSecrets: await this.includeSecretsSetting() });
+    const { text, containsSecrets } = await this.exportConfig(device, { includeSecrets: await this.includeSecretsSetting(device.id) });
     return this.createBackupFromContent(device, text, notes, type, containsSecrets);
   }
 

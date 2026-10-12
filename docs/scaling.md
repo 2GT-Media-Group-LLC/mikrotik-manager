@@ -15,6 +15,26 @@ Every device is polled on three cadences, dispatched through Redis-backed queues
 | Logs | 60 s | Device log events |
 | Slow | 5 min | Interfaces, VLANs, system info, wireless, STP |
 
+The intervals are set in **Settings → Polling** (the defaults above), and a site or a single
+device can override them, along with MAC scan, config snapshots and whether backups include
+passwords and keys (#261). The most specific wins: a device's own setting, then its site's,
+then the global one. A site behind a slow or metered link can be polled gently without slowing
+the rest.
+
+- **A site:** Sites → the site's edit button → **Polling and backups**. This is the usual place:
+  devices behind the same slow link are normally in the same site.
+- **A device:** for the odd one out (a unit on an LTE backup link, say), **Edit Device →
+  Advanced: polling and backups**, which shows each value in force and where it comes from. A
+  device that doesn't use the defaults says so in one line on its Overview tab.
+
+Overrides take a fleet admin or that site's admin. Before 0.51.0 the global intervals in
+Settings were saved but never used: polls ran every 30 seconds, 5 minutes and 1 minute whatever
+they said.
+
+Anything that depends on the cadence follows each device's own: a device counts as stale after
+three missed fast polls (at least 3 minutes), topology links are dropped after four missed slow
+polls (at least 20 minutes), and headroom adds up each device's own fast-poll rate.
+
 Enqueue rate is not connect rate. Workers process jobs with limited concurrency, so what
 matters is whether they drain faster than the schedule fills.
 
@@ -25,7 +45,7 @@ matters is whether they drain faster than the schedule fills.
 The number to read is **headroom** — service capacity divided by demand:
 
 ```
-arrival   devices / poll interval
+arrival   sum over devices of 1 / that device's fast-poll interval
 service   worker concurrency / mean poll duration
 headroom  service / arrival
 ```
@@ -58,14 +78,14 @@ All of these are environment variables and need a container restart.
 | Variable | Default | Effect |
 |---|---|---|
 | `POLLER_CONCURRENCY` | 12 | Workers per queue. The first lever when headroom is low |
-| `POLLER_INTERVAL_MS` | 30000 | Scheduler tick. Lengthening reduces demand |
+| `POLLER_INTERVAL_MS` | 10000 | Scheduler tick: how often it checks what's due. Polls run at their own intervals; this only needs to be as short as the shortest of them (10 s is the shortest fast poll) |
 | `POLLER_JOB_TIMEOUT_MS` | 45000 | Ceiling on one poll, so a dead device cannot hold a worker. A poll that runs past it is cancelled and its connection closed |
 | `POLLER_JOB_RETENTION_SEC` | 3600 | How long finished jobs are kept |
 | `POLLER_JOB_RETENTION_COUNT` | 5000 | How many finished jobs are kept |
 | `REDIS_MAXMEMORY` | 512mb | Ceiling on Redis |
 
-Raise concurrency first. Lengthen the interval second — it reduces freshness, which is the
-thing you are paying for.
+Raise concurrency first. Lengthen the poll intervals second (in Settings, or for the sites
+that need it) — it reduces freshness, which is the thing you are paying for.
 
 **When a poll hits the time limit.** A fast poll that runs out of time counts as a failed
 poll (the device goes offline if it keeps happening). A slow poll that runs out of time is

@@ -26,6 +26,7 @@ import SecurityTab from '../components/device-detail/SecurityTab';
 import clsx from 'clsx';
 import { displayState, STATE_LABEL } from '../utils/deviceState';
 import DeviceHealthCard from '../components/device-detail/DeviceHealthCard';
+import PollingNote from '../components/device-detail/PollingNote';
 import { DeviceIdentityBanner } from '../components/security/IdentityChange';
 import { isWirelessDevice } from '../utils/wireless';
 import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
@@ -446,6 +447,9 @@ export default function DeviceDetailPage() {
 
           {/* Physical location, rack & notes */}
           <DeviceLocationSection device={device} />
+
+          {/* Only when this device polls differently from the defaults (#261) */}
+          <PollingNote deviceId={deviceId} />
         </div>
       )}
 

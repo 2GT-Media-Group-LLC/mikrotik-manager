@@ -163,7 +163,7 @@ export default function PollerHealthCard() {
         <Stat
           label="Workers"
           value={String(workers.concurrency)}
-          hint={`${(workers.poll_interval_ms || 0) / 1000}s interval`}
+          hint={workers.fast_interval_sec ? `fast poll every ${workers.fast_interval_sec}s` : `${(workers.poll_interval_ms || 0) / 1000}s interval`}
         />
       </div>
 

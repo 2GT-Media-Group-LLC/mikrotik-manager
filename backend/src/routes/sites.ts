@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { devicesDenied } from '../utils/siteAccess';
+import { cleanOverrides, validateOverrides, resolveEffective } from '../utils/pollOverrides';
+import { globalSettings } from '../services/pollSettings';
 import { query, queryOne, transaction } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 
@@ -54,6 +56,41 @@ function refuseUnlessSiteAdmin(req: Request, res: Response, siteId: number): boo
   res.status(req.user.siteRoles[siteId] ? 403 : 404).json({ error: req.user.siteRoles[siteId] ? 'You need admin access to that site.' : 'Site not found' });
   return false;
 }
+
+// ─── Settings this site overrides (#261) ────────────────────────────────────
+// Poll intervals, MAC scan, config snapshots, secrets in backups: the site's
+// devices use these instead of the global settings, unless a device overrides
+// them itself. Changing them takes an admin: a fleet admin, or this site's.
+
+function siteAdminOrRefuse(req: Request, res: Response, siteId: number): boolean {
+  const scoped = req.user?.siteRoles;
+  const ok = scoped ? scoped[siteId] === 'admin' : req.user?.role === 'admin';
+  if (!ok) res.status(scoped && !scoped[siteId] ? 404 : 403).json({ error: scoped && !scoped[siteId] ? 'Site not found' : 'You need admin access to that site.' });
+  return ok;
+}
+
+router.get('/:id/poll-settings', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid site id' });
+  if (req.user?.siteRoles && !req.user.siteRoles[id]) return res.status(404).json({ error: 'Site not found' });
+  const row = await queryOne<{ poll_overrides: unknown }>(`SELECT poll_overrides FROM sites WHERE id = $1`, [id]);
+  if (!row) return res.status(404).json({ error: 'Site not found' });
+  const site = cleanOverrides(row.poll_overrides);
+  return res.json({ overrides: site, effective: resolveEffective(await globalSettings(), site, null) });
+});
+
+router.put('/:id/poll-settings', requireWrite, async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid site id' });
+  if (!siteAdminOrRefuse(req, res, id)) return;
+  const row = await queryOne<{ poll_overrides: unknown }>(`SELECT poll_overrides FROM sites WHERE id = $1`, [id]);
+  if (!row) return res.status(404).json({ error: 'Site not found' });
+  const v = validateOverrides(cleanOverrides(row.poll_overrides), req.body);
+  if (!v.ok) return res.status(400).json({ error: v.error });
+  await query(`UPDATE sites SET poll_overrides = $2, updated_at = NOW() WHERE id = $1`,
+    [id, Object.keys(v.value).length ? JSON.stringify(v.value) : null]);
+  return res.json({ overrides: v.value, effective: resolveEffective(await globalSettings(), v.value, null) });
+});
 
 router.get('/', async (req: Request, res: Response) => {
   // A site-scoped account sees only its own sites (P1-7).

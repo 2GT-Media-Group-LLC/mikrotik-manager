@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network, RotateCcw } from 'lucide-react';
 import { devicesApi, credentialPresetsApi } from '../../services/api';
 import { presetsForSite } from '../../hooks/useSitePresets';
+import PollOverridesCard from '../common/PollOverridesCard';
 import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
 import { API_SSL_PORT, portFieldError } from '../../utils/apiTls';
@@ -444,6 +445,17 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
             </div>
           </details>
           )}
+
+          {/* Per-device polling and backup overrides (#261): rarely needed, so
+              out of sight; a site's are set on the Sites page. */}
+          <details className="group">
+            <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider select-none">
+              Advanced: polling and backups
+            </summary>
+            <div className="mt-3">
+              <PollOverridesCard scope="device" id={device.id} siteId={device.site_id ?? null} compact />
+            </div>
+          </details>
 
           <div>
             <label className="label">Notes</label>

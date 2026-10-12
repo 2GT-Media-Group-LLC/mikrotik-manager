@@ -485,7 +485,7 @@ export interface PollerQueue {
 export interface PollerHealth {
   status: 'ok' | 'draining' | 'saturated';
   queues: PollerQueue[];
-  workers: { concurrency: number; job_timeout_ms: number; poll_interval_ms: number };
+  workers: { concurrency: number; job_timeout_ms: number; poll_interval_ms: number; fast_interval_sec?: number };
   capacity: {
     devices: number;
     avg_fast_poll_ms: number | null;
@@ -652,7 +652,17 @@ export const commandsApi = {
     api.get(`/commands/runs/${id}/export`, { responseType: 'blob' }),
 };
 
+/** Overridable settings (#261): the overrides set here, and what's in force with where it comes from. */
+export interface PollSettings {
+  overrides: Record<string, number | boolean>;
+  site?: { id: number | null; name: string | null; overrides: Record<string, number | boolean> };
+  effective: Record<string, { value: number | boolean; source: 'device' | 'site' | 'global' }>;
+}
+
 export const devicesApi = {
+  /** Settings this device overrides (#261); null in a PUT clears one. */
+  getPollSettings: (id: number) => api.get<PollSettings>(`/devices/${id}/poll-settings`),
+  setPollSettings: (id: number, data: Record<string, number | boolean | null>) => api.put<PollSettings>(`/devices/${id}/poll-settings`, data),
   /**
    * Change the login the manager uses for several devices (#259). Each is
    * logged in to with the new login first, and only updated if that works.
@@ -2143,6 +2153,9 @@ export const sitesApi = {
   update: (id: number, payload: SitePayload) =>
     api.put<import('../store/siteStore').Site>(`/sites/${id}`, payload),
   remove: (id: number) => api.delete<{ ok: boolean }>(`/sites/${id}`),
+  /** Settings this site overrides (#261); null in a PUT clears one. */
+  getPollSettings: (id: number) => api.get<PollSettings>(`/sites/${id}/poll-settings`),
+  setPollSettings: (id: number, data: Record<string, number | boolean | null>) => api.put<PollSettings>(`/sites/${id}/poll-settings`, data),
   assignDevices: (id: number, deviceIds: number[]) =>
     api.post<{ ok: boolean; moved: number }>(`/sites/${id}/devices`, { deviceIds }),
 };
