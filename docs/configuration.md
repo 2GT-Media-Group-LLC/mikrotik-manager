@@ -304,6 +304,10 @@ Then `docker compose up -d`.
 Point the proxy at `http://<manager host>:<HTTP_PORT>`, and turn on WebSocket support: live
 updates and the device terminal run over `/socket.io/`.
 
+Give the proxy a read timeout of at least 300 seconds (the same as the manager's own). Many
+proxies default to 60, and a protected change on a slow device can take longer: on a CRS112 a
+bridge move took about a minute and a half end to end.
+
 **Keep the plain HTTP port for the proxy only.** Anyone else who can reach it talks to the
 manager unencrypted. If the proxy runs on the same host, `BIND_ADDRESS=127.0.0.1` keeps both
 ports off the network; otherwise use one of the options in
@@ -356,6 +360,41 @@ labels:
 
 Caddy and Traefik send `X-Forwarded-For` and `X-Forwarded-Proto` and pass WebSockets through
 by default.
+
+HAProxy:
+
+```
+frontend https-in
+    bind :443 ssl crt /etc/haproxy/certs/mtm.pem
+    option forwardfor
+    http-request set-header X-Forwarded-Proto https
+    default_backend mtm
+
+backend mtm
+    timeout server 300s
+    timeout tunnel 1h
+    server mtm 10.0.0.20:80
+```
+
+`option forwardfor` adds `X-Forwarded-For`. HAProxy passes WebSocket upgrades through by
+itself; `timeout tunnel` keeps an open terminal from being cut after the server timeout.
+
+NetScaler (Citrix ADC): a load-balancing virtual server of type SSL with your certificate, and
+an HTTP service to the manager's `HTTP_PORT`. The pieces that matter here:
+
+```
+add ns httpProfile mtm_http -webSocket ENABLED
+add service mtm_svc 10.0.0.20 HTTP 80 -cip ENABLED X-Forwarded-For -svrTimeout 300
+add lb vserver mtm_vs SSL 203.0.113.10 443 -httpProfileName mtm_http -cltTimeout 300
+bind lb vserver mtm_vs mtm_svc
+bind ssl vserver mtm_vs -certkeyName mtm_cert
+add rewrite action mtm_xfp insert_http_header X-Forwarded-Proto "\"https\""
+add rewrite policy mtm_xfp_pol true mtm_xfp
+bind lb vserver mtm_vs -policyName mtm_xfp_pol -priority 100 -type REQUEST
+```
+
+NetScaler connects to the manager from its subnet IP (SNIP), not the virtual server's address,
+so that's the address for `TRUSTED_PROXIES`.
 
 ## Updating and image versions
 

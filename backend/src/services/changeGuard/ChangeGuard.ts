@@ -15,8 +15,9 @@
  *
  * The restore point is created *before* the scheduler, so a binary restore rolls
  * back to a config containing neither the scheduler nor the change: self-cleaning,
- * with no possibility of a revert loop. (Script mode has no reboot to clear the
- * scheduler, so its on-event removes itself explicitly.)
+ * with no possibility of a revert loop. Script mode restores only the menus the
+ * change can touch, with no reboot (see scriptRestore.ts); its scheduler removes
+ * itself before anything else.
  *
  * Everything here runs over the RouterOS API — no SSH — because many deployments
  * never configure SSH credentials and would otherwise have no protection at all.
@@ -28,6 +29,7 @@ import { decrypt } from '../../utils/crypto';
 import { query, queryOne } from '../../config/database';
 import { redis } from '../../config/redis';
 import { heldLockToken, restoreHeldLock } from './deviceLock';
+import { restoreScopeFor, captureScope, buildRestorePlan, type RestorePlan } from './scriptRestore';
 
 export type GuardMode = 'binary' | 'script';
 
@@ -78,6 +80,12 @@ export interface GuardOutcome<T> {
    */
   revertMayFireAt?: string;
   guardId?: number;
+  /** The restore actually armed: script mode falls back to binary for changes it can't cover. */
+  mode?: GuardMode;
+  /** Why script mode fell back to binary, when it did. */
+  modeNote?: string;
+  /** Milliseconds per phase, for the log: a slow device shows where its time goes (#258). */
+  timings?: Record<string, number>;
 }
 
 const DEFAULT_TIMEOUT_SEC = 120;
@@ -118,8 +126,8 @@ async function readSettings(): Promise<{ enabled: boolean; mode: GuardMode; time
  * Can this device protect itself? Performs the same two writes a real guard
  * does, with throwaway names, and removes both:
  *
- *   - the restore point (a binary backup, or an export in script mode). A
- *     least-privilege API user often cannot save a binary backup, and before
+ *   - the restore point: a binary backup, or in script mode a /system script.
+ *     A least-privilege API user often cannot save a binary backup, and before
  *     this was checked that only came to light when a real change ran
  *     unprotected.
  *   - a scheduler (logs a line, fires in a day).
@@ -138,9 +146,15 @@ export async function probeCapability(
     await client.connect();
 
     try {
-      if (mode === 'binary') await client.execute('/system/backup/save', { name: probeName });
-      else await client.execute('/export', { file: probeName });
-      savedFile = true;
+      if (mode === 'binary') {
+        await client.execute('/system/backup/save', { name: probeName });
+        savedFile = true;
+      } else {
+        // Script mode keeps its restore steps in /system script.
+        await client.execute('/system/script/add', { name: probeName, source: ':log info "mtm-guard-probe"' });
+        const sc = (await client.execute('/system/script/print')).find((x) => x['name'] === probeName);
+        if (sc?.['.id']) await client.execute('/system/script/remove', { '.id': sc['.id'] });
+      }
     } catch (err) {
       return { ok: false, mode, reason: `the device refused to save a restore point (${(err as Error).message})` };
     }
@@ -158,7 +172,7 @@ export async function probeCapability(
     return { ok: false, mode, reason: (err as Error).message };
   } finally {
     if (savedFile) {
-      const wanted = mode === 'binary' ? `${probeName}.backup` : `${probeName}.rsc`;
+      const wanted = `${probeName}.backup`;
       const files = await client.execute('/file/print').catch(() => [] as Record<string, string>[]);
       for (const f of files) {
         if ((f['name'] === wanted || f['name'] === probeName) && f['.id']) {
@@ -379,16 +393,16 @@ async function holdLock(deviceId: number, seconds: number): Promise<void> {
 
 async function recordGuard(
   device: GuardDevice, meta: ChangeMeta, mode: GuardMode, restorePoint: string,
-  schedulerName: string, timeoutSec: number
+  schedulerName: string, timeoutSec: number, note?: string
 ): Promise<number | undefined> {
   const row = await queryOne<{ id: number }>(
     `INSERT INTO device_change_guards
        (device_id, token, mode, restore_point, scheduler_name, status, change_kind,
-        change_summary, user_id, expires_at)
-     VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8, NOW() + ($9 || ' seconds')::interval)
+        change_summary, user_id, expires_at, note)
+     VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8, NOW() + ($9 || ' seconds')::interval, $10)
      RETURNING id`,
     [device.id, schedulerName, mode, restorePoint, schedulerName, meta.kind,
-     meta.summary, meta.userId ?? null, String(timeoutSec)]
+     meta.summary, meta.userId ?? null, String(timeoutSec), note ?? null]
   ).catch(() => null);
   return row?.id;
 }
@@ -426,7 +440,11 @@ export async function withSafeApply<T>(
   applyFn: () => Promise<T>
 ): Promise<GuardOutcome<T>> {
   const settings = await readSettings();
-  const mode: GuardMode = meta.mode ?? settings.mode;
+  let mode: GuardMode = meta.mode ?? settings.mode;
+  let modeNote: string | undefined;
+  const timings: Record<string, number> = {};
+  let mark = Date.now();
+  const phase = (name: string) => { const now = Date.now(); timings[name] = now - mark; mark = now; };
   const timeoutSec = meta.timeoutSec ?? settings.timeoutSec;
 
   if (!settings.enabled) {
@@ -456,18 +474,38 @@ export async function withSafeApply<T>(
     // ── Arm ────────────────────────────────────────────────────────────────
     try {
       await client.connect();
+      phase('connect');
+      // Script mode: a restore of just the menus this kind of change touches.
+      // Where there's no such scope, or no RouterOS 7, a binary restore point
+      // instead: still protected, with a reboot if it fires.
+      let plan: RestorePlan | undefined;
+      if (mode === 'script') {
+        const scope = restoreScopeFor(meta.kind);
+        const version = scope ? (await client.execute('/system/resource/print'))[0]?.['version'] ?? '' : '';
+        if (!scope) {
+          modeNote = `Script mode has no targeted restore for this kind of change (${meta.kind}), so a binary restore point was used; a revert would reboot the device.`;
+        } else if (!/^7\./.test(version)) {
+          modeNote = `Script mode needs RouterOS 7 (this device runs ${version || 'an unknown version'}), so a binary restore point was used; a revert would reboot the device.`;
+        } else {
+          plan = buildRestorePlan(await captureScope((path) => client.execute(path), scope), schedulerName);
+        }
+        if (!plan) mode = 'binary';
+      }
+
       if (mode === 'binary') {
         await client.execute('/system/backup/save', { name: restorePoint });
       } else {
-        await client.execute('/export', { file: restorePoint });
+        for (const [n, source] of plan!.chunks.entries()) {
+          await client.execute('/system/script/add', { name: `${schedulerName}-${n + 1}`, source });
+        }
       }
 
       const onEvent = mode === 'binary'
         // Restores exactly (recovers deleted interfaces) and reboots. The restored
         // config predates this scheduler, so it disappears with the restore.
         ? `/system backup load name=${restorePoint} password=""`
-        // No reboot, but /import is additive, so the scheduler must remove itself.
-        : `/import file-name=${restorePoint}.rsc\n/system scheduler remove [find name="${schedulerName}"]`;
+        // Removes the scheduler first, runs the restore steps, removes them.
+        : plan!.onEvent;
 
       await client.execute('/system/scheduler/add', {
         name: schedulerName,
@@ -476,10 +514,13 @@ export async function withSafeApply<T>(
       });
       armed = true;
       armedAt = Date.now();
-      guardId = await recordGuard(device, meta, mode, restorePoint, schedulerName, timeoutSec);
+      phase('arm');
+      guardId = await recordGuard(device, meta, mode, restorePoint, schedulerName, timeoutSec, modeNote);
     } catch (err) {
       // Couldn't arm. Clean up anything half-created first, either way.
+      phase('arm');
       await disarm(device, restorePoint, schedulerName, mode).catch(() => {});
+      phase('cleanup');
       if (meta.requireProtection) {
         throw new GuardRequiredError(
           `The device could not arm its auto-revert (${(err as Error).message}), and this change could ` +
@@ -487,9 +528,11 @@ export async function withSafeApply<T>(
         );
       }
       const result = await applyFn();
+      phase('apply');
       return {
         result, confirmed: false, autoReverting: false,
         unprotectedReason: `Could not arm auto-revert on this device (${(err as Error).message})`,
+        mode, modeNote, timings,
       };
     }
 
@@ -512,12 +555,14 @@ export async function withSafeApply<T>(
     } catch (err) {
       applyError = err;
     }
+    phase('apply');
 
     const fireAt = new Date((armedAt ?? Date.now()) + timeoutSec * 1000);
     const secondsUntilFire = () => (fireAt.getTime() - Date.now()) / 1000;
 
     // ── Verify ─────────────────────────────────────────────────────────────
     const reachable = await verifyReachable(device);
+    phase('verify');
     if (!reachable) {
       // Leave the scheduler armed: the device will restore itself and come back.
       const note = applyError
@@ -529,7 +574,7 @@ export async function withSafeApply<T>(
       // `result` is undefined when the change took the connection with it. The
       // caller only reports the outcome in that case, so the guard fields carry the
       // meaning rather than the result.
-      return { result: result as T, confirmed: false, autoReverting: true, guardId };
+      return { result: result as T, confirmed: false, autoReverting: true, guardId, mode, modeNote, timings };
     }
 
     if (applyError) {
@@ -555,19 +600,20 @@ export async function withSafeApply<T>(
     // scheduler left", so a good change was recorded as committed and then
     // reverted, with a reboot, when the scheduler fired anyway.
     const d = await disarm(device, restorePoint, schedulerName, mode);
+    phase('disarm');
     armed = false;
     if (!d.disarmed) {
       holdFor = secondsUntilFire() + LOCK_AFTER_FIRE_SEC;
       await setGuardStatus(guardId, 'uncertain', `Applied and reachable, but the revert could not be confirmed disarmed: ${d.reason}`);
       return {
         result: result as T, confirmed: true, autoReverting: false, guardId,
-        revertMayFireAt: fireAt.toISOString(),
+        revertMayFireAt: fireAt.toISOString(), mode, modeNote, timings,
       };
     }
     await setGuardStatus(guardId, 'committed');
     // Reaching here means applyFn returned normally, so `result` is assigned; the
     // optional type only exists for the severed-connection path above.
-    return { result: result as T, confirmed: true, autoReverting: false, guardId };
+    return { result: result as T, confirmed: true, autoReverting: false, guardId, mode, modeNote, timings };
   } finally {
     if (armed) await setGuardStatus(guardId, 'pending');
     client.disconnect();
@@ -608,11 +654,21 @@ async function disarm(
         continue;
       }
 
-      const wanted = mode === 'binary' ? `${restorePoint}.backup` : `${restorePoint}.rsc`;
-      const files = await client.execute('/file/print').catch(() => [] as Record<string, string>[]);
-      for (const f of files) {
-        if ((f['name'] === wanted || f['name'] === restorePoint) && f['.id']) {
-          await client.execute('/file/remove', { '.id': f['.id'] }).catch(() => {});
+      if (mode === 'binary') {
+        const wanted = `${restorePoint}.backup`;
+        const files = await client.execute('/file/print').catch(() => [] as Record<string, string>[]);
+        for (const f of files) {
+          if ((f['name'] === wanted || f['name'] === restorePoint) && f['.id']) {
+            await client.execute('/file/remove', { '.id': f['.id'] }).catch(() => {});
+          }
+        }
+      } else {
+        // The restore steps (`<scheduler>-1`, `-2`, …).
+        const scripts = await client.execute('/system/script/print').catch(() => [] as Record<string, string>[]);
+        for (const sc of scripts) {
+          if ((sc['name'] ?? '').startsWith(`${schedulerName}-`) && sc['.id']) {
+            await client.execute('/system/script/remove', { '.id': sc['.id'] }).catch(() => {});
+          }
         }
       }
       return { disarmed: true };

@@ -134,6 +134,9 @@ While a revert may still fire, the device stays locked against other protected c
 
 ### Settings
 
+**Settings → General → Change Guard** has all three (admins only; before 0.48.0 they could only
+be set through the API).
+
 | Setting | Default | Description |
 |---|---|---|
 | `change_guard_enabled` | `true` | Master switch. When off, routine guarded changes apply with no safety net, and changes that need protection (see below) are refused. |
@@ -142,14 +145,33 @@ While a revert may still fire, the device stays locked against other protected c
 
 **Choosing a mode:**
 
-| Mode | Mechanism | Reboots? | Recovers a deletion? |
+| Mode | What the revert does | Reboots? | Login needs |
 |---|---|---|---|
-| `binary` | `/system backup` restore | **Yes** | Yes — restores the configuration exactly |
-| `script` | `/export` then `/import` | No | **No** — `/import` is additive |
+| `binary` (default) | Restores a `/system backup` taken just before the change: the whole configuration, exactly | **Yes** | the `policy` permission (the `full` group has it) |
+| `script` | Puts back only the menus the change could touch, exactly | No | the `write` group is enough |
 
-`binary` is the default because a change that deletes an interface can only be undone by
-a restore that recreates it. `script` avoids the reboot but cannot undo a deletion, which
-is the case most likely to lock you out.
+`binary` puts everything back, whatever the change did, at the cost of a reboot when it fires.
+
+`script` avoids the reboot (#258). Before the change it reads the menus that kind of change
+can touch and writes a restore for exactly those, kept on the device as `/system script`
+entries the revert scheduler runs:
+
+- rows the change edited are set back to their old values, rows it deleted are added back,
+  and rows it created are removed (matched by RouterOS's internal ids, which survive edits);
+- firewall filter and NAT are rebuilt in their old order, and only if every rule could be
+  added back;
+- the scheduler removes itself first, so a revert runs once.
+
+It covers bridge and port changes (VLANs, PVID, moving ports between bridges, VLAN filtering,
+bonds), port settings, IP addresses, static routes, services, firewall filter, NAT and address
+lists. Any other change (bulk commands, firmware, routing protocols, WireGuard, wireless, the
+hotspot) is protected with a binary restore point instead, even in script mode, and the guard
+record says so. RouterOS 6 devices always use binary.
+
+Before 0.48.0 script mode saved a full `/export` and imported it on revert. `/import` stops at
+its first error, and a full export starts by adding objects that already exist, so the revert
+stopped on its first lines and restored nothing. If you had set `change_guard_mode` to `script`,
+your changes were not protected until this release.
 
 **Choosing a timeout:** it must exceed the time the manager needs to verify reachability —
 roughly 40 seconds across four connection attempts — with margin for a slow device. Too

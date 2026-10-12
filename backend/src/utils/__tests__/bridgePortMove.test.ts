@@ -1,4 +1,4 @@
-import { planBridgePortMove, addressesOnPorts, supportsMultipleOffloadedBridges, bridgeDeleteRefusal, type RosRow } from '../bridgePortMove';
+import { planBridgePortMove, addressesOnPorts, bridgeDeleteRefusal, type RosRow } from '../bridgePortMove';
 
 const interfaces: RosRow[] = [
   { name: 'bridge', type: 'bridge' },
@@ -71,16 +71,6 @@ describe('addressesOnPorts', () => {
       [{ interface: 'ether1', address: '203.0.113.2/30' }, { interface: 'bridge', address: '192.168.88.1/24' }],
       [{ interface: 'ether1' }]);
     expect(found).toEqual(['ether1 has address 203.0.113.2/30', 'ether1 gets its address over DHCP']);
-  });
-});
-
-describe('supportsMultipleOffloadedBridges', () => {
-  it('is only CRS1xx and CRS2xx', () => {
-    expect(supportsMultipleOffloadedBridges('CRS125-24G-1S-2HnD')).toBe(true);
-    expect(supportsMultipleOffloadedBridges('CRS226-24G-2S+')).toBe(true);
-    expect(supportsMultipleOffloadedBridges('CRS309-1G-8S+')).toBe(false);
-    expect(supportsMultipleOffloadedBridges('RB5009UG+S+')).toBe(false);
-    expect(supportsMultipleOffloadedBridges(null)).toBe(false);
   });
 });
 

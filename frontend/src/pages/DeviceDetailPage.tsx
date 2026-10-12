@@ -453,7 +453,6 @@ export default function DeviceDetailPage() {
         <SwitchPortDiagram
           deviceId={deviceId}
           deviceName={device?.name}
-          deviceModel={device?.model}
           autoOpenBridge={autoOpenBridge ?? undefined}
           onBridgeOpened={() => setAutoOpenBridge(null)}
         />

@@ -2864,8 +2864,10 @@ router.post('/:id/bridge-ports/move', requireWrite, async (req: Request, res: Re
   }
   const create = create_bridge === true;
 
+  const t0 = Date.now();
   const state = await bridgeStateFor(req.params.id, res);
   if (!state) return;
+  console.log(`[bridge-move] device ${logSafe(req.params.id)}: read bridge state in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   const planned = planBridgePortMove({
     ports, target: bridge, createTarget: create,
     bridgePorts: state.bridgePorts, interfaces: state.interfaces, bridgeVlans: state.bridgeVlans,

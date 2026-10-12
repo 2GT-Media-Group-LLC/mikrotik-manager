@@ -36,11 +36,12 @@ const api = axios.create({
 /**
  * For changes that run under Change Guard: a restore point is saved, the change
  * applied, the device checked and the guard disarmed, and on a slow device that
- * passes 30 seconds. Giving up earlier reported a change as failed while it was
+ * takes minutes, not seconds: a bridge move on a CRS112 took 90 seconds end to
+ * end. Giving up earlier reported a change as failed while it was
  * still finishing, and the next change met the device lock (#258). nginx allows
- * the API 120 seconds.
+ * the API 300 seconds.
  */
-export const GUARDED = { timeout: 120_000 };
+export const GUARDED = { timeout: 240_000 };
 
 // ─── Review changes (#255) ──────────────────────────────────────────────────
 /** One write the preview recorded, with the item it acts on as it is now. */
@@ -2389,5 +2390,7 @@ export interface BridgeMoveResult {
   unchanged: string[];
   created: boolean;
   offload: Record<string, boolean>;
+  /** Hardware switching was expected (CRS1xx/2xx, or an offloaded bridge) but not yet reported. */
+  offloadPending?: boolean;
   guard?: unknown;
 }

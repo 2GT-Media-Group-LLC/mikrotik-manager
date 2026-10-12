@@ -77,10 +77,13 @@ export async function withGuardedChange<T>(
     return;
   }
   let requireProtection = confirmedLockout;
+  const started = Date.now();
+  let analysisMs = 0;
   if (meta.change && !confirmedLockout) {
     try {
       const snap = await captureSnapshot(deviceRow as unknown as GuardDevice);
       const verdict = analyzeChange(snap, deviceRow as unknown as GuardDevice, meta.change);
+      analysisMs = Date.now() - started;
       if (verdict.severity !== 'safe') requireProtection = true;
       if (verdict.severity === 'critical') {
         res.status(409).json({
@@ -122,9 +125,19 @@ export async function withGuardedChange<T>(
     );
 
     // Only re-read the device once we know it's still reachable.
+    const refreshStart = Date.now();
     if (outcome.confirmed && afterConfirmed) {
       await afterConfirmed(collector).catch(() => { /* best effort */ });
     }
+    // Where the time went, so a slow device can be diagnosed from the log (#258).
+    const sec = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+    const parts = [
+      ...(analysisMs ? [`analysis ${sec(analysisMs)}`] : []),
+      ...Object.entries(outcome.timings ?? {}).map(([k, v]) => `${k} ${sec(v)}`),
+      ...(outcome.confirmed && afterConfirmed ? [`refresh ${sec(Date.now() - refreshStart)}`] : []),
+    ];
+    console.log(`[guard] ${logSafe(deviceRow.name)} ${logSafe(meta.kind)} (${outcome.mode ?? '-'}${outcome.unprotectedReason ? ', unprotected' : ''}): `
+      + `${parts.join(', ')}; total ${sec(Date.now() - started)}`);
 
     res.json({
       ...(typeof outcome.result === 'object' && outcome.result !== null
@@ -141,6 +154,8 @@ export async function withGuardedChange<T>(
         auto_reverting: outcome.autoReverting,
         unprotected_reason: outcome.unprotectedReason ?? null,
         revert_may_fire_at: outcome.revertMayFireAt ?? null,
+        mode: outcome.mode ?? null,
+        mode_note: outcome.modeNote ?? null,
       },
     });
   } catch (err) {

@@ -6,6 +6,7 @@ import {
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, ClipboardList, Zap, LogIn,
   Activity, Moon, Globe } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
+import { docsUrl } from '../version';
 import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
 import PollerHealthCard from '../components/system/PollerHealthCard';
@@ -707,6 +708,69 @@ export default function SettingsPage() {
                   min="1"
                   step="1"
                   disabled={!isAdmin || settings['config_snapshot_enabled'] === false}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Change Guard */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Change Guard</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
+              Before a change that could cut the manager off, the device arms its own revert. If the manager
+              can&apos;t reach it afterwards, the device puts the change back by itself.
+            </p>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Protect risky changes</div>
+                <button
+                  onClick={() => isAdmin && updateSettingsMutation.mutate({ change_guard_enabled: settings['change_guard_enabled'] === false })}
+                  disabled={!isAdmin}
+                  className={clsx(
+                    'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
+                    isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
+                    settings['change_guard_enabled'] !== false ? 'bg-blue-600' : 'bg-gray-300 dark:bg-slate-600'
+                  )}
+                >
+                  <span className={clsx(
+                    'inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200',
+                    settings['change_guard_enabled'] !== false ? 'translate-x-5' : 'translate-x-0'
+                  )} />
+                </button>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-gray-700 dark:text-slate-300">How it reverts</div>
+                  <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 max-w-md">
+                    {settings['change_guard_mode'] === 'script'
+                      ? 'Puts back only what the change touched, with no reboot. Works with a RouterOS login in the write group. Changes it can\u2019t cover (bulk commands, firmware, routing, WireGuard, wireless) use a full restore instead.'
+                      : 'Restores the whole configuration from a backup taken just before the change, and reboots. Needs the policy permission on the RouterOS login (the full group has it).'}
+                    {' '}<a className="underline" href={docsUrl('change-guard/#settings')} target="_blank" rel="noreferrer">More</a>
+                  </div>
+                </div>
+                <select
+                  className="input w-44 disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={settings['change_guard_mode'] === 'script' ? 'script' : 'binary'}
+                  onChange={(e) => updateSettingsMutation.mutate({ change_guard_mode: e.target.value })}
+                  disabled={!isAdmin || settings['change_guard_enabled'] === false}
+                >
+                  <option value="binary">Full restore (reboots)</option>
+                  <option value="script">Targeted, no reboot</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium text-gray-700 dark:text-slate-300">Revert after</div>
+                  <div className="text-xs text-gray-400">seconds without contact (60 to 900)</div>
+                </div>
+                <NumberSetting
+                  className="input w-24 text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={settings['change_guard_timeout_sec'] as number ?? 120}
+                  onCommit={(v) => updateSettingsMutation.mutate({ change_guard_timeout_sec: Math.min(900, Math.max(60, v)) })}
+                  min="60"
+                  max="900"
+                  step="10"
+                  disabled={!isAdmin || settings['change_guard_enabled'] === false}
                 />
               </div>
             </div>

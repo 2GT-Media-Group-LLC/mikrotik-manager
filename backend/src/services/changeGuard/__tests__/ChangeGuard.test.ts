@@ -31,12 +31,19 @@ let schedulerReadFailsAfterApply: boolean;
 /** Simulated device state, so cleanup has something real to find and remove. */
 let deviceSchedulers: Record<string, string>[];
 let deviceFiles: Record<string, string>[];
+let deviceScripts: Record<string, string>[];
+/** What the scheduler would run, captured for the script-mode tests. */
+let lastOnEvent: string;
+let rosVersion: string;
 
 function installClientMock() {
   commands = [];
   applyDone = false;
   deviceSchedulers = [];
   deviceFiles = [];
+  deviceScripts = [];
+  lastOnEvent = '';
+  rosVersion = '7.24.5 (stable)';
   MockedClient.mockImplementation(() => {
     const client = {
       connect: jest.fn(async () => {
@@ -56,7 +63,20 @@ function installClientMock() {
             return [];
           case '/system/scheduler/add':
             deviceSchedulers.push({ '.id': `*s${deviceSchedulers.length}`, name: params.name });
+            lastOnEvent = params['on-event'];
             return [];
+          case '/system/script/add':
+            deviceScripts.push({ '.id': `*c${deviceScripts.length}`, name: params.name, source: params.source });
+            return [];
+          case '/system/script/remove':
+            deviceScripts = deviceScripts.filter((x) => x['.id'] !== params['.id']);
+            return [];
+          case '/system/script/print': return deviceScripts;
+          case '/system/resource/print': return [{ version: rosVersion }];
+          case '/interface/bridge/port/print':
+            return [{ '.id': '*1', interface: 'ether2', bridge: 'bridge', pvid: '10', dynamic: 'false' }];
+          case '/interface/bridge/vlan/print':
+            return [{ '.id': '*2', bridge: 'bridge', 'vlan-ids': '10', tagged: 'bridge', untagged: 'ether2', dynamic: 'false' }];
           case '/system/scheduler/remove':
             deviceSchedulers = deviceSchedulers.filter((s) => s['.id'] !== params['.id']);
             return [];
@@ -205,13 +225,36 @@ describe('withSafeApply', () => {
     ).rejects.toThrow(/already in progress/);
   });
 
-  it('uses /export instead of a binary backup in script mode', async () => {
-    await withSafeApply(device, { kind: 'test', summary: 's', mode: 'script' }, async () => {
+  it('arms a targeted restore in script mode: no backup, no export, restore steps in /system script', async () => {
+    const out = await withSafeApply(device, { kind: 'port.vlan', summary: 's', mode: 'script' }, async () => {
       applyDone = true;
       return 'ok';
     });
-    expect(commands).toContain('/export');
     expect(commands).not.toContain('/system/backup/save');
+    expect(commands).not.toContain('/export');
+    expect(commands).toContain('/interface/bridge/port/print');
+    expect(commands).toContain('/system/script/add');
+    expect(lastOnEvent).toMatch(/^\/system scheduler remove \[find name="mtm-revert-/);
+    expect(lastOnEvent).toContain('/system script run');
+    expect(out.mode).toBe('script');
+    // Confirmed, so the restore steps are cleaned up with the scheduler.
+    expect(deviceScripts).toEqual([]);
+    expect(deviceSchedulers).toEqual([]);
+  });
+
+  it('falls back to binary in script mode for a change it has no scope for, and says why', async () => {
+    const out = await withSafeApply(device, { kind: 'command.bulk', summary: 's', mode: 'script' }, async () => 'ok');
+    expect(commands).toContain('/system/backup/save');
+    expect(commands).not.toContain('/system/script/add');
+    expect(out.mode).toBe('binary');
+    expect(out.modeNote).toMatch(/no targeted restore/);
+  });
+
+  it('falls back to binary in script mode on RouterOS 6', async () => {
+    rosVersion = '6.49.10 (long-term)';
+    const out = await withSafeApply(device, { kind: 'port.vlan', summary: 's', mode: 'script' }, async () => 'ok');
+    expect(commands).toContain('/system/backup/save');
+    expect(out.modeNote).toMatch(/RouterOS 7/);
   });
 
   // ── Protection required (P1-12) ───────────────────────────────────────────

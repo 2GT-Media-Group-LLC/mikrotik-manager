@@ -133,15 +133,6 @@ export function addressesOnPorts(ports: string[], addresses: RosRow[], dhcpClien
   return out;
 }
 
-/**
- * Most MikroTik switch chips hardware-switch only one bridge; CRS1xx and CRS2xx
- * can do several. Used to word the warning before a move, which is a prediction:
- * the device's own hw-offload flag after the move is the answer.
- */
-export function supportsMultipleOffloadedBridges(model: string | null | undefined): boolean {
-  return /^CRS[12]\d\d/i.test((model || '').trim());
-}
-
 /** Why a bridge can't be deleted, or null. Only empty, unused bridges are. */
 export function bridgeDeleteRefusal(bridge: string, rows: {
   bridgePorts: RosRow[]; addresses: RosRow[]; vlanInterfaces: RosRow[]; dhcpServers: RosRow[];

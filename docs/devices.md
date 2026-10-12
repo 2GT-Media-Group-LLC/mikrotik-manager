@@ -200,6 +200,36 @@ A preset is either **fleet-wide** or belongs to **one site**:
 
 Before 0.30.0 presets were fleet-wide only and lived under Settings.
 
+### The RouterOS login the manager uses
+
+Give the manager a RouterOS user in the built-in **`full`** group. It reads and changes
+configuration over the API, takes backups, upgrades firmware and runs bulk commands, and
+between them those need most of RouterOS's permissions.
+
+[Change Guard](change-guard.md) in particular needs the **`policy`** permission. Before every
+protected change it saves a restore point with `/system backup save`, which RouterOS refuses
+without `policy`, and the revert it schedules runs with the permissions of the user that
+created it. RouterOS 7's built-in **`write`** group has every permission except `policy` and
+`ftp`, so with a `write` user the restore point fails with "not enough permissions" and:
+
+- protected changes are applied without auto-revert, and the result says so: *Applied without
+  auto-revert protection: Could not arm auto-revert on this device (not enough permissions
+  (9))*;
+- changes that could cut the manager off are refused rather than applied unprotected.
+
+A user in the `read` group can be monitored but not changed.
+
+To check a device, run `/user print` and look at the group of the user the manager logs in as.
+To fix it, `/user set [find name=<user>] group=full`. If you'd rather use a group of your own,
+Change Guard needs `read`, `write`, `test`, `api` and `policy` (tested on RouterOS 7.24.5:
+saving the restore point, and a revert firing and restoring it).
+
+If the login has to stay in the `write` group, set **Settings → General → Change Guard → How it
+reverts** to **Targeted, no reboot** ([script mode](change-guard.md#settings)): it needs no
+`policy` permission and never reboots.
+Changes script mode doesn't cover still need a binary restore point, so those stay unprotected
+for a `write` user.
+
 ## The device list
 
 Filter by status, type, tag, rack or location, and sort by any column. The search box matches
@@ -368,12 +398,14 @@ says so: an address on a port stops working once the port is in a bridge, which 
 router's WAN port gets cut off. You can still go ahead with **Move anyway**.
 
 The **Bridge** column of the port table shows each port's bridge, marked **HW** when the
-switch chip forwards its traffic and **CPU** when the CPU does. Apart from CRS1xx and CRS2xx,
-MikroTik switch chips hardware-switch only one bridge, so ports in a second bridge are usually
-switched by the CPU: slower, and CPU load grows with traffic. The move dialog warns when that
-looks likely, and the result says which moved ports ended up on the CPU. To keep networks apart
-on a switch, VLANs on one bridge keep hardware switching; on a router, a separate bridge for a
-guest or IoT network is common, and usually carries little traffic.
+switch chip forwards its traffic and **CPU** when the CPU does. A MikroTik switch chip
+hardware-switches one bridge, so ports in a second bridge are switched by the CPU: slower, and
+CPU load grows with traffic. MikroTik documents CRS1xx and CRS2xx as able to offload several
+bridges, but a CRS112 on RouterOS 7.24.5 didn't, so the move dialog warns on every model. The
+result reads the device's own flag after the move (and waits a little longer for it where the
+target bridge is already hardware switched), and the Bridge column shows the answer. To keep
+networks apart on a switch, VLANs on one bridge keep hardware switching; on a router, a separate
+bridge for a guest or IoT network is common, and usually carries little traffic.
 
 To delete a bridge, double-click it on the faceplate and choose **Delete bridge**. Only a bridge
 with no ports, addresses, VLAN interfaces or DHCP server can be deleted.

@@ -31,6 +31,19 @@ router.get('/', async (_req: Request, res: Response) => {
 // PUT /api/settings
 router.put('/', requireAdmin, async (req: Request, res: Response) => {
   const updates = req.body as Record<string, unknown>;
+  // Change Guard is read on every protected change; refuse values it would misread.
+  if ('change_guard_mode' in updates && !['binary', 'script'].includes(String(updates['change_guard_mode']))) {
+    return res.status(400).json({ error: 'change_guard_mode must be binary or script.' });
+  }
+  if ('change_guard_timeout_sec' in updates) {
+    const t = Number(updates['change_guard_timeout_sec']);
+    if (!Number.isInteger(t) || t < 60 || t > 900) {
+      return res.status(400).json({ error: 'change_guard_timeout_sec must be a whole number from 60 to 900.' });
+    }
+  }
+  if ('change_guard_enabled' in updates && typeof updates['change_guard_enabled'] !== 'boolean') {
+    return res.status(400).json({ error: 'change_guard_enabled must be true or false.' });
+  }
   for (const [key, value] of Object.entries(updates)) {
     if (PROTECTED_SETTING_KEYS.has(key)) continue;
     await query(

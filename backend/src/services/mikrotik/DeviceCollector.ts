@@ -92,6 +92,9 @@ import { probeUserManager, USER_MANAGER_RECHECK_MS } from '../userManager';
 import { poolSize, usedPerPool } from '../../utils/dhcpPools';
 import { recordOptics } from '../opticLevels';
 
+/** How long to look for the hardware-offload flag where it is expected after a bridge move. */
+const OFFLOAD_WAIT_MS = 12_000;
+
 /** A RouterOS property name: lower-case words joined by '-' or '.', never '.id'. */
 const ROS_PROPERTY = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/;
 
@@ -3005,6 +3008,8 @@ export class DeviceCollector {
    */
   async moveBridgePorts(ports: string[], target: string | null, opts: { create?: boolean } = {}): Promise<{
     moved: string[]; unchanged: string[]; created: boolean; offload: Record<string, boolean>;
+    /** Hardware switching was expected but not yet reported; the flag may still change. */
+    offloadPending: boolean;
   }> {
     const state = await this.readBridgeState();
     const planned = planBridgePortMove({
@@ -3019,7 +3024,9 @@ export class DeviceCollector {
     const fail = (step: string, err: unknown): never => {
       throw new Error(
         `${step} failed: ${(err as Error).message}.`
-        + (done.length ? ` Already moved ${where}: ${done.join(', ')}.` : ' Nothing was moved.'),
+        // No reply isn't the same as not applied: a move that cuts the
+        // manager off succeeds on the device and the answer never arrives.
+        + (done.length ? ` Confirmed moved ${where}: ${done.join(', ')}.` : ' No port was confirmed moved.'),
         { cause: err },
       );
     };
@@ -3053,17 +3060,29 @@ export class DeviceCollector {
       }
     }
 
-    // The H flag settles a moment after the port joins.
+    // The H flag appears a moment after the port joins, later on a slow
+    // switch. Where hardware switching is expected (the bridge already has
+    // offloaded ports), keep looking for a while; elsewhere one look, since
+    // switch chips offload one bridge and the answer won't change. MikroTik
+    // documents CRS1xx/2xx as offloading several, but a CRS112 on 7.24.5
+    // didn't (#258), so they aren't assumed to.
     const offload: Record<string, boolean> = {};
-    if (target) {
-      await new Promise((r) => setTimeout(r, 1500));
-      const after = await this.client.execute('/interface/bridge/port/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
-      for (const port of done) {
-        const row = after.find((p) => p['interface'] === port);
-        if (row) offload[port] = row['hw-offload'] === 'true';
+    let offloadPending = false;
+    if (target && done.length) {
+      const expected = state.bridgePorts.some((p) => p['bridge'] === target && p['hw-offload'] === 'true');
+      const deadline = Date.now() + (expected ? OFFLOAD_WAIT_MS : 0);
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const after = await this.client.execute('/interface/bridge/port/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+        for (const port of done) {
+          const row = after.find((p) => p['interface'] === port);
+          if (row) offload[port] = row['hw-offload'] === 'true';
+        }
+        if (done.every((p) => offload[p]) || Date.now() >= deadline) break;
       }
+      offloadPending = expected && done.some((p) => !offload[p]);
     }
-    return { moved: done, unchanged: plan.unchanged, created: !!plan.createBridge, offload };
+    return { moved: done, unchanged: plan.unchanged, created: !!plan.createBridge, offload, offloadPending };
   }
 
   /** Delete a bridge that has no ports, addresses, VLAN interfaces or DHCP server. */

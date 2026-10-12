@@ -27,15 +27,10 @@ import clsx from 'clsx';
 const NEW_BRIDGE = '\u0000new';
 const NO_BRIDGE = '\u0000none';
 
-/** CRS1xx and CRS2xx hardware-switch several bridges; other MikroTik switch chips one. */
-const multipleOffloadedBridges = (model?: string | null) => /^CRS[12]\d\d/i.test((model || '').trim());
-
 
 interface Props {
   deviceId: number;
   deviceName?: string;
-  /** For the hardware-switching warning when moving ports between bridges (#258). */
-  deviceModel?: string | null;
   autoOpenBridge?: string;
   onBridgeOpened?: () => void;
 }
@@ -738,7 +733,7 @@ function PortClientsCard({ deviceId, portName }: { deviceId: number; portName: s
   );
 }
 
-export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, autoOpenBridge, onBridgeOpened }: Props) {
+export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge, onBridgeOpened }: Props) {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [selectedPorts, setSelectedPorts] = useState<Set<string>>(new Set());
@@ -1001,8 +996,13 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
       const r = res.data;
       // Read back from the device: the prediction in the dialog is only that.
       const cpu = Object.entries(r.offload ?? {}).filter(([, hw]) => !hw).map(([p]) => p);
-      const text = `${r.message}.` + (cpu.length
-        ? ` ${cpu.join(', ')} ${cpu.length === 1 ? 'is' : 'are'} switched by the CPU, not the switch chip.` : '');
+      const one = cpu.length === 1;
+      // On a slow switch where offload is expected, the flag can appear long
+      // after the move; don't state "CPU" as a fact then (#258).
+      const text = `${r.message}.` + (!cpu.length ? ''
+        : r.offloadPending
+          ? ` ${cpu.join(', ')} ${one ? 'isn’t' : 'aren’t'} reported as hardware switched yet. On a slow switch that can take a minute: check the Bridge column shortly.`
+          : ` ${cpu.join(', ')} ${one ? 'is' : 'are'} switched by the CPU, not the switch chip.`);
       showGuardNotice(text, r.guard as GuardResult | undefined, cpu.length > 0);
     },
     onError: (err: unknown, vars) => {
@@ -2421,7 +2421,9 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         // A prediction from what RouterOS reports now; the result is read back after.
         const offloadedElsewhere = [...new Set(ports.filter((p) => hwOffloaded(p) && bridgeOf(p) && bridgeOf(p) !== target).map((p) => bridgeOf(p)!))];
         const targetOffloaded = !creating && !!target && ports.some((p) => bridgeOf(p) === target && hwOffloaded(p));
-        const hwWarn = !!target && !multipleOffloadedBridges(deviceModel) && !targetOffloaded && offloadedElsewhere.length > 0;
+        // Switch chips hardware-switch one bridge. MikroTik documents CRS1xx/2xx
+        // as able to do several, but a CRS112 on 7.24.5 didn't (#258).
+        const hwWarn = !!target && !targetOffloaded && offloadedElsewhere.length > 0;
         const payload = {
           ports: moving.map((p) => p.name),
           bridge: target,
