@@ -94,8 +94,8 @@ router.get('/', async (req: Request, res: Response) => {
   // How the map has been arranged by hand, if it has (#147).
   const [posRows, anchorRows, hiddenRows] = await Promise.all([
     query<{ node_key: string; x: number; y: number }>(`SELECT node_key, x, y FROM topology_positions`),
-    query<{ edge_key: string; source_handle: string | null; target_handle: string | null }>(
-      `SELECT edge_key, source_handle, target_handle FROM topology_edge_anchors`),
+    query<{ edge_key: string; source_handle: string | null; target_handle: string | null; color: string | null }>(
+      `SELECT edge_key, source_handle, target_handle, color FROM topology_edge_anchors`),
     // Discovered links someone hid (discussion #85).
     query<{ edge_key: string; label: string | null; hidden_at: string; hidden_by_name: string | null }>(
       `SELECT h.edge_key, h.label, h.hidden_at, u.username AS hidden_by_name
@@ -103,8 +103,15 @@ router.get('/', async (req: Request, res: Response) => {
   ]);
   const layout = {
     positions: Object.fromEntries(posRows.map((r) => [r.node_key, { x: Number(r.x), y: Number(r.y) }])),
-    anchors: Object.fromEntries(anchorRows.map((r) => [r.edge_key, { sourceHandle: r.source_handle, targetHandle: r.target_handle }])),
+    anchors: Object.fromEntries(anchorRows.filter((r) => r.source_handle || r.target_handle)
+      .map((r) => [r.edge_key, { sourceHandle: r.source_handle, targetHandle: r.target_handle }])),
+    // A colour per link (#260).
+    colors: Object.fromEntries(anchorRows.filter((r) => r.color).map((r) => [r.edge_key, r.color])),
   };
+  // A name and type for neighbours discovery found (#260).
+  const overrideRows = await query<{ ext_id: string; name: string | null; kind: string | null }>(
+    `SELECT ext_id, name, kind FROM topology_neighbour_overrides`);
+  const neighbourOverrides = Object.fromEntries(overrideRows.map((r) => [r.ext_id, { name: r.name, kind: r.kind }]));
 
   // Client devices, attached where they really connect (#147). Only when asked:
   // a large site has thousands.
@@ -127,6 +134,7 @@ router.get('/', async (req: Request, res: Response) => {
     nodes,
     handLinks,
     layout,
+    neighbourOverrides,
     hiddenLinks: hiddenRows.map((r) => ({ key: r.edge_key, label: r.label, hiddenAt: r.hidden_at, hiddenBy: r.hidden_by_name })),
     ...(clients ? { clients } : {}),
   });
@@ -227,7 +235,7 @@ type EndKind = 'device' | 'node' | 'external';
 interface End { kind: EndKind; ref: string | number; name?: string | null }
 
 interface HandLinkRow {
-  id: number; site_id: number | null; label: string | null;
+  id: number; site_id: number | null; label: string | null; a_port: string | null; b_port: string | null;
   a_device_id: number | null; a_node_id: number | null; a_external: string | null; a_external_name: string | null;
   b_device_id: number | null; b_node_id: number | null; b_external: string | null; b_external_name: string | null;
 }
@@ -239,7 +247,7 @@ function endOf(r: HandLinkRow, side: 'a' | 'b'): End {
   if (node != null) return { kind: 'node', ref: node };
   return { kind: 'external', ref: r[`${side}_external`] ?? '', name: r[`${side}_external_name`] };
 }
-const toHandLink = (r: HandLinkRow) => ({ id: r.id, label: r.label, a: endOf(r, 'a'), b: endOf(r, 'b') });
+const toHandLink = (r: HandLinkRow) => ({ id: r.id, label: r.label, aPort: r.a_port, bPort: r.b_port, a: endOf(r, 'a'), b: endOf(r, 'b') });
 
 const EXTERNAL_REF = /^ext-[a-z0-9]{1,150}$/i;
 
@@ -311,6 +319,29 @@ router.post('/hand-links', requireWrite, async (req: Request, res: Response) => 
 });
 
 // DELETE /api/topology/hand-links/:id
+// PUT /api/topology/hand-links/:id { label?, a_port?, b_port? } — what's on
+// each end of a link drawn by hand (#260). null clears a field.
+router.put('/hand-links/:id', requireWrite, async (req: Request, res: Response) => {
+  const row = await queryOne<HandLinkRow>(`SELECT * FROM topology_hand_links WHERE id = $1`, [req.params.id]);
+  if (!row || !canWriteLink(req, row)) return res.status(404).json({ error: 'Link not found' });
+  const field = (k: string, max: number): string | null | undefined => {
+    if (!(k in (req.body ?? {}))) return undefined;
+    const v = req.body[k];
+    return v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max);
+  };
+  const label = field('label', 100);
+  const aPort = field('a_port', 64);
+  const bPort = field('b_port', 64);
+  const updated = await queryOne<HandLinkRow>(
+    `UPDATE topology_hand_links SET
+       label  = CASE WHEN $2 THEN $3 ELSE label END,
+       a_port = CASE WHEN $4 THEN $5 ELSE a_port END,
+       b_port = CASE WHEN $6 THEN $7 ELSE b_port END
+     WHERE id = $1 RETURNING *`,
+    [row.id, label !== undefined, label ?? null, aPort !== undefined, aPort ?? null, bPort !== undefined, bPort ?? null]);
+  return res.json(toHandLink(updated!));
+});
+
 router.delete('/hand-links/:id', requireWrite, async (req: Request, res: Response) => {
   const row = await queryOne<HandLinkRow>(`SELECT * FROM topology_hand_links WHERE id = $1`, [req.params.id]);
   if (!row || !canWriteLink(req, row)) return res.status(404).json({ error: 'Link not found' });
@@ -342,9 +373,16 @@ const MAX_LAYOUT_ENTRIES = 20_000;
 router.put('/layout', requireWrite, async (req: Request, res: Response) => {
   const positions = (req.body?.positions ?? {}) as Record<string, { x?: unknown; y?: unknown }>;
   const anchors = (req.body?.anchors ?? {}) as Record<string, { sourceHandle?: unknown; targetHandle?: unknown } | null>;
+  const colors = (req.body?.colors ?? {}) as Record<string, unknown>;
   const pos = Object.entries(positions);
   const anc = Object.entries(anchors);
-  if (pos.length + anc.length > MAX_LAYOUT_ENTRIES) return res.status(400).json({ error: 'Too many entries' });
+  const col = Object.entries(colors);
+  if (pos.length + anc.length + col.length > MAX_LAYOUT_ENTRIES) return res.status(400).json({ error: 'Too many entries' });
+  for (const [k, v] of col) {
+    if (!LAYOUT_KEY.test(k) || (v !== null && !/^#[0-9a-f]{6}$/i.test(String(v)))) {
+      return res.status(400).json({ error: 'A colour is #rrggbb, or null for the default' });
+    }
+  }
   const keys: string[] = []; const xs: number[] = []; const ys: number[] = [];
   for (const [k, v] of pos) {
     const x = Number(v?.x); const y = Number(v?.y);
@@ -376,8 +414,17 @@ router.put('/layout', requireWrite, async (req: Request, res: Response) => {
        ON CONFLICT (edge_key) DO UPDATE SET source_handle = EXCLUDED.source_handle, target_handle = EXCLUDED.target_handle, updated_at = NOW()`,
       [setKeys, srcs, tgts]);
   }
-  if (clear.length) await query(`DELETE FROM topology_edge_anchors WHERE edge_key = ANY($1::text[])`, [clear]);
-  return res.json({ ok: true, positions: keys.length, anchors: setKeys.length + clear.length });
+  // Clearing sides keeps a colour, and the other way round: one row holds both.
+  if (clear.length) await query(`UPDATE topology_edge_anchors SET source_handle = NULL, target_handle = NULL, updated_at = NOW() WHERE edge_key = ANY($1::text[])`, [clear]);
+  if (col.length) {
+    await query(
+      `INSERT INTO topology_edge_anchors (edge_key, color, updated_at)
+       SELECT k, c, NOW() FROM unnest($1::text[], $2::text[]) AS t(k, c)
+       ON CONFLICT (edge_key) DO UPDATE SET color = EXCLUDED.color, updated_at = NOW()`,
+      [col.map(([k]) => k), col.map(([, v]) => (v === null ? null : String(v).toLowerCase()))]);
+  }
+  await query(`DELETE FROM topology_edge_anchors WHERE source_handle IS NULL AND target_handle IS NULL AND color IS NULL`);
+  return res.json({ ok: true, positions: keys.length, anchors: setKeys.length + clear.length, colors: col.length });
 });
 
 // POST /api/topology/layout/reset { keys: [...], edges: [...] } — forget the
@@ -386,8 +433,33 @@ router.post('/layout/reset', requireWrite, async (req: Request, res: Response) =
   const keys = Array.isArray(req.body?.keys) ? (req.body.keys as unknown[]).map(String).filter((k) => LAYOUT_KEY.test(k)) : [];
   const edges = Array.isArray(req.body?.edges) ? (req.body.edges as unknown[]).map(String).filter((k) => LAYOUT_KEY.test(k)) : [];
   if (keys.length) await query(`DELETE FROM topology_positions WHERE node_key = ANY($1::text[])`, [keys.slice(0, MAX_LAYOUT_ENTRIES)]);
-  if (edges.length) await query(`DELETE FROM topology_edge_anchors WHERE edge_key = ANY($1::text[])`, [edges.slice(0, MAX_LAYOUT_ENTRIES)]);
+  // The sides links attach at; a colour someone chose is kept (#260).
+  if (edges.length) {
+    await query(`UPDATE topology_edge_anchors SET source_handle = NULL, target_handle = NULL WHERE edge_key = ANY($1::text[])`, [edges.slice(0, MAX_LAYOUT_ENTRIES)]);
+    await query(`DELETE FROM topology_edge_anchors WHERE source_handle IS NULL AND target_handle IS NULL AND color IS NULL`);
+  }
   return res.json({ ok: true });
+});
+
+// PUT /api/topology/neighbours/:extId { name?, kind? } — what a neighbour
+// discovery found really is (#260): a PC it labelled a switch, say. null
+// (or nothing set) goes back to what discovery says.
+const NEIGHBOUR_KINDS = new Set(['modem', 'cloud', 'router', 'firewall', 'switch', 'ap', 'server', 'nas', 'printer', 'camera', 'phone', 'computer', 'other']);
+router.put('/neighbours/:extId', requireWrite, async (req: Request, res: Response) => {
+  const extId = req.params.extId;
+  if (!EXTERNAL_REF.test(extId)) return res.status(400).json({ error: 'Not a neighbour id' });
+  const name = req.body?.name == null || String(req.body.name).trim() === '' ? null : String(req.body.name).trim().slice(0, 255);
+  const kind = req.body?.kind == null || req.body.kind === '' ? null : String(req.body.kind);
+  if (kind !== null && !NEIGHBOUR_KINDS.has(kind)) return res.status(400).json({ error: 'Unknown type' });
+  if (name === null && kind === null) {
+    await query(`DELETE FROM topology_neighbour_overrides WHERE ext_id = $1`, [extId]);
+  } else {
+    await query(
+      `INSERT INTO topology_neighbour_overrides (ext_id, name, kind) VALUES ($1, $2, $3)
+       ON CONFLICT (ext_id) DO UPDATE SET name = EXCLUDED.name, kind = EXCLUDED.kind, updated_at = NOW()`,
+      [extId, name, kind]);
+  }
+  return res.json({ ok: true, name, kind });
 });
 
 // POST /api/topology/hidden-links { key, label? } — hide a discovered link

@@ -14,6 +14,7 @@ import clsx from 'clsx';
 import AddDeviceModal from '../components/devices/AddDeviceModal';
 import AdoptDeviceModal from '../components/devices/AdoptDeviceModal';
 import EditDeviceModal from '../components/devices/EditDeviceModal';
+import BulkCredentialsModal from '../components/devices/BulkCredentialsModal';
 import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
 import CsvImportModal from '../components/devices/CsvImportModal';
 import BulkTagBar from '../components/devices/BulkTagBar';
@@ -118,6 +119,7 @@ export default function DevicesPage() {
   const [showCsvImport, setShowCsvImport] = useState(false);
   // Row selection for bulk tagging (#161).
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkLoginOpen, setBulkLoginOpen] = useState(false);
   const [deviceSort, setDeviceSort] = useState<{ key: DeviceSortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
   // Physical-placement filters (#107). Both are free-form strings on the device, so
   // the options come from what is actually recorded rather than a fixed list.
@@ -476,6 +478,7 @@ export default function DevicesPage() {
               devices={selectedVisible}
               tags={allTags}
               onClear={() => setSelected(new Set())}
+              onChangeLogin={() => setBulkLoginOpen(true)}
             />
           )}
           <div className="overflow-x-auto">
@@ -898,6 +901,10 @@ export default function DevicesPage() {
             queryClient.invalidateQueries({ queryKey: ['devices-discovered'] });
           }}
         />
+      )}
+
+      {bulkLoginOpen && (
+        <BulkCredentialsModal devices={selectedVisible} onClose={() => setBulkLoginOpen(false)} />
       )}
 
       {editDevice && (

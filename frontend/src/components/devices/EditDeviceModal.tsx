@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Loader2, Network, RotateCcw } from 'lucide-react';
-import { devicesApi } from '../../services/api';
+import { devicesApi, credentialPresetsApi } from '../../services/api';
+import { presetsForSite } from '../../hooks/useSitePresets';
 import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
 import { API_SSL_PORT, portFieldError } from '../../utils/apiTls';
@@ -50,6 +51,16 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  // A saved preset instead of typing the login (#259): fleet-wide ones and
+  // this device's site's, the same rule the server applies.
+  const [presetId, setPresetId] = useState<number | null>(null);
+  const { data: allPresets = [] } = useQuery({
+    queryKey: ['credential-presets'],
+    queryFn: () => credentialPresetsApi.list().then((r) => r.data),
+    staleTime: 30_000,
+  });
+  const presets = useMemo(() => presetsForSite(allPresets, device.site_id ?? null), [allPresets, device.site_id]);
+  const selectedPreset = presetId != null ? presets.find((p) => p.id === presetId) ?? null : null;
   // api-ssl on this port (#257). Null follows the port (TLS on 8729) until
   // the user ticks or unticks it, and is then sent with the save.
   const [apiSslChoice, setApiSslChoice] = useState<boolean | null>(
@@ -127,7 +138,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.ip_address || !form.api_username) {
+    if (!form.name || !form.ip_address || (!selectedPreset && !form.api_username)) {
       setError('Name, address, and username are required');
       return;
     }
@@ -154,6 +165,13 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
         notes: form.notes,
       };
       if (apiSslChoice !== null) payload.api_tls = apiSslChoice;
+      if (selectedPreset) {
+        // The server takes the login (and SSH login, and port) from the preset,
+        // and logs in with it before saving.
+        payload.credential_preset_id = selectedPreset.id;
+        delete payload.api_username;
+        delete payload.ssh_username;
+      }
       if (form.api_password) payload.api_password = form.api_password;
       if (form.ssh_password) payload.ssh_password = form.ssh_password;
       await devicesApi.update(device.id, payload);
@@ -316,7 +334,32 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                 connects over SSH until then, and checks a new address or SSH login over SSH when you save.
               </p>
             )}
+            {presets.length > 0 && (
+              <div className="mb-3">
+                <label className="label">Use a saved preset</label>
+                <select
+                  className="input"
+                  value={presetId ?? ''}
+                  onChange={(e) => setPresetId(e.target.value ? parseInt(e.target.value, 10) : null)}
+                >
+                  <option value="">— Keep or type the login below —</option>
+                  {presets.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.api_username}{p.ssh_username ? ` · SSH ${p.ssh_username}` : ''})
+                    </option>
+                  ))}
+                </select>
+                {selectedPreset && (
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-2">
+                    Saving replaces this device&apos;s login with preset <strong>{selectedPreset.name}</strong>
+                    {selectedPreset.has_ssh_password && selectedPreset.ssh_username ? ', SSH login included' : ''}.
+                    The manager logs in with it first, and nothing is saved if that fails.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
+              {!selectedPreset && (
               <div>
                 <label className="label">Username *</label>
                 <input
@@ -325,6 +368,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                   onChange={(e) => set('api_username', e.target.value)}
                 />
               </div>
+              )}
               <div>
                 <label className="label">API Port</label>
                 <input
@@ -341,6 +385,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                   API-SSL (encrypted)
                 </label>
               </div>
+              {!selectedPreset && (
               <div className="col-span-2">
                 <label className="label">
                   {passwordNeededForMove
@@ -356,10 +401,12 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                   placeholder="••••••••"
                 />
               </div>
+              )}
             </div>
           </div>
 
           {/* SSH credentials (optional; what an SSH-only device is reached with, #174) */}
+          {!selectedPreset && (
           <details className="group" open={device.ssh_only || undefined}>
             <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider select-none">
               SSH Credentials (optional, for backup/restore)
@@ -396,6 +443,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
               </div>
             </div>
           </details>
+          )}
 
           <div>
             <label className="label">Notes</label>

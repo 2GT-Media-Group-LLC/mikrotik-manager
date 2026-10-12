@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Tag as TagIcon, X, Loader2 } from 'lucide-react';
+import { Tag as TagIcon, X, Loader2, KeyRound } from 'lucide-react';
 import { tagsApi } from '../../services/api';
 import type { Device, Tag } from '../../types';
 
@@ -10,10 +10,12 @@ import type { Device, Tag } from '../../types';
  * Tags were settable one device at a time, which made them impractical as the
  * way to group a fleet for rollouts, channels and bulk commands.
  */
-export default function BulkTagBar({ devices, tags, onClear }: {
+export default function BulkTagBar({ devices, tags, onClear, onChangeLogin }: {
   devices: Device[];
   tags: Tag[];
   onClear: () => void;
+  /** Change the login the manager uses for the selected devices (#259). */
+  onChangeLogin?: () => void;
 }) {
   const qc = useQueryClient();
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -70,6 +72,11 @@ export default function BulkTagBar({ devices, tags, onClear }: {
             {tags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </>
+      )}
+      {onChangeLogin && (
+        <button onClick={onChangeLogin} className="flex items-center gap-1.5 text-[12px] px-2 py-1 rounded" style={selectStyle}>
+          <KeyRound className="w-3.5 h-3.5" /> Change login…
+        </button>
       )}
       {apply.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--ink-3)' }} />}
       {note && (

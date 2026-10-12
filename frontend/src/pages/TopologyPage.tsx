@@ -31,6 +31,7 @@ import EdgeMenu from '../components/topology/EdgeMenu';
 import NodeEditor from '../components/topology/NodeEditor';
 import HandLinksTable from '../components/topology/HandLinksTable';
 import HiddenLinksTable from '../components/topology/HiddenLinksTable';
+import NeighbourEditor from '../components/topology/NeighbourEditor';
 
 const edgeTypes = { topo: TopoEdge };
 const SHOW_CLIENTS_KEY = 'topology.showClients';
@@ -38,14 +39,16 @@ const SHOW_CLIENTS_KEY = 'topology.showClients';
 type Anchors = Record<string, { sourceHandle: Side | null; targetHandle: Side | null }>;
 
 /** React Flow edge for a graph edge: the colour says what kind of link it is. */
-function toFlowEdge(e: GraphEdge, anchors: Anchors, onDelete: (e: GraphEdge) => void, canWrite: boolean): Edge {
+function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, string>, onDelete: (e: GraphEdge) => void, canWrite: boolean): Edge {
   const sides = anchors[e.id];
+  // A colour chosen for this link (#260) wins over the one its kind gives it.
+  const custom = colors[e.id] ? { stroke: colors[e.id] } : {};
   const data: TopoEdgeData = { label: e.label, parallel: e.parallel, sourceSide: sides?.sourceHandle ?? null, targetSide: sides?.targetHandle ?? null };
   if (e.kind === 'hand') {
     return {
       id: e.id, source: e.source, target: e.target, type: 'topo',
       data: { ...data, hand: true, onDelete: canWrite && e.deleteId != null ? () => onDelete(e) : undefined },
-      style: { stroke: '#8b5cf6', strokeWidth: 2, strokeDasharray: '6,3' },
+      style: { stroke: '#8b5cf6', strokeWidth: 2, strokeDasharray: '6,3', ...custom },
     };
   }
   if (e.kind === 'client') {
@@ -59,7 +62,7 @@ function toFlowEdge(e: GraphEdge, anchors: Anchors, onDelete: (e: GraphEdge) => 
     id: e.id, source: e.source, target: e.target, type: 'topo',
     data: { ...data, label: e.label ? `${e.label}${e.role === 'blocked' ? ' [blocked]' : ''}` : (e.role === 'blocked' ? 'blocked' : undefined) },
     className: 'topology-edge',
-    style: { strokeWidth: 2, ...look },
+    style: { strokeWidth: 2, ...look, ...custom },
     animated: e.role === 'root',
   };
 }
@@ -93,6 +96,13 @@ export default function TopologyPage() {
   const invalidate = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['topology'] }); }, [queryClient]);
 
   const anchors: Anchors = useMemo(() => ({ ...(data?.layout?.anchors ?? {}), ...anchorEdits }), [data, anchorEdits]);
+  // Link colours (#260): saved ones, with edits made since the last load on top.
+  const [colorEdits, setColorEdits] = useState<Record<string, string | null>>({});
+  const colors = useMemo(() => {
+    const merged: Record<string, string | null> = { ...(data?.layout?.colors ?? {}), ...colorEdits };
+    return Object.fromEntries(Object.entries(merged).filter(([, c]) => !!c)) as Record<string, string>;
+  }, [data, colorEdits]);
+  const [editingNeighbour, setEditingNeighbour] = useState<{ id: string; name: string; discoveredName?: string; caps?: string; overrideKind?: string | null } | null>(null);
 
   const discoverMutation = useMutation({
     mutationFn: () => topologyApi.discover(),
@@ -130,6 +140,7 @@ export default function TopologyPage() {
       expandedClients: expanded,
       saved: data.layout?.positions ?? {},
       hidden: new Set((data.hiddenLinks ?? []).map((h) => h.key)),
+      neighbourOverrides: data.neighbourOverrides ?? {},
     });
   }, [data, showClients, expanded]);
 
@@ -160,8 +171,8 @@ export default function TopologyPage() {
 
   useEffect(() => {
     if (!graph) return;
-    setEdges(graph.edges.map((e) => toFlowEdge(e, anchors, onDeleteEdge, canWrite)));
-  }, [graph, anchors, onDeleteEdge, canWrite, setEdges]);
+    setEdges(graph.edges.map((e) => toFlowEdge(e, anchors, colors, onDeleteEdge, canWrite)));
+  }, [graph, anchors, colors, onDeleteEdge, canWrite, setEdges]);
 
   /**
    * Save where every card is, so the arrangement holds for everyone and after a
@@ -191,6 +202,14 @@ export default function TopologyPage() {
     onSuccess: () => { setLinkError(''); invalidate(); },
     onError: (e: unknown) => setLinkError((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Couldn’t connect them'),
   });
+
+  const setColor = useCallback((edgeId: string, color: string | null) => {
+    setColorEdits((c) => ({ ...c, [edgeId]: color }));
+    void topologyApi.saveLayout({ colors: { [edgeId]: color } });
+  }, []);
+  const saveHandLink = useCallback((id: number, v: { aPort: string; bPort: string; label: string }) => {
+    void topologyApi.updateHandLink(id, { a_port: v.aPort, b_port: v.bPort, label: v.label }).then(invalidate);
+  }, [invalidate]);
 
   const setSides = useCallback((edgeId: string, source: Side | null, target: Side | null) => {
     setAnchorEdits((a) => ({ ...a, [edgeId]: { sourceHandle: source, targetHandle: target } }));
@@ -240,6 +259,8 @@ export default function TopologyPage() {
       setExpanded((s) => { const next = new Set(s); if (next.has(dev)) next.delete(dev); else next.add(dev); return next; });
     } else if (n.type === 'client') {
       navigate(`/clients/${encodeURIComponent((n.data as { mac: string }).mac)}`);
+    } else if (n.type === 'external' && canWrite) {
+      setEditingNeighbour(n.data as unknown as { id: string; name: string; discoveredName?: string; caps?: string; overrideKind?: string | null } & { id: string });
     } else if (n.type === 'manual' && canWrite) {
       const node = (data?.nodes || []).find((x) => `node-${x.id}` === n.id);
       if (node) setEditing(node);
@@ -496,6 +517,13 @@ export default function TopologyPage() {
           canWrite={canWrite}
           onSides={(src, dst) => setSides(menuEdge.id, src, dst)}
           onRemove={menuEdge.kind === 'hand' ? () => { setMenu(null); onDeleteEdge(menuEdge); } : undefined}
+          color={colors[menuEdge.id] ?? null}
+          onColor={(c) => setColor(menuEdge.id, c)}
+          hand={menuEdge.kind === 'hand' ? (() => {
+            const hl = (data?.handLinks ?? []).find((h) => h.id === menuEdge.deleteId);
+            return { aPort: hl?.aPort ?? '', bPort: hl?.bPort ?? '', label: hl?.label ?? '' };
+          })() : undefined}
+          onSaveHand={menuEdge.kind === 'hand' && menuEdge.deleteId != null ? (v) => { setMenu(null); saveHandLink(menuEdge.deleteId!, v); } : undefined}
           onHide={menuEdge.kind === 'discovered' ? () => {
             setMenu(null);
             const label = `${nameOfNode(menuEdge.source)} ↔ ${nameOfNode(menuEdge.target)}${menuEdge.label ? ` (${menuEdge.label})` : ''}`;
@@ -503,6 +531,10 @@ export default function TopologyPage() {
           } : undefined}
           onClose={() => setMenu(null)}
         />
+      )}
+
+      {editingNeighbour && (
+        <NeighbourEditor neighbour={editingNeighbour} onClose={() => setEditingNeighbour(null)} onSaved={invalidate} />
       )}
 
       {editing && (

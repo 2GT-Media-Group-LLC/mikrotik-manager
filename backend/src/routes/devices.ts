@@ -3,7 +3,8 @@ import { readSshInfo, refreshOverSsh, checkApi, promoteToApi, recordApiCheck, ty
 import { describeSshFailure } from '../utils/sshOnly';
 import net from 'net';
 import { Router, Request, Response } from 'express';
-import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
+import { deviceSiteAccess, deviceIdParam, devicesDenied } from '../utils/siteAccess';
+import { bulkUpdateCredentials } from '../services/bulkCredentials';
 import { devicePins, pendingIdentityChanges, trustNewIdentity, IDENTITY_KINDS } from '../services/identityPins';
 import { enableApiSsl, type ApiSslDevice } from '../services/apiSsl';
 import { enableWwwSsl } from '../services/wwwSsl';
@@ -317,6 +318,38 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
 });
 
 const BULK_ADD_META_TTL_SEC = 86400;
+
+// POST /api/devices/credentials/bulk — change the login the manager uses for
+// several devices (#259). Each device is logged in to with the new login first
+// and only updated if that works. The devices themselves are not changed.
+router.post('/credentials/bulk', requireWrite, async (req: Request, res: Response) => {
+  const ids = Array.isArray(req.body?.device_ids) ? (req.body.device_ids as unknown[]).map(Number) : [];
+  if (ids.length === 0 || ids.length > 500 || !ids.every((n) => Number.isSafeInteger(n) && n > 0)) {
+    return res.status(400).json({ error: 'device_ids must be a list of up to 500 device ids.' });
+  }
+  const presetId = req.body?.credential_preset_id == null ? null : Number(req.body.credential_preset_id);
+  if (presetId !== null && (!Number.isSafeInteger(presetId) || presetId <= 0)) {
+    return res.status(400).json({ error: 'credential_preset_id must be a preset id.' });
+  }
+  const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+  const input = {
+    credential_preset_id: presetId,
+    api_username: str(req.body?.api_username)?.trim(),
+    api_password: str(req.body?.api_password),
+    ssh_username: req.body?.ssh_username === undefined ? undefined : (str(req.body.ssh_username)?.trim() || null),
+    ssh_password: req.body?.ssh_password === undefined ? undefined : (str(req.body.ssh_password) || null),
+  };
+  if (presetId === null && (!input.api_username || !input.api_password)) {
+    return res.status(400).json({ error: 'Pick a preset, or give both a username and a password.' });
+  }
+  // Every device must be one the account may change; one outside its sites
+  // refuses the lot rather than quietly skipping it.
+  const denied = await devicesDenied(req.user!, ids, 'operator');
+  if (denied.length) return res.status(404).json({ error: `Device${denied.length === 1 ? '' : 's'} not found: ${denied.join(', ')}` });
+
+  const results = await bulkUpdateCredentials(ids, input, { role: req.user?.role, presetCaller: presetCaller(req.user) });
+  return res.json({ results, updated: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length });
+});
 
 // POST /api/devices/bulk-add/jobs — enqueue Try-All style adds (survives tab close)
 router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) => {

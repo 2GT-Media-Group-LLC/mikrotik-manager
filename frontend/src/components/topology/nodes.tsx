@@ -40,13 +40,21 @@ export const NODE_KINDS: { kind: string; label: string; Icon: typeof Globe }[] =
 ];
 export const kindInfo = (kind: string) => NODE_KINDS.find((k) => k.kind === kind) ?? NODE_KINDS[NODE_KINDS.length - 1];
 
-function capsLabel(caps: string | undefined): string {
+/**
+ * What a neighbour's LLDP capabilities say it is. A computer with a software
+ * bridge (Hyper-V, a Linux bridge) advertises "bridge" as well as "station",
+ * and was labelled a switch (#260); an access point advertises "bridge" and
+ * "wlan-ap". Those win over "bridge". "bridge" stays ahead of "router",
+ * because a layer-3 switch advertises both.
+ */
+export function capsLabel(caps: string | undefined): string {
   if (!caps) return '';
-  const c = caps.toLowerCase();
-  if (c.includes('bridge'))   return 'Switch';
-  if (c.includes('router'))   return 'Router';
-  if (c.includes('wlan-ap'))  return 'AP';
+  const c = caps.toLowerCase().split(/[\s,]+/);
+  if (c.includes('station'))   return 'Computer';
+  if (c.includes('wlan-ap'))   return 'AP';
   if (c.includes('telephone')) return 'Phone';
+  if (c.includes('bridge'))    return 'Switch';
+  if (c.includes('router'))    return 'Router';
   return '';
 }
 
@@ -94,8 +102,9 @@ function DeviceNode({ data }: { data: Record<string, unknown> }) {
 }
 
 function ExternalNode({ data }: { data: Record<string, unknown> }) {
-  const node = data as unknown as ExternalTopologyNode & { connectMode: boolean };
-  const cl = capsLabel(node.caps);
+  const node = data as unknown as ExternalTopologyNode & { connectMode: boolean; overrideKind?: string | null };
+  // A type set by hand (#260) wins over what discovery says.
+  const cl = node.overrideKind ? kindInfo(node.overrideKind).label : capsLabel(node.caps);
   const gone = node.caps === 'gone';
   return (
     <div className="px-3 py-2 min-w-[130px] max-w-[200px] text-xs rounded-lg bg-gray-100 dark:bg-slate-700/60 shadow-sm select-none" style={{ border: '1.5px dashed #94a3b8' }}>

@@ -194,3 +194,25 @@ describe('links hidden by hand', () => {
     expect(g.nodes.filter((n) => n.kind === 'device')).toHaveLength(2);
   });
 });
+
+// #260: editing the map by hand.
+describe('hand edits on the map', () => {
+  it('shows the ports typed for a hand-drawn link, then its label', () => {
+    const g = buildTopologyGraph(base({
+      devices: [dev(1), dev(2)],
+      handLinks: [{ id: 7, label: 'trunk', aPort: 'ether5', bPort: 'sfp1', a: { kind: 'device', ref: 1 }, b: { kind: 'device', ref: 2 } }],
+    }));
+    expect(g.edges.find((e) => e.id === 'hand-7')?.label).toBe('ether5 ↔ sfp1 · trunk');
+  });
+
+  it('names and types a neighbour as set by hand, keeping what discovery called it', () => {
+    const g = buildTopologyGraph(base({
+      devices: [dev(1)],
+      externalNodes: [{ id: 'ext-aa', name: 'DESKTOP-1234', address: '', platform: '', mac: 'AA', caps: 'bridge,station' }],
+      links: [{ id: 1, from_device_id: 1, from_interface: 'ether3', neighbor_mac: 'AA', link_type: 'lldp', discovered_at: '2026-10-12T00:00:00Z' }],
+      neighbourOverrides: { 'ext-aa': { name: 'Rich PC', kind: 'computer' } },
+    }));
+    const n = g.nodes.find((x) => x.id === 'ext-aa')!;
+    expect(n.data).toMatchObject({ name: 'Rich PC', discoveredName: 'DESKTOP-1234', overrideKind: 'computer' });
+  });
+});

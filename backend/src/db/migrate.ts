@@ -1505,6 +1505,19 @@ CREATE TABLE IF NOT EXISTS topology_edge_anchors (
   updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Editing the map by hand (#260): a name and type for a neighbour discovery
+-- found (a PC it labelled a switch), the ports at each end of a hand-drawn
+-- link, and a colour for any link.
+CREATE TABLE IF NOT EXISTS topology_neighbour_overrides (
+  ext_id      VARCHAR(160) PRIMARY KEY,
+  name        VARCHAR(255),
+  kind        VARCHAR(32),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE topology_hand_links ADD COLUMN IF NOT EXISTS a_port VARCHAR(64);
+ALTER TABLE topology_hand_links ADD COLUMN IF NOT EXISTS b_port VARCHAR(64);
+ALTER TABLE topology_edge_anchors ADD COLUMN IF NOT EXISTS color VARCHAR(16);
+
 -- Discovered links hidden by hand (discussion #85): discovery can be wrong (a
 -- switch heard through forwarded LLDP), and someone who knows the cabling can
 -- hide a link it reports. Keyed by the link's stable id, so a hidden link stays

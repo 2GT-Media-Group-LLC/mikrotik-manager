@@ -653,6 +653,15 @@ export const commandsApi = {
 };
 
 export const devicesApi = {
+  /**
+   * Change the login the manager uses for several devices (#259). Each is
+   * logged in to with the new login first, and only updated if that works.
+   */
+  bulkCredentials: (data: {
+    device_ids: number[]; credential_preset_id?: number | null;
+    api_username?: string; api_password?: string; ssh_username?: string | null; ssh_password?: string | null;
+  }) => api.post<{ results: { id: number; name: string; ok: boolean; error?: string }[]; updated: number; failed: number }>(
+    '/devices/credentials/bulk', data, { timeout: 240_000 }),
   list: () => api.get<Device[]>('/devices'),
   discovered: () => api.get<DiscoveredDevice[]>('/devices/discovered'),
   get: (id: number) => api.get<Device>(`/devices/${id}`),
@@ -1466,7 +1475,11 @@ export const topologyApi = {
       layout: {
         positions: Record<string, { x: number; y: number }>;
         anchors: Record<string, { sourceHandle: 't' | 'b' | 'l' | 'r' | null; targetHandle: 't' | 'b' | 'l' | 'r' | null }>;
+        /** A colour per link, #rrggbb (#260). */
+        colors?: Record<string, string>;
       };
+      /** What neighbours discovery found really are, set by hand (#260). */
+      neighbourOverrides?: Record<string, { name: string | null; kind: string | null }>;
       /** Only with withClients: client devices and where they connect. */
       clients?: import('../types').TopologyClient[];
       /** Discovered links hidden by hand (discussion #85). */
@@ -1483,7 +1496,14 @@ export const topologyApi = {
   saveLayout: (data: {
     positions?: Record<string, { x: number; y: number }>;
     anchors?: Record<string, { sourceHandle: string | null; targetHandle: string | null } | null>;
+    colors?: Record<string, string | null>;
   }) => api.put('/topology/layout', data),
+  /** Ports at each end and the label of a link drawn by hand (#260); null clears. */
+  updateHandLink: (id: number, data: { label?: string | null; a_port?: string | null; b_port?: string | null }) =>
+    api.put<import('../types').HandLink>(`/topology/hand-links/${id}`, data),
+  /** A name and type for a neighbour discovery found (#260); both null go back to discovery's. */
+  setNeighbour: (extId: string, data: { name: string | null; kind: string | null }) =>
+    api.put(`/topology/neighbours/${encodeURIComponent(extId)}`, data),
   /** Forget the arrangement of these nodes and links, so they're laid out automatically again. */
   resetLayout: (keys: string[], edges: string[]) => api.post('/topology/layout/reset', { keys, edges }),
   createNode: (data: { name: string; kind: string; address?: string | null; notes?: string | null }) =>

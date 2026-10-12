@@ -36,6 +36,8 @@ export interface GraphInput {
   saved?: Record<string, { x: number; y: number }>;
   /** Discovered links hidden by hand, by link id (discussion #85). Left out before layout. */
   hidden?: Set<string>;
+  /** A name and type someone gave a neighbour discovery found, by its id (#260). */
+  neighbourOverrides?: Record<string, { name: string | null; kind: string | null }>;
 }
 
 export type GraphNodeKind = 'device' | 'external' | 'manual' | 'clientGroup' | 'client';
@@ -339,7 +341,11 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
         data: { ...d, isRootBridge: stpRoots.has(id), stpNote: notes.get(id) ?? null, orphan: loose.includes(id) } as Record<string, unknown>,
       };
     }),
-    ...externalNodes.map((e) => ({ id: e.id, kind: 'external' as const, ...pos(e.id), data: { ...e } as Record<string, unknown> })),
+    ...externalNodes.map((e) => {
+      const o = input.neighbourOverrides?.[e.id];
+      return { id: e.id, kind: 'external' as const, ...pos(e.id),
+        data: { ...e, ...(o?.name ? { name: o.name, discoveredName: e.name } : {}), overrideKind: o?.kind ?? null } as Record<string, unknown> };
+    }),
     ...nodes.map((n) => {
       const id = nodeId.manual(n.id);
       return { id, kind: 'manual' as const, ...pos(id), data: { ...n, orphan: loose.includes(id) } as Record<string, unknown> };
@@ -365,7 +371,10 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     const src = endId(hl.a);
     const dst = endId(hl.b);
     if (!adj.has(src) || !adj.has(dst)) continue;
-    edges.push({ id: `hand-${hl.id}`, kind: 'hand', source: src, target: dst, label: hl.label ?? undefined, deleteId: hl.id, parallel: nextParallel(src, dst) });
+    // The ports at each end, as typed (#260), then the label.
+    const ports = hl.aPort || hl.bPort ? `${hl.aPort ?? '?'} ↔ ${hl.bPort ?? '?'}` : '';
+    const label = [ports, hl.label].filter(Boolean).join(' · ') || undefined;
+    edges.push({ id: `hand-${hl.id}`, kind: 'hand', source: src, target: dst, label, deleteId: hl.id, parallel: nextParallel(src, dst) });
   }
   for (const e of clientEdges) edges.push(e);
 

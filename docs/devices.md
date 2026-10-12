@@ -200,6 +200,21 @@ A preset is either **fleet-wide** or belongs to **one site**:
 
 Before 0.30.0 presets were fleet-wide only and lived under Settings.
 
+**Edit Device** offers the same presets (#259): picking one replaces the device's login, SSH login
+included, with the preset's. The manager logs in with it first, and nothing is saved if that
+fails.
+
+### Changing the login for many devices
+
+Select devices in the device list and choose **Change login…** in the bar above it (#259). Pick a
+preset, or type a username and password (optionally an SSH login too). This changes the login the
+manager uses, not anything on the devices. Each device is logged in to with the new login first,
+and keeps its current one if that fails; the result lists every device and why any were left
+alone. Presets are offered only when every selected device's site can use them.
+
+A typical use: devices added with a shared admin login, then moved to a dedicated manager user
+once that user exists on them.
+
 ### The RouterOS login the manager uses
 
 Give the manager a RouterOS user in the built-in **`full`** group. It reads and changes

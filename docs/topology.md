@@ -74,6 +74,10 @@ and the view isn't refitted. A new device, or a client list you open, appears ne
 connects to. **Reset layout** forgets the arrangement of everything in view and lays it out
 automatically again.
 
+Any link, discovered or drawn, can be given a colour from its menu, to pick out trunks, say
+(#260); **Default** goes back to the colour its kind gives it. Colours are kept when the layout
+is reset.
+
 Links run straight between the edges of the two cards and follow them as they move. Click a link
 to choose where each end attaches: **Top**, **Bottom**, **Left**, **Right** or **Automatic**. A
 pinned end leaves its side at a right angle and the link routes around, as in a wiring diagram.
@@ -96,6 +100,16 @@ to it, and the access point it's associated with. It is drawn where it actually 
 
 Only active clients are shown. The setting is remembered in your browser.
 
+## Neighbours discovery found
+
+A device the manager doesn't manage, seen over LLDP, CDP or MNDP, is drawn with a dashed border
+and labelled from what it advertises: a switch, router, access point, phone or computer. A
+computer running a software bridge (Hyper-V, a Linux bridge) advertises "bridge" too; from 0.50.0
+it's labelled a computer, not a switch (#260).
+
+Click a neighbour to give it a better name or set its type by hand; **Back to what discovery
+says** undoes that. Discovery keeps finding it as before; only how it's shown changes.
+
 ## Your own nodes
 
 Discovery cannot see everything. **Add node** puts something the platform doesn't manage on the
@@ -113,7 +127,8 @@ equipment from another vendor. Turn on **Connect Mode** and drag from any blue h
 node to draw a link. Either end can be a managed device, one of your own nodes, or a neighbour
 discovery found but the platform doesn't manage. Handles work from any side.
 
-Hand-drawn links are purple and dashed so they can't be mistaken for discovered ones. To remove
+Hand-drawn links are purple and dashed so they can't be mistaken for discovered ones. Click one
+to type the port at each end and a label, shown on the link as `ether5 ↔ sfp1 · trunk` (#260). To remove
 one, use the × on its label or click it and choose **Remove**. All of them are also listed under
 **Links drawn by hand** below the map, each with a **Remove** button.
 
@@ -144,9 +159,11 @@ equipment the platform does not manage, or it genuinely has no neighbours.
 | `POST` | `/api/topology/nodes` | Add a node: `name`, `kind`, optional `address` and `notes` |
 | `PUT` / `DELETE` | `/api/topology/nodes/:id` | Edit or delete a node (its links go with it) |
 | `POST` | `/api/topology/hand-links` | Draw a link: `{"a": {"kind": "device", "ref": 1}, "b": {"kind": "node", "ref": 4}, "label": "WAN"}`. `kind` is `device`, `node` or `external` (a neighbour's map id, `ext-…`, with an optional `name`) |
+| `PUT` | `/api/topology/hand-links/:id` | Ports at each end and the label of a hand-drawn link: `a_port`, `b_port`, `label` (null clears) |
 | `DELETE` | `/api/topology/hand-links/:id` | Remove a hand-drawn link |
+| `PUT` | `/api/topology/neighbours/:id` | Name and type for a neighbour discovery found: `{"name": "…", "kind": "computer"}`; both null go back to discovery's |
 | `POST` / `DELETE` | `/api/topology/manual-links` | The older form, for scripts: a link between two managed devices (`from_device_id`, `to_device_id`) |
 | `POST` | `/api/topology/hidden-links` | Hide a discovered link: `{"key": "cable:…", "label": "…"}`, the link's id from the map |
 | `DELETE` | `/api/topology/hidden-links?key=…` | Show a hidden link again |
-| `PUT` | `/api/topology/layout` | Save card positions (`positions: {id: {x, y}}`) and link attachment sides (`anchors: {linkId: {sourceHandle, targetHandle}}`, `t`/`b`/`l`/`r`, or `null` for automatic); merged into what's saved |
+| `PUT` | `/api/topology/layout` | Save card positions (`positions: {id: {x, y}}`), link attachment sides (`anchors: {linkId: {sourceHandle, targetHandle}}`, `t`/`b`/`l`/`r`, or `null` for automatic) and link colours (`colors: {linkId: "#rrggbb" or null}`); merged into what's saved |
 | `POST` | `/api/topology/layout/reset` | Forget the arrangement of the given cards (`keys`) and links (`edges`) |

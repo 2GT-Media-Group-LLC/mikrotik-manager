@@ -374,6 +374,9 @@ export interface HandLinkEnd {
 export interface HandLink {
   id: number;
   label: string | null;
+  /** The port at each end, as typed (#260). */
+  aPort?: string | null;
+  bPort?: string | null;
   a: HandLinkEnd;
   b: HandLinkEnd;
 }
