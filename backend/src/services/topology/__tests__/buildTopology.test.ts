@@ -337,3 +337,56 @@ describe('no shared segments (#147)', () => {
     expect(g.externalNodes.map((n) => n.name)).toEqual(['printer-switch']);
   });
 });
+
+// Discussion #85: RouterOS bridges forward LLDP, so an AP heard a new switch
+// through the router as if cabled to it.
+describe('an unmanaged neighbour heard through the network', () => {
+  const devices = [dev(1, 'router', '10.0.0.1'), dev(2, 'ap', '10.0.0.2')];
+  const sw = { neighbor_mac: 'AA:BB:CC:00:00:01', neighbor_identity: 'new-switch', link_type: 'lldp' };
+  // The AP's ether1 is its uplink: it also hears the router.
+  const apUplink = link({ from_device_id: 2, from_interface: 'ether1', to_device_id: 1, to_interface: 'ether3', link_type: 'lldp' });
+  const routerToAp = link({ from_device_id: 1, from_interface: 'ether3', to_device_id: 2, to_interface: 'ether1', link_type: 'lldp' });
+  const drawnTo = (g: ReturnType<typeof buildTopology>) =>
+    g.links.filter((l) => l.neighbor_identity === 'new-switch').map((l) => `${l.from_device_id}:${l.from_interface}`);
+
+  it('keeps the cable and drops the uplink sighting of the same switch port', () => {
+    const g = buildTopology(devices, [
+      apUplink, routerToAp,
+      link({ ...sw, from_device_id: 1, from_interface: 'ether5', to_interface: 'port24' }),
+      link({ ...sw, from_device_id: 2, from_interface: 'ether1', to_interface: 'port24' }),
+    ], []);
+    expect(drawnTo(g)).toEqual(['1:ether5']);
+  });
+
+  it('leaves both when they name different ports of the switch: both can be cables', () => {
+    const g = buildTopology(devices, [
+      apUplink, routerToAp,
+      link({ ...sw, from_device_id: 1, from_interface: 'ether5', to_interface: 'Port 5' }),
+      link({ ...sw, from_device_id: 2, from_interface: 'ether1', to_interface: 'Port 6' }),
+    ], []);
+    expect(drawnTo(g).sort()).toEqual(['1:ether5', '2:ether1']);
+  });
+
+  it('leaves both when it cannot tell (both on edge ports, or both on uplinks)', () => {
+    const edges = buildTopology(devices, [
+      link({ ...sw, from_device_id: 1, from_interface: 'ether5', to_interface: 'port24' }),
+      link({ ...sw, from_device_id: 2, from_interface: 'ether7', to_interface: 'port24' }),
+    ], []);
+    expect(drawnTo(edges)).toHaveLength(2);
+    const uplinks = buildTopology(devices, [
+      apUplink, routerToAp,
+      link({ ...sw, from_device_id: 1, from_interface: 'ether3', to_interface: 'port24' }),
+      link({ ...sw, from_device_id: 2, from_interface: 'ether1', to_interface: 'port24' }),
+    ], []);
+    expect(drawnTo(uplinks)).toHaveLength(2);
+  });
+
+  it('compares the port, not a bridge prefix', () => {
+    const g = buildTopology(devices, [
+      apUplink, routerToAp,
+      link({ ...sw, from_device_id: 1, from_interface: 'ether5', to_interface: 'bridge/port24' }),
+      link({ ...sw, from_device_id: 2, from_interface: 'ether1', to_interface: 'port24' }),
+    ], []);
+    expect(drawnTo(g)).toEqual(['1:ether5']);
+  });
+});

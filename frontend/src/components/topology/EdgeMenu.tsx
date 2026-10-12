@@ -6,7 +6,7 @@ import { SIDES, type Side } from '../../utils/topologyGeometry';
  * What clicking a link offers (#147): which side of each card it attaches to,
  * and, for a link drawn by hand, removing it.
  */
-export default function EdgeMenu({ at, title, ports, sourceName, targetName, sourceSide, targetSide, canWrite, onSides, onRemove, onClose }: {
+export default function EdgeMenu({ at, title, ports, sourceName, targetName, sourceSide, targetSide, canWrite, onSides, onRemove, onHide, onClose }: {
   at: { x: number; y: number };
   title: string;
   ports?: string;
@@ -17,6 +17,8 @@ export default function EdgeMenu({ at, title, ports, sourceName, targetName, sou
   canWrite: boolean;
   onSides: (source: Side | null, target: Side | null) => void;
   onRemove?: () => void;
+  /** Hide a discovered link that's wrong (discussion #85). */
+  onHide?: () => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -49,6 +51,12 @@ export default function EdgeMenu({ at, title, ports, sourceName, targetName, sou
         <p className="text-[11px] text-gray-400">Attach at</p>
         {picker(sourceName, sourceSide, (v) => onSides(v, targetSide))}
         {picker(targetName, targetSide, (v) => onSides(sourceSide, v))}
+        {onHide && canWrite && (
+          <button className="block text-xs text-red-600 hover:underline pt-1" onClick={onHide}
+            title="For a link discovery reports that isn't a real cable. It can be shown again from the list below the map.">
+            Hide this link
+          </button>
+        )}
         {onRemove && canWrite && (
           <button className="text-xs text-red-600 hover:underline pt-1" onClick={onRemove}>Remove this hand-drawn link</button>
         )}

@@ -1505,6 +1505,17 @@ CREATE TABLE IF NOT EXISTS topology_edge_anchors (
   updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Discovered links hidden by hand (discussion #85): discovery can be wrong (a
+-- switch heard through forwarded LLDP), and someone who knows the cabling can
+-- hide a link it reports. Keyed by the link's stable id, so a hidden link stays
+-- hidden across polls; label is what the list of hidden links shows.
+CREATE TABLE IF NOT EXISTS topology_hidden_links (
+  edge_key   TEXT PRIMARY KEY,
+  label      TEXT,
+  hidden_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  hidden_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- NVD's entry for a CVE only the release notes name, looked up by id: it often
 -- has a description and score well before it lists affected versions.
 CREATE TABLE IF NOT EXISTS ros_cve_details (

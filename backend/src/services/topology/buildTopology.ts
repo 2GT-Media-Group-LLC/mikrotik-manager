@@ -388,8 +388,43 @@ export function buildTopology(
   }
   const soloNonLldp = [...portGroupMap.values()].filter((g) => g.length < 2).flat();
   const segConns: SegConn[] = [];
+
+  // ── Step 6b: One cable per port of an unmanaged neighbour ──────────────────
+  // RouterOS bridges forward LLDP, so a device can hear an unmanaged switch
+  // through the rest of the network as if it were cabled to it (discussion
+  // #85). The neighbour says which of its own ports each announcement left
+  // from. When two managed devices name the same port, at most one of them is
+  // the cable: the one whose port faces no other managed device is kept, and
+  // one heard on a port that also faces managed devices (an uplink) is
+  // dropped. Different ports can both be real and are left alone, as is a
+  // group with no clear answer; "Hide link" is there for those.
+  const facesManaged = new Set<string>();
+  for (const l of links) {
+    if (!l.to_device_id || !l.from_device_id) continue;
+    if (l.from_interface) facesManaged.add(`${l.from_device_id}::${portOf(l.from_interface)}`);
+    if (l.to_interface) facesManaged.add(`${l.to_device_id}::${portOf(l.to_interface)}`);
+  }
+  const onUplink = (l: LinkRow) => facesManaged.has(`${l.from_device_id}::${portOf(l.from_interface ?? '')}`);
+  const byNeighbourPort = new Map<string, LinkRow[]>();
+  for (const l of [...lldpLinks, ...soloNonLldp]) {
+    if (l.to_device_id || !l.from_device_id || !l.to_interface) continue;
+    const key = neighborKey(l);
+    if (!key) continue;
+    const k = `${key}|${portOf(l.to_interface).toLowerCase()}`;
+    byNeighbourPort.set(k, [...(byNeighbourPort.get(k) ?? []), l]);
+  }
+  const heardThrough = new Set<LinkRow>();
+  for (const group of byNeighbourPort.values()) {
+    if (new Set(group.map((l) => l.from_device_id)).size < 2) continue;
+    const edge = group.filter((l) => !onUplink(l));
+    if (edge.length === 0 || edge.length === group.length) continue;
+    group.filter(onUplink).forEach((l) => heardThrough.add(l));
+  }
+  const directLldp = lldpLinks.filter((l) => !heardThrough.has(l));
+  const directNonLldp = soloNonLldp.filter((l) => !heardThrough.has(l));
+
   // Neighbours no remaining link reaches would float unconnected.
-  const reached = new Set([...lldpLinks, ...soloNonLldp].filter((l) => !l.to_device_id).map(neighborKey).filter(Boolean) as string[]);
+  const reached = new Set([...directLldp, ...directNonLldp].filter((l) => !l.to_device_id).map(neighborKey).filter(Boolean) as string[]);
 
   // ── Step 7: Manual links as synthetic rows ─────────────────────────────────
   const manualAsLinks: LinkRow[] = manualLinks.map((ml) => ({
@@ -413,7 +448,7 @@ export function buildTopology(
   }));
 
   return {
-    links: [...lldpLinks, ...soloNonLldp, ...manualAsLinks],
+    links: [...directLldp, ...directNonLldp, ...manualAsLinks],
     externalNodes: [...externalMap.entries()].filter(([k]) => reached.has(k)).map(([, n]) => n),
     segConns,
     ambiguous: { addresses: [...amb.addresses], identities: [...amb.identities] },

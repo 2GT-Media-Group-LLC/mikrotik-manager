@@ -92,10 +92,14 @@ router.get('/', async (req: Request, res: Response) => {
   const handLinks = handRows.map(toHandLink);
 
   // How the map has been arranged by hand, if it has (#147).
-  const [posRows, anchorRows] = await Promise.all([
+  const [posRows, anchorRows, hiddenRows] = await Promise.all([
     query<{ node_key: string; x: number; y: number }>(`SELECT node_key, x, y FROM topology_positions`),
     query<{ edge_key: string; source_handle: string | null; target_handle: string | null }>(
       `SELECT edge_key, source_handle, target_handle FROM topology_edge_anchors`),
+    // Discovered links someone hid (discussion #85).
+    query<{ edge_key: string; label: string | null; hidden_at: string; hidden_by_name: string | null }>(
+      `SELECT h.edge_key, h.label, h.hidden_at, u.username AS hidden_by_name
+         FROM topology_hidden_links h LEFT JOIN users u ON u.id = h.hidden_by ORDER BY h.hidden_at DESC`),
   ]);
   const layout = {
     positions: Object.fromEntries(posRows.map((r) => [r.node_key, { x: Number(r.x), y: Number(r.y) }])),
@@ -123,6 +127,7 @@ router.get('/', async (req: Request, res: Response) => {
     nodes,
     handLinks,
     layout,
+    hiddenLinks: hiddenRows.map((r) => ({ key: r.edge_key, label: r.label, hiddenAt: r.hidden_at, hiddenBy: r.hidden_by_name })),
     ...(clients ? { clients } : {}),
   });
 });
@@ -382,6 +387,26 @@ router.post('/layout/reset', requireWrite, async (req: Request, res: Response) =
   const edges = Array.isArray(req.body?.edges) ? (req.body.edges as unknown[]).map(String).filter((k) => LAYOUT_KEY.test(k)) : [];
   if (keys.length) await query(`DELETE FROM topology_positions WHERE node_key = ANY($1::text[])`, [keys.slice(0, MAX_LAYOUT_ENTRIES)]);
   if (edges.length) await query(`DELETE FROM topology_edge_anchors WHERE edge_key = ANY($1::text[])`, [edges.slice(0, MAX_LAYOUT_ENTRIES)]);
+  return res.json({ ok: true });
+});
+
+// POST /api/topology/hidden-links { key, label? } — hide a discovered link
+// (discussion #85). DELETE ?key= shows it again.
+router.post('/hidden-links', requireWrite, async (req: Request, res: Response) => {
+  const key = String(req.body?.key ?? '');
+  if (!LAYOUT_KEY.test(key) || !key.startsWith('cable:')) return res.status(400).json({ error: 'key must be a discovered link id' });
+  const label = req.body?.label == null ? null : String(req.body.label).slice(0, 300);
+  await query(
+    `INSERT INTO topology_hidden_links (edge_key, label, hidden_by) VALUES ($1, $2, $3)
+     ON CONFLICT (edge_key) DO UPDATE SET label = COALESCE(EXCLUDED.label, topology_hidden_links.label)`,
+    [key, label, req.user?.userId ?? null]);
+  return res.json({ ok: true });
+});
+
+router.delete('/hidden-links', requireWrite, async (req: Request, res: Response) => {
+  const key = String(req.query.key ?? '');
+  if (!LAYOUT_KEY.test(key)) return res.status(400).json({ error: 'key must be a discovered link id' });
+  await query(`DELETE FROM topology_hidden_links WHERE edge_key = $1`, [key]);
   return res.json({ ok: true });
 });
 

@@ -34,6 +34,8 @@ export interface GraphInput {
   expandedClients: Set<string>;
   /** Positions someone arranged by hand, in pixels, by node id (#147). */
   saved?: Record<string, { x: number; y: number }>;
+  /** Discovered links hidden by hand, by link id (discussion #85). Left out before layout. */
+  hidden?: Set<string>;
 }
 
 export type GraphNodeKind = 'device' | 'external' | 'manual' | 'clientGroup' | 'client';
@@ -106,7 +108,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   const deviceIds = new Set(devices.map((d) => nodeId.device(d.id)));
   // A neighbour linked by hand stays on the map, under the name it had when
   // linked, even after discovery stops seeing it, so its link can be removed.
-  const externalNodes = [...input.externalNodes];
+  let externalNodes = [...input.externalNodes];
   const seenExt = new Set(externalNodes.map((e) => e.id));
   for (const hl of handLinks) {
     for (const end of [hl.a, hl.b]) {
@@ -139,9 +141,20 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
         || (!link.neighbor_address && !link.neighbor_mac && link.neighbor_identity && e.name === link.neighbor_identity));
       if (ext) dst = ext.id;
     }
-    if (dst) { farEnd.set(link.id, dst); connect(nodeId.device(link.from_device_id), dst); }
+    if (dst) farEnd.set(link.id, dst);
   }
+  // One edge per cable, less any hidden by hand (discussion #85). Hidden ones
+  // are dropped before layout, so they don't pull a card towards where
+  // discovery wrongly put it, and a neighbour only they reached goes too.
+  const hidden = input.hidden ?? new Set<string>();
+  const cables = mergeCables(discovered, farEnd).filter((c) => !hidden.has(c.id));
+  for (const c of cables) connect(c.source, c.target);
   for (const hl of handLinks) connect(endId(hl.a), endId(hl.b));
+  if (hidden.size) {
+    const reached = new Set([...cables.flatMap((c) => [c.source, c.target]), ...handLinks.flatMap((hl) => [endId(hl.a), endId(hl.b)])]);
+    for (const e of externalNodes) if (!reached.has(e.id)) adj.delete(e.id);
+    externalNodes = externalNodes.filter((e) => reached.has(e.id));
+  }
 
   // ── Clients hang off the device they connect through ─────────────────────
   const clientNodes: GraphNode[] = [];
@@ -345,7 +358,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     return n;
   };
 
-  for (const cable of mergeCables(discovered, farEnd)) {
+  for (const cable of cables) {
     edges.push({ ...cable, parallel: nextParallel(cable.source, cable.target) });
   }
   for (const hl of handLinks) {

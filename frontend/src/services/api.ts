@@ -1469,11 +1469,16 @@ export const topologyApi = {
       };
       /** Only with withClients: client devices and where they connect. */
       clients?: import('../types').TopologyClient[];
+      /** Discovered links hidden by hand (discussion #85). */
+      hiddenLinks?: { key: string; label: string | null; hiddenAt: string; hiddenBy: string | null }[];
     }>('/topology', { params: withClients ? { clients: 1 } : undefined }),
   discover: () => api.post('/topology/discover'),
   createHandLink: (a: import('../types').HandLinkEnd, b: import('../types').HandLinkEnd, label?: string) =>
     api.post<import('../types').HandLink>('/topology/hand-links', { a, b, label }),
   deleteHandLink: (id: number) => api.delete(`/topology/hand-links/${id}`),
+  /** Hide a discovered link (discussion #85); `label` is what the list of hidden links shows. */
+  hideLink: (key: string, label: string) => api.post('/topology/hidden-links', { key, label }),
+  showLink: (key: string) => api.delete('/topology/hidden-links', { params: { key } }),
   /** Save node positions and link sides; merged into what's saved. A null anchor goes back to automatic. */
   saveLayout: (data: {
     positions?: Record<string, { x: number; y: number }>;

@@ -30,6 +30,7 @@ import TopoEdge, { type TopoEdgeData } from '../components/topology/TopoEdge';
 import EdgeMenu from '../components/topology/EdgeMenu';
 import NodeEditor from '../components/topology/NodeEditor';
 import HandLinksTable from '../components/topology/HandLinksTable';
+import HiddenLinksTable from '../components/topology/HiddenLinksTable';
 
 const edgeTypes = { topo: TopoEdge };
 const SHOW_CLIENTS_KEY = 'topology.showClients';
@@ -101,6 +102,15 @@ export default function TopologyPage() {
     mutationFn: (id: number) => topologyApi.deleteHandLink(id),
     onSuccess: invalidate,
   }).mutate;
+  // A discovered link that isn't a real cable (discussion #85).
+  const hideMutate = useMutation({
+    mutationFn: ({ key, label }: { key: string; label: string }) => topologyApi.hideLink(key, label),
+    onSuccess: invalidate,
+  }).mutate;
+  const showMutate = useMutation({
+    mutationFn: (key: string) => topologyApi.showLink(key),
+    onSuccess: invalidate,
+  }).mutate;
   // Confirmed first: a hand-drawn link can't be rebuilt from discovery (U10).
   const onDeleteEdge = useCallback((e: GraphEdge) => {
     if (e.deleteId != null && window.confirm('Remove this hand-drawn link?')) deleteMutate(e.deleteId);
@@ -119,6 +129,7 @@ export default function TopologyPage() {
       clients: showClients ? data.clients ?? [] : null,
       expandedClients: expanded,
       saved: data.layout?.positions ?? {},
+      hidden: new Set((data.hiddenLinks ?? []).map((h) => h.key)),
     });
   }, [data, showClients, expanded]);
 
@@ -408,6 +419,9 @@ export default function TopologyPage() {
       )}
 
       {/* Links drawn by hand, removable from here as well as on the map */}
+      {(data?.hiddenLinks?.length ?? 0) > 0 && (
+        <HiddenLinksTable links={data!.hiddenLinks!} canWrite={canWrite} onShow={(key) => showMutate(key)} />
+      )}
       {(data?.handLinks?.length ?? 0) > 0 && (
         <HandLinksTable links={data!.handLinks} graph={graph} canWrite={canWrite} onRemove={(id) => { if (window.confirm('Remove this hand-drawn link?')) deleteMutate(id); }} />
       )}
@@ -482,6 +496,11 @@ export default function TopologyPage() {
           canWrite={canWrite}
           onSides={(src, dst) => setSides(menuEdge.id, src, dst)}
           onRemove={menuEdge.kind === 'hand' ? () => { setMenu(null); onDeleteEdge(menuEdge); } : undefined}
+          onHide={menuEdge.kind === 'discovered' ? () => {
+            setMenu(null);
+            const label = `${nameOfNode(menuEdge.source)} ↔ ${nameOfNode(menuEdge.target)}${menuEdge.label ? ` (${menuEdge.label})` : ''}`;
+            hideMutate({ key: menuEdge.id, label });
+          } : undefined}
           onClose={() => setMenu(null)}
         />
       )}

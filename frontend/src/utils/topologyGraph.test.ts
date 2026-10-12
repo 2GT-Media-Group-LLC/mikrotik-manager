@@ -161,3 +161,36 @@ describe('positions arranged by hand', () => {
     expect(a.edges[0].id).toBe(b.edges[0].id);
   });
 });
+
+// Discussion #85: a discovered link that isn't a real cable can be hidden.
+describe('links hidden by hand', () => {
+  const sw = { id: 'ext-aabbcc000001', name: 'new-switch', address: '', platform: '', mac: 'AA:BB:CC:00:00:01', caps: '' };
+  const toSwitch = (id: number, from: number, fromIf: string): TopologyLink =>
+    ({ id, from_device_id: from, from_interface: fromIf, to_interface: 'port24', neighbor_mac: 'AA:BB:CC:00:00:01', link_type: 'lldp', discovered_at: '2026-10-12T00:00:00Z' });
+  const input = (hidden?: Set<string>) => base({
+    devices: [dev(1, 'router'), dev(2, 'ap')],
+    externalNodes: [sw],
+    links: [link(1, 1, 2, 'ether3', 'ether1'), toSwitch(2, 1, 'ether5'), toSwitch(3, 2, 'ether1')],
+    hidden,
+  });
+
+  it('leaves out a hidden link, and keeps the rest', () => {
+    const all = buildTopologyGraph(input());
+    const wrong = all.edges.find((e) => e.source === '2' || (e.target === '2' && e.source === sw.id))!;
+    const toAp = all.edges.find((e) => [e.source, e.target].includes(sw.id) && [e.source, e.target].includes('2'))!;
+    expect(toAp).toBeDefined();
+    const g = buildTopologyGraph(input(new Set([toAp.id])));
+    expect(g.edges.some((e) => e.id === toAp.id)).toBe(false);
+    expect(g.edges.filter((e) => [e.source, e.target].includes(sw.id))).toHaveLength(1);
+    expect(g.nodes.some((n) => n.id === sw.id)).toBe(true);
+    expect(wrong).toBeDefined();
+  });
+
+  it('removes a neighbour that only hidden links reached', () => {
+    const all = buildTopologyGraph(input());
+    const toSw = all.edges.filter((e) => [e.source, e.target].includes(sw.id)).map((e) => e.id);
+    const g = buildTopologyGraph(input(new Set(toSw)));
+    expect(g.nodes.some((n) => n.id === sw.id)).toBe(false);
+    expect(g.nodes.filter((n) => n.kind === 'device')).toHaveLength(2);
+  });
+});
