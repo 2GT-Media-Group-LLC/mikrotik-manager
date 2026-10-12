@@ -403,6 +403,20 @@ Images are published to GHCR only after CI has passed on that commit:
 `latest`, its version (for example `0.24.37-beta`) and `sha-<commit>`. To stay on a
 version, replace `latest` with the version tag in `docker-compose.ghcr.yml`.
 
+**Update the compose file too, not only the images.** `docker compose pull` fetches new images
+but leaves your compose file as it was, and some releases add settings that only work if the
+compose file passes them to the containers. A setting in `.env` that the compose file doesn't
+mention never reaches the container, silently. For example, `TLS_MODE` and `TRUSTED_PROXIES`
+([Behind a reverse proxy](#behind-a-reverse-proxy)) need the compose file from 0.46.0 or later;
+with an older one, the manager stays in HTTPS mode and a proxy in front of it loops on
+redirects. So when updating:
+
+- from a git checkout: `git pull`, then `docker compose pull && docker compose up -d`;
+- with only the GHCR compose file: download `docker-compose.ghcr.yml` again (keep your `.env`),
+  then pull and start as above.
+
+To check that a setting arrived, ask the container: `docker compose exec nginx printenv TLS_MODE`.
+
 From 0.24.51 each image carries an SBOM and build provenance, and is signed with
 [cosign](https://docs.sigstore.dev/) by the workflow that built it. To check an image before
 running it:
