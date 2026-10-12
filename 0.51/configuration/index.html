@@ -1877,6 +1877,19 @@ so that's the address for <code>TRUSTED_PROXIES</code>.</p>
 <code>ghcr.io/2gt-media-group-llc/mikrotik-manager-backend</code> and <code>…-nginx</code>. Each is tagged
 <code>latest</code>, its version (for example <code>0.24.37-beta</code>) and <code>sha-&lt;commit&gt;</code>. To stay on a
 version, replace <code>latest</code> with the version tag in <code>docker-compose.ghcr.yml</code>.</p>
+<p><strong>Update the compose file too, not only the images.</strong> <code>docker compose pull</code> fetches new images
+but leaves your compose file as it was, and some releases add settings that only work if the
+compose file passes them to the containers. A setting in <code>.env</code> that the compose file doesn't
+mention never reaches the container, silently. For example, <code>TLS_MODE</code> and <code>TRUSTED_PROXIES</code>
+(<a href="#behind-a-reverse-proxy">Behind a reverse proxy</a>) need the compose file from 0.46.0 or later;
+with an older one, the manager stays in HTTPS mode and a proxy in front of it loops on
+redirects. So when updating:</p>
+<ul>
+<li>from a git checkout: <code>git pull</code>, then <code>docker compose pull &amp;&amp; docker compose up -d</code>;</li>
+<li>with only the GHCR compose file: download <code>docker-compose.ghcr.yml</code> again (keep your <code>.env</code>),
+  then pull and start as above.</li>
+</ul>
+<p>To check that a setting arrived, ask the container: <code>docker compose exec nginx printenv TLS_MODE</code>.</p>
 <p>From 0.24.51 each image carries an SBOM and build provenance, and is signed with
 <a href="https://docs.sigstore.dev/">cosign</a> by the workflow that built it. To check an image before
 running it:</p>
