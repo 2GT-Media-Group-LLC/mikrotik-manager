@@ -14,6 +14,7 @@ import { updateAvailable, isNewerRosVersion } from '../utils/rosVersion';
 import { newestCompleteFrom } from '../utils/firmwareMirror';
 import { findUpstreamWithinSelection } from '../utils/rolloutTopology';
 import type { StpBridge } from '../utils/stpUpstream';
+import { refuseSecrets } from '../utils/secretAccess';
 
 const router = Router();
 router.use(requireAuth);
@@ -171,6 +172,9 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
     const t = await queryOne<{ command: string; name: string }>(`SELECT command, name FROM command_templates WHERE id = $1`, [Number(post_template_id)]);
     if (!t) return res.status(400).json({ error: 'That command template no longer exists' });
     if (!t.command.trim()) return res.status(400).json({ error: `Template "${t.name}" has no commands` });
+    // Secrets in the template (#259): fleet admins only, every name existing.
+    const secretRefusal = await refuseSecrets(req, t.command);
+    if (secretRefusal) return res.status(secretRefusal.status).json({ error: secretRefusal.error });
     post = t;
   }
   if (!Array.isArray(devices) || devices.length === 0) return res.status(400).json({ error: 'devices array is required' });

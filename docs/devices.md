@@ -374,7 +374,9 @@ from the device rather than guessed from the port's name, which also distinguish
 cage from a copper port.
 
 Use **ports per row** in the faceplate header if the default does not suit your hardware;
-the setting is remembered.
+the setting is remembered. Next to it, **top row** says which ports are on top: `1 3 5` (most
+models) or `2 4 6`, for models whose front panel has the even ports on top (#277). It appears
+when the Ethernet ports sit in two rows, and is remembered per model in your browser.
 
 ### Changing a port's VLAN
 

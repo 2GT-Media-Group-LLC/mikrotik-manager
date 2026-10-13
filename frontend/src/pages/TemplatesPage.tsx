@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, Plus, Play, Pencil, Copy, Trash2, Search, X } from 'lucide-react';
 import { commandTemplatesApi, type CommandTemplate } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import SecretsCard from '../components/templates/SecretsCard';
+import { useAuthStore } from '../store/authStore';
 
 /**
  * The template library (#163).
@@ -18,6 +20,8 @@ type Draft = { id: number | null; name: string; description: string; command: st
 const EMPTY: Draft = { id: null, name: '', description: '', command: '' };
 
 export default function TemplatesPage() {
+  // Secrets are fleet-admin only (#259), so is the card that manages them.
+  const isFleetAdmin = useAuthStore((st) => st.user?.role === 'admin' && !(st.user as { siteRoles?: Record<string, string> | null })?.siteRoles);
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [search, setSearch] = useState('');
@@ -96,6 +100,8 @@ export default function TemplatesPage() {
           </div>
         </div>
       )}
+
+      {isFleetAdmin && <SecretsCard />}
 
       <div className="relative max-w-md">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

@@ -53,4 +53,8 @@ it('upgrades a pending RouterBOOT and confirms the new version after the reboot'
   const updates = JSON.stringify(itemUpdates());
   expect(updates).toMatch(/success/);
   expect(updates).toMatch(/7\.20\.1/);
+  // Shown as it happens, not "Pending" (#262).
+  const statuses = itemUpdates().map((p) => p[1]).filter((v) => typeof v === 'string');
+  expect(statuses).toEqual(expect.arrayContaining(['routerboot', 'rebooting', 'success']));
+  expect(statuses.indexOf('routerboot')).toBeLessThan(statuses.indexOf('rebooting'));
 });

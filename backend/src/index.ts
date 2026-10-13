@@ -30,6 +30,7 @@ import {
 import { startSshKeyFleetWorker, stopSshKeyFleetWorker } from './services/SshKeyFleetWorker';
 import sshKeysRoutes from './routes/sshKeys';
 import commandTemplatesRoutes from './routes/commandTemplates';
+import commandSecretsRoutes from './routes/commandSecrets';
 import { convertConfigTemplates } from './services/convertConfigTemplates';
 import { netflowCollector } from './services/netflow/NetflowCollector';
 import { verifyToken, highestRole, type AuthPayload } from './middleware/auth';
@@ -435,6 +436,7 @@ app.use('/api/commands', commandRoutes);
 app.use('/api/sites', sitesRoutes);
 app.use('/api/ssh-keys', sshKeysRoutes);
 app.use('/api/command-templates', commandTemplatesRoutes);
+app.use('/api/command-secrets', commandSecretsRoutes);
 app.use('/api/certificates', certificatesRoutes);
 app.use('/api/security/cves', cveRoutes);
 

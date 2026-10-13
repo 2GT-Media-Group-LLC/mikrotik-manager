@@ -26,6 +26,7 @@ export interface LocationStatus {
 /** Encrypted columns: table, row key, column, and a name for the UI. */
 const COLUMNS: Array<{ table: string; id: string; column: string; label: string }> = [
   { table: 'devices', id: 'id', column: 'api_password_encrypted', label: 'Device API passwords' },
+  { table: 'command_secrets', id: 'id', column: 'value_encrypted', label: 'Command secrets' },
   { table: 'devices', id: 'id', column: 'ssh_password_encrypted', label: 'Device SSH passwords' },
   { table: 'credential_presets', id: 'id', column: 'api_password_encrypted', label: 'Credential preset API passwords' },
   { table: 'credential_presets', id: 'id', column: 'ssh_password_encrypted', label: 'Credential preset SSH passwords' },

@@ -5,6 +5,8 @@ export const ITEM_STATUS: Record<string, { label: string; cls: string; spin?: bo
   backing_up: { label: 'Backing up',   cls: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400', spin: true },
   upgrading:  { label: 'Upgrading',    cls: 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400', spin: true },
   rebooting:  { label: 'Rebooting',    cls: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400', spin: true },
+  // Set by the RouterBOOT step; without it the badge fell back to "Pending" (#262).
+  routerboot: { label: 'RouterBOOT',   cls: 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400', spin: true },
   verifying:  { label: 'Verifying',    cls: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400', spin: true },
   post_commands: { label: 'Running commands', cls: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400', spin: true },
   success:    { label: 'Success',      cls: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' },

@@ -20,6 +20,7 @@ import { mirrorForDevice, newestCompleteVersion, type MirrorRow } from './firmwa
 import { matchLocalUpdate, packageFileName } from '../utils/firmwareMirror';
 import { runSshCommand, looksLikeFailure, type SshExecDevice } from './sshExec';
 import { withSafeApply, type GuardDevice } from './changeGuard/ChangeGuard';
+import { fillSecrets, maskSecrets } from './commandSecrets';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 /**
@@ -354,6 +355,7 @@ export class FirmwareOrchestrator {
     // RouterBOOT alone (#262): no RouterOS download or reboot, just the
     // pending bootloader upgrade, checked and confirmed as after an upgrade.
     if (rollout.kind === 'routerboot') {
+      await this.setItem(item.id, { status: 'routerboot' });
       const rb = await this.upgradeRouterboot(device, item, { settle: false });
       if (!rb.ok) return fail(`RouterBOOT upgrade failed: ${rb.error}`);
       await this.setItem(item.id, rb.skipped
@@ -679,8 +681,13 @@ export class FirmwareOrchestrator {
    * under Change Guard, the same way a bulk command runs.
    */
   private async runPostCommands(device: DeviceRow, rollout: RolloutRow): Promise<{ ok: boolean; output: string | null; error: string | null }> {
+    // {{secret:name}} filled in only here (#259); an echoed value is masked.
+    let secretValues: string[] = [];
     const execute = async () => {
-      const { output } = await runSshCommand(device as unknown as SshExecDevice, rollout.post_command!);
+      const filled = await fillSecrets(rollout.post_command!);
+      secretValues = filled.values;
+      const raw = (await runSshCommand(device as unknown as SshExecDevice, filled.text)).output;
+      const output = maskSecrets(raw, secretValues) ?? '';
       if (looksLikeFailure(output)) throw new Error(output.slice(0, 500));
       return output;
     };
@@ -695,8 +702,9 @@ export class FirmwareOrchestrator {
       }
       return { ok: true, output: outcome.result ?? null, error: null };
     } catch (e) {
-      console.error(`[Firmware] ${device.name}: post-upgrade commands failed: ${(e as Error).message}`);
-      return { ok: false, output: null, error: (e as Error).message.slice(0, 1000) };
+      const msg = maskSecrets((e as Error).message, secretValues) ?? '';
+      console.error(`[Firmware] ${device.name}: post-upgrade commands failed: ${msg}`);
+      return { ok: false, output: null, error: msg.slice(0, 1000) };
     }
   }
 
@@ -853,6 +861,8 @@ export class FirmwareOrchestrator {
     } finally {
       probe.disconnect();
     }
+    // Shown while waiting for it to come back, as for a RouterOS upgrade (#262).
+    await this.setItem(item.id, { status: 'rebooting' });
 
     // Second reboot of this upgrade. Same budget as the first. The device may
     // still be up for a few seconds after the reboot command, so a reading only

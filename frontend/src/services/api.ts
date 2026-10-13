@@ -624,6 +624,13 @@ export interface CommandTemplate {
   updated_at: string;
 }
 
+/** Secret values for commands (#259): names only ever come back, never values. */
+export const commandSecretsApi = {
+  list: () => api.get<{ id: number; name: string; created_by: string | null; updated_at: string }[]>('/command-secrets'),
+  save: (data: { name: string; value?: string; generate?: boolean }) => api.post('/command-secrets', data),
+  remove: (name: string) => api.delete(`/command-secrets/${encodeURIComponent(name)}`),
+};
+
 export const commandTemplatesApi = {
   list: () => api.get<CommandTemplate[]>('/command-templates'),
   create: (data: { name: string; command: string; description?: string }) =>

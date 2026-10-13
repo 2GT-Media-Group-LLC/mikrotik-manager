@@ -23,6 +23,34 @@ the same waves, halt-on-failure and Change Guard. A template can also run on eac
 a firmware upgrade: pick it under **Then run** when creating a rollout (see
 [Firmware rollouts](firmware.md#the-pipeline)).
 
+### Secrets in commands
+
+A command that sets a password, such as creating a dedicated user for the manager on every
+device, would otherwise show that password in the template, the run, its history and its output.
+Store it as a **secret** instead (#259):
+
+1. On the **Templates** page, under **Secrets**, give it a name and either type the value or
+   choose **Generate** for a random 24-character one. The value is stored encrypted and never
+   shown again, not even to whoever saved it.
+2. Use it in a command or template as `{{secret:name}}`, for example:
+
+   ```
+   /user add name=mtm group=full password="{{secret:mtm_password}}" address=10.0.0.5/32
+   ```
+
+When the command runs, the manager fills the value in just before sending it to the device.
+Everything stored or shown keeps the placeholder: the template, the run's command, its history,
+the manager's logs. If a device prints the value back (in an error, say), it's shown as `••••`.
+
+Only fleet admins can run a command that uses secrets, or put one in a firmware rollout's
+**Then run**: a command can print a value a piece at a time, which masking can't catch, so
+whoever writes it has to be someone trusted with the secret anyway. A command naming a secret
+that doesn't exist is refused before it runs. Values can't contain quotes, backslashes, `$` or
+line breaks, since they're placed inside a RouterOS command.
+
+To have the manager use a user created this way, see
+[Changing the login for many devices](devices.md#changing-the-login-for-many-devices).
+
 ### Config Templates
 
 Config Templates, which could only set DNS servers, NTP servers and a syslog host, have been

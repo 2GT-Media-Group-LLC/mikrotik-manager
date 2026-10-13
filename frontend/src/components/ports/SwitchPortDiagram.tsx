@@ -31,6 +31,8 @@ const NO_BRIDGE = '\u0000none';
 interface Props {
   deviceId: number;
   deviceName?: string;
+  /** For remembering which row the odd ports are on, per model (#277). */
+  deviceModel?: string | null;
   autoOpenBridge?: string;
   onBridgeOpened?: () => void;
 }
@@ -733,7 +735,7 @@ function PortClientsCard({ deviceId, portName }: { deviceId: number; portName: s
   );
 }
 
-export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge, onBridgeOpened }: Props) {
+export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, autoOpenBridge, onBridgeOpened }: Props) {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [selectedPorts, setSelectedPorts] = useState<Set<string>>(new Set());
@@ -1247,7 +1249,21 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
   }, []);
 
   const columns = resolveColumns(density, rackWidth);
-  const etherBanks = staggerBlocks(etherPorts, columns);
+  // Odd ports on the top row, or even (2 4 6 8 over 1 3 5 7) for models wired
+  // that way (#277). Remembered per model in this browser: every unit of a
+  // model is the same.
+  const evenTopKey = `faceplate.evenTop.${(deviceModel || 'unknown').toLowerCase()}`;
+  const [evenOnTop, setEvenOnTop] = useState<boolean>(() => {
+    try { return localStorage.getItem(evenTopKey) === '1'; } catch { return false; }
+  });
+  const chooseEvenOnTop = (v: boolean) => {
+    setEvenOnTop(v);
+    try { localStorage.setItem(evenTopKey, v ? '1' : '0'); } catch { /* private mode */ }
+  };
+  const etherBanks = staggerBlocks(etherPorts, columns, evenOnTop);
+  // Only offered when the ports actually sit in two rows: a control that moves
+  // nothing reads as broken.
+  const staggered = etherBanks.some((b) => b.bottom.length > 0);
   const sfpRows = chunkRows(individualSfpPorts, columns);
   const cageRows = chunkRows(qsfpCages, Math.max(1, Math.floor(columns / 4)));
   const bridgeRows = chunkRows(bridgePorts, columns);
@@ -1384,6 +1400,18 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
                   ))}
                 </select>
               </label>
+              {staggered && <label className="mono text-[11px]" style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-3)' }}
+                title="Which ports are on the top row, as on this model's front panel">
+                <select
+                  value={evenOnTop ? 'even' : 'odd'}
+                  onChange={(e) => chooseEvenOnTop(e.target.value === 'even')}
+                  className="mono text-[11px] bg-transparent outline-none cursor-pointer"
+                  style={{ color: 'var(--ink-2)' }}
+                >
+                  <option value="odd">top row 1 3 5</option>
+                  <option value="even">top row 2 4 6</option>
+                </select>
+              </label>}
             </div>
           </div>
 
@@ -1394,7 +1422,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, autoOpenBridge
             display: 'flex', gap: 30, alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 22,
             boxShadow: 'inset 0 0 0 2px var(--faceplate-inset), inset 0 1px 0 rgba(255,255,255,0.02)',
           }}>
-            {/* ETH group — staggered banks, odd above even, wrapping by density */}
+            {/* ETH group — staggered banks, odd above even (or the reverse, #277), wrapping by density */}
             {etherPorts.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
                 <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em' }}>ETH</div>

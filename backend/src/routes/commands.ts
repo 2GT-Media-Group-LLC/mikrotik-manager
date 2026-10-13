@@ -19,6 +19,7 @@ router.use(requireAuth);
 
 import { assessCommand } from '../utils/commandRisk';
 import { spreadsheetSafe } from '../utils/csvSafe';
+import { refuseSecrets } from '../utils/secretAccess';
 
 /**
  * POST /api/commands/preview — what would happen, without doing it.
@@ -96,6 +97,9 @@ router.post('/runs', requireWrite, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'device_ids array is required' });
   }
   if (await refuseForeignDevices(req, res, device_ids, 'operator')) return;
+  // {{secret:name}} (#259): fleet admins only, and every name must exist.
+  const secretRefusal = await refuseSecrets(req, command);
+  if (secretRefusal) return res.status(secretRefusal.status).json({ error: secretRefusal.error });
 
   // Change Guard off on a command that can cut management needs an explicit
   // acknowledgement, enforced here (outside review U3). It used to be checked

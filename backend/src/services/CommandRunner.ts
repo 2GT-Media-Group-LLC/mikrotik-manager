@@ -17,6 +17,7 @@ import { query, queryOne } from '../config/database';
 import { runSshCommand, looksLikeFailure, type SshExecDevice } from './sshExec';
 import { withSafeApply, type GuardDevice } from './changeGuard/ChangeGuard';
 import { interruptedOutcome } from '../utils/interrupted';
+import { fillSecrets, maskSecrets } from './commandSecrets';
 
 interface RunRow {
   id: number;
@@ -169,8 +170,14 @@ export class CommandRunner {
       [item.id, run.use_change_guard]
     );
 
+    // {{secret:name}} filled in only here, at the last moment (#259); what's
+    // stored and shown keeps the placeholder, and an echoed value is masked.
+    let secretValues: string[] = [];
     const execute = async () => {
-      const { output } = await runSshCommand(device, run.command);
+      const filled = await fillSecrets(run.command);
+      secretValues = filled.values;
+      const raw = (await runSshCommand(device, filled.text)).output;
+      const output = maskSecrets(raw, secretValues) ?? '';
       // RouterOS reports most errors in the text rather than an exit code, so an
       // unread output is an unnoticed failure.
       if (looksLikeFailure(output)) throw new Error(output.slice(0, 500));
@@ -221,7 +228,7 @@ export class CommandRunner {
           : outcome.unprotectedReason ? `Ran unprotected: ${outcome.unprotectedReason}` : null);
       return true;
     } catch (e) {
-      await this.finish(item.id, 'failed', null, (e as Error).message);
+      await this.finish(item.id, 'failed', null, maskSecrets((e as Error).message, secretValues));
       return false;
     }
   }

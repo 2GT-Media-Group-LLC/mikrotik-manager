@@ -59,6 +59,12 @@ describe('staggerBlocks', () => {
     expect(bank.bottom).toEqual([2,4,6,8,10]);
   });
 
+  it('puts even ports on top for models wired that way (#277)', () => {
+    const [bank] = staggerBlocks([1,2,3,4,5,6,7,8], 4, true);
+    expect(bank.top).toEqual([2,4,6,8]);
+    expect(bank.bottom).toEqual([1,3,5,7]);
+  });
+
   it('repeats the stagger in banks instead of running on forever', () => {
     // The old layout was hard-capped at two rows, so 24 ports meant 12 columns
     // no matter how little room there was.

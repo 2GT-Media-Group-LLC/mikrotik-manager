@@ -1508,6 +1508,17 @@ CREATE TABLE IF NOT EXISTS topology_edge_anchors (
   updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Secret values for commands (#259): {{secret:name}} is filled in on the
+-- server when a command runs, so a password in a command never shows.
+CREATE TABLE IF NOT EXISTS command_secrets (
+  id               SERIAL PRIMARY KEY,
+  name             VARCHAR(64) NOT NULL UNIQUE,
+  value_encrypted  TEXT NOT NULL,
+  created_by       VARCHAR(100),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Settings a site or a device overrides (#261): poll intervals, MAC scan,
 -- config snapshots, secrets in backups. Global, then site, then device.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS poll_overrides JSONB;
