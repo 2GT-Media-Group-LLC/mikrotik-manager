@@ -19,7 +19,7 @@ tagged on the published images. Updating (`git pull` and `docker compose up -d -
 If you discover a security vulnerability, please use one of the following channels:
 
 - **GitHub Private Security Advisory** *(preferred)*: Use the [Report a Vulnerability](../../security/advisories/new) button in the Security tab of this repository. This lets us discuss the issue privately before public disclosure.
-- **Email**: Send details to the repository maintainer via the contact information on their GitHub profile.
+- **Email**: Send details to [contact@2guystek.tv](mailto:contact@2guystek.tv).
 
 ### What to include in your report
 
