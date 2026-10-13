@@ -26,6 +26,9 @@ export default function FirmwarePage() {
   const [haltOnFailure, setHaltOnFailure] = useState(true);
   // Off by default: it is a second flash and a second reboot per device (#113).
   const [routerbootAfter, setRouterbootAfter] = useState(false);
+  // What the rollout upgrades (#262): RouterOS (with RouterBOOT after, if
+  // ticked), or RouterBOOT alone on devices already on the RouterOS they want.
+  const [rolloutKind, setRolloutKind] = useState<'routeros' | 'routerboot'>('routeros');
   // A command template to run on each device after its upgrade (#163).
   const [postTemplateId, setPostTemplateId] = useState<number | ''>('');
   const { data: templates = [] } = useQuery({
@@ -59,7 +62,10 @@ export default function FirmwarePage() {
   const devices = overview?.devices ?? [];
   // An update from MikroTik, or a newer version on the device's local mirror (#193).
   const hasUpdate = (d: (typeof devices)[number]) => d.firmware_update_available || !!d.mirror_update_available;
-  const updatable = devices.filter(d => hasUpdate(d) && d.status === 'online');
+  // What a rollout can include: devices with a RouterOS update, or for a
+  // RouterBOOT-only rollout, devices with a bootloader upgrade pending (#262).
+  const updatable = devices.filter(d => d.status === 'online'
+    && (rolloutKind === 'routerboot' ? !!d.routerboard_upgrade_available : hasUpdate(d)));
   const upToDate = devices.filter(d => !hasUpdate(d) && d.ros_version).length;
   // Up-to-date devices (nothing for RouterOS or RouterBOOT) are hidden by
   // default (#204): on a big fleet they were most of the table, greyed out.
@@ -98,11 +104,12 @@ export default function FirmwarePage() {
   const createRollout = useMutation({
     meta: { inlineError: true },
     mutationFn: () => firmwareApi.createRollout({
-      name: rolloutName.trim() || `RouterOS upgrade ${new Date().toISOString().slice(0, 10)}`,
+      name: rolloutName.trim() || `${rolloutKind === 'routerboot' ? 'RouterBOOT' : 'RouterOS'} upgrade ${new Date().toISOString().slice(0, 10)}`,
+      kind: rolloutKind,
       halt_on_failure: haltOnFailure,
       pre_backup: preBackup,
-      routerboot_after: routerbootAfter,
-      post_template_id: postTemplateId === '' ? null : postTemplateId,
+      routerboot_after: rolloutKind === 'routeros' && routerbootAfter,
+      post_template_id: rolloutKind === 'routerboot' || postTemplateId === '' ? null : postTemplateId,
       wave_concurrency: waveConcurrency,
       package_source: packageSource,
       scheduled_at: scheduleAt ? new Date(scheduleAt).toISOString() : null,
@@ -221,6 +228,17 @@ export default function FirmwarePage() {
       <div className="card overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Fleet versions</h3>
+          {canWrite && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400"
+              title="RouterBOOT only upgrades the bootloader on devices with one pending, without changing RouterOS (#262).">
+              Upgrade
+              <select className="input py-0.5 text-xs w-auto" value={rolloutKind}
+                onChange={(e) => { setRolloutKind(e.target.value as 'routeros' | 'routerboot'); setSelected(new Map()); }}>
+                <option value="routeros">RouterOS</option>
+                <option value="routerboot">RouterBOOT only</option>
+              </select>
+            </label>
+          )}
           {currentCount > 0 && (
             <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400 cursor-pointer select-none">
               <input type="checkbox" checked={showCurrent} onChange={(e) => setShowCurrent(e.target.checked)}
@@ -278,7 +296,7 @@ export default function FirmwarePage() {
                 )}
                 {tableDevices.map((d) => {
                   const isSel = selected.has(d.id);
-                  const selectable = canWrite && hasUpdate(d) && d.status === 'online';
+                  const selectable = canWrite && updatable.includes(d);
                   // Zebra striping comes from index.css, as it does on /devices.
                   // This table hand-rolled its own and so looked subtly
                   // different from the main one (#152).
@@ -353,7 +371,7 @@ export default function FirmwarePage() {
         {canWrite && selectedCount > 0 && (
           <div className="px-5 py-4 border-t border-gray-200 dark:border-slate-700 bg-blue-50/40 dark:bg-blue-900/10 space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              <input className="input w-64" placeholder={`RouterOS upgrade ${new Date().toISOString().slice(0, 10)}`}
+              <input className="input w-64" placeholder={`${rolloutKind === 'routerboot' ? 'RouterBOOT' : 'RouterOS'} upgrade ${new Date().toISOString().slice(0, 10)}`}
                 value={rolloutName} onChange={e => setRolloutName(e.target.value)} />
               <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300 cursor-pointer">
                 <input type="checkbox" className="w-4 h-4 rounded" checked={preBackup} onChange={e => setPreBackup(e.target.checked)} />
@@ -363,6 +381,7 @@ export default function FirmwarePage() {
                 <input type="checkbox" className="w-4 h-4 rounded" checked={haltOnFailure} onChange={e => setHaltOnFailure(e.target.checked)} />
                 Halt on failure
               </label>
+              {rolloutKind === 'routeros' && (<>
               <label
                 className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300 cursor-pointer"
                 title="After each RouterOS upgrade verifies, apply any pending RouterBOOT upgrade. This is a second flash and a second reboot per device."
@@ -381,6 +400,7 @@ export default function FirmwarePage() {
                   {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </label>
+              </>)}
               <label
                 className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300"
                 title="How many devices in the same wave may upgrade at once. 1 upgrades them one at a time."
@@ -397,7 +417,7 @@ export default function FirmwarePage() {
                   ))}
                 </select>
               </label>
-              {mirrorSelected > 0 && (
+              {rolloutKind === 'routeros' && mirrorSelected > 0 && (
                 <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300"
                   title="Devices set up for the local mirror pull their packages from it. Others always download from MikroTik.">
                   <HardDrive className="w-4 h-4 text-gray-400" />

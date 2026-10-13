@@ -80,6 +80,8 @@ interface RolloutRow {
   halt_on_failure: boolean; pre_backup: boolean;
   /** Follow the RouterOS upgrade with the pending RouterBOOT upgrade (issue #113). */
   routerboot_after: boolean;
+  /** 'routeros', or 'routerboot' to upgrade the bootloader alone (#262). */
+  kind?: string;
   /** How many devices in a wave may upgrade at once; 1 is sequential (#135). */
   wave_concurrency: number;
   /** 'mirror': devices set up for the local mirror pull from it (#193). */
@@ -347,6 +349,18 @@ export class FirmwareOrchestrator {
       } catch (e) {
         return fail(`Pre-upgrade backup failed: ${(e as Error).message}`);
       }
+    }
+
+    // RouterBOOT alone (#262): no RouterOS download or reboot, just the
+    // pending bootloader upgrade, checked and confirmed as after an upgrade.
+    if (rollout.kind === 'routerboot') {
+      const rb = await this.upgradeRouterboot(device, item, { settle: false });
+      if (!rb.ok) return fail(`RouterBOOT upgrade failed: ${rb.error}`);
+      await this.setItem(item.id, rb.skipped
+        ? { status: 'skipped', error: `RouterBOOT already at ${rb.before || 'the current version'}`, from_version: rb.before || null, to_version: rb.before || null }
+        : { status: 'success', from_version: rb.before || null, to_version: rb.after || null, error: null });
+      await query(`UPDATE firmware_rollout_devices SET finished_at=NOW() WHERE id=$1`, [item.id]);
+      return true;
     }
 
     // 2. Download the image, and confirm it is actually on the device.
@@ -795,9 +809,11 @@ export class FirmwareOrchestrator {
    */
   private async upgradeRouterboot(
     device: DeviceRow,
-    item: RolloutDeviceRow
-  ): Promise<{ ok: true } | { ok: false; error: string }> {
-    await sleep(this.routerbootSettleMs);
+    item: RolloutDeviceRow,
+    /** Wait for services to start first: needed right after a RouterOS reboot, not on its own (#262). */
+    opts: { settle?: boolean } = {},
+  ): Promise<{ ok: true; skipped?: boolean; before?: string; after?: string } | { ok: false; error: string }> {
+    if (opts.settle !== false) await sleep(this.routerbootSettleMs);
 
     // Connect and check, with retries: this runs moments after the RouterOS
     // reboot, when the device may still be starting its services.
@@ -826,7 +842,7 @@ export class FirmwareOrchestrator {
     if (!status.upgradeAvailable) {
       probe.disconnect();
       console.log(`[Firmware] ${device.name}: RouterBOOT already current (${before || 'unknown'})`);
-      return { ok: true };
+      return { ok: true, skipped: true, before };
     }
     const uptimeBefore: number | null = await probe.getUptimeSeconds().catch(() => null);
     try {
@@ -871,7 +887,7 @@ export class FirmwareOrchestrator {
           [device.id, after.currentFirmware]
         );
         console.log(`[Firmware] ${device.name}: RouterBOOT ${before || '?'} → ${after.currentFirmware || '?'}`);
-        return { ok: true };
+        return { ok: true, before, after: after.currentFirmware };
       } catch {
         probe.disconnect();
       }

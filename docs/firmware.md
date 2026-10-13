@@ -55,6 +55,18 @@ Each device goes through the same sequence:
    is kept on the device's line in the rollout. If they fail, the upgrade still counts as done,
    but halt-on-failure applies: the same commands would likely fail on the next device too
 
+### RouterBOOT only
+
+To upgrade the bootloader without touching RouterOS (#262), choose **Upgrade: RouterBOOT only**
+above the fleet table. Only devices with a RouterBOOT upgrade pending can be picked, and the
+rollout runs the optional pre-upgrade backup and then step 7 alone: it applies the pending
+upgrade, proves the reboot happened, and checks the bootloader reports the version it was
+upgrading to. A device already current is skipped, not failed. Waves, halt-on-failure,
+scheduling and cancelling work as for any rollout; there are no post-upgrade commands.
+
+RouterBOOT ships inside the RouterOS package, so the version a device can upgrade to is the one
+that came with its RouterOS. Upgrade RouterOS first if you want a newer bootloader.
+
 Steps 3 and 5 exist because of a specific failure. `/system/package/update/install`
 bundles download and reboot into one call whose progress cannot be observed, and a
 CCR2216 was seen to accept it, do neither, and report nothing. That surfaced as

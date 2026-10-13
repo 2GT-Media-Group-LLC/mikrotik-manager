@@ -613,6 +613,9 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_package VARCHAR(16);
 -- now meant visiting every device by hand — the exact task staged rollouts exist to
 -- remove.
 ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS routerboot_after BOOLEAN NOT NULL DEFAULT FALSE;
+-- What a rollout upgrades (#262): 'routeros' (with RouterBOOT after, if asked),
+-- or 'routerboot' alone, for a fleet already on the RouterOS it wants.
+ALTER TABLE firmware_rollouts ADD COLUMN IF NOT EXISTS kind VARCHAR(16) NOT NULL DEFAULT 'routeros';
 -- How many devices in a wave may upgrade at once (issue #135). Default 1 keeps
 -- the sequential behaviour every existing rollout was built around; raising it
 -- trades canary strictness for wall-clock time, which is the operator's call.

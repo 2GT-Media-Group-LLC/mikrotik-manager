@@ -145,8 +145,10 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
 router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
   const {
     name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, devices, start,
-    wave_concurrency, package_source, post_template_id,
+    wave_concurrency, package_source, post_template_id, kind: rawKind,
   } = req.body as {
+    /** 'routerboot': upgrade the bootloader alone, without RouterOS (#262). */
+    kind?: string;
     /** A command template to run on each device after its upgrade (#163). */
     post_template_id?: number | null;
     /** 'mirror': devices set up for the local mirror pull from it (#193). */
@@ -158,6 +160,11 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
     wave_concurrency?: number;
   };
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+  const kind = rawKind === 'routerboot' ? 'routerboot' : 'routeros';
+  // Post-upgrade commands follow a RouterOS upgrade; a bootloader-only rollout has none.
+  if (kind === 'routerboot' && post_template_id != null) {
+    return res.status(400).json({ error: 'A RouterBOOT-only rollout has no post-upgrade commands' });
+  }
   // The template's command is copied into the rollout now (#163).
   let post: { command: string; name: string } | null = null;
   if (post_template_id != null) {
@@ -218,11 +225,11 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
 
   const rollout = await queryOne<{ id: number }>(
     `INSERT INTO firmware_rollouts (name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, wave_concurrency, package_source,
-                                    post_command, post_template_name)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-    [name.trim().slice(0, 100), halt_on_failure !== false, pre_backup !== false, routerboot_after === true,
+                                    post_command, post_template_name, kind)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+    [name.trim().slice(0, 100), halt_on_failure !== false, pre_backup !== false, kind === 'routeros' && routerboot_after === true,
      scheduled_at || null, scheduled_until || null, clampConcurrency(wave_concurrency ?? 1),
-     package_source === 'mirror' ? 'mirror' : 'mikrotik', post?.command ?? null, post?.name ?? null]);
+     package_source === 'mirror' ? 'mirror' : 'mikrotik', post?.command ?? null, post?.name ?? null, kind]);
   for (const d of devices) {
     await query(
       `INSERT INTO firmware_rollout_devices (rollout_id, device_id, wave) VALUES ($1,$2,$3)`,

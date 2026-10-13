@@ -1255,6 +1255,7 @@ export const mirrorApi = {
 export interface FirmwareRollout {
   id: number; name: string; status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'missed';
   halt_on_failure: boolean; pre_backup: boolean; routerboot_after: boolean;
+  kind?: 'routeros' | 'routerboot';
   /** Devices per wave allowed to upgrade at once; 1 is sequential (#135). */
   wave_concurrency?: number;
   /** Where devices got their packages (#193). */
@@ -1286,6 +1287,8 @@ export const firmwareApi = {
       '/firmware/check-all', undefined, { timeout: 180_000 }),
   createRollout: (data: {
     name: string; halt_on_failure: boolean; pre_backup: boolean; routerboot_after?: boolean;
+    /** 'routerboot': upgrade the bootloader alone (#262). */
+    kind?: 'routeros' | 'routerboot';
     scheduled_at?: string | null; start?: boolean;
     /** Don't start after this time (a missed window is recorded, not caught up). */
     scheduled_until?: string | null;

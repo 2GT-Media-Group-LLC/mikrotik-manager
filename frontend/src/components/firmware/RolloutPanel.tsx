@@ -63,7 +63,9 @@ export default function RolloutPanel({ rolloutId, canWrite }: { rolloutId: numbe
         <span className="ml-auto flex items-center gap-3 text-xs text-gray-400 dark:text-slate-500">
           {rollout.pre_backup && <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />pre-backup</span>}
           {rollout.halt_on_failure && <span className="flex items-center gap-1"><ShieldAlert className="w-3 h-3" />halt on failure</span>}
-          {rollout.routerboot_after && <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />+ RouterBOOT</span>}
+          {rollout.kind === 'routerboot'
+            ? <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />RouterBOOT only</span>
+            : rollout.routerboot_after && <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />+ RouterBOOT</span>}
           {rollout.post_command && (
             <span className="flex items-center gap-1" title={rollout.post_command}>
               <Zap className="w-3 h-3" />then {rollout.post_template_name ? `"${rollout.post_template_name}"` : 'commands'}
