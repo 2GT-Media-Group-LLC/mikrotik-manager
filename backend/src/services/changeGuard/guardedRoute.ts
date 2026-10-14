@@ -157,6 +157,7 @@ export async function withGuardedChange<T>(
         auto_reverting: outcome.autoReverting,
         unprotected_reason: outcome.unprotectedReason ?? null,
         revert_may_fire_at: outcome.revertMayFireAt ?? null,
+        ...(outcome.revertMayHaveFired ? { revert_may_have_fired: true } : {}),
         mode: outcome.mode ?? null,
         mode_note: outcome.modeNote ?? null,
       },
