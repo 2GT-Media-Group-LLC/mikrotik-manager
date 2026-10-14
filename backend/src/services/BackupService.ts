@@ -5,6 +5,7 @@ import { query, queryOne } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
 import { exportPlan } from '../utils/backupExport';
 import { randomBytes } from 'crypto';
+import { PartialApplyRevertError } from './changeGuard/partialApply';
 import { withSafeApply, type GuardDevice, type GuardOutcome } from './changeGuard/ChangeGuard';
 import { resolveAuth, type SshExecDevice } from './sshExec';
 import { parseImportOutput, type ImportResult } from '../utils/importResult';
@@ -179,7 +180,15 @@ export class BackupService {
     try {
       const outcome = await withSafeApply(
         row,
-        { kind: 'backup.restore', summary: `Restore ${row.backup_filename}`, userId: opts.userId ?? null },
+        {
+          kind: 'backup.restore', summary: `Restore ${row.backup_filename}`, userId: opts.userId ?? null,
+          // A full import is the riskiest write there is: it runs only with an
+          // armed revert, and the revert must outlast the import's own 180 s
+          // SSH timeout plus the reachability check (a shorter timer fired
+          // mid-import and was then "committed" over).
+          requireProtection: true,
+          minTimeoutSec: RESTORE_MIN_TIMEOUT_SEC,
+        },
         async () => {
           const result = await this.sshImport(row, content);
           if (result.status !== 'applied') throw new ImportFailedError({ ...result, status: result.status });
@@ -189,6 +198,16 @@ export class BackupService {
       if (outcome.autoReverting) return { status: 'reverting', guard: guardSummary(outcome) };
       return { status: 'applied', guard: guardSummary(outcome) };
     } catch (err) {
+      if (err instanceof PartialApplyRevertError && err.original instanceof ImportFailedError) {
+        // The import stopped half-way and the guard left the revert armed.
+        return {
+          status: 'reverting',
+          guard: {
+            protected: true, confirmed: false, auto_reverting: true,
+            unprotected_reason: null, revert_may_fire_at: err.revertAt.toISOString(),
+          },
+        };
+      }
       if (err instanceof ImportFailedError) return { ...err.result, guard: null };
       throw err;
     }
@@ -336,6 +355,9 @@ export class BackupService {
   }
 }
 
+/** The 180 s SSH import, plus the reachability check and a disarm. */
+const RESTORE_MIN_TIMEOUT_SEC = 360;
+
 export type RestoreOutcome =
   | { status: 'applied' | 'reverting'; guard: RestoreGuard }
   | (ImportResult & { status: 'nothing_applied' | 'partial'; guard: null });
@@ -360,6 +382,8 @@ function guardSummary(o: GuardOutcome<unknown>): RestoreGuard {
 
 /** The import ran but did not complete; carries RouterOS's verdict out of the guard. */
 class ImportFailedError extends Error {
+  /** A partial import leaves a mix of old and new: the guard must keep the revert armed. */
+  get partialApply(): boolean { return this.result.status === 'partial'; }
   constructor(readonly result: ImportResult & { status: 'nothing_applied' | 'partial' }) {
     super(result.error || 'The import did not complete');
   }
@@ -371,7 +395,7 @@ export function describeRestore(r: RestoreOutcome): string {
     case 'applied':
       return 'Restored: RouterOS ran the whole backup, and the device was confirmed reachable afterwards.';
     case 'reverting':
-      return 'The device stopped responding during the restore, so it is putting its previous configuration back. It should return shortly.';
+      return 'The restore did not complete cleanly (it stopped responding or only partly applied), so the device is putting its previous configuration back. It should return shortly.';
     case 'partial':
       return `Partly restored. RouterOS ran ${r.appliedCommands} command${r.appliedCommands === 1 ? '' : 's'}, then stopped at line ${r.failedLine}: ${r.error}. ` +
         'The device now has a mix of the backup and its previous configuration.';

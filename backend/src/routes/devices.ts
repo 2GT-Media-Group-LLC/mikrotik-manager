@@ -2968,7 +2968,12 @@ router.post('/:id/bridge-ports/move', requireWrite, async (req: Request, res: Re
       : `Move ${list} to bridge '${bridge}'`;
   await withGuardedChange(
     req.params.id, req, res,
-    { kind: 'bridge-port.move', summary, change: { kind: 'bridge-port.move', ports: moving, bridge: bridge ?? null } },
+    {
+      kind: 'bridge-port.move', summary, change: { kind: 'bridge-port.move', ports: moving, bridge: bridge ?? null },
+      // The user confirmed past "an address on this port stops working": the
+      // dialog promises auto-revert, so it is not optional.
+      requireProtection: !!bridge && confirm_addresses === true,
+    },
     async (c) => {
       const r = await c.moveBridgePorts(ports, bridge ?? null, { create, state });
       return { message: summary, ...r };
