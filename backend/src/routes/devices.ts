@@ -1,3 +1,4 @@
+import { PartialApplyError, isPartialApply } from '../services/changeGuard/partialApply';
 import { resolveAuth } from '../services/sshExec';
 import { readSshInfo, refreshOverSsh, checkApi, promoteToApi, recordApiCheck, type SshOnlyDevice } from '../services/sshOnly';
 import { describeSshFailure } from '../utils/sshOnly';
@@ -2762,6 +2763,7 @@ router.post('/:id/vlans/copy', requireWrite, async (req: Request, res: Response)
     { kind: 'vlan.copy', summary: `Copy ${operations.length} VLAN(s)`, change: { kind: 'batch', changes } },
     async (collector) => {
       const results: Array<{ vlan_id: number; action: string; success: boolean; error?: string }> = [];
+      let partial: string | null = null;
       for (const op of operations) {
         try {
           if (op.action === 'add') {
@@ -2771,8 +2773,16 @@ router.post('/:id/vlans/copy', requireWrite, async (req: Request, res: Response)
           }
           results.push({ vlan_id: op.vlan_id, action: op.action, success: true });
         } catch (err) {
+          // An update that removed the old row and could not add the new one
+          // is a half-applied VLAN. Reporting it per-operation is not enough:
+          // Change Guard must see it, or it disarms the revert.
+          if (isPartialApply(err)) partial = (err as Error).message;
           results.push({ vlan_id: op.vlan_id, action: op.action, success: false, error: err instanceof Error ? err.message : String(err) });
         }
+      }
+      if (partial) {
+        const failed = results.filter((r) => !r.success).map((r) => `VLAN ${r.vlan_id}: ${r.error}`).join('; ');
+        throw new PartialApplyError(`Copying VLANs left the switch half-changed (${failed}).`);
       }
       return { results };
     },
