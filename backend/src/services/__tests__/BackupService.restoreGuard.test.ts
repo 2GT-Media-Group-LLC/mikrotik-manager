@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 process.env.BACKUPS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'mtm-bk-'));
 jest.mock('../../config/database', () => ({ query: jest.fn(), queryOne: jest.fn() }));
-jest.mock('../../config/redis', () => ({ redis: { set: jest.fn(), del: jest.fn() } }));
+jest.mock('../../config/redis', () => ({ redis: { set: jest.fn().mockResolvedValue('OK'), del: jest.fn().mockResolvedValue(1) } }));
 jest.mock('../../utils/crypto', () => ({ decrypt: (s: string) => s, encrypt: (s: string) => s }));
 jest.mock('../mikrotik/RouterOSClient');
 import { query } from '../../config/database';

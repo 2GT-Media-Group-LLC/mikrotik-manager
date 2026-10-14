@@ -312,6 +312,20 @@ describe('withSafeApply', () => {
     expect(commands).toHaveLength(0);
   });
 
+  it('takes and releases the device lock for an unprotected restore, and refuses while it is held', async () => {
+    const meta = { kind: 'backup.restore', summary: 's', requireProtection: true, requireProtectionOnlyWhenEnabled: true };
+    mockedQuery.mockResolvedValueOnce([{ key: 'change_guard_enabled', value: false }] as never);
+    await withSafeApply(device, meta, async () => 'ok');
+    expect(setCalls().some((c) => String(c[0]).startsWith('changeguard:lock:'))).toBe(true);
+    expect(redis.del).toHaveBeenCalled();
+
+    mockedQuery.mockResolvedValueOnce([{ key: 'change_guard_enabled', value: false }] as never);
+    jest.mocked(redis.set).mockResolvedValueOnce(null as never); // lock already held
+    let ran = false;
+    await expect(withSafeApply(device, meta, async () => { ran = true; return 'ok'; })).rejects.toThrow(/already in progress/);
+    expect(ran).toBe(false);
+  });
+
   it('still refuses a change marked requireProtectionOnlyWhenEnabled when the guard is on but cannot arm', async () => {
     MockedClient.mockImplementation(() => ({
       connect: jest.fn(async () => {}),

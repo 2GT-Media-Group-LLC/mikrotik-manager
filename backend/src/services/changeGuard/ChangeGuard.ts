@@ -480,7 +480,20 @@ export async function withSafeApply<T>(
         'It could cut off management, so it was not applied. Turn Change Guard on to apply it.'
       );
     }
-    return { result: await applyFn(), confirmed: false, autoReverting: false, unprotectedReason: 'Change Guard is disabled in settings' };
+    const unprotectedReason = 'Change Guard is disabled in settings';
+    if (!meta.requireProtectionOnlyWhenEnabled) {
+      return { result: await applyFn(), confirmed: false, autoReverting: false, unprotectedReason };
+    }
+    // A restore that runs without a revert still must not overlap another
+    // import or a revert that is still armed: serialisation is not optional.
+    if (!(await acquireLock(device.id))) {
+      throw new Error('Another change is already in progress on this device. Please wait for it to finish.');
+    }
+    try {
+      return { result: await applyFn(), confirmed: false, autoReverting: false, unprotectedReason };
+    } finally {
+      await releaseLock(device.id);
+    }
   }
   if (!(await acquireLock(device.id))) {
     throw new Error('Another protected change is already in progress on this device. Please wait for it to finish.');
