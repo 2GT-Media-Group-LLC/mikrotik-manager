@@ -255,18 +255,32 @@ export function vlanMembership(
   };
 }
 
-/** Longest-prefix-ish match: the active route the device would use for `ip`. */
-function routeFor(snap: DeviceSnapshot, ip: string): RosRow | null {
+/**
+ * Can this route carry the manager's traffic? A blackhole/unreachable route, or
+ * one in a routing table other than main, never does, however well it matches.
+ */
+export function routeUsable(r: RosRow): boolean {
+  if (isTrue(r['disabled']) || r['active'] === 'false') return false;
+  if (isTrue(r['blackhole']) || /^(blackhole|unreachable|prohibit)$/.test(r['type'] || '')) return false;
+  const table = (r['routing-table'] || '').trim();
+  return table === '' || table === 'main';
+}
+
+/** Longest-prefix match (then lowest distance): the active route the device would use for `ip`. */
+export function routeFor(snap: DeviceSnapshot, ip: string): RosRow | null {
   let best: RosRow | null = null;
   let bestLen = -1;
+  let bestDist = Infinity;
   for (const r of snap.routes) {
-    if (isTrue(r['disabled']) || r['active'] === 'false') continue;
+    if (!routeUsable(r)) continue;
     const dst = r['dst-address'] || '';
     const [net, lenStr] = dst.split('/');
     const len = parseInt(lenStr ?? '32', 10);
     if (isNaN(len)) continue;
     if (len === 0 || inNetwork(ip, net, len)) {
-      if (len > bestLen) { best = r; bestLen = len; }
+      const dist = parseInt(r['distance'] || '', 10);
+      const d = isNaN(dist) ? 255 : dist;
+      if (len > bestLen || (len === bestLen && d < bestDist)) { best = r; bestLen = len; bestDist = d; }
     }
   }
   return best;
@@ -451,9 +465,7 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
     lookupIp = onLink ? managerIp : gw;
     if (!onLink && gw && ipToInt(gw) !== null) managerGateway = gw;
   } else {
-    const defaultRoute = snap.routes.find(
-      (r) => (r['dst-address'] || '') === '0.0.0.0/0' && r['active'] !== 'false' && !isTrue(r['disabled'])
-    );
+    const defaultRoute = snap.routes.find((r) => (r['dst-address'] || '') === '0.0.0.0/0' && routeUsable(r));
     const gw = defaultRoute?.['gateway'] ? defaultRoute['gateway'].split('%')[0].trim() : null;
     if (gw && ipToInt(gw) !== null) { lookupIp = gw; viaDefaultGw = true; managerGateway = gw; }
   }
@@ -465,14 +477,25 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
     const arpRow = snap.arp.find((a) => a['address'] === lookupIp);
     const mac = arpRow?.['mac-address'];
     if (mac) {
-      const host = snap.bridgeHosts.find(
-        (h) => (h['mac-address'] || '').toLowerCase() === mac.toLowerCase() && !isTrue(h['local'])
+      // The same MAC can be learned in several bridges or VLANs (a router on a
+      // stick): only rows for the management bridge, and VLAN when it is
+      // known, count, and a MAC learned on two ports is ambiguous, not the first.
+      const hostPorts = new Set(
+        snap.bridgeHosts
+          .filter((h) => (h['mac-address'] || '').toLowerCase() === mac.toLowerCase() && !isTrue(h['local']))
+          .filter((h) => !bridge || !h['bridge'] || h['bridge'] === bridge)
+          .filter((h) => mgmtVlanId == null || !taggedManagement || !h['vid'] || h['vid'] === String(mgmtVlanId))
+          .map((h) => h['on-interface'] || h['interface'] || '')
+          .filter(Boolean)
       );
-      const port = host?.['on-interface'] || host?.['interface'] || null;
+      if (hostPorts.size > 1) {
+        warnings.push(`The next-hop MAC is learned on several ports (${[...hostPorts].join(', ')}), so the ingress port is ambiguous.`);
+      }
+      const port = hostPorts.size === 1 ? [...hostPorts][0] : null;
       if (port) {
         ingressPort = port;
         ingressPortSource = viaDefaultGw ? 'fdb-default-gw' : 'fdb';
-      } else if (arpRow?.['interface'] && arpRow['interface'] !== bridge) {
+      } else if (hostPorts.size === 0 && arpRow?.['interface'] && arpRow['interface'] !== bridge) {
         // ARP resolves to the bridge itself for anything behind it, which is not a
         // port — only useful when the address sits on a real interface.
         ingressPort = arpRow['interface'];
