@@ -1,3 +1,5 @@
+import { RouterOSError, RouterOSTrapError } from '../mikrotik/RouterOSClient';
+
 /**
  * Errors for multi-step device writers that can fail midway.
  *
@@ -27,11 +29,15 @@ export class PartialApplyRevertError extends Error {
 }
 
 /**
- * A failed write whose reply never came back (timeout, dropped connection) may
- * well have landed on the device. Only a clear rejection proves nothing changed.
+ * Only an answer from the device (a !trap) or a failure before anything was
+ * sent proves a write changed nothing. Every other failure (timeout, dropped
+ * connection, protocol error, !fatal) may have come after the write landed, so
+ * it is treated as ambiguous by default.
  */
 export function isAmbiguousWriteError(err: unknown): boolean {
-  return /timeout|timed out|closed|ECONN|EPIPE|reset|socket|disconnect/i.test((err as Error)?.message ?? '');
+  if (err instanceof RouterOSTrapError) return false;
+  if (err instanceof RouterOSError && err.message === 'Not connected') return false;
+  return true;
 }
 
 /**

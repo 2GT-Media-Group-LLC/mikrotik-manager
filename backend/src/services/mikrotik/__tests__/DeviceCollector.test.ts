@@ -1,6 +1,7 @@
 // Mock external deps before importing DeviceCollector
 jest.mock('../../../utils/crypto', () => ({ decrypt: (s: string) => s }));
 jest.mock('../RouterOSClient');
+import { RouterOSTrapError } from '../RouterOSClient';
 jest.mock('../../../config/database');
 jest.mock('../../../config/influxdb');
 jest.mock('../../../utils/oui');
@@ -363,7 +364,6 @@ describe('legacy wireless security', () => {
 
 // ── Legacy CAPsMAN (#250) ────────────────────────────────────────────────────
 
-import { RouterOSTrapError } from '../RouterOSClient';
 import { legacyFixture } from '../__fixtures__/legacyCapsman';
 
 describe('legacy CAPsMAN (#250)', () => {
@@ -503,16 +503,18 @@ describe('legacy CAPsMAN (#250)', () => {
 // ── Bonds: only a failure after a write is a partial apply ─────────────────────
 
 describe('bond create/remove failures', () => {
+  // A !trap: the device answered and refused, so nothing was written.
+  const trap = (message: string) => Object.create(RouterOSTrapError.prototype, { message: { value: message } }) as Error;
   /** A collector whose `failOn` command rejects with `error`; the rest answer from `responses`. */
   function bondCollector(
-    responses: Record<string, Record<string, string>[]>, failOn: string, error = 'failure: already have interface with such name',
+    responses: Record<string, Record<string, string>[]>, failOn: string, error: string | Error = trap('failure: already have interface with such name'),
   ) {
     const collector = new DeviceCollector(testDevice);
     const calls: string[] = [];
     (collector as unknown as { client: { execute: jest.Mock } }).client = {
       execute: jest.fn(async (cmd: string) => {
         calls.push(cmd);
-        if (cmd === failOn) throw new Error(error);
+        if (cmd === failOn) throw typeof error === 'string' ? new Error(error) : error;
         return responses[cmd] ?? [];
       }),
     };
