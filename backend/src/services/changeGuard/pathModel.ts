@@ -255,24 +255,35 @@ export function vlanMembership(
   };
 }
 
-/**
- * Can this route carry the manager's traffic? A blackhole/unreachable route, or
- * one in a routing table other than main, never does, however well it matches.
- */
-export function routeUsable(r: RosRow): boolean {
+/** An active route in the main table: one the device can select for forwarding. */
+export function routeActive(r: RosRow): boolean {
   if (isTrue(r['disabled']) || r['active'] === 'false') return false;
-  if (isTrue(r['blackhole']) || /^(blackhole|unreachable|prohibit)$/.test(r['type'] || '')) return false;
   const table = (r['routing-table'] || '').trim();
   return table === '' || table === 'main';
 }
 
-/** Longest-prefix match (then lowest distance): the active route the device would use for `ip`. */
+/** A route that wins selection but throws traffic away rather than forwarding it. */
+export function routeDiscards(r: RosRow): boolean {
+  return isTrue(r['blackhole']) || /^(blackhole|unreachable|prohibit)$/.test(r['type'] || '');
+}
+
+/** Can this route carry the manager's traffic? */
+export function routeUsable(r: RosRow): boolean {
+  return routeActive(r) && !routeDiscards(r);
+}
+
+/**
+ * Longest-prefix match (then lowest distance): the route the device would use for
+ * `ip`. Discard routes take part in the selection, because that is what the device
+ * does: a covering blackhole beats a default route, and the caller must treat a
+ * winning discard as no way back (`routeDiscards`).
+ */
 export function routeFor(snap: DeviceSnapshot, ip: string): RosRow | null {
   let best: RosRow | null = null;
   let bestLen = -1;
   let bestDist = Infinity;
   for (const r of snap.routes) {
-    if (!routeUsable(r)) continue;
+    if (!routeActive(r)) continue;
     const dst = r['dst-address'] || '';
     const [net, lenStr] = dst.split('/');
     const len = parseInt(lenStr ?? '32', 10);

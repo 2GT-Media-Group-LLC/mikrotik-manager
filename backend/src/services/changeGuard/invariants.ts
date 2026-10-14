@@ -14,7 +14,7 @@
  * (which is why effective `current-*` membership is what we test).
  */
 import { evaluateInputChain } from './firewallPath';
-import { vlanMembership, routeFor, routeUsable, type DeviceSnapshot, type ManagementPath } from './pathModel';
+import { vlanMembership, routeFor, routeActive, routeDiscards, type DeviceSnapshot, type ManagementPath } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
 import { managementService } from '../../utils/apiTls';
 
@@ -387,11 +387,19 @@ export const INVARIANTS: Invariant[] = [
       const target = path.managerIp ?? '0.0.0.0';
       const best = path.managerIp
         ? routeFor(snap, path.managerIp)
-        : snap.routes.find((r) => (r['dst-address'] || '') === '0.0.0.0/0' && routeUsable(r)) ?? null;
+        : snap.routes
+          .filter((r) => (r['dst-address'] || '') === '0.0.0.0/0' && routeActive(r))
+          .sort((x, y) => (parseInt(x['distance'] || '255', 10) || 255) - (parseInt(y['distance'] || '255', 10) || 255))[0] ?? null;
       if (!best) {
         return path.managerIp
           ? { ok: false, detail: `No route toward the manager (${target}) would remain; it is reached through ${path.managerGateway}.` }
           : { ok: false, detail: 'The default route would be removed, and the manager reaches this device through the default gateway.' };
+      }
+      if (routeDiscards(best)) {
+        return {
+          ok: false,
+          detail: `The route that would carry traffic back to the manager (${best['dst-address']}) discards it (${best['type'] || 'blackhole'}).`,
+        };
       }
       const gw = (best['gateway'] || '').split('%')[0].trim();
       const via = [gw, (best['immediate-gw'] || '').split('%')[0].trim()];

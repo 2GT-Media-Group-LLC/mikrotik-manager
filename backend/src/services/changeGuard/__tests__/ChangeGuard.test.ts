@@ -408,6 +408,26 @@ describe('review fixes: revert/commit race and partial apply (H1, M1)', () => {
     expect(statuses()).not.toContain('failed');
   });
 
+  it('H1: a removal that returns at the fire time is not trusted as a commit', async () => {
+    const realNow = Date.now.bind(Date);
+    // The clock jumps past the fire time while the scheduler is being removed.
+    const spy = jest.spyOn(Date, 'now')
+      .mockImplementation(() => realNow() + (commands.includes('/system/scheduler/remove') ? 200_000 : 0));
+    try {
+      const out = await withSafeApply(device, { kind: 'test', summary: 's', timeoutSec: 120 }, async () => {
+        applyDone = true;
+        return 'ok';
+      });
+      expect(out.revertMayFireAt).toBeDefined();
+      expect(statuses()).toContain('uncertain');
+      expect(statuses()).not.toContain('committed');
+      // The restore point stays: the revert may have started.
+      expect(deviceFiles).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('M1: an ordinary failure on a reachable device still disarms', async () => {
     await expect(
       withSafeApply(device, { kind: 'bond.create', summary: 's' }, async () => {

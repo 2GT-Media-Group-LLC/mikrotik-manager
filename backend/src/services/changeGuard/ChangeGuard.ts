@@ -625,7 +625,7 @@ export async function withSafeApply<T>(
     if (applyError) {
       // Still reachable, so the change genuinely failed and nothing needs undoing.
       // Disarm, or the device would reboot for no reason.
-      const d = await disarm(device, restorePoint, schedulerName, mode, { requirePresent: true });
+      const d = await disarm(device, restorePoint, schedulerName, mode, { requirePresent: true, fireAtMs: fireAt.getTime() });
       armed = false;
       if (!d.disarmed) {
         holdFor = secondsUntilFire() + LOCK_AFTER_FIRE_SEC;
@@ -644,7 +644,7 @@ export async function withSafeApply<T>(
     // Only a disarm we have proven counts. A failed read used to look like "no
     // scheduler left", so a good change was recorded as committed and then
     // reverted, with a reboot, when the scheduler fired anyway.
-    const d = await disarm(device, restorePoint, schedulerName, mode, { requirePresent: true });
+    const d = await disarm(device, restorePoint, schedulerName, mode, { requirePresent: true, fireAtMs: fireAt.getTime() });
     phase('disarm');
     armed = false;
     if (!d.disarmed && d.alreadyGone) {
@@ -680,6 +680,7 @@ export async function withSafeApply<T>(
 /** How long past a revert's fire time the device stays locked (restore + reboot). */
 const LOCK_AFTER_FIRE_SEC = 180;
 const DISARM_ATTEMPTS = 3;
+const DISARM_CUTOFF_MS = 3_000;
 
 /**
  * Disarm: remove the scheduler, prove it is gone, then remove the restore point.
@@ -691,12 +692,17 @@ const DISARM_ATTEMPTS = 3;
  */
 async function disarm(
   device: GuardDevice, restorePoint: string, schedulerName: string, mode: GuardMode,
-  opts: { requirePresent?: boolean } = {}
+  opts: { requirePresent?: boolean; fireAtMs?: number } = {}
 ): Promise<{ disarmed: boolean; reason?: string; alreadyGone?: boolean }> {
   let reason = 'unknown';
   /** We issued a successful remove ourselves, so a later absence is our doing. */
   let removedByUs = false;
+  /** Past this, a removal can no longer be told apart from one the revert beat. */
+  const cutoff = opts.fireAtMs !== undefined ? opts.fireAtMs - DISARM_CUTOFF_MS : Infinity;
   for (let attempt = 0; attempt < DISARM_ATTEMPTS; attempt++) {
+    if (Date.now() >= cutoff) {
+      return { disarmed: false, reason: 'the revert timer was about to fire, so the disarm was abandoned' };
+    }
     const client = newClient(device, VERIFY_CONNECT_TIMEOUT_MS);
     try {
       await client.connect();
@@ -713,6 +719,12 @@ async function disarm(
       for (const s of present) {
         await client.execute('/system/scheduler/remove', { '.id': s['.id'] });
         removedByUs = true;
+      }
+      // A removal that returned this close to the fire time may have landed
+      // after the on-event began (binary mode loads the backup without removing
+      // the scheduler first), and "gone" proves nothing then. Keep the restore point.
+      if (removedByUs && Date.now() >= cutoff) {
+        return { disarmed: false, reason: 'the scheduler was removed too close to its fire time to prove it had not started' };
       }
       const after = await client.execute('/system/scheduler/print');
       if (after.some((s) => s['name'] === schedulerName)) {

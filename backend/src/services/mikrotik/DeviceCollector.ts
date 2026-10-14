@@ -3044,7 +3044,10 @@ export class DeviceCollector {
     /** Something was written, so a later failure leaves a half-applied move. */
     let wrote = false;
     const fail = (step: string, err: unknown): never => {
-      const Ctor = wrote ? PartialApplyError : Error;
+      // No reply isn't "not applied": a lost reply on a write that was sent may
+      // well have landed, so only a clear rejection counts as nothing written.
+      const ambiguous = /timeout|timed out|closed|ECONN|EPIPE|reset|socket|disconnect/i.test((err as Error)?.message ?? '');
+      const Ctor = wrote || ambiguous ? PartialApplyError : Error;
       throw new Ctor(
         `${step} failed: ${(err as Error).message}.`
         // No reply isn't the same as not applied: a move that cuts the
