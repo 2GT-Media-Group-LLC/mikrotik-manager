@@ -1,4 +1,4 @@
-import { PartialApplyError } from '../changeGuard/partialApply';
+import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
 import { RouterOSClient, RouterOSTrapError } from './RouterOSClient';
@@ -3045,16 +3045,12 @@ export class DeviceCollector {
     let wrote = false;
     const fail = (step: string, err: unknown): never => {
       // No reply isn't "not applied": a lost reply on a write that was sent may
-      // well have landed, so only a clear rejection counts as nothing written.
-      const ambiguous = /timeout|timed out|closed|ECONN|EPIPE|reset|socket|disconnect/i.test((err as Error)?.message ?? '');
-      const Ctor = wrote || ambiguous ? PartialApplyError : Error;
-      throw new Ctor(
+      // well have landed (a move that cuts the manager off succeeds on the
+      // device and the answer never arrives), so only a clear rejection counts
+      // as nothing written.
+      throw stepFailure(err, wrote,
         `${step} failed: ${(err as Error).message}.`
-        // No reply isn't the same as not applied: a move that cuts the
-        // manager off succeeds on the device and the answer never arrives.
-        + (done.length ? ` Confirmed moved ${where}: ${done.join(', ')}.` : ' No port was confirmed moved.'),
-        { cause: err },
-      );
+        + (done.length ? ` Confirmed moved ${where}: ${done.join(', ')}.` : ' No port was confirmed moved.'));
     };
 
     if (plan.createBridge) {
@@ -4912,11 +4908,15 @@ export class DeviceCollector {
     }
     // Read VLAN membership before the ports leave the bridge.
     const vlanRows = originalBridge ? await this.vlanRowsListing(originalBridge, slaves) : [];
-    // From the first removal on, a failure leaves ports unbridged (or a bond
-    // half set up): mark it so Change Guard keeps the revert armed.
+    // From the first write on, a failure leaves ports unbridged (or a bond half
+    // set up): mark it so Change Guard keeps the revert armed. A rejection
+    // before anything was written is a plain failure, so the guard disarms
+    // rather than reverting (in binary mode, rebooting) an unchanged device.
+    let wrote = false;
     try {
       for (const bp of slavePorts) {
         await this.client.execute('/interface/bridge/port/remove', { '.id': bp['.id'] });
+        wrote = true;
       }
       const params: Record<string, string> = { name, slaves: slaves.join(','), mode };
       if (opts.lacpRate)   params['lacp-rate'] = this.mapLacpRate(opts.lacpRate);
@@ -4924,6 +4924,7 @@ export class DeviceCollector {
       if (opts.mtu)        params['mtu'] = String(opts.mtu);
       if (opts.minLinks != null) params['min-links'] = String(opts.minLinks);
       await this.client.execute('/interface/bonding/add', params);
+      wrote = true;
       // Put the new bond into the bridge the slaves came out of. If this fails the
       // member ports are left unbridged — never swallow it, the device may be
       // unreachable and the caller must know.
@@ -4953,8 +4954,7 @@ export class DeviceCollector {
         }
       }
     } catch (err) {
-      if (err instanceof PartialApplyError) throw err;
-      throw new PartialApplyError((err as Error).message, { cause: err });
+      throw stepFailure(err, wrote);
     }
   }
 
@@ -4985,14 +4985,16 @@ export class DeviceCollector {
     const carry = DeviceCollector.carryBridgePortAttrs(bondPort);
     const vlanRows = bridgeName ? await this.vlanRowsListing(bridgeName, [name]) : [];
 
+    // Once the bond's bridge port is gone, a failure leaves the bond unbridged.
+    let wrote = false;
     try {
       if (bondPort?.['.id']) {
         await this.client.execute('/interface/bridge/port/remove', { '.id': bondPort['.id'] });
+        wrote = true;
       }
       await this.client.execute('/interface/bonding/remove', { '.id': id });
     } catch (err) {
-      // The bond port may be gone while the bond is still there (or the reverse).
-      throw new PartialApplyError((err as Error).message, { cause: err });
+      throw stepFailure(err, wrote);
     }
 
     // Removing a bond releases its slaves as standalone interfaces. If the bond was
