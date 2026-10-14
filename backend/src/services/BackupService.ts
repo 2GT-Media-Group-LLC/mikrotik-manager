@@ -182,11 +182,13 @@ export class BackupService {
         row,
         {
           kind: 'backup.restore', summary: `Restore ${row.backup_filename}`, userId: opts.userId ?? null,
-          // A full import is the riskiest write there is: it runs only with an
-          // armed revert, and the revert must outlast the import's own 180 s
-          // SSH timeout plus the reachability check (a shorter timer fired
-          // mid-import and was then "committed" over).
+          // A full import is the riskiest write there is: with Change Guard on
+          // it runs only with an armed revert, and the revert must outlast the
+          // import's own 180 s SSH timeout plus the reachability check (a
+          // shorter timer fired mid-import and was then "committed" over).
+          // Turned off in Settings, it runs unprotected like any other change.
           requireProtection: true,
+          requireProtectionOnlyWhenEnabled: true,
           minTimeoutSec: RESTORE_MIN_TIMEOUT_SEC,
         },
         async () => {
@@ -403,6 +405,9 @@ class ImportFailedError extends Error {
 export function describeRestore(r: RestoreOutcome): string {
   switch (r.status) {
     case 'applied':
+      if (!r.guard.protected) {
+        return `Restored: RouterOS ran the whole backup. It ran without auto-revert (${r.guard.unprotected_reason}).`;
+      }
       return 'Restored: RouterOS ran the whole backup, and the device was confirmed reachable afterwards.';
     case 'reverting':
       return 'The restore did not complete cleanly (it stopped responding or only partly applied), so the device is putting its previous configuration back. It should return shortly.';

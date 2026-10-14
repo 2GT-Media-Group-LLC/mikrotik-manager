@@ -65,6 +65,13 @@ export interface ChangeMeta {
    * auto-revert, and without it a mistake strands the device.
    */
   requireProtection?: boolean;
+  /**
+   * With `requireProtection`: still refuse when the guard is on but cannot arm,
+   * but run unprotected when the operator has turned Change Guard off in
+   * Settings, as unflagged changes do. For changes that are risky but carry no
+   * lockout warning the user confirmed past (a backup restore).
+   */
+  requireProtectionOnlyWhenEnabled?: boolean;
 }
 
 /** Thrown, before anything is applied, when a change requires protection it cannot have. */
@@ -461,7 +468,7 @@ export async function withSafeApply<T>(
   const timeoutSec = Math.max(meta.minTimeoutSec ?? 0, meta.timeoutSec ?? settings.timeoutSec);
 
   if (!settings.enabled) {
-    if (meta.requireProtection) {
+    if (meta.requireProtection && !meta.requireProtectionOnlyWhenEnabled) {
       throw new GuardRequiredError(
         'Change Guard is turned off in Settings, so this change would have no auto-revert. ' +
         'It could cut off management, so it was not applied. Turn Change Guard on to apply it.'

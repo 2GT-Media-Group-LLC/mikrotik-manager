@@ -287,6 +287,33 @@ describe('withSafeApply', () => {
     expect(ran).toBe(false);
   });
 
+  it('runs a change marked requireProtectionOnlyWhenEnabled unprotected when Change Guard is turned off', async () => {
+    mockedQuery.mockResolvedValueOnce([{ key: 'change_guard_enabled', value: false }] as never);
+    const out = await withSafeApply(device,
+      { kind: 'backup.restore', summary: 's', requireProtection: true, requireProtectionOnlyWhenEnabled: true },
+      async () => 'ok');
+    expect(out.result).toBe('ok');
+    expect(out.unprotectedReason).toMatch(/disabled/);
+    expect(commands).toHaveLength(0);
+  });
+
+  it('still refuses a change marked requireProtectionOnlyWhenEnabled when the guard is on but cannot arm', async () => {
+    MockedClient.mockImplementation(() => ({
+      connect: jest.fn(async () => {}),
+      disconnect: jest.fn(),
+      isConnected: jest.fn(() => true),
+      execute: jest.fn(async (cmd: string) => {
+        if (cmd === '/system/backup/save') throw new Error('not enough permissions');
+        return [];
+      }),
+    }) as unknown as RouterOSClient);
+    let ran = false;
+    await expect(withSafeApply(device,
+      { kind: 'backup.restore', summary: 's', requireProtection: true, requireProtectionOnlyWhenEnabled: true },
+      async () => { ran = true; return 'ok'; })).rejects.toBeInstanceOf(GuardRequiredError);
+    expect(ran).toBe(false);
+  });
+
   // ── Disarm must be proven (P2-5, P2-6) ────────────────────────────────────
 
   it('does not record a commit when the scheduler cannot be read back after the change', async () => {
