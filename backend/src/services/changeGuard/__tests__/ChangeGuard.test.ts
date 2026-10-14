@@ -6,6 +6,7 @@ jest.mock('../../../utils/crypto', () => ({ decrypt: () => 'pw' }));
 jest.mock('../../mikrotik/RouterOSClient');
 
 import { withSafeApply, probeCapability, GuardRequiredError, type GuardDevice } from '../ChangeGuard';
+import { PartialApplyError, PartialApplyRevertError } from '../partialApply';
 import { RouterOSClient } from '../../mikrotik/RouterOSClient';
 import { query, queryOne } from '../../../config/database';
 import { redis } from '../../../config/redis';
@@ -348,5 +349,71 @@ describe('probeCapability', () => {
     expect(r.ok).toBe(true);
     expect(deviceSchedulers).toHaveLength(0);
     expect(deviceFiles).toHaveLength(0);
+  });
+});
+
+describe('review fixes: revert/commit race and partial apply (H1, M1)', () => {
+  const statuses = () => mockedQuery.mock.calls
+    .filter(([sql]) => String(sql).includes('UPDATE device_change_guards'))
+    .map(([, params]) => (params as unknown[])[1]);
+
+  it('H1: a revert that already removed its scheduler is not committed over', async () => {
+    const out = await withSafeApply(device, { kind: 'bond.delete', summary: 's', mode: 'script' }, async () => {
+      applyDone = true;
+      // What the on-event does first: remove its own scheduler, then restore.
+      deviceSchedulers = [];
+      return 'ok';
+    });
+    expect(out.confirmed).toBe(false);
+    expect(out.autoReverting).toBe(true);
+    expect(statuses()).toContain('uncertain');
+    expect(statuses()).not.toContain('committed');
+    // The restore steps may be mid-way: they must not be deleted.
+    expect(deviceScripts.length).toBeGreaterThan(0);
+  });
+
+  it('H1: nothing is committed when apply + verify ran into the revert timer', async () => {
+    const realNow = Date.now.bind(Date);
+    let offset = 0;
+    const spy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + offset);
+    try {
+      const out = await withSafeApply(device, { kind: 'test', summary: 's', timeoutSec: 120 }, async () => {
+        applyDone = true;
+        offset = 110_000; // 10 s before the revert fires
+        return 'ok';
+      });
+      expect(out.confirmed).toBe(false);
+      expect(out.autoReverting).toBe(true);
+      expect(out.revertMayFireAt).toBeDefined();
+      // Left armed, not disarmed.
+      expect(deviceSchedulers).toHaveLength(1);
+      expect(statuses()).not.toContain('committed');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('M1: a writer that fails midway leaves the revert armed instead of keeping a half-applied config', async () => {
+    let caught: unknown;
+    try {
+      await withSafeApply(device, { kind: 'bond.create', summary: 's' }, async () => {
+        applyDone = true;
+        throw new PartialApplyError('Bond bond1 was created, but adding it to bridge failed');
+      });
+    } catch (e) { caught = e; }
+    expect(caught).toBeInstanceOf(PartialApplyRevertError);
+    expect(deviceSchedulers).toHaveLength(1);
+    expect(deviceFiles).toHaveLength(1);
+    expect(statuses()).not.toContain('committed');
+    expect(statuses()).not.toContain('failed');
+  });
+
+  it('M1: an ordinary failure on a reachable device still disarms', async () => {
+    await expect(
+      withSafeApply(device, { kind: 'bond.create', summary: 's' }, async () => {
+        throw new Error('name already taken');
+      })
+    ).rejects.toThrow('name already taken');
+    expect(deviceSchedulers).toHaveLength(0);
   });
 });

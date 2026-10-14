@@ -29,6 +29,7 @@ import { decrypt } from '../../utils/crypto';
 import { query, queryOne } from '../../config/database';
 import { redis } from '../../config/redis';
 import { heldLockToken, restoreHeldLock } from './deviceLock';
+import { isPartialApply, PartialApplyRevertError } from './partialApply';
 import { restoreScopeFor, captureScope, buildRestorePlan, type RestorePlan } from './scriptRestore';
 
 export type GuardMode = 'binary' | 'script';
@@ -51,6 +52,12 @@ export interface ChangeMeta {
   userId?: number | null;
   mode?: GuardMode;
   timeoutSec?: number;
+  /**
+   * A floor for the revert timer. The apply and the reachability check are not
+   * bounded by it, so a long-running change (a full import) needs a window that
+   * outlasts its own worst case, whatever the operator's setting says.
+   */
+  minTimeoutSec?: number;
   /**
    * Refuse the change, rather than run it unprotected, when auto-revert cannot
    * be armed. Set for changes predicted to cut off management, or that the
@@ -92,6 +99,12 @@ const DEFAULT_TIMEOUT_SEC = 120;
 const VERIFY_ATTEMPTS = 4;
 const VERIFY_CONNECT_TIMEOUT_MS = 8_000;
 const LOCK_TTL_SEC = 600;
+/**
+ * Do not commit when the revert is this close to firing (or past it): disarming
+ * races the on-event, and a scheduler that has already removed itself looks
+ * exactly like one we removed.
+ */
+const COMMIT_MARGIN_SEC = 20;
 
 function token(): string {
   return randomBytes(5).toString('hex');
@@ -445,7 +458,7 @@ export async function withSafeApply<T>(
   const timings: Record<string, number> = {};
   let mark = Date.now();
   const phase = (name: string) => { const now = Date.now(); timings[name] = now - mark; mark = now; };
-  const timeoutSec = meta.timeoutSec ?? settings.timeoutSec;
+  const timeoutSec = Math.max(meta.minTimeoutSec ?? 0, meta.timeoutSec ?? settings.timeoutSec);
 
   if (!settings.enabled) {
     if (meta.requireProtection) {
@@ -577,10 +590,42 @@ export async function withSafeApply<T>(
       return { result: result as T, confirmed: false, autoReverting: true, guardId, mode, modeNote, timings };
     }
 
+    // The revert is about to fire (or has): a disarm now races it, and an absent
+    // scheduler is indistinguishable from one the revert removed. Commit nothing.
+    // The same goes for a writer that failed midway: the restore point is the
+    // only way back from a half-applied configuration.
+    const partial = !!applyError && isPartialApply(applyError);
+    if (partial || secondsUntilFire() < COMMIT_MARGIN_SEC) {
+      armed = false; // deliberately left armed on the device
+      holdFor = Math.max(secondsUntilFire(), 0) + LOCK_AFTER_FIRE_SEC;
+      const at = fireAt.toLocaleTimeString();
+      if (partial) {
+        const msg = (applyError as Error).message;
+        await setGuardStatus(guardId, 'reverted', `Change only partly applied (${msg}); left to self-restore`);
+        throw new PartialApplyRevertError(
+          `${msg} The change was only partly applied, so the device will restore its previous configuration ` +
+          `at about ${at}${mode === 'binary' ? ' and reboot' : ''}.`,
+          applyError, fireAt,
+        );
+      }
+      await setGuardStatus(guardId, 'uncertain',
+        'Applied, but the apply and verify took until the revert timer was about to fire, so it was not disarmed');
+      if (applyError) {
+        throw new Error(
+          `${(applyError as Error).message}. The change ran into the revert timer, so the device may restore ` +
+          `its previous configuration at about ${at}.`
+        );
+      }
+      return {
+        result: result as T, confirmed: false, autoReverting: true, guardId,
+        revertMayFireAt: fireAt.toISOString(), mode, modeNote, timings,
+      };
+    }
+
     if (applyError) {
       // Still reachable, so the change genuinely failed and nothing needs undoing.
       // Disarm, or the device would reboot for no reason.
-      const d = await disarm(device, restorePoint, schedulerName, mode);
+      const d = await disarm(device, restorePoint, schedulerName, mode, { requirePresent: true });
       armed = false;
       if (!d.disarmed) {
         holdFor = secondsUntilFire() + LOCK_AFTER_FIRE_SEC;
@@ -599,9 +644,19 @@ export async function withSafeApply<T>(
     // Only a disarm we have proven counts. A failed read used to look like "no
     // scheduler left", so a good change was recorded as committed and then
     // reverted, with a reboot, when the scheduler fired anyway.
-    const d = await disarm(device, restorePoint, schedulerName, mode);
+    const d = await disarm(device, restorePoint, schedulerName, mode, { requirePresent: true });
     phase('disarm');
     armed = false;
+    if (!d.disarmed && d.alreadyGone) {
+      // Not removed by us: the on-event ran. Its restore steps may be mid-way, so
+      // they are left where they are and the change is not reported as kept.
+      holdFor = LOCK_AFTER_FIRE_SEC;
+      await setGuardStatus(guardId, 'uncertain', `The revert had already fired (${d.reason}); the device may have restored its previous configuration`);
+      return {
+        result: result as T, confirmed: false, autoReverting: true, guardId,
+        revertMayFireAt: fireAt.toISOString(), mode, modeNote, timings,
+      };
+    }
     if (!d.disarmed) {
       holdFor = secondsUntilFire() + LOCK_AFTER_FIRE_SEC;
       await setGuardStatus(guardId, 'uncertain', `Applied and reachable, but the revert could not be confirmed disarmed: ${d.reason}`);
@@ -635,18 +690,29 @@ const DISARM_ATTEMPTS = 3;
  * does fire still has something to restore.
  */
 async function disarm(
-  device: GuardDevice, restorePoint: string, schedulerName: string, mode: GuardMode
-): Promise<{ disarmed: boolean; reason?: string }> {
+  device: GuardDevice, restorePoint: string, schedulerName: string, mode: GuardMode,
+  opts: { requirePresent?: boolean } = {}
+): Promise<{ disarmed: boolean; reason?: string; alreadyGone?: boolean }> {
   let reason = 'unknown';
+  /** We issued a successful remove ourselves, so a later absence is our doing. */
+  let removedByUs = false;
   for (let attempt = 0; attempt < DISARM_ATTEMPTS; attempt++) {
     const client = newClient(device, VERIFY_CONNECT_TIMEOUT_MS);
     try {
       await client.connect();
       const scheds = await client.execute('/system/scheduler/print');
-      for (const s of scheds) {
-        if (s['name'] === schedulerName && s['.id']) {
-          await client.execute('/system/scheduler/remove', { '.id': s['.id'] });
-        }
+      const present = scheds.filter((s) => s['name'] === schedulerName && s['.id']);
+      // After a commit attempt the scheduler must still be there: the revert's
+      // on-event removes it before restoring, so an absent one means it fired.
+      if (present.length === 0 && opts.requirePresent && !removedByUs) {
+        return {
+          disarmed: false, alreadyGone: true,
+          reason: 'the revert scheduler was no longer on the device before it was removed',
+        };
+      }
+      for (const s of present) {
+        await client.execute('/system/scheduler/remove', { '.id': s['.id'] });
+        removedByUs = true;
       }
       const after = await client.execute('/system/scheduler/print');
       if (after.some((s) => s['name'] === schedulerName)) {

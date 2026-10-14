@@ -11,6 +11,7 @@ import { DeviceCollector, type DeviceRow } from '../mikrotik/DeviceCollector';
 import { captureSnapshot } from './pathModel';
 import { analyzeChange, type PlannedChange } from './analyzeChange';
 import { withSafeApply, GuardRequiredError, type GuardDevice } from './ChangeGuard';
+import { PartialApplyRevertError } from './partialApply';
 import { logSafe } from '../../utils/logSafe';
 import { previewContext } from '../../utils/previewContext';
 
@@ -31,6 +32,8 @@ export async function withGuardedChange<T>(
     kind: string; summary: string; change?: PlannedChange;
     /** Seconds before the device restores itself; for slow multi-step changes. */
     timeoutSec?: number;
+    /** Refuse, rather than run unprotected, when auto-revert can't be armed. */
+    requireProtection?: boolean;
   },
   fn: (c: DeviceCollector) => Promise<T>,
   afterConfirmed?: (c: DeviceCollector) => Promise<void>
@@ -76,7 +79,7 @@ export async function withGuardedChange<T>(
     }
     return;
   }
-  let requireProtection = confirmedLockout;
+  let requireProtection = confirmedLockout || meta.requireProtection === true;
   const started = Date.now();
   let analysisMs = 0;
   if (meta.change && !confirmedLockout) {
@@ -159,6 +162,13 @@ export async function withGuardedChange<T>(
       },
     });
   } catch (err) {
+    if (err instanceof PartialApplyRevertError) {
+      res.status(500).json({
+        error: err.message,
+        guard: { protected: true, confirmed: false, auto_reverting: true, revert_may_fire_at: err.revertAt.toISOString() },
+      });
+      return;
+    }
     if (err instanceof GuardRequiredError) {
       res.status(422).json({ error: err.message, code: err.code });
       return;
