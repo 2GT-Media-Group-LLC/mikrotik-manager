@@ -569,6 +569,12 @@ describe('review fixes: verdict severity and blind spots (M3, M4, M5, M7)', () =
     expect(v.violations.map((x) => x.id)).toContain('ingress-port-unknown');
   });
 
+  it('M4: blind ingress still requires protection when a bond is built from bridge ports', () => {
+    const snap = baseSnapshot({ arp: [], bridgeHosts: [] });
+    const v = analyzeChange(snap, device, { kind: 'path-object.change', name: 'sfp28-1', what: 'Bonding this port' });
+    expect(v.severity).not.toBe('safe');
+  });
+
   it('M5: removing the specific route is not covered by a default route elsewhere', () => {
     const snap = baseSnapshot({
       addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'bridge', disabled: 'false' }],

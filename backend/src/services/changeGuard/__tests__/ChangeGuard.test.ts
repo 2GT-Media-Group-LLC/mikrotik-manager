@@ -428,6 +428,19 @@ describe('review fixes: revert/commit race and partial apply (H1, M1)', () => {
     }
   });
 
+  it('M1: a transport error marked as possibly partial (SSH import timeout) keeps the revert armed', async () => {
+    const err = Object.assign(new Error('SSH timeout during restore'), { partialApply: true });
+    let caught: unknown;
+    try {
+      await withSafeApply(device, { kind: 'backup.restore', summary: 's' }, async () => {
+        applyDone = true;
+        throw err;
+      });
+    } catch (e) { caught = e; }
+    expect(caught).toBeInstanceOf(PartialApplyRevertError);
+    expect(deviceSchedulers).toHaveLength(1);
+  });
+
   it('M1: an ordinary failure on a reachable device still disarms', async () => {
     await expect(
       withSafeApply(device, { kind: 'bond.create', summary: 's' }, async () => {

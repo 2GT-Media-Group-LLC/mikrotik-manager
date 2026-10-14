@@ -306,6 +306,15 @@ export class BackupService {
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
       let settled = false;
+      /**
+       * Set once /import has been sent. A timeout or dropped connection after
+       * that says nothing about how far RouterOS got, so the error is marked as
+       * a possible partial apply and Change Guard keeps the revert armed even
+       * though the API is still reachable.
+       */
+      let dispatched = false;
+      const ambiguous = (e: Error): Error =>
+        dispatched ? Object.assign(e, { partialApply: true }) : e;
       const finish = (fn: () => void) => {
         if (settled) return;
         settled = true;
@@ -313,7 +322,7 @@ export class BackupService {
         try { conn.end(); } catch { /* closing */ }
         fn();
       };
-      const timeout = setTimeout(() => finish(() => reject(new Error('SSH timeout during restore'))), 180_000);
+      const timeout = setTimeout(() => finish(() => reject(ambiguous(new Error('SSH timeout during restore')))), 180_000);
 
       const exec = (cmd: string): Promise<string> => new Promise((res, rej) => {
         conn.exec(cmd, (err, stream) => {
@@ -334,11 +343,12 @@ export class BackupService {
           writeStream.on('close', () => {
             void (async () => {
               try {
+                dispatched = true;
                 const output = await exec(`/import file-name=${remoteFile}`);
                 await exec(`/file remove [find name="${remoteFile}"]`).catch(() => '');
                 finish(() => resolve(parseImportOutput(output, content)));
               } catch (e) {
-                finish(() => reject(e));
+                finish(() => reject(ambiguous(e as Error)));
               }
             })();
           });
@@ -346,7 +356,7 @@ export class BackupService {
         });
       });
 
-      conn.on('error', (err) => finish(() => reject(explainSshError(err, device.ip_address, device.ssh_port || 22))));
+      conn.on('error', (err) => finish(() => reject(ambiguous(explainSshError(err, device.ip_address, device.ssh_port || 22) as Error))));
       conn.connect({
         host: device.ip_address, port: device.ssh_port || 22, username,
         ...sshHostCheck(device.ip_address, device.ssh_port || 22), ...auth, readyTimeout: 10_000,

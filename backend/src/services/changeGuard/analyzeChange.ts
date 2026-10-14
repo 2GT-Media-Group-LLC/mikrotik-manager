@@ -343,6 +343,7 @@ function touchedPorts(snap: DeviceSnapshot, change: PlannedChange, bridge: strin
       case 'bridge-port.move': return c.ports;
       case 'interface.disable': return [c.name];
       case 'bond.delete': return [c.name];
+      case 'path-object.change': return [c.name];
       case 'vlan.add':
       case 'vlan.update': return [...c.tagged, ...c.untagged];
       case 'vlan.delete':
