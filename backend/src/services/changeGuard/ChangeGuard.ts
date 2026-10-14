@@ -387,6 +387,9 @@ async function verifyReachable(device: GuardDevice, attempts = VERIFY_ATTEMPTS):
   return false;
 }
 
+/** How long an unprotected restore's device lock outlives an ambiguous failure. */
+const UNPROTECTED_HOLD_SEC = 300;
+
 async function acquireLock(deviceId: number): Promise<boolean> {
   // The request already holds this device's write lock (deviceLock.ts); the
   // guarded change runs under it.
@@ -489,10 +492,17 @@ export async function withSafeApply<T>(
     if (!(await acquireLock(device.id))) {
       throw new Error('Another change is already in progress on this device. Please wait for it to finish.');
     }
+    let hold = false;
     try {
       return { result: await applyFn(), confirmed: false, autoReverting: false, unprotectedReason };
+    } catch (err) {
+      // An import that failed after dispatch may still be running on the
+      // device; keep it locked until it can no longer overlap a retry.
+      hold = isPartialApply(err);
+      throw err;
     } finally {
-      await releaseLock(device.id);
+      if (hold) await holdLock(device.id, Math.max(timeoutSec, UNPROTECTED_HOLD_SEC));
+      else await releaseLock(device.id);
     }
   }
   if (!(await acquireLock(device.id))) {

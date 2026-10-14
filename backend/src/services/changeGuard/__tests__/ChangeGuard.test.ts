@@ -326,6 +326,18 @@ describe('withSafeApply', () => {
     expect(ran).toBe(false);
   });
 
+  it('keeps the device locked after an unprotected restore fails ambiguously', async () => {
+    const meta = { kind: 'backup.restore', summary: 's', requireProtection: true, requireProtectionOnlyWhenEnabled: true };
+    mockedQuery.mockResolvedValueOnce([{ key: 'change_guard_enabled', value: false }] as never);
+    jest.mocked(redis.del).mockClear();
+    jest.mocked(redis.set).mockClear();
+    await expect(withSafeApply(device, meta, async () => { throw new PartialApplyError('import timed out'); }))
+      .rejects.toBeInstanceOf(PartialApplyError);
+    expect(redis.del).not.toHaveBeenCalled();
+    const holds = setCalls().filter((c) => c[0] === `changeguard:lock:${device.id}` && c[2] === 'EX' && Number(c[3]) >= 300);
+    expect(holds.length).toBeGreaterThan(0);
+  });
+
   it('still refuses a change marked requireProtectionOnlyWhenEnabled when the guard is on but cannot arm', async () => {
     MockedClient.mockImplementation(() => ({
       connect: jest.fn(async () => {}),
