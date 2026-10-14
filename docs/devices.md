@@ -360,6 +360,14 @@ value, while the page showed it gone.
 
 On a switch port, changing flow control in one direction leaves the other direction alone.
 
+### Bandwidth queues and FastTrack
+
+The **Queues** tab, and **Limit this client** on a client's page, create a RouterOS simple
+queue. FastTracked connections skip simple queues, so on a device with an enabled FastTrack
+rule a queue only limits traffic that isn't FastTracked. When the device has one, the queue
+dialog says so (#280). To limit a target, exclude it from FastTrack (for example, an accept rule
+for it above the FastTrack rule) or turn FastTrack off.
+
 ## Ports and the faceplate
 
 The faceplate mirrors the physical front panel — copper staggered odd above even as the
@@ -430,6 +438,19 @@ with no ports, addresses, VLAN interfaces or DHCP server can be deleted.
 Moving ports and deleting bridges run through [Change Guard](change-guard.md): moving the port
 management traffic arrives on out of its bridge is predicted as a lockout before anything is
 applied.
+
+### VLANs in the switch chip's table
+
+Older switch chips, such as the Atheros 8327 in a hAP ac² and the chips in the RB951 and hEX
+lite, can't hardware-switch a bridge with VLAN filtering on: turning it on moves that bridge's
+switching to the CPU. On these chips VLANs belong in the switch chip's own table (**Switch,
+VLAN** in WinBox), with each port's VLAN mode, VLAN header and default VLAN.
+
+On such a device the **VLANs** tab shows a **Switch chip VLANs** card with that table and the
+port settings (#278), and no longer suggests turning on bridge VLAN filtering. The card is
+read-only for now: change these settings in WinBox or with a command. Chips that do VLAN
+filtering in hardware on RouterOS 7 (CRS3xx and other Marvell switches, and the hEX's MT7621)
+use bridge VLAN filtering as described above and don't show the card.
 
 ## Routing between VLANs in hardware
 

@@ -63,6 +63,7 @@ import { parseAllowedList, configuredServices, allowedFromKey, managerPeer, addr
 import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
 import { clientAddressListView } from '../utils/addressLists';
 import { l3hwView } from '../utils/l3hw';
+import { switchVlanView } from '../utils/switchVlans';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
 const router = Router();
@@ -1468,6 +1469,25 @@ router.get('/:id/l3hw', async (req, res) => {
       ? (await run.execute('/interface/ethernet/switch/l3hw-settings/monitor', { once: '' }).catch(none))[0]
       : undefined;
     return l3hwView(switches, ports, settings[0], monitor, vlans, addresses, filter, nat, bridges);
+  });
+});
+
+// GET /api/devices/:id/switch-vlans — the switch chip's own VLAN table and
+// port VLAN settings (#278), read live. Only older chips (Atheros 8327,
+// QCA8337 and similar) have them; elsewhere the menu doesn't exist and
+// supported is false. Read-only.
+router.get('/:id/switch-vlans', async (req, res) => {
+  await withCollector(req.params.id, res, async (c) => {
+    const run = c.commandRunner();
+    const none = () => [] as Record<string, string>[];
+    const [switches, vlanTable, ports, bridges] = await Promise.all([
+      run.execute('/interface/ethernet/switch/print').catch(none),
+      // null, not [], when the menu doesn't exist on this chip.
+      run.execute('/interface/ethernet/switch/vlan/print').catch(() => null),
+      run.execute('/interface/ethernet/switch/port/print').catch(none),
+      run.execute('/interface/bridge/print').catch(none),
+    ]);
+    return switchVlanView(switches, vlanTable, ports, bridges);
   });
 });
 

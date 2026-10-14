@@ -9,6 +9,7 @@ import CopyVlanModal from './CopyVlanModal';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import L3HwCard from './L3HwCard';
+import SwitchVlanCard from './SwitchVlanCard';
 
 interface PortForm {
   tagged_ports: string;
@@ -38,6 +39,15 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
     queryFn: () => devicesApi.getPorts(deviceId).then((r) => r.data),
   });
   const ports: SwitchPort[] = portsData?.ports ?? [];
+  // Older switch chips keep VLANs in their own table (#278). There, bridge VLAN
+  // filtering moves switching to the CPU, so the nudge to turn it on is wrong.
+  const { data: switchVlans } = useQuery({
+    queryKey: ['switch-vlans', deviceId],
+    queryFn: () => devicesApi.getSwitchVlans(deviceId).then((r) => r.data),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const chipVlans = !!switchVlans?.supported;
 
   // Find bridges where vlan-filtering is not enabled (stored as 'yes' from RouterOS or 'true' after toggle)
   const bridgesWithoutFiltering = ports.filter(
@@ -169,8 +179,11 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
       {/* Routing between VLANs in hardware or on the CPU (#254) */}
       <L3HwCard deviceId={deviceId} />
 
+      {/* VLANs in the switch chip's own table (#278) */}
+      {chipVlans && switchVlans && <SwitchVlanCard view={switchVlans} />}
+
       {/* VLAN Filtering warning */}
-      {bridgesWithoutFiltering.length > 0 && (
+      {bridgesWithoutFiltering.length > 0 && !chipVlans && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
           <Network className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
           <div className="flex-1 text-sm text-amber-800 dark:text-amber-300">

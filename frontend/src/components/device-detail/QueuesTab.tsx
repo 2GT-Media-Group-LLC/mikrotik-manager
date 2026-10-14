@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ReviewChangesButton from '../common/ReviewChangesButton';
+import FastTrackNote from '../common/FastTrackNote';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Pencil, RefreshCw, Check, X, Gauge, AlertCircle } from 'lucide-react';
 import { devicesApi } from '../../services/api';
@@ -27,8 +28,8 @@ const EMPTY: QForm = { name: '', target: '', up: '10M', down: '50M', comment: ''
 
 const RATE_PRESETS = ['1M', '5M', '10M', '25M', '50M', '100M'];
 
-function QueueModal({ title, form, setForm, onSave, onReview, onClose, isPending, error }: {
-  title: string; form: QForm; setForm: React.Dispatch<React.SetStateAction<QForm>>;
+function QueueModal({ deviceId, title, form, setForm, onSave, onReview, onClose, isPending, error }: {
+  deviceId: number; title: string; form: QForm; setForm: React.Dispatch<React.SetStateAction<QForm>>;
   onSave: () => void; onReview?: () => Promise<unknown>; onClose: () => void; isPending: boolean; error: string;
 }) {
   const set = (k: keyof QForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
@@ -63,6 +64,7 @@ function QueueModal({ title, form, setForm, onSave, onReview, onClose, isPending
           <p className="text-xs text-gray-400">Use suffixes: <span className="font-mono">k</span>, <span className="font-mono">M</span>, <span className="font-mono">G</span> (bits/sec). Leave a field as <span className="font-mono">0</span> for unlimited.</p>
           <div><label className="label">Comment</label>
             <input className="input" value={form.comment} onChange={e => set('comment', e.target.value)} placeholder="Optional" /></div>
+          <FastTrackNote deviceId={deviceId} />
           {error && (
             <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
               <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" /><p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -159,8 +161,8 @@ export default function QueuesTab({ deviceId }: { deviceId: number }) {
           </div>
         )}
 
-      {showAdd && <QueueModal title="Add Bandwidth Queue" form={form} setForm={setForm} isPending={addMut.isPending} error={err} onClose={() => setShowAdd(false)} onSave={() => addMut.mutate()} onReview={() => devicesApi.addQueue(deviceId, payload(form))} />}
-      {editing && <QueueModal title="Edit Bandwidth Queue" form={form} setForm={setForm} isPending={updMut.isPending} error={err} onClose={() => setEditing(null)} onSave={() => updMut.mutate(editing['.id'])} onReview={() => devicesApi.updateQueue(deviceId, editing['.id'], payload(form, true))} />}
+      {showAdd && <QueueModal deviceId={deviceId} title="Add Bandwidth Queue" form={form} setForm={setForm} isPending={addMut.isPending} error={err} onClose={() => setShowAdd(false)} onSave={() => addMut.mutate()} onReview={() => devicesApi.addQueue(deviceId, payload(form))} />}
+      {editing && <QueueModal deviceId={deviceId} title="Edit Bandwidth Queue" form={form} setForm={setForm} isPending={updMut.isPending} error={err} onClose={() => setEditing(null)} onSave={() => updMut.mutate(editing['.id'])} onReview={() => devicesApi.updateQueue(deviceId, editing['.id'], payload(form, true))} />}
     </div>
   );
 }

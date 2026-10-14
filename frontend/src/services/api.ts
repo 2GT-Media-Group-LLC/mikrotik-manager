@@ -832,6 +832,8 @@ export const devicesApi = {
     api.post<Record<string, string>[]>(`/devices/${id}/nat/move`, { id: ruleId, destination }),
   // Firewall address lists (reusable address objects)
   getAddressLists: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/address-lists`),
+  /** The switch chip's own VLAN table, on older chips (#278). Read-only. */
+  getSwitchVlans: (id: number) => api.get<SwitchVlanView>(`/devices/${id}/switch-vlans`),
   /** L3 hardware offloading on the switch chip (#254). */
   getL3Hw: (id: number) => api.get<L3HwView>(`/devices/${id}/l3hw`),
   setL3Hw: (id: number, enabled: boolean, acknowledgeFirewall = false) =>
@@ -2414,6 +2416,16 @@ export interface ClientAddressListView {
 }
 
 /** L3 hardware offloading on a device's switch chip (#254). */
+/** The switch chip's own VLAN table and port VLAN settings (#278). */
+export interface SwitchVlanView {
+  supported: boolean;
+  switches: { name: string; type: string }[];
+  vlans: { id: string; switch: string; vlanId: number; ports: string[]; independentLearning: boolean; disabled: boolean }[];
+  ports: { name: string; switch: string; vlanMode: string; vlanHeader: string; defaultVlanId: string }[];
+  inUse: boolean;
+  filteringBridges: string[];
+}
+
 export interface L3HwView {
   supported: boolean;
   switch: { id: string; name: string; type: string } | null;

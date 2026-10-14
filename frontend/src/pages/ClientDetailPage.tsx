@@ -13,6 +13,7 @@ import {
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import RoamingTimeline from '../components/clients/RoamingTimeline';
 import { clientsApi, trafficApi, devicesApi } from '../services/api';
+import FastTrackNote from '../components/common/FastTrackNote';
 import { CATEGORY_META, SELECTABLE_CATEGORIES } from '../utils/clientCategories';
 import type { ClientDetail } from '../services/api';
 import type { SignalPoint } from '../services/api';
@@ -291,6 +292,7 @@ function LimitBandwidth({ deviceId, ip, name }: { deviceId: number; ip: string; 
             <label className="text-[10px] text-gray-500 dark:text-slate-400">Download
               <input className="input font-mono mt-0.5 py-1 text-xs" value={down} onChange={e => setDown(e.target.value)} placeholder="50M" /></label>
           </div>
+          <FastTrackNote deviceId={deviceId} compact />
           {error && <p className="text-[10px] text-red-500">{error}</p>}
           <div className="flex items-center gap-2">
             <button onClick={apply} disabled={status === 'saving'}
