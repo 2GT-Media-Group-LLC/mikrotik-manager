@@ -1340,7 +1340,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
             </span>
             {singlePort && (
               <span className="text-[12px]" style={{ color: 'var(--ink-2)' }}>
-                selected{singlePort.speed ? ` · ${singlePort.speed}` : ''}{singlePort.mtu ? ` · ${singlePort.mtu} MTU` : ''}{singlePort.running ? ' · link-ok' : ' · link-down'}
+                selected{singlePort.speed ? ` · ${singlePort.speed}` : ''}{singlePort.mtu ? ` · ${singlePort.mtu} MTU` : ''}{singlePort.disabled ? ' · disabled' : singlePort.running ? ' · link-ok' : ' · link-down'}
               </span>
             )}
             <div style={{ flex: 1 }} />
