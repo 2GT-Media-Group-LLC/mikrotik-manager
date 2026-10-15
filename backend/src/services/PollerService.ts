@@ -18,6 +18,7 @@ import { reconcileProxyUsage } from './ProxyUsageService';
 import { checkInterfaceErrors, purgeInterfaceErrorEvents } from './interfaceErrors';
 import { checkOptics, purgeOpticReadings } from './opticLevels';
 import { checkWireGuardStale } from './wireguardStale';
+import { checkRoutingPeers } from './routingPeerAlerts';
 import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
@@ -469,6 +470,15 @@ export class PollerService {
       if (now - lastWg > 300_000) {
         await this.setTimestamp(wgKey, now, 300_000);
         checkWireGuardStale().catch((e) => console.error('[Poller] WireGuard stale check failed:', e));
+      }
+
+      // BGP sessions and OSPF neighbours down (#279) — every minute, from what
+      // the slow polls stored. Does nothing while the rule is off.
+      const rpKey = 'task:routing_peer_down';
+      const lastRp = await this.getTimestamp(rpKey);
+      if (now - lastRp > 60_000) {
+        await this.setTimestamp(rpKey, now, 60_000);
+        checkRoutingPeers().catch((e) => console.error('[Poller] Routing peer check failed:', e));
       }
 
       // Interface errors and flapping (#249) — every minute, from what the

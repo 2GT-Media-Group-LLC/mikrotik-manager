@@ -46,6 +46,9 @@ const DEFAULT_RULES = [
   // An optic's light this many dB below its usual level (the past week's
   // median), or the module at 70 °C or more. Off by default; per port.
   { event_type: 'optic_degraded', enabled: false, threshold: 3, cooldown_min: 360 },
+  // A BGP session or OSPF adjacency that was up has been down for the
+  // threshold, in minutes (#279). Off by default; one alert per peer, per cooldown.
+  { event_type: 'routing_peer_down', enabled: false, threshold: 2, cooldown_min: 60 },
 ];
 
 /**

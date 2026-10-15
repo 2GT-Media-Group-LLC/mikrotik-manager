@@ -2433,6 +2433,34 @@ export interface ClientAddressListView {
 }
 
 /** L3 hardware offloading on a device's switch chip (#254). */
+/** A BGP peer or OSPF neighbour, as the slow polls last found it (#279). */
+export interface RoutingPeerRow {
+  device_id: number;
+  device_name: string;
+  device_status: string;
+  protocol: 'bgp' | 'ospf';
+  peer_key: string;
+  name: string | null;
+  remote_address: string | null;
+  remote_as: string | null;
+  remote_id: string | null;
+  instance: string | null;
+  detail: string | null;
+  state: string;
+  up: boolean;
+  disabled: boolean;
+  uptime: string | null;
+  prefix_count: number | null;
+  last_up_at: string | null;
+  last_change_at: string;
+  last_seen_at: string;
+  updated_at: string;
+}
+
+export const routingApi = {
+  peers: (deviceId?: number) => api.get<RoutingPeerRow[]>('/routing/peers', { params: deviceId ? { deviceId } : undefined }),
+};
+
 /** The switch chip's own VLAN table and port VLAN settings (#278). */
 export interface SwitchVlanView {
   supported: boolean;

@@ -7,6 +7,7 @@ import {
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
   Server, Globe, Clock, Shield, FileText, Activity, BarChart3, Ticket, ArrowUpCircle, Radio,
   LayoutGrid, TerminalSquare, KeyRound, UserCheck,
+  Route,
 } from 'lucide-react';
 import clsx from 'clsx';
 import SiteSelector from './SiteSelector';
@@ -39,6 +40,7 @@ const networkServicesSubItems = [
   { to: '/network-services/dns',        icon: Globe,     label: 'DNS' },
   { to: '/network-services/ntp',        icon: Clock,     label: 'NTP' },
   { to: '/network-services/wireguard',  icon: Shield,    label: 'WireGuard' },
+  { to: '/network-services/routing',    icon: Route,     label: 'Routing' },
   { to: '/network-services/syslog',     icon: FileText,  label: 'Logging' },
   { to: '/network-services/netflow',    icon: BarChart3, label: 'NetFlow' },
   { to: '/network-services/discovery',  icon: Radio,     label: 'Discovery & SNMP' },

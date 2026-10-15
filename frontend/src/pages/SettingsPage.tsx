@@ -414,6 +414,7 @@ export default function SettingsPage() {
     interface_errors: 'Interface errors: bad frames on a port, per minute averaged over 5 minutes (threshold)',
     interface_flapping: 'Interface flapping: a port went down this many times in an hour (threshold)',
     optic_degraded: "Optic light level: this many dB away from the port's usual level either way, past a receive limit below, or the module at 70 °C (threshold, dB)",
+    routing_peer_down: 'Routing peer down: a BGP session or OSPF neighbour that was up has been down this long (threshold, minutes)',
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';
@@ -1822,7 +1823,7 @@ export default function SettingsPage() {
                         </button>
                       </td>
                       <td className="py-2.5 pr-4 text-center">
-                        {['high_cpu', 'high_memory', 'cert_expiry', 'wireguard_stale', 'interface_errors', 'interface_flapping', 'optic_degraded'].includes(rule.event_type) ? (
+                        {['high_cpu', 'high_memory', 'cert_expiry', 'wireguard_stale', 'interface_errors', 'interface_flapping', 'optic_degraded', 'routing_peer_down'].includes(rule.event_type) ? (
                           <NumberSetting
                             className="input w-20 text-center py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                             value={rule.threshold ?? ''}

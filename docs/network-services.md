@@ -71,6 +71,23 @@ underneath; **Show / add interface** opens a card for one so an interface can be
 
 A peer's persistent keepalive is in seconds; leave it empty to turn keepalive off.
 
+## Routing
+
+**Network Services → Routing** lists every BGP peer and OSPF neighbour across the fleet, or the
+selected site (#279): the device, the peer's address, AS or router ID, whether it's up, how long
+for, and when it last changed. Down peers are listed first. They're read with each device's slow
+poll, so a change shows up within that interval. Configure BGP and OSPF on a device's **Routing**
+tab, and turn on the **Routing peer down** alert ([Alerting](alerting.md)) to be told when a
+session drops.
+
+- **BGP:** one row per configured connection (a `peer` on RouterOS 6). It's up when its session
+  is established; a connection with no session is *idle*, one still trying is *connecting*, and a
+  disabled one is *disabled*.
+- **OSPF:** one row per neighbour. RouterOS forgets a neighbour once it stops hearing it, so the
+  manager keeps the last row and marks it *down*. A neighbour gone for a week is dropped from the
+  list. *2-Way* counts as up: on a LAN, two routers that are neither DR nor BDR stop there by
+  design.
+
 ## Logging (syslog)
 
 Where each device sends its logs — remote actions and the rules that select which topics go to

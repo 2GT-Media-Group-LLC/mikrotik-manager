@@ -1,3 +1,4 @@
+import { routingPeersFrom } from '../../utils/routingPeers';
 import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
@@ -350,6 +351,7 @@ export class DeviceCollector {
     await this.collectLte();
     if (this.modules.certificates) await this.collectCertificates();
     await this.collectWireGuardPeers();
+    await this.collectRoutingPeers();
     if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
@@ -457,6 +459,78 @@ export class DeviceCollector {
     }
   }
 
+  /**
+   * BGP peers and OSPF neighbours (#279). Two cheap reads on a device without
+   * either; the sessions and neighbours only where something is configured. A
+   * failed read keeps what was stored, as for WireGuard.
+   */
+  async collectRoutingPeers(): Promise<void> {
+    const none = () => [] as Record<string, string>[];
+    let bgpConnections: Record<string, string>[];
+    let ospfInstances: Record<string, string>[];
+    try {
+      [bgpConnections, ospfInstances] = await Promise.all([
+        // RouterOS 7: connection; 6: peer. A device without either answers with a trap.
+        this.client.execute('/routing/bgp/connection/print', { detail: '' })
+          .catch((e) => (e instanceof RouterOSTrapError
+            ? this.client.execute('/routing/bgp/peer/print', { detail: '' }).catch((e2) => (e2 instanceof RouterOSTrapError ? none() : Promise.reject(e2)))
+            : Promise.reject(e))),
+        this.client.execute('/routing/ospf/instance/print').catch((e) => (e instanceof RouterOSTrapError ? none() : Promise.reject(e))),
+      ]);
+    } catch {
+      return;
+    }
+    if (bgpConnections.length === 0 && ospfInstances.length === 0) {
+      await query(`DELETE FROM routing_peers WHERE device_id = $1`, [this.device.id]).catch(() => {});
+      return;
+    }
+    try {
+      const [bgpSessions, ospfNeighbors] = await Promise.all([
+        bgpConnections.length ? this.client.execute('/routing/bgp/session/print', { detail: '' }).catch(none) : none(),
+        ospfInstances.length ? this.client.execute('/routing/ospf/neighbor/print', { detail: '' }) : none(),
+      ]);
+      const peers = routingPeersFrom({ bgpConnections, bgpSessions, ospfNeighbors });
+      for (const p of peers) {
+        await query(
+          `INSERT INTO routing_peers (device_id, protocol, peer_key, name, remote_address, remote_as, remote_id, instance,
+                                      detail, state, up, disabled, uptime, prefix_count, last_up_at, last_change_at, last_seen_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, CASE WHEN $11 THEN NOW() END, NOW(), NOW(), NOW())
+           ON CONFLICT (device_id, protocol, peer_key) DO UPDATE SET
+             name = EXCLUDED.name, remote_address = EXCLUDED.remote_address, remote_as = EXCLUDED.remote_as,
+             remote_id = EXCLUDED.remote_id, instance = EXCLUDED.instance, detail = EXCLUDED.detail,
+             state = EXCLUDED.state, disabled = EXCLUDED.disabled, uptime = EXCLUDED.uptime,
+             prefix_count = EXCLUDED.prefix_count,
+             last_change_at = CASE WHEN routing_peers.up <> EXCLUDED.up THEN NOW() ELSE routing_peers.last_change_at END,
+             last_up_at = CASE WHEN EXCLUDED.up THEN NOW() ELSE routing_peers.last_up_at END,
+             up = EXCLUDED.up, last_seen_at = NOW(), updated_at = NOW()`,
+          [this.device.id, p.protocol, fit(p.key, 160), fit(p.name, 128), fit(p.remoteAddress, 64), fit(p.remoteAs, 16),
+           fit(p.remoteId, 64), fit(p.instance, 64), fit(p.detail, 160), fit(p.state, 32), p.up, p.disabled,
+           fit(p.uptime, 32), p.prefixCount]
+        );
+      }
+      const bgpKeys = peers.filter((p) => p.protocol === 'bgp').map((p) => fit(p.key, 160));
+      const ospfKeys = peers.filter((p) => p.protocol === 'ospf').map((p) => fit(p.key, 160));
+      // A BGP connection that's gone was removed on purpose.
+      await query(`DELETE FROM routing_peers WHERE device_id = $1 AND protocol = 'bgp' AND NOT (peer_key = ANY($2::text[]))`, [this.device.id, bgpKeys]);
+      if (ospfInstances.length === 0) {
+        await query(`DELETE FROM routing_peers WHERE device_id = $1 AND protocol = 'ospf'`, [this.device.id]);
+      } else {
+        // An OSPF neighbour that vanished has gone down: keep it, marked down,
+        // for a week, then forget it (a neighbour removed for good).
+        await query(
+          `UPDATE routing_peers SET up = FALSE, state = 'down', uptime = NULL,
+                  last_change_at = CASE WHEN up THEN NOW() ELSE last_change_at END, updated_at = NOW()
+            WHERE device_id = $1 AND protocol = 'ospf' AND NOT (peer_key = ANY($2::text[]))`,
+          [this.device.id, ospfKeys]);
+        await query(
+          `DELETE FROM routing_peers WHERE device_id = $1 AND protocol = 'ospf' AND last_seen_at < NOW() - INTERVAL '7 days'`,
+          [this.device.id]);
+      }
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to store routing peers:`, (err as Error).message);
+    }
+  }
+
   // ─── Log poll (every 60s) ─────────────────────────────────────────────────
 
   /** Collect new log lines; returns the ones actually stored, for log alerts. */
@@ -484,6 +558,10 @@ export class DeviceCollector {
     // refreshed on the five-minute slow poll (#131).
     await this.collectStp();
     await this.collectLte();
+    // WireGuard and routing peers too, so Sync shows a tunnel or BGP session
+    // that just came up or dropped (#279) rather than waiting for the slow poll.
+    await this.collectWireGuardPeers();
+    await this.collectRoutingPeers();
     // Wireless data belongs in a full resync too — without this, a manual sync
     // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
     // the UI could only catch up on the 5-minute slow poll.

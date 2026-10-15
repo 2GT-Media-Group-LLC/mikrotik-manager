@@ -1525,6 +1525,30 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS poll_overrides JSONB;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS poll_overrides JSONB;
 -- Outages before this don't count toward "had N outages this week" (#85).
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS outages_reset_at TIMESTAMPTZ;
+-- BGP peers and OSPF neighbours across the fleet, for the Routing page and
+-- the routing-peer-down alert (#279). An OSPF neighbour that drops vanishes
+-- from RouterOS, so its last row is kept and marked down.
+CREATE TABLE IF NOT EXISTS routing_peers (
+  device_id      INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  protocol       VARCHAR(8) NOT NULL,
+  peer_key       VARCHAR(160) NOT NULL,
+  name           VARCHAR(128),
+  remote_address VARCHAR(64),
+  remote_as      VARCHAR(16),
+  remote_id      VARCHAR(64),
+  instance       VARCHAR(64),
+  detail         VARCHAR(160),
+  state          VARCHAR(32) NOT NULL,
+  up             BOOLEAN NOT NULL DEFAULT FALSE,
+  disabled       BOOLEAN NOT NULL DEFAULT FALSE,
+  uptime         VARCHAR(32),
+  prefix_count   INTEGER,
+  last_up_at     TIMESTAMPTZ,
+  last_change_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (device_id, protocol, peer_key)
+);
 
 -- Editing the map by hand (#260): a name and type for a neighbour discovery
 -- found (a PC it labelled a switch), the ports at each end of a hand-drawn

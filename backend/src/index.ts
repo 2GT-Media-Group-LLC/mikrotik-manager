@@ -82,6 +82,7 @@ import commandRoutes from './routes/commands';
 import systemRoutes, { setPollerService as setSystemPoller } from './routes/system';
 import sitesRoutes from './routes/sites';
 import certificatesRoutes from './routes/certificates';
+import routingRoutes from './routes/routing';
 import cveRoutes from './routes/cves';
 import adoptionRoutes, { setPollerService as setAdoptionPoller } from './routes/adoption';
 import { siteContext } from './middleware/site';
@@ -438,6 +439,7 @@ app.use('/api/ssh-keys', sshKeysRoutes);
 app.use('/api/command-templates', commandTemplatesRoutes);
 app.use('/api/command-secrets', commandSecretsRoutes);
 app.use('/api/certificates', certificatesRoutes);
+app.use('/api/routing', routingRoutes);
 app.use('/api/security/cves', cveRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
