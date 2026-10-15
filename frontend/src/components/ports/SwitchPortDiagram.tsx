@@ -14,8 +14,9 @@ import { parseVlanList, toggleVlan, formatVlanList } from '../../utils/vlanList'
 import { changeErrorText } from '../../utils/changeError';
 import {
   staggerBlocks, chunkRows, resolveColumns,
-  DENSITY_OPTIONS, parseDensity, densityLabel, type Density,
+  DENSITY_OPTIONS, parseDensity, densityLabel, type Density, type StaggerBlock,
 } from '../../utils/faceplateLayout';
+import { lookupModelLayout, resolveEvenOnTop, arrangeSfp, stackCages, cageTiles } from '../../utils/faceplateModels';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -154,14 +155,14 @@ interface QsfpCage {
   label: string;
   /** Actual breakout lane ports (empty for single-mode cages). */
   lanes: SwitchPort[];
-  /** Set when the cage is a single non-broken-out QSFP port; renders 4 virtual lanes. */
+  /** Set when the cage is a single non-broken-out QSFP port; renders as one box. */
   singlePort?: SwitchPort;
 }
 
 /** Group QSFP ports into cage objects.
  *  - Breakout (qsfp28-1-1..4): real lanes with individual statuses, but if only 1 lane is
  *    running treat it as a single-cable connection and show all lanes green.
- *  - Single mode (qsfp28-1): synthetic cage with 4 virtual lanes all sharing the port status.
+ *  - Single mode (qsfp28-1): one cage holding the single real port.
  */
 function groupQsfpCages(ports: SwitchPort[]): { cages: QsfpCage[]; individual: SwitchPort[] } {
   const lanesByKey = new Map<string, SwitchPort[]>();
@@ -1280,9 +1281,10 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
   // Odd ports on the top row, or even (2 4 6 8 over 1 3 5 7) for models wired
   // that way (#277). Remembered per model in this browser: every unit of a
   // model is the same.
+  const modelLayout = lookupModelLayout(deviceModel);
   const evenTopKey = `faceplate.evenTop.${(deviceModel || 'unknown').toLowerCase()}`;
   const [evenOnTop, setEvenOnTop] = useState<boolean>(() => {
-    try { return localStorage.getItem(evenTopKey) === '1'; } catch { return false; }
+    try { return resolveEvenOnTop(localStorage.getItem(evenTopKey), modelLayout); } catch { return resolveEvenOnTop(null, modelLayout); }
   });
   const chooseEvenOnTop = (v: boolean) => {
     setEvenOnTop(v);
@@ -1292,8 +1294,11 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
   // Only offered when the ports actually sit in two rows: a control that moves
   // nothing reads as broken.
   const staggered = etherBanks.some((b) => b.bottom.length > 0);
-  const sfpRows = chunkRows(individualSfpPorts, columns);
-  const cageRows = chunkRows(qsfpCages, Math.max(1, Math.floor(columns / 4)));
+  const sfpArrangement = arrangeSfp(individualSfpPorts, modelLayout, columns);
+  const cageGroups: StaggerBlock<QsfpCage>[] | null = modelLayout?.qsfpStacked ? stackCages(qsfpCages) : null;
+  const cageRows = cageGroups
+    ? [qsfpCages]
+    : chunkRows(qsfpCages, Math.max(1, Math.floor(columns / 4)));
   const bridgeRows = chunkRows(bridgePorts, columns);
   const bondRows = chunkRows(bondPorts, columns);
 
@@ -1503,25 +1508,51 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                 {/* Explicit rows. The previous attempt set flexWrap with a
                     maxWidth of 52px per port against a real 50px per port, so
                     the wrap could never trigger — it missed by 2px each. */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {sfpRows.map((row, ri) => (
-                    <div key={ri} style={{ display: 'flex', gap: 4 }}>
-                      {row.map(port => (
-                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
-                      ))}
-                    </div>
-                  ))}
-                </div>
+                {sfpArrangement.kind === 'rows' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {sfpArrangement.rows.map((row, ri) => (
+                      <div key={ri} style={{ display: 'flex', gap: 4 }}>
+                        {row.map(port => (
+                          <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Model-specific: banks of four, even ports above odd. */
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {sfpArrangement.banks.map((bank, bi) => (
+                      <div key={bi} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {bank.top.map(port => (
+                            <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                          ))}
+                        </div>
+                        {bank.bottom.length > 0 && (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {bank.bottom.map(port => (
+                              <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {/* QSFP cages — grouped into rows so a chassis full of cages folds
-                rather than running off the side. */}
+                rather than running off the side. Models with stacked cages put
+                the even cage above its odd neighbour. A single-mode cage is one
+                real port, so it draws one box; breakout cages draw their lanes. */}
             {cageRows.map((cageRow, cri) => (
             <div key={`cagerow-${cri}`} style={{ display: 'flex', gap: 30, alignItems: 'flex-start' }}>
-            {cageRow.map(cage => {
+            {(cageGroups ?? cageRow.map(c => ({ top: [c], bottom: [] as QsfpCage[] }))).map((group, gi) => (
+              <div key={gi} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[...group.top, ...group.bottom].map(cage => {
+              const tiles = cageTiles(cage);
               const isSingleMode = !!cage.singlePort;
-              const laneCount = isSingleMode ? 4 : cage.lanes.length;
               const runningLanes = cage.lanes.filter(p => p.running && !p.disabled).length;
               const isSingleCable = !isSingleMode && runningLanes === 1;
               const refPort = cage.singlePort ?? cage.lanes[0];
@@ -1529,17 +1560,18 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                 <div key={cage.key}>
                   <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em', marginBottom: 6 }}>{cage.label}</div>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    {Array.from({ length: laneCount }, (_, li) => {
-                      const lane = isSingleMode ? cage.singlePort! : cage.lanes[li];
-                      const visualPort: SwitchPort = (isSingleMode || isSingleCable) ? { ...refPort, running: refPort.running, disabled: refPort.disabled } : lane;
+                    {tiles.map((lane) => {
+                      const visualPort: SwitchPort = isSingleCable ? { ...refPort, running: refPort.running, disabled: refPort.disabled } : lane;
                       return (
-                        <PortTile key={li} port={visualPort} selected={selectedPorts.has(lane.name)} hovered={hoveredPort === lane.name} watts={poeWattsMap[lane.name]} errors={portErrMap[lane.name]} optic={opticMap[lane.name]} onClick={e => togglePort(lane.name, e)} onMouseEnter={() => setHoveredPort(lane.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(lane)} />
+                        <PortTile key={lane.name} port={visualPort} selected={selectedPorts.has(lane.name)} hovered={hoveredPort === lane.name} watts={poeWattsMap[lane.name]} errors={portErrMap[lane.name]} optic={opticMap[lane.name]} onClick={e => togglePort(lane.name, e)} onMouseEnter={() => setHoveredPort(lane.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(lane)} />
                       );
                     })}
                   </div>
                 </div>
               );
-            })}
+              })}
+              </div>
+            ))}
             </div>
             ))}
 
