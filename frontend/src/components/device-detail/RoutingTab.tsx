@@ -442,13 +442,14 @@ function BgpSubTab({ deviceId }: { deviceId: number }) {
   });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: '', 'remote.address': '', 'remote.as': '', 'local.role': 'ebgp' });
+  const EMPTY_BGP = { name: '', 'remote.address': '', 'remote.as': '', 'local.role': 'ebgp', local_as: '', instance: '' };
+  const [form, setForm] = useState(EMPTY_BGP);
   const [error, setError] = useState('');
 
   const addRequest = () => dApi.addBgpConnection(deviceId, form);
   const addMutation = useMutation({
     mutationFn: addRequest,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['routing-bgp', deviceId] }); setShowAdd(false); setForm({ name: '', 'remote.address': '', 'remote.as': '', 'local.role': 'ebgp' }); setError(''); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['routing-bgp', deviceId] }); setShowAdd(false); setForm(EMPTY_BGP); setError(''); },
     onError: (err: unknown) => setError(errMsg(err)),
   });
 
@@ -462,6 +463,10 @@ function BgpSubTab({ deviceId }: { deviceId: number }) {
 
   const connections = (data?.connections as Record<string, string>[]) || [];
   const sessions    = (data?.sessions    as Record<string, string>[]) || [];
+  // RouterOS 7.20+ puts the local AS on an instance: use the device's own, or
+  // create one from the local AS entered here when it has none.
+  const instances   = (data?.instances   as Record<string, string>[]) || [];
+  const oneInstance = instances.length === 1 ? instances[0] : null;
 
   return (
     <div className="space-y-6">
@@ -484,12 +489,33 @@ function BgpSubTab({ deviceId }: { deviceId: number }) {
                       <option value="ibgp">iBGP</option>
                     </select>
                   </div>
+                  {instances.length > 1 ? (
+                    <div><label className="label">Instance</label>
+                      <select className="input" value={form.instance} onChange={e => setForm(f => ({ ...f, instance: e.target.value }))}>
+                        <option value="">Choose…</option>
+                        {instances.map(i => <option key={i['.id'] || i['name']} value={i['name']}>{i['name']}{i['as'] ? ` (AS ${i['as']})` : ''}</option>)}
+                      </select>
+                    </div>
+                  ) : (
+                    <div><label className="label">Local AS</label>
+                      <input className="input font-mono" value={oneInstance ? (oneInstance['as'] || '') : form.local_as} disabled={!!oneInstance}
+                        onChange={e => setForm(f => ({ ...f, local_as: e.target.value }))} placeholder="65001"
+                        title={oneInstance ? `Set by the device's BGP instance ${oneInstance['name']}` : 'Your AS number'} />
+                    </div>
+                  )}
                 </div>
+                <p className="text-xs text-gray-400">
+                  {oneInstance
+                    ? `The connection joins this device's BGP instance ${oneInstance['name']}${oneInstance['as'] ? ` (AS ${oneInstance['as']})` : ''}.`
+                    : instances.length > 1
+                      ? 'Choose the instance the connection belongs to; it carries the local AS.'
+                      : 'With no BGP instance on the device yet, one called default is created with this local AS (RouterOS 7.20 and later need one).'}
+                </p>
                 <div className="flex gap-2">
-                  <button onClick={() => addMutation.mutate()} disabled={!form.name || !form['remote.address'] || addMutation.isPending} className="btn-primary text-sm flex items-center gap-1.5">
+                  <button onClick={() => addMutation.mutate()} disabled={!form.name || !form['remote.address'] || !form['remote.as'] || (instances.length > 1 && !form.instance) || addMutation.isPending} className="btn-primary text-sm flex items-center gap-1.5">
                     {addMutation.isPending && <RefreshCw className="w-3.5 h-3.5 animate-spin" />} Add
                   </button>
-                  <ReviewChangesButton request={addRequest} onApply={() => addMutation.mutate()} applyLabel="Add" disabled={!form.name || !form['remote.address'] || addMutation.isPending} />
+                  <ReviewChangesButton request={addRequest} onApply={() => addMutation.mutate()} applyLabel="Add" disabled={!form.name || !form['remote.address'] || !form['remote.as'] || (instances.length > 1 && !form.instance) || addMutation.isPending} />
                   <button onClick={() => setShowAdd(false)} className="btn-secondary text-sm">Cancel</button>
                 </div>
               </div>

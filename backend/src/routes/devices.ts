@@ -67,6 +67,7 @@ import { l3hwView } from '../utils/l3hw';
 import { switchVlanView } from '../utils/switchVlans';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit } from '../utils/ipAddressEdit';
+import { parseBgpConnection } from '../utils/bgpConnection';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
 const router = Router();
@@ -2647,8 +2648,14 @@ router.get('/:id/routing/bgp', async (req: Request, res: Response) => {
 });
 
 router.post('/:id/routing/bgp/connection', requireWrite, async (req: Request, res: Response) => {
-  await withGuardedChange(req.params.id, req, res, { kind: 'routing.bgp.connection.post', summary: 'Add routing bgp connection' },
-    async (collector) => { await collector.addBgpConnection(req.body); return { success: true }; });
+  const parsed = parseBgpConnection(req.body ?? {});
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'routing.bgp.connection.post', summary: `Add BGP connection ${parsed.name} to ${parsed.remoteAddress} (AS ${parsed.remoteAs})` },
+    async (collector) => {
+      const r = await collector.addBgpConnection(parsed);
+      return { success: true, ...(r.instanceCreated ? { instance_created: r.instanceCreated } : {}) };
+    });
 });
 
 router.delete('/:id/routing/bgp/connection/:itemId', requireWrite, async (req: Request, res: Response) => {

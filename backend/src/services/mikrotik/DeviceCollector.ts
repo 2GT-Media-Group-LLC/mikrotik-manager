@@ -1,3 +1,4 @@
+import type { BgpConnectionInput } from '../../utils/bgpConnection';
 import { routingPeersFrom } from '../../utils/routingPeers';
 import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
@@ -5481,6 +5482,8 @@ export class DeviceCollector {
     connections: Record<string, string>[];
     sessions: Record<string, string>[];
     templates: Record<string, string>[];
+    /** RouterOS 7.20+ (and 6): the instances, which carry the local AS. */
+    instances: Record<string, string>[];
   }> {
     // ROS7 uses /routing/bgp/connection, ROS6 uses /routing/bgp/peer
     const [connections, sessions, templates] = await Promise.all([
@@ -5490,13 +5493,52 @@ export class DeviceCollector {
       this.client.execute('/routing/bgp/template/print', { detail: '' })
         .catch(() => this.client.execute('/routing/bgp/instance/print', { detail: '' }).catch(() => [] as Record<string, string>[])),
     ]);
-    return { connections, sessions, templates };
+    const instances = await this.client.execute('/routing/bgp/instance/print').catch(() => [] as Record<string, string>[]);
+    return { connections, sessions, templates, instances };
   }
 
-  async addBgpConnection(params: Record<string, string>): Promise<void> {
-    // Try ROS7 path first, then ROS6
-    await this.client.execute('/routing/bgp/connection/add', params)
-      .catch(() => this.client.execute('/routing/bgp/peer/add', params));
+  /**
+   * Add a BGP connection the way this RouterOS version wants it:
+   *  - 7.20+: connections belong to an instance, which carries the local AS.
+   *    The named or only instance is used; with none, one is created from the
+   *    local AS given.
+   *  - 7.0–7.19: no instance menu; the local AS goes on the connection.
+   *  - 6: a peer, under the default instance.
+   * The old version tried a 7 add and fell back to a 6 one on any error, so a
+   * 7.20+ device got "missing =instance=" reported as a peer error.
+   */
+  async addBgpConnection(c: BgpConnectionInput): Promise<{ instanceCreated?: string }> {
+    const trapOr = <T>(fallback: T) => (e: unknown) => (e instanceof RouterOSTrapError ? fallback : Promise.reject(e));
+    const ros7 = await this.client.execute('/routing/bgp/connection/print').then(() => true, trapOr(false));
+    if (!ros7) {
+      await this.client.execute('/routing/bgp/peer/add', {
+        name: c.name, 'remote-address': c.remoteAddress, 'remote-as': c.remoteAs,
+      });
+      return {};
+    }
+    const base = { name: c.name, 'remote.address': c.remoteAddress, 'remote.as': c.remoteAs, 'local.role': c.role };
+    const instances = await this.client.execute('/routing/bgp/instance/print').then((r) => r, trapOr(null));
+    if (instances === null) {
+      if (!c.localAs) throw new Error('Enter the local AS: this RouterOS version sets it on each connection.');
+      await this.client.execute('/routing/bgp/connection/add', { ...base, as: c.localAs });
+      return {};
+    }
+    let instance = c.instance;
+    let instanceCreated: string | undefined;
+    if (instance) {
+      if (!instances.some((i) => i['name'] === instance)) throw new Error(`There's no BGP instance called ${instance} on this device.`);
+    } else if (instances.length === 1) {
+      instance = instances[0]['name'];
+    } else if (instances.length > 1) {
+      throw new Error(`This device has ${instances.length} BGP instances; choose which one the connection belongs to.`);
+    } else {
+      if (!c.localAs) throw new Error('Enter the local AS: this device has no BGP instance yet, and one is created with it.');
+      instance = 'default';
+      await this.client.execute('/routing/bgp/instance/add', { name: instance, as: c.localAs, comment: 'created by MikroTik Manager' });
+      instanceCreated = instance;
+    }
+    await this.client.execute('/routing/bgp/connection/add', { ...base, instance: instance! });
+    return { instanceCreated };
   }
 
   async removeBgpConnection(id: string): Promise<void> {

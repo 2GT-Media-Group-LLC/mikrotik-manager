@@ -83,6 +83,13 @@ session drops.
 - **BGP:** one row per configured connection (a `peer` on RouterOS 6). It's up when its session
   is established; a connection with no session is *idle*, one still trying is *connecting*, and a
   disabled one is *disabled*.
+Adding a BGP connection on a device's Routing tab asks for the name, remote address, remote AS,
+role and local AS. On RouterOS 7.20 and later a connection belongs to a BGP instance, which
+carries the local AS: the device's instance is used (you choose when it has several), and on a
+device with none, one called `default` is created with the local AS you enter. On 7.0 to 7.19 the
+local AS goes on the connection itself, and on RouterOS 6 a peer is added. Before 0.59.1 adding a
+connection failed on 7.20 and later with *missing =instance=*.
+
 - **OSPF:** one row per neighbour. RouterOS forgets a neighbour once it stops hearing it, so the
   manager keeps the last row and marks it *down*. A neighbour gone for a week is dropped from the
   list. *2-Way* counts as up: on a LAN, two routers that are neither DR nor BDR stop there by
