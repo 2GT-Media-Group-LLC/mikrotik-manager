@@ -29,6 +29,8 @@ export type PlannedChange =
   | { kind: 'vlan.update'; bridge: string; vlanId: number; tagged: string[]; untagged: string[] }
   | { kind: 'vlan.delete'; bridge: string; vlanId: number }
   | { kind: 'ip.remove'; addressId: string }
+  /** Edit an address in place (#285); `fields` use RouterOS names, '' clears. */
+  | { kind: 'ip.set'; addressId: string; fields: Record<string, string> }
   | { kind: 'interface.disable'; name: string; disabled: boolean }
   | { kind: 'bond.delete'; name: string }
   /** Ports into a bridge, or out of any bridge with `bridge: null` (#258). */
@@ -187,6 +189,21 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
 
     case 'ip.remove': {
       s.addresses = s.addresses.filter((a) => a['.id'] !== change.addressId);
+      break;
+    }
+
+    case 'ip.set': {
+      s.addresses = s.addresses.map((a) => {
+        if (a['.id'] !== change.addressId) return a;
+        const row = mergeFields(a, change.fields);
+        // As RouterOS does: an address on a bridge port is held by the bridge.
+        const to = change.fields['interface'];
+        if (to) {
+          const port = s.bridgePorts.find((p) => p['interface'] === to && p['disabled'] !== 'true' && p['disabled'] !== 'yes');
+          row['actual-interface'] = port?.['bridge'] || to;
+        }
+        return row;
+      });
       break;
     }
 

@@ -65,6 +65,7 @@ import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
 import { clientAddressListView } from '../utils/addressLists';
 import { l3hwView } from '../utils/l3hw';
 import { switchVlanView } from '../utils/switchVlans';
+import { ipAddressEdit } from '../utils/ipAddressEdit';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
 const router = Router();
@@ -2112,6 +2113,30 @@ router.post('/:id/ip-addresses', requireWrite, async (req: Request, res: Respons
     async (c) => {
       await c.addIpAddress(address, iface);
       return { message: `Address ${address} added` };
+    },
+    async (c) => { await c.collectIpAddressesCache(); }
+  );
+});
+
+// PUT /api/devices/:id/ip-addresses/:addrId { address?, interface?, comment?, disabled? }
+// Edit an address in place (#285). Guarded and predicted: changing, moving or
+// disabling the address the manager connects to cuts it off.
+router.put('/:id/ip-addresses/:addrId', requireWrite, async (req: Request, res: Response) => {
+  const parsed = ipAddressEdit(req.body ?? {});
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const fields = parsed.fields;
+  await withGuardedChange(
+    req.params.id,
+    req,
+    res,
+    {
+      kind: 'ip.set',
+      summary: `Edit IP address ${fields.address ?? req.params.addrId}`,
+      change: { kind: 'ip.set', addressId: req.params.addrId, fields },
+    },
+    async (c) => {
+      await c.updateIpAddress(req.params.addrId, fields);
+      return { message: 'IP address updated' };
     },
     async (c) => { await c.collectIpAddressesCache(); }
   );

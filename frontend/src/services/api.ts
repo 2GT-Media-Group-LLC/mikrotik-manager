@@ -745,6 +745,10 @@ export const devicesApi = {
     api.get<IpAddress[]>(`/devices/${id}/ip-addresses`, { params: opts.includeIpv6 ? { include: 'ipv6' } : undefined }),
   addIpAddress: (id: number, data: { address: string; interface: string; confirm_lockout?: boolean }) =>
     api.post<IpAddress[]>(`/devices/${id}/ip-addresses`, data),
+  /** Edit an address in place (#285); only the fields sent change. */
+  updateIpAddress: (id: number, addrId: string,
+    data: { address?: string; interface?: string; comment?: string; disabled?: boolean }, confirmLockout = false) =>
+    api.put(`/devices/${id}/ip-addresses/${encodeURIComponent(addrId)}`, confirmLockout ? { ...data, confirm_lockout: true } : data),
   removeIpAddress: (id: number, addrId: string, confirmLockout = false) =>
     api.delete(`/devices/${id}/ip-addresses/${encodeURIComponent(addrId)}`,
       confirmLockout ? { data: { confirm_lockout: true } } : undefined),

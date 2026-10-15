@@ -653,3 +653,66 @@ describe('review fixes: a failing invariant fails closed (M7)', () => {
     expect(v.severity).toBe('warning');
   });
 });
+
+describe('analyzeChange — ip.set (#285)', () => {
+  const withSecond = () => {
+    const snap = baseSnapshot();
+    snap.addresses.push({ '.id': '*2', address: '10.10.10.1/24', interface: 'ether1', disabled: 'false' });
+    return snap;
+  };
+  const ids = (v: ReturnType<typeof analyzeChange>) => v.violations.map((x) => x.id);
+
+  it('flags changing the management address', () => {
+    const v = analyzeChange(baseSnapshot(), device, { kind: 'ip.set', addressId: '*1', fields: { address: '192.168.0.41/24' } });
+    expect(v.severity).toBe('critical');
+    expect(ids(v)).toContain('mgmt-ip-present');
+  });
+
+  it('flags disabling the management address', () => {
+    const v = analyzeChange(baseSnapshot(), device, { kind: 'ip.set', addressId: '*1', fields: { disabled: 'yes' } });
+    expect(v.severity).toBe('critical');
+    expect(ids(v)).toContain('mgmt-ip-present');
+  });
+
+  it('flags moving the management address off the bridge to a plain port', () => {
+    const snap = baseSnapshot();
+    snap.interfaces.push({ name: 'ether9', type: 'ether', disabled: 'false' });
+    const v = analyzeChange(snap, device, { kind: 'ip.set', addressId: '*1', fields: { interface: 'ether9' } });
+    expect(v.severity).toBe('critical');
+    expect(v.violations.find((x) => x.id === 'mgmt-ip-interface')?.detail).toMatch(/move from bridge to ether9/);
+  });
+
+  // As found on a CRS309: the address sits on a bridge port, so RouterOS
+  // reports actual-interface=bridge, and that is what the path uses.
+  const onBridgePort = () => baseSnapshot({
+    addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'sfp28-1', 'actual-interface': 'bridge', disabled: 'false' }],
+  });
+
+  it('has no pre-existing violation for an address held on a bridge port', () => {
+    const v = analyzeChange(onBridgePort(), device, { kind: 'ip.set', addressId: '*1', fields: { comment: 'x' } });
+    expect(v.preexisting.map((p) => p.id)).not.toContain('mgmt-ip-interface');
+    expect(v.severity).toBe('safe');
+  });
+
+  it('allows moving it to another port of the same bridge, which still holds it', () => {
+    const v = analyzeChange(onBridgePort(), device, { kind: 'ip.set', addressId: '*1', fields: { interface: 'ether1' } });
+    expect(v.violations.map((x) => x.id)).not.toContain('mgmt-ip-interface');
+  });
+
+  it('still flags disabling it (the regression found on the CRS309)', () => {
+    const v = analyzeChange(onBridgePort(), device, { kind: 'ip.set', addressId: '*1', fields: { disabled: 'yes' } });
+    expect(v.severity).toBe('critical');
+    expect(v.violations.map((x) => x.id)).toContain('mgmt-ip-present');
+  });
+
+  it('is safe for a comment on the management address, or any edit of another address', () => {
+    expect(analyzeChange(baseSnapshot(), device, { kind: 'ip.set', addressId: '*1', fields: { comment: 'mgmt' } }).severity).toBe('safe');
+    expect(analyzeChange(withSecond(), device, { kind: 'ip.set', addressId: '*2', fields: { address: '10.10.20.1/24', interface: 'ether2' } }).severity).toBe('safe');
+    expect(analyzeChange(withSecond(), device, { kind: 'ip.set', addressId: '*2', fields: { disabled: 'yes' } }).severity).toBe('safe');
+  });
+
+  it('keeps the prefix-length change on the management address passing (same address, same interface)', () => {
+    expect(ids(analyzeChange(baseSnapshot(), device, { kind: 'ip.set', addressId: '*1', fields: { address: '192.168.0.40/23' } })))
+      .not.toContain('mgmt-ip-present');
+  });
+});

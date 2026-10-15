@@ -4703,6 +4703,11 @@ export class DeviceCollector {
     await this.client.execute('/ip/address/remove', { numbers: id });
   }
 
+  /** Edit an address in place (#285): address, interface, comment, disabled; '' clears. */
+  async updateIpAddress(id: string, fields: Record<string, string>): Promise<void> {
+    await this.setItem('/ip/address', id, fields);
+  }
+
   // ─── Clock / Time ─────────────────────────────────────────────────────────
 
   async getClockConfig(): Promise<{ date: string; time: string; timezone: string }> {

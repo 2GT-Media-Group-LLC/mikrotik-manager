@@ -71,6 +71,27 @@ export const INVARIANTS: Invariant[] = [
   },
 
   {
+    // A check of its own, not part of mgmt-ip-present: a violation already
+    // present would otherwise hide that one (an address on a bridge port is
+    // held by the bridge, which this compares by actual-interface).
+    id: 'mgmt-ip-interface',
+    title: 'The management address stays on the interface the manager reaches it through',
+    check(snap, path) {
+      if (!path.mgmtInterface) return ok();
+      const rows = snap.addresses.filter(
+        (a) => !isTrue(a['disabled']) && !isTrue(a['invalid']) && stripCidr(a['address']) === path.mgmtIp
+      );
+      if (rows.length === 0) return ok(); // mgmt-ip-present reports that
+      if (rows.some((a) => (a['actual-interface'] || a['interface']) === path.mgmtInterface)) return ok();
+      const now = rows[0]['actual-interface'] || rows[0]['interface'];
+      return {
+        ok: false,
+        detail: `${path.mgmtIp} would move from ${path.mgmtInterface} to ${now} (#285). The manager reaches the device through ${path.mgmtInterface}, so the address would stop answering there.`,
+      };
+    },
+  },
+
+  {
     id: 'mgmt-iface-up',
     title: 'The interface holding the management address is enabled',
     check(snap, path) {

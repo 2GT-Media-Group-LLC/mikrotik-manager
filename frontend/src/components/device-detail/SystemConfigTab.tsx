@@ -5,7 +5,7 @@ import SshKeyCard from './SshKeyCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   RefreshCw, Plus, Trash2, CheckCircle, AlertCircle, Download, Server, Cpu, FileText,
-  ShieldCheck,
+  ShieldCheck, Pencil, Check, X,
 } from 'lucide-react';
 import { devicesApi, certificatesApi } from '../../services/api';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
@@ -154,6 +154,37 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
       }
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setIpError(msg || 'Failed to remove IP address');
+    },
+  });
+
+  // Editing an address in place (#285). Only changed fields are sent, so a
+  // comment edit can't also rewrite the address.
+  const [editingIp, setEditingIp] = useState<{ id: string; orig: IpAddress; address: string; interface: string; comment: string; enabled: boolean } | null>(null);
+  const ipEdits = (e: NonNullable<typeof editingIp>) => {
+    const d: { address?: string; interface?: string; comment?: string; disabled?: boolean } = {};
+    if (e.address.trim() !== e.orig.address) d.address = e.address.trim();
+    if (e.interface !== e.orig.interface) d.interface = e.interface;
+    if (e.comment !== (e.orig.comment ?? '')) d.comment = e.comment;
+    if (e.enabled !== (e.orig.disabled !== 'true')) d.disabled = !e.enabled;
+    return d;
+  };
+  const updateIpMutation = useMutation({
+    mutationFn: ({ e, confirm = false }: { e: NonNullable<typeof editingIp>; confirm?: boolean }) =>
+      devicesApi.updateIpAddress(deviceId, e.id, ipEdits(e), confirm),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ip-addresses', deviceId] });
+      setEditingIp(null);
+      setIpError('');
+      setLockout(null);
+    },
+    onError: (err: unknown, vars) => {
+      const verdict = lockoutVerdictOf(err);
+      if (verdict) {
+        setLockout({ verdict, retry: () => updateIpMutation.mutate({ e: vars.e, confirm: true }) });
+        return;
+      }
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setIpError(msg || 'Failed to update IP address');
     },
   });
 
@@ -516,21 +547,60 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
               <th className="table-header px-4 py-2 text-left">Address / Prefix</th>
               <th className="table-header px-4 py-2 text-left">Network</th>
               <th className="table-header px-4 py-2 text-left">Interface</th>
+              <th className="table-header px-4 py-2 text-left">Comment</th>
               <th className="table-header px-4 py-2 text-left">Status</th>
-              <th className="table-header px-4 py-2 w-12" />
+              <th className="table-header px-4 py-2 w-20" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
             {ipLoading ? (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Loading...</td></tr>
             ) : (ipAddresses as IpAddress[]).length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">No IP addresses</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">No IP addresses</td></tr>
             ) : (
-              (ipAddresses as IpAddress[]).map((ip) => (
+              (ipAddresses as IpAddress[]).map((ip) => editingIp?.id === ip['.id'] ? (
+                <tr key={ip['.id']} className="bg-blue-50/50 dark:bg-slate-700/40">
+                  <td className="px-4 py-2" colSpan={2}>
+                    <input className="input font-mono py-1 text-sm" value={editingIp.address} aria-label="Address / prefix"
+                      onChange={(e) => setEditingIp((x) => x && { ...x, address: e.target.value })} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <select className="input py-1 text-sm" value={editingIp.interface} aria-label="Interface"
+                      onChange={(e) => setEditingIp((x) => x && { ...x, interface: e.target.value })}>
+                      {!(interfaces as Interface[]).some((i) => i.name === editingIp.interface) && <option value={editingIp.interface}>{editingIp.interface}</option>}
+                      {(interfaces as Interface[]).map((i) => <option key={i.name} value={i.name}>{i.name}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className="input py-1 text-sm" value={editingIp.comment} placeholder="Comment" aria-label="Comment"
+                      onChange={(e) => setEditingIp((x) => x && { ...x, comment: e.target.value })} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300">
+                      <input type="checkbox" checked={editingIp.enabled}
+                        onChange={(e) => setEditingIp((x) => x && { ...x, enabled: e.target.checked })} /> enabled
+                    </label>
+                  </td>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => updateIpMutation.mutate({ e: editingIp })}
+                        disabled={updateIpMutation.isPending || Object.keys(ipEdits(editingIp)).length === 0}
+                        className="p-1 rounded text-green-600 hover:text-green-700 disabled:opacity-40" title="Save">
+                        {updateIpMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      </button>
+                      <button onClick={() => { setEditingIp(null); setIpError(''); }} className="p-1 rounded text-gray-400 hover:text-gray-600" title="Cancel">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
                 <tr key={ip['.id']} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
                   <td className="px-4 py-2 font-mono text-gray-900 dark:text-white">{ip.address}</td>
                   <td className="px-4 py-2 font-mono text-xs text-gray-500 dark:text-slate-400">{ip.network || '—'}</td>
                   <td className="px-4 py-2 text-gray-600 dark:text-slate-300">{ip.interface}</td>
+                  <td className="px-4 py-2 text-xs text-gray-500 dark:text-slate-400">{ip.comment || ''}</td>
                   <td className="px-4 py-2">
                     <span className={clsx(
                       'text-xs font-medium',
@@ -541,16 +611,29 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
                   </td>
                   <td className="px-4 py-2">
                     {canWrite && ip.dynamic !== 'true' && (
-                      <button
-                        onClick={() => {
-                          if (confirm(`Remove ${ip.address} from ${ip.interface}?`)) {
-                            removeIpMutation.mutate({ id: ip['.id'] });
-                          }
-                        }}
-                        className="p-1 rounded text-gray-400 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setIpError('');
+                            setEditingIp({ id: ip['.id'], orig: ip, address: ip.address, interface: ip.interface, comment: ip.comment ?? '', enabled: ip.disabled !== 'true' });
+                          }}
+                          className="p-1 rounded text-gray-400 hover:text-blue-500 transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remove ${ip.address} from ${ip.interface}?`)) {
+                              removeIpMutation.mutate({ id: ip['.id'] });
+                            }
+                          }}
+                          className="p-1 rounded text-gray-400 hover:text-red-500 transition-colors"
+                          title="Remove"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

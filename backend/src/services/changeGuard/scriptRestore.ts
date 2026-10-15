@@ -151,6 +151,7 @@ const SCOPES: Record<string, MenuKey[]> = {
   'interface.set': ['interface', 'ethernet', 'ethernetPoe'],
   'ip.add': ['ipAddress'],
   'ip.remove': ['ipAddress'],
+  'ip.set': ['ipAddress'],
   'route.add': ['ipRoute'],
   'route.remove': ['ipRoute'],
   'service.toggle': ['ipService'],

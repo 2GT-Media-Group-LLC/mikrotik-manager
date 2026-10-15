@@ -374,6 +374,17 @@ value, while the page showed it gone.
 
 On a switch port, changing flow control in one direction leaves the other direction alone.
 
+### IP addresses
+
+The **Config** tab's **IP Addresses** card lists the device's IPv4 addresses. Add one with the
+form below the list, remove one with the bin, or click the pencil to edit it in place: the
+address and prefix, the interface, the comment, and whether it's enabled (#285). Only the
+fields you change are sent. Dynamic addresses (from a DHCP client, say) can't be edited.
+
+Every change runs through [Change Guard](change-guard.md). Changing, disabling or moving the
+address the manager connects to is predicted as a lockout and stops for confirmation, and
+moving it to another interface counts too, since the manager reaches it through the old one.
+
 ### Bandwidth queues and FastTrack
 
 The **Queues** tab, and **Limit this client** on a client's page, create a RouterOS simple
