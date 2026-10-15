@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react';
 import { usesApiTls } from '../utils/apiTls';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +18,8 @@ import BulkCredentialsModal from '../components/devices/BulkCredentialsModal';
 import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
 import CsvImportModal from '../components/devices/CsvImportModal';
 import BulkTagBar from '../components/devices/BulkTagBar';
+import ColumnPicker from '../components/devices/ColumnPicker';
+import { loadColumnPrefs, saveColumnPrefs, visibleColumns, clampWidth, type ColumnPrefs, type DeviceColumnId } from '../utils/deviceColumns';
 import { displayState, STATE_COLOR } from '../utils/deviceState';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import SortableHeader, { type SortDir } from '../components/common/SortableHeader';
@@ -107,6 +109,30 @@ export default function DevicesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
+  // Hidden and resized columns, remembered in this browser (#283).
+  const [colPrefs, setColPrefs] = useState<ColumnPrefs>(loadColumnPrefs);
+  useEffect(() => { saveColumnPrefs(colPrefs); }, [colPrefs]);
+  const cols = visibleColumns(colPrefs);
+  const startResize = (e: ReactMouseEvent<HTMLSpanElement>, id: DeviceColumnId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = e.currentTarget.parentElement;
+    if (!th) return;
+    const startX = e.clientX;
+    const startW = th.getBoundingClientRect().width;
+    const move = (ev: MouseEvent) => {
+      const w = clampWidth(startW + ev.clientX - startX);
+      setColPrefs((p) => (p.widths[id] === w ? p : { ...p, widths: { ...p.widths, [id]: w } }));
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
+  const resetWidth = (id: DeviceColumnId) =>
+    setColPrefs((p) => { const widths = { ...p.widths }; delete widths[id]; return { ...p, widths }; });
   const [showAddModal, setShowAddModal] = useState(false);
   const [adoptTarget, setAdoptTarget] = useState<AdoptionCandidate | null>(null);
   const [addPrefill, setAddPrefill] = useState<{ name?: string; ip_address?: string } | undefined>();
@@ -452,6 +478,9 @@ export default function DevicesPage() {
             </FilterSelect>
           </>
         )}
+        <div className="ml-auto">
+          <ColumnPicker prefs={colPrefs} onChange={setColPrefs} />
+        </div>
       </FilterBar>
 
       {/* Device table */}
@@ -496,37 +525,40 @@ export default function DevicesPage() {
                       />
                     </th>
                   )}
-                  {[
-                    { key: null,         label: '',           w: 22  },
-                    { key: 'name',       label: 'DEVICE',     w: null },
-                    { key: null,         label: 'TYPE',       w: 72  },
-                    { key: 'model',      label: 'MODEL',      w: null },
-                    { key: 'serial_number', label: 'SERIAL',  w: 130  },
-                    { key: 'rack_name',  label: 'RACK',       w: 100  },
-                    { key: 'ip_address', label: 'IP ADDRESS', w: null },
-                    { key: null,         label: 'API',        w: 64  },
-                    { key: null,         label: 'LOGIN',      w: 90  },
-                    { key: 'ros_version',label: 'ROS',        w: 110 },
-                    { key: null,         label: 'CPU',        w: 110 },
-                    { key: null,         label: 'LOAD',       w: 100 },
-                    { key: 'last_seen',  label: 'SEEN',       w: 90  },
-                    { key: null,         label: '',           w: 56  },
-                  ].map(({ key, label, w }, i) => (
-                    <th
-                      key={i}
-                      className="table-header px-4 py-[10px] text-left"
-                      style={w ? { width: w } : undefined}
-                    >
-                      {key ? (
-                        <SortableHeader
-                          label={label}
-                          active={deviceSort.key === key as DeviceSortKey}
-                          dir={deviceSort.dir}
-                          onClick={() => flipSort(deviceSort, key as DeviceSortKey, setDeviceSort)}
-                        />
-                      ) : label}
-                    </th>
-                  ))}
+                  {cols.map((c) => {
+                    const w = colPrefs.widths[c.id] ?? c.width;
+                    const resizable = c.id !== 'status' && c.id !== 'actions';
+                    return (
+                      <th
+                        key={c.id}
+                        className="table-header px-4 py-[10px] text-left relative"
+                        style={w ? { width: w } : undefined}
+                      >
+                        {c.sortKey ? (
+                          <SortableHeader
+                            label={c.label}
+                            active={deviceSort.key === c.sortKey as DeviceSortKey}
+                            dir={deviceSort.dir}
+                            onClick={() => flipSort(deviceSort, c.sortKey as DeviceSortKey, setDeviceSort)}
+                          />
+                        ) : c.label}
+                        {/* Drag to resize, double-click to reset this column (#283). */}
+                        {resizable && (
+                          <span
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label={`Resize ${c.label || c.id} column`}
+                            title="Drag to resize; double-click to reset"
+                            onMouseDown={(e) => startResize(e, c.id)}
+                            onDoubleClick={() => resetWidth(c.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize select-none"
+                            style={{ borderRight: colPrefs.widths[c.id] ? '2px solid var(--line)' : undefined }}
+                          />
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -553,10 +585,15 @@ export default function DevicesPage() {
                           />
                         </td>
                       )}
-                      <td className="px-4 py-[12px]">
+                      {(() => {
+                        const cell: Record<DeviceColumnId, ReactNode> = {
+                        status: (
+                          <>
                         <GlowDot device={device} />
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        device: (
+                          <>
                         {/* Beside the name rather than beneath it: a second line per
                             row doubles the table's height for the few rows that
                             carry tags, and misaligns them with the rest (#149).
@@ -574,26 +611,34 @@ export default function DevicesPage() {
                             </span>
                           ))}
                         </div>
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        type: (
+                          <>
                         <DeviceTypePill type={device.device_type} />
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        model: (
+                          <>
                         <span className="mono text-[11.5px]" style={{ color: 'var(--ink-2)' }}>{device.model || '—'}</span>
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        serial: (
+                          <>
                         <span
                           className="mono text-[11.5px] block truncate"
-                          style={{ color: 'var(--ink-3)', maxWidth: 130 }}
+                          style={{ color: 'var(--ink-3)', maxWidth: colPrefs.widths.serial ?? 130 }}
                           title={device.serial_number || undefined}
                         >
                           {device.serial_number || '—'}
                         </span>
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        rack: (
+                          <>
                         <span
                           className="text-[11.5px] block truncate"
-                          style={{ color: 'var(--ink-3)', maxWidth: 100 }}
+                          style={{ color: 'var(--ink-3)', maxWidth: colPrefs.widths.rack ?? 100 }}
                           title={[device.rack_name, device.rack_slot && `slot ${device.rack_slot}`, device.effective_location?.address]
                             .filter(Boolean).join(' · ') || undefined}
                         >
@@ -601,24 +646,32 @@ export default function DevicesPage() {
                             ? `${device.rack_name}${device.rack_slot ? `/${device.rack_slot}` : ''}`
                             : '—'}
                         </span>
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        ip: (
+                          <>
                         <span className="mono num-tab text-[12px]" style={{ color: 'var(--ink-2)' }}>{device.ip_address}</span>
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        api: (
+                          <>
                         {device.ssh_only
                           ? <span className="mono text-[11px]" style={{ color: 'var(--warn)' }}
                               title={`Added over SSH only: the API isn't enabled yet.${device.api_check_error ? ` ${device.api_check_error}` : ''}`}>SSH ONLY</span>
                           : apiKind(device) === 'ssl'
                           ? <span className="mono text-[11px]" style={{ color: 'var(--ok, #16a34a)' }} title={`Managed over API-SSL (port ${device.api_port})`}>SSL</span>
                           : <span className="mono text-[11px]" style={{ color: 'var(--warn)' }} title="Managed over the plain, unencrypted API">PLAIN</span>}
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        login: (
+                          <>
                         <span className="mono text-[11px]" style={{ color: 'var(--ink-2)' }} title={LOGIN_TITLE[loginKind(device)]}>
                           {LOGIN_LABEL[loginKind(device)]}
                         </span>
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        ros: (
+                          <>
                         <span
                           className="mono text-[11.5px] flex items-center gap-[4px]"
                           style={{ color: device.firmware_update_available || device.routerboard_upgrade_available ? 'var(--warn)' : 'var(--ink-3)' }}
@@ -631,21 +684,29 @@ export default function DevicesPage() {
                           )}
                           {device.ros_version || '—'}
                         </span>
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        cpu: (
+                          <>
                         <CpuValue value={(() => { const arr = cpuHistories[device.id]; return arr && arr.length > 0 ? arr[arr.length - 1] : undefined; })()} />
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        load: (
+                          <>
                         <LoadSparkline data={cpuSpark} />
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        seen: (
+                          <>
                         <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
                           {device.last_seen
                             ? new Date(device.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                             : '—'}
                         </span>
-                      </td>
-                      <td className="px-4 py-[12px]">
+                          </>
+                        ),
+                        actions: (
+                          <>
                         <div
                           className="flex items-center justify-end gap-1"
                           onClick={e => e.stopPropagation()}
@@ -702,7 +763,19 @@ export default function DevicesPage() {
                           )}
                           <ChevronRight className="w-4 h-4" style={{ color: 'var(--ink-4)' }} />
                         </div>
-                      </td>
+                          </>
+                        ),
+                        };
+                        return cols.map((c) => {
+                          const w = colPrefs.widths[c.id];
+                          return (
+                            <td key={c.id} className="px-4 py-[12px]">
+                              {/* A dragged width also caps the content, so a column can shrink below it. */}
+                              {w ? <div style={{ maxWidth: w, overflow: 'hidden' }}>{cell[c.id]}</div> : cell[c.id]}
+                            </td>
+                          );
+                        });
+                      })()}
                     </tr>
                   );
                 })}

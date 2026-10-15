@@ -622,6 +622,11 @@ function OperationsView({
       operationsApi.dismissInsight(v.fingerprint, v.hours, v.category, v.title),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ops-insights'] }),
   });
+  // "Had N outages this week": count again from now (#85).
+  const resetOutages = useMutation({
+    mutationFn: (deviceId: number) => devicesApi.resetOutages(deviceId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ops-insights'] }),
+  });
   const capacity: OpsCapacityRow[] = insights?.capacity ?? [];
   const activityAll: OpsActivityItem[] = insights?.activity ?? [];
   // The app's own write requests are audit-log noise from an operations point of
@@ -882,6 +887,19 @@ function OperationsView({
                 >
                   {item.action} →
                 </button>
+                {item.resetOutagesDeviceId != null && canWrite && (
+                  <button
+                    onClick={() => resetOutages.mutate(item.resetOutagesDeviceId!)}
+                    disabled={resetOutages.isPending && resetOutages.variables === item.resetOutagesDeviceId}
+                    title="Count outages from now on. Uptime figures and history are kept."
+                    className="text-[11.5px] rounded-[5px] px-2 py-[6px] whitespace-nowrap transition-colors disabled:opacity-50"
+                    style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-3)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    Reset count
+                  </button>
+                )}
                 {/* "Not now" rather than "never": an item that is genuinely resolved
                     stops being generated, so a dismissal is time-boxed (#102). */}
                 {item.fingerprint && (

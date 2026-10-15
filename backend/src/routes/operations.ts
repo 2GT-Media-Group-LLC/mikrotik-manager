@@ -37,6 +37,8 @@ const bucket = process.env.INFLUXDB_BUCKET || 'mikrotik';
 type Sev = 'error' | 'warn' | 'info';
 interface AttentionItem {
   sev: Sev; category: string; title: string; body: string; action: string; path: string;
+  /** A device whose outage count this item reports, so it can be reset (#85). */
+  resetOutagesDeviceId?: number;
   /** Stable identity for an item that is otherwise recomputed each request (#102). */
   fingerprint?: string;
 }
@@ -163,6 +165,8 @@ router.get('/insights', async (req: Request, res: Response) => {
       SELECT a.device_id, d.name, COUNT(*) AS outages
       FROM device_availability a JOIN devices d ON d.id = a.device_id
       WHERE a.went_offline_at > NOW() - INTERVAL '7 days'
+        -- Outages before a reset don't count (#85).
+        AND (d.outages_reset_at IS NULL OR a.went_offline_at > d.outages_reset_at)
         ${availFilter ? `AND ${availFilter}` : ''}
       GROUP BY a.device_id, d.name`),
     query<{ count: string }>(`
@@ -285,6 +289,7 @@ router.get('/insights', async (req: Request, res: Response) => {
       title: `${o.name} had ${o.outages} outage${Number(o.outages) !== 1 ? 's' : ''} this week`,
       body: 'Recent connectivity flapping — worth checking power, uplink, or PoE.',
       action: 'View device', path: `/devices/${o.device_id}`,
+      resetOutagesDeviceId: o.device_id,
     });
   }
 

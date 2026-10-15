@@ -260,6 +260,11 @@ Two columns show how the manager reaches each device, and each has a filter:
 
 The list updates by itself as polls finish; there is no need to reload.
 
+**Columns** at the end of the filter bar shows or hides columns, apart from the status dot,
+the name and the action buttons (#283). Drag a column header's right edge to make it wider or
+narrower, and double-click that edge to put it back. **Reset columns** restores the
+defaults. The choice is remembered in your browser.
+
 ### Device names
 
 A device's name follows its RouterOS identity (`/system identity`): rename a router on the
@@ -322,6 +327,15 @@ powered devices, or anything else that drops out normally. Such a device:
 - sends no offline alert when it drops out
 - alerts once if it stays offline longer than its limit (24 hours by default; 0 means never),
   and then sends a recovery alert when it returns
+
+### Resetting a device's outage count
+
+The dashboard lists a device that went offline several times in the last week as *had N
+outages this week*. Once you've dealt with the cause, or the drops were expected (an LTE link
+reconnecting, say), **Reset count** on that item counts the device's outages from now on, so
+the item goes away until it drops again (#85). Only the count is reset: the availability
+history, uptime figures and reports keep every outage. **Snooze** instead hides the item for
+24 hours.
 
 ## Device tabs
 

@@ -732,6 +732,16 @@ router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
 });
 
 // POST /api/devices/:id/sync - run a full resync and wait for it to complete
+// POST /api/devices/:id/outages/reset — start the "had N outages this week"
+// count again from now (#85), e.g. after a known run of LTE reconnects. The
+// availability history and uptime figures are left alone.
+router.post('/:id/outages/reset', requireWrite, async (req: Request, res: Response) => {
+  const row = await queryOne<{ outages_reset_at: string }>(
+    `UPDATE devices SET outages_reset_at = NOW() WHERE id = $1 RETURNING outages_reset_at`, [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'Device not found' });
+  return res.json({ message: 'Outage count reset', outages_reset_at: row.outages_reset_at });
+});
+
 router.post('/:id/sync', requireWrite, async (req: Request, res: Response) => {
   const deviceRow = await queryOne<DeviceRow>(
     `SELECT * FROM devices WHERE id = $1`,

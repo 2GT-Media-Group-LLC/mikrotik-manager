@@ -826,6 +826,8 @@ export const devicesApi = {
   // Firewall: reorder + counters (order is decisive in RouterOS)
   moveFirewallRule: (id: number, ruleId: string, destination?: string, confirmLockout = false) =>
     api.post(`/devices/${id}/firewall/move`, { id: ruleId, destination, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
+  /** Count "outages this week" from now on (#85); history is kept. */
+  resetOutages: (id: number) => api.post<{ message: string; outages_reset_at: string }>(`/devices/${id}/outages/reset`),
   resetFirewallCounters: (id: number) =>
     api.post<Record<string, string>[]>(`/devices/${id}/firewall/reset-counters`),
   moveNatRule: (id: number, ruleId: string, destination?: string) =>
@@ -1336,6 +1338,8 @@ export interface OpsAttentionItem {
   body: string;
   action: string;
   path: string;
+  /** A device whose outage count this item reports, so it can be reset (#85). */
+  resetOutagesDeviceId?: number;
   /** Stable identity used to dismiss an item that is otherwise recomputed. */
   fingerprint?: string;
 }
