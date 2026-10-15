@@ -113,9 +113,11 @@ so it cannot reach into another site's history.
 
 Restore (and Config History's rollback) uploads the `.rsc` and runs it with `/import`.
 This is a real configuration change with all the risk that implies, so it runs under
-[Change Guard](change-guard.md): if the device stops responding during the import, it
-puts its previous configuration back by itself. It signs in with the device's SSH key
-when one is deployed.
+[Change Guard](change-guard.md): if the device stops responding during the import, or
+the import stops partway, it puts its previous configuration back by itself. With Change
+Guard on, a restore runs only once auto-revert is armed, with a timer of at least six minutes
+so the import can finish. With Change Guard turned off in Settings it runs without, and the
+result says so. It signs in with the device's SSH key when one is deployed.
 
 **Know what `/import` does before relying on it.** It replays the backup's commands onto
 the *running* configuration, one line at a time, and stops at the first one that fails.
@@ -130,8 +132,8 @@ The result tells you exactly what happened:
 |---|---|
 | **Restored** | RouterOS ran every line, and the device was confirmed reachable afterwards |
 | **Nothing was changed** | It stopped before running any command, and the message gives the line and reason |
-| **Partly restored** | It ran some commands, then stopped at the line given. The device now has a mix of the backup and its previous configuration |
-| **Restoring itself** | The device stopped responding, so Change Guard is putting the previous configuration back |
+| **Partly restored** | With Change Guard off only: it ran some commands, then stopped at the line given. The device now has a mix of the backup and its previous configuration |
+| **Restoring itself** | The device stopped responding, or the import stopped partway, so Change Guard is putting the previous configuration back |
 
 `/import` exits successfully even when it fails, so before 0.24.36 every restore reported
 success. Each restore also uploads under a name of its own and deletes the file afterwards,

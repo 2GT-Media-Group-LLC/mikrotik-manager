@@ -116,6 +116,17 @@ API call times out even though the change succeeded on the device. **Reachabilit
 exception, decides the outcome.** A change that throws while the device is still reachable
 is a genuine failure, and the guard is disarmed immediately so nothing reboots for nothing.
 
+The exception is a change that fails partway: a bond half built, a VLAN entry removed but
+not re-added, a restore that stopped in the middle. The device is then in neither the old
+state nor the new one, so the revert is left armed and puts it back (#281). A step the device
+clearly rejected before anything was written is an ordinary failure; a lost reply counts as
+possibly applied.
+
+The manager also won't keep a change once the revert is within 20 seconds of firing, or
+past it: cancelling it then would race the revert. It leaves the revert to run and says so.
+To cancel a revert it disables the scheduler, reads it back disabled, and only then removes
+it, so a lost reply can't be mistaken for a revert that has already started.
+
 ### Guard history
 
 Every protected change is recorded per device:
@@ -125,7 +136,7 @@ Every protected change is recorded per device:
 | `committed` | Change applied, device confirmed reachable, guard disarmed and proven gone |
 | `reverted` | Contact lost; the device was left to restore itself |
 | `failed` | Change rejected by the device; nothing applied, guard disarmed |
-| `uncertain` | Change applied and the device is reachable, but the revert scheduler could not be confirmed removed. The device may still restore its previous configuration when the timeout runs out; the UI gives the time. |
+| `uncertain` | Change applied and the device is reachable, but the revert scheduler could not be confirmed removed, or was already gone, so the revert may already have run. The device may restore (or have restored) its previous configuration; the UI gives the time and says which. |
 
 Disarming is only counted once the manager has re-read the device's schedulers and seen
 the revert gone. A failed read is a failure, not an empty list: before 0.24.36 a timed-out
@@ -202,8 +213,11 @@ What the model follows:
 - the bridge and its VLAN table, including a VLAN interface reached through an access
   port whose PVID is that VLAN (tagged at the CPU, untagged on the wire);
 - a bond holding the address, under its VLAN interface, or as the ingress port;
-- the route back to an off-subnet manager, whether that is the default route or a more
-  specific one;
+- the port holding the address, or the parent port of its VLAN interface, being moved into
+  a bridge, where it would stop receiving management (#281);
+- the route back to an off-subnet manager: the one the device would actually pick (longest
+  prefix, then distance), so a default route elsewhere doesn't count, and a blackhole
+  route counts as no way back;
 - the API service and the input firewall chain.
 
 A failed read during the check is never taken as "nothing there": the check fails, and the
@@ -252,7 +266,12 @@ Auto-revert is mandatory, not best effort, for a change that:
 - you confirmed past a lockout warning,
 - the prediction flagged as a warning, or
 - could not be analysed (the device's state couldn't be read), or
-- depends on something the check couldn't evaluate.
+- depends on something the check couldn't evaluate, including a check that failed to run,
+  or a port change on a bridge where the port management arrives on isn't known.
+
+A backup restore, and moving ports into a bridge after confirming that an address on them
+will stop working, always need it. A restore still runs when Change Guard is turned off in
+Settings, and says it ran without auto-revert.
 
 A failed read of any part of the device's state counts as "could not be analysed". Before
 0.24.44 a failed read was treated as an empty table, which could produce a confident
@@ -277,7 +296,8 @@ adds a scheduler, then removes both.
 
 A pre-existing violation is reported separately from one your change would cause. That
 distinction matters: if an invariant is already broken, that check cannot detect a new
-break, and the verdict says so rather than implying a clean result.
+break, and the verdict says so rather than implying a clean result. A pre-existing warning
+that your change would make critical counts as caused by the change.
 
 ### Capability probe
 
