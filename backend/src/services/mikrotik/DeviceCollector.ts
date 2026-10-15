@@ -4120,6 +4120,17 @@ export class DeviceCollector {
     }
   }
 
+  /**
+   * Cut a port's PoE output for `seconds`, then restore it (#291): restarts
+   * an AP or camera powered from it. An action, not a configuration change.
+   */
+  async poePowerCycle(name: string, seconds: number): Promise<void> {
+    const ports = await this.client.execute('/interface/ethernet/poe/print', {}, [`?name=${name}`])
+      .catch((e) => (e instanceof RouterOSTrapError ? [] : Promise.reject(e)));
+    if (!ports[0]?.['.id']) throw new Error(`${name} doesn't supply PoE on this device.`);
+    await this.client.execute('/interface/ethernet/poe/power-cycle', { numbers: ports[0]['.id'], duration: `${seconds}s` });
+  }
+
   async getPoEStatus(name: string): Promise<Record<string, string> | null> {
     const result = await this.client
       .execute('/interface/ethernet/poe/print', {}, [`?name=${name}`])

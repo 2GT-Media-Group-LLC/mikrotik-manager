@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, RefreshCw, Router, Trash2, ChevronRight,
-  Radar, Pencil, ShieldQuestion, Upload} from 'lucide-react';
+  Radar, Pencil, ShieldQuestion, Upload, Power} from 'lucide-react';
 import { devicesApi, topologyApi, metricsApi, tagsApi, adoptionApi} from '../services/api';
 import type { Device } from '../types';
 import type { DiscoveredDevice, AdoptionCandidate} from '../services/api';
@@ -221,6 +221,14 @@ export default function DevicesPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['devices'] }),
   });
 
+  // Reboot from the row (#292), with a confirmation naming the device.
+  const [rowNote, setRowNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const rebootMutation = useMutation({
+    mutationFn: (d: Device) => devicesApi.reboot(d.id).then((r) => ({ d, msg: r.data.message })),
+    onSuccess: ({ d }) => setRowNote({ ok: true, text: `${d.name}: reboot sent. It will be unreachable for a minute or two while it restarts.` }),
+    onError: (e: unknown, d) => setRowNote({ ok: false, text: `${d.name}: ${(e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'reboot failed'}` }),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => devicesApi.delete(id),
     onSuccess: () => {
@@ -411,6 +419,14 @@ export default function DevicesPage() {
           </div>
         )}
       </div>
+
+      {rowNote && (
+        <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-[12.5px]"
+          style={{ background: rowNote.ok ? 'var(--good-bg)' : 'var(--bad-bg, #fee2e2)', color: rowNote.ok ? 'var(--good)' : 'var(--bad)' }}>
+          <Power className="w-3.5 h-3.5" /><span className="flex-1">{rowNote.text}</span>
+          <button type="button" onClick={() => setRowNote(null)} className="text-[11px]" style={{ opacity: 0.7 }}>Dismiss</button>
+        </div>
+      )}
 
       {/* Filter bar */}
       <FilterBar>
@@ -736,6 +752,24 @@ export default function DevicesPage() {
                               >
                                 <RefreshCw className={clsx('w-3.5 h-3.5', syncMutation.isPending && 'animate-spin')} />
                               </button>
+                              {!device.ssh_only && (
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Reboot ${device.name}? It will be unreachable for a minute or two while it restarts.`)) {
+                                      setRowNote(null);
+                                      rebootMutation.mutate(device);
+                                    }
+                                  }}
+                                  disabled={rebootMutation.isPending && rebootMutation.variables?.id === device.id}
+                                  className="p-1.5 rounded transition-colors disabled:opacity-40"
+                                  style={{ color: 'var(--ink-4)' }}
+                                  title="Reboot"
+                                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--warn)')}
+                                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--ink-4)')}
+                                >
+                                  <Power className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => setEditDevice(device)}
                                 className="p-1.5 rounded transition-colors"

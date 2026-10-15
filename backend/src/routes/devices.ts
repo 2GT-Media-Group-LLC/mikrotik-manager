@@ -2529,6 +2529,41 @@ router.post('/:id/reboot', requireWrite, async (req: Request, res: Response) => 
   }
 });
 
+// POST /api/devices/:id/ports/:name/poe-power-cycle { seconds?, confirm_management? }
+// Cut a port's PoE output briefly and restore it (#291). Nothing to revert, so
+// not under Change Guard; but when management arrives on this port, the device
+// it powers may carry the manager's connection, so that asks first (409).
+router.post('/:id/ports/:name/poe-power-cycle', requireWrite, async (req: Request, res: Response) => {
+  const name = req.params.name;
+  if (!IFACE_NAME.test(name)) return res.status(400).json({ error: 'Invalid port name.' });
+  const seconds = req.body?.seconds === undefined ? 5 : Number(req.body.seconds);
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 60) return res.status(400).json({ error: 'seconds must be a whole number from 1 to 60' });
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  if (req.body?.confirm_management !== true) {
+    try {
+      const path = resolveManagementPath(await captureSnapshot(deviceRow as unknown as GuardDevice), deviceRow as unknown as GuardDevice);
+      if (path.ingressPort === name) {
+        return res.status(409).json({
+          needs_confirmation: true,
+          error: `Management traffic reaches this device through ${name}. If the device it powers carries that traffic, the manager will lose contact for about ${seconds} seconds plus its boot time.`,
+        });
+      }
+    } catch { /* can't tell; the power-cycle itself is harmless to this device */ }
+  }
+  const collector = new DeviceCollector(deviceRow);
+  try {
+    await collector.connect();
+    await collector.poePowerCycle(name, seconds);
+    console.log(`[poe] ${logSafe(deviceRow.name)}: power-cycled ${logSafe(name)} for ${seconds}s`);
+    return res.json({ message: `PoE on ${name} is off for ${seconds} seconds, then back on.` });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  } finally {
+    collector.disconnect();
+  }
+});
+
 // GET /api/devices/:id/clock
 router.get('/:id/clock', async (req: Request, res: Response) => {
   const deviceRow = await queryOne<any>(

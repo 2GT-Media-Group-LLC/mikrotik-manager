@@ -261,6 +261,9 @@ Two columns show how the manager reaches each device, and each has a filter:
 
 The list updates by itself as polls finish; there is no need to reload.
 
+The power icon on a device's row reboots it, after a confirmation (#292). It isn't offered
+for a device added over SSH only.
+
 **Columns** at the end of the filter bar shows or hides columns, apart from the status dot,
 the name and the action buttons (#283). Drag a column header's right edge to make it wider or
 narrower, and double-click that edge to put it back. **Reset columns** restores the
@@ -412,6 +415,14 @@ Use **ports per row** in the faceplate header if the default does not suit your 
 the setting is remembered. Next to it, **top row** says which ports are on top: `1 3 5` (most
 models) or `2 4 6`, for models whose front panel has the even ports on top (#277). It appears
 when the Ethernet ports sit in two rows, and is remembered per model in your browser.
+
+### Power-cycling a PoE port
+
+On a port that supplies PoE, **Power-cycle PoE** turns its power off for 5 seconds and back on,
+which restarts the access point, camera or phone it powers (#291). It's in the selection bar
+when that port is selected, and as a lightning icon on the port's row in the port table. If
+management traffic reaches the device through that port, it asks first: the device being
+powered may be carrying the manager's connection.
 
 ### Changing a port's VLAN
 

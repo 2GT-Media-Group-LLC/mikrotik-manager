@@ -96,13 +96,25 @@ export function importRejection(output: string): string | null {
  * (shorter and faster), RSA otherwise (see keyTypeForVersion). The private
  * half never leaves the manager and is never returned by the API.
  */
+const KEYGEN_ATTEMPTS = 5;
+
+function generate(keyType: SshKeyType, comment: string): { public: string; private: string } {
+  return keyType === 'rsa'
+    ? sshUtils.generateKeyPairSync('rsa', { bits: 3072, comment })
+    : sshUtils.generateKeyPairSync('ed25519', { comment });
+}
+
 export function generateDeviceKeyPair(
   deviceId: number, suffix = newKeySuffix(), keyType: SshKeyType = 'ed25519'
 ): GeneratedKeyPair {
   const comment = keyComment(deviceId, suffix);
-  const kp = keyType === 'rsa'
-    ? sshUtils.generateKeyPairSync('rsa', { bits: 3072, comment })
-    : sshUtils.generateKeyPairSync('ed25519', { comment });
+  // ssh2 now and then writes an Ed25519 private key it can't read back
+  // ("Malformed OpenSSH private key": 11 in 3,000 on ssh2 1.17). Deploying one
+  // is refused, but that failed the deploy; generate again instead.
+  let kp = generate(keyType, comment);
+  for (let attempt = 1; attempt < KEYGEN_ATTEMPTS && sshUtils.parseKey(kp.private) instanceof Error; attempt++) {
+    kp = generate(keyType, comment);
+  }
   // generateKeyPairSync already appends the comment; appending it again produced
   // keys tagged twice, which is harmless but reads like a bug on the device.
   const generated = kp.public.trim();

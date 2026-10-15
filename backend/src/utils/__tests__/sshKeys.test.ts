@@ -18,6 +18,14 @@ describe('generateDeviceKeyPair', () => {
     expect(isUsablePrivateKey(kp.privateKey)).toBe(true);
   });
 
+  it('never hands back a key ssh2 cannot read, though ssh2 sometimes writes one', () => {
+    // About 1 in 270 Ed25519 keys from ssh2 1.17 fail its own parser; 400 tries
+    // would hit that without the retry more often than not.
+    for (let i = 0; i < 400; i++) {
+      expect(isUsablePrivateKey(generateDeviceKeyPair(7, `t${i}`).privateKey)).toBe(true);
+    }
+  });
+
   it('tags the public key exactly once', () => {
     // The generator appends the comment itself; appending again produced keys
     // tagged twice, which reads like a bug when seen on the device.

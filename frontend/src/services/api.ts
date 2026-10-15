@@ -791,6 +791,10 @@ export const devicesApi = {
     api.post<{ results?: Array<{ vlan_id: number; action: string; success: boolean; error?: string }>; guard?: { protected: boolean; confirmed: boolean; auto_reverting: boolean; unprotected_reason: string | null; revert_may_fire_at?: string | null }; message?: string }>(
       `/devices/${id}/vlans/copy`, { operations, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
   reboot: (id: number) => api.post<{ message: string }>(`/devices/${id}/reboot`),
+  /** Cut a port's PoE output for a few seconds, then restore it (#291). */
+  poePowerCycle: (id: number, port: string, seconds = 5, confirmManagement = false) =>
+    api.post<{ message: string }>(`/devices/${id}/ports/${encodeURIComponent(port)}/poe-power-cycle`,
+      { seconds, ...(confirmManagement ? { confirm_management: true } : {}) }),
   getInterfaceErrors: (id: number) => api.get<InterfaceErrorsResponse>(`/devices/${id}/interface-errors`),
   getOptics: (id: number) => api.get<OpticsResponse>(`/devices/${id}/optics`),
   getOpticHistory: (id: number, port: string, days = 7) =>

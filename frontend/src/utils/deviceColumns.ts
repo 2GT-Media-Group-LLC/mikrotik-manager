@@ -33,7 +33,7 @@ export const DEVICE_COLUMNS: DeviceColumn[] = [
   { id: 'cpu',     label: 'CPU', pickerLabel: 'CPU',        sortKey: null,            width: 110 },
   { id: 'load',    label: 'LOAD', pickerLabel: 'Load',       sortKey: null,            width: 100 },
   { id: 'seen',    label: 'SEEN', pickerLabel: 'Last seen',       sortKey: 'last_seen',     width: 90 },
-  { id: 'actions', label: '',           sortKey: null,            width: 56,  fixed: true, pickerLabel: 'Actions' },
+  { id: 'actions', label: '',           sortKey: null,            width: 150, fixed: true, pickerLabel: 'Actions' },
 ];
 
 export const MIN_COLUMN_WIDTH = 48;
