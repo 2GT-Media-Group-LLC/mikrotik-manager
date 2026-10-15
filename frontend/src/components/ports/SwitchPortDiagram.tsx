@@ -1420,7 +1420,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
             <div>
               <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>
-                Switch faceplate · {ports.length} ports
+                Switch faceplate · {physicalPorts.length} physical{bridgePorts.length + bondPorts.length > 0 ? ` · ${bridgePorts.length + bondPorts.length} virtual` : ''}
               </div>
               <div className="mono text-[11px] mt-[2px]" style={{ color: 'var(--ink-3)' }}>
                 click to select · shift for multi · double-click to configure
