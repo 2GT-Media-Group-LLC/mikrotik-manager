@@ -1319,7 +1319,10 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
 
   return (
     <div className="space-y-4">
-      {/* Selection bar */}
+      {/* Selection bar. Its slot is always reserved: appearing on the first
+          click of a double-click used to push the faceplate down so the second
+          click missed the tile. */}
+      <div style={{ minHeight: 56 }}>
       {selectedPorts.size > 0 && (() => {
         const singlePort = selectedPorts.size === 1 ? ports.find(p => p.name === Array.from(selectedPorts)[0]) : null;
         const selArr = Array.from(selectedPorts).map(n => ports.find(p => p.name === n)).filter((p): p is SwitchPort => !!p);
@@ -1329,7 +1332,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         return (
           <div style={{
             background: 'var(--accent-soft)', border: '1px solid var(--accent)',
-            borderRadius: 8, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10,
+            borderRadius: 8, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, minHeight: 56, boxSizing: 'border-box',
           }}>
             <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--accent)', flexShrink: 0, boxShadow: '0 0 0 2px var(--accent)33, 0 0 8px var(--accent)88' }} />
             <span className="mono text-[12px]" style={{ color: 'var(--accent)' }}>
@@ -1399,6 +1402,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
           </div>
         );
       })()}
+      </div>
 
       {poeNote && (
         <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-[12px]"
