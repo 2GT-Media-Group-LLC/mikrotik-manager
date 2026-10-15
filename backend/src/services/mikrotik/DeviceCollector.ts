@@ -4703,6 +4703,30 @@ export class DeviceCollector {
     await this.client.execute('/ip/address/remove', { numbers: id });
   }
 
+  // ─── Switch chip VLAN table (#278) ───────────────────────────────────────
+  // Older chips (Atheros 8327, QCA8337…) keep VLANs here rather than in a
+  // VLAN-filtering bridge. Fields are already checked (utils/switchVlanEdit).
+
+  async addSwitchVlan(fields: Record<string, string>): Promise<void> {
+    await this.client.execute('/interface/ethernet/switch/vlan/add', fields);
+  }
+
+  async updateSwitchVlan(id: string, fields: Record<string, string>): Promise<void> {
+    await this.setItem('/interface/ethernet/switch/vlan', id, fields);
+  }
+
+  async removeSwitchVlan(id: string): Promise<void> {
+    await this.client.execute('/interface/ethernet/switch/vlan/remove', { '.id': id });
+  }
+
+  /** A switch port's vlan-mode, vlan-header and default-vlan-id, by port name. */
+  async setSwitchPortVlan(name: string, fields: Record<string, string>): Promise<void> {
+    const port = (await this.client.execute('/interface/ethernet/switch/port/print'))
+      .find((p) => p['name'] === name);
+    if (!port?.['.id']) throw new Error(`Switch port ${name} not found`);
+    await this.setItem('/interface/ethernet/switch/port', port['.id'], fields);
+  }
+
   /** Edit an address in place (#285): address, interface, comment, disabled; '' clears. */
   async updateIpAddress(id: string, fields: Record<string, string>): Promise<void> {
     await this.setItem('/ip/address', id, fields);

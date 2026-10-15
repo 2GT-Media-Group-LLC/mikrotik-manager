@@ -65,6 +65,7 @@ import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
 import { clientAddressListView } from '../utils/addressLists';
 import { l3hwView } from '../utils/l3hw';
 import { switchVlanView } from '../utils/switchVlans';
+import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit } from '../utils/ipAddressEdit';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
@@ -1504,6 +1505,50 @@ router.get('/:id/switch-vlans', async (req, res) => {
     ]);
     return switchVlanView(switches, vlanTable, ports, bridges);
   });
+});
+
+// Switch chip VLAN edits (#278). Change Guard can't simulate the switch chip,
+// so it can't predict a lockout here: every change requires auto-revert, and
+// is refused rather than run unprotected when the device can't arm it.
+const ROS_ID = /^\*[0-9A-Fa-f]+$/;
+
+// POST /api/devices/:id/switch-vlans { switch, vlan_id, ports[], independent_learning?, disabled? }
+router.post('/:id/switch-vlans', requireWrite, async (req: Request, res: Response) => {
+  const parsed = switchVlanEntry(req.body ?? {}, true);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const f = parsed.fields;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'switch-vlan.add', summary: `Add switch VLAN ${f['vlan-id']} on ${f.switch}`, requireProtection: true },
+    async (c) => { await c.addSwitchVlan(f); return { message: `Switch VLAN ${f['vlan-id']} added` }; });
+});
+
+// PUT /api/devices/:id/switch-vlans/:entryId { vlan_id?, ports?, independent_learning?, disabled? }
+router.put('/:id/switch-vlans/:entryId', requireWrite, async (req: Request, res: Response) => {
+  if (!ROS_ID.test(req.params.entryId)) return res.status(400).json({ error: 'Not a switch VLAN entry id' });
+  const parsed = switchVlanEntry(req.body ?? {}, false);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'switch-vlan.set', summary: `Edit switch VLAN entry ${req.params.entryId}`, requireProtection: true },
+    async (c) => { await c.updateSwitchVlan(req.params.entryId, parsed.fields); return { message: 'Switch VLAN updated' }; });
+});
+
+// DELETE /api/devices/:id/switch-vlans/:entryId
+router.delete('/:id/switch-vlans/:entryId', requireWrite, async (req: Request, res: Response) => {
+  if (!ROS_ID.test(req.params.entryId)) return res.status(400).json({ error: 'Not a switch VLAN entry id' });
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'switch-vlan.remove', summary: `Remove switch VLAN entry ${req.params.entryId}`, requireProtection: true },
+    async (c) => { await c.removeSwitchVlan(req.params.entryId); return { message: 'Switch VLAN removed' }; });
+});
+
+// PUT /api/devices/:id/switch-ports/:name/vlan { vlan_mode?, vlan_header?, default_vlan_id? }
+router.put('/:id/switch-ports/:name/vlan', requireWrite, async (req: Request, res: Response) => {
+  const name = req.params.name;
+  if (!validPortName(name)) return res.status(400).json({ error: 'Not a valid port name' });
+  const parsed = switchPortVlan(req.body ?? {});
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'switch-port.vlan', summary: `Set switch VLAN settings on ${name}`, requireProtection: true },
+    async (c) => { await c.setSwitchPortVlan(name, parsed.fields); return { message: `VLAN settings on ${name} updated` }; });
 });
 
 // PUT /api/devices/:id/l3hw { enabled, acknowledge_firewall? } — turn L3

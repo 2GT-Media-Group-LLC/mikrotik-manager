@@ -180,7 +180,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
       <L3HwCard deviceId={deviceId} />
 
       {/* VLANs in the switch chip's own table (#278) */}
-      {chipVlans && switchVlans && <SwitchVlanCard view={switchVlans} />}
+      {chipVlans && switchVlans && <SwitchVlanCard view={switchVlans} deviceId={deviceId} />}
 
       {/* VLAN Filtering warning */}
       {bridgesWithoutFiltering.length > 0 && !chipVlans && (
@@ -222,7 +222,8 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
             <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />
             Refresh
           </button>
-          {canWrite && deviceType === 'switch' && (
+          {/* Bridge VLANs aren't how this switch chip does VLANs (#278): no adding or copying them here. */}
+          {canWrite && deviceType === 'switch' && !chipVlans && (
             <button
               onClick={() => setShowCopyModal(true)}
               className="btn-secondary flex items-center gap-2 text-sm"
@@ -232,7 +233,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
               Copy from Switch
             </button>
           )}
-          {canWrite && (
+          {canWrite && !chipVlans && (
             <button
               onClick={() => {
                 setShowAdd(!showAdd);
@@ -405,7 +406,9 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
       <div className="card overflow-hidden">
         {(vlans as Vlan[]).length === 0 ? (
           <div className="text-center py-8 text-gray-400 dark:text-slate-500">
-            No VLANs configured on this device, or device not synced yet.
+            {chipVlans
+              ? 'No bridge VLANs. On this switch chip, VLANs are set in the switch chip table above.'
+              : 'No VLANs configured on this device, or device not synced yet.'}
           </div>
         ) : (
           <table className="w-full text-sm">

@@ -840,6 +840,15 @@ export const devicesApi = {
   getAddressLists: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/address-lists`),
   /** The switch chip's own VLAN table, on older chips (#278). Read-only. */
   getSwitchVlans: (id: number) => api.get<SwitchVlanView>(`/devices/${id}/switch-vlans`),
+  /** Switch chip VLAN edits (#278); each requires Change Guard's auto-revert. */
+  addSwitchVlan: (id: number, data: { switch: string; vlan_id: number; ports: string[]; disabled?: boolean }) =>
+    api.post(`/devices/${id}/switch-vlans`, data, { timeout: 120_000 }),
+  updateSwitchVlan: (id: number, entryId: string, data: { vlan_id?: number; ports?: string[]; disabled?: boolean }) =>
+    api.put(`/devices/${id}/switch-vlans/${encodeURIComponent(entryId)}`, data, { timeout: 120_000 }),
+  removeSwitchVlan: (id: number, entryId: string) =>
+    api.delete(`/devices/${id}/switch-vlans/${encodeURIComponent(entryId)}`, { timeout: 120_000 }),
+  setSwitchPortVlan: (id: number, port: string, data: { vlan_mode?: string; vlan_header?: string; default_vlan_id?: string }) =>
+    api.put(`/devices/${id}/switch-ports/${encodeURIComponent(port)}/vlan`, data, { timeout: 120_000 }),
   /** L3 hardware offloading on the switch chip (#254). */
   getL3Hw: (id: number) => api.get<L3HwView>(`/devices/${id}/l3hw`),
   setL3Hw: (id: number, enabled: boolean, acknowledgeFirewall = false) =>

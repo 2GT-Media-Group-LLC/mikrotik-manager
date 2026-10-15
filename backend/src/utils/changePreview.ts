@@ -193,6 +193,8 @@ const PREVIEWABLE: [string, RegExp][] = [
   ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/routing(\/(ospf\/instance|ospf\/area|bgp\/connection|tables|filters\/rule))?(\/[^/]+)?$/],
   ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/(vlans|bonds)(\/[^/]+)?$/],
   ['PUT', /^\/api\/devices\/\d+\/bridge\/[^/]+\/vlan-filtering$/],
+  ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/switch-vlans(\/[^/]+)?$/],
+  ['PUT', /^\/api\/devices\/\d+\/switch-ports\/[^/]+\/vlan$/],
   // Network services (device in ?deviceId=)
   ['POST|PUT|DELETE', /^\/api\/network-services\/dhcp\/(server|pool|static-lease)(\/[^/]+)?$/],
   ['PUT', /^\/api\/network-services\/(dns|ntp|netflow)$/],

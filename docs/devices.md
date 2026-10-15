@@ -473,8 +473,24 @@ switching to the CPU. On these chips VLANs belong in the switch chip's own table
 VLAN** in WinBox), with each port's VLAN mode, VLAN header and default VLAN.
 
 On such a device the **VLANs** tab shows a **Switch chip VLANs** card with that table and the
-port settings (#278), and no longer suggests turning on bridge VLAN filtering. The card is
-read-only for now: change these settings in WinBox or with a command. Chips that do VLAN
+port settings (#278), and no longer suggests turning on bridge VLAN filtering or offers to add
+bridge VLANs. You can edit it there:
+
+- **Add switch VLAN** adds an entry: a VLAN ID and its member ports. Include the CPU port
+  (`switch1-cpu`) for a VLAN the router itself needs to reach, such as one with a VLAN interface
+  on it; it's ticked to start with.
+- The pencil on an entry changes its ports or turns it on or off; the bin removes it.
+- Each port's **VLAN mode**, **VLAN header** and **default VLAN** are set in the table below,
+  with a save button that appears once you change a value. Hover a mode or header to see what
+  it does. `secure` with `always-strip` and a default VLAN is a typical access port;
+  `add-if-missing` a typical trunk.
+
+Every change runs through [Change Guard](change-guard.md) with auto-revert required. The
+lockout check can't model the switch chip, so it can't tell you in advance that a change is
+safe; instead, if the device stops answering, it restores its previous configuration. These
+changes use a binary restore point, so a revert also restarts the device. Where auto-revert
+can't be armed (Change Guard turned off, or a login without the `policy` permission), the
+change is refused rather than run unprotected. Chips that do VLAN
 filtering in hardware on RouterOS 7 (CRS3xx and other Marvell switches, and the hEX's MT7621)
 use bridge VLAN filtering as described above and don't show the card.
 
