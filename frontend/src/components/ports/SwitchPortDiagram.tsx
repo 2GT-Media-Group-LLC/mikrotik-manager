@@ -1574,41 +1574,52 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
             ))}
             </div>
             ))}
-
-            {/* Bridge group. marginLeft:auto was removed here — it shoved the
-                group to the far edge of the row, which once the groups started
-                wrapping guaranteed a gap the width of the container. */}
-            {bridgePorts.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em' }}>BRIDGE</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {bridgeRows.map((row, ri) => (
-                    <div key={ri} style={{ display: 'flex', gap: 4 }}>
-                      {row.map(port => (
-                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Bond group */}
-            {bondPorts.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em' }}>BOND</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {bondRows.map((row, ri) => (
-                    <div key={ri} style={{ display: 'flex', gap: 4 }}>
-                      {row.map(port => (
-                        <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
+
+          {/* Virtual interfaces (bridges, bonds) are not on the front panel, so
+              they get their own strip beneath it instead of flowing in beside
+              the physical ports. */}
+          {(bridgePorts.length > 0 || bondPorts.length > 0) && (
+            <div style={{
+              marginTop: 10, padding: '14px 26px', display: 'flex', gap: 30, alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 18,
+              border: '1px dashed var(--faceplate-border)', borderRadius: 8,
+            }}>
+              <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em', alignSelf: 'center' }}>VIRTUAL</div>
+              {/* Bridge group. marginLeft:auto was removed here — it shoved the
+                  group to the far edge of the row, which once the groups started
+                  wrapping guaranteed a gap the width of the container. */}
+              {bridgePorts.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em' }}>BRIDGE</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {bridgeRows.map((row, ri) => (
+                      <div key={ri} style={{ display: 'flex', gap: 4 }}>
+                        {row.map(port => (
+                          <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bond group */}
+              {bondPorts.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em' }}>BOND</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {bondRows.map((row, ri) => (
+                      <div key={ri} style={{ display: 'flex', gap: 4 }}>
+                        {row.map(port => (
+                          <PortTile key={port.name} port={port} selected={selectedPorts.has(port.name)} hovered={hoveredPort === port.name} watts={poeWattsMap[port.name]} errors={portErrMap[port.name]} optic={opticMap[port.name]} onClick={e => togglePort(port.name, e)} onMouseEnter={() => setHoveredPort(port.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(port)} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
       </div>
