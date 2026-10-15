@@ -1,4 +1,5 @@
 import { analyzeChange, simulate, type PlannedChange } from '../analyzeChange';
+import { evaluate } from '../invariants';
 import { resolveManagementPath, vlanMembership, expandVlanIds, type DeviceSnapshot } from '../pathModel';
 import type { GuardDevice } from '../ChangeGuard';
 
@@ -498,5 +499,157 @@ describe('analyzeChange — bridge-port.move and bridge.delete', () => {
 
   it('allows deleting another bridge', () => {
     expect(analyzeChange(withGuest(), device, { kind: 'bridge.delete', bridge: 'guest' }).severity).toBe('safe');
+  });
+});
+
+describe('review fixes: management port swallowed by a bridge (H2)', () => {
+  const direct = () => baseSnapshot({
+    addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'ether1', disabled: 'false' }],
+    bridgePorts: [{ interface: 'sfp28-1', bridge: 'bridge', pvid: '1', disabled: 'false' }],
+    arp: [], bridgeHosts: [],
+  });
+  const onVlan = () => baseSnapshot({
+    addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'vlan10', disabled: 'false' }],
+    vlanInterfaces: [{ name: 'vlan10', 'vlan-id': '10', interface: 'ether1' }],
+    interfaces: [
+      { name: 'bridge', type: 'bridge', disabled: 'false' },
+      { name: 'ether1', type: 'ether', disabled: 'false' },
+      { name: 'vlan10', type: 'vlan', disabled: 'false' },
+      { name: 'sfp28-1', type: 'ether', disabled: 'false' },
+    ],
+    bridgePorts: [{ interface: 'sfp28-1', bridge: 'bridge', pvid: '1', disabled: 'false' }],
+    arp: [], bridgeHosts: [],
+  });
+  const move: PlannedChange = { kind: 'bridge-port.move', ports: ['ether1'], bridge: 'bridge' };
+
+  it('flags bridging the port that carries the management address', () => {
+    const v = analyzeChange(direct(), device, move);
+    expect(v.severity).toBe('critical');
+    expect(v.violations.map((x) => x.id)).toContain('mgmt-not-bridge-slave');
+  });
+
+  it('flags bridging the parent port of the management VLAN interface', () => {
+    const v = analyzeChange(onVlan(), device, move);
+    expect(v.severity).toBe('critical');
+    expect(v.violations.map((x) => x.id)).toContain('mgmt-not-bridge-slave');
+  });
+
+  it('is quiet for an unrelated port', () => {
+    const snap = direct();
+    snap.interfaces.push({ name: 'ether9', type: 'ether', disabled: 'false' });
+    const v = analyzeChange(snap, device, { kind: 'bridge-port.move', ports: ['ether9'], bridge: 'bridge' });
+    expect(v.violations.map((x) => x.id)).not.toContain('mgmt-not-bridge-slave');
+  });
+});
+
+describe('review fixes: verdict severity and blind spots (M3, M4, M5, M7)', () => {
+  it('M3: a pre-existing dynamic-only warning does not hide a new critical break', () => {
+    // The bridge is an untagged member of VLAN 1 only through a dynamic entry.
+    const snap = baseSnapshot({
+      bridgeVlans: [
+        { bridge: 'bridge', 'vlan-ids': '1', dynamic: 'false', tagged: '', untagged: 'sfp28-1,ether1',
+          'current-tagged': '', 'current-untagged': 'sfp28-1,ether1' },
+        { bridge: 'bridge', 'vlan-ids': '1', dynamic: 'true', tagged: '', untagged: 'bridge',
+          'current-tagged': '', 'current-untagged': 'bridge' },
+      ],
+    });
+    // Drop the ingress port (sfp28-1) from VLAN 1.
+    const rm = analyzeChange(snap, device, {
+      kind: 'vlan.update', bridge: 'bridge', vlanId: 1, tagged: [], untagged: ['ether1'],
+    });
+    expect(rm.preexisting.map((p) => p.id)).toContain('bridge-untagged-member');
+    expect(rm.severity).toBe('critical');
+    expect(rm.violations.map((x) => x.id)).toContain('bridge-untagged-member');
+  });
+
+  it('M4: an unknown ingress port is a warning for a port-level change, not "safe"', () => {
+    const snap = baseSnapshot({ arp: [], bridgeHosts: [] });
+    const v = analyzeChange(snap, device, { kind: 'interface.disable', name: 'sfp28-1', disabled: true });
+    expect(v.severity).not.toBe('safe');
+    expect(v.violations.map((x) => x.id)).toContain('ingress-port-unknown');
+  });
+
+  it('M4: blind ingress still requires protection when a bond is built from bridge ports', () => {
+    const snap = baseSnapshot({ arp: [], bridgeHosts: [] });
+    const v = analyzeChange(snap, device, { kind: 'path-object.change', name: 'sfp28-1', what: 'Bonding this port' });
+    expect(v.severity).not.toBe('safe');
+  });
+
+  it('M5: removing the specific route is not covered by a default route elsewhere', () => {
+    const snap = baseSnapshot({
+      addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'bridge', disabled: 'false' }],
+      routes: [
+        { '.id': '*A', 'dst-address': '0.0.0.0/0', gateway: '192.168.0.9', active: 'true' },
+        { '.id': '*S', 'dst-address': '10.9.0.0/16', gateway: '192.168.0.1', active: 'true' },
+        { '.id': '*B', 'dst-address': '192.168.0.0/24', gateway: 'bridge', active: 'true' },
+      ],
+      mgmtConnections: [{ protocol: 'tcp', 'src-address': '10.9.1.5:50000', 'dst-address': '192.168.0.40:8728' }],
+      arp: [{ address: '192.168.0.1', 'mac-address': 'B4:FB:E4:0B:0B:8A', interface: 'bridge' }],
+    });
+    const v = analyzeChange(snap, device, { kind: 'route.remove', routeId: '*S' });
+    expect(v.severity).not.toBe('safe');
+    expect(v.violations.map((x) => x.id)).toContain('route-to-manager');
+  });
+
+  it('M5: a blackhole route is not a way back', () => {
+    const snap = baseSnapshot({
+      routes: [
+        { '.id': '*A', 'dst-address': '0.0.0.0/0', gateway: '192.168.0.1', active: 'true' },
+        { '.id': '*H', 'dst-address': '0.0.0.0/0', gateway: '', blackhole: 'true', active: 'true' },
+      ],
+    });
+    expect(resolveManagementPath(snap, device).managerGateway).toBe('192.168.0.1');
+    const v = analyzeChange(snap, device, { kind: 'route.remove', routeId: '*A' });
+    expect(v.violations.map((x) => x.id)).toContain('route-to-manager');
+    expect(v.severity).toBe('critical');
+  });
+
+  it('M5: a more specific discard route beats the default route that remains', () => {
+    const snap = baseSnapshot({
+      routes: [
+        { '.id': '*A', 'dst-address': '0.0.0.0/0', gateway: '192.168.0.1', active: 'true' },
+        { '.id': '*S', 'dst-address': '10.9.1.5/32', gateway: '192.168.0.1', active: 'true' },
+        { '.id': '*H', 'dst-address': '10.9.0.0/16', blackhole: 'true', active: 'true', distance: '1' },
+      ],
+      mgmtConnections: [{ protocol: 'tcp', 'src-address': '10.9.1.5:50000', 'dst-address': '192.168.0.40:8728' }],
+    });
+    const v = analyzeChange(snap, device, { kind: 'route.remove', routeId: '*S' });
+    expect(v.severity).toBe('critical');
+    expect(v.violations.map((x) => x.id)).toContain('route-to-manager');
+  });
+
+  it('M6: a MAC learned in another bridge is not taken as the ingress port', () => {
+    const snap = baseSnapshot({
+      bridgeHosts: [
+        { 'mac-address': 'B4:FB:E4:0B:0B:8A', 'on-interface': 'ether1', bridge: 'guest', local: 'false' },
+        { 'mac-address': 'B4:FB:E4:0B:0B:8A', 'on-interface': 'sfp28-1', bridge: 'bridge', local: 'false' },
+      ],
+    });
+    expect(resolveManagementPath(snap, device).ingressPort).toBe('sfp28-1');
+  });
+
+  it('M6: a MAC learned on two ports of the bridge is ambiguous, so the port is unknown', () => {
+    const snap = baseSnapshot({
+      bridgeHosts: [
+        { 'mac-address': 'B4:FB:E4:0B:0B:8A', 'on-interface': 'ether1', bridge: 'bridge', local: 'false' },
+        { 'mac-address': 'B4:FB:E4:0B:0B:8A', 'on-interface': 'sfp28-1', bridge: 'bridge', local: 'false' },
+      ],
+    });
+    expect(resolveManagementPath(snap, device).ingressPort).toBeNull();
+  });
+});
+
+describe('review fixes: a failing invariant fails closed (M7)', () => {
+  it('reports a throwing check as uncertain and surfaces it as a warning', () => {
+    const snap = baseSnapshot();
+    const path = resolveManagementPath(snap, device);
+    // A malformed value the input-chain evaluation cannot handle.
+    const broken = { ...snap, firewallFilter: [null as unknown as Record<string, string>] };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = evaluate(broken, path, device).get('input-chain-permits');
+    warn.mockRestore();
+    expect(res).toMatchObject({ ok: true, uncertain: true, failed: true });
+    const v = analyzeChange(broken, device, { kind: 'route.remove', routeId: '*none' });
+    expect(v.severity).toBe('warning');
   });
 });

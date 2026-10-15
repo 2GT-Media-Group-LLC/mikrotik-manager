@@ -1,6 +1,7 @@
 // Mock external deps before importing DeviceCollector
 jest.mock('../../../utils/crypto', () => ({ decrypt: (s: string) => s }));
 jest.mock('../RouterOSClient');
+import { RouterOSTrapError } from '../RouterOSClient';
 jest.mock('../../../config/database');
 jest.mock('../../../config/influxdb');
 jest.mock('../../../utils/oui');
@@ -8,6 +9,7 @@ jest.mock('../../../utils/serverArp');
 
 import { DeviceCollector, DeviceRow } from '../DeviceCollector';
 import { query } from '../../../config/database';
+import { isPartialApply } from '../../changeGuard/partialApply';
 
 const testDevice: DeviceRow = {
   id: 1,
@@ -362,7 +364,6 @@ describe('legacy wireless security', () => {
 
 // ── Legacy CAPsMAN (#250) ────────────────────────────────────────────────────
 
-import { RouterOSTrapError } from '../RouterOSClient';
 import { legacyFixture } from '../__fixtures__/legacyCapsman';
 
 describe('legacy CAPsMAN (#250)', () => {
@@ -496,5 +497,72 @@ describe('legacy CAPsMAN (#250)', () => {
     expect(fireTv[8]).toBe(-70);
     expect(fireTv[10]).toBe(130_000_000);                 // tx rate "130Mbps-20MHz/2S" (#252)
     expect(fireTv[11]).toBe(1_000_000);                   // rx rate "1Mbps"
+  });
+});
+
+// ── Bonds: only a failure after a write is a partial apply ─────────────────────
+
+describe('bond create/remove failures', () => {
+  // A !trap: the device answered and refused, so nothing was written.
+  const trap = (message: string) => Object.create(RouterOSTrapError.prototype, { message: { value: message } }) as Error;
+  /** A collector whose `failOn` command rejects with `error`; the rest answer from `responses`. */
+  function bondCollector(
+    responses: Record<string, Record<string, string>[]>, failOn: string, error: string | Error = trap('failure: already have interface with such name'),
+  ) {
+    const collector = new DeviceCollector(testDevice);
+    const calls: string[] = [];
+    (collector as unknown as { client: { execute: jest.Mock } }).client = {
+      execute: jest.fn(async (cmd: string) => {
+        calls.push(cmd);
+        if (cmd === failOn) throw typeof error === 'string' ? new Error(error) : error;
+        return responses[cmd] ?? [];
+      }),
+    };
+    return { collector, calls };
+  }
+  const bridged = { '/interface/bridge/port/print': [{ '.id': '*1', interface: 'ether2', bridge: 'bridge' }] };
+  const bond = { '/interface/bonding/print': [{ '.id': '*b', name: 'bond1', slaves: 'ether2,ether3' }] };
+
+  it('create: a rejection before anything was written is a plain failure', async () => {
+    const { collector } = bondCollector({}, '/interface/bonding/add');
+    const err = await collector.createBond('bond1', ['ether2', 'ether3'], '802.3ad', {}).catch((e) => e);
+    expect(isPartialApply(err)).toBe(false);
+    expect((err as Error).message).toMatch(/already have/);
+  });
+
+  it('create: a rejected first port removal is a plain failure', async () => {
+    const { collector } = bondCollector(bridged, '/interface/bridge/port/remove');
+    const err = await collector.createBond('bond1', ['ether2'], '802.3ad', {}).catch((e) => e);
+    expect(isPartialApply(err)).toBe(false);
+  });
+
+  it('create: a failure after the slaves left the bridge is partial', async () => {
+    const { collector } = bondCollector(bridged, '/interface/bonding/add');
+    const err = await collector.createBond('bond1', ['ether2'], '802.3ad', {}).catch((e) => e);
+    expect(isPartialApply(err)).toBe(true);
+  });
+
+  it('create: a lost reply on the first write is partial (it may have landed)', async () => {
+    const { collector } = bondCollector({}, '/interface/bonding/add', 'Read timeout waiting for API response');
+    const err = await collector.createBond('bond1', ['ether2'], '802.3ad', {}).catch((e) => e);
+    expect(isPartialApply(err)).toBe(true);
+  });
+
+  it('remove: a rejected bridge-port removal is a plain failure', async () => {
+    const { collector } = bondCollector({ ...bond, ...bridged }, '/interface/bridge/port/remove');
+    const err = await collector.deleteBond('bond1').catch((e) => e);
+    expect(isPartialApply(err)).toBe(false);
+  });
+
+  it('remove: an unbridged bond whose removal is rejected is a plain failure', async () => {
+    const { collector } = bondCollector(bond, '/interface/bonding/remove');
+    const err = await collector.deleteBond('bond1').catch((e) => e);
+    expect(isPartialApply(err)).toBe(false);
+  });
+
+  it('remove: a rejection after the bond left the bridge is partial', async () => {
+    const { collector } = bondCollector({ ...bond, ...bridged }, '/interface/bonding/remove');
+    const err = await collector.deleteBond('bond1').catch((e) => e);
+    expect(isPartialApply(err)).toBe(true);
   });
 });

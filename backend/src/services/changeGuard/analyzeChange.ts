@@ -330,6 +330,31 @@ function mergeFields(row: RosRow, fields: Record<string, string>): RosRow {
   return Object.fromEntries([...kept, ...set]);
 }
 
+/** Ports, bonds and the bridge itself, among those of `bridge`, that a change touches. */
+function touchedPorts(snap: DeviceSnapshot, change: PlannedChange, bridge: string): string[] {
+  const inScope = (n: string): boolean =>
+    n === bridge
+    || snap.bridgePorts.some((p) => p['interface'] === n && p['bridge'] === bridge)
+    || snap.bonds.some((b) => b['name'] === n);
+  const names = (c: PlannedChange): string[] => {
+    switch (c.kind) {
+      case 'batch': return c.changes.flatMap(names);
+      case 'port.vlan': return [c.port];
+      case 'bridge-port.move': return c.ports;
+      case 'interface.disable': return [c.name];
+      case 'bond.delete': return [c.name];
+      case 'path-object.change': return [c.name];
+      case 'vlan.add':
+      case 'vlan.update': return [...c.tagged, ...c.untagged];
+      case 'vlan.delete':
+      case 'bridge.delete':
+      case 'bridge.vlan-filtering': return [c.bridge];
+      default: return [];
+    }
+  };
+  return [...new Set(names(change).filter(inScope))];
+}
+
 /** Objects the management path runs through, by name. */
 function pathObjects(path: ManagementPath): Set<string> {
   const names = path.hops.map((h) => h.name);
@@ -369,6 +394,16 @@ export function analyzeChange(
   for (const inv of INVARIANTS) {
     const b = before.get(inv.id);
     const a = after.get(inv.id);
+    // A violation already present is not this change's doing, but one that gets
+    // WORSE is: a pre-existing warning must not hide a new critical break.
+    const worse = !!b && !b.ok && !!a && !a.ok
+      && (a.severity ?? 'critical') === 'critical' && (b.severity ?? 'critical') === 'warning';
+    if (worse && a) {
+      violations.push({
+        id: inv.id, title: inv.title, before: false, after: false,
+        detail: a.detail, severity: 'critical',
+      });
+    }
     if (b && !b.ok) {
       preexisting.push({
         id: inv.id,
@@ -389,7 +424,7 @@ export function analyzeChange(
         detail: a.detail,
         severity: a.severity ?? 'critical',
       });
-    } else if (a?.ok && a.uncertain && (!b?.uncertain || touchesFirewall(change))) {
+    } else if (a?.ok && a.uncertain && (!b?.uncertain || a.failed || touchesFirewall(change))) {
       // Not predicted to break, but the check can't vouch for it either:
       // either this change made it uncertain, or it edits the very rules the
       // check couldn't fully evaluate.
@@ -416,6 +451,25 @@ export function analyzeChange(
         `This can't be simulated, so it runs only with auto-revert.`,
       severity: 'warning',
     });
+  }
+
+  // Port-level changes judged without knowing where management enters. Nothing
+  // above can fail for a port it cannot name, so the verdict would be a clean
+  // "safe"; make it a warning, which makes auto-revert mandatory. (A guess from
+  // the default gateway is left to the invariants: it is still a named port.)
+  if (path.bridge && path.ingressPortSource === 'unknown') {
+    const touched = touchedPorts(snap, change, path.bridge);
+    if (touched.length > 0) {
+      violations.push({
+        id: 'ingress-port-unknown',
+        title: 'Where management enters the device is not certain',
+        before: true,
+        after: true,
+        detail: `Which port management arrives on could not be determined, and this change touches ${touched.join(', ')} on ${path.bridge}. ` +
+          `It can't be checked, so it runs only with auto-revert.`,
+        severity: 'warning',
+      });
+    }
   }
 
   const warnings = [...path.warnings];

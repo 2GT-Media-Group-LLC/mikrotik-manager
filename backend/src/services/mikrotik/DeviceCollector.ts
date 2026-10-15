@@ -1,3 +1,4 @@
+import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
 import { RouterOSClient, RouterOSTrapError } from './RouterOSClient';
@@ -3040,19 +3041,22 @@ export class DeviceCollector {
 
     const done: string[] = [];
     const where = target ? `into ${target}` : 'out of their bridge';
+    /** Something was written, so a later failure leaves a half-applied move. */
+    let wrote = false;
     const fail = (step: string, err: unknown): never => {
-      throw new Error(
+      // No reply isn't "not applied": a lost reply on a write that was sent may
+      // well have landed (a move that cuts the manager off succeeds on the
+      // device and the answer never arrives), so only a clear rejection counts
+      // as nothing written.
+      throw stepFailure(err, wrote,
         `${step} failed: ${(err as Error).message}.`
-        // No reply isn't the same as not applied: a move that cuts the
-        // manager off succeeds on the device and the answer never arrives.
-        + (done.length ? ` Confirmed moved ${where}: ${done.join(', ')}.` : ' No port was confirmed moved.'),
-        { cause: err },
-      );
+        + (done.length ? ` Confirmed moved ${where}: ${done.join(', ')}.` : ' No port was confirmed moved.'));
     };
 
     if (plan.createBridge) {
       await this.client.execute('/interface/bridge/add', { name: plan.createBridge, 'protocol-mode': 'rstp' })
         .catch((e) => fail(`Creating bridge ${plan.createBridge}`, e));
+      wrote = true;
     }
     // The old bridges stop listing the ports first: an entry naming a port
     // that has left is invalid, and would apply again if the port came back.
@@ -3060,6 +3064,7 @@ export class DeviceCollector {
       await this.client.execute('/interface/bridge/vlan/set', {
         '.id': e.id, tagged: e.tagged.join(','), untagged: e.untagged.join(','),
       }).catch((err) => fail(`Removing the ports from VLAN ${e.vlanIds} on ${e.bridge}`, err));
+      wrote = true;
     }
     for (const op of plan.ops) {
       try {
@@ -3074,6 +3079,7 @@ export class DeviceCollector {
           await this.client.execute('/interface/bridge/port/add', { interface: op.port, bridge: target! });
         }
         done.push(op.port);
+        wrote = true;
       } catch (err) {
         fail(`Moving ${op.port}`, err);
       }
@@ -4774,7 +4780,15 @@ export class DeviceCollector {
 
   async updateBridgeVlan(bridge: string, vlanId: number, taggedPorts: string[], untaggedPorts: string[]): Promise<void> {
     await this.removeBridgeVlan(bridge, vlanId);
-    await this.addBridgeVlan(bridge, vlanId, taggedPorts, untaggedPorts);
+    try {
+      await this.addBridgeVlan(bridge, vlanId, taggedPorts, untaggedPorts);
+    } catch (err) {
+      // The old row is already gone: the VLAN does not exist now.
+      throw new PartialApplyError(
+        `Updating VLAN ${vlanId} on ${bridge} removed the old entry but adding the new one failed: ${(err as Error).message}`,
+        { cause: err },
+      );
+    }
   }
 
   async removeBridgeVlan(bridge: string, vlanId: number): Promise<void> {
@@ -4894,42 +4908,53 @@ export class DeviceCollector {
     }
     // Read VLAN membership before the ports leave the bridge.
     const vlanRows = originalBridge ? await this.vlanRowsListing(originalBridge, slaves) : [];
-    for (const bp of slavePorts) {
-      await this.client.execute('/interface/bridge/port/remove', { '.id': bp['.id'] });
-    }
-    const params: Record<string, string> = { name, slaves: slaves.join(','), mode };
-    if (opts.lacpRate)   params['lacp-rate'] = this.mapLacpRate(opts.lacpRate);
-    if (opts.hashPolicy) params['transmit-hash-policy'] = this.mapHashPolicy(opts.hashPolicy);
-    if (opts.mtu)        params['mtu'] = String(opts.mtu);
-    if (opts.minLinks != null) params['min-links'] = String(opts.minLinks);
-    await this.client.execute('/interface/bonding/add', params);
-    // Put the new bond into the bridge the slaves came out of. If this fails the
-    // member ports are left unbridged — never swallow it, the device may be
-    // unreachable and the caller must know.
-    if (originalBridge) {
-      try {
-        await this.client.execute('/interface/bridge/port/add', {
-          bridge: originalBridge,
-          interface: name,
-          ...carry,
-        });
-      } catch (err) {
-        throw new Error(
-          `Bond '${name}' was created, but adding it to bridge '${originalBridge}' failed: ` +
-          `${(err as Error).message}. The member ports (${slaves.join(', ')}) are no longer bridged ` +
-          `and may not forward traffic — check the device.`,
-          { cause: err }
-        );
+    // From the first write on, a failure leaves ports unbridged (or a bond half
+    // set up): mark it so Change Guard keeps the revert armed. A rejection
+    // before anything was written is a plain failure, so the guard disarms
+    // rather than reverting (in binary mode, rebooting) an unchanged device.
+    let wrote = false;
+    try {
+      for (const bp of slavePorts) {
+        await this.client.execute('/interface/bridge/port/remove', { '.id': bp['.id'] });
+        wrote = true;
       }
-      // The bond takes over the VLANs its members carried.
-      const failures = await this.replaceVlanMembers(vlanRows, (list) =>
-        list.some((m) => slaves.includes(m)) ? [...list.filter((m) => !slaves.includes(m)), name] : list);
-      if (failures.length > 0) {
-        throw new Error(
-          `Bond '${name}' was created and bridged, but moving VLAN membership onto it failed for: ` +
-          `${failures.join('; ')}. Those VLANs may not cross the bond — check the device.`
-        );
+      const params: Record<string, string> = { name, slaves: slaves.join(','), mode };
+      if (opts.lacpRate)   params['lacp-rate'] = this.mapLacpRate(opts.lacpRate);
+      if (opts.hashPolicy) params['transmit-hash-policy'] = this.mapHashPolicy(opts.hashPolicy);
+      if (opts.mtu)        params['mtu'] = String(opts.mtu);
+      if (opts.minLinks != null) params['min-links'] = String(opts.minLinks);
+      await this.client.execute('/interface/bonding/add', params);
+      wrote = true;
+      // Put the new bond into the bridge the slaves came out of. If this fails the
+      // member ports are left unbridged — never swallow it, the device may be
+      // unreachable and the caller must know.
+      if (originalBridge) {
+        try {
+          await this.client.execute('/interface/bridge/port/add', {
+            bridge: originalBridge,
+            interface: name,
+            ...carry,
+          });
+        } catch (err) {
+          throw new Error(
+            `Bond '${name}' was created, but adding it to bridge '${originalBridge}' failed: ` +
+            `${(err as Error).message}. The member ports (${slaves.join(', ')}) are no longer bridged ` +
+            `and may not forward traffic — check the device.`,
+            { cause: err }
+          );
+        }
+        // The bond takes over the VLANs its members carried.
+        const failures = await this.replaceVlanMembers(vlanRows, (list) =>
+          list.some((m) => slaves.includes(m)) ? [...list.filter((m) => !slaves.includes(m)), name] : list);
+        if (failures.length > 0) {
+          throw new Error(
+            `Bond '${name}' was created and bridged, but moving VLAN membership onto it failed for: ` +
+            `${failures.join('; ')}. Those VLANs may not cross the bond — check the device.`
+          );
+        }
       }
+    } catch (err) {
+      throw stepFailure(err, wrote);
     }
   }
 
@@ -4960,10 +4985,17 @@ export class DeviceCollector {
     const carry = DeviceCollector.carryBridgePortAttrs(bondPort);
     const vlanRows = bridgeName ? await this.vlanRowsListing(bridgeName, [name]) : [];
 
-    if (bondPort?.['.id']) {
-      await this.client.execute('/interface/bridge/port/remove', { '.id': bondPort['.id'] });
+    // Once the bond's bridge port is gone, a failure leaves the bond unbridged.
+    let wrote = false;
+    try {
+      if (bondPort?.['.id']) {
+        await this.client.execute('/interface/bridge/port/remove', { '.id': bondPort['.id'] });
+        wrote = true;
+      }
+      await this.client.execute('/interface/bonding/remove', { '.id': id });
+    } catch (err) {
+      throw stepFailure(err, wrote);
     }
-    await this.client.execute('/interface/bonding/remove', { '.id': id });
 
     // Removing a bond releases its slaves as standalone interfaces. If the bond was
     // bridged, put each slave back in that bridge with the same port settings —
@@ -4991,7 +5023,7 @@ export class DeviceCollector {
       failures.push(...vlanFailures);
     }
     if (failures.length > 0) {
-      throw new Error(
+      throw new PartialApplyError(
         `Bond '${name}' was removed, but restoring bridge or VLAN membership on '${bridgeName}' failed for: ` +
         `${failures.join('; ')}. Those ports may not forward traffic — check the device.`
       );

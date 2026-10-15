@@ -14,7 +14,7 @@
  * (which is why effective `current-*` membership is what we test).
  */
 import { evaluateInputChain } from './firewallPath';
-import { vlanMembership, type DeviceSnapshot, type ManagementPath } from './pathModel';
+import { vlanMembership, routeFor, routeActive, routeDiscards, type DeviceSnapshot, type ManagementPath } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
 import { managementService } from '../../utils/apiTls';
 
@@ -34,6 +34,8 @@ export interface InvariantResult {
    * reported as a warning, which makes auto-revert mandatory for it.
    */
   uncertain?: boolean;
+  /** The check itself threw, so it says nothing either way (set by `evaluate`). */
+  failed?: boolean;
 }
 
 export interface Invariant {
@@ -45,23 +47,6 @@ export interface Invariant {
 const isTrue = (v: string | undefined): boolean => v === 'true' || v === 'yes';
 const stripCidr = (a: string): string => (a || '').split('/')[0].trim();
 const ok = (detail = ''): InvariantResult => ({ ok: true, detail });
-
-/** Does the route destination (e.g. 10.0.0.0/8, 0.0.0.0/0) include `ip`? */
-function routeCovers(dst: string, ip: string): boolean {
-  const toInt = (a: string): number | null => {
-    const p = a.split('.').map(Number);
-    return p.length === 4 && p.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)
-      ? ((p[0] << 24) >>> 0) + (p[1] << 16) + (p[2] << 8) + p[3] : null;
-  };
-  const [net, lenStr] = dst.split('/');
-  const len = parseInt(lenStr ?? '32', 10);
-  const a = toInt(ip);
-  const b = toInt(net);
-  if (a === null || b === null || isNaN(len)) return false;
-  if (len <= 0) return true;
-  const mask = len >= 32 ? 0xffffffff : ((0xffffffff << (32 - len)) >>> 0);
-  return ((a & mask) >>> 0) === ((b & mask) >>> 0);
-}
 
 /**
  * Read vlan-filtering from the snapshot being evaluated, never from the resolved
@@ -113,6 +98,29 @@ export const INVARIANTS: Invariant[] = [
       }
       return isTrue(row['disabled'])
         ? { ok: false, detail: `${path.mgmtParent} carries the management VLAN interface ${path.mgmtInterface} and would be disabled.` }
+        : ok();
+    },
+  },
+
+  {
+    id: 'mgmt-not-bridge-slave',
+    title: 'The port carrying management is not swallowed by a bridge',
+    check(snap, path) {
+      // Management addressed directly on a port, or on a VLAN interface whose
+      // parent is a plain port, only works while that port is NOT a bridge slave:
+      // RouterOS hands a slave's frames to the bridge, so the address (or the
+      // VLAN interface) on it stops receiving anything.
+      const port = path.mgmtParent ?? path.mgmtInterface;
+      if (!port || port === path.bridge) return ok();
+      const row = snap.interfaces.find((i) => i['name'] === port);
+      if (row && !['ether', 'bond', 'sfp', 'wlan', 'wifi'].some((t) => (row['type'] || 'ether').startsWith(t))) return ok();
+      const slave = snap.bridgePorts.find((p) => p['interface'] === port && !isTrue(p['disabled']));
+      return slave
+        ? {
+            ok: false,
+            severity: 'critical',
+            detail: `${port} carries management (${path.mgmtParent ? `under ${path.mgmtInterface}` : path.mgmtIp}) and would become a port of bridge ${slave['bridge']}. A bridge port hands its frames to the bridge, so management on it would stop working.`,
+          }
         : ok();
     },
   },
@@ -172,17 +180,6 @@ export const INVARIANTS: Invariant[] = [
         };
       }
 
-      // Present, but only because RouterOS auto-added it from the PVID. That entry
-      // disappears if the PVID or frame-types change, so management would be
-      // resting on something the operator did not configure.
-      if (!m.untaggedStatic.includes(path.bridge)) {
-        return {
-          ok: false,
-          severity: 'warning',
-          detail: `${path.bridge} would remain an untagged member of VLAN ${vid} only through a dynamic "added by pvid" entry, not a configured one. Management would keep working for now, but any later change to the bridge PVID or frame-types would remove it. Add ${path.bridge} to VLAN ${vid} explicitly.`,
-        };
-      }
-
       // The ingress port must be a member of the VLAN, but it need NOT be an
       // untagged one: a tagged trunk that also accepts untagged frames via its PVID
       // is a normal and correct configuration. Requiring "untagged" here produced a
@@ -196,6 +193,17 @@ export const INVARIANTS: Invariant[] = [
           detail: `${path.ingressPort} — the port management traffic arrives on — would not be a member of VLAN ${vid} at all.`,
         };
       }
+      // Present, but only because RouterOS auto-added it from the PVID. That entry
+      // disappears if the PVID or frame-types change, so management would be
+      // resting on something the operator did not configure.
+      if (!m.untaggedStatic.includes(path.bridge)) {
+        return {
+          ok: false,
+          severity: 'warning',
+          detail: `${path.bridge} would remain an untagged member of VLAN ${vid} only through a dynamic "added by pvid" entry, not a configured one. Management would keep working for now, but any later change to the bridge PVID or frame-types would remove it. Add ${path.bridge} to VLAN ${vid} explicitly.`,
+        };
+      }
+
       return ok();
     },
   },
@@ -373,17 +381,36 @@ export const INVARIANTS: Invariant[] = [
       // path had been inferred from the default gateway, so removing a
       // specific route to the manager passed as safe (P2-7).
       if (!path.managerGateway) return ok();
-      const live = (r: Record<string, string>) => r['active'] !== 'false' && !isTrue(r['disabled']);
-      if (!path.managerIp) {
-        const hasDefault = snap.routes.some((r) => (r['dst-address'] || '') === '0.0.0.0/0' && live(r));
-        return hasDefault
-          ? ok()
+      // The route the device would actually pick (longest prefix, main table, not a
+      // blackhole). "Some route covers the manager" was satisfied by a default
+      // route pointing somewhere else entirely.
+      const target = path.managerIp ?? '0.0.0.0';
+      const best = path.managerIp
+        ? routeFor(snap, path.managerIp)
+        : snap.routes
+          .filter((r) => (r['dst-address'] || '') === '0.0.0.0/0' && routeActive(r))
+          .sort((x, y) => (parseInt(x['distance'] || '255', 10) || 255) - (parseInt(y['distance'] || '255', 10) || 255))[0] ?? null;
+      if (!best) {
+        return path.managerIp
+          ? { ok: false, detail: `No route toward the manager (${target}) would remain; it is reached through ${path.managerGateway}.` }
           : { ok: false, detail: 'The default route would be removed, and the manager reaches this device through the default gateway.' };
       }
-      const covered = snap.routes.some((r) => live(r) && routeCovers(r['dst-address'] || '', path.managerIp!));
-      return covered
-        ? ok()
-        : { ok: false, detail: `No route toward the manager (${path.managerIp}) would remain; it is reached through ${path.managerGateway}.` };
+      if (routeDiscards(best)) {
+        return {
+          ok: false,
+          detail: `The route that would carry traffic back to the manager (${best['dst-address']}) discards it (${best['type'] || 'blackhole'}).`,
+        };
+      }
+      const gw = (best['gateway'] || '').split('%')[0].trim();
+      const via = [gw, (best['immediate-gw'] || '').split('%')[0].trim()];
+      if (!via.includes(path.managerGateway)) {
+        return {
+          ok: true,
+          uncertain: true,
+          detail: `The route back toward the manager would go through ${gw || best['dst-address']} instead of ${path.managerGateway}. That may be fine, but the model cannot confirm the manager is reachable that way.`,
+        };
+      }
+      return ok();
     },
   },
 ];
@@ -408,8 +435,10 @@ export function evaluate(
     try {
       out.set(inv.id, inv.check(snap, path, device));
     } catch (err) {
-      // A broken check must never block a legitimate change.
-      out.set(inv.id, { ok: true, detail: `check skipped: ${(err as Error).message}` });
+      // A broken check must not block a legitimate change, but it must not
+      // vouch for it either: report it uncertain so protection is mandatory.
+      console.warn(`[ChangeGuard] invariant ${inv.id} threw: ${(err as Error).message}`);
+      out.set(inv.id, { ok: true, uncertain: true, failed: true, detail: `${inv.title}: this check could not be evaluated (${(err as Error).message}).` });
     }
   }
   return out;

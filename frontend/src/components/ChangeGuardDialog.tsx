@@ -322,11 +322,22 @@ export interface GuardResult {
   unprotected_reason: string | null;
   /** Set when the change was kept but its revert could not be proven removed. */
   revert_may_fire_at?: string | null;
+  /** The revert's scheduler was gone before the commit could disable it. */
+  revert_may_have_fired?: boolean;
 }
 
 /** Human-readable outcome for a guarded change, or null when nothing to say. */
 export function guardOutcomeMessage(guard?: GuardResult): { tone: 'ok' | 'warn'; text: string } | null {
   if (!guard) return null;
+  if (guard.revert_may_have_fired) {
+    return {
+      tone: 'warn',
+      text: 'The change was applied and the device stayed reachable, but its auto-revert was gone '
+        + 'before it could be cancelled, so the revert may already have run. The device may have '
+        + 'restored its previous configuration (in binary mode, with a restart). Check whether the '
+        + 'change is still there.',
+    };
+  }
   if (guard.auto_reverting) {
     return {
       tone: 'warn',
