@@ -19,16 +19,21 @@ const ROWS: { key: string; label: string; unit?: string; min?: number; max?: num
  * and where it comes from, and an admin can override it here or go back to
  * inheriting it.
  */
+/** Fleet admins, or a site admin for this site, may change these (#261). */
+export function useCanEditPollSettings(siteId: number | null | undefined): boolean {
+  const user = useAuthStore((s) => s.user) as { role?: string; siteRoles?: Record<string, string> | null } | null;
+  return user?.siteRoles && Object.keys(user.siteRoles).length > 0
+    ? siteId != null && user.siteRoles[String(siteId)] === 'admin'
+    : user?.role === 'admin';
+}
+
 export default function PollOverridesCard({ scope, id, siteId, compact = false }: {
   scope: 'site' | 'device'; id: number; siteId: number | null;
   /** Inside another form (Edit Device): no card around it. */
   compact?: boolean;
 }) {
   const qc = useQueryClient();
-  const user = useAuthStore((s) => s.user) as { role?: string; siteRoles?: Record<string, string> | null } | null;
-  const canEdit = user?.siteRoles && Object.keys(user.siteRoles).length > 0
-    ? siteId != null && user.siteRoles[String(siteId)] === 'admin'
-    : user?.role === 'admin';
+  const canEdit = useCanEditPollSettings(siteId);
   const key = ['poll-settings', scope, id];
   const { data } = useQuery({
     queryKey: key,

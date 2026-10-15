@@ -449,7 +449,7 @@ export default function DeviceDetailPage() {
           <DeviceLocationSection device={device} />
 
           {/* Only when this device polls differently from the defaults (#261) */}
-          <PollingNote deviceId={deviceId} />
+          <PollingNote deviceId={deviceId} siteId={device.site_id ?? null} />
         </div>
       )}
 
