@@ -37,7 +37,8 @@ export default function BackupsPage() {
   const [selectedDevice, setSelectedDevice] = useState('');
   const [notes, setNotes] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [restoreConfirm, setRestoreConfirm] = useState<number | null>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState<Backup | null>(null);
+  const [restoreTyped, setRestoreTyped] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   // Config-snapshot backups are confirmed via a modal (deleting also removes the snapshot).
   const [snapshotDeleteTarget, setSnapshotDeleteTarget] = useState<Backup | null>(null);
@@ -461,31 +462,15 @@ export default function BackupsPage() {
                         <Download className="w-3.5 h-3.5" />
                       </button>
 
-                      {canWrite && (restoreConfirm === backup.id ? (
-                        <div className="flex gap-1 text-xs">
-                          <button
-                            onClick={() => restoreMutation.mutate(backup.id)}
-                            disabled={restoreMutation.isPending}
-                            className="text-orange-500 hover:text-orange-600 font-medium"
-                          >
-                            {restoreMutation.isPending ? '...' : 'Restore?'}
-                          </button>
-                          <button
-                            onClick={() => setRestoreConfirm(null)}
-                            className="text-gray-400 hover:text-gray-600"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ) : (
+                      {canWrite && (
                         <button
-                          onClick={() => setRestoreConfirm(backup.id)}
+                          onClick={() => { setRestoreTyped(''); setRestoreConfirm(backup); }}
                           className="p-1.5 rounded text-gray-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
                           title="Restore"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                         </button>
-                      ))}
+                      )}
 
                       {canWrite && (deleteConfirm === backup.id ? (
                         <div className="flex gap-1 text-xs">
@@ -625,6 +610,78 @@ export default function BackupsPage() {
           </div>
         </div>
       )}
+
+      {/* Restore confirmation: overwrites the device's live configuration */}
+      {restoreConfirm && (() => {
+        const target = restoreConfirm.device_name || 'RESTORE';
+        const ok = restoreTyped.trim() === target;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="card w-full max-w-lg mx-4 border-2 border-red-500">
+              <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
+                <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertTriangle className="w-6 h-6" />
+                  Restore this backup?
+                </h3>
+                <button
+                  onClick={() => setRestoreConfirm(null)}
+                  disabled={restoreMutation.isPending}
+                  className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300 space-y-1">
+                  <p className="font-semibold">This replaces the live configuration on the device.</p>
+                  <p>
+                    Anything changed since this backup was taken will be lost, and the device may reboot or drop
+                    your connection to it. If the configuration is wrong for the device you could lock yourself out.
+                  </p>
+                </div>
+                <dl className="text-sm grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
+                  <dt className="text-gray-500 dark:text-slate-400">Device</dt>
+                  <dd className="font-medium text-gray-900 dark:text-white">{restoreConfirm.device_name || '—'}</dd>
+                  <dt className="text-gray-500 dark:text-slate-400">Backup</dt>
+                  <dd className="font-mono text-xs break-all text-gray-700 dark:text-slate-300">{restoreConfirm.filename}</dd>
+                  <dt className="text-gray-500 dark:text-slate-400">Taken</dt>
+                  <dd className="text-gray-700 dark:text-slate-300">{format(new Date(restoreConfirm.created_at), 'MMM d, yyyy HH:mm')}</dd>
+                </dl>
+                <label className="block text-sm text-gray-700 dark:text-slate-300">
+                  Type <span className="font-mono font-semibold">{target}</span> to confirm
+                  <input
+                    autoFocus
+                    value={restoreTyped}
+                    onChange={(e) => setRestoreTyped(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && ok && !restoreMutation.isPending) restoreMutation.mutate(restoreConfirm.id); }}
+                    className="input mt-1 w-full font-mono"
+                    placeholder={target}
+                  />
+                </label>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setRestoreConfirm(null)}
+                    disabled={restoreMutation.isPending}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => restoreMutation.mutate(restoreConfirm.id)}
+                    disabled={!ok || restoreMutation.isPending}
+                    className="btn-danger inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {restoreMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                    Restore and overwrite device
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Confirm deletion of a snapshot-linked backup (removes the config snapshot too) */}
       {snapshotDeleteTarget && (
