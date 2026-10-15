@@ -148,6 +148,8 @@ const SCOPES: Record<string, MenuKey[]> = {
   'bond.delete': ['bonding', 'bridgePort', 'bridgeVlan', 'ipAddress'],
   'bridge-port.move': ['bridge', 'bridgePort', 'bridgeVlan', 'ipAddress'],
   'bridge.delete': ['bridge', 'bridgePort', 'bridgeVlan', 'ipAddress'],
+  'bridge.add': ['bridge'],
+  'bridge.set': ['bridge'],
   'interface.set': ['interface', 'ethernet', 'ethernetPoe'],
   'ip.add': ['ipAddress'],
   'ip.remove': ['ipAddress'],

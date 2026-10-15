@@ -819,6 +819,13 @@ export const devicesApi = {
   deleteBridge: (id: number, bridgeName: string, confirmLockout = false) =>
     api.delete(`/devices/${id}/bridges/${encodeURIComponent(bridgeName)}`,
       { ...GUARDED, ...(confirmLockout ? { data: { confirm_lockout: true } } : {}) }),
+  /** Bridges tab (#284): every bridge with ports, VLAN entries and addresses. */
+  getBridgesDetail: (id: number) => api.get<BridgeView[]>(`/devices/${id}/bridges`),
+  addBridge: (id: number, data: { name: string; protocol_mode?: string; priority?: string; vlan_filtering?: boolean; comment?: string }) =>
+    api.post(`/devices/${id}/bridges`, data, GUARDED),
+  updateBridge: (id: number, bridgeName: string,
+    data: { name?: string; protocol_mode?: string; priority?: string; comment?: string; disabled?: boolean }, confirmLockout = false) =>
+    api.put(`/devices/${id}/bridges/${encodeURIComponent(bridgeName)}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
   setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`,
       { enabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
@@ -2435,6 +2442,15 @@ export interface ClientAddressListView {
 }
 
 /** L3 hardware offloading on a device's switch chip (#254). */
+/** One bridge as the Bridges tab shows it (#284). */
+export interface BridgeView {
+  id: string; name: string; protocolMode: string; priority: string | null; vlanFiltering: boolean;
+  running: boolean; disabled: boolean; dynamic: boolean; comment: string | null; mtu: string | null; macAddress: string | null;
+  ports: { name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null }[];
+  vlans: string[];
+  addresses: string[];
+}
+
 /** A BGP peer or OSPF neighbour, as the slow polls last found it (#279). */
 export interface RoutingPeerRow {
   device_id: number;

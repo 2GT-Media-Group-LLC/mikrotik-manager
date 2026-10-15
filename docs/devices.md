@@ -344,6 +344,7 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 |---|---|
 | **Overview** | Status, uptime, model, firmware, resource graphs, location |
 | **Ports** | The switch faceplate, per-port configuration, bonds, VLAN membership |
+| **Bridges** | Every bridge, its ports, VLAN filtering and spanning tree; create, rename, edit, delete |
 | **VLANs** | The bridge VLAN table, and copying VLANs between switches |
 | **Radios** | Wireless interfaces, SSIDs, channels, connected clients |
 | **Firewall** | Filter, NAT and mangle rules, with reordering and counters |
@@ -493,6 +494,25 @@ can't be armed (Change Guard turned off, or a login without the `policy` permiss
 change is refused rather than run unprotected. Chips that do VLAN
 filtering in hardware on RouterOS 7 (CRS3xx and other Marvell switches, and the hEX's MT7621)
 use bridge VLAN filtering as described above and don't show the card.
+
+## Bridges
+
+The **Bridges** tab lists every bridge on the device (#284): whether it's running, its spanning
+tree mode and priority, its comment, its ports, whether VLAN filtering is on and which VLANs
+have entries, and the addresses on it. A port switched by the CPU rather than the switch chip
+has a small chip icon; hover a port for its PVID and spanning tree role.
+
+- **New bridge** creates an empty one, with RSTP unless you choose otherwise. Add ports to it
+  on the **Ports** tab (see [Moving ports between bridges](#moving-ports-between-bridges)).
+- **Edit** renames it, changes its spanning tree mode or priority (0 to 61440 in steps of
+  4096; the lowest wins the root election), changes its comment, or turns it off. Renaming
+  keeps its ports, VLANs and addresses.
+- **turn on / turn off** next to VLAN filtering works as it does from the faceplate.
+- The bin deletes a bridge with no ports, addresses or VLAN entries.
+
+Everything runs through [Change Guard](change-guard.md). Renaming the bridge the manager
+connects through, or changing its spanning tree, can't be simulated, so it runs with
+auto-revert required; turning that bridge off is predicted as a lockout and asks first.
 
 ## Routing between VLANs in hardware
 

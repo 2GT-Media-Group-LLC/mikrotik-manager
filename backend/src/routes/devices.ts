@@ -68,6 +68,8 @@ import { switchVlanView } from '../utils/switchVlans';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit } from '../utils/ipAddressEdit';
 import { parseBgpConnection } from '../utils/bgpConnection';
+import { parseBridgeCreate, parseBridgeUpdate } from '../utils/bridgeEdit';
+import { bridgesView } from '../utils/bridgesView';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
 const router = Router();
@@ -3083,6 +3085,51 @@ router.post('/:id/bridge-ports/move', requireWrite, async (req: Request, res: Re
 });
 
 // DELETE /api/devices/:id/bridges/:bridgeName — only an empty, unused bridge.
+// GET /api/devices/:id/bridges — every bridge, its ports (hardware or CPU),
+// VLAN entries and addresses, for the Bridges tab (#284). Read live.
+router.get('/:id/bridges', async (req: Request, res: Response) => {
+  await withCollector(req.params.id, res, async (c) => bridgesView(await c.getBridgesDetail()));
+});
+
+// POST /api/devices/:id/bridges { name, protocol_mode?, priority?, vlan_filtering?, comment? }
+// A new, empty bridge changes nothing that's forwarding; it still runs under
+// Change Guard like every write.
+router.post('/:id/bridges', requireWrite, async (req: Request, res: Response) => {
+  const parsed = parseBridgeCreate(req.body ?? {});
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const f = parsed.fields;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'bridge.add', summary: `Create bridge '${f.name}'` },
+    async (c) => { await c.addBridge(f); return { message: `Bridge ${f.name} created` }; },
+    async (c) => { await c.collectInterfaces(); });
+});
+
+// PUT /api/devices/:id/bridges/:bridgeName { name?, protocol_mode?, priority?, comment?, disabled? }
+// Renaming or changing spanning tree on the bridge management runs through
+// can't be simulated, so it requires auto-revert; disabling it is predicted
+// as a lockout. VLAN filtering has its own route with its own analysis.
+router.put('/:id/bridges/:bridgeName', requireWrite, async (req: Request, res: Response) => {
+  const name = req.params.bridgeName;
+  if (!IFACE_NAME.test(name)) return res.status(400).json({ error: 'Invalid bridge name.' });
+  const parsed = parseBridgeUpdate(req.body ?? {});
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const f = parsed.fields;
+  const changes: PlannedChange[] = [];
+  if (f.name && f.name !== name) changes.push({ kind: 'path-object.change', name, what: `Renaming the bridge to ${f.name}` });
+  if (f['protocol-mode'] || f.priority) changes.push({ kind: 'path-object.change', name, what: 'Changing spanning tree' });
+  if (f.disabled) changes.push({ kind: 'interface.disable', name, disabled: f.disabled === 'yes' });
+  const what = [f.name && f.name !== name ? `rename to '${f.name}'` : '', f['protocol-mode'] ? `protocol ${f['protocol-mode']}` : '',
+    f.priority ? `priority ${f.priority}` : '', f.disabled ? (f.disabled === 'yes' ? 'disable' : 'enable') : '',
+    f.comment !== undefined ? 'comment' : ''].filter(Boolean).join(', ');
+  await withGuardedChange(req.params.id, req, res,
+    {
+      kind: 'bridge.set', summary: `Bridge '${name}': ${what}`,
+      ...(changes.length ? { change: changes.length === 1 ? changes[0] : { kind: 'batch', changes } } : {}),
+    },
+    async (c) => { await c.updateBridge(name, f); return { message: `Bridge ${f.name ?? name} updated` }; },
+    async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); });
+});
+
 router.delete('/:id/bridges/:bridgeName', requireWrite, async (req: Request, res: Response) => {
   const name = req.params.bridgeName;
   if (!IFACE_NAME.test(name)) return res.status(400).json({ error: 'Invalid bridge name.' });

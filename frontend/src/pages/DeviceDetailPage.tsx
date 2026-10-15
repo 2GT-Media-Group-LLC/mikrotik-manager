@@ -26,12 +26,13 @@ import SecurityTab from '../components/device-detail/SecurityTab';
 import clsx from 'clsx';
 import { displayState, STATE_LABEL } from '../utils/deviceState';
 import DeviceHealthCard from '../components/device-detail/DeviceHealthCard';
+import BridgesTab from '../components/device-detail/BridgesTab';
 import PollingNote from '../components/device-detail/PollingNote';
 import { DeviceIdentityBanner } from '../components/security/IdentityChange';
 import { isWirelessDevice } from '../utils/wireless';
 import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
 
-type TabKey = 'overview' | 'ports' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
+type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
 
 function formatUptime(raw: string): string {
   if (!raw) return '—';
@@ -59,7 +60,7 @@ export default function DeviceDetailPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [searchParams] = useSearchParams();
-  const VALID_TABS: TabKey[] = ['overview', 'ports', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios', 'lte'];
+  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios', 'lte'];
   const requestedTab = searchParams.get('tab') as TabKey | null;
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
@@ -133,6 +134,7 @@ export default function DeviceDetailPage() {
   const allTabs: { key: TabKey; label: string }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'ports', label: 'Ports' },
+    { key: 'bridges', label: 'Bridges' },
     { key: 'vlans', label: 'VLANs' },
     { key: 'routing', label: 'Routing' },
     { key: 'firewall', label: 'Firewall' },
@@ -469,6 +471,10 @@ export default function DeviceDetailPage() {
           deviceType={device?.device_type}
           onGoToPorts={(bridgeName) => { setAutoOpenBridge(bridgeName); setActiveTab('ports'); }}
         />
+      )}
+      {shownTab === 'bridges' && (
+        <BridgesTab deviceId={deviceId} deviceName={device.name}
+          onGoToPorts={(bridgeName) => { if (bridgeName) setAutoOpenBridge(bridgeName); setActiveTab('ports'); }} />
       )}
       {shownTab === 'routing' && <RoutingTab deviceId={deviceId} deviceName={device.name} />}
       {shownTab === 'firewall' && <FirewallTab deviceId={deviceId} deviceName={device.name} />}

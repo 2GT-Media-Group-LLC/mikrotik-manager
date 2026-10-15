@@ -4782,6 +4782,34 @@ export class DeviceCollector {
     await this.client.execute('/ip/address/remove', { numbers: id });
   }
 
+  // ─── Bridges tab (#284) ─────────────────────────────────────────────────
+
+  /** Every bridge with its ports, VLAN entries and addresses, read live. */
+  async getBridgesDetail(): Promise<{
+    bridges: Record<string, string>[]; ports: Record<string, string>[];
+    vlans: Record<string, string>[]; addresses: Record<string, string>[];
+  }> {
+    const none = () => [] as Record<string, string>[];
+    const [bridges, ports, vlans, addresses] = await Promise.all([
+      this.client.execute('/interface/bridge/print', { detail: '' }),
+      this.client.execute('/interface/bridge/port/print', { detail: '' }).catch(none),
+      this.client.execute('/interface/bridge/vlan/print', { detail: '' }).catch(none),
+      this.client.execute('/ip/address/print', { detail: '' }).catch(none),
+    ]);
+    return { bridges, ports, vlans, addresses };
+  }
+
+  async addBridge(fields: Record<string, string>): Promise<void> {
+    await this.client.execute('/interface/bridge/add', fields);
+  }
+
+  /** Rename, spanning tree, comment, disabled, by bridge name. */
+  async updateBridge(name: string, fields: Record<string, string>): Promise<void> {
+    const bridge = (await this.client.execute('/interface/bridge/print')).find((b) => b['name'] === name);
+    if (!bridge?.['.id']) throw new Error(`There is no bridge called ${name} on this device.`);
+    await this.setItem('/interface/bridge', bridge['.id'], fields);
+  }
+
   // ─── Switch chip VLAN table (#278) ───────────────────────────────────────
   // Older chips (Atheros 8327, QCA8337…) keep VLANs here rather than in a
   // VLAN-filtering bridge. Fields are already checked (utils/switchVlanEdit).
