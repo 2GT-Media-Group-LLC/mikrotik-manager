@@ -248,7 +248,8 @@ for a `write` user.
 ## The device list
 
 Filter by status, type, tag, rack or location, and sort by any column. The search box matches
-name, address, serial and MAC.
+name, address, serial and MAC. **All** clears the status and the AP/SW/RTR type filter; clicking
+the selected type again also clears it.
 
 Two columns show how the manager reaches each device, and each has a filter:
 

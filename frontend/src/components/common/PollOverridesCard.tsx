@@ -82,7 +82,10 @@ export default function PollOverridesCard({ scope, id, siteId, compact = false }
                     <NumberSetting className="input py-1 w-24 text-center" value={eff.value as number} min={String(r.min)} max={String(r.max)}
                       onCommit={(v) => save.mutate({ [r.key]: v })} />
                   ))}
+                  {/* type="button": inside the Edit device form a plain button
+                      submitted it, closing the dialog (#261). */}
                   <button
+                    type="button"
                     className="text-xs text-blue-600 hover:underline w-14 text-right"
                     onClick={() => save.mutate({ [r.key]: own ? null : eff.value })}
                   >

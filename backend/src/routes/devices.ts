@@ -95,6 +95,9 @@ router.get('/', async (req: Request, res: Response) => {
   const where = andSite('', siteScopeDevices(activeSite(req)));
   const devices = await query(
     `SELECT ${DEVICE_BASE_COLUMNS},
+            -- The Edit dialog opened from the list fills its SSH fields from
+            -- these; without them a save wiped the SSH username and port (#261).
+            ssh_port, ssh_username,
             latest_ros_version, firmware_update_available,
             routerboard_upgrade_available, upgrade_firmware_version,
             location_address, location_lat::float8 AS location_lat, location_lng::float8 AS location_lng,

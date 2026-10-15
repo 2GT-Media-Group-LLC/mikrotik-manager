@@ -38,7 +38,8 @@ export default function NumberSetting({ value, onCommit, min, max, className, ..
       value={text}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      // Enter commits this field only; inside a form it would also submit it (#261).
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
     />
   );
 }

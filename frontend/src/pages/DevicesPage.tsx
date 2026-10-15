@@ -25,7 +25,8 @@ import DeviceTypePill from '../components/devices/DeviceTypePill';
 import SortableHeader, { type SortDir } from '../components/common/SortableHeader';
 import { FilterBar, FilterSearch, FilterSelect } from '../components/common/FilterBar';
 
-type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen' | 'rack_name' | 'location_address';
+type DeviceSortKey = 'name' | 'ip_address' | 'model' | 'serial_number' | 'ros_version' | 'status' | 'last_seen' | 'rack_name' | 'location_address'
+  | 'device_type' | 'api' | 'login';
 type DiscoveredSortKey = 'identity' | 'address' | 'mac_address' | 'seen_by' | 'discovered_at';
 
 
@@ -292,6 +293,10 @@ export default function DevicesPage() {
           case 'ros_version': return x.ros_version || '';
           case 'status': return x.status || '';
           case 'last_seen': return x.last_seen ? new Date(x.last_seen).getTime() : 0;
+          // Sortable too (#85): by what the column shows.
+          case 'device_type': return x.device_type || '';
+          case 'api': return apiKind(x);
+          case 'login': return LOGIN_LABEL[loginKind(x)];
           default: return '';
         }
       };
@@ -435,20 +440,25 @@ export default function DevicesPage() {
           <option value="key">SSH key only</option>
           <option value="both">Password + SSH key</option>
         </FilterSelect>
-        {(['all', 'online', 'offline', 'updates'] as const).map(f => (
+        {(['all', 'online', 'offline', 'updates'] as const).map(f => {
+          // "All" clears the AP/SW/RTR filter too, and only reads as selected
+          // when nothing is filtered by status or type (#85).
+          const active = f === 'all' ? statusFilter === 'all' && !typeFilter : statusFilter === f;
+          return (
           <button
             key={f}
-            onClick={() => setStatusFilter(f)}
+            onClick={() => { setStatusFilter(f); if (f === 'all') setTypeFilter(null); }}
             className="mono text-[11.5px] px-[10px] py-[4px] rounded-[5px] transition-colors capitalize"
             style={{
-              background: statusFilter === f ? 'var(--surface-3)' : 'transparent',
-              color: statusFilter === f ? 'var(--ink)' : 'var(--ink-3)',
+              background: active ? 'var(--surface-3)' : 'transparent',
+              color: active ? 'var(--ink)' : 'var(--ink-3)',
               border: 'none',
             }}
           >
             {f}
           </button>
-        ))}
+          );
+        })}
         <div className="w-px h-[18px] mx-1" style={{ background: 'var(--line)' }} />
         {(['AP', 'SW', 'RTR'] as const).map(t => {
           const colors: Record<string, string> = { AP: 'var(--info)', SW: 'var(--accent)', RTR: 'var(--violet)' };
@@ -456,6 +466,8 @@ export default function DevicesPage() {
             <button
               key={t}
               onClick={() => setTypeFilter(typeFilter === t ? null : t)}
+              title={typeFilter === t ? 'Show every type' : `Show only ${t === 'AP' ? 'access points' : t === 'SW' ? 'switches' : 'routers'}`}
+              aria-pressed={typeFilter === t}
               className="mono text-[11px] px-[8px] py-[4px] rounded-[5px] transition-colors"
               style={{
                 background: typeFilter === t ? 'var(--surface-3)' : 'transparent',
