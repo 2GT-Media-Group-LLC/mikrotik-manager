@@ -664,6 +664,8 @@ export interface PollSettings {
   overrides: Record<string, number | boolean>;
   site?: { id: number | null; name: string | null; overrides: Record<string, number | boolean> };
   effective: Record<string, { value: number | boolean; source: 'device' | 'site' | 'global' }>;
+  /** Device settings only: each value without this device's own override (#261). */
+  inherited?: Record<string, { value: number | boolean; source: 'device' | 'site' | 'global' }>;
 }
 
 export const devicesApi = {

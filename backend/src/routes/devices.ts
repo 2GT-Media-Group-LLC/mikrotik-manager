@@ -2991,7 +2991,7 @@ router.put('/:id/bridge/:bridgeName/vlan-filtering', requireWrite, async (req: R
 router.get('/:id/poll-settings', async (req: Request, res: Response) => {
   const s = await deviceSettings(Number(req.params.id));
   if (!s) return res.status(404).json({ error: 'Device not found' });
-  return res.json({ overrides: s.device, site: { id: s.siteId, name: s.siteName, overrides: s.site }, effective: s.effective });
+  return res.json({ overrides: s.device, site: { id: s.siteId, name: s.siteName, overrides: s.site }, effective: s.effective, inherited: s.inherited });
 });
 
 router.put('/:id/poll-settings', requireSiteAdmin, async (req: Request, res: Response) => {
@@ -3002,7 +3002,7 @@ router.put('/:id/poll-settings', requireSiteAdmin, async (req: Request, res: Res
   await query(`UPDATE devices SET poll_overrides = $2, updated_at = NOW() WHERE id = $1`,
     [Number(req.params.id), Object.keys(v.value).length ? JSON.stringify(v.value) : null]);
   const s = await deviceSettings(Number(req.params.id));
-  return res.json({ overrides: s!.device, site: { id: s!.siteId, name: s!.siteName, overrides: s!.site }, effective: s!.effective });
+  return res.json({ overrides: s!.device, site: { id: s!.siteId, name: s!.siteName, overrides: s!.site }, effective: s!.effective, inherited: s!.inherited });
 });
 
 // ─── Bridge membership for any port (#258) ──────────────────────────────────

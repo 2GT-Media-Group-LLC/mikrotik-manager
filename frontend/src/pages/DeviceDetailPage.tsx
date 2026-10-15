@@ -448,7 +448,7 @@ export default function DeviceDetailPage() {
           {/* Physical location, rack & notes */}
           <DeviceLocationSection device={device} />
 
-          {/* Only when this device polls differently from the defaults (#261) */}
+          {/* Polling and backup settings in force, and where each comes from (#261) */}
           <PollingNote deviceId={deviceId} siteId={device.site_id ?? null} />
         </div>
       )}
