@@ -22,6 +22,10 @@ many access points in one action rather than configured per device.
 A device's own **Radios** tab shows the same interfaces with live channel, connected client
 count and signal distribution for that device alone.
 
+Disabling a wireless interface, with the power button or by ticking **Disabled** when editing
+it, asks first, naming the SSID: its clients will be disconnected, and if the device is managed
+over that wireless link the manager may lose contact (#294). Enabling one doesn't ask.
+
 ## RF Health
 
 **Wireless → Overview** aggregates the fleet:

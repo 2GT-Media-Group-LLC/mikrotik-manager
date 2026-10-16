@@ -96,6 +96,10 @@ function RadioEditModal({
     // channel automatically to that frequency.
     const changes = changedFields(loaded, form);
     if (!Object.keys(changes).length) { onClose(); return; }
+    // Taking a radio off the air asks first (#294).
+    if (changes.disabled === true && !confirm(
+      `Disable ${iface.name}${iface.ssid ? ` ("${iface.ssid}")` : ''}? Clients connected to it will be disconnected, `
+      + 'and if this device is managed over that wireless link, the manager may lose contact.')) return;
     mutation.mutate(changes);
   };
 

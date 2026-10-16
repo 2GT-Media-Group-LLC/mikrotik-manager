@@ -235,6 +235,12 @@ function defaultSsidForm(isNewWifiPkg: boolean, firstRadio: string, firstRadioBa
   };
 }
 
+/** The confirmation before taking a wireless interface off the air (#294). */
+function disableWirelessPrompt(name: string, ssid?: string): string {
+  return `Disable ${name}${ssid ? ` ("${ssid}")` : ''}? Clients connected to it will be disconnected, `
+    + 'and if this device is managed over that wireless link, the manager may lose contact.';
+}
+
 function SsidModal({
   apId, existing, isNewWifiPkg, availableRadios, allAps, onClose,
 }: {
@@ -416,6 +422,8 @@ function SsidModal({
     if (p === null) { onClose(); return; }
     if ('error' in p) { setError(p.error); return; }
     const { data } = p;
+    // Ticking Disabled on a running SSID asks first, as the power button does (#294).
+    if (isEdit && existing!.disabled !== 'true' && form.disabled && !confirm(disableWirelessPrompt(existing!.name, form.ssid))) return;
     if (isBulk) {
       bulkMutation.mutate(data);
     } else {
@@ -906,9 +914,13 @@ export default function WirelessSettingsPage() {
       wirelessApi.updateInterface(selectedApId!, name, { disabled, ...(confirm ? { confirm_lockout: true } : {}) }),
     onSuccess: done,
   });
-  const toggleSsid = (name: string, disabled: boolean) => toggleSsidMutation.mutate({ name, disabled }, {
-    onError: guard.onError(() => toggleSsidMutation.mutate({ name, disabled, confirm: true }, { onError: failed }), failed),
-  });
+  const toggleSsid = (name: string, disabled: boolean, ssid?: string) => {
+    // One click used to take an SSID off the air (#294): disabling asks first.
+    if (disabled && !confirm(disableWirelessPrompt(name, ssid))) return;
+    toggleSsidMutation.mutate({ name, disabled }, {
+      onError: guard.onError(() => toggleSsidMutation.mutate({ name, disabled, confirm: true }, { onError: failed }), failed),
+    });
+  };
   const deleteSsid = (name: string) => deleteSsidMutation.mutate({ name }, {
     onError: guard.onError(() => deleteSsidMutation.mutate({ name, confirm: true }, { onError: failed }), failed),
   });
@@ -1079,7 +1091,7 @@ export default function WirelessSettingsPage() {
                             {canWrite && (
                               <div className="flex items-center justify-end gap-1">
                                 <button
-                                  onClick={() => toggleSsid(iface.name, iface.disabled !== 'true')}
+                                  onClick={() => toggleSsid(iface.name, iface.disabled !== 'true', iface.ssid)}
                                   className="p-1.5 rounded-lg text-gray-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
                                   title={iface.disabled === 'true' ? 'Enable' : 'Disable'}
                                 >
