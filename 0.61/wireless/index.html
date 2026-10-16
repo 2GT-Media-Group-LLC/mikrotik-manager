@@ -1200,6 +1200,9 @@ enable, disable and remove SSIDs, with WPA2 and WPA3 profiles. An SSID can be de
 many access points in one action rather than configured per device.</p>
 <p>A device's own <strong>Radios</strong> tab shows the same interfaces with live channel, connected client
 count and signal distribution for that device alone.</p>
+<p>Disabling a wireless interface, with the power button or by ticking <strong>Disabled</strong> when editing
+it, asks first, naming the SSID: its clients will be disconnected, and if the device is managed
+over that wireless link the manager may lose contact (#294). Enabling one doesn't ask.</p>
 <h2 id="rf-health">RF Health<a class="headerlink" href="#rf-health" title="Permanent link">&para;</a></h2>
 <p><strong>Wireless → Overview</strong> aggregates the fleet:</p>
 <ul>
