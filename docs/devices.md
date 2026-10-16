@@ -411,6 +411,10 @@ Negotiated link rate and SFP module details — type, connector, vendor part num
 from the device rather than guessed from the port's name, which also distinguishes an empty
 cage from a copper port.
 
+A port's **Comment** is its interface comment, or, where that's empty, the comment on its
+bridge port (Bridge → Ports in WinBox), which is where many people put them (#290). Editing a
+port's comment here sets the interface comment.
+
 Use **ports per row** in the faceplate header if the default does not suit your hardware;
 the setting is remembered. Next to it, **top row** says which ports are on top: `1 3 5` (most
 models) or `2 4 6`, for models whose front panel has the even ports on top (#277). It appears

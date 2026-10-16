@@ -113,7 +113,7 @@ function PortTile({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onDoubleClick={onDoubleClick}
-      title={`${port.name}${port.comment ? ` — ${port.comment}` : ''}${port.link_rate || port.speed ? ` · ${port.link_rate || port.speed}` : ''}${watts && watts > 0 ? ` · ${watts.toFixed(1)}W PoE` : ''}${problems ? ` · ${problems}` : ''}`}
+      title={`${port.name}${port.comment || port.bridgeInfo?.config_json?.comment ? ` — ${port.comment || port.bridgeInfo?.config_json?.comment}` : ''}${port.link_rate || port.speed ? ` · ${port.link_rate || port.speed}` : ''}${watts && watts > 0 ? ` · ${watts.toFixed(1)}W PoE` : ''}${problems ? ` · ${problems}` : ''}`}
       style={{
         width: 46, height: 46, borderRadius: 4, position: 'relative', flexShrink: 0,
         background: bg, border: errTone && !selected ? `2px solid ${errTone}` : `1px solid ${border}`,
@@ -845,6 +845,15 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
   const poeWattsMap = Object.fromEntries(
     (poeMetrics?.ports ?? []).map(p => [p.port, p.watts])
   );
+  // Where PoE can be power-cycled (#291): the device's own list of PoE ports,
+  // not just the ones with power readings (an idle port has none).
+  const { data: poePortList } = useQuery({
+    queryKey: ['poe-ports', deviceId],
+    queryFn: () => devicesApi.getPoePorts(deviceId).then((r) => r.data.ports),
+    staleTime: 300_000,
+    retry: false,
+  });
+  const poeCapable = new Set<string>([...(poePortList ?? []).map((p) => p.name), ...Object.keys(poeWattsMap)]);
 
   // Auto-open bridge config panel when navigated from the VLANs tab warning
   useEffect(() => {
@@ -1339,7 +1348,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                 onClick={() => openEditPanel(singlePort)}
               >Configure</button>
             )}
-            {canWrite && singlePort && singlePort.name in poeWattsMap && (
+            {canWrite && singlePort && poeCapable.has(singlePort.name) && (
               <button
                 className="btn-secondary text-[11px] flex items-center gap-[6px]"
                 style={{ padding: '5px 10px' }}
@@ -1689,9 +1698,17 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                       ) : <span className="mono text-[11.5px]" style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     <td className="px-4 py-[10px]"><span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>{port.mac_address || '—'}</span></td>
-                    <td className="px-4 py-[10px]"><span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>{port.comment || '—'}</span></td>
+                    {/* The interface's own comment, or else the bridge port's (Bridge → Ports in
+                        WinBox), which is where many people put them (#290). */}
+                    <td className="px-4 py-[10px]">
+                      {port.comment
+                        ? <span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>{port.comment}</span>
+                        : port.bridgeInfo?.config_json?.comment
+                          ? <span className="text-[12px]" style={{ color: 'var(--ink-3)' }} title="Comment on the bridge port (Bridge → Ports)">{port.bridgeInfo.config_json.comment}</span>
+                          : <span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>—</span>}
+                    </td>
                     <td className="px-4 py-[10px] whitespace-nowrap">
-                      {canWrite && port.name in poeWattsMap && (
+                      {canWrite && poeCapable.has(port.name) && (
                         <button
                           className="p-1 rounded transition-colors disabled:opacity-40"
                           style={{ color: poeBusy === port.name ? 'var(--warn)' : 'var(--ink-4)' }}
@@ -1769,6 +1786,12 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                       onChange={(e) => setEditForm((f) => ({ ...f, comment: e.target.value }))}
                       placeholder="Port description..."
                     />
+                    {/* This edits the interface's comment; say so when the bridge port has its own (#290). */}
+                    {editingPort?.bridgeInfo?.config_json?.comment && (
+                      <p className="text-[11px] mt-1" style={{ color: 'var(--ink-4)' }}>
+                        The bridge port also has a comment: <span className="mono">{editingPort.bridgeInfo.config_json.comment}</span>. This field is the interface&apos;s own comment.
+                      </p>
+                    )}
                   </div>
 
                   <div>

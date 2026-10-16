@@ -4144,8 +4144,14 @@ export class DeviceCollector {
 
   async collectPoePower(): Promise<void> {
     try {
+      // monitor needs the ports named (`monitor ether9`, or `[find]` for all).
+      // Called without, it failed on every PoE switch, so no readings were
+      // ever stored and the PoE power-cycle button never appeared (#291).
+      const poe = await this.client.execute('/interface/ethernet/poe/print').catch(() => [] as Record<string, string>[]);
+      const ids = poe.map((p) => p['.id']).filter(Boolean);
+      if (ids.length === 0) return;
       const ports = await this.client
-        .execute('/interface/ethernet/poe/monitor', { once: '' })
+        .execute('/interface/ethernet/poe/monitor', { numbers: ids.join(','), once: '' })
         .catch(() => [] as Record<string, string>[]);
       if (ports.length === 0) return;
 
@@ -4153,7 +4159,11 @@ export class DeviceCollector {
       for (const port of ports) {
         const name = port['name'] || port['port-name'] || '';
         if (!name) continue;
-        const watts = parseFloat(port['poe-out-voltage'] || '0') * parseFloat(port['poe-out-current'] || '0') / 1000;
+        // RouterOS reports poe-out-power itself ("24.3W"); work it out from
+        // voltage and current only where it doesn't.
+        const watts = port['poe-out-power'] !== undefined
+          ? parseFloat(port['poe-out-power']) || 0
+          : parseFloat(port['poe-out-voltage'] || '0') * parseFloat(port['poe-out-current'] || '0') / 1000;
         const currentMa = parseFloat(port['poe-out-current'] || '0');
         const voltageV = parseFloat(port['poe-out-voltage'] || '0');
         writeApi.writePoint(

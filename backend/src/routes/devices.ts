@@ -2529,6 +2529,15 @@ router.post('/:id/reboot', requireWrite, async (req: Request, res: Response) => 
   }
 });
 
+// GET /api/devices/:id/poe — the ports that can supply PoE, read live (#291):
+// where the power-cycle button belongs, whether or not anything is drawing
+// power right now. Empty on a device without PoE-out.
+router.get('/:id/poe', async (req: Request, res: Response) => {
+  await withCollector(req.params.id, res, async (c) => ({
+    ports: (await c.getAllPoEStatus()).map((p) => ({ name: p['name'] ?? '', poeOut: p['poe-out'] ?? null })).filter((p) => p.name),
+  }));
+});
+
 // POST /api/devices/:id/ports/:name/poe-power-cycle { seconds?, confirm_management? }
 // Cut a port's PoE output briefly and restore it (#291). Nothing to revert, so
 // not under Change Guard; but when management arrives on this port, the device
