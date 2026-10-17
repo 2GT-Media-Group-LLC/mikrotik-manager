@@ -401,7 +401,13 @@ for it above the FastTrack rule) or turn FastTrack off.
 ## Ports and the faceplate
 
 The faceplate mirrors the physical front panel — copper staggered odd above even as the
-hardware is, SFP cages and QSFP breakout lanes grouped separately, bridges and bonds alongside.
+hardware is, SFP cages and QSFP breakout lanes grouped separately. Bridges and bonds aren't on
+the front panel, so they sit in a **Virtual** strip below it. A QSFP port that isn't broken out
+is drawn as one box.
+
+Some models have their layout built in, so the faceplate matches the panel without any setting:
+CRS354-48P-4S+2Q+, CRS510-8XS-2XQ, CRS317-1G-16S+, CRS328-24P-4S+, CCR2216-1G-12XS-2XQ and
+CRS518-16XS-2XQ (#288). Other models use the generic layout.
 
 Ports are identified by RouterOS's **factory name**, not their display name, so renaming a port
 to something useful does not move it into the wrong group or cost it its label or position.
@@ -419,7 +425,7 @@ comment.
 Use **ports per row** in the faceplate header if the default does not suit your hardware;
 the setting is remembered. Next to it, **top row** says which ports are on top: `1 3 5` (most
 models) or `2 4 6`, for models whose front panel has the even ports on top (#277). It appears
-when the Ethernet ports sit in two rows, and is remembered per model in your browser.
+when the Ethernet ports sit in two rows, and is remembered per model in your browser. A choice you make there overrides the model's built-in Ethernet layout.
 
 ### Power-cycling a PoE port
 
