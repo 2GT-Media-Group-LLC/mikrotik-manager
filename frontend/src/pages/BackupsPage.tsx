@@ -613,7 +613,7 @@ export default function BackupsPage() {
 
       {/* Restore confirmation: runs the backup's commands on the device's running configuration */}
       {restoreConfirm && (() => {
-        const target = restoreConfirm.device_name || 'RESTORE';
+        const target = (restoreConfirm.device_name ?? '').trim() || 'RESTORE';
         const ok = restoreTyped.trim() === target;
         return (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
