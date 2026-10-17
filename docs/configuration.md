@@ -180,18 +180,10 @@ manager to a new host with only a database dump: restore `secrets.json` and rest
 
 ## Backing up the manager
 
-A complete backup is these four things. The first is useless without the second.
-
-| What | Where | Why |
-|---|---|---|
-| The database | `docker compose exec postgres pg_dump -U mikrotik mikrotik_manager` | Devices, settings, history, and the encrypted credentials |
-| The encryption key | `app_data` volume (`secrets.json`), or your `ENCRYPTION_KEY` | Without it the credentials in the dump can't be decrypted |
-| Device backups | `backups_data` volume | The configuration backups themselves; some are encrypted with the key |
-| TLS certificate | `certs_data` volume | Only if you installed your own certificate |
-
-Store the key **separately** from the database dump. Together they give anyone the admin
-passwords of every managed device; apart, neither does. To restore, bring back all four, with
-the key in place before the manager's first start.
+**Settings → Backup & Restore** makes encrypted backups of the manager, on a schedule if you
+like, and copies them to S3, SFTP or email. It also restores them, including onto a new
+server. See [Backing up MikroTik Manager](platform-backup.md), which also lists what to keep
+if you'd rather back up by hand.
 
 ## Settings stored in the database
 

@@ -401,9 +401,28 @@ export function encryptionKey(): Buffer {
   return ensure().encCurrent;
 }
 
+/**
+ * Keys added for a moment by a platform restore: the keys of the server that
+ * made the backup, so its ciphertext can be read and re-encrypted under this
+ * server's key. Cleared as soon as that's done.
+ */
+let extraDecryptors: Buffer[] = [];
+
 /** All keys a ciphertext may be decrypted with (current + legacy). */
 export function decryptionKeys(): Buffer[] {
-  return ensure().encDecryptors;
+  const own = ensure().encDecryptors;
+  return extraDecryptors.length ? [...own, ...extraDecryptors.filter((k) => !own.some((o) => o.equals(k)))] : own;
+}
+
+/** For a platform restore only: read data written under another server's key. */
+export function setExtraDecryptionKeys(keys: Buffer[]): void {
+  extraDecryptors = keys.filter((k) => k.length === 32);
+}
+
+/** Every key this server can decrypt with, for a platform backup to carry. */
+export function allDecryptionKeys(): { current: Buffer; all: Buffer[] } {
+  const s = ensure();
+  return { current: s.encCurrent, all: s.encDecryptors };
 }
 
 export function getSecretsInfo(): SecretsInfo {

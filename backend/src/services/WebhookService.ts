@@ -47,6 +47,7 @@ export const WEBHOOK_EVENTS = [
   'wireguard_stale',
   'interface_errors', 'interface_flapping', 'optic_degraded',
   'routing_peer_down',
+  'platform_backup_failed',
 ] as const;
 export type WebhookEvent = typeof WEBHOOK_EVENTS[number] | 'test';
 

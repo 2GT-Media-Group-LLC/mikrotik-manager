@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, ClipboardList, Zap, LogIn,
-  Activity, Moon, Globe } from 'lucide-react';
+  Activity, Moon, Globe, HardDrive } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
 import { docsUrl } from '../version';
 import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
@@ -26,6 +26,7 @@ import FleetSshKeysCard from '../components/settings/FleetSshKeysCard';
 import AutomationSettings from '../components/settings/AutomationSettings';
 import EncryptionKeyCard from '../components/settings/EncryptionKeyCard';
 import OidcSettings from '../components/settings/OidcSettings';
+import PlatformBackupSettings from '../components/settings/PlatformBackupSettings';
 import { useIsSiteScoped } from '../hooks/useCanWrite';
 import SiteAccessDialog, { type UserSiteRole } from '../components/settings/SiteAccessDialog';
 
@@ -81,7 +82,7 @@ export default function SettingsPage() {
   }, []);
 
   const siteScoped = useIsSiteScoped();
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys'>(siteScoped ? 'security' : 'general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys' | 'platformbackup'>(siteScoped ? 'security' : 'general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -415,6 +416,7 @@ export default function SettingsPage() {
     interface_flapping: 'Interface flapping: a port went down this many times in an hour (threshold)',
     optic_degraded: "Optic light level: this many dB away from the port's usual level either way, past a receive limit below, or the module at 70 °C (threshold, dB)",
     routing_peer_down: 'Routing peer down: a BGP session or OSPF neighbour that was up has been down this long (threshold, minutes)',
+    platform_backup_failed: 'Platform backup failed: a backup of MikroTik Manager itself failed or didn’t reach a destination',
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';
@@ -435,6 +437,7 @@ export default function SettingsPage() {
         { key: 'certificate' as const, label: 'Certificate', icon: Lock },
         ...(isAdmin ? [{ key: 'audit' as const, label: 'Audit Log', icon: ClipboardList }] : []),
         ...(isAdmin ? [{ key: 'poller' as const, label: 'Polling', icon: Activity }] : []),
+        ...(isAdmin ? [{ key: 'platformbackup' as const, label: 'Backup & Restore', icon: HardDrive }] : []),
         // Its own entry rather than a card inside General, where it sat six
         // cards down and was not found (#159).
         { key: 'darksite' as const, label: 'Dark Site Mode', icon: Moon },
@@ -1281,6 +1284,7 @@ export default function SettingsPage() {
       {/* ── Device Credential Presets ── */}
 
       {activeTab === 'sshkeys' && isAdmin && <FleetSshKeysCard />}
+      {activeTab === 'platformbackup' && isAdmin && <PlatformBackupSettings />}
 
       {/* ── My Password ── */}
       {activeTab === 'security' && !passwordLogin && (

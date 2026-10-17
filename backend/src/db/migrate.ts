@@ -1525,6 +1525,50 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS poll_overrides JSONB;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS poll_overrides JSONB;
 -- Outages before this don't count toward "had N outages this week" (#85).
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS outages_reset_at TIMESTAMPTZ;
+-- Platform backup of MikroTik Manager itself: the schedule (one row), the
+-- off-box destinations, and the backups made. Never part of a platform
+-- backup's restore: each server keeps its own.
+CREATE TABLE IF NOT EXISTS platform_backup_settings (
+  id                   INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  enabled              BOOLEAN NOT NULL DEFAULT FALSE,
+  frequency            VARCHAR(10) NOT NULL DEFAULT 'daily',
+  time_of_day          VARCHAR(5) NOT NULL DEFAULT '02:30',
+  weekday              INTEGER NOT NULL DEFAULT 0,
+  monthday             INTEGER NOT NULL DEFAULT 1,
+  contents             VARCHAR(20) NOT NULL DEFAULT 'config',
+  keep                 INTEGER NOT NULL DEFAULT 14,
+  passphrase_encrypted TEXT,
+  destination_ids      INTEGER[] NOT NULL DEFAULT '{}',
+  last_run_at          TIMESTAMPTZ,
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS platform_backup_destinations (
+  id               SERIAL PRIMARY KEY,
+  type             VARCHAR(10) NOT NULL,
+  name             VARCHAR(100) NOT NULL,
+  enabled          BOOLEAN NOT NULL DEFAULT TRUE,
+  keep             INTEGER NOT NULL DEFAULT 14,
+  config           JSONB NOT NULL DEFAULT '{}',
+  secret_encrypted TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS platform_backups (
+  id           SERIAL PRIMARY KEY,
+  file_name    VARCHAR(200) NOT NULL UNIQUE,
+  contents     VARCHAR(20) NOT NULL,
+  trigger      VARCHAR(20) NOT NULL,
+  status       VARCHAR(10) NOT NULL DEFAULT 'running',
+  size_bytes   BIGINT,
+  app_version  VARCHAR(40),
+  error        TEXT,
+  destinations JSONB NOT NULL DEFAULT '[]',
+  created_by   INTEGER,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_platform_backups_created ON platform_backups (created_at DESC);
+
 -- BGP peers and OSPF neighbours across the fleet, for the Routing page and
 -- the routing-peer-down alert (#279). An OSPF neighbour that drops vanishes
 -- from RouterOS, so its last row is kept and marked down.

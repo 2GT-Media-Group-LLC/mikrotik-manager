@@ -49,6 +49,9 @@ const DEFAULT_RULES = [
   // A BGP session or OSPF adjacency that was up has been down for the
   // threshold, in minutes (#279). Off by default; one alert per peer, per cooldown.
   { event_type: 'routing_peer_down', enabled: false, threshold: 2, cooldown_min: 60 },
+  // A platform backup of MikroTik Manager itself that failed, or didn't reach
+  // a destination. On by default: an unnoticed failing backup is the worst kind.
+  { event_type: 'platform_backup_failed', enabled: true, threshold: null, cooldown_min: 60 },
 ];
 
 /**

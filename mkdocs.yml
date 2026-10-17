@@ -73,6 +73,7 @@ nav:
       - Bulk commands: commands.md
       - Firmware rollouts: firmware.md
       - Backups: backups.md
+      - Backing up MikroTik Manager: platform-backup.md
   - Devices:
       - Wireless: wireless.md
       - Network services: network-services.md

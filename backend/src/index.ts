@@ -83,6 +83,8 @@ import systemRoutes, { setPollerService as setSystemPoller } from './routes/syst
 import sitesRoutes from './routes/sites';
 import certificatesRoutes from './routes/certificates';
 import routingRoutes from './routes/routing';
+import platformBackupRoutes from './routes/platformBackup';
+import { isRestoring } from './services/platformBackup/service';
 import cveRoutes from './routes/cves';
 import adoptionRoutes, { setPollerService as setAdoptionPoller } from './routes/adoption';
 import { siteContext } from './middleware/site';
@@ -378,6 +380,12 @@ terminalNs.on('connection', (socket) => {
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors(corsMiddlewareOptions()));
 app.use(compression());
+// While a platform backup is being restored the data is being replaced:
+// nothing else may read or write it until MikroTik Manager restarts.
+app.use('/api', (req, res, next) => {
+  if (!isRestoring() || req.path === '/health' || req.path === '/platform-backup/restore/progress') return next();
+  res.status(503).json({ error: 'MikroTik Manager is restoring a platform backup and will restart in a moment.', restoring: true });
+});
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -440,6 +448,7 @@ app.use('/api/command-templates', commandTemplatesRoutes);
 app.use('/api/command-secrets', commandSecretsRoutes);
 app.use('/api/certificates', certificatesRoutes);
 app.use('/api/routing', routingRoutes);
+app.use('/api/platform-backup', platformBackupRoutes);
 app.use('/api/security/cves', cveRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────

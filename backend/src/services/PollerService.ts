@@ -19,6 +19,7 @@ import { checkInterfaceErrors, purgeInterfaceErrorEvents } from './interfaceErro
 import { checkOptics, purgeOpticReadings } from './opticLevels';
 import { checkWireGuardStale } from './wireguardStale';
 import { checkRoutingPeers } from './routingPeerAlerts';
+import { isRestoring, scheduleTick as platformBackupTick } from './platformBackup/service';
 import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
@@ -290,7 +291,8 @@ export class PollerService {
    * finds the previous cycle still running is skipped.
    */
   private async guardedCycle(): Promise<void> {
-    if (this.cycleRunning) return;
+    // A platform restore is replacing the data; the restart that follows resumes polling.
+    if (this.cycleRunning || isRestoring()) return;
     this.cycleRunning = true;
     try {
       await this.schedulePollCycle();
@@ -596,6 +598,10 @@ export class PollerService {
           console.error('[Poller] History prune error:', e)
         );
       }
+
+      // Platform backups of MikroTik Manager itself — checked every minute; the
+      // schedule's own last-run time stops a double run.
+      platformBackupTick(appTimezone).catch((e) => console.error('[Poller] Platform backup schedule error:', e));
 
       // Scheduled backups — fire when the cron expression matches the current minute/hour.
       // Redis key with 1-hour TTL prevents double-firing within the same cron window.

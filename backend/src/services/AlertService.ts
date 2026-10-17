@@ -26,7 +26,8 @@ export type AlertEventType =
   | 'interface_errors'
   | 'interface_flapping'
   | 'optic_degraded'
-  | 'routing_peer_down';
+  | 'routing_peer_down'
+  | 'platform_backup_failed';
 
 export interface AlertContext {
   deviceId?: number;
@@ -74,6 +75,7 @@ const EVENT_LABELS: Record<string, string> = {
   interface_flapping:       'Interface Flapping',
   optic_degraded:           'Optic Light Level',
   routing_peer_down:        'Routing Peer Down (BGP/OSPF)',
+  platform_backup_failed:   'Platform Backup Failed',
 };
 
 const EVENT_EMOJI: Record<string, string> = {
@@ -95,6 +97,7 @@ const EVENT_EMOJI: Record<string, string> = {
   interface_flapping:       '🔁',
   optic_degraded:           '🔦',
   routing_peer_down:        '🛣️',
+  platform_backup_failed:   '💾',
 };
 
 export class AlertService {

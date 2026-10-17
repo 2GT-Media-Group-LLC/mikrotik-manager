@@ -2448,6 +2448,56 @@ export interface ClientAddressListView {
 }
 
 /** L3 hardware offloading on a device's switch chip (#254). */
+// ─── Platform backup (MikroTik Manager itself) ────────────────────────────────
+export type PlatformBackupContents = 'config' | 'config+database';
+export interface PlatformBackupHeader { format: number; app_version: string; created_at: string; contents: PlatformBackupContents }
+export interface PlatformBackupRow {
+  id: number; file_name: string; contents: PlatformBackupContents; trigger: 'manual' | 'scheduled' | 'pre-restore';
+  status: 'running' | 'success' | 'failed'; size_bytes: number | null; app_version: string | null; error: string | null;
+  destinations: { id: number; name: string; type: string; ok: boolean; error?: string; pruned?: number }[];
+  created_at: string; finished_at: string | null; created_by: string | null;
+}
+export interface PlatformBackupDestination {
+  id: number; type: 's3' | 'sftp' | 'email'; name: string; enabled: boolean; keep: number;
+  config: Record<string, unknown>; secrets_set: string[];
+}
+export interface PlatformBackupSchedule {
+  enabled: boolean; frequency: 'daily' | 'weekly' | 'monthly'; time_of_day: string; weekday: number; monthday: number;
+  contents: PlatformBackupContents; keep: number; destination_ids: number[]; has_passphrase: boolean; last_run_at: string | null;
+}
+export interface PlatformRestoreState {
+  phase: 'idle' | 'pre-backup' | 'restoring' | 'restarting' | 'failed'; message: string; startedAt?: string | null;
+  error?: string; result?: { mode: string; tables: number; rows: number; reencrypted: number; unreadable: number };
+}
+export interface PlatformBackupOverview {
+  app_version: string; min_passphrase: number; schedule: PlatformBackupSchedule;
+  destinations: PlatformBackupDestination[]; backups: PlatformBackupRow[]; restore: PlatformRestoreState;
+}
+const LONG = { timeout: 0 };
+export const platformBackupApi = {
+  overview: () => api.get<PlatformBackupOverview>('/platform-backup'),
+  saveSchedule: (data: Partial<PlatformBackupSchedule> & { passphrase?: string }) => api.put<PlatformBackupSchedule>('/platform-backup/schedule', data),
+  backupNow: (data: { contents: PlatformBackupContents; passphrase?: string; use_saved_passphrase?: boolean; destination_ids?: number[] }) =>
+    api.post('/platform-backup/backups', data),
+  remove: (id: number) => api.delete(`/platform-backup/backups/${id}`),
+  downloadLink: (id: number) => api.post<{ url: string }>(`/platform-backup/backups/${id}/download-link`),
+  upload: (file: File, onProgress: (pct: number) => void) =>
+    api.post<{ upload_id: string; header: PlatformBackupHeader; size: number }>('/platform-backup/upload', file, {
+      ...LONG, headers: { 'Content-Type': 'application/octet-stream' },
+      onUploadProgress: (e) => { if (e.total) onProgress(Math.round((e.loaded / e.total) * 100)); },
+    }),
+  check: (src: { backup_id?: number; upload_id?: string }, passphrase: string) =>
+    api.post<{ ok: boolean; header: PlatformBackupHeader; restorable: boolean }>('/platform-backup/check', { ...src, passphrase }),
+  restore: (src: { backup_id?: number; upload_id?: string }, passphrase: string, mode: 'config' | 'full') =>
+    api.post('/platform-backup/restore', { ...src, passphrase, mode, confirm: 'RESTORE' }),
+  restoreProgress: () => api.get<{ phase: PlatformRestoreState['phase']; message: string }>('/platform-backup/restore/progress'),
+  clearRestore: () => api.post('/platform-backup/restore/clear'),
+  addDestination: (data: Record<string, unknown>) => api.post<{ id: number }>('/platform-backup/destinations', data),
+  updateDestination: (id: number, data: Record<string, unknown>) => api.put(`/platform-backup/destinations/${id}`, data),
+  removeDestination: (id: number) => api.delete(`/platform-backup/destinations/${id}`),
+  testDestination: (id: number) => api.post<{ ok: boolean; message: string; host_key: string | null }>(`/platform-backup/destinations/${id}/test`, {}, { timeout: 120_000 }),
+};
+
 /** One bridge as the Bridges tab shows it (#284). */
 export interface BridgeView {
   id: string; name: string; protocolMode: string; priority: string | null; vlanFiltering: boolean;
