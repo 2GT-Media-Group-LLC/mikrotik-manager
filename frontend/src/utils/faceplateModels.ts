@@ -14,7 +14,9 @@ export type SfpLayout =
   /** One unwrapped row, left to right. */
   | { rows: 1 }
   /** Two rows in banks of four: 2 4 over 1 3, then 6 8 over 5 7. */
-  | { rows: 2; evenOnTop: true };
+  | { rows: 2; evenOnTop: true }
+  /** Two rows in one evenly spaced block: 2 4 6 .. over 1 3 5 .. */
+  | { rows: 2; evenOnTop: true; continuous: true };
 
 export interface ModelLayout {
   /** Ethernet ports: 2 4 6.. on the top row. */
@@ -29,6 +31,10 @@ export const MODEL_LAYOUTS: Record<string, ModelLayout> = {
   'CRS354-48P-4S+2Q+': { etherEvenOnTop: true, sfp: { rows: 2, evenOnTop: true }, qsfpStacked: true },
   'CRS510-8XS-2XQ': { sfp: { rows: 2, evenOnTop: true }, qsfpStacked: true },
   'CRS317-1G-16S+': { sfp: { rows: 1 } },
+  // SFP28 in stacked pairs, evenly spaced; QSFP28 side by side. Checked
+  // against front-panel photos.
+  'CCR2216-1G-12XS-2XQ': { sfp: { rows: 2, evenOnTop: true, continuous: true } },
+  'CRS518-16XS-2XQ': { sfp: { rows: 2, evenOnTop: true, continuous: true } },
   // Ethers verified on the physical unit; SFP+ layout not verified.
   'CRS328-24P-4S+': { etherEvenOnTop: true },
 };
@@ -66,7 +72,8 @@ export function arrangeSfp<T>(ports: T[], layout: ModelLayout | undefined, colum
   const sfp = layout?.sfp;
   if (!sfp) return { kind: 'rows', rows: chunkRows(ports, columns) };
   if (sfp.rows === 1) return { kind: 'rows', rows: ports.length ? [ports] : [] };
-  return { kind: 'banks', banks: staggerBlocks(ports, 2, true) };
+  const perBank = 'continuous' in sfp ? Math.ceil(ports.length / 2) : 2;
+  return { kind: 'banks', banks: staggerBlocks(ports, perBank, true) };
 }
 
 /** Cages stacked in pairs: even-numbered cage above its odd neighbour. */

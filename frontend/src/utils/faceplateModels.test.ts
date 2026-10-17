@@ -50,6 +50,11 @@ describe('arrangeSfp', () => {
       { top: [2, 4], bottom: [1, 3] }, { top: [6, 8], bottom: [5, 7] },
     ] });
   });
+  it('CCR2216 stacks its 12 SFP28 in one block, even over odd', () => {
+    const a = arrangeSfp(nums(12), lookupModelLayout('CCR2216-1G-12XS-2XQ'), 22);
+    expect(a).toEqual({ kind: 'banks', banks: [{ top: [2, 4, 6, 8, 10, 12], bottom: [1, 3, 5, 7, 9, 11] }] });
+    expect(lookupModelLayout('CRS518-16XS-2XQ')?.qsfpStacked).toBeUndefined();
+  });
   it('CRS317 keeps 16 ports in one row even at a narrow column count', () => {
     const a = arrangeSfp(nums(16), lookupModelLayout('CRS317-1G-16S+'), 4);
     expect(a).toEqual({ kind: 'rows', rows: [nums(16)] });
