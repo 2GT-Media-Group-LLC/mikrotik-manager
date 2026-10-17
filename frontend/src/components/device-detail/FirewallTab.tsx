@@ -2,7 +2,7 @@ import { useState } from 'react';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Plus, Trash2, Pencil, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield,
+  Plus, Trash2, Pencil, Power, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield,
   ArrowUp, ArrowDown, List, Activity,
 } from 'lucide-react';
 import { devicesApi } from '../../services/api';
@@ -321,8 +321,17 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
     mutationFn: ({ id, confirm }: { id: string; confirm?: boolean }) => devicesApi.removeAddressListEntry(deviceId, id, confirm),
     onSuccess: (res) => { invalidate(); setErr(''); guard.onSuccess(res); },
   });
+  // Turning an entry off without deleting it (Stanley, D85). Guarded like a
+  // removal: disabling the entry that admits the manager locks it out too.
+  const togMut = useMutation({
+    mutationFn: ({ id, disabled, confirm }: { id: string; disabled: boolean; confirm?: boolean }) =>
+      devicesApi.updateAddressListEntry(deviceId, id, { disabled, ...(confirm ? { confirm_lockout: true } : {}) }),
+    onSuccess: (res) => { invalidate(); setErr(''); guard.onSuccess(res); },
+  });
   const add = () => addMut.mutate(false, { onError: guard.onError(() => addMut.mutate(true, { onError: fail }), fail) });
   const remove = (id: string) => delMut.mutate({ id }, { onError: guard.onError(() => delMut.mutate({ id, confirm: true }, { onError: fail }), fail) });
+  const toggle = (id: string, disabled: boolean) =>
+    togMut.mutate({ id, disabled }, { onError: guard.onError(() => togMut.mutate({ id, disabled, confirm: true }, { onError: fail }), fail) });
 
   // A Map, not an object: a list named "constructor" or "__proto__" (names
   // come from the device) found Object.prototype and crashed the tab (U12).
@@ -335,7 +344,7 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
 
   return (
     <div className="card overflow-hidden">
-      <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={addMut.isPending || delMut.isPending} />
+      <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={addMut.isPending || delMut.isPending || togMut.isPending} />
       <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 p-4 text-left">
         <div className="w-7 h-7 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg flex items-center justify-center flex-shrink-0">
           <List className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -350,22 +359,35 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
           <p className="text-xs text-gray-500 dark:text-slate-400">
             Reusable address objects. Reference a list from any firewall rule&apos;s Source/Destination instead of repeating IPs.
           </p>
+          {err && !adding && <p className="text-xs text-red-500">{err}</p>}
           {listNames.length === 0 ? (
             <div className="text-sm text-gray-400 py-3 text-center">No address lists yet.</div>
           ) : listNames.map(name => (
             <div key={name} className="border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
               <div className="px-3 py-1.5 bg-gray-50 dark:bg-slate-800 text-xs font-semibold text-gray-700 dark:text-slate-200 font-mono">{name}</div>
               <div className="divide-y divide-gray-100 dark:divide-slate-700/50">
-                {(grouped.get(name) ?? []).map(e => (
-                  <div key={e['.id']} className="flex items-center gap-2 px-3 py-1.5 text-xs">
-                    <span className="font-mono text-gray-700 dark:text-slate-300">{e.address}</span>
-                    {e.comment && <span className="text-gray-400 italic truncate">{e.comment}</span>}
-                    {e.dynamic === 'true' && <span className="text-amber-500 text-[10px]">dynamic</span>}
-                    {canWrite && e.dynamic !== 'true' && (
-                      <button onClick={() => remove(e['.id'])} className="ml-auto text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                    )}
-                  </div>
-                ))}
+                {(grouped.get(name) ?? []).map(e => {
+                  const off = e.disabled === 'true';
+                  const busy = togMut.isPending && togMut.variables?.id === e['.id'];
+                  return (
+                    <div key={e['.id']} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                      <span className={clsx('font-mono', off ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-slate-300')}>{e.address}</span>
+                      {e.comment && <span className="text-gray-400 italic truncate">{e.comment}</span>}
+                      {off && <span className="text-gray-400 text-[10px] uppercase tracking-wide">disabled</span>}
+                      {e.dynamic === 'true' && <span className="text-amber-500 text-[10px]">dynamic</span>}
+                      {canWrite && e.dynamic !== 'true' && (
+                        <div className="ml-auto flex items-center gap-2">
+                          <button onClick={() => toggle(e['.id'], !off)} disabled={busy}
+                            title={off ? 'Enable this entry' : 'Disable this entry (it stays in the list)'}
+                            className={clsx('disabled:opacity-40', off ? 'text-gray-400 hover:text-green-600' : 'text-green-600 hover:text-gray-500')}>
+                            <Power className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => remove(e['.id'])} title="Remove this entry" className="text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}

@@ -198,6 +198,19 @@ describe('analyzeChange for firewall edits', () => {
     expect(v.severity).toBe('critical');
   });
 
+  it('catches disabling the manager\'s entry in the address list it is accepted by (D85)', () => {
+    const filter: RosRow[] = [
+      { '.id': '*a', chain: 'input', action: 'accept', 'src-address-list': 'mgmt' },
+      { '.id': '*d', chain: 'input', action: 'drop' },
+    ];
+    const lists = { addressLists: [{ '.id': '*L1', list: 'mgmt', address: '10.9.0.5' }, { '.id': '*L2', list: 'mgmt', address: '10.9.0.77' }], addressListsRead: ['mgmt'] };
+    const off = analyzeChange(snapshot(filter, lists), device, { kind: 'address-list.set', entryId: '*L1', fields: { disabled: 'yes' } });
+    expect(off.severity).toBe('critical');
+    // Another entry in the same list can be turned off safely.
+    const other = analyzeChange(snapshot(filter, lists), device, { kind: 'address-list.set', entryId: '*L2', fields: { disabled: 'yes' } });
+    expect(other.severity).toBe('safe');
+  });
+
   it('catches appending a drop-all to the default config, which relies on the default accept for LAN', () => {
     const v = analyzeChange(snapshot(DEFCONF), device, { kind: 'firewall.add', fields: { chain: 'input', action: 'drop' } });
     expect(v.severity).toBe('critical');

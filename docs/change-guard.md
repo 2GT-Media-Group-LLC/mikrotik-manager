@@ -37,7 +37,7 @@ applied; the rest are protected by auto-revert alone.
 | Area | Operations | Predicted? |
 |---|---|---|
 | Firewall filter | add, edit, enable/disable, move, delete | Yes, in rule order (see [Firewall rules](#firewall-rules)) |
-| Firewall address lists | add, edit, remove | Yes |
+| Firewall address lists | add, edit, enable/disable, remove | Yes |
 | Bridge | VLAN filtering toggle | Yes |
 | Bridge | move ports between bridges, create a bridge with the move, delete an empty bridge | Yes |
 | Ports | PVID and tagged/untagged membership | Yes |
@@ -242,8 +242,8 @@ evaluate (tcp-flags, rate limits, marks, time) counts as "maybe", and a rule tha
 matches makes the answer "can't tell" rather than a guess.
 
 So enabling a staged drop rule with the toggle, moving a drop above the rule that
-accepts the manager, deleting that accept rule, or removing the manager from an accepted
-address list is caught before it is applied. RouterOS's default configuration is
+accepts the manager, deleting that accept rule, or removing or disabling the manager's entry in an
+accepted address list is caught before it is applied. RouterOS's default configuration is
 understood correctly: it lets LAN traffic reach the end of the chain, so appending a
 drop-all to it is predicted as a lockout.
 

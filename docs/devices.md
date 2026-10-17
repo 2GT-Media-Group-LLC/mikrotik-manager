@@ -379,6 +379,11 @@ value, while the page showed it gone.
 
 On a switch port, changing flow control in one direction leaves the other direction alone.
 
+On the Firewall tab, **Address Lists** entries can be turned off and on with the power button
+without removing them, as in WinBox. A disabled entry stays in its list, struck through, and no
+longer matches. Change Guard checks it like a removal, so disabling the entry that lets the
+manager in is caught before it is applied.
+
 ### IP addresses
 
 The **Config** tab's **IP Addresses** card lists the device's IPv4 addresses. Add one with the
