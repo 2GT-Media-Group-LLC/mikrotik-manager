@@ -1319,10 +1319,11 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
 
   return (
     <div className="space-y-4">
-      {/* Selection bar. Its slot is always reserved: appearing on the first
-          click of a double-click used to push the faceplate down so the second
-          click missed the tile. */}
-      <div style={{ minHeight: 56 }}>
+      {/* Selection bar. It overlays the top of the card below instead of
+          taking space in the flow: appearing on the first click of a
+          double-click used to push the faceplate down so the second click
+          missed the tile, and reserving its height left an empty band. */}
+      <div style={{ position: 'relative', height: 0, zIndex: 20 }}>
       {selectedPorts.size > 0 && (() => {
         const singlePort = selectedPorts.size === 1 ? ports.find(p => p.name === Array.from(selectedPorts)[0]) : null;
         const selArr = Array.from(selectedPorts).map(n => ports.find(p => p.name === n)).filter((p): p is SwitchPort => !!p);
@@ -1331,8 +1332,9 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         const moveEligible = selArr.length > 0 && selArr.every(p => !isBridge(p) && !bondMemberMap.has(p.name) && !dynamicBridgePort(p));
         return (
           <div style={{
-            background: 'var(--accent-soft)', border: '1px solid var(--accent)',
+            background: 'linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg)', border: '1px solid var(--accent)',
             borderRadius: 8, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, minHeight: 56, boxSizing: 'border-box',
+            position: 'absolute', top: 0, left: 0, right: 0, boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
           }}>
             <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--accent)', flexShrink: 0, boxShadow: '0 0 0 2px var(--accent)33, 0 0 8px var(--accent)88' }} />
             <span className="mono text-[12px]" style={{ color: 'var(--accent)' }}>
