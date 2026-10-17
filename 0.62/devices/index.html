@@ -2119,7 +2119,8 @@ from the device rather than guessed from the port's name, which also distinguish
 cage from a copper port.</p>
 <p>A port's <strong>Comment</strong> is its interface comment, or, where that's empty, the comment on its
 bridge port (Bridge → Ports in WinBox), which is where many people put them (#290). Editing a
-port's comment here sets the interface comment.</p>
+port's comment here sets the interface comment. The column is hidden when no port has a
+comment.</p>
 <p>Use <strong>ports per row</strong> in the faceplate header if the default does not suit your hardware;
 the setting is remembered. Next to it, <strong>top row</strong> says which ports are on top: <code>1 3 5</code> (most
 models) or <code>2 4 6</code>, for models whose front panel has the even ports on top (#277). It appears
@@ -2202,7 +2203,8 @@ use bridge VLAN filtering as described above and don't show the card.</p>
 <h2 id="bridges">Bridges<a class="headerlink" href="#bridges" title="Permanent link">&para;</a></h2>
 <p>The <strong>Bridges</strong> tab lists every bridge on the device (#284): whether it's running, its spanning
 tree mode and priority, its comment, its ports, whether VLAN filtering is on and which VLANs
-have entries, and the addresses on it. A port switched by the CPU rather than the switch chip
+have entries, and the addresses on it. Each VLAN is listed once; VLANs that RouterOS only added
+by itself, for a port's PVID or a wifi interface, are marked <strong>(dynamic)</strong>. A port switched by the CPU rather than the switch chip
 has a small chip icon; hover a port for its PVID and spanning tree role.</p>
 <ul>
 <li><strong>New bridge</strong> creates an empty one, with RSTP unless you choose otherwise. Add ports to it
