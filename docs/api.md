@@ -62,6 +62,14 @@ or 2FA changes.
 | `GET /api/topology` | Graph of devices, links, external nodes, and distrusted identifiers |
 | `GET /api/operations/insights` | The dashboard's "things to handle" feed |
 | `GET /api/sites` | Sites with device counts (see [Sites](sites.md)) |
+| `GET /api/metrics/resources/latest` | Newest CPU and memory point per device: `{"devices": {"<deviceId>": {"cpu_load", "memory_used", "memory_total", "time"}}}`. `cpu_load` is a percentage, memory is in bytes, `time` is ISO 8601. Devices with no point in the last 15 minutes are omitted. Read-only; honours site scoping |
+| `GET /api/metrics/interfaces/latest` | Newest byte counters per device and interface: `{"devices": {"<deviceId>": {"<interface>": {"rx_bytes", "tx_bytes", "time"}}}}`. See [Interface counters](#interface-counters). Read-only; honours site scoping |
+
+### Interface counters
+
+`rx_bytes` and `tx_bytes` from `/api/metrics/interfaces/latest` are the router's **cumulative counters** (`rx-byte` / `tx-byte` from `/interface/print stats`), not per-interval deltas. They only grow, and reset to zero when the device reboots or the interface is recreated. Each value is the newest sample in the last 15 minutes, and `time` is when that sample was collected.
+
+To get a rate, poll the endpoint, keep the previous `rx_bytes` and `time` for each interface, and compute `(rx_now - rx_prev) / seconds_between_times`. Take the interval from the two `time` values, not from when you polled, and if the counter went down treat it as a reset and discard that interval. Multiply by 8 for bits per second.
 
 ### Scoping a request to one site
 
