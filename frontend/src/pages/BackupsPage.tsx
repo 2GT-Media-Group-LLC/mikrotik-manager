@@ -611,7 +611,7 @@ export default function BackupsPage() {
         </div>
       )}
 
-      {/* Restore confirmation: overwrites the device's live configuration */}
+      {/* Restore confirmation: runs the backup's commands on the device's running configuration */}
       {restoreConfirm && (() => {
         const target = restoreConfirm.device_name || 'RESTORE';
         const ok = restoreTyped.trim() === target;
@@ -633,10 +633,12 @@ export default function BackupsPage() {
               </div>
               <div className="p-5 space-y-4">
                 <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300 space-y-1">
-                  <p className="font-semibold">This replaces the live configuration on the device.</p>
+                  <p className="font-semibold">
+                    Restore runs this backup's commands on the device's running configuration.
+                  </p>
                   <p>
-                    Anything changed since this backup was taken will be lost, and the device may reboot or drop
-                    your connection to it. If the configuration is wrong for the device you could lock yourself out.
+                    Settings in the backup are applied over the current ones; the device may drop your connection
+                    while it runs.
                   </p>
                 </div>
                 <dl className="text-sm grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
@@ -674,7 +676,7 @@ export default function BackupsPage() {
                     className="btn-danger inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {restoreMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                    Restore and overwrite device
+                    Run restore
                   </button>
                 </div>
               </div>
