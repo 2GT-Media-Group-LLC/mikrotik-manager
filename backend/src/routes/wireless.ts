@@ -10,6 +10,7 @@ import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { lookupVendor } from '../utils/oui';
+import { aggregateAPScanRows } from '../utils/apScan';
 import { analyzeSpectrum, summarize, BAND_RANGES, parseChannelSpec } from '../utils/rfSpectrum';
 import { fluxString } from '@influxdata/influxdb-client';
 
@@ -772,67 +773,6 @@ router.get('/:id/spectral-history/:iface', async (req: Request, res: Response) =
 
 // ─── AP scan ──────────────────────────────────────────────────────────────────
 
-interface APBandEntry {
-  bssid: string; vendor: string; signal: number;
-  freq: number; band: string; channel_width: string;
-}
-interface APNetworkEntry {
-  ssid: string; security: string; hidden: boolean; entries: APBandEntry[];
-}
-
-function normBand(band: string, freq: number): string {
-  if (band.includes('6ghz') || freq >= 5925) return '6 GHz';
-  if (band.includes('5ghz') || (freq >= 4900 && freq < 5925)) return '5 GHz';
-  return '2.4 GHz';
-}
-
-function aggregateAPScanRows(
-  allRows: { iface: string; rows: Record<string, string>[] }[]
-): APNetworkEntry[] {
-  const byKey = new Map<string, APNetworkEntry>();
-
-  for (const { rows } of allRows) {
-    for (const row of rows) {
-      const ssid   = row['network-name'] || row['ssid'] || '';
-      const bssid  = (row['address'] || row['bssid'] || '').toLowerCase();
-      if (!bssid) continue;
-      const rawSig = row['signal-strength'] || row['signal'] || '-100';
-      const signal = parseInt(rawSig, 10) || -100;
-      const freq   = parseFloat(row['frequency'] || row['channel'] || '0');
-      const band   = normBand(row['band'] || row['radio-band'] || '', freq);
-      // security: prefer explicit field; if auth-types present but no explicit security, call it WPA
-      const security = row['security']
-        || (row['authentication-types'] ? 'WPA' : 'open');
-      const channelWidth = row['channel-width'] || '';
-      const key = ssid || `hidden:${bssid}`;
-
-      if (!byKey.has(key)) {
-        byKey.set(key, { ssid, security, hidden: !ssid, entries: [] });
-      }
-      const net = byKey.get(key)!;
-      const existing = net.entries.find(e => e.bssid === bssid && e.freq === freq);
-      if (existing) {
-        if (signal > existing.signal) existing.signal = signal;
-      } else {
-        net.entries.push({
-          bssid,
-          vendor: lookupVendor(bssid),
-          signal,
-          freq,
-          band,
-          channel_width: channelWidth,
-        });
-      }
-    }
-  }
-
-  return Array.from(byKey.values()).sort((a, b) => {
-    const aBest = Math.max(...a.entries.map(e => e.signal));
-    const bBest = Math.max(...b.entries.map(e => e.signal));
-    return bBest - aBest;
-  });
-}
-
 // POST /api/wireless/:id/ap-scan — scan all interfaces, combine results, save + return
 router.post('/:id/ap-scan', requireWrite, async (req: Request, res: Response) => {
   const ap = await getAP(parseInt(req.params.id));
@@ -872,7 +812,7 @@ router.post('/:id/ap-scan', requireWrite, async (req: Request, res: Response) =>
   }
 
   try {
-    const aggregated = aggregateAPScanRows(allRows);
+    const aggregated = aggregateAPScanRows(allRows, lookupVendor);
     const saved = await query<{ id: number; scanned_at: string }>(
       `INSERT INTO ap_scan_data (device_id, data, scan_type)
        VALUES ($1, $2, 'manual') RETURNING id, scanned_at`,

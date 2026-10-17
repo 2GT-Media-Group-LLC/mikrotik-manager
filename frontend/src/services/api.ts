@@ -2504,6 +2504,7 @@ export interface BridgeView {
   running: boolean; disabled: boolean; dynamic: boolean; comment: string | null; mtu: string | null; macAddress: string | null;
   ports: { name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null }[];
   vlans: string[];
+  dynamicVlans?: string[];
   addresses: string[];
 }
 

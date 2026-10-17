@@ -32,4 +32,21 @@ describe('bridgesView', () => {
     expect(guest).toMatchObject({ name: 'guest', protocolMode: 'none', running: false, vlanFiltering: false, addresses: ['10.9.9.1/24'] });
     expect(guest.ports).toEqual([{ name: 'ether9', hw: false, pvid: '1', disabled: false, inactive: false, dynamic: false, role: null }]);
   });
+
+  it('lists each VLAN once, keeping dynamic-only ones apart (#284)', () => {
+    // Orhideous's router: three configured entries, and RouterOS's own for PVIDs and wifi.
+    const rows: Row[] = [
+      { bridge: 'bridge1', 'vlan-ids': '20', dynamic: 'false', disabled: 'false' },
+      { bridge: 'bridge1', 'vlan-ids': '99', dynamic: 'false', disabled: 'false' },
+      { bridge: 'bridge1', 'vlan-ids': '10', dynamic: 'false', disabled: 'false' },
+      { bridge: 'bridge1', 'vlan-ids': '1', dynamic: 'true', disabled: 'false' },
+      { bridge: 'bridge1', 'vlan-ids': '10', dynamic: 'true', disabled: 'false' },
+      { bridge: 'bridge1', 'vlan-ids': '10', dynamic: 'true', disabled: 'false' },
+      { bridge: 'bridge1', 'vlan-ids': '10', dynamic: 'true', disabled: 'false' },
+      { bridge: 'bridge1', 'vlan-ids': '30,40', dynamic: 'false', disabled: 'false' },
+    ];
+    const [b] = bridgesView({ bridges: [{ '.id': '*1', name: 'bridge1' }], ports: [], vlans: rows, addresses: [] });
+    expect(b.vlans).toEqual(['10', '20', '30', '40', '99']);
+    expect(b.dynamicVlans).toEqual(['1']);
+  });
 });

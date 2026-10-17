@@ -254,6 +254,11 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                 </div>
                 <span className={b.vlanFiltering ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-slate-400'}>{b.vlanFiltering ? 'On' : 'Off'}</span>
                 {b.vlans.length > 0 && <span className="text-xs text-gray-400"> · VLANs {b.vlans.join(', ')}</span>}
+                {!!b.dynamicVlans?.length && (
+                  <span className="text-xs text-gray-400" title="VLANs RouterOS added for a port's PVID or a wifi interface, with no entry of their own">
+                    {' '}· {b.vlans.length > 0 ? 'also' : 'VLANs'} {b.dynamicVlans.join(', ')} (dynamic)
+                  </span>
+                )}
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-slate-400 mb-1">Addresses</div>

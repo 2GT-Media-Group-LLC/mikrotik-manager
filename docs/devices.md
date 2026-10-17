@@ -413,7 +413,8 @@ cage from a copper port.
 
 A port's **Comment** is its interface comment, or, where that's empty, the comment on its
 bridge port (Bridge → Ports in WinBox), which is where many people put them (#290). Editing a
-port's comment here sets the interface comment.
+port's comment here sets the interface comment. The column is hidden when no port has a
+comment.
 
 Use **ports per row** in the faceplate header if the default does not suit your hardware;
 the setting is remembered. Next to it, **top row** says which ports are on top: `1 3 5` (most
@@ -514,7 +515,8 @@ use bridge VLAN filtering as described above and don't show the card.
 
 The **Bridges** tab lists every bridge on the device (#284): whether it's running, its spanning
 tree mode and priority, its comment, its ports, whether VLAN filtering is on and which VLANs
-have entries, and the addresses on it. A port switched by the CPU rather than the switch chip
+have entries, and the addresses on it. Each VLAN is listed once; VLANs that RouterOS only added
+by itself, for a port's PVID or a wifi interface, are marked **(dynamic)**. A port switched by the CPU rather than the switch chip
 has a small chip icon; hover a port for its PVID and spanning tree role.
 
 - **New bridge** creates an empty one, with RSTP unless you choose otherwise. Add ports to it

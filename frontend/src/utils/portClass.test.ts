@@ -98,6 +98,16 @@ describe('portSortKey', () => {
     expect(ka[1]).toBeLessThan(kb[1]);
   });
 
+  it('sorts SFP28 ports by port number, not by the 28', () => {
+    const names = ['sfp28-1', 'sfp28-10', 'sfp28-11', 'sfp28-12', 'sfp28-2', 'sfp28-3'];
+    const sorted = names.map((name) => ({ name })).sort((a, b) => {
+      const ka = portSortKey(a), kb = portSortKey(b);
+      return ka[0] - kb[0] || ka[1] - kb[1] || ka[2].localeCompare(kb[2], undefined, { numeric: true });
+    });
+    expect(sorted.map((p) => p.name)).toEqual(['sfp28-1', 'sfp28-2', 'sfp28-3', 'sfp28-10', 'sfp28-11', 'sfp28-12']);
+    expect(portSortKey({ name: 'qsfp28-2-1' })[1]).toBe(2);
+  });
+
   it('sorts a renamed port by its hardware position, not its new name', () => {
     const renamed = { name: 'aaa-first', default_name: 'ether9', type: 'ether' };
     expect(portSortKey(renamed)[1]).toBe(9);

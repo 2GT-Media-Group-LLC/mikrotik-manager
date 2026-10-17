@@ -65,6 +65,10 @@ BSSID broadcasting one of your SSIDs is flagged as an evil twin.
 
 Scans run on demand or on a schedule; spectral scans are configured per radio.
 
+With the newer **wifi** package a network's security shows its authentication types (for example
+`wpa2-psk,wpa3-psk`). The older **wireless** package only reports whether a network is
+encrypted, so those show **secured** or **open** (#295).
+
 ## CAPsMAN
 
 Centrally provisioned access points are modelled separately — see [CAPsMAN](capsman.md),

@@ -162,6 +162,10 @@ export function portSortKey(port: PortLike): [number, number, string] {
     copper: 0, sfp: 1, 'qsfp-lane': 2, qsfp: 2, virtual: 3,
   };
   const digits = /(\d+)(?:-(\d+))?$/.exec(id.basis);
-  const major = digits ? Number(digits[1]) : 0;
+  // "sfp28-10" and "qsfp28-2" end in rate-port: the port is the second number,
+  // not the 28 (which sorted every SFP28 port as port 28, so 10 came before 2).
+  // A breakout lane ("qsfp28-2-1") ends in cage-lane, where the cage comes first.
+  const second = (id.kind === 'sfp' || id.kind === 'qsfp') && digits?.[2] !== undefined;
+  const major = digits ? Number(second ? digits[2] : digits[1]) : 0;
   return [rank[id.kind], major, id.basis];
 }

@@ -1094,8 +1094,9 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
     const rb = rank(b, kb[0]);
     if (ra !== rb) return ra - rb;
     if (ka[1] !== kb[1]) return ka[1] - kb[1];
-    return ka[2].localeCompare(kb[2]);
+    return ka[2].localeCompare(kb[2], undefined, { numeric: true });
   });
+  const anyComment = ports.some((p) => p.comment || p.bridgeInfo?.config_json?.comment);
 
   const isBond = (p: SwitchPort) => p.type === 'bond';
   const physicalPorts = sortedPorts.filter((p) => !isBridge(p) && !isBond(p));
@@ -1611,13 +1612,13 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         );
       })()}
 
-      {/* Port table */}
+      {/* Port table. The Comment column only shows when some port has one (#290). */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                {['PORT', 'STATUS', 'SPEED', 'MTU', 'PVID', 'BRIDGE', 'MAC', 'COMMENT', ''].map((h, i) => (
+                {['PORT', 'STATUS', 'SPEED', 'MTU', 'PVID', 'BRIDGE', 'MAC', ...(anyComment ? ['COMMENT'] : []), ''].map((h, i) => (
                   <th key={i} className="table-header px-4 py-[10px] text-left">{h}</th>
                 ))}
               </tr>
@@ -1700,13 +1701,13 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                     <td className="px-4 py-[10px]"><span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>{port.mac_address || '—'}</span></td>
                     {/* The interface's own comment, or else the bridge port's (Bridge → Ports in
                         WinBox), which is where many people put them (#290). */}
-                    <td className="px-4 py-[10px]">
+                    {anyComment && <td className="px-4 py-[10px]">
                       {port.comment
                         ? <span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>{port.comment}</span>
                         : port.bridgeInfo?.config_json?.comment
                           ? <span className="text-[12px]" style={{ color: 'var(--ink-3)' }} title="Comment on the bridge port (Bridge → Ports)">{port.bridgeInfo.config_json.comment}</span>
                           : <span className="text-[12px]" style={{ color: 'var(--ink-3)' }}>—</span>}
-                    </td>
+                    </td>}
                     <td className="px-4 py-[10px] whitespace-nowrap">
                       {canWrite && poeCapable.has(port.name) && (
                         <button

@@ -1261,53 +1261,6 @@ export class PollerService {
       }));
   }
 
-  private static aggregateAPScanRows(
-    allRows: { iface: string; rows: Record<string, string>[] }[],
-    lookupVendor: (mac: string) => string
-  ): unknown[] {
-    interface BandEntry { bssid: string; vendor: string; signal: number; freq: number; band: string; channel_width: string }
-    interface NetworkEntry { ssid: string; security: string; hidden: boolean; entries: BandEntry[] }
-    const byKey = new Map<string, NetworkEntry>();
-
-    function normBand(band: string, freq: number): string {
-      if (band.includes('6ghz') || freq >= 5925) return '6 GHz';
-      if (band.includes('5ghz') || (freq >= 4900 && freq < 5925)) return '5 GHz';
-      return '2.4 GHz';
-    }
-
-    for (const { rows } of allRows) {
-      for (const row of rows) {
-        const ssid   = row['network-name'] || row['ssid'] || '';
-        const bssid  = (row['address'] || row['bssid'] || '').toLowerCase();
-        if (!bssid) continue;
-        const rawSig = row['signal-strength'] || row['signal'] || '-100';
-        const signal = parseInt(rawSig, 10) || -100;
-        const freq   = parseFloat(row['frequency'] || row['channel'] || '0');
-        const band   = normBand(row['band'] || row['radio-band'] || '', freq);
-        const security = row['security'] || row['authentication-types'] ? (row['security'] || 'WPA') : 'open';
-        const channelWidth = row['channel-width'] || '';
-        const key = ssid || `hidden:${bssid}`;
-
-        if (!byKey.has(key)) {
-          byKey.set(key, { ssid, security, hidden: !ssid, entries: [] });
-        }
-        const net = byKey.get(key)!;
-        const existing = net.entries.find(e => e.bssid === bssid && e.freq === freq);
-        if (existing) {
-          if (signal > existing.signal) existing.signal = signal;
-        } else {
-          net.entries.push({ bssid, vendor: lookupVendor(bssid), signal, freq, band, channel_width: channelWidth });
-        }
-      }
-    }
-
-    return Array.from(byKey.values()).sort((a, b) => {
-      const aBest = Math.max(...a.entries.map(e => e.signal));
-      const bBest = Math.max(...b.entries.map(e => e.signal));
-      return bBest - aBest;
-    });
-  }
-
   private async processSpectralJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
@@ -1361,7 +1314,8 @@ export class PollerService {
       }
       if (allRows.length === 0) return;
 
-      const aggregated = PollerService.aggregateAPScanRows(allRows, lookupVendor);
+      const { aggregateAPScanRows } = await import('../utils/apScan');
+      const aggregated = aggregateAPScanRows(allRows, lookupVendor);
       await query(
         `INSERT INTO ap_scan_data (device_id, data, scan_type) VALUES ($1, $2, 'scheduled')`,
         [device.id, JSON.stringify(aggregated)]
