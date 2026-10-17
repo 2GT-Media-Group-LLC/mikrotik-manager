@@ -15,6 +15,7 @@ import type { OpticStatus } from '../utils/opticLevels';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { BackupService, BackupDevice } from '../services/BackupService';
 import { fluxString } from '@influxdata/influxdb-client';
+import { latestResources } from '../services/latestMetrics';
 
 const router = Router();
 
@@ -65,40 +66,6 @@ export function scopeKey(scope: SiteScope): string {
   if (scope === null) return 'all';
   const ids = (Array.isArray(scope) ? [...scope] : [scope]).sort((a, b) => a - b);
   return `s${ids.join(',')}`;
-}
-
-// Latest value per device for a set of device_resources fields.
-async function latestResources(): Promise<Map<string, { cpu: number; memTotal: number; memUsed: number }>> {
-  const out = new Map<string, { cpu: number; memTotal: number; memUsed: number }>();
-  const flux = `
-    from(bucket: "${bucket}")
-      |> range(start: -15m)
-      |> filter(fn: (r) => r["_measurement"] == "device_resources")
-      |> filter(fn: (r) => r["_field"] == "cpu_load" or r["_field"] == "memory_total" or r["_field"] == "memory_used")
-      |> group(columns: ["device_id", "_field"])
-      |> last()
-  `;
-  try {
-    const api = getQueryApi();
-    await new Promise<void>((resolve, reject) => {
-      api.queryRows(flux, {
-        next(row, tableMeta) {
-          const o = tableMeta.toObject(row) as Record<string, unknown>;
-          const id = String(o['device_id'] || '');
-          const field = String(o['_field'] || '');
-          const val = Number(o['_value']) || 0;
-          const e = out.get(id) || { cpu: 0, memTotal: 0, memUsed: 0 };
-          if (field === 'cpu_load') e.cpu = val;
-          else if (field === 'memory_total') e.memTotal = val;
-          else if (field === 'memory_used') e.memUsed = val;
-          out.set(id, e);
-        },
-        error: reject,
-        complete: resolve,
-      });
-    });
-  } catch { /* influx unavailable → empty */ }
-  return out;
 }
 
 // Latest TX-retry % per radio (from the RF Health series).

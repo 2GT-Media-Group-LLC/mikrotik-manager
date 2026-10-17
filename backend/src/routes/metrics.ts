@@ -8,6 +8,7 @@ import { requireAuth } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, clientSeriesTag, siteList } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { fluxString } from '@influxdata/influxdb-client';
+import { latestResources, latestInterfaceCounters } from '../services/latestMetrics';
 
 const router = Router();
 router.use(requireAuth);
@@ -372,6 +373,45 @@ router.get('/device/:deviceId/availability', async (req: Request, res: Response)
     outages,
     range: rangeRaw,
   });
+});
+
+// GET /api/metrics/resources/latest - newest CPU/memory point per device (read-only, site-scoped)
+router.get('/resources/latest', async (req: Request, res: Response) => {
+  const devFilter = siteScopeDevices(activeSite(req));
+  const [allowed, latest] = await Promise.all([
+    query<{ id: number }>(`SELECT id FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`),
+    latestResources(),
+  ]);
+  const devices: Record<string, { cpu_load: number; memory_used: number; memory_total: number; time: string }> = {};
+  for (const d of allowed) {
+    const r = latest.get(String(d.id));
+    if (!r || !r.time) continue;
+    devices[String(d.id)] = { cpu_load: r.cpu, memory_used: r.memUsed, memory_total: r.memTotal, time: r.time };
+  }
+  res.json({ devices });
+});
+
+// GET /api/metrics/interfaces/latest - newest cumulative rx/tx byte counters per device and interface
+router.get('/interfaces/latest', async (req: Request, res: Response) => {
+  const devFilter = siteScopeDevices(activeSite(req));
+  let latest;
+  try {
+    latest = await latestInterfaceCounters();
+  } catch {
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
+  }
+  const allowed = await query<{ id: number }>(`SELECT id FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`);
+  const devices: Record<string, Record<string, { rx_bytes: number; tx_bytes: number; time: string }>> = {};
+  for (const d of allowed) {
+    const ifaces = latest.get(String(d.id));
+    if (!ifaces) continue;
+    const out: Record<string, { rx_bytes: number; tx_bytes: number; time: string }> = {};
+    for (const [name, v] of ifaces) {
+      if (v.time) out[name] = { rx_bytes: v.rx, tx_bytes: v.tx, time: v.time };
+    }
+    if (Object.keys(out).length) devices[String(d.id)] = out;
+  }
+  res.json({ devices });
 });
 
 // GET /api/metrics/summary - dashboard summary stats
