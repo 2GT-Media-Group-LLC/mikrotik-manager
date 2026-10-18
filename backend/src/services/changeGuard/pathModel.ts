@@ -19,6 +19,7 @@
  * Capture and resolution are deliberately separate so resolution stays a pure
  * function over a snapshot and can be unit-tested against fixtures.
  */
+import { readApiConnections, readCoveringRoutes } from './targetedReads';
 import { isIP } from 'net';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
 import { usesApiTls } from '../../utils/apiTls';
@@ -152,7 +153,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
 
     const [
       addresses, interfaces, vlanInterfaces, bridges, bridgePorts,
-      bridgeVlans, bonds, routes, arp, bridgeHosts, services, firewallFilter, mgmtConnections,
+      bridgeVlans, bonds, arp, bridgeHosts, services, firewallFilter,
       interfaceLists, interfaceListMembers, deviceModeRows, switches,
     ] = await Promise.all([
       run('/ip/address/print', { detail: '' }),
@@ -162,17 +163,26 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       run('/interface/bridge/port/print', { detail: '' }),
       run('/interface/bridge/vlan/print', { detail: '' }),
       run('/interface/bonding/print', { detail: '' }),
-      run('/ip/route/print', { detail: '' }),
       run('/ip/arp/print'),
       run('/interface/bridge/host/print'),
       run('/ip/service/print'),
       run('/ip/firewall/filter/print', { detail: '' }),
-      optional('/ip/firewall/connection/print', { detail: '' }),
       run('/interface/list/print'),
       run('/interface/list/member/print'),
       optional('/system/device-mode/print'),
       optional('/interface/ethernet/switch/print'),
     ]);
+
+    // Only the manager's connection, and only the routes that could carry
+    // traffic back to it, never the whole tables: a BGP router has hundreds of
+    // thousands of routes, and reading them all timed out (#313). Connection
+    // tracking may be off; the model copes without it. A failed route read
+    // throws, like any other read here.
+    const mgmtConnections = await readApiConnections(client, client.remoteAddress || device.ip_address, device.api_port)
+      .catch(() => [] as RosRow[]);
+    const managerIp = managerIpFromConntrack(
+      { mgmtConnections, managerLocalPort: client.localPort } as unknown as DeviceSnapshot, device.api_port);
+    const routes = await readCoveringRoutes(client, managerIp && ipToInt(managerIp) !== null ? managerIp : null);
 
     // Only the lists the filter names, each on its own and time-boxed: a
     // router can carry a blocklist of many thousands of entries, and one that

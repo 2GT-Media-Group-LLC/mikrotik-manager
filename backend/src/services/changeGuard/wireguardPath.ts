@@ -17,6 +17,7 @@
 import net from 'net';
 import { DeviceCollector, type DeviceRow } from '../mikrotik/DeviceCollector';
 import { managerIpFromConntrack, type DeviceSnapshot, type RosRow } from './pathModel';
+import { readApiConnections, readCoveringRoutes } from './targetedReads';
 import { canonicalIp } from '../netflow/attribution';
 
 export interface TunnelState {
@@ -181,28 +182,37 @@ export async function readManagementTunnel(device: DeviceRow): Promise<Managemen
   try {
     await c.connect();
     const run = c.commandRunner();
+    const reader = c.batchReader();
     // IPv4 and IPv6 both: tunnels can be IPv6-only. The IPv6 reads fail
     // quietly where IPv6 is disabled.
     const none = () => [] as RosRow[];
-    const [addresses, addresses6, routes, routes6, wgInterfaces, peers, conns, conns6] = await Promise.all([
+    // The address the connection actually reached, so a device added by
+    // hostname is still found; the configured address as a fallback.
+    const deviceIp = c.apiRemoteAddress() || device.ip_address;
+    const [addresses, addresses6, wgInterfaces, peers, conns] = await Promise.all([
       run.execute('/ip/address/print', { detail: '' }),
       run.execute('/ipv6/address/print', { detail: '' }).catch(none),
-      run.execute('/ip/route/print', { detail: '' }).catch(none),
-      run.execute('/ipv6/route/print', { detail: '' }).catch(none),
       c.getWireGuardInterfaces(),
       c.getWireGuardPeers(),
-      run.execute('/ip/firewall/connection/print', { detail: '' }).catch(none),
-      run.execute('/ipv6/firewall/connection/print', { detail: '' }).catch(none),
+      // Only the manager's own connection, never the whole table (#313).
+      readApiConnections(reader, deviceIp, device.api_port).catch(none),
     ]);
-    const snap = { mgmtConnections: [...conns, ...conns6], managerLocalPort: c.apiLocalPort() ?? null } as unknown as DeviceSnapshot;
+    const snap = { mgmtConnections: conns, managerLocalPort: c.apiLocalPort() ?? null } as unknown as DeviceSnapshot;
+    const managerIp = managerIpFromConntrack(snap, device.api_port);
+    // Only the routes covering the manager's address: the device picks the
+    // longest of those, and a BGP table of every other route took minutes to
+    // stream (#313). Not needed when no WireGuard interface exists, or the
+    // manager's address can't be seen.
+    const family = managerIp ? (net.isIP(managerIp) === 6 ? 6 : 4) : 4;
+    const routes = managerIp && wgInterfaces.length
+      ? await readCoveringRoutes(reader, managerIp, family, false).catch(none)
+      : [];
     return managementTunnel({
       addresses: [...addresses, ...addresses6],
-      routes: [...routes, ...routes6],
+      routes,
       wgInterfaces, peers,
-      // The address the connection actually reached, so a device added by
-      // hostname is still found; the configured address as a fallback.
-      deviceIp: c.apiRemoteAddress() || device.ip_address,
-      managerIp: managerIpFromConntrack(snap, device.api_port),
+      deviceIp,
+      managerIp,
     });
   } catch {
     return null;

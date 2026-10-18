@@ -320,6 +320,7 @@ export default function SettingsPage() {
     queryFn: () => auditLogApi.list({ page: auditPage, limit: 50, search: auditSearch || undefined }).then((r) => r.data),
     enabled: activeTab === 'audit',
   });
+  const auditPages = Math.max(1, Math.ceil((auditData?.total ?? 0) / 50));
 
   // ─── Alerting ──────────────────────────────────────────────────────────────
   const { data: alertRules = [] } = useQuery({
@@ -2349,8 +2350,11 @@ export default function SettingsPage() {
             </div>
             {(auditData?.total ?? 0) > 50 && (
               <div className="flex items-center justify-between mt-4 text-sm text-gray-500 dark:text-slate-400">
-                <span>{auditData?.total} total entries</span>
-                <div className="flex gap-2">
+                <span>{(auditData?.total ?? 0).toLocaleString()} total entries</span>
+                {/* Jump straight to a page (discussion #85), not only one at a time. */}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setAuditPage(1)} disabled={auditPage <= 1}
+                    className="btn-secondary text-xs px-3 py-1 disabled:opacity-50">First</button>
                   <button
                     onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
                     disabled={auditPage <= 1}
@@ -2358,14 +2362,34 @@ export default function SettingsPage() {
                   >
                     Prev
                   </button>
-                  <span className="px-2 py-1">Page {auditPage}</span>
+                  <label className="flex items-center gap-1.5 px-1">
+                    Page
+                    <input
+                      key={auditPage}
+                      type="number" min={1} max={auditPages} defaultValue={auditPage}
+                      aria-label="Go to page"
+                      className="input py-0.5 px-1.5 text-xs w-16 text-center"
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        const n = Math.round(Number((e.target as HTMLInputElement).value));
+                        if (Number.isFinite(n)) setAuditPage(Math.min(auditPages, Math.max(1, n)));
+                      }}
+                      onBlur={(e) => {
+                        const n = Math.round(Number(e.target.value));
+                        if (Number.isFinite(n) && n !== auditPage) setAuditPage(Math.min(auditPages, Math.max(1, n)));
+                      }}
+                    />
+                    of {auditPages.toLocaleString()}
+                  </label>
                   <button
                     onClick={() => setAuditPage((p) => p + 1)}
-                    disabled={auditPage * 50 >= (auditData?.total ?? 0)}
+                    disabled={auditPage >= auditPages}
                     className="btn-secondary text-xs px-3 py-1 disabled:opacity-50"
                   >
                     Next
                   </button>
+                  <button onClick={() => setAuditPage(auditPages)} disabled={auditPage >= auditPages}
+                    className="btn-secondary text-xs px-3 py-1 disabled:opacity-50">Last</button>
                 </div>
               </div>
             )}

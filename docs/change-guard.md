@@ -203,6 +203,11 @@ Two details make the result precise rather than merely cautious:
   hosts (a monitoring tool, WinBox) are connected to the API port too, the manager picks
   out its own session by its source port; if it can't, it says so and works from the
   default gateway instead of guessing.
+- Only what's needed is read from the device: the connections to its API port, and the
+  routes whose prefix covers the manager's address (the device picks the longest of
+  those, and they always include the default route). A router carrying a full BGP table
+  used to be asked for every route and every tracked connection, which could take
+  minutes; the same is true of the WireGuard page's tunnel check (#313).
 - The **ingress port** is taken from the bridge forwarding table, so it is the port the
   traffic actually arrives on, not a guess from topology.
 

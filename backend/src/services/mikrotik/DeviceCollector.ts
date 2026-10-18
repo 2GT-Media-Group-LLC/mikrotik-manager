@@ -3759,7 +3759,9 @@ export class DeviceCollector {
    */
   async getConnectionsPage(limit: number, protocol?: string): Promise<Record<string, string>[]> {
     return this.client.executeStreaming('/ip/firewall/connection/print', {
-      '.proplist': '.id,protocol,src-address,dst-address,tcp-state,orig-rate,repl-rate,orig-bytes,repl-bytes',
+      // src-port and dst-port: RouterOS 7.24 keeps the ports there, not on the
+      // address, and leaving them out lost them (discussion #85).
+      '.proplist': '.id,protocol,src-address,src-port,dst-address,dst-port,tcp-state,orig-rate,repl-rate,orig-bytes,repl-bytes',
     }, 20_000, { maxRows: limit, queries: protocol ? [`?protocol=${protocol}`] : [] }).catch(() => [] as Record<string, string>[]);
   }
 
@@ -4149,6 +4151,11 @@ export class DeviceCollector {
    * against the raw client (the certificate steps of API-SSL and www-ssl, #234).
    */
   commandRunner(): Pick<RouterOSClient, 'execute'> {
+    return this.client;
+  }
+
+  /** Several reads in one round trip, for targeted queries (#313). */
+  batchReader(): Pick<RouterOSClient, 'executeMany'> {
     return this.client;
   }
 

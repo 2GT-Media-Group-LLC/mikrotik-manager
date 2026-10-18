@@ -5,12 +5,8 @@ import { devicesApi } from '../../services/api';
 import { formatBytes } from '../../utils/firewallSummary';
 import clsx from 'clsx';
 
-// Split a RouterOS connection address ("192.168.1.10:443") into ip + port.
-function splitAddr(a?: string): { ip: string; port: string } {
-  if (!a) return { ip: '', port: '' };
-  const i = a.lastIndexOf(':');
-  return i > 0 ? { ip: a.slice(0, i), port: a.slice(i + 1) } : { ip: a, port: '' };
-}
+import SortableHeader, { type SortDir } from '../common/SortableHeader';
+import { endpoint, sortConnections, type ConnSortKey } from '../../utils/connections';
 
 const PROTO_COLOR: Record<string, string> = {
   tcp: 'text-blue-600 dark:text-blue-400', udp: 'text-violet-600 dark:text-violet-400',
@@ -26,6 +22,17 @@ export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
   const [limit, setLimit] = useState(200);
   const [protocol, setProtocol] = useState('');
   const [auto, setAuto] = useState(false);
+  // Sorting the rows read (discussion #85); unsorted, they come in the router's order.
+  const [sort, setSort] = useState<{ key: ConnSortKey; dir: SortDir } | null>(null);
+  const sortBy = (key: ConnSortKey) => setSort((s) => (s?.key === key
+    ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+    // Rates and bytes start biggest first; the rest A to Z.
+    : { key, dir: key === 'rate' || key === 'bytes' ? 'desc' : 'asc' }));
+  const header = (label: string, key: ConnSortKey, align: 'left' | 'right' = 'left') => (
+    <th className={clsx('table-header px-3 py-2.5', align === 'right' ? 'text-right' : 'text-left')}>
+      <SortableHeader label={label} active={sort?.key === key} dir={sort?.dir ?? 'asc'} onClick={() => sortBy(key)} align={align} />
+    </th>
+  );
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['connections', deviceId, limit, protocol],
@@ -36,7 +43,8 @@ export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
   const all = data?.connections ?? [];
   const total = data?.total ?? null;
   const q = search.trim().toLowerCase();
-  const rows = q ? all.filter(c => JSON.stringify(c).toLowerCase().includes(q)) : all;
+  const filtered = q ? all.filter(c => JSON.stringify(c).toLowerCase().includes(q)) : all;
+  const rows = sort ? sortConnections(filtered, sort.key, sort.dir) : filtered;
 
   // Conntrack state: yes / no / auto (auto = active only once firewall/NAT rules exist).
   const tracking = (data?.tracking?.enabled ?? '').toLowerCase();
@@ -98,18 +106,20 @@ export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50">
-                <th className="table-header px-3 py-2.5 text-left">Proto</th>
-                <th className="table-header px-3 py-2.5 text-left">Source</th>
-                <th className="table-header px-3 py-2.5 text-left">Destination</th>
-                <th className="table-header px-3 py-2.5 text-left">State</th>
-                <th className="table-header px-3 py-2.5 text-right">Rate ↓/↑</th>
-                <th className="table-header px-3 py-2.5 text-right">Bytes</th>
+                {header('Proto', 'proto')}
+                {header('Source', 'src')}
+                {header('Port', 'sport', 'right')}
+                {header('Destination', 'dst')}
+                {header('Port', 'dport', 'right')}
+                {header('State', 'state')}
+                {header('Rate ↓/↑', 'rate', 'right')}
+                {header('Bytes', 'bytes', 'right')}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
               {rows.map((c, i) => {
-                const src = splitAddr(c['src-address']);
-                const dst = splitAddr(c['dst-address']);
+                const src = endpoint(c, 'src');
+                const dst = endpoint(c, 'dst');
                 const proto = (c.protocol || '').toLowerCase();
                 const origRate = c['orig-rate'] || '0';
                 const replRate = c['repl-rate'] || '0';
@@ -117,8 +127,10 @@ export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
                 return (
                   <tr key={c['.id'] ?? i} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
                     <td className={clsx('px-3 py-2 text-xs font-semibold uppercase', PROTO_COLOR[proto] ?? 'text-gray-500')}>{proto || '—'}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-gray-600 dark:text-slate-300">{src.ip}{src.port && <span className="text-gray-400">:{src.port}</span>}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-gray-600 dark:text-slate-300">{dst.ip}{dst.port && <span className="text-gray-400">:{dst.port}</span>}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-gray-600 dark:text-slate-300">{src.ip}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-right text-gray-500 dark:text-slate-400">{src.port || '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-gray-600 dark:text-slate-300">{dst.ip}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-right text-gray-500 dark:text-slate-400">{dst.port || '—'}</td>
                     <td className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">{c['tcp-state'] || c.state || '—'}</td>
                     <td className="px-3 py-2 text-right text-xs text-gray-500 dark:text-slate-400 font-mono">{replRate !== '0' || origRate !== '0' ? `${replRate}/${origRate}` : '—'}</td>
                     <td className="px-3 py-2 text-right text-xs text-gray-500 dark:text-slate-400">{bytes > 0 ? formatBytes(bytes) : '—'}</td>
@@ -131,7 +143,7 @@ export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
       )}
       <p className="text-xs text-gray-400">
         Live from the device&apos;s connection tracking table. Only the first {limit.toLocaleString()} connections are read, so a busy
-        router isn&apos;t asked for its whole table; the protocol filter is applied by the router, the text filter to the rows shown.
+        router isn&apos;t asked for its whole table; the protocol filter is applied by the router, the text filter and sorting to the rows shown.
         {auto ? ' Refreshing every 30 seconds.' : ' Refresh to update, or turn on auto-refresh (every 30 seconds).'}
       </p>
     </div>
