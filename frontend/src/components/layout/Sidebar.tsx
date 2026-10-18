@@ -20,6 +20,7 @@ const monitorItems = [
   { to: '/topology',  icon: GitBranch,       label: 'Topology' },
   { to: '/traffic',   icon: Activity,        label: 'Traffic' },
   { to: '/events',    icon: Bell,            label: 'Events' },
+  { to: '/firewall-events', icon: ShieldCheck, label: 'Firewall Events' },
   { to: '/security',  icon: Shield,          label: 'Security' },
   // Reported as unreachable (#148): the only route to this page was the
   // "All sites" entry in the selector under the logo, itself hidden unless more

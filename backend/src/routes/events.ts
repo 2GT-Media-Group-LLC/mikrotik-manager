@@ -5,6 +5,7 @@ import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeByNullableDevice } from '../utils/siteScope';
 import { activeSite, writableScope } from '../middleware/site';
 import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
+import { parseFirewallLog } from '../utils/firewallLogParser';
 
 /** Most events the list's total counts; past it the page shows "N+". */
 export const EVENTS_COUNT_CAP = 100_000;
@@ -37,6 +38,144 @@ router.get('/topics', async (req: Request, res: Response) => {
     ORDER BY COUNT(*) DESC, token ASC
     LIMIT 40`);
   res.json(rows.map((r) => ({ topic: r.token.trim(), count: Number(r.n) })));
+});
+
+
+type FirewallEventRow = {
+  id: number;
+  device_id: number | null;
+  severity: string;
+  topic: string | null;
+  message: string;
+  event_time: Date | string;
+  device_name: string | null;
+};
+
+const FIREWALL_SCAN_LIMIT = 10_000;
+
+// GET /api/events/firewall
+router.get('/firewall', async (req: Request, res: Response) => {
+  const {
+    deviceId,
+    since,
+    search,
+    action,
+    protocol,
+    limit = '100',
+    offset = '0',
+  } = req.query;
+
+  const filters: string[] = [
+    `'firewall' = ANY(string_to_array(e.topic, ','))`,
+  ];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (deviceId) {
+    filters.push(`e.device_id = $${idx++}`);
+    params.push(deviceId);
+  }
+
+  const siteFilter = siteScopeByNullableDevice(activeSite(req), 'e.device_id');
+  if (siteFilter) filters.push(siteFilter);
+
+  if (since) {
+    filters.push(`e.event_time >= $${idx++}`);
+    params.push(since);
+  }
+
+  const requestedLimit = Math.min(
+    Math.max(parseInt(String(limit), 10) || 100, 1),
+    200
+  );
+
+  const requestedOffset = Math.max(
+    parseInt(String(offset), 10) || 0,
+    0
+  );
+
+  const rows = await query<FirewallEventRow>(
+    `SELECT
+       e.id,
+       e.device_id,
+       e.severity,
+       e.topic,
+       e.message,
+       e.event_time,
+       d.name AS device_name
+     FROM events e
+     LEFT JOIN devices d ON d.id = e.device_id
+     WHERE ${filters.join(' AND ')}
+     ORDER BY e.event_time DESC
+     LIMIT ${FIREWALL_SCAN_LIMIT + 1}`,
+    params
+  );
+
+  const scanCapped = rows.length > FIREWALL_SCAN_LIMIT;
+
+  const parsed = rows
+    .slice(0, FIREWALL_SCAN_LIMIT)
+    .flatMap((row) => {
+      const event = parseFirewallLog(row.message);
+      if (!event) return [];
+
+      return [{
+        id: row.id,
+        deviceId: row.device_id,
+        deviceName: row.device_name,
+        eventTime: row.event_time,
+        severity: row.severity,
+        topic: row.topic,
+        rawMessage: row.message,
+        ...event,
+      }];
+    });
+
+  const actionFilter = action ? String(action).toLowerCase() : '';
+  const protocolFilter = protocol ? String(protocol).toLowerCase() : '';
+  const searchTerm = search ? String(search).trim().toLowerCase() : '';
+
+  const filtered = parsed.filter((event) => {
+    if (actionFilter && event.action !== actionFilter) return false;
+    if (protocolFilter && event.protocol !== protocolFilter) return false;
+
+    if (searchTerm) {
+      const searchable = [
+        event.srcIp,
+        event.srcPort != null ? String(event.srcPort) : '',
+        event.srcPort != null ? `${event.srcIp}:${event.srcPort}` : '',
+        event.dstIp,
+        event.dstPort != null ? String(event.dstPort) : '',
+        event.dstPort != null ? `${event.dstIp}:${event.dstPort}` : '',
+        event.action,
+        event.protocol,
+        event.chain,
+        event.prefix,
+        event.inInterface ?? '',
+        event.outInterface ?? '',
+        event.connectionState ?? '',
+        event.srcMac ?? '',
+        event.tcpFlags ?? '',
+        event.deviceName ?? '',
+        event.rawMessage,
+      ].map((value) => value.toLowerCase());
+
+      if (!searchable.some((value) => value.includes(searchTerm))) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  res.json({
+    events: filtered.slice(
+      requestedOffset,
+      requestedOffset + requestedLimit
+    ),
+    total: filtered.length,
+    totalCapped: scanCapped,
+  });
 });
 
 router.get('/', async (req: Request, res: Response) => {
