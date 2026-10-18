@@ -15,7 +15,7 @@ describe('clientAttachments', () => {
       s({ device_id: 1, interface_name: 'bridge' }),
       s({ device_id: 2, interface_name: 'ether5', hostname: 'laptop' }),
     ], uplinks, types);
-    expect(r).toEqual([{ mac: 'AA:BB:CC:00:00:01', name: 'laptop', ip: '10.0.0.5', deviceId: 2, interface: 'ether5', wireless: false, portKnown: true, behindNeighbour: false }]);
+    expect(r).toEqual([{ mac: 'AA:BB:CC:00:00:01', name: 'laptop', ip: '10.0.0.5', deviceId: 2, interface: 'ether5', wireless: false, portKnown: true, behindNeighbour: false, vlan: null }]);
   });
 
   it('puts a wireless client on its AP, though the switch learns it on the AP uplink', () => {
@@ -69,5 +69,21 @@ describe('isPortLike', () => {
     expect(isPortLike('vlan10', 'vlan')).toBe(false);
     expect(isPortLike('sfp-sfpplus1')).toBe(true);
     expect(isPortLike('wg0')).toBe(false);
+  });
+});
+
+import { vlanLabel } from '../topologyClients';
+
+describe('vlanLabel (#296)', () => {
+  const types = new Map([['5:vlan-guest', 'vlan'], ['5:ether2', 'ether']]);
+  const names = new Map([['5:20', 'guest'], ['5:30', 'VLAN 30'], ['5:40', 'vlan-cams']]);
+  it('uses the VLAN interface a client was seen on, by name', () => {
+    expect(vlanLabel(5, 'vlan-guest', null, types, names)).toBe('vlan-guest');
+  });
+  it('otherwise the VLAN id, with a name only when it says more than the id', () => {
+    expect(vlanLabel(5, 'ether2', 20, types, names)).toBe('VLAN 20 · guest');
+    expect(vlanLabel(5, 'ether2', 30, types, names)).toBe('VLAN 30');
+    expect(vlanLabel(5, 'ether2', 40, types, names)).toBe('VLAN 40 · vlan-cams');
+    expect(vlanLabel(5, 'ether2', null, types, names)).toBeNull();
   });
 });

@@ -408,6 +408,9 @@ device-mode can only be changed at the device. Their advice is unchanged.
 | Ingress port would reject the frames management arrives in | `admit-only-vlan-tagged` on a port carrying untagged management drops it at ingress, while every VLAN row still lists the port |
 | Spanning tree off on a bridge with several active ports | Nothing stops a loop; the second cable someone plugs in becomes a broadcast storm |
 | Bridge running classic STP rather than RSTP | Convergence takes tens of seconds where RSTP takes under one |
+| Spanning tree off with switches on two or more ports (critical) | One stray cable between those switches is a loop nothing here will break |
+| Spanning-tree root chosen by lowest MAC (default priority on every bridge) | Add or replace a switch and the root can move to it; the tree reconverges around a box nobody chose |
+| An access point is the spanning-tree root over other switches | Its reboot or link flap reconverges the whole tree |
 | Device-mode blocks the scheduler | Change Guard can't arm its automatic undo, so changes that could cut off management are refused |
 | Device-mode blocks bandwidth-test, sniffer, hotspot or fetch | The bandwidth test, packet capture, Guest WiFi wizard or adopting through this device fail with "not allowed by device-mode" |
 | RouterOS has flagged the device | RouterOS found configuration it considers suspicious; device-mode can't change until it's cleared |

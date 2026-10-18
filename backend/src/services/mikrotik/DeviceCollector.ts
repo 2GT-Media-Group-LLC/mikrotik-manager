@@ -1750,6 +1750,10 @@ export class DeviceCollector {
       if (bridgeRead === null) return;
       const bridges = bridgeRead;
 
+      const bridgePorts = await this.client
+        .execute('/interface/bridge/port/print', { detail: '' })
+        .catch(() => [] as Record<string, string>[]);
+
       const seen: string[] = [];
       for (const bridge of bridges) {
         const name = bridge['name'];
@@ -1761,17 +1765,33 @@ export class DeviceCollector {
         if (!m) continue;
         seen.push(name);
 
+        // The bridge on the far end of the root port, as spanning tree knows
+        // it: the exact upstream, where neighbour discovery only lists
+        // candidates (#260). One more read, for the root port only.
+        let designated: Record<string, string> = {};
+        const rootPort = m['root-port'];
+        if (rootPort && rootPort !== 'none') {
+          const portRow = bridgePorts.find((p) => p['bridge'] === name && p['interface'] === rootPort);
+          if (portRow?.['.id']) {
+            designated = (await this.client
+              .execute('/interface/bridge/port/monitor', { numbers: portRow['.id'], once: '' })
+              .catch(() => [] as Record<string, string>[]))[0] ?? {};
+          }
+        }
+        const dCost = parseInt(designated['designated-cost'] || '', 10);
+
         const cost = parseInt(m['root-path-cost'] || '', 10);
         await query(
           `INSERT INTO device_bridges
              (device_id, bridge_name, bridge_id, root_bridge, root_bridge_id,
-              root_port, root_path_cost, protocol_mode, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+              root_port, root_path_cost, protocol_mode, designated_bridge_id, designated_port_id, designated_cost, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
            ON CONFLICT (device_id, bridge_name) DO UPDATE SET
              bridge_id = EXCLUDED.bridge_id, root_bridge = EXCLUDED.root_bridge,
              root_bridge_id = EXCLUDED.root_bridge_id, root_port = EXCLUDED.root_port,
              root_path_cost = EXCLUDED.root_path_cost,
-             protocol_mode = EXCLUDED.protocol_mode, updated_at = NOW()`,
+             protocol_mode = EXCLUDED.protocol_mode, designated_bridge_id = EXCLUDED.designated_bridge_id,
+             designated_port_id = EXCLUDED.designated_port_id, designated_cost = EXCLUDED.designated_cost, updated_at = NOW()`,
           [
             this.device.id, name, m['bridge-id'] || null,
             m['root-bridge'] === 'true',
@@ -1779,6 +1799,9 @@ export class DeviceCollector {
             m['root-port'] || null,
             Number.isFinite(cost) ? cost : null,
             bridge['protocol-mode'] || null,
+            designated['designated-bridge-id'] || null,
+            designated['designated-port-id'] || null,
+            Number.isFinite(dCost) ? dCost : null,
           ]
         );
       }
@@ -1792,10 +1815,6 @@ export class DeviceCollector {
       } else {
         await query(`DELETE FROM device_bridges WHERE device_id = $1`, [this.device.id]);
       }
-
-      const bridgePorts = await this.client
-        .execute('/interface/bridge/port/print', { detail: '' })
-        .catch(() => []);
 
       for (const port of bridgePorts) {
         const iface = (port['interface'] as string) || '';
@@ -3639,6 +3658,19 @@ export class DeviceCollector {
 
   async getConnections(): Promise<Record<string, string>[]> {
     return this.client.execute('/ip/firewall/connection/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+  }
+
+  /**
+   * The first `limit` connections, without reading the whole table (#300): a
+   * busy edge router can track hundreds of thousands, and printing them all
+   * every refresh loaded both it and the manager. Rows stream in and the
+   * print is cancelled once there are enough; only the shown fields are sent;
+   * a protocol filter is applied by the router.
+   */
+  async getConnectionsPage(limit: number, protocol?: string): Promise<Record<string, string>[]> {
+    return this.client.executeStreaming('/ip/firewall/connection/print', {
+      '.proplist': '.id,protocol,src-address,dst-address,tcp-state,orig-rate,repl-rate,orig-bytes,repl-bytes',
+    }, 20_000, { maxRows: limit, queries: protocol ? [`?protocol=${protocol}`] : [] }).catch(() => [] as Record<string, string>[]);
   }
 
   // /ip/firewall/connection/tracking holds the global conntrack state. `enabled`

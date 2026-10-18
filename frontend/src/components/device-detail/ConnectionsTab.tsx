@@ -17,17 +17,24 @@ const PROTO_COLOR: Record<string, string> = {
   icmp: 'text-amber-600 dark:text-amber-400',
 };
 
+const LIMITS = [200, 500, 2000];
+
 export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
   const [search, setSearch] = useState('');
+  // Only the first rows are read, and refreshing is opt-in: a busy router can
+  // track hundreds of thousands of connections (#300).
+  const [limit, setLimit] = useState(200);
+  const [protocol, setProtocol] = useState('');
+  const [auto, setAuto] = useState(false);
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['connections', deviceId],
-    queryFn: () => devicesApi.getConnections(deviceId, 500).then(r => r.data),
-    refetchInterval: 15_000,
+    queryKey: ['connections', deviceId, limit, protocol],
+    queryFn: () => devicesApi.getConnections(deviceId, limit, protocol).then(r => r.data),
+    refetchInterval: auto ? 30_000 : false,
   });
 
   const all = data?.connections ?? [];
-  const total = data?.total ?? 0;
+  const total = data?.total ?? null;
   const q = search.trim().toLowerCase();
   const rows = q ? all.filter(c => JSON.stringify(c).toLowerCase().includes(q)) : all;
 
@@ -51,7 +58,9 @@ export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg flex items-center justify-center"><Activity className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" /></div>
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-            Active Connections <span className="text-gray-400 font-normal">({total}{total > all.length ? `, showing ${all.length}` : ''})</span>
+            Active Connections <span className="text-gray-400 font-normal">
+              ({total !== null ? total.toLocaleString() : all.length.toLocaleString()}{data?.truncated ? `, showing the first ${all.length.toLocaleString()}` : ''})
+            </span>
           </h3>
           {trackLabel && (
             <span className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium', trackStyle)}
@@ -60,11 +69,20 @@ export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <select className="input py-1.5 text-xs w-auto" value={protocol} onChange={e => setProtocol(e.target.value)} title="Filtered by the router">
+            <option value="">All protocols</option><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option>
+          </select>
+          <select className="input py-1.5 text-xs w-auto" value={limit} onChange={e => setLimit(Number(e.target.value))} title="How many connections to read from the router">
+            {LIMITS.map(l => <option key={l} value={l}>First {l.toLocaleString()}</option>)}
+          </select>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-            <input className="input pl-8 py-1.5 text-xs w-56" placeholder="Filter IP / port / proto…" value={search} onChange={e => setSearch(e.target.value)} />
+            <input className="input pl-8 py-1.5 text-xs w-48" placeholder="Filter shown rows…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300">
+            <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} /> Auto-refresh
+          </label>
           <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5">
             <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh
           </button>
@@ -111,7 +129,11 @@ export default function ConnectionsTab({ deviceId }: { deviceId: number }) {
           </table>
         </div>
       )}
-      <p className="text-xs text-gray-400">Live from the device&apos;s connection tracking table, auto-refreshing every 15s.</p>
+      <p className="text-xs text-gray-400">
+        Live from the device&apos;s connection tracking table. Only the first {limit.toLocaleString()} connections are read, so a busy
+        router isn&apos;t asked for its whole table; the protocol filter is applied by the router, the text filter to the rows shown.
+        {auto ? ' Refreshing every 30 seconds.' : ' Refresh to update, or turn on auto-refresh (every 30 seconds).'}
+      </p>
     </div>
   );
 }

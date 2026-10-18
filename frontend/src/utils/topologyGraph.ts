@@ -15,8 +15,22 @@ export interface StpUpstream {
   deviceId: number;
   bridgeName: string;
   upstreamDeviceId: number | null;
-  confidence: 'resolved' | 'is-root' | 'external-root' | 'ambiguous' | 'unknown';
+  confidence: 'resolved' | 'external-upstream' | 'is-root' | 'external-root' | 'ambiguous' | 'unknown';
   rootBridgeId: string | null;
+  /** 'designated': spanning tree named the far end of the root port (exact, #260). */
+  method?: 'designated' | 'cost';
+  /** For an unmanaged upstream: its name if discovery saw it, and the discovered link to it. */
+  upstreamName?: string | null;
+  viaLinkId?: number | null;
+}
+
+/** One spanning-tree root seen across the fleet, named when it's unmanaged and discovery saw it (#260). */
+export interface StpDomainInfo {
+  rootBridgeId: string;
+  ownerDeviceId: number | null;
+  guessedName: string | null;
+  defaultPriority: boolean;
+  memberDeviceIds: number[];
 }
 
 export interface GraphInput {
@@ -25,6 +39,7 @@ export interface GraphInput {
   links: TopologyLink[];
   bridges: BridgeInfo[];
   upstreams: StpUpstream[];
+  stpDomains?: StpDomainInfo[];
   nodes: TopologyNode[];
   /** Links drawn by hand, between any two things on the map. */
   handLinks: HandLink[];
@@ -32,6 +47,8 @@ export interface GraphInput {
   clients: TopologyClient[] | null;
   /** Node ids (devices, or unmanaged neighbours) whose clients are shown one by one rather than as a count. */
   expandedClients: Set<string>;
+  /** Open a device's clients into one group per VLAN first, rather than straight into clients (#296). */
+  groupClientsByVlan?: boolean;
   /** Positions someone arranged by hand, in pixels, by node id (#147). */
   saved?: Record<string, { x: number; y: number }>;
   /** Discovered links hidden by hand, by link id (discussion #85). Left out before layout. */
@@ -192,11 +209,36 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
       });
       clientEdges.push({ id: `cgedge-${dev}`, kind: 'client', source: dev, target: group, parallel: 0 });
       if (!open) continue;
+      const hang = (parent: string, members: TopologyClient[]) => {
+        for (const c of members) {
+          const id = nodeId.client(c.mac);
+          ensure(id); connect(parent, id);
+          clientNodes.push({ id, kind: 'client', x: 0, y: 0, data: { ...c } });
+          clientEdges.push({ id: `cedge-${c.mac}`, kind: 'client', source: parent, target: id, parallel: 0, label: c.interface ?? undefined });
+        }
+      };
+      // By VLAN (#296): one chip per VLAN, each opening to its clients, so a
+      // guest VLAN with hundreds of phones doesn't bury the few that matter.
+      // A device whose clients are all in one VLAN (or none known) opens flat.
+      const byVlan = new Map<string, TopologyClient[]>();
       for (const c of list) {
-        const id = nodeId.client(c.mac);
-        ensure(id); connect(group, id);
-        clientNodes.push({ id, kind: 'client', x: 0, y: 0, data: { ...c } });
-        clientEdges.push({ id: `cedge-${c.mac}`, kind: 'client', source: group, target: id, parallel: 0, label: c.interface ?? undefined });
+        const k = c.vlan ?? 'No VLAN';
+        if (!byVlan.has(k)) byVlan.set(k, []);
+        byVlan.get(k)!.push(c);
+      }
+      if (!input.groupClientsByVlan || byVlan.size < 2) { hang(group, list); continue; }
+      const order = [...byVlan.keys()].sort((a, b) => (a === 'No VLAN' ? 1 : b === 'No VLAN' ? -1 : a.localeCompare(b, undefined, { numeric: true })));
+      for (const label of order) {
+        const members = byVlan.get(label)!;
+        const vg = `${group}:vlan:${label}`;
+        const vOpen = input.expandedClients.has(vg);
+        ensure(vg); connect(group, vg);
+        clientNodes.push({
+          id: vg, kind: 'clientGroup', x: 0, y: 0,
+          data: { deviceId: vg, count: members.length, wireless: members.filter((c) => c.wireless).length, expanded: vOpen, label },
+        });
+        clientEdges.push({ id: `cvedge-${vg}`, kind: 'client', source: group, target: vg, parallel: 0 });
+        if (vOpen) hang(vg, members);
       }
     }
   }
@@ -205,6 +247,12 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   const stpParent = new Map<string, string>();
   for (const u of upstreams) {
     if (u.confidence === 'resolved' && u.upstreamDeviceId != null) stpParent.set(nodeId.device(u.deviceId), nodeId.device(u.upstreamDeviceId));
+    // An unmanaged switch spanning tree names as upstream (#260): hang the
+    // device under it, so two switches on it show as siblings.
+    else if (u.confidence === 'external-upstream' && u.viaLinkId != null) {
+      const far = farEnd.get(u.viaLinkId);
+      if (far) stpParent.set(nodeId.device(u.deviceId), far);
+    }
   }
   const stpRoots = new Set<string>();
   const notes = new Map<string, string>();
@@ -228,7 +276,8 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     // A modem or "the internet" drawn by hand goes above the device it feeds.
     const above = [...(adj.get(root!) || [])].find((n) => UPSTREAM_KINDS.has(manualById.get(n)?.kind ?? ''));
     if (verdict?.confidence === 'external' && root) {
-      notes.set(root, `Spanning-tree root is outside the managed fleet${verdict.rootBridgeId ? ` (${verdict.rootBridgeId})` : ''}`);
+      const named = input.stpDomains?.find((d) => d.rootBridgeId.toLowerCase() === (verdict!.rootBridgeId ?? '').toLowerCase())?.guessedName;
+      notes.set(root, `Spanning-tree root is outside the managed fleet${verdict.rootBridgeId ? ` (${verdict.rootBridgeId}${named ? `, probably ${named}` : ''})` : ''}`);
     }
     return above ?? root!;
   };

@@ -662,7 +662,13 @@ export class RouterOSClient extends EventEmitter {
   async executeStreaming(
     command: string,
     params: Record<string, string> = {},
-    maxDurationMs = 30_000
+    maxDurationMs = 30_000,
+    /**
+     * maxRows: stop (and cancel) once this many rows have arrived, so a print
+     * of a huge table (a busy router's connections, #300) never transfers it
+     * all. queries: API query words ("?protocol=tcp") for the router to filter.
+     */
+    opts: { maxRows?: number; queries?: string[] } = {},
   ): Promise<Record<string, string>[]> {
     if (previewContext()) throw new RouterOSError('This action runs a tool on the device, so it can\'t be previewed');
     let result!: Record<string, string>[];
@@ -671,7 +677,7 @@ export class RouterOSClient extends EventEmitter {
     await new Promise<void>((resolve) => {
       this.operationChain = this.operationChain.then(async () => {
         try {
-          result = await this._executeStreamingRaw(command, params, maxDurationMs);
+          result = await this._executeStreamingRaw(command, params, maxDurationMs, opts);
         } catch (err) {
           error = err as Error;
         }
@@ -686,7 +692,8 @@ export class RouterOSClient extends EventEmitter {
   private async _executeStreamingRaw(
     command: string,
     params: Record<string, string>,
-    maxDurationMs: number
+    maxDurationMs: number,
+    opts: { maxRows?: number; queries?: string[] } = {},
   ): Promise<Record<string, string>[]> {
     if (!this.socket || !this.connected) {
       throw new RouterOSError('Not connected');
@@ -697,11 +704,13 @@ export class RouterOSClient extends EventEmitter {
     for (const [key, value] of Object.entries(params)) {
       words.push(`=${key}=${value}`);
     }
+    for (const q of opts.queries ?? []) words.push(q);
     words.push(`.tag=${tag}`);
 
     await this.sendSentence(words);
 
     const results: Record<string, string>[] = [];
+    const maxRows = opts.maxRows ?? Infinity;
     const deadline = Date.now() + maxDurationMs;
 
     // Collect !re sentences until deadline or until !done / !fatal arrives
@@ -722,6 +731,7 @@ export class RouterOSClient extends EventEmitter {
 
       if (sentence.type === '!re') {
         results.push(sentence.words);
+        if (results.length >= maxRows) break;
       } else if (sentence.type === '!done') {
         // Command finished on its own (shouldn't happen for generators, but handle it)
         return results;

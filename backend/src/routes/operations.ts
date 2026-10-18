@@ -15,6 +15,7 @@ import type { OpticStatus } from '../utils/opticLevels';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { BackupService, BackupDevice } from '../services/BackupService';
 import { fluxString } from '@influxdata/influxdb-client';
+import { stpDomains } from '../utils/stpUpstream';
 import { latestResources } from '../services/latestMetrics';
 
 const router = Router();
@@ -478,11 +479,18 @@ router.get('/insights', async (req: Request, res: Response) => {
       if (!external.has(b.root_bridge_id!)) external.set(b.root_bridge_id!, []);
       external.get(b.root_bridge_id!)!.push(b.name);
     }
+    // Name it where discovery saw it: a neighbour whose MAC fits the root's bridge id (#260).
+    const seenNeighbours = external.size
+      ? await query<{ neighbor_mac: string | null; neighbor_identity: string | null }>(
+        `SELECT DISTINCT neighbor_mac, neighbor_identity FROM topology_links WHERE neighbor_mac IS NOT NULL`).catch(() => [])
+      : [];
     for (const [rootId, names] of external) {
       const devices = [...new Set(names)].sort();
+      const named = stpDomains([{ device_id: -1, bridge_name: '', bridge_id: null, root_bridge: false, root_bridge_id: rootId, root_port: null, root_path_cost: null }],
+        seenNeighbours.map((n) => ({ from_device_id: null, to_device_id: null, neighbor_mac: n.neighbor_mac, neighbor_identity: n.neighbor_identity })))[0]?.guessedName;
       attention.push({
         sev: 'info', category: 'topology',
-        title: `Spanning-tree root ${rootId} is not a managed device`,
+        title: `Spanning-tree root ${rootId}${named ? ` (probably ${named})` : ''} is not a managed device`,
         body:
           `${devices.join(', ')} ${devices.length === 1 ? 'follows' : 'follow'} a root bridge ` +
           `that no device here owns. Layer-2 decisions for that segment — which links forward ` +

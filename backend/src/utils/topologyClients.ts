@@ -27,6 +27,8 @@ export interface ClientSighting {
   custom_name: string | null;
   ip_address: string | null;
   vendor: string | null;
+  /** "VLAN 1212 · guest", or a VLAN interface's name, for grouping on the map (#296). */
+  vlan?: string | null;
 }
 
 export interface TopoClient {
@@ -40,6 +42,23 @@ export interface TopoClient {
   portKnown: boolean;
   /** Seen on a port facing an unmanaged neighbour: it is behind that neighbour. */
   behindNeighbour: boolean;
+  /** The VLAN it was seen in, labelled (#296); null when not known. */
+  vlan: string | null;
+}
+
+/**
+ * A client's VLAN as a label (#296): the VLAN interface it was seen on, by name;
+ * otherwise "VLAN <id>", with the VLAN interface or bridge VLAN name the device
+ * has for that id when it isn't just "VLAN <id>" again.
+ */
+export function vlanLabel(
+  deviceId: number, iface: string | null, vlanId: number | null,
+  portTypes: Map<string, string>, vlanNames: Map<string, string>,
+): string | null {
+  if (iface && portTypes.get(key(deviceId, iface)) === 'vlan') return iface;
+  if (vlanId == null) return null;
+  const name = vlanNames.get(`${deviceId}:${vlanId}`);
+  return `VLAN ${vlanId}${name && !/^vlan\s*\d+$/i.test(name.trim()) ? ` · ${name.trim()}` : ''}`;
 }
 
 /** A port a client can be plugged into, rather than a bridge, VLAN or tunnel. */
@@ -88,6 +107,7 @@ export function clientAttachments(
       wireless: best.client_type === 'wireless',
       portKnown: r < 3,
       behindNeighbour: r === 2,
+      vlan: best.vlan ?? null,
     });
   }
   return out.sort((a, b) => a.deviceId - b.deviceId || a.name.localeCompare(b.name));

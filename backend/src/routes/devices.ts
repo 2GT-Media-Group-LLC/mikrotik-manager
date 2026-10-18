@@ -1656,11 +1656,22 @@ router.delete('/:id/address-lists/:entryId', requireWrite, async (req, res) => {
 
 // ─── Active Connections (read-only) ─────────────────────────────────────────────
 router.get('/:id/connections', async (req, res) => {
-  const limit = Math.min(parseInt(String(req.query.limit || '500'), 10) || 500, 2000);
+  const limit = Math.max(1, Math.min(parseInt(String(req.query.limit || '200'), 10) || 200, 2000));
+  const protocol = String(req.query.protocol ?? '').toLowerCase();
+  if (protocol && !/^[a-z0-9-]{1,16}$/.test(protocol)) return res.status(400).json({ error: 'protocol must be a protocol name' });
   await withCollector(req.params.id, res, async (c) => {
-    const [rows, tracking] = await Promise.all([c.getConnections(), c.getConnectionTracking()]);
-    // Connection tables can be huge; cap and surface the total so the UI can note truncation.
-    return { total: rows.length, connections: rows.slice(0, limit), tracking };
+    // Never the whole table (#300): the total comes from conntrack's own
+    // counter, and only the first `limit` rows are read.
+    const tracking = await c.getConnectionTracking();
+    const rows = await c.getConnectionsPage(limit, protocol || undefined);
+    const counted = Number(tracking['total-entries']);
+    return {
+      total: Number.isFinite(counted) && !protocol ? Math.max(counted, rows.length) : null,
+      connections: rows,
+      limit,
+      truncated: rows.length >= limit,
+      tracking,
+    };
   });
 });
 

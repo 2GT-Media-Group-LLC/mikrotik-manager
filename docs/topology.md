@@ -33,12 +33,23 @@ tell. A link that's still wrong can be [hidden](#hiding-a-discovered-link).
 ## Spanning tree
 
 LLDP frequently reports several neighbours on one port, and cannot say which is upstream.
-Where the devices run STP they have already computed that answer, so the root port, STP domain
-and path cost are used to resolve the real upstream link.
+Where the devices run STP they have already computed that answer. For each bridge's root port,
+spanning tree names the **designated bridge**, the switch at the other end, and that is used
+as the upstream (#260):
 
-Where STP says the root belongs to equipment outside the fleet, the platform declines to guess
-rather than naming the wrong switch, and the top device of that part of the map says so, with the
-root's bridge id.
+- a managed switch: the device hangs under it;
+- a switch the manager doesn't manage (a third-party switch that runs STP): the device hangs
+  under that neighbour, named from discovery where it was seen. Two switches on the same
+  unmanaged switch show as siblings, not one below the other.
+
+Data from before the designated bridge was read falls back to the older rule: the neighbour on
+the root port that is in the same STP domain and closer to the root, used only when exactly one
+qualifies. Where spanning tree proves a cable that discovery left out (a switch seen only by CDP
+or MNDP on a busy port), it's drawn as an **stp** link.
+
+Where STP says the root belongs to equipment outside the fleet, the top device of that part of
+the map says so, with the root's bridge id, and with a name ("probably 2GT-NW-CORE") when a
+neighbour discovery saw has a MAC address that fits it.
 
 When several bridges claim to be root (an access point running a bridge of its own, say), the one
 the other switches point at wins, and it is marked with a ★.
@@ -48,8 +59,14 @@ redundant path spanning tree has switched off) are drawn red and dashed, and a s
 between the same two switches gets its own edge. A redundant path you would otherwise never see
 is exactly what you want to know about before unplugging something.
 
-[Config Health](change-guard.md) separately flags bridges with spanning tree switched off and
-bridges still running classic STP rather than RSTP.
+[Config Health](change-guard.md) separately flags:
+
+- bridges with spanning tree switched off: a warning, or **critical** when discovery sees
+  switches on two or more of the bridge's ports, where one stray cable makes a loop;
+- bridges still running classic STP rather than RSTP;
+- a tree whose root kept the default priority (0x8000), so it won on lowest MAC address rather
+  than by anyone's choice; reported on the root, or on its members when the root isn't managed;
+- an access point as root of a tree of several switches.
 
 ## Layout
 
@@ -88,6 +105,13 @@ A second cable between the same two cards is drawn alongside the first.
 **Show clients** adds a chip under each switch, access point or unmanaged neighbour with the
 number of clients connected through it (and how many are on Wi-Fi). Click a chip to show each
 client; click it again to fold them back. Click a client to open it.
+
+Tick **By VLAN** to open a chip into one chip per VLAN first, each with its count, and open those
+to see their clients (#296). A guest VLAN with hundreds of phones then stays folded while the few
+clients on management or camera VLANs are a click away. A VLAN is named after the VLAN interface
+the client was seen on, or shown as "VLAN 1212" with the device's name for that VLAN when it has
+one. A device whose clients are all in one VLAN opens straight to them. The setting is remembered
+in your browser.
 
 A client is usually seen by several devices at once: the router in ARP, every switch on the way
 to it, and the access point it's associated with. It is drawn where it actually connects:

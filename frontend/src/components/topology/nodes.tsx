@@ -141,12 +141,13 @@ function ManualNode({ data }: { data: Record<string, unknown> }) {
 
 /** "12 clients" under a switch or AP; click to show them one by one. */
 function ClientGroupNode({ data }: { data: Record<string, unknown> }) {
-  const g = data as { count: number; wireless: number; expanded?: boolean };
+  const g = data as { count: number; wireless: number; expanded?: boolean; label?: string };
   return (
     <div className="px-2.5 py-1.5 text-xs rounded-full bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 shadow-sm select-none cursor-pointer flex items-center gap-1.5"
       style={{ border: '1px solid #7dd3fc' }} title={g.expanded ? 'Click to fold them back into a count' : 'Click to show each client'}>
       <Handles connectable={false} />
       <Users className="w-3.5 h-3.5" />
+      {g.label && <span className="font-semibold">{g.label} ·</span>}
       <span className="font-medium">{g.count} client{g.count === 1 ? '' : 's'}</span>
       {g.wireless > 0 && <span className="text-sky-500/80 flex items-center gap-0.5"><Wifi className="w-3 h-3" />{g.wireless}</span>}
       {g.expanded ? <ChevronUp className="w-3 h-3 opacity-60" /> : <ChevronDown className="w-3 h-3 opacity-60" />}

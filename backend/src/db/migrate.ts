@@ -924,6 +924,11 @@ CREATE TABLE IF NOT EXISTS device_bridges (
   PRIMARY KEY (device_id, bridge_name)
 );
 CREATE INDEX IF NOT EXISTS idx_device_bridges_rootid ON device_bridges(root_bridge_id);
+-- The bridge at the far end of the root port, from spanning tree: the exact
+-- upstream, managed or not (#260).
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS designated_bridge_id VARCHAR(64);
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS designated_port_id VARCHAR(16);
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS designated_cost INTEGER;
 
 -- Bulk command execution (#118).
 --

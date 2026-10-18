@@ -206,3 +206,69 @@ describe('STP upstream: bonds and unmanaged roots', () => {
     expect(v.upstreamDeviceId).toBe(20);
   });
 });
+
+// ─── #260: the live fleet of 2026-10-18, with spanning tree's designated bridges ───
+import { macNear } from '../stpUpstream';
+
+describe('designated bridge: the exact upstream, managed or not (#260)', () => {
+  const B = (device_id: number, bridge_id: string, root_bridge_id: string, root_port: string, cost: number, designated?: string) => ({
+    device_id, bridge_name: 'bridge', bridge_id, root_bridge: bridge_id === root_bridge_id, root_bridge_id,
+    root_port, root_path_cost: cost, designated_bridge_id: designated ?? null,
+  });
+  const CORE_ROOT = '0x2000.70:A7:41:EF:8F:FB';
+  const STUDIO = '0x7000.E0:63:DA:C7:B3:23';
+  const bridges = [
+    B(1, '0x8000.F4:1E:57:51:74:1E', '0x8000.F4:1E:57:51:74:1E', 'none', 0),
+    B(2, '0x8000.D0:EA:11:0A:DE:77', '0x8000.D0:EA:11:0A:DE:77', 'none', 0),
+    B(7, '0x8000.F4:1E:57:BD:F0:2A', '0x8000.F4:1E:57:51:74:1E', 'sfp28-2', 800, '0x8000.F4:1E:57:51:74:1E'),
+    B(8, '0x8000.C4:AD:34:D5:BC:B7', CORE_ROOT, 'ether1', 41010, STUDIO),
+    B(26, '0x8000.38:32:7A:34:E5:1B', CORE_ROOT, 'ether1', 61000, STUDIO),
+  ];
+  let id = 0;
+  const L = (from: number, port: string, to: number | null, type: string, ident: string, mac: string) =>
+    ({ id: ++id, from_device_id: from, from_interface: port, to_device_id: to, link_type: type, neighbor_identity: ident, neighbor_mac: mac });
+  // What discovery reported. CDP floods through the unmanaged switches, so every
+  // root port "sees" most of the fleet; the TEST switch's sightings are resolved
+  // to it here, which is when the old cost rule went wrong.
+  const links = [
+    L(1, 'sfp28-1', 26, 'cdp', '2GT-NW-MiniRack', '38:32:7A:34:E5:1B'),
+    L(1, 'sfp28-1', 2, 'cdp', '2GT-NW-AP4', 'D0:EA:11:0A:DE:77'),
+    L(1, 'sfp28-1', 8, 'cdp', '2GT-NW-MIKROTIK10G-TEST', 'C4:AD:34:D5:BC:B7'),
+    L(1, 'sfp28-1', null, 'lldp', '2GT-NW-CORE', '70:A7:41:EF:8F:FC'),
+    L(1, 'sfp28-2', 7, 'lldp', '2GT-NW-BigSwitch', 'F4:1E:57:BD:F0:33'),
+    L(2, 'ether2', 1, 'cdp', '2GT-NW-100G', 'F4:1E:57:51:74:0E'),
+    L(2, 'ether2', null, 'lldp', '2GT-NW-TOR', 'D8:B3:70:54:98:21'),
+    L(7, 'sfp28-2', 8, 'cdp', '2GT-NW-MIKROTIK10G-TEST', 'C4:AD:34:D5:BC:B7'),
+    L(7, 'sfp28-2', 1, 'lldp', '2GT-NW-100G', 'F4:1E:57:51:74:0F'),
+    L(7, 'sfp28-2', 26, 'cdp', '2GT-NW-MiniRack', '38:32:7A:34:E5:1B'),
+    L(8, 'ether1', 7, 'cdp', '2GT-NW-BigSwitch', 'F4:1E:57:BD:F0:33'),
+    L(8, 'ether1', 26, 'cdp', '2GT-NW-MiniRack', '38:32:7A:34:E5:1B'),
+    L(8, 'ether1', null, 'lldp', '2GT-NW-STUDIO', 'E0:63:DA:C7:B3:24'),
+    L(26, 'ether1', 1, 'cdp', '2GT-NW-100G', 'F4:1E:57:51:74:0E'),
+    L(26, 'ether1', 8, 'cdp', '2GT-NW-MIKROTIK10G-TEST', 'C4:AD:34:D5:BC:B7'),
+    L(26, 'ether1', null, 'lldp', '2GT-NW-STUDIO', 'E0:63:DA:C7:B3:24'),
+  ];
+  const verdicts = resolveStpUpstreams(bridges, links);
+  const of = (d: number) => verdicts.find((v) => v.deviceId === d)!;
+
+  it('names a managed upstream from the designated bridge', () => {
+    expect(of(7)).toMatchObject({ confidence: 'resolved', upstreamDeviceId: 1, method: 'designated' });
+  });
+
+  it('two switches on the same unmanaged switch are siblings, not one upstream of the other', () => {
+    // The cost rule picked the TEST switch for MiniRack: same tree, lower cost.
+    expect(of(26)).toMatchObject({ confidence: 'external-upstream', upstreamDeviceId: null, upstreamName: '2GT-NW-STUDIO' });
+    expect(of(8)).toMatchObject({ confidence: 'external-upstream', upstreamName: '2GT-NW-STUDIO' });
+    expect(links.find((l) => l.id === of(26).viaLinkId)?.neighbor_identity).toBe('2GT-NW-STUDIO');
+  });
+
+  it('roots stay roots', () => {
+    expect(of(1).confidence).toBe('is-root');
+    expect(of(2).confidence).toBe('is-root');
+  });
+
+  it('matches MACs from the same box only', () => {
+    expect(macNear('E0:63:DA:C7:B3:23', 'e0:63:da:c7:b3:24')).toBe(true);
+    expect(macNear('E0:63:DA:C7:B3:23', 'E0:63:DA:C7:B4:23')).toBe(false);
+  });
+});

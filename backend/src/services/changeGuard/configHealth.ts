@@ -26,6 +26,7 @@ import {
   type RosRow,
 } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
+import { stpDomains, type StpBridge, type StpLink } from '../../utils/stpUpstream';
 
 export type FindingSeverity = 'critical' | 'warning' | 'info';
 
@@ -591,6 +592,106 @@ function ruleStpLegacyMode(snap: DeviceSnapshot): ConfigFinding[] {
     }));
 }
 
+// ─── Spanning tree across the fleet (#260) ──────────────────────────────────
+
+export interface StpFleetInput {
+  deviceId: number;
+  deviceName: string;
+  /** Every managed bridge, as spanning tree reports it. */
+  fleetBridges: StpBridge[];
+  devices: { id: number; name: string; device_type: string | null }[];
+  /** Discovered neighbours of this device: port, managed far end if resolved, advertised capabilities. */
+  neighbours: { from_interface: string | null; to_device_id: number | null; neighbor_caps: string | null }[];
+  /** Every neighbour sighting, to name a root no managed device owns. */
+  sightings: StpLink[];
+}
+
+/**
+ * Spanning-tree findings that need the rest of the fleet to see (#260).
+ *
+ * - Spanning tree off on a bridge that has switches on two or more ports is a
+ *   loop one cable away: the per-device warning becomes critical.
+ * - A tree whose root kept RouterOS's default priority was settled by lowest
+ *   MAC address, not by anyone; reported on the root (or its members, when the
+ *   root isn't managed).
+ * - An access point as root of a tree of several switches: a reboot or link
+ *   flap there reconverges everything around the weakest box.
+ */
+export function stpFleetRules(snap: DeviceSnapshot, input: StpFleetInput): { findings: ConfigFinding[]; replaces: string[] } {
+  const findings: ConfigFinding[] = [];
+  const replaces: string[] = [];
+  const name = (id: number) => input.devices.find((d) => d.id === id)?.name.trim() ?? `device ${id}`;
+
+  for (const b of snap.bridges) {
+    const bridge = b['name'];
+    if (!bridge || (b['protocol-mode'] || '').toLowerCase() !== 'none') continue;
+    const members = new Set(snap.bridgePorts.filter((p) => p['bridge'] === bridge && !isTrue(p['disabled'])).map((p) => p['interface']));
+    const switchPorts = [...new Set(input.neighbours
+      .filter((n) => n.from_interface && members.has(n.from_interface)
+        && (n.to_device_id != null || /bridge/i.test(n.neighbor_caps ?? '')))
+      .map((n) => n.from_interface!))];
+    if (switchPorts.length < 2) continue;
+    replaces.push(`stp-disabled:${bridge}`);
+    findings.push({
+      rule: 'stp-disabled-redundant',
+      fingerprint: `stp-disabled-redundant:${bridge}`,
+      severity: 'critical',
+      title: `Spanning tree is off on bridge ${bridge}, which has switches on ${switchPorts.length} ports`,
+      detail:
+        `protocol-mode is "none" and discovery sees switches on ${switchPorts.join(', ')}. If any two of them are `
+        + `also connected to each other, by design or by a stray patch cable, this bridge forwards in a loop: `
+        + `broadcasts multiply until the network is unusable, and nothing here will stop it.`,
+      remediation: `/interface/bridge set ${bridge} protocol-mode=rstp`,
+      docUrl: STP_DOC,
+      objects: [bridge, ...switchPorts],
+    });
+  }
+
+  const domains = stpDomains(input.fleetBridges, input.sightings).filter((d) => d.memberDeviceIds.length >= 2);
+  for (const d of domains) {
+    if (!d.memberDeviceIds.includes(input.deviceId)) continue;
+    const isOwner = d.ownerDeviceId === input.deviceId;
+    if (d.defaultPriority && (isOwner || d.ownerDeviceId === null)) {
+      const others = d.memberDeviceIds.filter((id) => id !== input.deviceId).map(name);
+      findings.push({
+        rule: 'stp-root-by-mac',
+        fingerprint: `stp-root-by-mac:${d.rootBridgeId.toLowerCase()}`,
+        severity: 'info',
+        title: isOwner
+          ? `${input.deviceName.trim()} is the spanning-tree root only because it has the lowest MAC address`
+          : `This tree's root (${d.guessedName ?? d.rootBridgeId}) won on lowest MAC address, not by choice`,
+        detail:
+          `Every bridge in this tree (with ${others.join(', ')}) has RouterOS's default priority, 0x8000, so the `
+          + `root was decided by which has the lowest MAC. Replace or add a switch and the root can move to it, `
+          + `and the whole tree reconverges around a box nobody chose.`,
+        remediation: isOwner
+          ? `If this should be the root, make it so on purpose: /interface/bridge set [find] priority=0x4000`
+          : 'Give the switch that should be root a lower priority, e.g. /interface/bridge set [find] priority=0x4000 on it.',
+        docUrl: STP_DOC,
+        objects: [d.rootBridgeId],
+      });
+    }
+    const owner = input.devices.find((x) => x.id === d.ownerDeviceId);
+    if (isOwner && owner && /wireless|ap/i.test(owner.device_type ?? '')) {
+      findings.push({
+        rule: 'stp-root-is-ap',
+        fingerprint: `stp-root-is-ap:${d.rootBridgeId.toLowerCase()}`,
+        severity: 'warning',
+        title: `An access point, ${input.deviceName.trim()}, is the spanning-tree root for ${d.memberDeviceIds.length - 1} other device(s)`,
+        detail:
+          `Every switch in this tree routes its idea of the network through this AP. When it reboots or its link `
+          + `flaps, the tree reconverges around whichever switch has the next-best priority, and traffic stops while it does.`,
+        remediation:
+          `Give the core switch a lower priority than the AP (e.g. priority=0x4000 on the switch), or raise the AP's: `
+          + `/interface/bridge set [find] priority=0xF000`,
+        docUrl: STP_DOC,
+        objects: [d.rootBridgeId],
+      });
+    }
+  }
+  return { findings, replaces };
+}
+
 const DEVICE_MODE_DOC = 'https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode';
 
 /** Device-mode features the manager relies on, and what each one powers here. */
@@ -744,7 +845,22 @@ export interface ConfigHealthResult {
  */
 export async function runConfigHealth(device: GuardDevice): Promise<ConfigHealthResult> {
   const snap = await captureSnapshot(device);
-  const findings = auditConfig(snap, device);
+  let findings = auditConfig(snap, device);
+  // Spanning-tree checks that need the rest of the fleet (#260).
+  try {
+    const [fleetBridges, devices, neighbours, sightings] = await Promise.all([
+      query<StpBridge>(`SELECT device_id, bridge_name, bridge_id, root_bridge, root_bridge_id, root_port, root_path_cost, designated_bridge_id, designated_port_id FROM device_bridges`),
+      query<{ id: number; name: string; device_type: string | null }>(`SELECT id, name, device_type FROM devices`),
+      query<{ from_interface: string | null; to_device_id: number | null; neighbor_caps: string | null }>(
+        `SELECT from_interface, to_device_id, neighbor_caps FROM topology_links WHERE from_device_id = $1`, [device.id]),
+      query<StpLink>(`SELECT DISTINCT NULL::int AS from_device_id, NULL::int AS to_device_id, neighbor_mac, neighbor_identity FROM topology_links WHERE neighbor_mac IS NOT NULL`),
+    ]);
+    const fleet = stpFleetRules(snap, { deviceId: device.id, deviceName: device.name, fleetBridges, devices, neighbours, sightings });
+    findings = [...findings.filter((f) => !fleet.replaces.includes(f.fingerprint)), ...fleet.findings]
+      .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.rule.localeCompare(b.rule));
+  } catch (e) {
+    console.warn(`[config-health] spanning-tree fleet checks skipped for ${device.name}: ${(e as Error).message}`);
+  }
   const checkedAt = new Date();
 
   for (const f of findings) {

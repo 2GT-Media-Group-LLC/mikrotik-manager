@@ -353,7 +353,7 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **Firewall** | Filter, NAT and mangle rules, with reordering and counters |
 | **Routing** | Routes, OSPF, BGP, routing tables and filters |
 | **Queues** | Traffic shaping |
-| **Connections** | The live connection tracking table |
+| **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300) |
 | **Hardware** | Health sensors, PoE, SFP module detail |
 | **LTE** | Signal, carrier, bands and the data cap — see [Cellular](cellular.md) |
 | **Security** | Baseline hardening checks and the posture score |

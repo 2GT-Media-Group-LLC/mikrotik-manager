@@ -39,4 +39,11 @@ describe('AP scan parsing', () => {
     expect(scanSecurity({})).toBe('open');
     expect(scanSecurity({ 'authentication-types': 'wpa2-psk' })).toBe('WPA');
   });
+
+  it('says unknown, not open, when a legacy scan leaves out the privacy flag (#295)', () => {
+    expect(scanSecurity({ address: 'aa:bb:cc:dd:ee:ff', sig: '-70' })).toBe('unknown');
+    expect(scanSecurity({ address: 'aa:bb:cc:dd:ee:ff', sig: '-70', privacy: 'false' })).toBe('open');
+    // The wifi package leaves security out for an open network.
+    expect(scanSecurity({ address: 'aa:bb:cc:dd:ee:ff', signal: '-70' })).toBe('open');
+  });
 });

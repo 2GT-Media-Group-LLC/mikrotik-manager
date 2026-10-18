@@ -33,12 +33,19 @@ export function scanSignal(row: Record<string, string>): number {
   return Number.isFinite(n) ? n : NO_SIGNAL;
 }
 
-/** What the AP asks of clients: its auth types, "secured" when only the legacy privacy flag says so, or "open". */
+/**
+ * What the AP asks of clients: its auth types, "secured" when only the legacy
+ * privacy flag says so, "open", or "unknown" when the scan didn't say (#295).
+ */
 export function scanSecurity(row: Record<string, string>): string {
   if (row['security']) return row['security'];
   if (row['authentication-types']) return 'WPA';
   // The legacy package only says whether the network is encrypted, not how.
-  if (isTrue(row['privacy'])) return 'secured';
+  if ('privacy' in row) return isTrue(row['privacy']) ? 'secured' : 'open';
+  // A legacy scan (it reports `sig`) that doesn't include the privacy flag
+  // says nothing about security; calling that "open" was wrong (#295). The
+  // wifi package leaves security out for an open network.
+  if ('sig' in row && !('signal' in row)) return 'unknown';
   return 'open';
 }
 
@@ -63,7 +70,7 @@ export function aggregateAPScanRows(
       if (!byKey.has(key)) byKey.set(key, { ssid, security, hidden: !ssid, entries: [] });
       const net = byKey.get(key)!;
       // A streaming scan repeats rows; an early one may lack fields a later one has.
-      if (net.security === 'open' && security !== 'open') net.security = security;
+      if ((net.security === 'open' || net.security === 'unknown') && security !== 'open' && security !== 'unknown') net.security = security;
       const existing = net.entries.find((e) => e.bssid === bssid && e.freq === freq);
       if (existing) {
         if (signal > existing.signal) existing.signal = signal;

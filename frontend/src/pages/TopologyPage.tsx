@@ -35,6 +35,7 @@ import NeighbourEditor from '../components/topology/NeighbourEditor';
 
 const edgeTypes = { topo: TopoEdge };
 const SHOW_CLIENTS_KEY = 'topology.showClients';
+const BY_VLAN_KEY = 'topology.clientsByVlan';
 
 type Anchors = Record<string, { sourceHandle: Side | null; targetHandle: Side | null }>;
 
@@ -78,6 +79,13 @@ export default function TopologyPage() {
     try { return localStorage.getItem(SHOW_CLIENTS_KEY) === '1'; } catch { return false; }
   });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Open client chips into one chip per VLAN first (#296), remembered in this browser.
+  const [byVlan, setByVlan] = useState(() => { try { return localStorage.getItem(BY_VLAN_KEY) === '1'; } catch { return false; } });
+  const toggleByVlan = () => {
+    const next = !byVlan;
+    setByVlan(next);
+    try { localStorage.setItem(BY_VLAN_KEY, next ? '1' : '0'); } catch { /* private mode */ }
+  };
   const [hover, setHover] = useState<string | null>(null);
   const [editing, setEditing] = useState<TopologyNode | 'new' | null>(null);
   const [linkError, setLinkError] = useState('');
@@ -134,15 +142,17 @@ export default function TopologyPage() {
       links: data.links || [],
       bridges: (data.bridges as BridgeInfo[]) || [],
       upstreams: (data.upstreams as StpUpstream[]) || [],
+      stpDomains: data.stpDomains ?? [],
       nodes: data.nodes || [],
       handLinks: data.handLinks || [],
       clients: showClients ? data.clients ?? [] : null,
       expandedClients: expanded,
+      groupClientsByVlan: byVlan,
       saved: data.layout?.positions ?? {},
       hidden: new Set((data.hiddenLinks ?? []).map((h) => h.key)),
       neighbourOverrides: data.neighbourOverrides ?? {},
     });
-  }, [data, showClients, expanded]);
+  }, [data, showClients, expanded, byVlan]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -303,6 +313,11 @@ export default function TopologyPage() {
           >
             <Users className="w-4 h-4" />{showClients ? 'Hide clients' : 'Show clients'}
           </button>
+          {showClients && (
+            <label className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300" title="Open a device's clients into one group per VLAN first">
+              <input type="checkbox" checked={byVlan} onChange={toggleByVlan} /> By VLAN
+            </label>
+          )}
           {showClients && expanded.size > 0 && (
             <button className="text-sm text-sky-700 dark:text-sky-300 hover:underline flex items-center gap-1" onClick={() => setExpanded(new Set())}>
               <ChevronUp className="w-3.5 h-3.5" />Collapse clients
@@ -480,7 +495,8 @@ export default function TopologyPage() {
                           link.link_type === 'lldp' && 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
                           link.link_type === 'cdp'  && 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
                           link.link_type === 'mndp' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-                          !['lldp','cdp','mndp'].includes(link.link_type) && 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300',
+                          link.link_type === 'stp'  && 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
+                          !['lldp','cdp','mndp','stp'].includes(link.link_type) && 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300',
                         )}>
                           {link.link_type}
                         </span>

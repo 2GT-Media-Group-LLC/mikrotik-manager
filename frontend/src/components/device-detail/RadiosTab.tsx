@@ -781,9 +781,11 @@ function APScanner({ deviceId }: { deviceId: number }) {
                     {/* SSID */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        {net.security !== 'open'
-                          ? <Lock className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                          : <Unlock className="w-3 h-3 text-amber-400 flex-shrink-0" />}
+                        {net.security === 'open'
+                          ? <Unlock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                          : net.security === 'unknown'
+                            ? null
+                            : <Lock className="w-3 h-3 text-gray-400 flex-shrink-0" />}
                         {net.hidden
                           ? <span className="text-gray-400 italic text-xs">Hidden network</span>
                           : <span className="font-medium text-gray-900 dark:text-white">{net.ssid}</span>}

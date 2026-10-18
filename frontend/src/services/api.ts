@@ -878,8 +878,9 @@ export const devicesApi = {
   removeAddressListEntry: (id: number, entryId: string, confirmLockout = false) =>
     api.delete(`/devices/${id}/address-lists/${encodeURIComponent(entryId)}`, confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
   // Active connections (read-only)
-  getConnections: (id: number, limit = 500) =>
-    api.get<{ total: number; connections: Record<string, string>[]; tracking: Record<string, string> }>(`/devices/${id}/connections`, { params: { limit } }),
+  getConnections: (id: number, limit = 200, protocol = '') =>
+    api.get<{ total: number | null; connections: Record<string, string>[]; limit: number; truncated: boolean; tracking: Record<string, string> }>(
+      `/devices/${id}/connections`, { params: { limit, ...(protocol ? { protocol } : {}) } }),
   // Simple queues (bandwidth control)
   getQueues: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/queues`),
   addQueue: (id: number, data: Record<string, unknown>) =>
@@ -1516,12 +1517,9 @@ export const topologyApi = {
       /** What each bridge reports about the spanning tree (#131). */
       bridges: import('../utils/stpRoot').BridgeInfo[];
       /** Each device's upstream as resolved from spanning tree, server-side. */
-      upstreams: {
-        deviceId: number; bridgeName: string;
-        upstreamDeviceId: number | null;
-        confidence: 'resolved' | 'is-root' | 'external-root' | 'ambiguous' | 'unknown';
-        rootBridgeId: string | null;
-      }[];
+      upstreams: import('../utils/topologyGraph').StpUpstream[];
+      /** Every spanning-tree root, named when it's unmanaged and discovery saw it (#260). */
+      stpDomains?: import('../utils/topologyGraph').StpDomainInfo[];
       /** Nodes added by hand, and links drawn by hand (#147). */
       nodes: import('../types').TopologyNode[];
       handLinks: import('../types').HandLink[];

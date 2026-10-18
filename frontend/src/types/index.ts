@@ -393,6 +393,8 @@ export interface TopologyClient {
   portKnown: boolean;
   /** Seen on a port facing an unmanaged neighbour: drawn behind that neighbour. */
   behindNeighbour?: boolean;
+  /** The VLAN it was seen in, labelled ("VLAN 1212 · guest" or a VLAN interface name), for grouping (#296). */
+  vlan?: string | null;
 }
 
 export interface ExternalTopologyNode {

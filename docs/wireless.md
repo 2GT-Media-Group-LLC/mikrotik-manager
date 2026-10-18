@@ -67,7 +67,8 @@ Scans run on demand or on a schedule; spectral scans are configured per radio.
 
 With the newer **wifi** package a network's security shows its authentication types (for example
 `wpa2-psk,wpa3-psk`). The older **wireless** package only reports whether a network is
-encrypted, so those show **secured** or **open** (#295).
+encrypted, so those show **secured** or **open**, or **unknown** where the scan doesn't report
+it (#295).
 
 ## CAPsMAN
 

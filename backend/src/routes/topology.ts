@@ -3,10 +3,10 @@ import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
-import { resolveStpUpstreams } from '../utils/stpUpstream';
+import { stpDomains, resolveStpUpstreams } from '../utils/stpUpstream';
 import { activeSite, writableScope, targetSite } from '../middleware/site';
 import { roleInSite, roleAtLeast, roleOnDevice } from '../utils/siteAccess';
-import { clientAttachments, type ClientSighting } from '../utils/topologyClients';
+import { clientAttachments, vlanLabel, type ClientSighting } from '../utils/topologyClients';
 import { PollerService } from '../services/PollerService';
 import {
   buildTopology,
@@ -34,6 +34,8 @@ interface BridgeRow {
   root_port: string | null;
   root_path_cost: number | null;
   protocol_mode: string | null;
+  designated_bridge_id: string | null;
+  designated_port_id: string | null;
 }
 
 // GET /api/topology
@@ -74,7 +76,7 @@ router.get('/', async (req: Request, res: Response) => {
     // reason the root is no longer guessed from port roles (#131).
     query<BridgeRow>(
       `SELECT device_id, bridge_name, bridge_id, root_bridge, root_bridge_id,
-              root_port, root_path_cost, protocol_mode
+              root_port, root_path_cost, protocol_mode, designated_bridge_id, designated_port_id
          FROM device_bridges ${brFilter ? `WHERE ${brFilter}` : ''}`
     ),
   ]);
@@ -123,11 +125,32 @@ router.get('/', async (req: Request, res: Response) => {
   // rollout warning and the diagram agree on one answer (#131 follow-on).
   const upstreams = resolveStpUpstreams(bridges, allLinks, await loadBondMembers());
 
+  // A cable spanning tree proves (the designated bridge on a root port) that
+  // discovery's filtering dropped, typically a switch seen only by CDP or MNDP
+  // on a port that sees many: drawn as a spanning-tree link (#260).
+  const stpLinks: typeof graph.links = [];
+  const joined = (a: number, b: number) => graph.links.some((l) =>
+    (l.from_device_id === a && l.to_device_id === b) || (l.from_device_id === b && l.to_device_id === a));
+  for (const u of upstreams) {
+    if (u.confidence !== 'resolved' || u.method !== 'designated' || u.upstreamDeviceId == null) continue;
+    if (joined(u.deviceId, u.upstreamDeviceId)) continue;
+    const b = bridges.find((x) => x.device_id === u.deviceId && x.bridge_name === u.bridgeName);
+    stpLinks.push({
+      id: -(1_000_000 + stpLinks.length), from_device_id: u.deviceId, from_interface: b?.root_port ?? null,
+      to_device_id: u.upstreamDeviceId, to_interface: null, neighbor_address: null, neighbor_identity: null,
+      neighbor_platform: null, neighbor_mac: null, stp_role: 'root', stp_state: 'forwarding', bridge_name: u.bridgeName,
+      neighbor_caps: null, link_type: 'stp', discovered_by: null,
+      from_device_name: devices.find((d) => d.id === u.deviceId)?.name ?? null,
+      to_device_name: devices.find((d) => d.id === u.upstreamDeviceId)?.name ?? null,
+    });
+  }
+
   res.json({
     devices,
     bridges,
     upstreams,
-    links: graph.links,
+    stpDomains: stpDomains(bridges, allLinks),
+    links: [...graph.links, ...stpLinks],
     externalNodes: graph.externalNodes,
     segConns: graph.segConns,
     ambiguous: graph.ambiguous,
@@ -149,7 +172,7 @@ async function topologyClients(siteId: ReturnType<typeof activeSite>) {
   const [sightings, uplinkRows, ports] = await Promise.all([
     query<ClientSighting>(
       `SELECT c.mac_address, c.device_id, c.interface_name, c.client_type, c.last_seen,
-              c.hostname, c.custom_name, c.ip_address, c.vendor
+              c.hostname, c.custom_name, c.ip_address, c.vendor, c.vlan_id
          FROM clients c WHERE c.active ${scope ? `AND ${scope}` : ''}`
     ),
     // Ports with a neighbour: facing another managed device (the client is
@@ -158,13 +181,21 @@ async function topologyClients(siteId: ReturnType<typeof activeSite>) {
       `SELECT from_device_id, from_interface, (to_device_id IS NOT NULL) AS managed FROM topology_links
         WHERE from_interface IS NOT NULL`
     ),
-    query<{ device_id: number; name: string; type: string | null }>(`SELECT device_id, name, type FROM interfaces`),
+    query<{ device_id: number; name: string; type: string | null; vlan_id: string | null }>(
+      `SELECT device_id, name, type, config_json->>'vlan-id' AS vlan_id FROM interfaces`),
   ]);
+  // Names for VLAN ids, per device: its VLAN interfaces, then its bridge VLAN entries (#296).
+  const bridgeVlanNames = await query<{ device_id: number; vlan_id: number; name: string | null }>(
+    `SELECT device_id, vlan_id, name FROM vlans WHERE name IS NOT NULL`).catch(() => []);
+  const vlanNames = new Map<string, string>();
+  for (const v of bridgeVlanNames) if (v.name) vlanNames.set(`${v.device_id}:${v.vlan_id}`, v.name);
+  for (const p of ports) if (p.type === 'vlan' && p.vlan_id) vlanNames.set(`${p.device_id}:${p.vlan_id}`, p.name);
   const portKey = (r: { from_device_id: number; from_interface: string }) => `${r.from_device_id}:${r.from_interface.toLowerCase()}`;
   const uplinks = new Set(uplinkRows.filter((r) => r.managed).map(portKey));
   const neighbourPorts = new Set(uplinkRows.filter((r) => !r.managed).map(portKey));
   const types = new Map(ports.filter((p) => p.type).map((p) => [`${p.device_id}:${p.name.toLowerCase()}`, p.type!]));
-  return clientAttachments(sightings, uplinks, types, neighbourPorts);
+  const labelled = sightings.map((s) => ({ ...s, vlan: vlanLabel(s.device_id, s.interface_name, (s as { vlan_id?: number | null }).vlan_id ?? null, types, vlanNames) }));
+  return clientAttachments(labelled, uplinks, types, neighbourPorts);
 }
 
 /** Write access to a node: operator or better in its site. */
