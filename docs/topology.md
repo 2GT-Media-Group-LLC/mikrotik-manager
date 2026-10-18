@@ -2,6 +2,19 @@
 
 An automatically discovered map of how the fleet is connected.
 
+## One site, or one device, at a time
+
+The site switcher narrows the map to one site. With **All sites** chosen on a fleet of more than
+40 devices spread over several sites, the page asks which site to map rather than draw everything
+at once; **Draw all devices anyway** is still there (#305).
+
+**Topology** on a device's page opens the map at that device: it and what's within one hop,
+with **2 hops** and **3 hops** to widen it. Hops count through neighbours discovery found and
+nodes you added, since an unmanaged switch between two of yours is still the path between them.
+Clients come along with what they connect to and don't count as a hop. The links table under the
+map shows only the links in view. **Whole map** goes back to the full map. The arrangement is the
+same map's, so a card moved here stays moved there.
+
 ## How links are found
 
 Neighbours are read on the slow poll from LLDP, CDP and MNDP. LLDP is treated as ground truth;

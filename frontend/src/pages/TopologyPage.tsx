@@ -1,6 +1,6 @@
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ReactFlow,
@@ -17,8 +17,10 @@ import {
   ConnectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw } from 'lucide-react';
-import { topologyApi } from '../services/api';
+import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw, Crosshair, Building2 } from 'lucide-react';
+import { topologyApi, sitesApi, devicesApi } from '../services/api';
+import { useSiteStore } from '../store/siteStore';
+import { nodesWithinHops } from '../utils/topologyFocus';
 import type { TopologyDevice, TopologyNode, HandLinkEnd } from '../types';
 import clsx from 'clsx';
 import { useThemeStore } from '../store/themeStore';
@@ -36,6 +38,11 @@ import NeighbourEditor from '../components/topology/NeighbourEditor';
 const edgeTypes = { topo: TopoEdge };
 const SHOW_CLIENTS_KEY = 'topology.showClients';
 const BY_VLAN_KEY = 'topology.clientsByVlan';
+/**
+ * Past this many devices across several sites, the all-sites view asks for a
+ * site first rather than draw everything at once (#305).
+ */
+const LARGE_MAP = 40;
 
 type Anchors = Record<string, { sourceHandle: Side | null; targetHandle: Side | null }>;
 
@@ -97,9 +104,32 @@ export default function TopologyPage() {
   /** Client cards moved by hand; others follow their chip and aren't saved. */
   const movedClients = useRef(new Set<string>());
 
+  // One device's view (#305): ?device=ID, that device and what's within ?hops= of it.
+  const [params, setParams] = useSearchParams();
+  const focus = params.get('device');
+  const hops = Math.min(3, Math.max(1, Number(params.get('hops')) || 1));
+  const setHops = (h: number) => setParams((p) => { const n = new URLSearchParams(p); n.set('hops', String(h)); return n; }, { replace: true });
+  const { data: focusDevice, isError: focusMissing } = useQuery({
+    queryKey: ['device', Number(focus)],
+    queryFn: () => devicesApi.get(Number(focus)).then((r) => r.data),
+    enabled: !!focus,
+  });
+
+  // A large fleet picks a site before anything is drawn (#305).
+  const { currentSiteId, setCurrentSite } = useSiteStore();
+  const { data: sites, isFetched: sitesFetched } = useQuery({
+    queryKey: ['sites'], queryFn: () => sitesApi.list().then((r) => r.data), staleTime: 300_000,
+  });
+  const [drawAll, setDrawAll] = useState(false);
+  const fleetSize = (sites ?? []).reduce((n, s) => n + (s.device_count ?? 0), 0);
+  const pickSite = !focus && currentSiteId == null && (sites?.length ?? 0) > 1 && fleetSize > LARGE_MAP && !drawAll;
+  // From the all-sites view, a device's view needs only its own site.
+  const siteOverride = focus && currentSiteId == null ? focusDevice?.site_id ?? null : null;
+
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['topology', showClients],
-    queryFn: () => topologyApi.get(showClients).then((r) => r.data),
+    queryKey: ['topology', showClients, siteOverride],
+    queryFn: () => topologyApi.get(showClients, siteOverride).then((r) => r.data),
+    enabled: sitesFetched && !pickSite && (!focus || !!focusDevice || focusMissing),
   });
   const invalidate = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['topology'] }); }, [queryClient]);
 
@@ -154,6 +184,22 @@ export default function TopologyPage() {
     });
   }, [data, showClients, expanded, byVlan]);
 
+  // The device's view keeps what's within `hops` of it (#305).
+  const view = useMemo(() => {
+    if (!graph || !focus) return graph;
+    const keep = nodesWithinHops(focus, graph.edges, hops);
+    return {
+      ...graph,
+      nodes: graph.nodes.filter((n) => keep.has(n.id)),
+      edges: graph.edges.filter((e) => keep.has(e.source) && keep.has(e.target)),
+    };
+  }, [graph, focus, hops]);
+  const focusInMap = !focus || !!graph?.nodes.some((n) => n.id === focus);
+  // Refit when the view changes what it shows.
+  useEffect(() => {
+    if (focus) setTimeout(() => rf.current?.fitView({ padding: 0.2, duration: 300 }), 120);
+  }, [focus, hops, view?.nodes.length]);
+
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const nodesRef = useRef<Node[]>([]);
@@ -163,11 +209,11 @@ export default function TopologyPage() {
   // a new node or a refresh must not rearrange the map. Only new cards take the
   // position the graph gives them (next to what they hang from).
   useEffect(() => {
-    if (!graph) return;
+    if (!view) return;
     const fresh = resetting.current;
     setNodes((prev) => {
       const here = new Map(prev.map((n) => [n.id, n.position]));
-      return graph.nodes.map((n) => ({
+      return view.nodes.map((n) => ({
         id: n.id, type: n.kind,
         position: (!fresh && here.get(n.id)) || { x: n.x, y: n.y },
         data: { ...n.data, connectMode: connectMode && (n.kind === 'device' || n.kind === 'manual' || n.kind === 'external') },
@@ -177,12 +223,12 @@ export default function TopologyPage() {
       resetting.current = false;
       setTimeout(() => rf.current?.fitView({ padding: 0.12, duration: 300 }), 80);
     }
-  }, [graph, connectMode, setNodes]);
+  }, [view, connectMode, setNodes]);
 
   useEffect(() => {
-    if (!graph) return;
-    setEdges(graph.edges.map((e) => toFlowEdge(e, anchors, colors, onDeleteEdge, canWrite)));
-  }, [graph, anchors, colors, onDeleteEdge, canWrite, setEdges]);
+    if (!view) return;
+    setEdges(view.edges.map((e) => toFlowEdge(e, anchors, colors, onDeleteEdge, canWrite)));
+  }, [view, anchors, colors, onDeleteEdge, canWrite, setEdges]);
 
   /**
    * Save where every card is, so the arrangement holds for everyone and after a
@@ -289,14 +335,47 @@ export default function TopologyPage() {
     try { localStorage.setItem(SHOW_CLIENTS_KEY, next ? '1' : '0'); } catch { /* private mode */ }
   };
 
-  if (isLoading) {
+  if (pickSite) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Network Topology</h1>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+            {fleetSize} devices in {sites!.length} sites. Choose a site to map, or open a device&apos;s own view from its page.
+          </p>
+        </div>
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+          {[...sites!].sort((a, b) => a.name.localeCompare(b.name)).map((s) => (
+            <button key={s.id} onClick={() => setCurrentSite(s.id)} className="card p-4 text-left hover:ring-2 transition-shadow" style={{ ['--tw-ring-color' as string]: 'var(--accent)' }}>
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
+                <span className="font-medium truncate" style={{ color: 'var(--ink)' }}>{s.name}</span>
+              </div>
+              <div className="mono text-[11px] mt-1" style={{ color: 'var(--ink-3)' }}>
+                {s.device_count} device{s.device_count === 1 ? '' : 's'}
+                {s.device_count - s.online_count > 0 && <span style={{ color: 'var(--bad)' }}> · {s.device_count - s.online_count} offline</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setDrawAll(true)} className="text-sm underline" style={{ color: 'var(--ink-3)' }}>
+          Draw all {fleetSize} devices anyway
+        </button>
+      </div>
+    );
+  }
+
+  if (isLoading || !data) {
     return <div className="flex items-center justify-center h-96 text-gray-400">Loading topology…</div>;
   }
 
   const hasData = (data?.devices?.length ?? 0) > 0;
   const links = data?.links ?? [];
   const hasStp = links.some((l) => l.stp_role);
-  const discovered = links.filter((l) => l.link_type !== 'manual');
+  // In a device's view, only the links on its part of the map.
+  const inView = focus && view ? new Set(view.nodes.map((n) => n.id)) : null;
+  const discovered = links.filter((l) => l.link_type !== 'manual'
+    && (!inView || inView.has(String(l.from_device_id)) || (l.to_device_id != null && inView.has(String(l.to_device_id)))));
 
   return (
     <div className="space-y-4">
@@ -356,6 +435,33 @@ export default function TopologyPage() {
         </div>
       </div>
 
+      {focus && (
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg text-sm" style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+          <Crosshair className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent)' }} />
+          {focusInMap ? (
+            <span>
+              <Link to={`/devices/${focus}`} className="font-medium underline">{focusDevice?.name ?? 'This device'}</Link>
+              {' '}and what&apos;s within
+            </span>
+          ) : (
+            <span>{focusMissing ? 'That device isn’t in view.' : `${focusDevice?.name ?? 'This device'} isn’t on the map yet.`}</span>
+          )}
+          {focusInMap && (
+            <span className="inline-flex rounded-md overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+              {[1, 2, 3].map((h) => (
+                <button key={h} onClick={() => setHops(h)} className="px-2 py-0.5 text-xs"
+                  style={{ background: h === hops ? 'var(--surface-3)' : 'transparent', fontWeight: h === hops ? 600 : 400 }}>
+                  {h} hop{h > 1 ? 's' : ''}
+                </button>
+              ))}
+            </span>
+          )}
+          <button onClick={() => setParams({}, { replace: false })} className="ml-auto text-xs underline" style={{ color: 'var(--ink-3)' }}>
+            Whole map
+          </button>
+        </div>
+      )}
+
       {connectMode && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 text-sm text-purple-700 dark:text-purple-300">
           <Link2 className="w-4 h-4 flex-shrink-0" />
@@ -365,7 +471,7 @@ export default function TopologyPage() {
         </div>
       )}
 
-      {graph && graph.orphanCount > 0 && !connectMode && (
+      {graph && graph.orphanCount > 0 && !connectMode && !focus && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-sm text-orange-700 dark:text-orange-300">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           {graph.orphanCount} device{graph.orphanCount !== 1 ? 's have' : ' has'} no discovered connections.

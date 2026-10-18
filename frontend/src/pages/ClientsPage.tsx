@@ -17,6 +17,7 @@ import clsx from 'clsx';
 import { FilterBar, FilterSearch, FilterSelect, FilterSegment, FilterDivider } from '../components/common/FilterBar';
 import { formatRate, formatRatePair } from '../utils/wifiRate';
 import ClientAddressLists from '../components/clients/ClientAddressLists';
+import DevicePicker from '../components/common/DevicePicker';
 
 
 const REFRESH_OPTIONS = [
@@ -438,10 +439,11 @@ export default function ClientsPage() {
           value={typeFilter ?? ''}
           onChange={(v) => setTypeFilter((v || null) as 'wired' | 'wireless' | null)}
         />
-        <FilterSelect value={deviceFilter != null ? String(deviceFilter) : ''} onChange={(v) => setUrlFilter({ device: v || null })} title="Connected to">
-          <option value="">All devices</option>
-          {deviceOptions.map((d) => <option key={d.id} value={d.id}>{d.name.trim()}</option>)}
-        </FilterSelect>
+        <DevicePicker
+          variant="filter" title="Connected to" emptyLabel="All devices" devices={deviceOptions}
+          value={deviceFilter ?? null}
+          onChange={(id) => setUrlFilter({ device: id == null ? null : String(id) })}
+        />
         {/* VLAN filter — populated from what the fleet actually uses, so the
             operator picks a real VLAN rather than guessing an id (#100). */}
         {vlanOptions.length > 0 && (

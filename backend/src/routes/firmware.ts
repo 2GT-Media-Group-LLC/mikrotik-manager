@@ -9,7 +9,7 @@ import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { activeSite, writableScope } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { firmwareOrchestrator } from '../services/FirmwareOrchestrator';
-import { clampConcurrency, MAX_WAVE_CONCURRENCY } from '../utils/concurrency';
+import { clampConcurrency, MAX_WAVE_CONCURRENCY, settleWithConcurrency, FLEET_ACTION_CONCURRENCY } from '../utils/concurrency';
 import { updateAvailable, isNewerRosVersion } from '../utils/rosVersion';
 import { newestCompleteFrom } from '../utils/firmwareMirror';
 import { findUpstreamWithinSelection } from '../utils/rolloutTopology';
@@ -119,7 +119,8 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
   const devices = await query<DeviceRow>(
     `SELECT * FROM devices WHERE status='online' AND NOT ssh_only ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
-  const settled = await Promise.allSettled(devices.map(async (d) => {
+  // A limited number at a time (#302): this used to contact every device at once.
+  const settled = await settleWithConcurrency(devices, FLEET_ACTION_CONCURRENCY, async (d) => {
     const c = new DeviceCollector(d);
     try {
       await c.connect();
@@ -134,7 +135,7 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
         [d.id, installed, latest, available]);
       return { name: d.name, installed, latest, available };
     } finally { c.disconnect(); }
-  }));
+  });
   res.json({
     results: settled.map((s, i) => s.status === 'fulfilled'
       ? { ...s.value, ok: true }

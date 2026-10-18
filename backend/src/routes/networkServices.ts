@@ -10,6 +10,7 @@ import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { siteScopeDevices } from '../utils/siteScope';
 import { poolState } from '../utils/dhcpPools';
 import { activeSite, writableScope } from '../middleware/site';
+import { liveForDevices } from '../services/liveCache';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { getLldpStatuses, setLldpForTypes, parseDeviceTypes, LLDP_DEVICE_TYPES } from '../services/lldpApply';
@@ -24,6 +25,17 @@ router.use(deviceSiteAccess(deviceIdQuery));
 router.use(maskSecretsForReadOnly);
 // One write at a time per device, so a Change Guard revert can't undo another write.
 router.use(deviceWriteLock(deviceIdFromQuery));
+// A change made here shows straight away: the device's cached summaries
+// (#302) are dropped once the change succeeds, and re-read on next view.
+router.use((req, res, next) => {
+  if (req.method === 'GET') return next();
+  res.on('finish', () => {
+    if (res.statusCode >= 400) return;
+    const id = deviceIdFromQuery(req);
+    if (id != null) void query(`DELETE FROM device_live_cache WHERE device_id = $1`, [id]).catch(() => {});
+  });
+  next();
+});
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -113,56 +125,55 @@ router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
   }
 });
 
+// Cached per device and refreshed a few at a time (#302): this used to open a
+// connection to every device on every load and every minute.
+const SERVICES_MAX_AGE_MS = 10 * 60_000;
+async function servicesSummary(collector: DeviceCollector) {
+  const [dhcpV4, dhcpV6, dns, ntp, wg, syslogActions] = await Promise.allSettled([
+    collector.getDhcpServers('ipv4'),
+    collector.getDhcpServers('ipv6'),
+    collector.getDnsSettings(),
+    collector.getNtpSettings(),
+    collector.getWireGuardInterfaces(),
+    collector.getSyslogActions(),
+  ]);
+  const v4Servers    = dhcpV4.status === 'fulfilled' ? dhcpV4.value : [];
+  const v6Servers    = dhcpV6.status === 'fulfilled' ? dhcpV6.value : [];
+  const dnsRow       = dns.status === 'fulfilled' ? dns.value : null;
+  const ntpRow       = ntp.status === 'fulfilled' ? ntp.value : null;
+  const wgIfaces     = wg.status === 'fulfilled' ? wg.value : [];
+  const syslogActs   = syslogActions.status === 'fulfilled' ? syslogActions.value : [];
+  return {
+    dhcp_v4: { total: v4Servers.length, enabled: v4Servers.filter(s => s['disabled'] !== 'true').length },
+    dhcp_v6: { total: v6Servers.length, enabled: v6Servers.filter(s => s['disabled'] !== 'true').length },
+    dns: dnsRow ? { allow_remote: dnsRow['allow-remote-requests'] === 'yes', servers: dnsRow['servers'] || '' } : null,
+    ntp: ntpRow ? { server_enabled: ntpRow.server['enabled'] === 'yes', client_enabled: ntpRow.client['enabled'] === 'yes' } : null,
+    wireguard: { total: wgIfaces.length, running: wgIfaces.filter(i => i['running'] === 'true').length },
+    // RouterOS calls it `target`; the built-in `remote` action points at
+    // 0.0.0.0 until configured, so it isn't a destination (C7).
+    syslog: { remote_count: syslogActs.filter(a => a['target'] === 'remote' && !!a['remote'] && a['remote'] !== '0.0.0.0').length },
+  };
+}
+
 router.get('/overview', async (req: Request, res: Response) => {
   const siteFilter = siteScopeDevices(activeSite(req));
   const devices = await query<DeviceRow>(
     `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only
        ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
   );
-
-  const results = await Promise.allSettled(
-    devices.map(async (device: DeviceRow) => {
-      const collector = new DeviceCollector(device);
-      try {
-        await collector.connect();
-        const [dhcpV4, dhcpV6, dns, ntp, wg, syslogActions] = await Promise.allSettled([
-          collector.getDhcpServers('ipv4'),
-          collector.getDhcpServers('ipv6'),
-          collector.getDnsSettings(),
-          collector.getNtpSettings(),
-          collector.getWireGuardInterfaces(),
-          collector.getSyslogActions(),
-        ]);
-
-        const v4Servers    = dhcpV4.status === 'fulfilled' ? dhcpV4.value : [];
-        const v6Servers    = dhcpV6.status === 'fulfilled' ? dhcpV6.value : [];
-        const dnsRow       = dns.status === 'fulfilled' ? dns.value : null;
-        const ntpRow       = ntp.status === 'fulfilled' ? ntp.value : null;
-        const wgIfaces     = wg.status === 'fulfilled' ? wg.value : [];
-        const syslogActs   = syslogActions.status === 'fulfilled' ? syslogActions.value : [];
-
-        return {
-          id: device.id, name: device.name, ip_address: device.ip_address,
-          dhcp_v4: { total: v4Servers.length, enabled: v4Servers.filter(s => s['disabled'] !== 'true').length },
-          dhcp_v6: { total: v6Servers.length, enabled: v6Servers.filter(s => s['disabled'] !== 'true').length },
-          dns: dnsRow ? { allow_remote: dnsRow['allow-remote-requests'] === 'yes', servers: dnsRow['servers'] || '' } : null,
-          ntp: ntpRow ? { server_enabled: ntpRow.server['enabled'] === 'yes', client_enabled: ntpRow.client['enabled'] === 'yes' } : null,
-          wireguard: { total: wgIfaces.length, running: wgIfaces.filter(i => i['running'] === 'true').length },
-          // RouterOS calls it `target`; the built-in `remote` action points at
-          // 0.0.0.0 until configured, so it isn't a destination (C7).
-          syslog: { remote_count: syslogActs.filter(a => a['target'] === 'remote' && !!a['remote'] && a['remote'] !== '0.0.0.0').length },
-        };
-      } catch (err) {
-        return { id: device.id, name: device.name, ip_address: device.ip_address,
-          dhcp_v4: null, dhcp_v6: null, dns: null, ntp: null, wireguard: null, syslog: null,
-          error: (err as Error).message };
-      } finally {
-        collector.disconnect();
-      }
-    })
-  );
-
-  res.json(results.map(r => r.status === 'fulfilled' ? r.value : { error: (r.reason as Error).message }));
+  const live = await liveForDevices('services', devices, (c) => servicesSummary(c), {
+    maxAgeMs: SERVICES_MAX_AGE_MS, refresh: req.query.refresh === '1', waitMs: 3000,
+  });
+  res.json(devices.map((device) => {
+    const e = live.get(device.id)!;
+    const empty = { dhcp_v4: null, dhcp_v6: null, dns: null, ntp: null, wireguard: null, syslog: null };
+    return {
+      id: device.id, name: device.name, ip_address: device.ip_address,
+      ...(e.data ?? empty),
+      ...(e.error && !e.data ? { error: e.error } : {}),
+      fetched_at: e.fetchedAt, refreshing: e.refreshing,
+    };
+  }));
 });
 
 // ─── DHCP ─────────────────────────────────────────────────────────────────────
@@ -663,49 +674,36 @@ router.get('/netflow/fleet', async (req: Request, res: Response) => {
     `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only
        ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
   );
-
-  const results = await Promise.allSettled(
-    devices.map(async (device: DeviceRow) => {
-      const collector = new DeviceCollector(device);
-      try {
-        await collector.connect();
-        const [tfSettings, targets] = await Promise.all([
-          collector.getTrafficFlowSettings(),
-          collector.getTrafficFlowTargets(),
-        ]);
-        const exporterStats = statsByDevice.get(device.id);
-        return {
-          id: device.id,
-          name: device.name,
-          ip_address: device.ip_address,
-          enabled: tfSettings?.['enabled'] === 'true' || tfSettings?.['enabled'] === 'yes',
-          interfaces: tfSettings?.['interfaces'] || '',
-          targets: targets.map((t) => ({
-            id: t['.id'],
-            dst_address: t['dst-address'],
-            port: Number(t['port']) || 0,
-            version: t['version'] || '',
-            disabled: t['disabled'] === 'true',
-          })),
-          target_matches_collector: targetMatchesCollector(targets, settings),
-          flows_received: exporterStats?.flows || 0,
-          last_flow_at: exporterStats?.lastSeen || null,
-        };
-      } catch (err) {
-        return {
-          id: device.id, name: device.name, ip_address: device.ip_address,
-          enabled: null, interfaces: '', targets: [], target_matches_collector: false,
-          flows_received: 0, last_flow_at: null, error: (err as Error).message,
-        };
-      } finally {
-        collector.disconnect();
-      }
-    })
-  );
+  // The device's traffic-flow settings, cached (#302): this page used to read
+  // them from every device every 10 seconds. Flow counts are live, from the
+  // collector, as before. A change made here refreshes the device's entry.
+  const live = await liveForDevices('traffic-flow', devices, async (c) => {
+    const [tfSettings, targets] = await Promise.all([c.getTrafficFlowSettings(), c.getTrafficFlowTargets()]);
+    return { tfSettings, targets };
+  }, { maxAgeMs: SERVICES_MAX_AGE_MS, refresh: req.query.refresh === '1', waitMs: 3000 });
 
   res.json({
     collector: { ...settings, listening: stats.listening },
-    devices: results.map((r) => (r.status === 'fulfilled' ? r.value : { error: (r.reason as Error).message })),
+    devices: devices.map((device) => {
+      const e = live.get(device.id)!;
+      const exporterStats = statsByDevice.get(device.id);
+      const base = { id: device.id, name: device.name, ip_address: device.ip_address, fetched_at: e.fetchedAt, refreshing: e.refreshing,
+        flows_received: exporterStats?.flows || 0, last_flow_at: exporterStats?.lastSeen || null };
+      if (!e.data) {
+        return { ...base, enabled: null, interfaces: '', targets: [], target_matches_collector: false, ...(e.error ? { error: e.error } : {}) };
+      }
+      const { tfSettings, targets } = e.data as { tfSettings: Record<string, string> | null; targets: Record<string, string>[] };
+      return {
+        ...base,
+        enabled: tfSettings?.['enabled'] === 'true' || tfSettings?.['enabled'] === 'yes',
+        interfaces: tfSettings?.['interfaces'] || '',
+        targets: targets.map((t) => ({
+          id: t['.id'], dst_address: t['dst-address'], port: Number(t['port']) || 0,
+          version: t['version'] || '', disabled: t['disabled'] === 'true',
+        })),
+        target_matches_collector: targetMatchesCollector(targets, settings),
+      };
+    }),
   });
 });
 

@@ -41,6 +41,63 @@ polls (at least 20 minutes), and headroom adds up each device's own fast-poll ra
 Enqueue rate is not connect rate. Workers process jobs with limited concurrency, so what
 matters is whether they drain faster than the schedule fills.
 
+## Sessions kept open between polls
+
+Opening an API session costs a TCP handshake, a TLS handshake (an RSA signature on the
+router's CPU) and a login. Measured on the reference fleet that was 150 to 300 ms per poll on a
+LAN, against 3 to 25 ms for the commands, and over a WAN each of those round trips adds the
+link's latency (#301).
+
+So the manager keeps sessions open: up to three per device, one each for fast, log and slow
+polls (they run on separate queues and often at the same moment). A session is reused only while
+it is healthy and the device's address, port, login and TLS setting are unchanged; any error or
+timeout closes it rather than handing it on, and a poll that finds its session busy connects on
+its own. The serial number is re-checked every ten minutes on a reused session. Sessions idle for
+eleven minutes are closed. TCP keepalive keeps them alive through NAT and firewalls between polls.
+
+Slow polls no longer wait for the manager's own ARP scan (it fills in addresses for neighbours
+that advertise none). It used to expire on the slow poll's own schedule, so every device's slow
+poll waited up to 12 seconds for a fresh scan; where the scan can't run (Docker Desktop, or no
+NET_RAW) that was all 12. Polls now use the last finished scan while the next runs in the
+background. On the reference fleet a slow poll went from 12.5 s to well under a second.
+
+**Settings → Polling → Keep sessions open between polls** turns this off if a device or firewall
+in your network misbehaves with long-lived sessions.
+
+The same card shows **where a fast poll's time goes**: the average cost of a new session against
+a reused one, the time spent collecting, and how many polls reused a session. On the reference
+fleet, reusing sessions took fast polls from about 800 ms to 100 to 400 ms; what remains is the
+collecting itself.
+
+## Pages that show something from every device
+
+Some pages show what only the device can tell (DHCP servers, traffic-flow settings, the
+dashboard's security scores). They used to contact every device on every load. Now they show
+what was last read from each device, with when, and refresh entries older than 10 to 15
+minutes in the background, eight devices at a time. A small fleet barely notices: the page
+waits a moment for those refreshes. A large one gets the last known view at once, and it fills
+in as the page re-checks every few seconds while refreshes run. **Refresh** reads every device
+again (still eight at a time), and a change made on the page drops that device's cached entry
+so it shows straight away (#302).
+
+Bulk actions that contact every device ("Check all for updates", "Sync all", deploying an SSID
+to several access points) also run eight devices at a time.
+
+## Pages on a large fleet
+
+- **Choosing a device.** Every drop-down that lists devices (Events, Backups, Clients, the
+  Network Services pages, the device Tools tab, Copy VLANs, Guest WiFi and others) can be typed
+  into: every word typed must appear in the device's name, address, site, model or identity, so
+  "amsterdam crs" narrows straight to the switches at that site. Arrow keys and Enter choose,
+  Escape closes, and typing on the closed drop-down starts a search (#304).
+- **Dashboard cards** list the devices needing attention first (offline, then other trouble,
+  then pending updates) and stop at ten, with a link to the rest. The Fleet strip stops at two
+  rows of tiles. The update banner names six devices per line and counts the rest. Lists that can
+  run long (things to handle, capacity when expanded, devices not polled recently) keep a fixed
+  height and scroll (#303).
+- **Topology** asks for a site on a large fleet, and a device's page opens its own part of the
+  map ([Topology](topology.md#one-site-or-one-device-at-a-time), #305).
+
 ## Is it keeping up?
 
 **Settings → Polling**, or `GET /api/system/poller`.

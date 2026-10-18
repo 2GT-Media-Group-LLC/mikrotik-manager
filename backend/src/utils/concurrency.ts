@@ -52,3 +52,14 @@ export function clampConcurrency(raw: unknown): number {
   if (n === -Infinity) return 1;
   return Math.min(MAX_WAVE_CONCURRENCY, Math.max(1, Math.floor(n)));
 }
+
+/** Devices a fleet-wide action talks to at once (J10, #302). */
+export const FLEET_ACTION_CONCURRENCY = 8;
+
+/** Promise.allSettled, but at most `limit` at a time, results in input order. */
+export async function settleWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  return mapWithConcurrency(items, limit, async (item) => {
+    try { return { status: 'fulfilled', value: await fn(item) } as const; }
+    catch (reason) { return { status: 'rejected', reason } as const; }
+  });
+}

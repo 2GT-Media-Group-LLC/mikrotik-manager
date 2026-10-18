@@ -7,6 +7,7 @@ import {
 import clsx from 'clsx';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { networkServicesApi, settingsApi, trafficApi } from '../services/api';
+import { liveRefetch, freshnessLabel, type LiveRow } from '../utils/liveFreshness';
 import { useCanWrite, useIsFleetAdmin } from '../hooks/useCanWrite';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -94,6 +95,7 @@ export default function NetworkServicesNetflowPage() {
   const { data: fleet, isLoading: fleetLoading, refetch, isFetching, error: fleetError } = useQuery({
     queryKey: ['ns-netflow-fleet'],
     queryFn: () => networkServicesApi.netflowFleet().then(r => r.data),
+    refetchInterval: (q) => liveRefetch(q.state.data?.devices as LiveRow[] | undefined),
   });
 
   const [togglePending, setTogglePending] = useState<number | null>(null);
@@ -149,7 +151,9 @@ export default function NetworkServicesNetflowPage() {
             <Link to="/traffic" className="text-blue-600 dark:text-blue-400 hover:underline">Traffic</Link> page
           </p>
         </div>
-        <button onClick={() => refetch()} disabled={isFetching}
+        <span className="text-xs text-gray-400" title="Traffic-flow settings as last read from each device; flow counts are live">{freshnessLabel(fleet?.devices as LiveRow[] | undefined)}</span>
+        <button onClick={() => { void networkServicesApi.netflowFleet(true).then(() => refetch()); }} disabled={isFetching}
+          title="Read every device's traffic-flow settings again (a few at a time)"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors">
           <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />Refresh
         </button>

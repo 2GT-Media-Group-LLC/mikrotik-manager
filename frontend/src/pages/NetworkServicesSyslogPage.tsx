@@ -8,6 +8,7 @@ import {
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import DevicePicker from '../components/common/DevicePicker';
 
 type NS = Record<string, string>;
 
@@ -350,14 +351,11 @@ function AddToDevice({
 }) {
   return (
     <div className="flex items-center gap-1">
-      <select
-        value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        className="text-xs rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[10rem]"
-        title="Choose a device to add to"
-      >
-        {devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-      </select>
+      <DevicePicker
+        variant="filter" className="max-w-[10rem]" title="Choose a device to add to"
+        devices={devices} value={value === '' ? null : value}
+        onChange={(id) => { if (id != null) onChange(id); }}
+      />
       <button onClick={onAdd}
         className="flex items-center gap-1 px-2.5 py-1 border border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 text-xs font-medium rounded-lg transition-colors whitespace-nowrap">
         <Plus className="w-3.5 h-3.5" />Add to device

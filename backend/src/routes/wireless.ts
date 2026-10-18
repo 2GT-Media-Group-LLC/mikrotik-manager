@@ -10,6 +10,7 @@ import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { lookupVendor } from '../utils/oui';
+import { settleWithConcurrency, FLEET_ACTION_CONCURRENCY } from '../utils/concurrency';
 import { aggregateAPScanRows } from '../utils/apScan';
 import { analyzeSpectrum, summarize, BAND_RANGES, parseChannelSpec } from '../utils/rfSpectrum';
 import { fluxString } from '@influxdata/influxdb-client';
@@ -66,8 +67,9 @@ router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
     apIds
   );
 
-  const settled = await Promise.allSettled(
-    aps.map(async (ap) => {
+  // A limited number at a time (#302).
+  const settled = await settleWithConcurrency(aps, FLEET_ACTION_CONCURRENCY,
+    async (ap) => {
       const collector = new DeviceCollector(ap);
       try {
         await collector.connect();
@@ -122,7 +124,7 @@ router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
       } finally {
         collector.disconnect();
       }
-    })
+    }
   );
 
   const results = settled.map(r =>

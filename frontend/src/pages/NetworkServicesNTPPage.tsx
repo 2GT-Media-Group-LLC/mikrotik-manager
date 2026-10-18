@@ -4,11 +4,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Clock, RefreshCw, AlertTriangle, Save } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
+import { liveRefetch, type LiveRow } from '../utils/liveFreshness';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { apiErrorMessage } from '../utils/apiError';
 import ListInput from '../components/common/ListInput';
 import { splitList } from '../utils/ipPrefix';
 import { isValidIPv4, isValidIPv6, isValidHostname } from '../utils/deviceAddress';
+import DevicePicker from '../components/common/DevicePicker';
+import { shortList } from '../utils/deviceCards';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -75,6 +78,7 @@ export default function NetworkServicesNTPPage() {
     queryKey: ['network-services-overview'],
     queryFn: () => networkServicesApi.overview().then(r => r.data as Record<string, unknown>[]),
     staleTime: 60_000,
+    refetchInterval: (q) => liveRefetch(q.state.data as LiveRow[] | undefined),
   });
   const conflictDevices = overview.filter(d => {
     if ((d.id as number) === deviceId) return false;
@@ -133,11 +137,11 @@ export default function NetworkServicesNTPPage() {
       {/* Device selector */}
       <div className="card p-4">
         <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-2">Select Device</label>
-        <select className="input w-full max-w-xs" value={selectedDeviceId}
-          onChange={e => setSelectedDeviceId(e.target.value === '' ? '' : parseInt(e.target.value))}>
-          <option value="">— Choose a device —</option>
-          {devices.map(d => <option key={d.id} value={d.id}>{d.name} ({d.ip_address}){d.status !== 'online' ? ' — offline' : ''}</option>)}
-        </select>
+        <DevicePicker
+          className="max-w-xs" devices={devices} aria-label="Device"
+          value={selectedDeviceId === '' ? null : selectedDeviceId}
+          onChange={(id) => setSelectedDeviceId(id ?? '')}
+        />
         {selectedDevice?.status !== 'online' && deviceId > 0 && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
             <AlertTriangle className="w-3.5 h-3.5" />This device is currently offline.
@@ -149,7 +153,7 @@ export default function NetworkServicesNTPPage() {
       {conflictDevices.length > 0 && deviceId > 0 && serverEnabled && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-sm text-amber-700 dark:text-amber-300">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>NTP server also enabled on: <strong>{conflictDevices.map(d => d.name as string).join(', ')}</strong>. Multiple NTP servers may cause time drift.</span>
+          <span>NTP server also enabled on: <strong>{shortList(conflictDevices.map(d => String(d.name)))}</strong>. Multiple NTP servers may cause time drift.</span>
         </div>
       )}
 

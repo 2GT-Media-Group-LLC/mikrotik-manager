@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useIsFleetAdmin } from '../../hooks/useCanWrite';
 import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCw, Trash2 } from 'lucide-react';
-import { pollerApi, type PollerHealth } from '../../services/api';
+import { pollerApi, settingsApi, type PollerHealth, type PollerPhases } from '../../services/api';
 
 /**
  * The poller's own health, in the UI rather than buried in an API response.
@@ -167,6 +168,8 @@ export default function PollerHealthCard() {
         />
       </div>
 
+      {data.phases && <PhasesPanel phases={data.phases} onSaved={() => queryClient.invalidateQueries({ queryKey: ['poller-health'] })} />}
+
       {cap.headroom != null && cap.headroom < 1.5 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-700/60 dark:bg-amber-900/20">
           <div className="font-medium text-amber-900 dark:text-amber-200">Little margin left</div>
@@ -244,7 +247,7 @@ export default function PollerHealthCard() {
             Every device has been polled successfully in the last few minutes.
           </p>
         ) : (
-          <ul className="space-y-1.5">
+          <ul className="space-y-1.5 max-h-64 overflow-y-auto">
             {staleDevices.map(d => (
               <li key={`${d.id}-${d.kind}`} className="text-xs flex flex-wrap gap-x-2 gap-y-0.5">
                 <span className="font-medium text-gray-900 dark:text-white">{d.name}</span>
@@ -263,6 +266,42 @@ export default function PollerHealthCard() {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Where a fast poll's time goes (#301): opening a session (TCP, TLS, login)
+ * against reusing one, and the work itself, with the switch for keeping
+ * sessions open between polls.
+ */
+function PhasesPanel({ phases, onSaved }: { phases: PollerPhases; onSaved: () => void }) {
+  const isFleetAdmin = useIsFleetAdmin();
+  const save = useMutation({
+    mutationFn: (on: boolean) => settingsApi.update({ poller_persistent_sessions: on }),
+    onSuccess: onSaved,
+  });
+  const ms = (v: number | null) => (v == null ? '—' : `${v} ms`);
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="text-xs font-medium text-gray-700 dark:text-slate-200">Where a fast poll’s time goes</div>
+        <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300" title="Reuse one API session per device between polls instead of connecting each time">
+          <input type="checkbox" checked={phases.persistent_sessions} disabled={!isFleetAdmin || save.isPending}
+            onChange={(e) => save.mutate(e.target.checked)} />
+          Keep sessions open between polls
+        </label>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <div><div className="text-gray-500">New session</div><div className="font-medium tabular-nums">{ms(phases.avg_connect_new_ms)}</div></div>
+        <div><div className="text-gray-500">Reused session</div><div className="font-medium tabular-nums">{ms(phases.avg_connect_reused_ms)}</div></div>
+        <div><div className="text-gray-500">Collecting</div><div className="font-medium tabular-nums">{ms(phases.avg_collect_ms)}</div></div>
+        <div><div className="text-gray-500">Polls reusing a session</div><div className="font-medium tabular-nums">{phases.reused_pct == null ? '—' : `${phases.reused_pct}%`} · {phases.open_sessions} open</div></div>
+      </div>
+      <p className="text-[11px] text-gray-400">
+        A new session costs a TCP and TLS handshake and a login, mostly work on the router’s CPU, plus network round trips.
+        Averages over the last fast poll of {phases.devices_measured === 1 ? 'one device' : `${phases.devices_measured} devices`}.
+      </p>
     </div>
   );
 }

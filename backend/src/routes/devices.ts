@@ -195,11 +195,15 @@ router.post('/security/suppressions', requireWrite, async (req: Request, res: Re
   );
   // ON CONFLICT DO NOTHING returns no row when it already existed, which is not an
   // error — the caller asked for a state that now holds either way.
+  // The dashboard's cached posture (#302) is recomputed with the mute applied.
+  await query(`DELETE FROM device_live_cache WHERE kind = 'posture'${device_id ? ' AND device_id = $1' : ''}`, device_id ? [device_id] : []);
   res.status(201).json(rows[0] ?? { check_id, device_id: device_id ?? null, already: true });
 });
 
 router.delete('/security/suppressions/:id', requireWrite, async (req: Request, res: Response) => {
-  await query(`DELETE FROM security_check_suppressions WHERE id = $1`, [req.params.id]);
+  const gone = await query<{ device_id: number | null }>(`DELETE FROM security_check_suppressions WHERE id = $1 RETURNING device_id`, [req.params.id]);
+  const deviceId = gone[0]?.device_id;
+  await query(`DELETE FROM device_live_cache WHERE kind = 'posture'${deviceId ? ' AND device_id = $1' : ''}`, deviceId ? [deviceId] : []);
   res.status(204).end();
 });
 
@@ -1932,12 +1936,30 @@ router.get('/:id/security-posture', async (req, res) => {
     upgrade_firmware_version?: string | null;
   }>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!device) return res.status(404).json({ error: 'Device not found' });
+
+  await withCollector(req.params.id, res, (c) => securityPosture(c, device));
+});
+
+/** The posture device type: the device row with its update columns. */
+export type PostureDevice = DeviceRow & {
+    firmware_update_available?: boolean;
+    latest_ros_version?: string | null;
+    routerboard_upgrade_available?: boolean;
+    firmware_version?: string | null;
+    upgrade_firmware_version?: string | null;
+  };
+
+/**
+ * A device's hardening checklist and score (live: services, firewall, SNMP).
+ * Shared by the device's Security tab and the dashboard's fleet rollup, which
+ * caches it (#302).
+ */
+export async function securityPosture(c: DeviceCollector, device: PostureDevice) {
   // Which RouterOS service the platform uses to reach this device. Default api
   // (8728), or api-ssl where the device uses it (8729 or as set, #257). Never offered for disabling.
   const mgmtService = managementService(device);
   const isRouter = device.device_type === 'router';
 
-  await withCollector(req.params.id, res, async (c) => {
     const [servicesRaw, fwRules, snmp] = await Promise.all([
       c.getServices().catch(() => [] as Record<string, string>[]),
       c.getFirewallRules().catch(() => [] as Record<string, string>[]),
@@ -2058,8 +2080,8 @@ router.get('/:id/security-posture', async (req, res) => {
     const penalty = counted.reduce((n, c2) => n + WEIGHT[c2.severity], 0);
     const score = counted.length === 0 ? 100 : Math.max(5, 100 - penalty);
     return { score, checks: marked };
-  });
-});
+}
+
 
 // GET /api/devices/:id/resources (live resource usage)
 router.get('/:id/resources', async (req: Request, res: Response) => {

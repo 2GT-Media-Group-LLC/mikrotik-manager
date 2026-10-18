@@ -71,10 +71,8 @@ async function runArpScan(): Promise<Record<string, string>> {
  * Called once per collectNeighbors() run to avoid re-scanning per neighbour.
  */
 export async function buildServerArpMap(): Promise<Record<string, string>> {
-  const [passive, active] = await Promise.all([
-    readKernelArpCache(),
-    sharedArpScan(),
-  ]);
+  const active = sharedArpScan();
+  const passive = await readKernelArpCache();
   // Passive cache takes precedence over scan (it's live kernel state)
   return { ...active, ...passive };
 }
@@ -83,20 +81,38 @@ export async function buildServerArpMap(): Promise<Record<string, string>> {
  * One arp-scan shared by every device's neighbour poll for a few minutes
  * (outside review J13). Each slow poll of each device used to start its own,
  * so a large fleet ran several 12-second scans a second over the same subnet,
- * for a result that doesn't change between them. Concurrent callers share the
- * scan in progress.
+ * for a result that doesn't change between them.
+ *
+ * Nobody waits for a scan (#301). The cache lasted exactly as long as the slow
+ * poll interval, so each cycle found it expired and every device's slow poll
+ * sat out the scan, 12 seconds where the scan can't finish (Docker Desktop, or
+ * no NET_RAW). The scan only fills in addresses for neighbours that advertise
+ * none, so polls use the last finished result and an expired one starts a new
+ * scan in the background; the first polls after start-up go without.
  */
 const ARP_SCAN_TTL_MS = 5 * 60_000;
-let arpScanCache: { at: number; result: Promise<Record<string, string>> } | null = null;
+let arpScanResult: Record<string, string> = {};
+let arpScanAt = 0;
+let arpScanRunning: Promise<void> | null = null;
 
-function sharedArpScan(now = Date.now()): Promise<Record<string, string>> {
-  if (!arpScanCache || now - arpScanCache.at > ARP_SCAN_TTL_MS) {
-    arpScanCache = { at: now, result: runArpScan() };
+function sharedArpScan(now = Date.now(), scan: () => Promise<Record<string, string>> = runArpScan): Record<string, string> {
+  if (!arpScanRunning && now - arpScanAt > ARP_SCAN_TTL_MS) {
+    arpScanAt = now;
+    arpScanRunning = scan()
+      .then((r) => { arpScanResult = r; })
+      .catch(() => { /* keep the last result */ })
+      .finally(() => { arpScanRunning = null; });
   }
-  return arpScanCache.result;
+  return arpScanResult;
 }
+
+/** For tests: the scan in progress, if any. */
+export function _arpScanInProgress(): Promise<void> | null { return arpScanRunning; }
+export { sharedArpScan as _sharedArpScan };
 
 /** For tests. */
 export function _resetArpScanCache(): void {
-  arpScanCache = null;
+  arpScanResult = {};
+  arpScanAt = 0;
+  arpScanRunning = null;
 }

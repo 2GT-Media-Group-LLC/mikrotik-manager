@@ -9,6 +9,7 @@ import clsx from 'clsx';
 import { guestWifiApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import type { Device } from '../types';
+import DevicePicker from '../components/common/DevicePicker';
 
 type HS = Record<string, string>;
 
@@ -413,13 +414,12 @@ export default function GuestWifiPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <select className="input w-auto" value={devId} onChange={e => setDeviceId(parseInt(e.target.value))}>
-            {online.map(d => (
-              <option key={d.id} value={d.id}>
-                {d.name} ({d.device_type === 'wireless_ap' ? 'AP' : hasRadios(d) ? 'Router with Wi-Fi' : 'Router'})
-              </option>
-            ))}
-          </select>
+          <DevicePicker
+            className="w-auto min-w-[16rem]" devices={online} aria-label="Device"
+            describe={(d) => (d.device_type === 'wireless_ap' ? 'AP' : hasRadios(d) ? 'Router with Wi-Fi' : 'Router')}
+            value={devId ?? null}
+            onChange={(id) => { if (id != null) setDeviceId(id); }}
+          />
           <button className="btn-secondary flex items-center gap-2" onClick={() => refetch()} disabled={isFetching}>
             <RefreshCw className={clsx('w-4 h-4', isFetching && 'animate-spin')} />Refresh
           </button>

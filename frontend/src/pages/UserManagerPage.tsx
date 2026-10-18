@@ -5,6 +5,7 @@ import { UserCheck, RefreshCw, AlertTriangle, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { userManagerApi, type UmRow } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import DevicePicker from '../components/common/DevicePicker';
 
 /**
  * User Manager, RouterOS's RADIUS server (#251): who's logged in where, the
@@ -111,9 +112,11 @@ export default function UserManagerPage() {
         </div>
         <div className="flex items-center gap-2">
           {servers.length > 1 && (
-            <select className="input text-sm" value={chosen ?? ''} onChange={(e) => setParams({ device: e.target.value })}>
-              {servers.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.ip_address})</option>)}
-            </select>
+            <DevicePicker
+              className="min-w-[14rem]" devices={servers} aria-label="User Manager server"
+              value={chosen ?? null}
+              onChange={(id) => { if (id != null) setParams({ device: String(id) }); }}
+            />
           )}
           {chosen != null && (
             <button className="btn-secondary p-2" title="Read it again" onClick={() => refetch()} disabled={isFetching}>

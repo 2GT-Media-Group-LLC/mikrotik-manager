@@ -9,6 +9,7 @@ import {
   type FirmwareMirror, type MirrorDevice, type MirrorClientResult, type MirrorDisk,
 } from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import DevicePicker from '../components/common/DevicePicker';
 
 const STATUS_STYLE: Record<FirmwareMirror['status'], string> = {
   new: 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300',
@@ -212,14 +213,12 @@ function SetupCard({ canAddFleet, siteChoices, onDone, onCancel }: {
         </label>
         <label className="space-y-1">
           <span className="text-xs text-gray-500 dark:text-slate-400">Package server</span>
-          <select className="input w-full" value={deviceId} onChange={(e) => { setDeviceId(e.target.value ? Number(e.target.value) : ''); setDisk(undefined); }}>
-            <option value="">Choose a router…</option>
-            {candidates.map((d) => (
-              <option key={d.id} value={d.id} disabled={!canServe(d.ros_version)}>
-                {d.name.trim()} ({d.ip_address}){canServe(d.ros_version) ? '' : ` — RouterOS ${d.ros_version || '?'} is too old`}
-              </option>
-            ))}
-          </select>
+          <DevicePicker
+            devices={candidates} placeholder="Choose a router…" aria-label="Package server"
+            unavailable={(d) => (canServe(d.ros_version) ? null : `RouterOS ${d.ros_version || '?'} is too old`)}
+            value={deviceId === '' ? null : deviceId}
+            onChange={(id) => { setDeviceId(id ?? ''); setDisk(undefined); }}
+          />
         </label>
         <label className="space-y-1">
           <span className="text-xs text-gray-500 dark:text-slate-400">Address devices reach it on</span>

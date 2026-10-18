@@ -6,6 +6,7 @@ import FloatingWindow from '../common/FloatingWindow';
 import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../ChangeGuardDialog';
 import { devicesApi, type ClientAddressListView } from '../../services/api';
 import type { Device } from '../../types';
+import DevicePicker from '../common/DevicePicker';
 
 /**
  * A client's firewall address lists on one router (#145): tick to add, untick
@@ -122,10 +123,12 @@ export default function ClientAddressLists({ address, clientName, defaultDeviceI
       <div className="space-y-3 text-sm">
         <div className="flex items-center gap-2">
           <span className="text-gray-500 dark:text-slate-400">On</span>
-          <select className="input py-1 text-sm flex-1" value={deviceId ?? ''}
-            onChange={(e) => { setPicked(Number(e.target.value)); setWanted(null); setNotes([]); }}>
-            {choices.map((d) => <option key={d.id} value={d.id}>{d.name.trim()}{d.device_type === 'router' ? '' : ` (${d.device_type})`}</option>)}
-          </select>
+          <DevicePicker
+            className="py-1 flex-1" devices={choices} aria-label="Device"
+            describe={(d) => (d.device_type === 'router' ? null : d.device_type)}
+            value={deviceId ?? null}
+            onChange={(id) => { if (id == null) return; setPicked(id); setWanted(null); setNotes([]); }}
+          />
         </div>
         <p className="text-xs text-gray-500 dark:text-slate-400">
           Address <span className="font-mono">{address}</span>. Tick the lists it should be in; an address can be in several.

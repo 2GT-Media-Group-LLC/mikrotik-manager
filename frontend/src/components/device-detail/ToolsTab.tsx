@@ -4,6 +4,7 @@ import { Play, Loader2, CheckCircle, XCircle, Wifi, RotateCcw, Download, Activit
 import { deviceToolsApi, devicesApi } from '../../services/api';
 import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import DevicePicker from '../common/DevicePicker';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -541,14 +542,12 @@ function BandwidthTestTool({ deviceId }: { deviceId: number }) {
 
       <div className="flex flex-wrap gap-3">
         {mode === 'managed' ? (
-          <select className="input flex-1 min-w-48" value={targetDeviceId} onChange={(e) => setTargetDeviceId(e.target.value)}>
-            <option value="">— Select target device —</option>
-            {targetDevices.map((d: { id: number; name: string; ip_address: string; status?: string }) => (
-              <option key={d.id} value={d.id}>
-                {d.name} ({d.ip_address}){d.status === 'offline' ? ' — offline' : ''}
-              </option>
-            ))}
-          </select>
+          <DevicePicker
+            className="flex-1 min-w-48" placeholder="Select target device" aria-label="Target device"
+            devices={targetDevices as { id: number; name: string; ip_address: string; status?: string }[]}
+            value={targetDeviceId ? Number(targetDeviceId) : null}
+            onChange={(id) => setTargetDeviceId(id == null ? '' : String(id))}
+          />
         ) : (
           <input
             className="input flex-1 min-w-48"

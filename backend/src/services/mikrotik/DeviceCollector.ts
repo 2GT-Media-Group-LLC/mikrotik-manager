@@ -3,6 +3,7 @@ import { routingPeersFrom } from '../../utils/routingPeers';
 import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
+import { lease, dropSessions, type Lease, type SessionLane } from './sessionPool';
 import { RouterOSClient, RouterOSTrapError } from './RouterOSClient';
 import { usesApiTls } from '../../utils/apiTls';
 import { query, queryOne } from '../../config/database';
@@ -227,6 +228,54 @@ export class DeviceCollector {
   /** Set once the poller gave up on this job; see abort(). */
   private aborted = false;
 
+  /** Phase timings of this session, for Settings → Polling (#301). */
+  timings: { connectMs: number; reused: boolean } = { connectMs: 0, reused: false };
+  private leaseHandle: Lease | null = null;
+
+  /**
+   * Connect for a poll through the session pool (#301): an open session for
+   * this device and lane is reused, a new one is opened and kept otherwise.
+   * When the pooled session is busy, or pooling is off, connects on its own.
+   * Pair with release(ok) rather than disconnect().
+   */
+  async connectPooled(lane: SessionLane, enabled = true): Promise<void> {
+    const started = Date.now();
+    if (!enabled) {
+      // Switched off: close any sessions still open from before.
+      dropSessions(this.device.id);
+      await this.connect(); this.timings = { connectMs: Date.now() - started, reused: false }; return;
+    }
+    if (this.aborted) throw new Error('Poll cancelled: it ran past its time limit');
+    const l = lease(this.device, lane, usesApiTls(this.device), () => this.client);
+    if (!l) { await this.connect(); this.timings = { connectMs: Date.now() - started, reused: false }; return; }
+    this.leaseHandle = l;
+    this.client = l.client;
+    try {
+      if (l.fresh) {
+        await this.connect();
+        l.markVerified();
+      } else if (l.needsVerify) {
+        await this.verifySerial();
+        l.markVerified();
+      }
+    } catch (e) {
+      this.release(false);
+      throw e;
+    }
+    this.timings = { connectMs: Date.now() - started, reused: !l.fresh };
+  }
+
+  /** End a poll: a pooled session is kept when the poll succeeded, closed otherwise. */
+  release(ok: boolean): void {
+    if (this.leaseHandle) {
+      const l = this.leaseHandle;
+      this.leaseHandle = null;
+      l.release(ok && !this.aborted);
+    } else {
+      this.client.disconnect();
+    }
+  }
+
   async connect(): Promise<void> {
     if (this.aborted) throw new Error('Poll cancelled: it ran past its time limit');
     // Added over SSH only (#174): nothing here works until the API is on. Many
@@ -282,6 +331,8 @@ export class DeviceCollector {
   abort(): void {
     this.aborted = true;
     this.client.disconnect();
+    // A pooled session is dropped too: its reply stream can't be trusted now.
+    if (this.leaseHandle) { this.leaseHandle.release(false); this.leaseHandle = null; }
   }
 
   // ─── Fast poll (every 30s) ─────────────────────────────────────────────────

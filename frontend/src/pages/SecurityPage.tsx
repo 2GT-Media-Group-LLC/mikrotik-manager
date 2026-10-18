@@ -330,7 +330,7 @@ export default function SecurityPage() {
                       </div>
                     )}
                     {open && (
-                      <div className="px-5 pb-2.5 pl-12 flex flex-wrap gap-1.5">
+                      <div className="px-5 pb-2.5 pl-12 flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto">
                         {c.devices.map(n => (
                           <span key={n} className="mono text-[11px] px-1.5 py-0.5 rounded"
                                 style={{ background: 'var(--surface-2)', color: 'var(--ink-2)' }}>

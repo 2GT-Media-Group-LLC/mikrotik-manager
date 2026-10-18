@@ -22,6 +22,8 @@ import type { Device, DeviceEvent } from '../types';
 import { fleetStatus } from '../utils/fleetStatus';
 import { escapeHtml } from '../utils/escapeHtml';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
+import { byAttention, CARD_ROWS } from '../utils/deviceCards';
+import { filterDevices } from '../utils/devicePicker';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -392,8 +394,10 @@ function SummaryView(props: Record<string, any>) {
               Manage →
             </button>
           </div>
+          {/* A large fleet gets the devices needing attention, not a page of
+              names (#303). */}
           <div className="space-y-[1px]">
-            {(devices as Device[]).map((d) => (
+            {byAttention(devices as Device[]).slice(0, CARD_ROWS).map((d) => (
               <div
                 key={d.id}
                 className="flex items-center gap-[10px] px-[6px] py-[7px] rounded-[5px] cursor-pointer transition-colors"
@@ -419,6 +423,15 @@ function SummaryView(props: Record<string, any>) {
               </div>
             ))}
           </div>
+          {(devices as Device[]).length > CARD_ROWS && (
+            <button
+              onClick={() => navigate('/devices')}
+              className="mt-2 w-full text-left px-[6px] text-[11.5px]"
+              style={{ color: 'var(--ink-3)' }}
+            >
+              {CARD_ROWS} of {(devices as Device[]).length}, offline and updates first · <span style={{ color: 'var(--accent)' }}>View all →</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -661,25 +674,23 @@ function OperationsView({
   });
 
   // Fleet security posture rollup (live per-device; cached 5 min, lazy)
-  const { data: posture } = useQuery({
-    queryKey: ['ops-security', onlineDevices.map(d => d.id).join(',')],
+  // One request, served from the cache and refreshed a few devices at a time
+  // (#302); it used to ask every online device separately.
+  const { data: postureAll } = useQuery({
+    queryKey: ['ops-security'],
     enabled: onlineDevices.length > 0,
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    queryFn: async () => {
-      const settled = await Promise.allSettled(
-        onlineDevices.map(d =>
-          devicesApi.getSecurityPosture(d.id).then(r => ({ id: d.id, name: d.name, score: r.data.score, checks: r.data.checks }))
-        )
-      );
-      return settled.flatMap(s => s.status === 'fulfilled' ? [s.value] : []);
-    },
+    queryFn: () => operationsApi.securityPosture().then(r => r.data),
+    refetchInterval: (q) => ((q.state.data?.refreshing ?? 0) > 0 ? 5_000 : false),
   });
+  const posture = postureAll?.devices;
 
   // Action state
   const [busy, setBusy] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [pickTerminal, setPickTerminal] = useState(false);
+  const [terminalSearch, setTerminalSearch] = useState('');
   // Capacity lists the busiest devices first and stops at CAPACITY_ROWS, which
   // silently hid the rest: nine devices showed eight rows, reported as a bug.
   const [showAllCapacity, setShowAllCapacity] = useState(false);
@@ -711,7 +722,7 @@ function OperationsView({
         return `Backed up ${ok}/${r.data.total} device${r.data.total !== 1 ? 's' : ''}`;
       }) },
     { key: 'terminal', label: 'Open terminal', sub: 'Pick a device', icon: Terminal, color: 'var(--violet)',
-      run: () => { setActionMsg(null); setPickTerminal(true); } },
+      run: () => { setActionMsg(null); setTerminalSearch(''); setPickTerminal(true); } },
     { key: 'sync', label: 'Sync config', sub: 'Pull latest /export', icon: RefreshCw, color: 'var(--ink-2)',
       run: () => fleetConfirm('Pull the configuration') && runAction('sync', async () => {
         const r = await operationsApi.syncAll();
@@ -734,6 +745,12 @@ function OperationsView({
 
   const sortedCapacity = [...capacity].sort((a, b) => Math.max(b.cpu, b.mem_pct) - Math.max(a.cpu, a.mem_pct));
   const CAPACITY_ROWS = 8;
+  // Fleet strip: two rows of tiles at most, the last one linking to the rest (#303).
+  const FLEET_TILES = 10;
+  const fleetList = devices as Device[];
+  const fleetTiles = fleetList.length > FLEET_TILES ? byAttention(fleetList).slice(0, FLEET_TILES - 1) : fleetList;
+  const fleetHidden = fleetList.length - fleetTiles.length;
+  const fleetOffline = fleetList.filter((d) => d.status === 'offline').length;
   const shownCapacity = showAllCapacity ? sortedCapacity : sortedCapacity.slice(0, CAPACITY_ROWS);
   const meterColor = (v: number) => v >= 90 ? 'var(--bad)' : v >= 75 ? 'var(--warn)' : 'var(--accent)';
 
@@ -948,7 +965,7 @@ function OperationsView({
           {sortedCapacity.length === 0 ? (
             <div className="py-8 text-center text-[13px]" style={{ color: 'var(--ink-3)' }}>No resource data yet.</div>
           ) : (
-            <div className="px-5 py-3 space-y-3">
+            <div className="px-5 py-3 space-y-3" style={showAllCapacity ? { maxHeight: 'min(52vh, 460px)', overflowY: 'auto' } : undefined}>
               {shownCapacity.map((c) => (
                 <button key={c.id} onClick={() => navigate(`/devices/${c.id}`)}
                   className="w-full text-left flex items-center gap-3 group">
@@ -1072,10 +1089,13 @@ function OperationsView({
           <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Fleet</div>
           <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
             {(devices as Device[]).length} device{(devices as Device[]).length !== 1 ? 's' : ''}
+            {fleetOffline > 0 && <span style={{ color: 'var(--bad)' }}> · {fleetOffline} offline</span>}
           </span>
         </div>
+        {/* One tile per device stops at two rows; past that, the tiles needing
+            attention and a link to the rest (#303). */}
         <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min((devices as Device[]).length, 5)}, 1fr)` }}>
-          {(devices as Device[]).map((d) => {
+          {fleetTiles.map((d) => {
             const hasAlert = d.firmware_update_available || d.routerboard_upgrade_available;
             return (
               <button
@@ -1104,6 +1124,18 @@ function OperationsView({
               </button>
             );
           })}
+          {fleetHidden > 0 && (
+            <button
+              onClick={() => navigate('/devices')}
+              className="text-left rounded-[8px] p-[14px] transition-colors flex flex-col justify-center"
+              style={{ background: 'transparent', border: '1px dashed var(--line)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>+{fleetHidden} more</div>
+              <div className="text-[11px]" style={{ color: 'var(--accent)' }}>View all devices →</div>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1119,8 +1151,24 @@ function OperationsView({
                 <X className="w-4 h-4" />
               </button>
             </div>
+            <div className="px-5 py-2" style={{ borderBottom: '1px solid var(--line)' }}>
+              <input
+                autoFocus
+                value={terminalSearch}
+                onChange={(e) => setTerminalSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  const first = filterDevices(deviceList, terminalSearch).find((d) => d.status === 'online');
+                  if (first) { setTerminalDevice({ id: first.id, name: first.name }); setPickTerminal(false); }
+                }}
+                placeholder="Name, address, site or model"
+                aria-label="Search devices"
+                className="w-full bg-transparent text-[13px] outline-none py-1"
+                style={{ color: 'var(--ink)' }}
+              />
+            </div>
             <div className="max-h-[360px] overflow-y-auto">
-              {[...deviceList].sort((a, b) => (a.status === 'online' ? 0 : 1) - (b.status === 'online' ? 0 : 1)).map((d) => (
+              {[...filterDevices(deviceList, terminalSearch)].sort((a, b) => (a.status === 'online' ? 0 : 1) - (b.status === 'online' ? 0 : 1)).map((d) => (
                 <button key={d.id} disabled={d.status !== 'online'}
                   onClick={() => { setTerminalDevice({ id: d.id, name: d.name }); setPickTerminal(false); }}
                   className="w-full text-left flex items-center gap-3 px-5 py-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1153,6 +1201,8 @@ function OperationsView({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+/** Device names the update banner lists before "and N more" (#303). */
+const BANNER_NAMES = 6;
 const ALL_SEVERITIES = ['error', 'warning', 'info'] as const;
 const SEVERITY_KEY = 'dashboard:severities';
 
@@ -1327,7 +1377,7 @@ export default function DashboardPage() {
                   <ArrowUpCircle className="w-3 h-3" />
                   RouterOS ({devicesWithRosUpdates.length}):
                 </span>
-                {devicesWithRosUpdates.map((d, i) => (
+                {devicesWithRosUpdates.slice(0, BANNER_NAMES).map((d, i) => (
                   <span key={d.id}>
                     {i > 0 && <span style={{ color: 'var(--ink-3)' }}> · </span>}
                     <button
@@ -1339,6 +1389,11 @@ export default function DashboardPage() {
                     </button>
                   </span>
                 ))}
+                {devicesWithRosUpdates.length > BANNER_NAMES && (
+                  <button onClick={() => navigate('/firmware')} className="underline underline-offset-2" style={{ color: 'var(--ink-3)' }}>
+                    and {devicesWithRosUpdates.length - BANNER_NAMES} more
+                  </button>
+                )}
               </div>
             )}
             {devicesWithRbUpgrades.length > 0 && (
@@ -1347,7 +1402,7 @@ export default function DashboardPage() {
                   <Cpu className="w-3 h-3" />
                   RouterBOOT ({devicesWithRbUpgrades.length}):
                 </span>
-                {devicesWithRbUpgrades.map((d, i) => (
+                {devicesWithRbUpgrades.slice(0, BANNER_NAMES).map((d, i) => (
                   <span key={d.id}>
                     {i > 0 && <span style={{ color: 'var(--ink-3)' }}> · </span>}
                     <button
@@ -1359,6 +1414,11 @@ export default function DashboardPage() {
                     </button>
                   </span>
                 ))}
+                {devicesWithRbUpgrades.length > BANNER_NAMES && (
+                  <button onClick={() => navigate('/firmware')} className="underline underline-offset-2" style={{ color: 'var(--ink-3)' }}>
+                    and {devicesWithRbUpgrades.length - BANNER_NAMES} more
+                  </button>
+                )}
               </div>
             )}
           </div>

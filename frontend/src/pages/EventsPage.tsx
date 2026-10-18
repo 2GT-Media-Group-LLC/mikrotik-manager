@@ -8,6 +8,7 @@ import { useSocket } from '../hooks/useSocket';
 import { format } from 'date-fns';
 import type { EventSeverity } from '../types';
 import clsx from 'clsx';
+import DevicePicker from '../components/common/DevicePicker';
 
 const severityIcon = (severity: EventSeverity) => {
   if (severity === 'error' || severity === 'critical') return AlertCircle;
@@ -178,16 +179,11 @@ export default function EventsPage() {
           </label>
         </div>
 
-        <select
-          className="input w-full sm:w-44"
-          value={deviceId}
-          onChange={(e) => { setDeviceId(e.target.value); setPage(0); }}
-        >
-          <option value="">All devices</option>
-          {devices.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+        <DevicePicker
+          className="w-full sm:w-56" emptyLabel="All devices" devices={devices} aria-label="Device"
+          value={deviceId ? Number(deviceId) : null}
+          onChange={(id) => { setDeviceId(id == null ? '' : String(id)); setPage(0); }}
+        />
       </div>
 
       {isLoading ? (

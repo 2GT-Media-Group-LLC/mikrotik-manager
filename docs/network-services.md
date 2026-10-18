@@ -4,6 +4,11 @@ DHCP, DNS, NTP, WireGuard, logging, NetFlow and discovery, viewed across the fle
 one device at a time. **Network Services → Overview** is a table of which devices run what:
 search it, sort by any service, and click a row to open the device.
 
+The Overview and the NetFlow fleet view show what was last read from each device and when,
+refreshing anything older than ten minutes in the background; **Refresh** reads every device
+again. On a large fleet the page fills in over a few seconds rather than contacting every device
+at once (see [Scaling](scaling.md#pages-that-show-something-from-every-device)).
+
 Everything here writes to the device. Changes go through [Change Guard](change-guard.md) where
 they could affect reachability.
 

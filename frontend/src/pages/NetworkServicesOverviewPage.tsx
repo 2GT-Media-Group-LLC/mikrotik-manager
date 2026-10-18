@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { RefreshCw, Search } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
+import { liveRefetch, freshnessLabel, type LiveRow } from '../utils/liveFreshness';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import TagChips from '../components/devices/TagChips';
 import SortableHeader, { type SortDir } from '../components/common/SortableHeader';
@@ -104,7 +105,7 @@ export default function NetworkServicesOverviewPage() {
   const { data = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['network-services-overview'],
     queryFn: () => networkServicesApi.overview().then(r => r.data as unknown as DeviceServiceRow[]),
-    refetchInterval: 60_000,
+    refetchInterval: (q) => liveRefetch(q.state.data as LiveRow[] | undefined),
   });
   // Type and tags come from the device list.
   const { data: devices = [] } = useQuery({
@@ -146,7 +147,9 @@ export default function NetworkServicesOverviewPage() {
             <input className="input pl-8 w-56" placeholder="Search devices or tags" value={search}
               onChange={(e) => setSearch(e.target.value)} aria-label="Search devices" />
           </div>
-          <button onClick={() => refetch()} disabled={isFetching}
+          <span className="text-xs text-gray-400" title="Shown from what was last read from each device; refreshed a few devices at a time">{freshnessLabel(data as LiveRow[])}</span>
+          <button onClick={() => { void networkServicesApi.overview(true).then(() => refetch()); }} disabled={isFetching}
+            title="Read every device again (a few at a time)"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors">
             <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />
             Refresh

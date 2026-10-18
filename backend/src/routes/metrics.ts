@@ -391,6 +391,36 @@ router.get('/resources/latest', async (req: Request, res: Response) => {
   res.json({ devices });
 });
 
+// GET /api/metrics/resources/cpu-history?range=1h — every device's CPU series
+// in one query, for the Devices list sparklines (#302). The list used to ask
+// once per device: 1,500 requests and Flux queries for a large fleet.
+router.get('/resources/cpu-history', async (req: Request, res: Response) => {
+  const range = rangeToFlux(String(req.query.range || '1h'));
+  const devFilter = siteScopeDevices(activeSite(req));
+  const allowed = new Set((await query<{ id: number }>(`SELECT id FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`)).map((d) => String(d.id)));
+  const flux = `
+    from(bucket: ${fluxString(bucket)})
+      |> range(start: -${range})
+      |> filter(fn: (r) => r._measurement == "device_resources" and r._field == "cpu_load")
+      |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+      |> keep(columns: ["_time", "_value", "device_id"])
+  `;
+  const series = new Map<string, { t: string; v: number }[]>();
+  try {
+    await getQueryApi().collectRows(flux, (row, meta) => {
+      const id = String(meta.get(row, 'device_id') ?? '');
+      if (!allowed.has(id)) return;
+      if (!series.has(id)) series.set(id, []);
+      series.get(id)!.push({ t: String(meta.get(row, '_time')), v: Number(meta.get(row, '_value')) || 0 });
+    });
+  } catch {
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
+  }
+  const devices: Record<string, number[]> = {};
+  for (const [id, pts] of series) devices[id] = pts.sort((a, b) => a.t.localeCompare(b.t)).map((p) => Math.round(p.v * 10) / 10);
+  res.json({ devices });
+});
+
 // GET /api/metrics/interfaces/latest - newest cumulative rx/tx byte counters per device and interface
 router.get('/interfaces/latest', async (req: Request, res: Response) => {
   const devFilter = siteScopeDevices(activeSite(req));

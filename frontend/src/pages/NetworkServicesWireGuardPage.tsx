@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
+import { liveRefetch, type LiveRow } from '../utils/liveFreshness';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useGuardedWrite, GuardedWriteUi } from '../components/ChangeGuardDialog';
 import { apiErrorMessage } from '../utils/apiError';
@@ -531,6 +532,7 @@ export default function NetworkServicesWireGuardPage() {
     queryKey: ['network-services-overview'],
     queryFn: () => networkServicesApi.overview().then(r => r.data as Record<string, unknown>[]),
     staleTime: 60_000,
+    refetchInterval: (q) => liveRefetch(q.state.data as LiveRow[] | undefined),
   });
   const wgCount = new Map(overview.map((o) => [o.id as number, (o.wireguard as { total?: number } | null)?.total ?? null]));
   const withWg = devices.filter((d) => (wgCount.get(d.id) ?? 0) > 0 || d.id === adding);

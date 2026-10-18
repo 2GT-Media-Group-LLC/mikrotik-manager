@@ -7,10 +7,13 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
+import { liveRefetch, type LiveRow } from '../utils/liveFreshness';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { apiErrorMessage } from '../utils/apiError';
 import { Link } from 'react-router-dom';
 import { DhcpPoolUsage } from '../components/wireless/RfHealth';
+import DevicePicker from '../components/common/DevicePicker';
+import { shortList } from '../utils/deviceCards';
 
 type NS = Record<string, string>;
 
@@ -157,7 +160,7 @@ function ServerForm({ protocol, existing, pools, interfaces, deviceId, onClose, 
           <div className="px-5 pb-3">
             <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-xs text-amber-700 dark:text-amber-300">
               <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-              <span>Active {protocol.toUpperCase()} DHCP server(s) already running on: <strong>{conflictDevices.map(d => d.name).join(', ')}</strong>. Multiple DHCP servers on the same network may cause IP address conflicts.</span>
+              <span>Active {protocol.toUpperCase()} DHCP server(s) already running on: <strong>{shortList(conflictDevices.map(d => String(d.name)))}</strong>. Multiple DHCP servers on the same network may cause IP address conflicts.</span>
             </div>
           </div>
         )}
@@ -400,7 +403,7 @@ function ServerTable({ servers, protocol, canWrite, conflictDevices, onToggle, o
                     <div className="flex items-center justify-end gap-1">
                       <button onClick={() => {
                         if (disabled && conflictDevices.length > 0) {
-                          const names = conflictDevices.map(d => d.name as string).join(', ');
+                          const names = shortList(conflictDevices.map(d => String(d.name)));
                           if (!confirm(`Active ${protocol.toUpperCase()} DHCP server(s) already running on: ${names}.\n\nEnabling another DHCP server on the same network may cause IP address conflicts. Continue?`)) return;
                         }
                         onToggle(s['.id'], disabled);
@@ -606,6 +609,7 @@ export default function NetworkServicesDHCPPage() {
     queryKey: ['network-services-overview'],
     queryFn: () => networkServicesApi.overview().then(r => r.data as Record<string, unknown>[]),
     staleTime: 60_000,
+    refetchInterval: (q) => liveRefetch(q.state.data as LiveRow[] | undefined),
   });
   const conflictDevicesV4 = overview.filter(d => {
     if ((d.id as number) === deviceId) return false;
@@ -663,13 +667,11 @@ export default function NetworkServicesDHCPPage() {
       {/* Device selector */}
       <div className="card p-4">
         <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-2">Select Device</label>
-        <select className="input w-full max-w-xs" value={selectedDeviceId}
-          onChange={e => setSelectedDeviceId(e.target.value === '' ? '' : parseInt(e.target.value))}>
-          <option value="">— Choose a device —</option>
-          {devices.map(d => (
-            <option key={d.id} value={d.id}>{d.name} ({d.ip_address}){d.status !== 'online' ? ' — offline' : ''}</option>
-          ))}
-        </select>
+        <DevicePicker
+          className="max-w-xs" devices={devices} aria-label="Device"
+          value={selectedDeviceId === '' ? null : selectedDeviceId}
+          onChange={(id) => setSelectedDeviceId(id ?? '')}
+        />
         {selectedDevice && selectedDevice.status !== 'online' && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
             <AlertTriangle className="w-3.5 h-3.5" />This device is currently offline. Connection may fail.
@@ -681,13 +683,13 @@ export default function NetworkServicesDHCPPage() {
       {conflictDevicesV4.length > 0 && deviceId > 0 && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-sm text-amber-700 dark:text-amber-300">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>Active IPv4 DHCP server(s) already running on: <strong>{conflictDevicesV4.map(d => d.name as string).join(', ')}</strong>. Adding another DHCP server on the same network may cause IP address conflicts.</span>
+          <span>Active IPv4 DHCP server(s) already running on: <strong>{shortList(conflictDevicesV4.map(d => String(d.name)))}</strong>. Adding another DHCP server on the same network may cause IP address conflicts.</span>
         </div>
       )}
       {conflictDevicesV6.length > 0 && deviceId > 0 && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-sm text-amber-700 dark:text-amber-300">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>Active IPv6 DHCP server(s) already running on: <strong>{conflictDevicesV6.map(d => d.name as string).join(', ')}</strong>. Adding another DHCP server on the same network may cause IP address conflicts.</span>
+          <span>Active IPv6 DHCP server(s) already running on: <strong>{shortList(conflictDevicesV6.map(d => String(d.name)))}</strong>. Adding another DHCP server on the same network may cause IP address conflicts.</span>
         </div>
       )}
 

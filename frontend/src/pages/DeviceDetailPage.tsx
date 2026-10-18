@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, RefreshCw, Activity, Cpu, MemoryStick, Clock, ExternalLink, TerminalSquare, ShieldCheck, Copy, Check,
+  ArrowLeft, RefreshCw, Activity, Cpu, MemoryStick, Clock, ExternalLink, TerminalSquare, ShieldCheck, Copy, Check, GitBranch,
 } from 'lucide-react';
 import { hostPort, winboxAddress } from '../utils/deviceAddress';
 import { devicesApi, metricsApi } from '../services/api';
@@ -237,6 +237,15 @@ export default function DeviceDetailPage() {
             <ExternalLink className="w-4 h-4" />
             <span className="hidden sm:inline">Web Admin</span>
           </button>
+          {/* This device's part of the map (#305). */}
+          <Link
+            to={`/topology?device=${device.id}`}
+            className="btn-secondary flex items-center gap-2 text-sm"
+            title="Show this device and its neighbours on the topology map"
+          >
+            <GitBranch className="w-4 h-4" />
+            <span className="hidden sm:inline">Topology</span>
+          </Link>
           {canWrite && (
             <button
               onClick={() => setShowTerminal(true)}

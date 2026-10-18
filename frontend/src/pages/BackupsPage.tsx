@@ -15,6 +15,7 @@ import clsx from 'clsx';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import TagChips from '../components/devices/TagChips';
 import { FilterBar, FilterSearch, FilterSelect, FilterDivider } from '../components/common/FilterBar';
+import DevicePicker from '../components/common/DevicePicker';
 
 /** One home for backup-type wording, used by the filter and the table badge. */
 const TYPE_LABEL: Record<string, string> = {
@@ -214,18 +215,13 @@ export default function BackupsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Device</label>
-              <select
-                className="input"
-                value={selectedDevice}
-                onChange={(e) => setSelectedDevice(e.target.value)}
-              >
-                <option value="">Select a device...</option>
-                {devices.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name} ({d.ip_address})
-                  </option>
-                ))}
-              </select>
+              <DevicePicker
+                devices={devices}
+                value={selectedDevice ? Number(selectedDevice) : null}
+                onChange={(id) => setSelectedDevice(id == null ? '' : String(id))}
+                placeholder="Select a device…"
+                aria-label="Device"
+              />
             </div>
             <div>
               <label className="label">Notes (optional)</label>
@@ -274,10 +270,11 @@ export default function BackupsPage() {
       {/* Filters (#134), in the same bar as Devices and Clients (#217). */}
       <FilterBar>
         <FilterSearch value={filters.search} onChange={(v) => setFilters((f) => ({ ...f, search: v }))} placeholder="Device, filename or note…" />
-        <FilterSelect value={filters.deviceId} onChange={(v) => setFilters((f) => ({ ...f, deviceId: v }))} title="Device">
-          <option value="">All devices</option>
-          {devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </FilterSelect>
+        <DevicePicker
+          variant="filter" title="Device" emptyLabel="All devices" devices={devices}
+          value={filters.deviceId ? Number(filters.deviceId) : null}
+          onChange={(id) => setFilters((f) => ({ ...f, deviceId: id == null ? '' : String(id) }))}
+        />
         <FilterSelect value={filters.type} onChange={(v) => setFilters((f) => ({ ...f, type: v }))} title="Type">
           <option value="">All types</option>
           {types.map((t) => (

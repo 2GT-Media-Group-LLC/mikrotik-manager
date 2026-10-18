@@ -6,11 +6,14 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
+import { liveRefetch, type LiveRow } from '../utils/liveFreshness';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { apiErrorMessage } from '../utils/apiError';
 import ListInput from '../components/common/ListInput';
 import { splitList } from '../utils/ipPrefix';
 import { isValidIPv4, isValidIPv6 } from '../utils/deviceAddress';
+import DevicePicker from '../components/common/DevicePicker';
+import { shortList } from '../utils/deviceCards';
 
 type NS = Record<string, string>;
 
@@ -220,6 +223,7 @@ export default function NetworkServicesDNSPage() {
     queryKey: ['network-services-overview'],
     queryFn: () => networkServicesApi.overview().then(r => r.data as NS[]),
     staleTime: 60_000,
+    refetchInterval: (q) => liveRefetch(q.state.data as LiveRow[] | undefined),
   });
   const conflictDevices = overview.filter(d => {
     if (parseInt(d['id']) === deviceId) return false;
@@ -279,11 +283,11 @@ export default function NetworkServicesDNSPage() {
       {/* Device selector */}
       <div className="card p-4">
         <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-2">Select Device</label>
-        <select className="input w-full max-w-xs" value={selectedDeviceId}
-          onChange={e => setSelectedDeviceId(e.target.value === '' ? '' : parseInt(e.target.value))}>
-          <option value="">— Choose a device —</option>
-          {devices.map(d => <option key={d.id} value={d.id}>{d.name} ({d.ip_address}){d.status !== 'online' ? ' — offline' : ''}</option>)}
-        </select>
+        <DevicePicker
+          className="max-w-xs" devices={devices} aria-label="Device"
+          value={selectedDeviceId === '' ? null : selectedDeviceId}
+          onChange={(id) => setSelectedDeviceId(id ?? '')}
+        />
         {selectedDevice?.status !== 'online' && deviceId > 0 && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
             <AlertTriangle className="w-3.5 h-3.5" />This device is currently offline.
@@ -294,7 +298,7 @@ export default function NetworkServicesDNSPage() {
       {conflictDevices.length > 0 && deviceId > 0 && allowRemote && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-sm text-amber-700 dark:text-amber-300">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>DNS remote requests also enabled on: <strong>{conflictDevices.map(d => d['name']).join(', ')}</strong>. Multiple DNS servers may cause resolution issues.</span>
+          <span>DNS remote requests also enabled on: <strong>{shortList(conflictDevices.map(d => String(d['name'])))}</strong>. Multiple DNS servers may cause resolution issues.</span>
         </div>
       )}
 

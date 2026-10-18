@@ -117,8 +117,10 @@ api.interceptors.request.use((config) => {
   // rather than threading it through ~160 query keys means a new query is
   // scoped correctly by default and cannot be forgotten. null is the all-sites
   // view, which sends no header and so behaves exactly as before sites existed.
+  // A request naming its own site keeps it (the device view of the topology
+  // asks for that device's site from the all-sites view, #305).
   const siteId = useSiteStore.getState().currentSiteId;
-  if (siteId != null) config.headers['X-Site-Id'] = String(siteId);
+  if (siteId != null && config.headers['X-Site-Id'] == null) config.headers['X-Site-Id'] = String(siteId);
   return config;
 }, undefined, { synchronous: true });
 
@@ -482,9 +484,20 @@ export interface PollerQueue {
   failed?: number; completed?: number; paused?: number; error?: string;
 }
 
+export interface PollerPhases {
+  persistent_sessions: boolean;
+  open_sessions: number;
+  avg_connect_new_ms: number | null;
+  avg_connect_reused_ms: number | null;
+  avg_collect_ms: number | null;
+  reused_pct: number | null;
+  devices_measured: number;
+}
 export interface PollerHealth {
   status: 'ok' | 'draining' | 'saturated';
   queues: PollerQueue[];
+  /** Where fast-poll time goes (#301). */
+  phases?: PollerPhases | null;
   workers: { concurrency: number; job_timeout_ms: number; poll_interval_ms: number; fast_interval_sec?: number };
   capacity: {
     devices: number;
@@ -1391,6 +1404,11 @@ export interface OpsActionResult { total: number; results: { name: string; ok: b
 
 export const operationsApi = {
   insights: () => api.get<OpsInsights>('/operations/insights'),
+  /** Every online device's hardening score, cached and refreshed a few at a time (#302). */
+  securityPosture: (refresh = false) => api.get<{
+    devices: { id: number; name: string; score: number; checks: SecurityCheck[]; fetched_at: string | null }[];
+    refreshing: number;
+  }>('/operations/security-posture', { params: refresh ? { refresh: '1' } : undefined, timeout: 60_000 }),
   dismissInsight: (fingerprint: string, hours: number, category?: string, title?: string) =>
     api.post('/operations/insights/dismiss', { fingerprint, hours, category, title }),
   listDismissed: () =>
@@ -1486,6 +1504,8 @@ export const configHistoryApi = {
 
 // ─── Metrics ─────────────────────────────────────────────────────────────────
 export const metricsApi = {
+  /** Every device's CPU series in one request, for list sparklines (#302). */
+  cpuHistory: (range = '1h') => api.get<{ devices: Record<string, number[]> }>('/metrics/resources/cpu-history', { params: { range } }),
   summary: () => api.get<MetricsSummary>('/metrics/summary'),
   clientsOverTime: (range = '24h') =>
     api.get<TimeSeriesPoint[]>('/metrics/clients-over-time', { params: { range } }),
@@ -1509,7 +1529,8 @@ export const metricsApi = {
 
 // ─── Topology ────────────────────────────────────────────────────────────────
 export const topologyApi = {
-  get: (withClients = false) =>
+  /** `siteId`: draw that site whatever the site switcher says (the device view, #305). */
+  get: (withClients = false, siteId?: number | null) =>
     api.get<{
       devices: Device[];
       links: import('../types').TopologyLink[];
@@ -1536,7 +1557,10 @@ export const topologyApi = {
       clients?: import('../types').TopologyClient[];
       /** Discovered links hidden by hand (discussion #85). */
       hiddenLinks?: { key: string; label: string | null; hiddenAt: string; hiddenBy: string | null }[];
-    }>('/topology', { params: withClients ? { clients: 1 } : undefined }),
+    }>('/topology', {
+      params: withClients ? { clients: 1 } : undefined,
+      headers: siteId != null ? { 'X-Site-Id': String(siteId) } : undefined,
+    }),
   discover: () => api.post('/topology/discover'),
   createHandLink: (a: import('../types').HandLinkEnd, b: import('../types').HandLinkEnd, label?: string) =>
     api.post<import('../types').HandLink>('/topology/hand-links', { a, b, label }),
@@ -1928,8 +1952,9 @@ export interface DhcpPoolUsageRow {
 export const networkServicesApi = {
   poolUsage: () => api.get<DhcpPoolUsageRow[]>('/network-services/dhcp/pool-usage'),
   // Overview
-  overview: () =>
-    api.get<Record<string, unknown>[]>('/network-services/overview', { timeout: 60_000 }),
+  // Cached per device and refreshed a few at a time (#302); refresh=true re-reads every device.
+  overview: (refresh = false) =>
+    api.get<Record<string, unknown>[]>('/network-services/overview', { timeout: 60_000, params: refresh ? { refresh: '1' } : undefined }),
 
   // ── LLDP, every device type ───────────────────────────────────────────────
   /** SNMP settings of every online device in the site, of any type. */
@@ -2053,11 +2078,11 @@ export const networkServicesApi = {
     api.delete(`/network-services/wireguard/peer/${encodeURIComponent(id)}`, { params: { deviceId } }),
 
   // ── NetFlow ───────────────────────────────────────────────────────────────
-  netflowFleet: () =>
+  netflowFleet: (refresh = false) =>
     api.get<{
       collector: { address: string; port: number; version: string; listening: boolean };
       devices: NetflowDeviceState[];
-    }>('/network-services/netflow/fleet', { timeout: 60_000 }),
+    }>('/network-services/netflow/fleet', { timeout: 60_000, params: refresh ? { refresh: '1' } : undefined }),
   getNetflow: (deviceId: number) =>
     api.get<{ settings: NS | null; targets: NS[]; target_matches_collector: boolean }>(
       '/network-services/netflow', { params: { deviceId } }

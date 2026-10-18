@@ -10,6 +10,7 @@ import { useCanWrite, useIsFleetAdmin } from '../hooks/useCanWrite';
 import { useGuardedWrite, GuardedWriteUi } from '../components/ChangeGuardDialog';
 import type { WirelessAP } from '../types';
 import clsx from 'clsx';
+import DevicePicker from '../components/common/DevicePicker';
 
 // ─── Radio helpers ────────────────────────────────────────────────────────────
 
@@ -948,17 +949,11 @@ export default function WirelessSettingsPage() {
       {aps.length > 1 && (
         <div className="flex items-center gap-3">
           <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Access Point:</label>
-          <select
-            className="input w-auto"
-            value={selectedApId ?? ''}
-            onChange={e => setSelectedApId(Number(e.target.value))}
-          >
-            {aps.map(ap => (
-              <option key={ap.id} value={ap.id}>
-                {ap.name} ({ap.ip_address}) — {ap.status}
-              </option>
-            ))}
-          </select>
+          <DevicePicker
+            className="w-auto min-w-[18rem]" devices={aps} aria-label="Access point"
+            value={selectedApId ?? null}
+            onChange={(id) => { if (id != null) setSelectedApId(id); }}
+          />
         </div>
       )}
 

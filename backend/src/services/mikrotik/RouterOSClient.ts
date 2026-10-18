@@ -174,6 +174,9 @@ export class RouterOSClient extends EventEmitter {
         this.socket = net.createConnection({ host: this.host, port: this.port });
         this.socket.on('connect', () => { void onReady(); });
       }
+      // A session kept open between polls (#301) must survive NAT and
+      // firewall idle timeouts between them.
+      this.socket.setKeepAlive(true, 30_000);
 
       this.socket.on('data', (data: Buffer) => {
         // Nothing thrown here may escape: this runs from the socket's event
@@ -331,6 +334,11 @@ export class RouterOSClient extends EventEmitter {
 
   isConnected(): boolean {
     return this.connected && this.authenticated;
+  }
+
+  /** Connected, logged in, and its reply stream still trusted: safe to hand to the next poll (#301). */
+  isUsable(): boolean {
+    return this.connected && this.authenticated && !this.poisoned && !!this.socket && !this.socket.destroyed;
   }
 
   // ─── RouterOS API Protocol ────────────────────────────────────────────────

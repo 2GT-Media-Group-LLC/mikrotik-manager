@@ -5,6 +5,7 @@ import { devicesApi } from '../../services/api';
 import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
 import type { Device, Vlan, SwitchPort } from '../../types';
 import clsx from 'clsx';
+import DevicePicker from '../common/DevicePicker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -358,18 +359,11 @@ export default function CopyVlanModal({
     <div className="space-y-4">
       <div>
         <label className="label">Source switch</label>
-        <select
-          className="input"
-          value={sourceDeviceId ?? ''}
-          onChange={(e) => setSourceDeviceId(e.target.value ? Number(e.target.value) : null)}
-        >
-          <option value="">Select a switch…</option>
-          {switchDevices.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name} ({d.ip_address}){d.status !== 'online' ? ' — offline' : ''}
-            </option>
-          ))}
-        </select>
+        <DevicePicker
+          devices={switchDevices} placeholder="Select a switch…" aria-label="Source switch"
+          value={sourceDeviceId ?? null}
+          onChange={(id) => setSourceDeviceId(id)}
+        />
         {switchDevices.length === 0 && (
           <p className="text-xs text-gray-400 mt-1.5">
             No other switches found. Add another switch device first.

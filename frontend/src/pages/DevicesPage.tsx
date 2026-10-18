@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react';
 import { usesApiTls } from '../utils/apiTls';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, RefreshCw, Router, Trash2, ChevronRight,
   Radar, Pencil, ShieldQuestion, Upload, Power} from 'lucide-react';
@@ -248,22 +248,17 @@ export default function DevicesPage() {
     () => [...new Set(devices.map(d => d.effective_location?.address).filter(Boolean) as string[])].sort(),
     [devices]);
 
-  const cpuHistoryResults = useQueries({
-    queries: devices.map(d => ({
-      queryKey: ['device-resources-history', d.id],
-      queryFn: () => metricsApi.deviceResources(d.id, '1h').then(r => r.data),
-      staleTime: 60_000,
-      enabled: d.status === 'online',
-    })),
+  // One request for every device's sparkline (#302), not one per device.
+  const { data: cpuHistoryAll } = useQuery({
+    queryKey: ['device-cpu-history', '1h'],
+    queryFn: () => metricsApi.cpuHistory('1h').then(r => r.data.devices),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    enabled: devices.length > 0,
   });
   const cpuHistories = useMemo(
-    () => Object.fromEntries(
-      devices.map((d, i) => {
-        const pts = cpuHistoryResults[i]?.data ?? [];
-        return [d.id, pts.filter((p: { cpu_load?: number }) => p.cpu_load != null).map((p: { cpu_load?: number }) => p.cpu_load as number)];
-      })
-    ) as Record<number, number[]>,
-    [devices, cpuHistoryResults],
+    () => Object.fromEntries(devices.map(d => [d.id, d.status === 'online' ? (cpuHistoryAll?.[String(d.id)] ?? []) : []])) as Record<number, number[]>,
+    [devices, cpuHistoryAll],
   );
 
   const filtered = useMemo(() => {

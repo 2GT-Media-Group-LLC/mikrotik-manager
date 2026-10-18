@@ -1,4 +1,6 @@
-import { mapWithConcurrency } from '../utils/concurrency';
+import { mapWithConcurrency, settleWithConcurrency, FLEET_ACTION_CONCURRENCY } from '../utils/concurrency';
+import { liveForDevices } from '../services/liveCache';
+import { securityPosture, type PostureDevice } from './devices';
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
 import { getQueryApi } from '../config/influxdb';
@@ -20,16 +22,6 @@ import { latestResources } from '../services/latestMetrics';
 
 const router = Router();
 
-/** Devices a fleet-wide action works on at once (J10). */
-const FLEET_ACTION_CONCURRENCY = 8;
-
-/** Promise.allSettled, but at most `limit` at a time. */
-async function settleWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
-  return mapWithConcurrency(items, limit, async (item) => {
-    try { return { status: 'fulfilled', value: await fn(item) } as const; }
-    catch (reason) { return { status: 'rejected', reason } as const; }
-  });
-}
 router.use(requireAuth);
 
 const backupService = new BackupService();
@@ -759,6 +751,24 @@ router.post('/backup-all', requireWrite, async (req: Request, res: Response) => 
       ok: s.status === 'fulfilled',
       error: s.status === 'rejected' ? (s.reason as Error)?.message : undefined,
     })),
+  });
+});
+
+// GET /api/operations/security-posture — every online device's hardening score,
+// for the dashboard (#302). Read through the live cache: the dashboard used to
+// ask each device separately, opening a connection to every one.
+router.get('/security-posture', async (req: Request, res: Response) => {
+  const scope = siteScopeDevices(activeSite(req));
+  const devices = await query<PostureDevice>(
+    `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only ${scope ? `AND ${scope}` : ''} ORDER BY name`);
+  const live = await liveForDevices('posture', devices as unknown as DeviceRow[], (c, d) => securityPosture(c, d as unknown as PostureDevice),
+    { maxAgeMs: 15 * 60_000, refresh: req.query.refresh === '1', waitMs: 3000 });
+  res.json({
+    devices: devices.flatMap((d) => {
+      const e = live.get(d.id)!;
+      return e.data ? [{ id: d.id, name: d.name, score: e.data.score, checks: e.data.checks, fetched_at: e.fetchedAt }] : [];
+    }),
+    refreshing: [...live.values()].filter((e) => e.refreshing).length,
   });
 });
 
