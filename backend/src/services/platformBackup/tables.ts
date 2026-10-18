@@ -5,9 +5,8 @@
  * first). These tables only reference each other, so a configuration restore
  * can replace them without touching history.
  *
- * Database: every table, except the ones below that describe files on this
- * server (device config backups, cached firmware packages) or this server's
- * own platform-backup setup, which a restore leaves as they are.
+ * Database: every table, except this server's own platform-backup setup
+ * (NEVER_RESTORED below), which a restore leaves as it is.
  */
 export const CONFIG_TABLES = [
   'sites',
@@ -15,6 +14,8 @@ export const CONFIG_TABLES = [
   'tags',
   'credential_presets',
   'devices',
+  'device_ca',
+  'managed_device_certs',
   'user_site_roles',
   'api_tokens',
   'device_tags',

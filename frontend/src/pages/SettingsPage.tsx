@@ -417,6 +417,7 @@ export default function SettingsPage() {
     optic_degraded: "Optic light level: this many dB away from the port's usual level either way, past a receive limit below, or the module at 70 °C (threshold, dB)",
     routing_peer_down: 'Routing peer down: a BGP session or OSPF neighbour that was up has been down this long (threshold, minutes)',
     platform_backup_failed: 'Platform backup failed: a backup of MikroTik Manager itself failed or didn’t reach a destination',
+    device_cert_renewal_failed: 'Device certificate renewal failed: the manager couldn’t renew a certificate its CA issued to a device',
   };
 
   const cfgStr = (key: string) => (chForm.config[key] as string) ?? '';

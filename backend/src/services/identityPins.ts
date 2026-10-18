@@ -104,6 +104,20 @@ export function sshHostKeyFingerprint(key: Buffer): string {
   return createHash('sha256').update(key).digest('hex');
 }
 
+/**
+ * Certificates the manager is installing right now (#200), by device. While a
+ * device's api-ssl certificate is being replaced, a poll can land on either
+ * side of the switch; the new certificate is accepted without counting as a
+ * changed identity, and is pinned once the manager has proved it.
+ */
+const tlsTransitions = new Map<number, string>();
+export function expectTlsCertificate(deviceId: number, fingerprint: string): void {
+  tlsTransitions.set(deviceId, normalizeFingerprint(fingerprint));
+}
+export function clearTlsExpectation(deviceId: number): void {
+  tlsTransitions.delete(deviceId);
+}
+
 interface PinRow {
   device_id: number;
   name: string;
@@ -134,6 +148,7 @@ export async function verifyDeviceIdentity(
       await pin(row.device_id, kind, fp);
       continue;
     }
+    if (kind === 'api-tls' && tlsTransitions.get(row.device_id) === fp) continue;
     if (row.fingerprint === fp) {
       if (row.seen_fingerprint) {
         await query(
@@ -185,6 +200,11 @@ export async function trustNewIdentity(deviceId: number, kind: IdentityKind): Pr
       WHERE device_id = $1 AND kind = $2 AND seen_fingerprint IS NOT NULL
       RETURNING device_id`,
     [deviceId, kind]);
+  // A device now trusted with a certificate the manager didn't issue no
+  // longer carries the manager's certificate (#200).
+  if (kind === 'api-tls' && rows.length > 0) {
+    await query(`DELETE FROM managed_device_certs WHERE device_id = $1`, [deviceId]);
+  }
   return rows.length > 0;
 }
 

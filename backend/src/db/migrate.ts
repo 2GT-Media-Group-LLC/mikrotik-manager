@@ -1569,6 +1569,45 @@ CREATE TABLE IF NOT EXISTS platform_backups (
 );
 CREATE INDEX IF NOT EXISTS idx_platform_backups_created ON platform_backups (created_at DESC);
 
+-- The manager's own certificate authority (#200): one row, made here or
+-- imported, with the device-certificate defaults. The key is encrypted with
+-- the manager's key. Devices carrying a certificate it issued are listed in
+-- managed_device_certs; no row means the device isn't enrolled.
+CREATE TABLE IF NOT EXISTS device_ca (
+  id                INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  cert_pem          TEXT NOT NULL,
+  key_encrypted     TEXT NOT NULL,
+  imported          BOOLEAN NOT NULL DEFAULT FALSE,
+  default_days      INTEGER NOT NULL DEFAULT 365,
+  renew_before_days INTEGER NOT NULL DEFAULT 30,
+  auto_renew        BOOLEAN NOT NULL DEFAULT TRUE,
+  default_www       BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by        VARCHAR(100),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS managed_device_certs (
+  device_id         INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  cert_name         VARCHAR(64) NOT NULL,
+  ca_cert_name      VARCHAR(64),
+  serial            VARCHAR(64) NOT NULL,
+  fingerprint       CHAR(64) NOT NULL,
+  ca_fingerprint    CHAR(64) NOT NULL,
+  sans              TEXT[] NOT NULL DEFAULT '{}',
+  -- Names beyond the management address, kept for renewals.
+  extra_names       TEXT[] NOT NULL DEFAULT '{}',
+  days              INTEGER NOT NULL,
+  apply_www         BOOLEAN NOT NULL DEFAULT TRUE,
+  not_before        TIMESTAMPTZ NOT NULL,
+  not_after         TIMESTAMPTZ NOT NULL,
+  previous_api_cert VARCHAR(128),
+  previous_www_cert VARCHAR(128),
+  last_error        TEXT,
+  last_attempt_at   TIMESTAMPTZ,
+  issued_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  renewed_at        TIMESTAMPTZ
+);
+
 -- BGP peers and OSPF neighbours across the fleet, for the Routing page and
 -- the routing-peer-down alert (#279). An OSPF neighbour that drops vanishes
 -- from RouterOS, so its last row is kept and marked down.

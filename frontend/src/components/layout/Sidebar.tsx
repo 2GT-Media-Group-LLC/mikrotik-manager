@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { isWirelessDevice } from '../../utils/wireless';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useIsFleetAdmin } from '../../hooks/useCanWrite';
 import {
-  LayoutDashboard, Router, Users, Bell, GitBranch, HardDrive,
+  LayoutDashboard, Router, Users, Bell, GitBranch, HardDrive, ShieldCheck,
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
   Server, Globe, Clock, Shield, FileText, Activity, BarChart3, Ticket, ArrowUpCircle, Radio,
   LayoutGrid, TerminalSquare, KeyRound, UserCheck,
@@ -52,6 +53,8 @@ const operationsItems = [
   { to: '/templates', icon: FileText,        label: 'Templates' },
   { to: '/backups',   icon: HardDrive,       label: 'Backups' },
   { to: '/credentials', icon: KeyRound,      label: 'Credentials' },
+  // Fleet admins only (#200).
+  { to: '/certificates', icon: ShieldCheck,  label: 'Certificates', fleetAdmin: true },
 ];
 
 interface SidebarProps {
@@ -174,6 +177,7 @@ function CollapsedGroupLink({
 export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const isFleetAdmin = useIsFleetAdmin();
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices'],
@@ -366,7 +370,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 
         {/* ── Operations ── */}
         <SectionLabel label="Operations" isCollapsed={isCollapsed} />
-        {operationsItems.map(({ to, icon, label }) => (
+        {operationsItems.filter((i) => !('fleetAdmin' in i) || isFleetAdmin).map(({ to, icon, label }) => (
           <NavItem key={to} to={to} icon={icon} label={label} isCollapsed={isCollapsed} onClick={handleNavClick} />
         ))}
       </nav>

@@ -17,6 +17,7 @@ import FirmwareHistoryPage from './pages/FirmwareHistoryPage';
 import FirmwareMirrorPage from './pages/FirmwareMirrorPage';
 import UserManagerPage from './pages/UserManagerPage';
 import CredentialsPage from './pages/CredentialsPage';
+import CertificatesPage from './pages/CertificatesPage';
 import CommandsPage from './pages/CommandsPage';
 import TemplatesPage from './pages/TemplatesPage';
 import SettingsPage from './pages/SettingsPage';
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="firmware/history" element={<FirmwareHistoryPage />} />
           <Route path="firmware/mirror" element={<FirmwareMirrorPage />} />
           <Route path="credentials" element={<CredentialsPage />} />
+          <Route path="certificates" element={<CertificatesPage />} />
           <Route path="commands" element={<CommandsPage />} />
           <Route path="templates" element={<TemplatesPage />} />
           <Route path="sites" element={<SitesPage />} />

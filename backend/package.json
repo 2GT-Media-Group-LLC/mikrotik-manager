@@ -1,6 +1,6 @@
 {
   "name": "mikrotik-manager-backend",
-  "version": "0.64.0-beta",
+  "version": "0.65.0-beta",
   "description": "Mikrotik Network Management Platform - Backend API",
   "main": "dist/index.js",
   "scripts": {
@@ -15,6 +15,7 @@
   "dependencies": {
     "@influxdata/influxdb-client": "^1.33.2",
     "@influxdata/influxdb-client-apis": "^1.35.0",
+    "@peculiar/x509": "2.1.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.81.2",
     "compression": "^1.8.2",
@@ -31,6 +32,7 @@
     "otpauth": "^9.5.2",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
+    "reflect-metadata": "0.2.2",
     "socket.io": "^4.6.1",
     "ssh2": "^1.14.0"
   },

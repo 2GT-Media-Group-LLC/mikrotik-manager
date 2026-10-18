@@ -90,7 +90,8 @@ before trusting it:
 
 An admin then clicks **Trust new certificate** (or **Trust new host key**) on the banner, and
 the manager reconnects. When the manager replaces a device's certificate itself, through
-**Switch to API-SSL**, it updates the pin on its own.
+**Switch to API-SSL** or [device certificates](certificates.md), it updates the pin on its own.
+A device with a certificate from the manager's CA must also present one the CA signed.
 
 ### Serial numbers
 

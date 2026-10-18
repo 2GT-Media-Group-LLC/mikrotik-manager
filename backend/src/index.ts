@@ -84,6 +84,8 @@ import sitesRoutes from './routes/sites';
 import certificatesRoutes from './routes/certificates';
 import routingRoutes from './routes/routing';
 import platformBackupRoutes from './routes/platformBackup';
+import deviceCertsRoutes from './routes/deviceCerts';
+import { verifyManagedCertificate, adoptCaCertificate } from './services/deviceCa';
 import { isRestoring } from './services/platformBackup/service';
 import cveRoutes from './routes/cves';
 import adoptionRoutes, { setPollerService as setAdoptionPoller } from './routes/adoption';
@@ -120,8 +122,16 @@ function provisionSecrets(): void {
 }
 
 // Every API-SSL connection checks the device's certificate against the one it
-// presented first, before sending the login (outside review P1-4).
-RouterOSClient.tlsVerifier = (host, port, fingerprint) => verifyDeviceIdentity('api-tls', host, port, fingerprint);
+// presented first, before sending the login (outside review P1-4); a device
+// carrying a certificate from the manager's CA must also present one the CA
+// signed (#200).
+RouterOSClient.tlsVerifier = async (host, port, fingerprint, raw) => {
+  // First, take up a certificate the CA issued that isn't on record (after
+  // restoring an older platform backup), so it isn't reported as a change.
+  await adoptCaCertificate(host, port, raw).catch((e) => console.error('[device-ca] adopt check failed:', (e as Error).message));
+  await verifyDeviceIdentity('api-tls', host, port, fingerprint);
+  await verifyManagedCertificate(host, port, raw);
+};
 
 const app = express();
 // nginx sits exactly one hop in front; trust its X-Forwarded-For so req.ip is the real client IP
@@ -449,6 +459,7 @@ app.use('/api/command-secrets', commandSecretsRoutes);
 app.use('/api/certificates', certificatesRoutes);
 app.use('/api/routing', routingRoutes);
 app.use('/api/platform-backup', platformBackupRoutes);
+app.use('/api/device-certs', deviceCertsRoutes);
 app.use('/api/security/cves', cveRoutes);
 
 // ─── Error Handler ────────────────────────────────────────────────────────────

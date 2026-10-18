@@ -20,6 +20,7 @@ import { checkOptics, purgeOpticReadings } from './opticLevels';
 import { checkWireGuardStale } from './wireguardStale';
 import { checkRoutingPeers } from './routingPeerAlerts';
 import { isRestoring, scheduleTick as platformBackupTick } from './platformBackup/service';
+import { renewalTick as deviceCertRenewalTick } from './deviceCa';
 import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
@@ -602,6 +603,7 @@ export class PollerService {
       // Platform backups of MikroTik Manager itself — checked every minute; the
       // schedule's own last-run time stops a double run.
       platformBackupTick(appTimezone).catch((e) => console.error('[Poller] Platform backup schedule error:', e));
+      deviceCertRenewalTick().catch((e) => console.error('[Poller] Device certificate renewal error:', e));
 
       // Scheduled backups — fire when the cron expression matches the current minute/hour.
       // Redis key with 1-hour TTL prevents double-firing within the same cron window.

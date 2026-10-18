@@ -20,6 +20,7 @@ function extractEntity(path: string): { entityType: string | null; entityId: num
     'credential-presets': 'credential_preset',
     'audit-log': 'audit_log',
     'ssh-keys': 'ssh_keys',
+    'device-certs': 'device_cert',
     users: 'user',
   };
   const entityType = resourceMap[segments[0]] ?? segments[0] ?? null;

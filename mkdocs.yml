@@ -74,6 +74,7 @@ nav:
       - Firmware rollouts: firmware.md
       - Backups: backups.md
       - Backing up MikroTik Manager: platform-backup.md
+      - Device certificates: certificates.md
   - Devices:
       - Wireless: wireless.md
       - Network services: network-services.md

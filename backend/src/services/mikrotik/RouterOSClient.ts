@@ -93,7 +93,7 @@ export class RouterOSClient extends EventEmitter {
    * Checks the certificate a device presents on API-SSL, before any login is
    * sent. Registered once at startup (index.ts); throws to refuse the device.
    */
-  static tlsVerifier: ((host: string, port: number, fingerprint: string) => Promise<void>) | null = null;
+  static tlsVerifier: ((host: string, port: number, fingerprint: string, raw: Buffer) => Promise<void>) | null = null;
 
   /** SHA-256 fingerprint of the certificate seen on the last TLS connect, lowercase hex. */
   tlsFingerprint: string | null = null;
@@ -157,7 +157,7 @@ export class RouterOSClient extends EventEmitter {
                 if (!fp) throw new RouterOSError('The device presented no certificate on API-SSL');
                 this.tlsFingerprint = fp.replace(/:/g, '').toLowerCase();
                 if (RouterOSClient.tlsVerifier) {
-                  await RouterOSClient.tlsVerifier(this.host, this.port, this.tlsFingerprint);
+                  await RouterOSClient.tlsVerifier(this.host, this.port, this.tlsFingerprint, cert.raw);
                 }
               } catch (err) {
                 clearTimeout(timer);

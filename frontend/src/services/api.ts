@@ -2574,3 +2574,41 @@ export interface BridgeMoveResult {
   offloadPending?: boolean;
   guard?: unknown;
 }
+
+// ─── Device certificates from the manager's CA (#200) ────────────────────────
+export type DeviceCertStatus = 'not_issued' | 'valid' | 'renewal_due' | 'expired' | 'renewal_failed';
+export interface DeviceCaInfo {
+  subject: string; commonName: string; fingerprint: string; notBefore: string; notAfter: string; keyType: string;
+  imported: boolean; created_by: string | null; created_at: string;
+}
+export interface DeviceCaSettings { default_days: number; renew_before_days: number; auto_renew: boolean; default_www: boolean }
+export interface DeviceCertRow {
+  id: number; name: string; ip_address: string; site_name: string | null; ros_version: string | null; status: string;
+  api_ssl: boolean; cert_name: string | null; fingerprint: string | null; sans: string[] | null; extra_names: string[] | null;
+  days: number | null; apply_www: boolean | null; not_before: string | null; not_after: string | null;
+  last_error: string | null; last_attempt_at: string | null; issued_at: string | null; renewed_at: string | null;
+  cert_status: DeviceCertStatus;
+}
+export interface DeviceCertsOverview {
+  ca: DeviceCaInfo | null;
+  settings: DeviceCaSettings | null;
+  limits: { min_days: number; max_days: number; ca_day_choices: number[] };
+  devices: DeviceCertRow[];
+}
+export interface DeviceCertResult { ok: boolean; steps: string[]; message: string }
+
+export const deviceCertsApi = {
+  overview: () => api.get<DeviceCertsOverview>('/device-certs'),
+  createCa: (data: { common_name: string; organization?: string; days: number }) => api.post('/device-certs/ca', data),
+  importCa: (data: { cert_pem: string; key_pem: string; passphrase?: string }) =>
+    api.post<{ message: string; warnings: string[] }>('/device-certs/ca/import', data),
+  deleteCa: () => api.delete('/device-certs/ca'),
+  caCertificate: () => api.get<string>('/device-certs/ca/certificate', { responseType: 'text' as const }),
+  saveSettings: (data: Partial<DeviceCaSettings>) => api.put('/device-certs/settings', data),
+  // Issuing talks to the device (key upload, import, a fresh TLS login): allow time.
+  issue: (id: number, data: { days?: number; extra_names?: string[]; apply_www?: boolean }) =>
+    api.post<DeviceCertResult>(`/device-certs/devices/${id}/issue`, data, { timeout: 180_000 }),
+  renew: (id: number) => api.post<DeviceCertResult>(`/device-certs/devices/${id}/renew`, {}, { timeout: 180_000 }),
+  remove: (id: number, forget = false) =>
+    api.delete<DeviceCertResult>(`/device-certs/devices/${id}`, { params: forget ? { forget: '1' } : undefined, timeout: 180_000 }),
+};

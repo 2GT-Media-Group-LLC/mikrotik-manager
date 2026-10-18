@@ -29,6 +29,7 @@ const COLUMNS: Array<{ table: string; id: string; column: string; label: string 
   { table: 'command_secrets', id: 'id', column: 'value_encrypted', label: 'Command secrets' },
   { table: 'platform_backup_destinations', id: 'id', column: 'secret_encrypted', label: 'Platform backup destination secrets' },
   { table: 'platform_backup_settings', id: 'id', column: 'passphrase_encrypted', label: 'Platform backup passphrase' },
+  { table: 'device_ca', id: 'id', column: 'key_encrypted', label: 'Certificate authority key' },
   { table: 'devices', id: 'id', column: 'ssh_password_encrypted', label: 'Device SSH passwords' },
   { table: 'credential_presets', id: 'id', column: 'api_password_encrypted', label: 'Credential preset API passwords' },
   { table: 'credential_presets', id: 'id', column: 'ssh_password_encrypted', label: 'Credential preset SSH passwords' },

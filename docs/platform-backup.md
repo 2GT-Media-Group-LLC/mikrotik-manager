@@ -10,7 +10,7 @@ You choose one of two kinds each time, and for the schedule:
 
 | Kind | Holds | Size |
 |---|---|---|
-| **Configuration** | Devices and their stored logins, sites, users and roles, API tokens, settings, alert rules and channels, webhooks, report schedules, maintenance windows, command and config templates, secrets, tags, firmware mirrors, dismissed findings and topology layout | Small |
+| **Configuration** | Devices and their stored logins, sites, users and roles, API tokens, settings, alert rules and channels, webhooks, report schedules, maintenance windows, command and config templates, secrets, tags, firmware mirrors, dismissed findings, the [device certificate](certificates.md) CA and enrolments, and topology layout | Small |
 | **Configuration + database** | Everything in the database, history included: events, clients, change history, outages, audit log and so on | Larger, depending on retention |
 
 A configuration + database backup can still be restored as configuration only.
