@@ -11,6 +11,19 @@ export interface Site {
   is_default: boolean;
   device_count: number;
   online_count: number;
+  /** The group (customer) it belongs to (#306). */
+  group_id?: number | null;
+  group_name?: string | null;
+}
+
+/** A group of sites, one customer (#306). */
+export interface SiteGroup {
+  id: number;
+  name: string;
+  notes: string | null;
+  site_ids: number[];
+  device_count: number;
+  online_count: number;
 }
 
 /** null = the all-sites view; a number = that site. */
@@ -19,6 +32,12 @@ export type SiteSelection = number | null;
 interface SiteState {
   currentSiteId: SiteSelection;
   setCurrentSite: (id: SiteSelection) => void;
+  /**
+   * A group chosen instead of a site (#306): every page narrows to its sites.
+   * Only ever set with currentSiteId null; choosing a site clears it.
+   */
+  currentGroupId: number | null;
+  setCurrentGroup: (id: number | null) => void;
 }
 
 /**
@@ -45,11 +64,13 @@ export const useSiteStore = create<SiteState>()(
       // site, and App resolves the selection to it, so single-site deployments
       // never see the concept.
       currentSiteId: null,
-      setCurrentSite: (id) => set({ currentSiteId: id }),
+      setCurrentSite: (id) => set({ currentSiteId: id, currentGroupId: null }),
+      currentGroupId: null,
+      setCurrentGroup: (id) => set({ currentGroupId: id, currentSiteId: null }),
     }),
     {
       name: 'mikrotik-site',
-      partialize: (state) => ({ currentSiteId: state.currentSiteId }),
+      partialize: (state) => ({ currentSiteId: state.currentSiteId, currentGroupId: state.currentGroupId }),
     }
   )
 );

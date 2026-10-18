@@ -12,7 +12,7 @@ import { useSiteStore } from '../store/siteStore';
  * several customers' networks would be a number nobody asked for.
  */
 export default function SiteLanding() {
-  const { currentSiteId } = useSiteStore();
+  const { currentSiteId, currentGroupId } = useSiteStore();
   const { data: sites, isLoading } = useQuery({
     queryKey: ['sites'],
     queryFn: () => sitesApi.list().then((r) => r.data),
@@ -21,6 +21,7 @@ export default function SiteLanding() {
 
   // Don't bounce through /sites while the list is still in flight.
   if (isLoading) return null;
-  if (currentSiteId == null && (sites?.length ?? 0) > 1) return <Navigate to="/sites" replace />;
+  // A group chosen (#306) is one customer: its dashboard.
+  if (currentSiteId == null && currentGroupId == null && (sites?.length ?? 0) > 1) return <Navigate to="/sites" replace />;
   return <Navigate to="/dashboard" replace />;
 }

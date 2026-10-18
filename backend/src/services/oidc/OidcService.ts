@@ -230,7 +230,8 @@ async function resolveUser(claims: Record<string, unknown>, config: OidcConfig):
 async function isLastAdmin(userId: number): Promise<boolean> {
   const row = await queryOne<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM users WHERE role = 'admin' AND id <> $1
-       AND NOT EXISTS (SELECT 1 FROM user_site_roles r WHERE r.user_id = users.id)`, [userId]);
+       AND NOT EXISTS (SELECT 1 FROM user_site_roles r WHERE r.user_id = users.id)
+       AND NOT EXISTS (SELECT 1 FROM user_group_roles g WHERE g.user_id = users.id)`, [userId]);
   return Number(row?.n ?? 0) === 0;
 }
 

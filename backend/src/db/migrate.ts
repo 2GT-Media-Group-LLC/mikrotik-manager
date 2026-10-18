@@ -1574,18 +1574,35 @@ CREATE TABLE IF NOT EXISTS platform_backups (
 );
 CREATE INDEX IF NOT EXISTS idx_platform_backups_created ON platform_backups (created_at DESC);
 
--- The manager's own certificate authority (#200): one row, made here or
--- imported, with the device-certificate defaults. The key is encrypted with
--- the manager's key. Devices carrying a certificate it issued are listed in
--- managed_device_certs; no row means the device isn't enrolled.
--- What fleet pages show per device that only the device can tell (#302):
--- the last answer and when it was read, refreshed a few at a time in the
--- background instead of contacting every device on every page load.
 -- Where a poll's time went (#301): opening or reusing the API session, and the work.
 ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_connect_ms INTEGER;
 ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_collect_ms INTEGER;
 ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_session_reused BOOLEAN;
 
+-- Groups of sites (#306): a customer with several sites. A site belongs to at
+-- most one group; devices belong through their site. Access can be given per
+-- group, which reaches every site in it, including sites added later.
+CREATE TABLE IF NOT EXISTS site_groups (
+  id         SERIAL PRIMARY KEY,
+  name       VARCHAR(120) NOT NULL UNIQUE,
+  notes      TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS group_id INTEGER REFERENCES site_groups(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_sites_group ON sites(group_id);
+-- An account with rows here or in user_site_roles is limited to those sites.
+CREATE TABLE IF NOT EXISTS user_group_roles (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  group_id   INTEGER NOT NULL REFERENCES site_groups(id) ON DELETE CASCADE,
+  role       VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, group_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_group_roles_group ON user_group_roles(group_id);
+
+-- What fleet pages show per device that only the device can tell (#302):
+-- the last answer and when it was read, refreshed a few at a time in the
+-- background instead of contacting every device on every page load.
 CREATE TABLE IF NOT EXISTS device_live_cache (
   device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   kind       VARCHAR(40) NOT NULL,
@@ -1595,6 +1612,10 @@ CREATE TABLE IF NOT EXISTS device_live_cache (
   PRIMARY KEY (device_id, kind)
 );
 
+-- The manager's own certificate authority (#200): one row, made here or
+-- imported, with the device-certificate defaults. The key is encrypted with
+-- the manager's key. Devices carrying a certificate it issued are listed in
+-- managed_device_certs; no row means the device isn't enrolled.
 CREATE TABLE IF NOT EXISTS device_ca (
   id                INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   cert_pem          TEXT NOT NULL,

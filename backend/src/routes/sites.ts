@@ -4,6 +4,8 @@ import { cleanOverrides, validateOverrides, resolveEffective } from '../utils/po
 import { globalSettings } from '../services/pollSettings';
 import { query, queryOne, transaction } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
+import { groupsChanged } from '../services/siteGroups';
+import { accountsOnlyReaching } from '../utils/siteRoles';
 
 const router = Router();
 router.use(requireAuth);
@@ -19,6 +21,25 @@ export interface SiteRow {
   notes: string | null;
   is_default: boolean;
   created_at: string;
+  /** The group (customer) it belongs to (#306). */
+  group_id?: number | null;
+}
+
+/**
+ * A group_id from a request: undefined = unchanged, null = no group, or an
+ * existing group's id. Only fleet-wide accounts may set it: putting a site in
+ * a group gives everyone with a role in that group access to it (#306).
+ */
+async function parseGroupId(req: Request, res: Response): Promise<{ ok: boolean; value?: number | null }> {
+  const raw = (req.body as { group_id?: unknown }).group_id;
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (req.user?.siteRoles) { res.status(403).json({ error: 'Only fleet-wide accounts can change which group a site is in.' }); return { ok: false }; }
+  if (raw === null || raw === '') return { ok: true, value: null };
+  const id = Number(raw);
+  if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: 'Invalid group' }); return { ok: false }; }
+  const g = await queryOne<{ id: number }>(`SELECT id FROM site_groups WHERE id = $1`, [id]);
+  if (!g) { res.status(400).json({ error: 'That group does not exist' }); return { ok: false }; }
+  return { ok: true, value: id };
 }
 
 /** Shared validation so create and rename cannot drift apart. */
@@ -99,13 +120,14 @@ router.get('/', async (req: Request, res: Response) => {
     `SELECT s.id, s.name, s.address,
             s.location_lat::float8 AS location_lat,
             s.location_lng::float8 AS location_lng,
-            s.notes, s.is_default, s.created_at,
+            s.notes, s.is_default, s.created_at, s.group_id, g.name AS group_name,
             COUNT(d.id)::text AS device_count,
             COUNT(d.id) FILTER (WHERE d.status = 'online')::text AS online_count
      FROM sites s
      LEFT JOIN devices d ON d.site_id = s.id
+     LEFT JOIN site_groups g ON g.id = s.group_id
      ${own ? 'WHERE s.id = ANY($1::int[])' : ''}
-     GROUP BY s.id
+     GROUP BY s.id, g.name
      ORDER BY s.is_default DESC, LOWER(s.name) ASC`,
     own ? [own] : []
   );
@@ -132,14 +154,17 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
     `SELECT id FROM sites WHERE LOWER(name) = LOWER($1)`, [name]
   );
   if (existing) { res.status(409).json({ error: 'A site with that name already exists' }); return; }
+  const group = await parseGroupId(req, res);
+  if (!group.ok) return;
 
   const rows = await query<SiteRow>(
-    `INSERT INTO sites (name, address, location_lat, location_lng, notes)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO sites (name, address, location_lat, location_lng, notes, group_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id, name, address, location_lat::float8 AS location_lat,
-               location_lng::float8 AS location_lng, notes, is_default, created_at`,
-    [name, address?.trim() || null, lat, lng, notes?.trim() || null]
+               location_lng::float8 AS location_lng, notes, is_default, created_at, group_id`,
+    [name, address?.trim() || null, lat, lng, notes?.trim() || null, group.value ?? null]
   );
+  if (group.value != null) groupsChanged();
   res.status(201).json({ ...rows[0], device_count: 0, online_count: 0 });
 });
 
@@ -170,6 +195,8 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
   // no pin at all.
   const addressGiven = body.address !== undefined;
   const { lat, lng } = normaliseCoords(body.location_lat, body.location_lng);
+  const group = await parseGroupId(req, res);
+  if (!group.ok) return;
 
   const rows = await query<SiteRow>(
     `UPDATE sites SET
@@ -178,13 +205,16 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
        location_lat = CASE WHEN $2::boolean THEN $4 ELSE location_lat END,
        location_lng = CASE WHEN $2::boolean THEN $5 ELSE location_lng END,
        notes        = COALESCE($6, notes),
+       group_id     = CASE WHEN $8::boolean THEN $9 ELSE group_id END,
        updated_at   = NOW()
      WHERE id = $7
      RETURNING id, name, address, location_lat::float8 AS location_lat,
-               location_lng::float8 AS location_lng, notes, is_default, created_at`,
-    [name, addressGiven, body.address?.trim() || null, lat, lng, body.notes?.trim() ?? null, id]
+               location_lng::float8 AS location_lng, notes, is_default, created_at, group_id`,
+    [name, addressGiven, body.address?.trim() || null, lat, lng, body.notes?.trim() ?? null, id,
+     group.value !== undefined, group.value ?? null]
   );
   if (!rows[0]) { res.status(404).json({ error: 'Site not found' }); return; }
+  if (group.value !== undefined) groupsChanged();
   res.json(rows[0]);
 });
 
@@ -212,6 +242,18 @@ router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
     return;
   }
 
+  // An account whose only access is this site would be left with none, which
+  // makes it fleet-wide: refuse rather than widen it (#306).
+  const stranded = await accountsOnlyReaching({ siteId: id });
+  if (stranded.length > 0) {
+    res.status(409).json({
+      error: `${stranded.join(', ')} ${stranded.length === 1 ? 'has' : 'have'} access only to "${site.name}". `
+           + 'Give them access elsewhere, or remove the account, before deleting the site.',
+      accounts: stranded,
+    });
+    return;
+  }
+
   // Count and delete under one lock: two deletes at once each saw two sites
   // and removed both (outside review S10).
   const deleted = await transaction(async (client) => {
@@ -225,6 +267,8 @@ router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
     res.status(409).json({ error: 'Cannot delete the only site' });
     return;
   }
+  // Its group, and roles on it, are gone with it.
+  groupsChanged();
   res.json({ ok: true });
 });
 

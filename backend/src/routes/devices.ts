@@ -48,6 +48,7 @@ import { runHealthCheck } from '../services/healthCheck';
 import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
 import { siteScopeDevices, andSite } from '../utils/siteScope';
 import { activeSite, targetSite } from '../middleware/site';
+import { resolveSiteChoice } from '../services/deviceSite';
 
 /** Postgres interval text to milliseconds, for the few windows we offer. */
 function intervalToMs(interval: string): number {
@@ -319,11 +320,16 @@ router.get('/discovered', async (_req: Request, res: Response) => {
 
 // POST /api/devices
 router.post('/', requireWrite, async (req: Request, res: Response) => {
-  // A device added while viewing a site joins that site (issue #130); a
-  // site-scoped account can only add to its own sites (P1-7).
-  const target = targetSite(req);
+  // A device added while viewing a site joins that site (issue #130), unless
+  // the request names one, existing or new (#306); a site-scoped account can
+  // only add to its own sites (P1-7).
+  const chosen = await resolveSiteChoice(req.user ?? {}, req.body ?? {});
+  if (!chosen.ok) return res.status(chosen.status).json({ error: chosen.error });
+  const target = chosen.named ? { ok: true as const, siteId: chosen.siteId } : targetSite(req);
   if (!target.ok) return res.status(target.status).json({ error: target.error });
-  const result = await createDeviceFromBody(req.body, pollerService, {
+  const deviceBody = { ...(req.body ?? {}) };
+  delete deviceBody.site_id; delete deviceBody.site_name; delete deviceBody.group_name;
+  const result = await createDeviceFromBody(deviceBody, pollerService, {
     // Admin-only credential presets are fleet objects: a site admin uses them as an operator would (P1-7).
     requestingUserRole: isSiteScoped(req.user) ? 'operator' : req.user?.role,
     presetCaller: presetCaller(req.user),
@@ -369,8 +375,6 @@ router.post('/credentials/bulk', requireWrite, async (req: Request, res: Respons
 
 // POST /api/devices/bulk-add/jobs — enqueue Try-All style adds (survives tab close)
 router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) => {
-  const bulkTarget = targetSite(req);
-  if (!bulkTarget.ok) return res.status(bulkTarget.status).json({ error: bulkTarget.error });
   const { items } = req.body as { items?: unknown };
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items must be a non-empty array' });
@@ -378,6 +382,25 @@ router.post('/bulk-add/jobs', requireWrite, async (req: Request, res: Response) 
   if (items.length > 500) {
     return res.status(400).json({ error: 'items array exceeds maximum of 500' });
   }
+  // Rows naming a site (#306) join it, made if it's new; the rest join the
+  // active site as before. Sites are resolved here, before anything is
+  // queued, so an import naming a site the account can't use is refused whole.
+  const bySiteName = new Map<string, number | null>();
+  const unnamed: number[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = (items[i] ?? {}) as Record<string, unknown>;
+    const key = it.site_id != null && it.site_id !== '' ? `id:${String(it.site_id)}` : `name:${String(it.site_name ?? '').trim().toLowerCase()}`;
+    if (key === 'name:') { unnamed.push(i); continue; }
+    if (!bySiteName.has(key)) {
+      const r = await resolveSiteChoice(req.user ?? {}, it);
+      if (!r.ok) return res.status(r.status).json({ error: `Row ${i + 1}: ${r.error}` });
+      bySiteName.set(key, r.siteId);
+    }
+    it.site_id = bySiteName.get(key);
+    delete it.site_name; delete it.group_name;
+  }
+  const bulkTarget = unnamed.length ? targetSite(req) : { ok: true as const, siteId: null };
+  if (!bulkTarget.ok) return res.status(bulkTarget.status).json({ error: bulkTarget.error });
   const jobId = randomUUID();
   const ownerUserId = req.user!.userId;
   await redis.set(

@@ -24,6 +24,21 @@ Switching site reloads the data you are looking at. This is intentional and not 
 performance bug: every cached figure belonged to the site you just left, and showing it
 under another site's name would be worse than a brief reload.
 
+## Groups
+
+A group is a set of sites belonging to one customer: useful for an MSP whose customers have
+several sites each (#306). Choose a group in the site switcher and every page narrows to its
+sites, as it would to one site. A site belongs to at most one group, and devices belong through
+their site, so moving a site into a group brings its devices with it.
+
+Make groups on the **Sites** page under **Groups**: name it and tick its sites. Ticking a site
+that's in another group moves it. A site's group can also be set when editing the site. Deleting
+a group leaves its sites and devices where they are, without a group. Groups are managed by
+fleet-wide accounts, since putting a site in a group gives everyone with access to that group
+access to the site.
+
+With many sites, the switcher has a search box, and the Sites page can be filtered.
+
 ## Moving devices
 
 A device belongs to exactly one site. Move it from **Device → Physical Details → Site**;
@@ -68,7 +83,9 @@ An account can be limited to particular sites, with its own role in each: **admi
 which is every account until you change it, so upgrading changes nothing.
 
 Set it under **Settings → Users & Roles**: click the globe icon on a user, choose
-**Specific sites**, and pick a role for each site. **Whole fleet** undoes it. It applies on
+**Specific sites** (**Specific groups and sites** once there are groups), and pick a role for
+each. A role in a group reaches every site in it, including sites added to the group later; a
+site reached both ways gets the higher of the two roles. **Whole fleet** undoes it. It applies on
 the account's next request; nobody has to sign in again. You can't limit your own account,
 so there is always a fleet administrator.
 
@@ -163,6 +180,11 @@ Deleting a site never deletes the devices in it. If devices remain, the deletion
 refused and you are asked to move them first, so their destination is a decision rather
 than a side effect.
 
+Deleting a site, or a group, that is some account's only access is refused too, naming the
+accounts: an account with no sites or groups left would otherwise become fleet-wide. Give
+them access elsewhere, or remove them, first. An account whose only group has no sites in it
+yet sees nothing, never the whole fleet.
+
 ## API
 
 The active site travels as an `X-Site-Id` header, or a `?site_id=` query parameter.
@@ -177,23 +199,35 @@ site-limited account, omitting it means all of its own sites, and naming a site 
 returns `403` with `code: "site_forbidden"`. Fleet-wide features refuse such accounts with
 `403` and `code: "fleet_only"`.
 
-Per-site access is set on the user, as a list; an empty list makes the account fleet-wide:
+A group travels as `X-Site-Group: <id>` and scopes the request to its sites; a group with no
+sites matches nothing. For a site-limited account it covers the group's sites that are its own,
+and a group holding none of them returns `403` `site_forbidden`. `X-Site-Id` wins when both are sent.
+
+Per-site access is set on the user, as lists of sites and groups; both empty makes the account
+fleet-wide:
 
 ```bash
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   https://mtm.example.com/api/settings/users/12 \
-  -d '{"site_roles":[{"site_id":2,"role":"operator"},{"site_id":5,"role":"viewer"}]}'
+  -d '{"site_roles":[{"site_id":2,"role":"operator"}],"group_roles":[{"group_id":3,"role":"viewer"}]}'
 ```
 
-`GET /api/settings/users` returns each account's `site_roles`.
+`GET /api/settings/users` returns each account's `site_roles` and `group_roles`.
+
+Adding a device (`POST /api/devices`, or the items of a bulk add) can name its site: `site_id`,
+or `site_name` to use or make a site by name, with `group_name` for the group a new site goes in.
 
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/sites` | List sites with device counts |
 | `POST` | `/api/sites` | Create a site |
-| `PUT` | `/api/sites/:id` | Rename, set address or notes |
-| `DELETE` | `/api/sites/:id` | Delete (refused while devices remain) |
+| `PUT` | `/api/sites/:id` | Rename, set address, notes or `group_id` |
+| `DELETE` | `/api/sites/:id` | Delete (refused while devices remain, or if it's an account's only access) |
 | `POST` | `/api/sites/:id/devices` | Move devices into the site |
+| `GET` | `/api/site-groups` | List groups with their sites and device counts |
+| `POST` | `/api/site-groups` | Create a group: `name`, optional `site_ids` |
+| `PUT` | `/api/site-groups/:id` | Rename, or replace its sites with `site_ids` |
+| `DELETE` | `/api/site-groups/:id` | Delete; its sites stay, without a group |
 
 ## The Connected Clients chart
 

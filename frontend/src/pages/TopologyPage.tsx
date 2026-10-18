@@ -116,15 +116,17 @@ export default function TopologyPage() {
   });
 
   // A large fleet picks a site before anything is drawn (#305).
-  const { currentSiteId, setCurrentSite } = useSiteStore();
+  const { currentSiteId, setCurrentSite, currentGroupId } = useSiteStore();
   const { data: sites, isFetched: sitesFetched } = useQuery({
     queryKey: ['sites'], queryFn: () => sitesApi.list().then((r) => r.data), staleTime: 300_000,
   });
   const [drawAll, setDrawAll] = useState(false);
-  const fleetSize = (sites ?? []).reduce((n, s) => n + (s.device_count ?? 0), 0);
-  const pickSite = !focus && currentSiteId == null && (sites?.length ?? 0) > 1 && fleetSize > LARGE_MAP && !drawAll;
+  // With a group chosen (#306), its sites.
+  const scopeSites = (sites ?? []).filter((s) => currentGroupId == null || s.group_id === currentGroupId);
+  const fleetSize = scopeSites.reduce((n, s) => n + (s.device_count ?? 0), 0);
+  const pickSite = !focus && currentSiteId == null && scopeSites.length > 1 && fleetSize > LARGE_MAP && !drawAll;
   // From the all-sites view, a device's view needs only its own site.
-  const siteOverride = focus && currentSiteId == null ? focusDevice?.site_id ?? null : null;
+  const siteOverride = focus && currentSiteId == null && currentGroupId == null ? focusDevice?.site_id ?? null : null;
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['topology', showClients, siteOverride],
@@ -321,7 +323,7 @@ export default function TopologyPage() {
       const node = (data?.nodes || []).find((x) => `node-${x.id}` === n.id);
       if (node) setEditing(node);
     }
-  }, [connectMode, navigate, canWrite, data]);
+  }, [connectMode, navigate, canWrite, data, setEditingNeighbour]);
 
   // Double-click opens a device's page; a single click is for arranging.
   const onNodeDoubleClick = useCallback((_: unknown, n: Node) => {
@@ -341,11 +343,11 @@ export default function TopologyPage() {
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Network Topology</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-            {fleetSize} devices in {sites!.length} sites. Choose a site to map, or open a device&apos;s own view from its page.
+            {fleetSize} devices in {scopeSites.length} sites. Choose a site to map, or open a device&apos;s own view from its page.
           </p>
         </div>
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
-          {[...sites!].sort((a, b) => a.name.localeCompare(b.name)).map((s) => (
+          {[...scopeSites].sort((a, b) => a.name.localeCompare(b.name)).map((s) => (
             <button key={s.id} onClick={() => setCurrentSite(s.id)} className="card p-4 text-left hover:ring-2 transition-shadow" style={{ ['--tw-ring-color' as string]: 'var(--accent)' }}>
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />

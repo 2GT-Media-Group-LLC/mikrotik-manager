@@ -26,7 +26,9 @@ function scopedRole(siteRoles: Record<string, string>): UserRole {
 }
 
 function normalize(user: User): User {
-  if (user.siteRoles && Object.keys(user.siteRoles).length > 0) {
+  // An empty set still means limited (an account whose only group has no
+  // sites yet, #306): it sees nothing, as a viewer, never the whole fleet.
+  if (user.siteRoles) {
     return { ...user, role: scopedRole(user.siteRoles) };
   }
   const { siteRoles: _drop, ...rest } = user;
@@ -46,7 +48,8 @@ export const useAuthStore = create<AuthState>()(
       },
       applyAccess: (me) => set((state) => {
         if (!state.user) return {};
-        const siteRoles = me.siteRoles && Object.keys(me.siteRoles).length > 0 ? me.siteRoles as Record<string, UserRole> : undefined;
+        // null: fleet-wide. An object, even empty, limits the account (#306).
+        const siteRoles = me.siteRoles ? me.siteRoles as Record<string, UserRole> : undefined;
         reconcileSiteSelection(siteRoles);
         return { user: normalize({ ...state.user, role: (me.role ?? state.user.role) as UserRole, siteRoles }) };
       }),

@@ -9,6 +9,7 @@
  * (NEVER_RESTORED below), which a restore leaves as it is.
  */
 export const CONFIG_TABLES = [
+  'site_groups',
   'sites',
   'users',
   'tags',
@@ -17,6 +18,7 @@ export const CONFIG_TABLES = [
   'device_ca',
   'managed_device_certs',
   'user_site_roles',
+  'user_group_roles',
   'api_tokens',
   'device_tags',
   'device_ssh_keys',

@@ -294,3 +294,57 @@ describe('site-scoped sessions', () => {
     expect(req.siteId).toEqual([3]);
   });
 });
+
+// ── groups chosen in the site switcher (#306) ───────────────────────────────
+
+describe('a group as the site scope', () => {
+  const scoped = { ...TEST_PAYLOAD, userId: 12, siteRoles: { 3: 'viewer', 4: 'operator' } };
+
+  async function run(groupSites: number[], roles: Record<number, string> | null = scoped.siteRoles) {
+    mockValidate.mockResolvedValueOnce({ ...scoped, siteRoles: roles ? { ...roles } : undefined });
+    const req = {
+      headers: { authorization: `Bearer ${signToken(scoped)}` }, originalUrl: '/api/devices',
+      siteId: groupSites, siteGroupId: 9,
+    } as unknown as Request;
+    const res = mockRes();
+    const next = jest.fn() as unknown as NextFunction;
+    requireAuth(req, res, next);
+    await settle();
+    return { req, res, next };
+  }
+
+  it('narrows a limited account to its own sites in the group, under its best role there', async () => {
+    const { req, next } = await run([3, 4, 5]);
+    expect(next).toHaveBeenCalled();
+    expect(req.siteId).toEqual([3, 4]);
+    expect(req.user?.role).toBe('operator');
+  });
+
+  it('refuses a group holding none of its sites', async () => {
+    const { res, next } = await run([5, 6]);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('refuses an empty group to a limited account', async () => {
+    const { res } = await run([]);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('leaves a fleet-wide account with exactly the group’s sites', async () => {
+    const { req, next } = await run([5, 6], null);
+    expect(next).toHaveBeenCalled();
+    expect(req.siteId).toEqual([5, 6]);
+  });
+
+  it('an account limited to an empty group sees nothing, not the whole fleet', async () => {
+    mockValidate.mockResolvedValueOnce({ ...scoped, siteRoles: {} });
+    const req = { headers: { authorization: `Bearer ${signToken(scoped)}` }, originalUrl: '/api/devices', siteId: null } as unknown as Request;
+    const next = jest.fn() as unknown as NextFunction;
+    requireAuth(req, mockRes(), next);
+    await settle();
+    expect(next).toHaveBeenCalled();
+    expect(req.siteId).toEqual([]);
+    expect(req.user?.role).toBe('viewer');
+  });
+});

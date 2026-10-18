@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Upload, Download, Loader2, Check, AlertTriangle, FileText } from 'lucide-react';
 import clsx from 'clsx';
-import { devicesApi, tagsApi, type BulkAddJobStatus } from '../../services/api';
+import { devicesApi, tagsApi, sitesApi, type BulkAddJobStatus } from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
+import { shortList } from '../../utils/deviceCards';
 import { parseDeviceCsv, buildCsvTemplate, MAX_ROWS } from '../../utils/csvImport';
 import { useSitePresets } from '../../hooks/useSitePresets';
 
@@ -33,16 +35,29 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
   // Only presets that can apply in the site the device joins (#228).
   const { presets } = useSitePresets();
 
+  // A site column (#306): existing sites by name, new ones made by fleet-wide accounts.
+  const fleetWide = useAuthStore((s) => !s.user?.siteRoles);
+  const { data: allSites = [] } = useQuery({ queryKey: ['sites'], queryFn: () => sitesApi.list().then((r) => r.data), staleTime: 60_000 });
   const { data: tags = [] } = useQuery({
     queryKey: ['tags'],
     queryFn: () => tagsApi.list().then((r) => r.data),
   });
 
   const parsed = useMemo(
-    () => (text.trim() ? parseDeviceCsv(text, presets, existingAddresses, tags) : null),
-    [text, presets, existingAddresses, tags]
+    () => (text.trim() ? parseDeviceCsv(text, presets, existingAddresses, tags, { names: allSites.map((s) => s.name), canCreate: fleetWide }) : null),
+    [text, presets, existingAddresses, tags, allSites, fleetWide]
   );
-  const ready = parsed?.rows.filter((r) => r.item && !r.skip) ?? [];
+  const ready = useMemo(() => parsed?.rows.filter((r) => r.item && !r.skip) ?? [], [parsed]);
+  // Sites the import will make (#306), named once each.
+  const newSites = useMemo(() => {
+    const have = new Set(allSites.map((s) => s.name.toLowerCase()));
+    const out = new Map<string, string>();
+    for (const r of ready) {
+      const n = r.item?.site_name;
+      if (n && !have.has(n.toLowerCase()) && !out.has(n.toLowerCase())) out.set(n.toLowerCase(), n);
+    }
+    return [...out.values()];
+  }, [ready, allSites]);
   const skipped = parsed?.rows.filter((r) => r.skip) ?? [];
   const broken = parsed?.rows.filter((r) => r.errors.length > 0) ?? [];
   const canImport = !!parsed && parsed.fileErrors.length === 0 && ready.length > 0 && !running;
@@ -143,6 +158,10 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
                   ['tags', 'Optional', tags.length
                     ? `Existing tags, separated by | (yours: ${tags.map((x) => x.name).join(', ')}).`
                     : 'Existing tags, separated by |. You have none yet; create them under Settings → Tags.'],
+                  ['site', 'Optional', fleetWide
+                    ? 'The site it joins, by name. A site that doesn\'t exist yet is made. Blank joins the site in view.'
+                    : 'One of your sites, by name. Blank joins the site in view.'],
+                  ...(fleetWide ? [['site_group', 'Optional', 'The group (customer) a new site goes in, made if it\'s new. Also read as customer or client.']] : []),
                   ['notes', 'Optional', 'Anything you like.'],
                 ].map(([col, need, what]) => (
                   <tr key={col}>
@@ -182,6 +201,11 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
 
               <div className="flex flex-wrap gap-4 text-[13px]">
                 <span className="text-green-700 dark:text-green-400">{ready.length} ready to import</span>
+                {newSites.length > 0 && (
+                  <span className="text-gray-600 dark:text-slate-300">
+                    makes {newSites.length} new site{newSites.length === 1 ? '' : 's'}: {shortList(newSites)}
+                  </span>
+                )}
                 {skipped.length > 0 && (
                   <span className="text-gray-500">
                     {skipped.length} skipped
@@ -201,6 +225,9 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
                   Ignored columns: <span className="mono">{parsed.ignoredColumns.join(', ')}</span>
                 </p>
               )}
+              {(parsed.notes ?? []).map((n) => (
+                <p key={n} className="text-[11.5px] text-amber-600 dark:text-amber-400">{n}</p>
+              ))}
 
               {broken.length > 0 && (
                 <div className="rounded border border-gray-200 dark:border-slate-700 max-h-48 overflow-y-auto">

@@ -101,16 +101,19 @@ async function processJob(job: Job<BulkJobPayload>): Promise<void> {
       current_name: identity,
     });
 
+    // A row naming a site carries its id, resolved and checked when the job
+    // was queued (#306); the rest join the job's site.
+    const { site_id: rowSite, ...body } = item as typeof item & { site_id?: number | null };
     const result = await createDeviceFromBody(
       {
-        ...item,
-        device_type: item.device_type || 'router',
+        ...body,
+        device_type: body.device_type || 'router',
       },
       poller,
       // Without the role, an operator could use an admin-only preset here, and
       // since the add connects to the address in the item, send that preset's
       // credentials to a host of their choosing.
-      { siteId: siteId ?? null, requestingUserRole, allowedSites: allowedSites ?? null, presetCaller }
+      { siteId: typeof rowSite === 'number' ? rowSite : siteId ?? null, requestingUserRole, allowedSites: allowedSites ?? null, presetCaller }
     );
 
     let failMsg = 'Failed';

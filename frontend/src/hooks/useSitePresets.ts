@@ -14,7 +14,7 @@ export function presetsForSite<T extends { site_id?: number | null }>(presets: T
  * fleet-wide presets and that site's are offered. Names are unique per site,
  * so this is also what CSV import matches names against.
  */
-export function useSitePresets(): { presets: CredentialPreset[]; isLoading: boolean } {
+export function useSitePresets(siteOverride?: number | 'new' | null): { presets: CredentialPreset[]; isLoading: boolean } {
   const currentSiteId = useSiteStore((s) => s.currentSiteId);
   const { data: all = [], isLoading } = useQuery({
     queryKey: ['credential-presets'],
@@ -22,7 +22,8 @@ export function useSitePresets(): { presets: CredentialPreset[]; isLoading: bool
     staleTime: 30_000,
   });
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: () => sitesApi.list().then((r) => r.data), staleTime: 300_000 });
-  const target = currentSiteId ?? sites.find((s) => s.is_default)?.id ?? null;
+  // A site chosen in the form wins (#306); a new site has no presets of its own yet.
+  const target = siteOverride === 'new' ? -1 : (siteOverride ?? currentSiteId ?? sites.find((s) => s.is_default)?.id ?? null);
   const presets = useMemo(() => presetsForSite(all, target), [all, target]);
   return { presets, isLoading };
 }

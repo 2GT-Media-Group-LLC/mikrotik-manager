@@ -214,6 +214,17 @@ function applySiteAccess(req: Request, res: Response, user: AuthPayload): boolea
       return false;
     }
     user.role = role;
+  } else if (Array.isArray(requested) && req.siteGroupId !== undefined) {
+    // A group (#306): the sites in it this account may see, under its highest
+    // role among them. A group holding none of them is refused, like a site.
+    const roles = new Map(Object.entries(user.siteRoles));
+    const mine = requested.filter((id) => roles.has(String(id)));
+    if (mine.length === 0) {
+      res.status(403).json({ error: 'You do not have access to that group.', code: 'site_forbidden' });
+      return false;
+    }
+    req.siteId = mine;
+    user.role = highestRole(mine.map((id) => roles.get(String(id))!));
   } else {
     req.siteId = allowed;
     user.role = highestRole(Object.values(user.siteRoles));

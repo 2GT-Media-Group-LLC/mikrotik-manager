@@ -119,8 +119,10 @@ api.interceptors.request.use((config) => {
   // view, which sends no header and so behaves exactly as before sites existed.
   // A request naming its own site keeps it (the device view of the topology
   // asks for that device's site from the all-sites view, #305).
-  const siteId = useSiteStore.getState().currentSiteId;
+  const { currentSiteId: siteId, currentGroupId: groupId } = useSiteStore.getState();
   if (siteId != null && config.headers['X-Site-Id'] == null) config.headers['X-Site-Id'] = String(siteId);
+  // A group (#306) narrows to its sites; a request naming a site keeps its site.
+  else if (groupId != null && config.headers['X-Site-Id'] == null) config.headers['X-Site-Group'] = String(groupId);
   return config;
 }, undefined, { synchronous: true });
 
@@ -141,7 +143,7 @@ api.interceptors.response.use(
     // removed. Drop to the all-sites view, which the server narrows to the
     // account's sites; changing the site refetches every query.
     if (error.response?.status === 403 && code === 'site_forbidden'
-        && useSiteStore.getState().currentSiteId != null) {
+        && (useSiteStore.getState().currentSiteId != null || useSiteStore.getState().currentGroupId != null)) {
       useSiteStore.getState().setCurrentSite(null);
     }
     return Promise.reject(error);
@@ -276,6 +278,10 @@ export interface BulkAddDeviceItem {
   tag_ids?: number[];
   /** The API isn't enabled yet: add over SSH if it doesn't answer (#174). */
   ssh_only?: boolean;
+  /** The site it joins, by name, made if it's new (#306). */
+  site_name?: string;
+  /** The group a new site goes in, made if it's new. */
+  group_name?: string;
 }
 
 export interface BulkAddJobResponse {
@@ -1756,8 +1762,11 @@ export const settingsApi = {
   getUsers: () => api.get('/settings/users'),
   createUser: (data: { username: string; password: string; role?: string }) =>
     api.post('/settings/users', data),
-  /** `site_roles`: [] makes the account fleet-wide; a list limits it to those sites (P1-7). */
-  updateUser: (id: number, data: { role?: string; password?: string; site_roles?: Array<{ site_id: number; role: string }> }) =>
+  /**
+   * `site_roles` and `group_roles` (#306): both empty makes the account
+   * fleet-wide; any entry limits it to those sites and groups' sites (P1-7).
+   */
+  updateUser: (id: number, data: { role?: string; password?: string; site_roles?: Array<{ site_id: number; role: string }>; group_roles?: Array<{ group_id: number; role: string }> }) =>
     api.put(`/settings/users/${id}`, data),
   deleteUser: (id: number) => api.delete(`/settings/users/${id}`),
 };
@@ -2211,7 +2220,19 @@ export interface SitePayload {
   notes?: string;
   location_lat?: number | null;
   location_lng?: number | null;
+  /** The group it belongs to; null for none (#306). */
+  group_id?: number | null;
 }
+
+/** Groups of sites, one customer each (#306). */
+export const siteGroupsApi = {
+  list: () => api.get<import('../store/siteStore').SiteGroup[]>('/site-groups'),
+  create: (payload: { name: string; notes?: string | null; site_ids?: number[] }) =>
+    api.post<import('../store/siteStore').SiteGroup>('/site-groups', payload),
+  update: (id: number, payload: { name?: string; notes?: string | null; site_ids?: number[] }) =>
+    api.put<{ ok: boolean }>(`/site-groups/${id}`, payload),
+  remove: (id: number) => api.delete<{ ok: boolean }>(`/site-groups/${id}`),
+};
 
 export const sitesApi = {
   list: () => api.get<import('../store/siteStore').Site[]>('/sites'),

@@ -101,8 +101,9 @@ jobs:
 
       # The crypto, secrets, auth and Change Guard tests. They used to run only
       # in the local preflight, so main could break them without CI noticing.
-      # PG_E2E_URL turns on the platform-backup round trip against the
-      # service database above (backup, compare, restore, restore under a new key).
+      # PG_E2E_URL turns on the tests against the service database above: the
+      # platform-backup round trip (backup, compare, restore, restore under a
+      # new key) and site groups and access (#306), each in its own database.
       - name: Tests
         run: npm test
         env:

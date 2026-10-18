@@ -64,11 +64,13 @@ function makeQueryClient() {
  */
 function SiteScopedQueryProvider({ children }: { children: React.ReactNode }) {
   const siteId = useSiteStore((s) => s.currentSiteId);
+  // A group is a scope too (#306): switching groups is switching context.
+  const groupId = useSiteStore((s) => s.currentGroupId);
   // The signed-in user is part of the key too (outside review U1): logging
   // out, or someone else signing in on the same tab, starts an empty cache, so
   // nothing the previous user loaded (users, secret-bearing backups) can show.
   const userId = useAuthStore((s) => (s.isAuthenticated ? s.user?.id ?? 'session' : 'anon'));
-  const key = `${userId}:${siteId == null ? 'all' : String(siteId)}`;
+  const key = `${userId}:${siteId != null ? String(siteId) : groupId != null ? `g${groupId}` : 'all'}`;
   // A new cache per site; `key` is the dependency on purpose.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const client = React.useMemo(() => makeQueryClient(), [key]);

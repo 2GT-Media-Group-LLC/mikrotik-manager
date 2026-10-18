@@ -28,7 +28,7 @@ import EncryptionKeyCard from '../components/settings/EncryptionKeyCard';
 import OidcSettings from '../components/settings/OidcSettings';
 import PlatformBackupSettings from '../components/settings/PlatformBackupSettings';
 import { useIsSiteScoped } from '../hooks/useCanWrite';
-import SiteAccessDialog, { type UserSiteRole } from '../components/settings/SiteAccessDialog';
+import SiteAccessDialog, { type UserSiteRole, type UserGroupRole } from '../components/settings/SiteAccessDialog';
 
 const ROLE_META: Record<UserRole, { label: string; color: string; desc: string }> = {
   admin:    { label: 'Admin',    color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',    desc: 'Full access including user management' },
@@ -114,6 +114,8 @@ export default function SettingsPage() {
   // Per-site access (P1-7): the users list returns each account's site roles.
   const [accessUser, setAccessUser] = useState<User | null>(null);
   const siteRolesOf = (u: User): UserSiteRole[] => (u as User & { site_roles?: UserSiteRole[] }).site_roles ?? [];
+  const groupRolesOf = (u: User): UserGroupRole[] => (u as User & { group_roles?: UserGroupRole[] }).group_roles ?? [];
+  const isLimited = (u: User) => siteRolesOf(u).length > 0 || groupRolesOf(u).length > 0;
   const [editError, setEditError] = useState('');
 
   const createUserMutation = useMutation({
@@ -1105,7 +1107,7 @@ export default function SettingsPage() {
         <div className="space-y-4">
           {accessUser && (
             <SiteAccessDialog
-              user={{ ...accessUser, site_roles: siteRolesOf(accessUser) }}
+              user={{ ...accessUser, site_roles: siteRolesOf(accessUser), group_roles: groupRolesOf(accessUser) }}
               isSelf={accessUser.id === user?.id}
               onClose={() => setAccessUser(null)}
             />
@@ -1161,11 +1163,11 @@ export default function SettingsPage() {
                     </td>
                     <td className="px-4 py-2.5">
                       {/* A site-limited account's roles are per site; its own role column doesn't apply (P1-7). */}
-                      {siteRolesOf(u).length > 0 ? <span className="text-xs text-gray-500 dark:text-slate-400">per site</span> : <RoleBadge role={u.role} />}
+                      {isLimited(u) ? <span className="text-xs text-gray-500 dark:text-slate-400">per site</span> : <RoleBadge role={u.role} />}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-600 dark:text-slate-300">
-                      {siteRolesOf(u).length > 0
-                        ? siteRolesOf(u).map((r) => `${r.site_name}: ${r.role}`).join(', ')
+                      {isLimited(u)
+                        ? [...groupRolesOf(u).map((r) => `${r.group_name} (group): ${r.role}`), ...siteRolesOf(u).map((r) => `${r.site_name}: ${r.role}`)].join(', ')
                         : 'Whole fleet'}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-400 dark:text-slate-500">

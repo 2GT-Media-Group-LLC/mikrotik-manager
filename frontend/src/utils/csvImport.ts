@@ -43,6 +43,10 @@ const COLUMNS: Record<string, keyof RowFields> = {
   // Several tags in one cell, separated by | or ; (or commas, inside quotes).
   tags: 'tags', tag: 'tags', groups: 'tags', group: 'tags',
   notes: 'notes', note: 'notes', comment: 'notes',
+  // The site each device joins, made if there's none by that name, and the
+  // group (customer) a new site goes in (#306). "group" stays tags, as it was.
+  site: 'site', site_name: 'site',
+  site_group: 'site_group', customer: 'site_group', client: 'site_group',
 };
 
 interface RowFields {
@@ -60,6 +64,8 @@ interface RowFields {
   ssh_only?: string;
   tags?: string;
   notes?: string;
+  site?: string;
+  site_group?: string;
 }
 
 export interface ParsedRow {
@@ -82,6 +88,8 @@ export interface ParseResult {
   fileErrors: string[];
   /** Header names that were not recognised and will be ignored. */
   ignoredColumns: string[];
+  /** How a column is read, where that might surprise (#306). */
+  notes?: string[];
 }
 
 /**
@@ -159,8 +167,12 @@ export function parseDeviceCsv(
   text: string,
   presets: Pick<CredentialPreset, 'id' | 'name'>[],
   existingAddresses: string[] = [],
-  tags: { id: number; name: string }[] = []
+  tags: { id: number; name: string }[] = [],
+  /** Sites there are, and whether this account may make new ones (#306). */
+  sites: { names: string[]; canCreate: boolean } = { names: [], canCreate: false },
 ): ParseResult {
+  const siteNames = new Set(sites.names.map((n) => n.trim().toLowerCase()));
+  const newSitesNoted = new Set<string>();
   const tagByName = new Map(tags.map((t) => [t.name.trim().toLowerCase(), t.id]));
   const fileErrors: string[] = [];
   const body = text.replace(/^\uFEFF/, '');
@@ -193,6 +205,10 @@ export function parseDeviceCsv(
   }
   if (fileErrors.length > 0) return { rows: [], fileErrors, ignoredColumns };
 
+  const notes: string[] = [];
+  if (header.some((h) => h === 'group' || h === 'groups')) {
+    notes.push(`The "${header.find((h) => h === 'group' || h === 'groups')}" column is read as tags. For the group (customer) a new site goes in, use "site_group".`);
+  }
   const presetByName = new Map(presets.map((p) => [p.name.trim().toLowerCase(), p.id]));
   const existing = new Set(existingAddresses.map((a) => a.trim().toLowerCase()));
   const seen = new Map<string, number>();
@@ -288,6 +304,20 @@ export function parseDeviceCsv(
       else if (!tagIds.includes(id)) tagIds.push(id);
     }
 
+    // A site by name: an existing one, or a new one where the account may make sites.
+    const siteName = f.site?.trim();
+    if (siteName && !siteNames.has(siteName.toLowerCase())) {
+      if (!sites.canCreate) errors.push(`No site called "${siteName}".`);
+      else if (!newSitesNoted.has(siteName.toLowerCase())) {
+        newSitesNoted.add(siteName.toLowerCase());
+        warnings.push(`Makes a new site "${siteName}"${f.site_group ? ` in the group "${f.site_group}"` : ''}.`);
+      }
+    }
+    if (f.site_group && !siteName) warnings.push('A group only applies with a site. Ignored.');
+    else if (f.site_group && siteName && siteNames.has(siteName.toLowerCase())) {
+      warnings.push(`"${siteName}" already exists, so its group is left as it is.`);
+    }
+
     const item: BulkAddDeviceItem | null = errors.length ? null : {
       name: f.name?.trim() || addr,
       ip_address: addr,
@@ -302,6 +332,7 @@ export function parseDeviceCsv(
       ...(tagIds.length ? { tag_ids: tagIds } : {}),
       ...(f.notes ? { notes: f.notes } : {}),
       ...(sshOnly ? { ssh_only: true } : {}),
+      ...(siteName ? { site_name: siteName, ...(f.site_group ? { group_name: f.site_group } : {}) } : {}),
     };
     rows.push({ line, item, errors, warnings, skip });
   }
@@ -310,7 +341,7 @@ export function parseDeviceCsv(
   if (rows.length > MAX_ROWS) {
     fileErrors.push(`${rows.length} rows; the limit per import is ${MAX_ROWS}. Split the file and import it in parts.`);
   }
-  return { rows, fileErrors, ignoredColumns };
+  return { rows, fileErrors, ignoredColumns, ...(notes.length ? { notes } : {}) };
 }
 
 /**
@@ -326,18 +357,18 @@ export function parseDeviceCsv(
 export function buildCsvTemplate(presetName?: string, tagName?: string): string {
   const q = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const rows: string[][] = [
-    ['name', 'ip_address', 'type', 'preset', 'username', 'password', 'ssh_username', 'ssh_password', 'ssh_only', 'tags', 'notes'],
+    ['name', 'ip_address', 'type', 'preset', 'username', 'password', 'ssh_username', 'ssh_password', 'ssh_only', 'tags', 'site', 'site_group', 'notes'],
   ];
   const tag = tagName ?? '';
   if (presetName) {
-    rows.push(['example-switch', '192.0.2.10', 'switch', presetName, '', '', '', '', '', tag,
+    rows.push(['example-switch', '192.0.2.10', 'switch', presetName, '', '', '', '', '', tag, '', '',
       'Example: logs in with a saved credential preset. Replace these rows with your devices.']);
   }
-  rows.push(['example-router', '192.0.2.1', 'router', '', 'admin', 'your-password', '', '', '', tag,
-    'Example: username and password instead of a preset.']);
-  rows.push(['example-ap', '192.0.2.20', 'ap', '', 'admin', 'your-password', 'backup', 'ssh-password', '', '',
+  rows.push(['example-router', '192.0.2.1', 'router', '', 'admin', 'your-password', '', '', '', tag, '', '',
+    'Example: username and password instead of a preset. A site column puts it in that site, made if new, and site_group in a customer group.']);
+  rows.push(['example-ap', '192.0.2.20', 'ap', '', 'admin', 'your-password', 'backup', 'ssh-password', '', '', '', '',
     'Example: separate SSH login. Leave SSH blank to use the same login.']);
-  rows.push(['example-no-api', '192.0.2.30', 'router', '', 'admin', 'your-password', '', '', 'yes', '',
+  rows.push(['example-no-api', '192.0.2.30', 'router', '', 'admin', 'your-password', '', '', 'yes', '', '', '',
     'Example: API not enabled yet. Added over SSH; switches to the API once it answers.']);
   return rows.map((r) => r.map(q).join(',')).join('\r\n') + '\r\n';
 }

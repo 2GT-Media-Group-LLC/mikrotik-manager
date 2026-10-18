@@ -50,7 +50,7 @@ const SECRET_COLUMNS = new Set(['password_hash', 'token_hash', 'totp_secret', 't
 
 const TABLE_LABEL: Record<string, string> = {
   sites: 'Sites', users: 'Users', tags: 'Tags', credential_presets: 'Credential presets', devices: 'Devices',
-  device_ca: 'Certificate authority', managed_device_certs: 'Device certificates', user_site_roles: 'Site roles',
+  device_ca: 'Certificate authority', managed_device_certs: 'Device certificates', user_site_roles: 'Site roles', site_groups: 'Groups', user_group_roles: 'Group roles',
   api_tokens: 'API tokens', device_tags: 'Device tags', device_ssh_keys: 'Device SSH keys',
   device_identity_pins: 'Pinned device identities', alert_channels: 'Alert channels', alert_rules: 'Alert rules',
   app_settings: 'Settings', webhooks: 'Webhooks', report_schedules: 'Report schedules',

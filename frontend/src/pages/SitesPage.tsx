@@ -4,9 +4,10 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Building2, MapPin, Plus, Pencil, Trash2, Check, X, AlertCircle, RefreshCw } from 'lucide-react';
-import { sitesApi, settingsApi } from '../services/api';
+import { sitesApi, settingsApi, siteGroupsApi } from '../services/api';
 import { useSiteStore, type Site } from '../store/siteStore';
-import { useCanWrite } from '../hooks/useCanWrite';
+import { useCanWrite, useIsSiteScoped } from '../hooks/useCanWrite';
+import GroupsCard from '../components/sites/GroupsCard';
 import { geocodeAddress, OSM_TILE_URL, OSM_ATTRIBUTION } from '../utils/geocode';
 import { escapeHtml } from '../utils/escapeHtml';
 import PollOverridesCard from '../components/common/PollOverridesCard';
@@ -66,7 +67,15 @@ export default function SitesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
-  const { setCurrentSite } = useSiteStore();
+  const { setCurrentSite, setCurrentGroup } = useSiteStore();
+  // Groups are managed by fleet-wide accounts (#306).
+  const isScoped = useIsSiteScoped();
+  const [groupId, setGroupId] = useState<number | null>(null);
+  const [filter, setFilter] = useState('');
+  const { data: groups = [] } = useQuery({
+    queryKey: ['site-groups'],
+    queryFn: () => siteGroupsApi.list().then((r) => r.data),
+  });
   const [editing, setEditing] = useState<Site | null>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -97,6 +106,11 @@ export default function SitesPage() {
     setCurrentSite(id);
   }
 
+  function openGroup(id: number) {
+    navigate('/dashboard');
+    setCurrentGroup(id);
+  }
+
   async function save() {
     const trimmed = name.trim();
     if (!trimmed) { setError('Site name is required'); return; }
@@ -113,6 +127,7 @@ export default function SitesPage() {
       const payload = {
         name: trimmed,
         address: addr,
+        ...(!isScoped && (editing ? (editing.group_id ?? null) !== groupId : groupId != null) ? { group_id: groupId } : {}),
         ...(addressChanged
           ? { location_lat: coords?.lat ?? null, location_lng: coords?.lng ?? null }
           : {}),
@@ -120,6 +135,7 @@ export default function SitesPage() {
       if (editing) await sitesApi.update(editing.id, payload);
       else await sitesApi.create(payload);
       await queryClient.invalidateQueries({ queryKey: ['sites'] });
+      await queryClient.invalidateQueries({ queryKey: ['site-groups'] });
       cancel();
     } catch (e) {
       const err = e as { response?: { data?: { error?: string } }; message?: string };
@@ -139,12 +155,16 @@ export default function SitesPage() {
   });
 
   function cancel() {
-    setEditing(null); setAdding(false); setName(''); setAddress(''); setError('');
+    setEditing(null); setAdding(false); setName(''); setAddress(''); setError(''); setGroupId(null);
   }
 
   function startEdit(s: Site) {
-    setEditing(s); setAdding(false); setName(s.name); setAddress(s.address ?? ''); setError('');
+    setEditing(s); setAdding(false); setName(s.name); setAddress(s.address ?? ''); setError(''); setGroupId(s.group_id ?? null);
   }
+
+  const q = filter.trim().toLowerCase();
+  const shownSites = q ? sites.filter((s) => [s.name, s.address, s.group_name].some((v) => (v ?? '').toLowerCase().includes(q))) : sites;
+  const anyGroups = sites.some((s) => s.group_id != null);
 
   const totalDevices = sites.reduce((n, s) => n + s.device_count, 0);
   const totalOnline = sites.reduce((n, s) => n + s.online_count, 0);
@@ -196,6 +216,16 @@ export default function SitesPage() {
               placeholder="Address (optional)"
               className="input"
             />
+            {!isScoped && (
+              <label className="flex items-center gap-2 text-sm sm:col-span-2" style={{ color: 'var(--ink-3)' }}>
+                Group
+                <select className="input max-w-xs" value={groupId ?? ''} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">No group</option>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+                <span className="text-xs" style={{ color: 'var(--ink-4)' }}>The customer it belongs to. New groups are made under Groups below.</span>
+              </label>
+            )}
           </div>
           <p className="text-xs text-gray-400">
             {mapsEnabled
@@ -223,11 +253,19 @@ export default function SitesPage() {
 
       {mapsEnabled && sites.length > 0 && <SitesMap sites={sites} onSelect={openSite} />}
 
+      {/* Groups of sites, one per customer (#306) */}
+      <GroupsCard sites={sites} canManage={canWrite && !isScoped} onOpen={openGroup} />
+
+      {sites.length > 10 && (
+        <input className="input max-w-sm" placeholder="Find a site by name, address or group" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Find a site" />
+      )}
+
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
               <th className="px-4 py-2.5 font-medium">Site</th>
+              {anyGroups && <th className="px-4 py-2.5 font-medium">Group</th>}
               <th className="px-4 py-2.5 font-medium">Address</th>
               <th className="px-4 py-2.5 font-medium text-right">Devices</th>
               <th className="px-4 py-2.5 font-medium text-right">Online</th>
@@ -236,12 +274,12 @@ export default function SitesPage() {
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">Loading…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Loading…</td></tr>
             )}
             {!isLoading && sites.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">No sites yet.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">No sites yet.</td></tr>
             )}
-            {sites.map((s) => (
+            {shownSites.map((s) => (
               <tr
                 key={s.id}
                 className="border-b border-gray-100 dark:border-slate-800 last:border-0 hover:bg-gray-50 dark:hover:bg-slate-800/50 cursor-pointer"
@@ -258,6 +296,11 @@ export default function SitesPage() {
                     )}
                   </div>
                 </td>
+                {anyGroups && (
+                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">
+                    {s.group_name ?? <span className="text-gray-300 dark:text-slate-600">—</span>}
+                  </td>
+                )}
                 <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">
                   {s.address || <span className="text-gray-300 dark:text-slate-600">—</span>}
                 </td>

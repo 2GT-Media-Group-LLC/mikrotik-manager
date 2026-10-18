@@ -58,15 +58,15 @@ e2e_pg() {
   local ok=1
   for _ in $(seq 1 30); do docker exec "$name" pg_isready -U postgres >/dev/null 2>&1 && { ok=0; break; }; sleep 1; done
   [[ $ok -eq 0 ]] && PG_E2E_URL="postgres://postgres:e2e@127.0.0.1:$port/mtm_e2e" \
-    npx jest --silent src/services/platformBackup/__tests__/roundtrip.pg.test.ts
+    npx jest --silent "\.pg\.test\.ts$"
   local rc=$?
   docker rm -f "$name" >/dev/null 2>&1
   return $rc
 }
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  run "backend: backup round trip"  backend  e2e_pg
+  run "backend: Postgres tests"     backend  e2e_pg
 else
-  printf '  %-34s%s\n' "backend: backup round trip" "skipped (no Docker)"
+  printf '  %-34s%s\n' "backend: Postgres tests" "skipped (no Docker)"
 fi
 run "frontend: lint"       frontend npm run lint
 run "frontend: type-check" frontend npx tsc --noEmit

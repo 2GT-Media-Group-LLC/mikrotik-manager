@@ -104,11 +104,51 @@ async function saveSiteRoles(userId: number, roles: SiteRoleInput[]): Promise<vo
   forgetSessionAccount(userId);
 }
 
+type GroupRoleInput = { group_id: number; role: string };
+
+/** Validate `group_roles` (#306) the same way as site_roles. */
+async function parseGroupRoles(raw: unknown): Promise<{ ok: true; value: GroupRoleInput[] | undefined } | { ok: false; error: string }> {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: [] };
+  if (!Array.isArray(raw)) return { ok: false, error: 'group_roles must be a list of { group_id, role }' };
+  const out: GroupRoleInput[] = [];
+  const seen = new Set<number>();
+  for (const e of raw as Array<Record<string, unknown>>) {
+    const groupId = Number(e?.['group_id']);
+    const role = String(e?.['role'] ?? '');
+    if (!Number.isSafeInteger(groupId) || groupId <= 0) return { ok: false, error: 'group_roles: invalid group_id' };
+    if (!['admin', 'operator', 'viewer'].includes(role)) return { ok: false, error: 'group_roles: role must be admin, operator or viewer' };
+    if (seen.has(groupId)) return { ok: false, error: 'group_roles: a group is listed twice' };
+    seen.add(groupId);
+    out.push({ group_id: groupId, role });
+  }
+  if (out.length > 0) {
+    const found = await query<{ id: number }>(`SELECT id FROM site_groups WHERE id = ANY($1::int[])`, [out.map((e) => e.group_id)]);
+    if (found.length !== out.length) return { ok: false, error: 'group_roles: a group does not exist' };
+  }
+  return { ok: true, value: out };
+}
+
+/** Replace a user's group roles. */
+async function saveGroupRoles(userId: number, roles: GroupRoleInput[]): Promise<void> {
+  await transaction(async (client) => {
+    await client.query(`DELETE FROM user_group_roles WHERE user_id = $1`, [userId]);
+    for (const r of roles) {
+      await client.query(`INSERT INTO user_group_roles (user_id, group_id, role) VALUES ($1, $2, $3)`, [userId, r.group_id, r.role]);
+    }
+  });
+  forgetSessionAccount(userId);
+}
+
 const USER_COLUMNS = `u.id, u.username, u.email, u.role, u.auth_provider, u.created_at,
   COALESCE(
     (SELECT json_agg(json_build_object('site_id', usr.site_id, 'site_name', s.name, 'role', usr.role) ORDER BY s.name)
        FROM user_site_roles usr JOIN sites s ON s.id = usr.site_id WHERE usr.user_id = u.id),
-    '[]'::json) AS site_roles`;
+    '[]'::json) AS site_roles,
+  COALESCE(
+    (SELECT json_agg(json_build_object('group_id', ugr.group_id, 'group_name', g.name, 'role', ugr.role) ORDER BY g.name)
+       FROM user_group_roles ugr JOIN site_groups g ON g.id = ugr.group_id WHERE ugr.user_id = u.id),
+    '[]'::json) AS group_roles`;
 
 router.get('/users', requireAdmin, async (_req: Request, res: Response) => {
   const users = await query(`SELECT ${USER_COLUMNS} FROM users u ORDER BY u.username`);
@@ -132,6 +172,8 @@ router.post('/users', requireAdmin, async (req: Request, res: Response) => {
 
   const siteRoles = await parseSiteRoles(req.body.site_roles);
   if (!siteRoles.ok) return res.status(400).json({ error: siteRoles.error });
+  const groupRoles = await parseGroupRoles(req.body.group_roles);
+  if (!groupRoles.ok) return res.status(400).json({ error: groupRoles.error });
 
   const existing = await queryOne(`SELECT id FROM users WHERE username = $1`, [username]);
   if (existing) return res.status(409).json({ error: 'Username already exists' });
@@ -142,6 +184,7 @@ router.post('/users', requireAdmin, async (req: Request, res: Response) => {
     [username, hash, role]
   );
   if (siteRoles.value && siteRoles.value.length > 0) await saveSiteRoles(rows[0].id, siteRoles.value);
+  if (groupRoles.value && groupRoles.value.length > 0) await saveGroupRoles(rows[0].id, groupRoles.value);
   const created = await queryOne(`SELECT ${USER_COLUMNS} FROM users u WHERE u.id = $1`, [rows[0].id]);
   return res.status(201).json(created);
 });
@@ -163,8 +206,10 @@ router.put('/users/:id', requireAdmin, async (req: Request, res: Response) => {
   }
   const siteRoles = await parseSiteRoles(req.body.site_roles);
   if (!siteRoles.ok) return res.status(400).json({ error: siteRoles.error });
-  // Nor limit yourself to particular sites, which would end your fleet administration.
-  if (userId === req.user!.userId && siteRoles.value && siteRoles.value.length > 0) {
+  const groupRoles = await parseGroupRoles(req.body.group_roles);
+  if (!groupRoles.ok) return res.status(400).json({ error: groupRoles.error });
+  // Nor limit yourself to particular sites or groups, which would end your fleet administration.
+  if (userId === req.user!.userId && ((siteRoles.value?.length ?? 0) > 0 || (groupRoles.value?.length ?? 0) > 0)) {
     return res.status(400).json({ error: 'Cannot limit your own account to particular sites' });
   }
 
@@ -195,6 +240,7 @@ router.put('/users/:id', requireAdmin, async (req: Request, res: Response) => {
   }
 
   if (siteRoles.value !== undefined) await saveSiteRoles(userId, siteRoles.value);
+  if (groupRoles.value !== undefined) await saveGroupRoles(userId, groupRoles.value);
 
   const updated = await queryOne(`SELECT ${USER_COLUMNS} FROM users u WHERE u.id = $1`, [userId]);
   return res.json(updated);

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Building2, ChevronDown, Check, Plus, Pencil, Globe, X } from 'lucide-react';
+import { Building2, ChevronDown, Check, Plus, Pencil, Globe, X, FolderOpen, Search } from 'lucide-react';
 import clsx from 'clsx';
-import { sitesApi } from '../../services/api';
+import { sitesApi, siteGroupsApi } from '../../services/api';
 import { useSiteStore, type Site } from '../../store/siteStore';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { useIsSiteScoped } from '../../hooks/useCanWrite';
@@ -23,7 +23,8 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
   const allLabel = useIsSiteScoped() ? 'All my sites' : 'All sites';
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
-  const { currentSiteId, setCurrentSite } = useSiteStore();
+  const { currentSiteId, setCurrentSite, currentGroupId, setCurrentGroup } = useSiteStore();
+  const [filter, setFilter] = useState('');
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<Site | null>(null);
@@ -37,9 +38,21 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
     queryFn: () => sitesApi.list().then((r) => r.data),
     staleTime: 60_000,
   });
+  // Groups of sites, one customer each (#306).
+  const { data: groups = [], isFetched: groupsFetched } = useQuery({
+    queryKey: ['site-groups'],
+    queryFn: () => siteGroupsApi.list().then((r) => r.data),
+    staleTime: 60_000,
+    enabled: sites.length > 1,
+  });
+  // A group that's gone (deleted, or no longer reachable) stops being the scope.
+  useEffect(() => {
+    if (currentGroupId != null && groupsFetched && !groups.some((g) => g.id === currentGroupId)) setCurrentSite(null);
+  }, [currentGroupId, groups, groupsFetched, setCurrentSite]);
 
   function closeAll() {
     setOpen(false);
+    setFilter('');
     setCreating(false);
     setRenaming(null);
     setError('');
@@ -87,6 +100,12 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
     onNavigate?.();
   }
 
+  function switchToGroup(id: number) {
+    setCurrentGroup(id);
+    closeAll();
+    onNavigate?.();
+  }
+
   function openAllSites() {
     closeAll();
     onNavigate?.();
@@ -110,7 +129,13 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
   // real would rekey the QueryClient and remount the app on every page load.
   const soleSite = sites.length === 1 ? sites[0] : null;
   const shown = current ?? soleSite;
-  const label = shown?.name ?? allLabel;
+  const currentGroup = currentSiteId == null && currentGroupId != null ? groups.find((g) => g.id === currentGroupId) ?? null : null;
+  const label = shown?.name ?? currentGroup?.name ?? allLabel;
+  // A long list (one site per customer) can be typed into.
+  const searchable = sites.length + groups.length > 8;
+  const q = filter.trim().toLowerCase();
+  const shownGroups = groups.filter((g) => !q || g.name.toLowerCase().includes(q));
+  const shownSites = sites.filter((s) => !q || s.name.toLowerCase().includes(q) || (s.group_name ?? '').toLowerCase().includes(q));
 
   return (
     <div ref={wrapRef} className="relative px-[14px] pt-3">
@@ -126,7 +151,9 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
       >
         {shown
           ? <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
-          : <Globe className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />}
+          : currentGroup
+            ? <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
+            : <Globe className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />}
         <span
           className={clsx('flex-1 text-left text-[12.5px] font-medium truncate', isCollapsed && 'md:hidden')}
           style={{ color: 'var(--ink)' }}
@@ -189,8 +216,29 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
               </p>
             </div>
           ) : (
-            <div className="py-1 max-h-[320px] overflow-y-auto">
-              {sites.length > 1 && (
+            <div className="py-1 max-h-[420px] overflow-y-auto">
+              {searchable && (
+                <div className="flex items-center gap-2 px-3 py-1.5 mb-1" style={{ borderBottom: '1px solid var(--line)' }}>
+                  <Search className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-4)' }} />
+                  <input
+                    autoFocus
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') closeAll();
+                      if (e.key === 'Enter') {
+                        if (shownGroups.length + shownSites.length !== 1) return;
+                        if (shownGroups[0]) switchToGroup(shownGroups[0].id); else switchTo(shownSites[0].id);
+                      }
+                    }}
+                    placeholder="Find a site or group"
+                    aria-label="Find a site or group"
+                    className="flex-1 bg-transparent text-[12.5px] outline-none"
+                    style={{ color: 'var(--ink)' }}
+                  />
+                </div>
+              )}
+              {sites.length > 1 && !q && (
                 <>
                   <button
                     onClick={openAllSites}
@@ -199,13 +247,38 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
                   >
                     <Globe className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
                     <span className="flex-1 text-left">{allLabel}</span>
-                    {currentSiteId == null && <Check className="w-3.5 h-3.5 text-blue-500" />}
+                    {currentSiteId == null && currentGroupId == null && <Check className="w-3.5 h-3.5 text-blue-500" />}
                   </button>
                   <div className="my-1 h-px" style={{ background: 'var(--line)' }} />
                 </>
               )}
 
-              {sites.map((s) => (
+              {shownGroups.length > 0 && (
+                <>
+                  <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-4)' }}>Groups</div>
+                  {shownGroups.map((g) => (
+                    <button
+                      key={`g${g.id}`}
+                      onClick={() => switchToGroup(g.id)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[12.5px] min-w-0 hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ color: 'var(--ink)' }}
+                      title={`${g.site_ids.length} site${g.site_ids.length === 1 ? '' : 's'}`}
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
+                      <span className="flex-1 text-left truncate">{g.name}</span>
+                      <span className="text-[10.5px] flex-shrink-0" style={{ color: 'var(--ink-4)' }}>{g.device_count}</span>
+                      {currentGroup?.id === g.id && <Check className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+                    </button>
+                  ))}
+                  <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-4)' }}>Sites</div>
+                </>
+              )}
+
+              {shownSites.length === 0 && shownGroups.length === 0 && (
+                <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--ink-4)' }}>Nothing matches “{filter.trim()}”.</div>
+              )}
+
+              {shownSites.map((s) => (
                 <div key={s.id} className="group flex items-center hover:bg-black/5 dark:hover:bg-white/5">
                   <button
                     onClick={() => switchTo(s.id)}
@@ -213,7 +286,10 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
                     style={{ color: 'var(--ink)' }}
                   >
                     <Building2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
-                    <span className="flex-1 text-left truncate">{s.name}</span>
+                    <span className="flex-1 text-left truncate">
+                      {s.name}
+                      {s.group_name && <span className="text-[10.5px]" style={{ color: 'var(--ink-4)' }}> · {s.group_name}</span>}
+                    </span>
                     <span className="text-[10.5px] flex-shrink-0" style={{ color: 'var(--ink-4)' }}>
                       {s.device_count}
                     </span>

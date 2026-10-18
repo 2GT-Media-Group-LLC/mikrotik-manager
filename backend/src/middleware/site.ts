@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { resolveSiteId, type SiteScope } from '../utils/siteScope';
+import { groupSites } from '../services/siteGroups';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -10,6 +11,8 @@ declare global {
        * site-scoped account with no site chosen, the list of its sites (P1-7).
        */
       siteId?: number | number[] | null;
+      /** The group chosen in the site switcher (#306); siteId then holds its sites. */
+      siteGroupId?: number;
     }
   }
 }
@@ -24,11 +27,18 @@ declare global {
  * A query-string ?site_id= is also honoured, for links and for anything that
  * cannot set headers.
  */
-export function siteContext(req: Request, _res: Response, next: NextFunction): void {
+export function siteContext(req: Request, res: Response, next: NextFunction): void {
   const header = req.headers['x-site-id'];
   const raw = Array.isArray(header) ? header[0] : header;
   req.siteId = resolveSiteId(raw ?? req.query.site_id);
-  next();
+  // A group (#306): its sites, an empty list if it holds none (which matches
+  // nothing, never everything). A site, when both are sent, wins.
+  const gHeader = req.headers['x-site-group'];
+  const groupId = req.siteId === null ? resolveSiteId(Array.isArray(gHeader) ? gHeader[0] : gHeader) : null;
+  if (groupId === null) { next(); return; }
+  groupSites(groupId)
+    .then((sites) => { req.siteId = sites; req.siteGroupId = groupId; next(); })
+    .catch(() => res.status(503).json({ error: 'Could not read the group. Try again in a moment.' }));
 }
 
 /**
@@ -50,7 +60,8 @@ export function activeSite(req: Request): SiteScope {
 export function targetSite(req: Request): { ok: true; siteId: number | null } | { ok: false; status: number; error: string } {
   const scope = req.siteId ?? null;
   const roles = req.user?.siteRoles;
-  if (!roles) return { ok: true, siteId: typeof scope === 'number' ? scope : null };
+  // A group holding one site (#306) is that site.
+  if (!roles) return { ok: true, siteId: typeof scope === 'number' ? scope : (Array.isArray(scope) && scope.length === 1 ? scope[0] : null) };
   const site = typeof scope === 'number' ? scope : (Array.isArray(scope) && scope.length === 1 ? scope[0] : null);
   if (site === null) {
     return { ok: false, status: 400, error: 'Choose which site the device belongs to with the site switcher first.' };

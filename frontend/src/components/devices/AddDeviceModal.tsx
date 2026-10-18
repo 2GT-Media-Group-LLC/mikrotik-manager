@@ -11,6 +11,7 @@ import { parsePort } from '../../utils/parsePort';
 import { API_SSL_PORT, portFieldError } from '../../utils/apiTls';
 import { isValidDeviceAddress, classifyAddress, addressFieldValue } from '../../utils/deviceAddress';
 import { useSitePresets } from '../../hooks/useSitePresets';
+import SiteField, { siteFieldPayload, useDefaultSiteField, type SiteFieldValue } from './SiteField';
 
 interface Props {
   onClose: () => void;
@@ -55,8 +56,10 @@ export default function AddDeviceModal({
   const [loading, setLoading] = useState(false);
   const [duplicateSerial, setDuplicateSerial] = useState<DuplicateSerialError | null>(null);
 
+  // The site it joins, chosen here or the one in view (#306).
+  const [site, setSite] = useState<SiteFieldValue>(useDefaultSiteField());
   // Only presets that can apply in the site the device joins (#228).
-  const { presets } = useSitePresets();
+  const { presets } = useSitePresets(site.newSite != null ? 'new' : site.siteId);
 
   const { data: tags = [] } = useQuery({
     queryKey: ['tags'],
@@ -97,6 +100,7 @@ export default function AddDeviceModal({
       force_replace_existing_by_serial: opts.forceReplace,
       ...(tagIds.length ? { tag_ids: tagIds } : {}),
       ...(sshOnly ? { ssh_only: true } : {}),
+      ...siteFieldPayload(site),
     };
     if (selectedPreset) {
       return {
@@ -133,6 +137,10 @@ export default function AddDeviceModal({
     }
     if (addressInvalid) {
       setError(`"${addressTrimmed}" is not a valid IP address or hostname`);
+      return;
+    }
+    if (site.newSite != null && !site.newSite.trim()) {
+      setError('Name the new site, or choose an existing one');
       return;
     }
     if (!selectedPreset && (!form.api_username || !form.api_password)) {
@@ -234,6 +242,9 @@ export default function AddDeviceModal({
                   <span>Credentials travel unencrypted to this address. Prefer api-ssl on port 8729, or a VPN.</span>
                 </p>
               )}
+            </div>
+            <div className="sm:col-span-2">
+              <SiteField value={site} onChange={setSite} />
             </div>
             <div>
               <label className="label">Device Type</label>

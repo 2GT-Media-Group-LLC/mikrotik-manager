@@ -14,6 +14,12 @@ configured one is simply registered. See [Adopting devices](adoption.md).
 optionally a [credential preset](#device-credentials) so the same username and password are not
 retyped per device.
 
+**Site** chooses the [site](sites.md) it joins: the one in view to begin with, or with a group in
+view, that group's first site. A fleet-wide account can pick **New site…** to make one on the
+spot, with a group (customer) for it, existing or new (#306). An install with one site shows
+**Add it to a new site…** instead. A site made this way stays if the device then can't be added;
+adding again with the same name finds it.
+
 The address can be a LAN IP, a public IP, an IPv6 address, or a hostname (a local DNS name, or
 a router's own `/ip cloud` DDNS name). Pasting a full URL like `https://203.0.113.5:8729/`
 works too — the port is pulled out into the API Port field automatically. The same goes for an
@@ -156,7 +162,12 @@ closed browser tab and reports progress and failures per device.
 | `ssh_username`, `ssh_password` | Optional | Only if SSH uses a different login. Blank uses the one above |
 | `ssh_only` | Optional | `yes` when the API isn't enabled yet; see [SSH only](#devices-without-the-api-enabled-ssh-only) |
 | `tags` | Optional | Existing tags. Create them under Settings → Tags first |
+| `site` | Optional | The [site](sites.md) it joins, by name. One that doesn't exist yet is made (fleet-wide accounts). Blank joins the site in view |
+| `site_group` | Optional | The [group](sites.md#groups) (customer) a new site goes in, made if it's new. Also read as `customer` or `client` |
 | `notes` | Optional | Anything you like |
+
+A `group` column is read as tags, as it always was; the dialog says so. The group of a site
+that already exists is left as it is. The dialog lists the sites an import will make.
 
 For several tags on one device, separate them with a vertical bar: `branch|lab`.
 

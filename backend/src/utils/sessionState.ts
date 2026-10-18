@@ -15,6 +15,7 @@
  * Accounts are cached for a few seconds, and the cache entry is dropped the
  * moment the account changes, so revocation is immediate on this server.
  */
+import { loadSiteRoles } from './siteRoles';
 import { query, queryOne } from '../config/database';
 import { redis } from '../config/redis';
 import type { AuthPayload } from '../middleware/auth';
@@ -44,12 +45,8 @@ async function loadAccount(userId: number): Promise<SessionAccount | null> {
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.account;
   const row = await queryOne<{ username: string; role: string; session_version: number; must_change_password: boolean }>(
     `SELECT username, role, session_version, must_change_password FROM users WHERE id = $1`, [userId]);
-  let siteRoles: Record<number, string> | null = null;
-  if (row) {
-    const sites = await query<{ site_id: number; role: string }>(
-      `SELECT site_id, role FROM user_site_roles WHERE user_id = $1`, [userId]);
-    if (sites.length > 0) siteRoles = Object.fromEntries(sites.map((r) => [r.site_id, r.role]));
-  }
+  // Site roles, and those reached through groups (#306).
+  const siteRoles = row ? await loadSiteRoles(userId) : null;
   const account = row
     ? { username: row.username, role: row.role, sessionVersion: row.session_version ?? 0, mustChangePassword: !!row.must_change_password, siteRoles }
     : null;
@@ -60,6 +57,14 @@ async function loadAccount(userId: number): Promise<SessionAccount | null> {
 /** Forget a cached account, e.g. after it was deleted. */
 export function forgetSessionAccount(userId: number): void {
   cache.delete(userId);
+}
+
+/**
+ * Forget every cached account: a change to a group's sites or to which group a
+ * site is in changes the sites of everyone with a role in that group (#306).
+ */
+export function forgetAllSessionAccounts(): void {
+  cache.clear();
 }
 
 /** End every session the account has; the next request with one is refused. */

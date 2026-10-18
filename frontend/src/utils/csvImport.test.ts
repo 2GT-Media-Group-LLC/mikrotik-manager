@@ -241,3 +241,36 @@ describe('api_ssl column (#257)', () => {
     expect(r.rows[1].errors.join(' ')).toMatch(/Port/);
   });
 });
+
+describe('sites and groups in an import (#306)', () => {
+  const sites = { names: ['HQ'], canCreate: true };
+
+  it('sends the site by name, and the group for a new site', () => {
+    const r = parseDeviceCsv('ip,preset,site,customer\n10.0.0.2,Default,Branch 7,Acme\n10.0.0.3,Default,hq,\n', presets, [], [], sites);
+    expect(r.rows[0].item).toMatchObject({ site_name: 'Branch 7', group_name: 'Acme' });
+    expect(r.rows[0].warnings.some((w) => /new site "Branch 7"/.test(w))).toBe(true);
+    expect(r.rows[1].item).toMatchObject({ site_name: 'hq' });
+    expect(r.rows[1].warnings).toEqual([]);
+  });
+
+  it('notes a new site once, not on every row', () => {
+    const r = parseDeviceCsv('ip,preset,site\n10.0.0.2,Default,New\n10.0.0.3,Default,new\n', presets, [], [], sites);
+    expect(r.rows.flatMap((x) => x.warnings).filter((w) => /new site/.test(w))).toHaveLength(1);
+  });
+
+  it('an account that cannot make sites gets an error for an unknown one', () => {
+    const r = parseDeviceCsv('ip,preset,site\n10.0.0.2,Default,Nowhere\n', presets, [], [], { names: ['HQ'], canCreate: false });
+    expect(r.rows[0].errors).toEqual(['No site called "Nowhere".']);
+  });
+
+  it('keeps "group" as tags, and says so', () => {
+    const r = parseDeviceCsv('ip,preset,group\n10.0.0.2,Default,prod\n', presets, [], [{ id: 1, name: 'prod' }], sites);
+    expect(r.rows[0].item).toMatchObject({ tag_ids: [1] });
+    expect(r.notes?.[0]).toMatch(/read as tags/);
+  });
+
+  it('a group for an existing site leaves it alone, with a warning', () => {
+    const r = parseDeviceCsv('ip,preset,site,site_group\n10.0.0.2,Default,HQ,Acme\n', presets, [], [], sites);
+    expect(r.rows[0].warnings.some((w) => /already exists/.test(w))).toBe(true);
+  });
+});
