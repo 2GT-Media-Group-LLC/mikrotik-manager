@@ -66,7 +66,8 @@ function generate(source) {
         `The generator needs updating to match how that service is now defined.`
       );
     }
-    out = out.replace(swap.build, swap.image);
+    // Every service built from it: the backend and its poll workers (#301).
+    out = out.split(swap.build).join(swap.image);
   }
 
   // Compose v2 ignores the top-level `version:` key and warns on every command

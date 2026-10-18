@@ -3,7 +3,7 @@ import { hasRadios } from './mikrotik/capsman';
 import { checkApi, promoteToApi, recordApiCheck, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
 import { apiCheckIntervalMs } from '../utils/sshOnly';
 import { cleanOverrides, effectiveValues } from '../utils/pollOverrides';
-import { createRedisConnection } from '../config/redis';
+import { createRedisConnection, redis } from '../config/redis';
 import { query, queryOne } from '../config/database';
 import { pooledSessionCount } from './mikrotik/sessionPool';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
@@ -31,6 +31,7 @@ import { gateTtlSeconds } from '../utils/schedulerGate';
 import { runPollJob, pollJobAborted } from '../utils/pollJobContext';
 import { refreshCveFeed } from './cveFeed';
 import { checkCveAlerts } from './cveAlerts';
+import { POLLER_ROLE, PROCESS_ID, EMIT_CHANNEL, HEARTBEAT_PREFIX } from './pollerRole';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 
@@ -106,8 +107,13 @@ interface PollJob {
 }
 
 /** Keep API sessions open between polls (#301); on unless switched off in Settings → Polling. */
+/**
+ * Sessions kept open between polls (#301) are opt-in: a long-lived session
+ * to every device is a change in how the manager behaves on the network, so
+ * it's switched on deliberately (Settings → Polling), not by upgrading.
+ */
 function persistentSessions(appSettings: Record<string, unknown>): boolean {
-  return appSettings['poller_persistent_sessions'] !== false;
+  return appSettings['poller_persistent_sessions'] === true;
 }
 
 /** Job types recorded under their own kind in device_poll_stats rather than their queue's. */
@@ -187,7 +193,13 @@ export class PollerService {
    * ones ('fleet' room) and those with access to its site (P1-7).
    */
   private async emitForDevice(event: string, payload: Record<string, unknown>, deviceId: number): Promise<void> {
-    if (!this.io) return;
+    if (!this.io) {
+      // A worker process has no browsers: the API process sends it on (#301).
+      if (POLLER_ROLE === 'worker') {
+        void redis.publish(EMIT_CHANNEL, JSON.stringify({ event, payload, deviceId })).catch(() => {});
+      }
+      return;
+    }
     let hit = this.deviceSite.get(deviceId);
     if (!hit || Date.now() - hit.at > 60_000) {
       const row = await queryOne<{ site_id: number | null }>(`SELECT site_id FROM devices WHERE id = $1`, [deviceId]).catch(() => null);
@@ -206,15 +218,111 @@ export class PollerService {
   async start(): Promise<void> {
     const disabled = describeDisabled(resolveModules(await this.getAppSettings()));
     if (disabled) console.log(`[Poller] Collectors disabled by settings: ${disabled}`);
-    this.startWorkers();
-    this.startScheduler();
-    console.log('PollerService started');
+    // Worker containers (#301): POLLER_ROLE decides what runs here.
+    if (POLLER_ROLE !== 'api') {
+      this.startWorkers();
+      this.startHeartbeat();
+    }
+    if (POLLER_ROLE !== 'worker') {
+      this.startScheduler();
+      this.startEmitRelay();
+    }
+    console.log(`PollerService started (role: ${POLLER_ROLE})`);
+  }
+
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private relay: ReturnType<typeof createRedisConnection> | null = null;
+
+  /**
+   * Tell poller health this process is here, with its workers and open
+   * sessions (#301). Expires on its own if the process goes away.
+   */
+  private startHeartbeat(): void {
+    const beat = () => {
+      void redis.set(`${HEARTBEAT_PREFIX}${PROCESS_ID}`, JSON.stringify({
+        role: POLLER_ROLE, concurrency: POLL_CONCURRENCY, sessions: pooledSessionCount(), at: Date.now(),
+      }), 'EX', 45).catch(() => { /* health just won't count it this time */ });
+    };
+    beat();
+    this.heartbeatTimer = setInterval(beat, 15_000);
+    this.heartbeatTimer.unref();
+  }
+
+  /** Live updates published by worker processes, sent on to the browsers connected here. */
+  private startEmitRelay(): void {
+    const sub = createRedisConnection();
+    this.relay = sub;
+    sub.on('message', (_channel: string, raw: string) => {
+      try {
+        const m = JSON.parse(raw) as { event: string; payload: Record<string, unknown>; deviceId: number | null };
+        if (typeof m.event !== 'string') return;
+        if (m.deviceId == null) this.io?.emit(m.event, m.payload ?? {});
+        else void this.emitForDevice(m.event, m.payload ?? {}, m.deviceId);
+      } catch { /* not ours */ }
+    });
+    sub.on('error', () => { /* ioredis reconnects by itself */ });
+    void sub.connect().then(() => sub.subscribe(EMIT_CHANNEL)).catch((e: Error) =>
+      console.warn('[Poller] live-update relay not started:', e.message));
+  }
+
+  /**
+   * The slowest fast polls, each split into connecting, waiting on the device
+   * and the rest (database, processing, queue bookkeeping), so a slow site's
+   * time can be pinned on its link, its router or the manager (#301).
+   */
+  private async slowestPolls(limit = 15): Promise<Record<string, unknown>[]> {
+    const rows = await query<{
+      id: number; name: string; site: string | null; duration: number; connect: number | null; collect: number | null;
+      device: number | null; reused: boolean | null; error: string | null; at: string | null;
+    }>(
+      `SELECT d.id, d.name, s.name AS site, p.last_duration_ms AS duration, p.last_connect_ms AS connect,
+              p.last_collect_ms AS collect, p.last_device_ms AS device, p.last_session_reused AS reused,
+              p.last_error AS error, p.last_attempt_at AS at
+         FROM device_poll_stats p
+         JOIN devices d ON d.id = p.device_id
+         LEFT JOIN sites s ON s.id = d.site_id
+        WHERE p.kind = 'fast' AND p.last_duration_ms IS NOT NULL AND d.status != 'disabled'
+        ORDER BY p.last_duration_ms DESC
+        LIMIT $1`, [limit]).catch(() => []);
+    return rows.map((r) => ({
+      id: r.id, name: r.name, site: r.site, total_ms: r.duration,
+      connect_ms: r.connect, device_ms: r.device,
+      // Everything not spent connecting or waiting on the device.
+      other_ms: r.connect == null || r.device == null ? null : Math.max(0, r.duration - r.connect - r.device),
+      reused: r.reused, error: r.error, at: r.at,
+    }));
+  }
+
+  /** Every process running poll workers, from their heartbeats. */
+  private async pollerProcesses(): Promise<{ id: string; role: string; concurrency: number; sessions: number }[]> {
+    try {
+      const keys = await redis.keys(`${HEARTBEAT_PREFIX}*`);
+      if (!keys.length) return [];
+      const vals = await redis.mget(...keys);
+      return keys.flatMap((k, i) => {
+        try {
+          const v = JSON.parse(vals[i] ?? '') as { role: string; concurrency: number; sessions: number };
+          return [{ id: k.slice(HEARTBEAT_PREFIX.length), role: v.role, concurrency: Number(v.concurrency) || 0, sessions: Number(v.sessions) || 0 }];
+        } catch { return []; }
+      });
+    } catch { return []; }
+  }
+
+  /** A live update for every browser (no device to scope it by). */
+  private broadcast(event: string, payload: Record<string, unknown>): void {
+    if (this.io) { this.io.emit(event, payload); return; }
+    if (POLLER_ROLE === 'worker') {
+      void redis.publish(EMIT_CHANNEL, JSON.stringify({ event, payload, deviceId: null })).catch(() => {});
+    }
   }
 
   async stop(): Promise<void> {
     if (this.schedulerInterval) {
       clearInterval(this.schedulerInterval);
     }
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    await redis.del(`${HEARTBEAT_PREFIX}${PROCESS_ID}`).catch(() => {});
+    this.relay?.disconnect();
     await this.fastWorker?.close();
     await this.slowWorker?.close();
     await this.logsWorker?.close();
@@ -703,7 +811,7 @@ export class PollerService {
 
     if (updated > 0) {
       console.log(`[Poller] Reverse DNS enriched ${updated} client hostname(s)`);
-      this.io?.emit('clients:updated', {});
+      this.broadcast('clients:updated', {});
     }
   }
 
@@ -853,7 +961,7 @@ export class PollerService {
     const count = parseInt(result[0]?.count || '0', 10);
     if (count > 0) {
       console.log(`[Poller] Pruned ${count} stale client record(s) (inactive > ${retentionDays} days)`);
-      this.io?.emit('clients:updated', {});
+      this.broadcast('clients:updated', {});
     }
   }
 
@@ -968,8 +1076,8 @@ export class PollerService {
       // Where the time went (#301): opening or reusing the session, and the work.
       if (ph && !error) {
         await query(
-          `UPDATE device_poll_stats SET last_connect_ms = $3, last_collect_ms = $4, last_session_reused = $5
-            WHERE device_id = $1 AND kind = $2`, [deviceId, kind, ph.connectMs, ph.collectMs, ph.reused]);
+          `UPDATE device_poll_stats SET last_connect_ms = $3, last_collect_ms = $4, last_session_reused = $5, last_device_ms = $6
+            WHERE device_id = $1 AND kind = $2`, [deviceId, kind, ph.connectMs, ph.collectMs, ph.reused, ph.deviceMs]);
       }
     } catch { /* never let bookkeeping break a poll */ }
   }
@@ -1032,7 +1140,10 @@ export class PollerService {
           sum + 1 / effectiveValues(appSettings, cleanOverrides(r.site), cleanOverrides(r.dev)).fastSec, 0);
       }
     } catch { /* fall back to the global interval for every device */ }
-    const servicePerSec = avgSec > 0 ? POLL_CONCURRENCY / avgSec : null;
+    // Workers in every process (#301), or this one's before any heartbeat.
+    const procs = await this.pollerProcesses();
+    const totalConcurrency = procs.length ? procs.reduce((n, p) => n + p.concurrency, 0) : POLL_CONCURRENCY;
+    const servicePerSec = avgSec > 0 ? totalConcurrency / avgSec : null;
 
     const headroom = servicePerSec == null || arrivalPerSec === 0
       ? null
@@ -1058,21 +1169,26 @@ export class PollerService {
     // Where poll time goes (#301): session setup (new vs reused) and the work.
     let phases: Record<string, unknown> | null = null;
     try {
-      const [p] = await query<{ new_connect: number | null; reused_connect: number | null; collect: number | null; reused_pct: number | null; n: number }>(
+      const [p] = await query<{ new_connect: number | null; reused_connect: number | null; collect: number | null; device: number | null; reused_pct: number | null; n: number }>(
         `SELECT AVG(last_connect_ms) FILTER (WHERE NOT last_session_reused)::int AS new_connect,
                 AVG(last_connect_ms) FILTER (WHERE last_session_reused)::int AS reused_connect,
                 AVG(last_collect_ms)::int AS collect,
+                AVG(last_device_ms)::int AS device,
                 (100.0 * COUNT(*) FILTER (WHERE last_session_reused) / NULLIF(COUNT(*), 0))::int AS reused_pct,
                 COUNT(*)::int AS n
            FROM device_poll_stats WHERE kind = 'fast' AND last_connect_ms IS NOT NULL`);
       phases = {
         persistent_sessions: persistentSessions(appSettings),
-        open_sessions: pooledSessionCount(),
+        pipelined_reads: appSettings['poller_pipelined_reads'] !== false,
+        open_sessions: procs.length ? procs.reduce((n, p) => n + p.sessions, 0) : pooledSessionCount(),
         avg_connect_new_ms: p?.new_connect ?? null,
         avg_connect_reused_ms: p?.reused_connect ?? null,
         avg_collect_ms: p?.collect ?? null,
+        // Of the collecting, waiting on the device; the rest is the database and processing.
+        avg_device_ms: p?.device ?? null,
         reused_pct: p?.reused_pct ?? null,
         devices_measured: p?.n ?? 0,
+        slowest: await this.slowestPolls(),
       };
     } catch (e) {
       console.error('[Poller] Health: phase query failed:', (e as Error).message);
@@ -1083,7 +1199,9 @@ export class PollerService {
       queues,
       phases,
       workers: {
-        concurrency: POLL_CONCURRENCY,
+        // Every process's workers (#301); `processes` lists them when there are worker containers.
+        concurrency: totalConcurrency,
+        processes: procs.map((p) => ({ role: p.role, concurrency: p.concurrency, sessions: p.sessions })),
         job_timeout_ms: JOB_TIMEOUT_MS,
         poll_interval_ms: POLL_INTERVAL_MS,
         /** The global fast-poll interval; sites and devices may override it (#261). */
@@ -1197,6 +1315,8 @@ export class PollerService {
     const prevStatus = device.status; // capture before poll
     const collector = new DeviceCollector(device);
     collector.modules = pollModules;
+    // A fast poll's reads sent together (#301), unless switched off.
+    collector.pipelineReads = appSettings['poller_pipelined_reads'] !== false;
     // Sessions kept open between polls (#301): fast polls on the fast lane, a
     // full sync on the slow one; a MAC scan keeps its own connection.
     const pooling = persistentSessions(appSettings) && data.type !== 'macscan';
@@ -1217,7 +1337,7 @@ export class PollerService {
         await collector.collectFast();
       }
       ok = true;
-      this.notePhases(device.id, data.type === 'full' ? 'full' : 'fast', collector.timings, Date.now() - collectStarted);
+      this.notePhases(device.id, data.type === 'full' ? 'full' : 'fast', collector.timings, Date.now() - collectStarted, collector.deviceTime());
 
       this.recordPollSuccess(device, prevStatus);
 
@@ -1232,9 +1352,9 @@ export class PollerService {
   }
 
   /** Phase timings of the poll that just ran, picked up by recordPollOutcome (#301). */
-  private phases = new Map<string, { connectMs: number; collectMs: number; reused: boolean }>();
-  private notePhases(deviceId: number, kind: string, t: { connectMs: number; reused: boolean }, collectMs: number): void {
-    this.phases.set(`${deviceId}:${kind}`, { connectMs: t.connectMs, collectMs, reused: t.reused });
+  private phases = new Map<string, { connectMs: number; collectMs: number; deviceMs: number; reused: boolean }>();
+  private notePhases(deviceId: number, kind: string, t: { connectMs: number; reused: boolean }, collectMs: number, deviceMs: number): void {
+    this.phases.set(`${deviceId}:${kind}`, { connectMs: t.connectMs, collectMs, deviceMs: Math.min(deviceMs, collectMs), reused: t.reused });
   }
 
   /** A poll reached the device: close any open outage, and announce a recovery. */
@@ -1550,7 +1670,7 @@ export class PollerService {
         ).catch(() => {});
       }
       ok = true;
-      this.notePhases(device.id, 'slow', collector.timings, Date.now() - collectStarted);
+      this.notePhases(device.id, 'slow', collector.timings, Date.now() - collectStarted, collector.deviceTime());
     } catch (err) {
       // A slow poll that ran out of time was cancelled, which says nothing
       // about whether the device is up; the fast poll decides that. Marking it
@@ -1581,7 +1701,7 @@ export class PollerService {
       const collectStarted = Date.now();
       const stored = await collector.collectLogs();
       ok = true;
-      this.notePhases(device.id, 'logs', collector.timings, Date.now() - collectStarted);
+      this.notePhases(device.id, 'logs', collector.timings, Date.now() - collectStarted, collector.deviceTime());
       void this.emitForDevice('events:updated', { deviceId: device.id }, device.id);
 
       // Alert on the lines this poll actually stored, not on whatever looks

@@ -41,19 +41,43 @@ polls (at least 20 minutes), and headroom adds up each device's own fast-poll ra
 Enqueue rate is not connect rate. Workers process jobs with limited concurrency, so what
 matters is whether they drain faster than the schedule fills.
 
+## Where a poll's time goes
+
+**Settings → Polling → Where a fast poll's time goes** splits a fast poll into three parts
+(#301):
+
+- **Connecting**: the TCP handshake, the TLS handshake (an RSA signature on the router's CPU) and
+  the login. A few round trips, so on a slow link this is often most of the poll.
+- **Waiting on the device**: the round trips for the reads, and the router answering them.
+- **Database and processing**: everything on this server.
+
+It shows the fleet's averages, and below them the **slowest fast polls**, each device with its
+own split and a bar, so a slow site can be pinned on its link (connecting and waiting both
+long), its router (waiting long on a fast link) or this server (the grey part). Hover a failed
+poll for its error.
+
 ## Sessions kept open between polls
 
-Opening an API session costs a TCP handshake, a TLS handshake (an RSA signature on the
-router's CPU) and a login. Measured on the reference fleet that was 150 to 300 ms per poll on a
-LAN, against 3 to 25 ms for the commands, and over a WAN each of those round trips adds the
-link's latency (#301).
+Measured on the reference fleet, connecting took 150 to 300 ms per poll on a LAN, against 3 to
+25 ms for the commands, and over a WAN each of its round trips adds the link's latency. A device
+pays it on every fast, log and slow poll.
 
-So the manager keeps sessions open: up to three per device, one each for fast, log and slow
-polls (they run on separate queues and often at the same moment). A session is reused only while
-it is healthy and the device's address, port, login and TLS setting are unchanged; any error or
-timeout closes it rather than handing it on, and a poll that finds its session busy connects on
-its own. The serial number is re-checked every ten minutes on a reused session. Sessions idle for
-eleven minutes are closed. TCP keepalive keeps them alive through NAT and firewalls between polls.
+**Settings → Polling → Keep sessions open between polls** keeps an API session open per device
+and reuses it. It's **off by default**: long-lived sessions to every device are a change in how
+the manager behaves on your network, so it's for you to switch on. When it's on:
+
+- a device has up to three sessions, one each for fast, log and slow polls (they run on
+  separate queues and often at the same moment);
+- a session is reused only while it's healthy and the device's address, port, login and TLS
+  setting are unchanged; any error or timeout closes it rather than handing it on, and a poll
+  that finds its session busy connects on its own;
+- the serial number is re-checked every ten minutes on a reused session;
+- sessions idle for eleven minutes are closed, and TCP keepalive holds them open through NAT and
+  firewalls between polls;
+- switching it off closes the open sessions at each device's next poll.
+
+On the reference fleet it took fast polls from about 800 ms to 100 to 400 ms; what remains is the
+collecting itself.
 
 Slow polls no longer wait for the manager's own ARP scan (it fills in addresses for neighbours
 that advertise none). It used to expire on the slow poll's own schedule, so every device's slow
@@ -61,13 +85,18 @@ poll waited up to 12 seconds for a fresh scan; where the scan can't run (Docker 
 NET_RAW) that was all 12. Polls now use the last finished scan while the next runs in the
 background. On the reference fleet a slow poll went from 12.5 s to well under a second.
 
-**Settings → Polling → Keep sessions open between polls** turns this off if a device or firewall
-in your network misbehaves with long-lived sessions.
+## Reads sent together
 
-The same card shows **where a fast poll's time goes**: the average cost of a new session against
-a reused one, the time spent collecting, and how many polls reused a session. On the reference
-fleet, reusing sessions took fast polls from about 800 ms to 100 to 400 ms; what remains is the
-collecting itself.
+A fast poll makes about ten reads (interfaces and their counters, resources, ARP, DHCP leases,
+the bridge host table, wireless registrations, PoE). They used to go one after another, each
+waiting for the last to answer: ten round trips. Now they're sent together, each with its own
+tag, and the answers are sorted back as they arrive (#301). Over a WAN that's one round trip
+instead of ten, roughly 450 ms saved per poll on a 50 ms link. On a LAN, where the router's own
+work dominates, the reference devices gained 10 to 25%.
+
+Only reads are sent this way, and only within one poll; a read that fails (a menu the device
+doesn't have) fails on its own, as it did before, and any reply that doesn't fit drops the
+connection. **Settings → Polling → Send reads together** turns it off.
 
 ## Pages that show something from every device
 
@@ -154,6 +183,37 @@ device offline. Any open outage is closed by the next successful poll. Before 0.
 that hit the limit kept running after it had been counted as failed, and when it finished it
 marked the device online without closing the outage it had opened, so the device's uptime
 kept falling while it was up.
+
+## More workers
+
+One backend runs `POLLER_CONCURRENCY` polls at a time. When headroom stays low after raising
+that, run extra poll workers next to it (#301):
+
+```bash
+docker compose --profile workers up -d --scale poller=3
+```
+
+Each `poller` container runs `POLLER_CONCURRENCY` polls at once against the same Redis and
+Postgres, and nothing else: no API, no schedule, no firmware rollouts, reports or backups, which
+stay with the backend. Their live updates reach the browser through the backend. **Settings →
+Polling** counts every process's workers (*Workers: 36, in 3 processes*), and headroom uses
+the total. To leave all polling to the workers, set `POLLER_ROLE=api` on the backend in `.env`.
+
+| `POLLER_ROLE` | Runs |
+|---|---|
+| `all` (default) | The API, the schedule and poll workers |
+| `api` | The API and the schedule; polls go to `poller` containers |
+| `worker` | Poll workers only (what the `poller` service sets) |
+
+Worth knowing:
+
+- With sessions kept open, they're kept per process, and a device's polls go to whichever worker is free, so with
+  several workers fewer polls find their session open, and a device can hold up to three sessions
+  per worker. Plenty of workers is still the faster way through a large fleet; a device that can
+  take only a few API sessions is the case to watch.
+- Workers read the backend's secrets from the `app_data` volume (read-only), and start once the
+  backend is healthy, so its migrations have run.
+- The pre-built `docker-compose.ghcr.yml` has the same `poller` service.
 
 ## Reducing the work itself
 

@@ -1094,7 +1094,7 @@ function OperationsView({
         </div>
         {/* One tile per device stops at two rows; past that, the tiles needing
             attention and a link to the rest (#303). */}
-        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min((devices as Device[]).length, 5)}, 1fr)` }}>
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min((devices as Device[]).length, 5)}, minmax(0, 1fr))` }}>
           {fleetTiles.map((d) => {
             const hasAlert = d.firmware_update_available || d.routerboard_upgrade_available;
             return (

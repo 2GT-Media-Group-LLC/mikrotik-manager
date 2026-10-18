@@ -492,19 +492,34 @@ export interface PollerQueue {
 
 export interface PollerPhases {
   persistent_sessions: boolean;
+  /** A fast poll's reads sent together (#301). */
+  pipelined_reads: boolean;
   open_sessions: number;
   avg_connect_new_ms: number | null;
   avg_connect_reused_ms: number | null;
   avg_collect_ms: number | null;
   reused_pct: number | null;
   devices_measured: number;
+  /** Of the collecting, the time waiting on the device; the rest is the database and processing. */
+  avg_device_ms?: number | null;
+  /** The slowest fast polls, split by phase. */
+  slowest?: SlowPoll[];
+}
+export interface SlowPoll {
+  id: number; name: string; site: string | null;
+  total_ms: number; connect_ms: number | null; device_ms: number | null; other_ms: number | null;
+  reused: boolean | null; error: string | null; at: string | null;
 }
 export interface PollerHealth {
   status: 'ok' | 'draining' | 'saturated';
   queues: PollerQueue[];
   /** Where fast-poll time goes (#301). */
   phases?: PollerPhases | null;
-  workers: { concurrency: number; job_timeout_ms: number; poll_interval_ms: number; fast_interval_sec?: number };
+  workers: {
+    concurrency: number; job_timeout_ms: number; poll_interval_ms: number; fast_interval_sec?: number;
+    /** Each process running poll workers, when there are worker containers (#301). */
+    processes?: { role: string; concurrency: number; sessions: number }[];
+  };
   capacity: {
     devices: number;
     avg_fast_poll_ms: number | null;

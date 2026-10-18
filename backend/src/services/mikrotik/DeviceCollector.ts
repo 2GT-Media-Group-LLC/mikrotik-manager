@@ -4,7 +4,7 @@ import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
 import { lease, dropSessions, type Lease, type SessionLane } from './sessionPool';
-import { RouterOSClient, RouterOSTrapError } from './RouterOSClient';
+import { RouterOSClient, RouterOSTrapError, type ReadSpec } from './RouterOSClient';
 import { usesApiTls } from '../../utils/apiTls';
 import { query, queryOne } from '../../config/database';
 import { getWriteApi } from '../../config/influxdb';
@@ -230,6 +230,14 @@ export class DeviceCollector {
 
   /** Phase timings of this session, for Settings → Polling (#301). */
   timings: { connectMs: number; reused: boolean } = { connectMs: 0, reused: false };
+
+  /**
+   * Time this poll spent waiting on the device's answers since it connected
+   * (#301); the rest of the collecting is the database and processing.
+   */
+  deviceTime(): number {
+    return this.client.takeDeviceTime();
+  }
   private leaseHandle: Lease | null = null;
 
   /**
@@ -243,11 +251,11 @@ export class DeviceCollector {
     if (!enabled) {
       // Switched off: close any sessions still open from before.
       dropSessions(this.device.id);
-      await this.connect(); this.timings = { connectMs: Date.now() - started, reused: false }; return;
+      await this.connect(); this.timings = { connectMs: Date.now() - started, reused: false }; this.client.takeDeviceTime(); return;
     }
     if (this.aborted) throw new Error('Poll cancelled: it ran past its time limit');
     const l = lease(this.device, lane, usesApiTls(this.device), () => this.client);
-    if (!l) { await this.connect(); this.timings = { connectMs: Date.now() - started, reused: false }; return; }
+    if (!l) { await this.connect(); this.timings = { connectMs: Date.now() - started, reused: false }; this.client.takeDeviceTime(); return; }
     this.leaseHandle = l;
     this.client = l.client;
     try {
@@ -262,7 +270,7 @@ export class DeviceCollector {
       this.release(false);
       throw e;
     }
-    this.timings = { connectMs: Date.now() - started, reused: !l.fresh };
+    this.timings = { connectMs: Date.now() - started, reused: !l.fresh }; this.client.takeDeviceTime();
   }
 
   /** End a poll: a pooled session is kept when the poll succeeded, closed otherwise. */
@@ -342,8 +350,39 @@ export class DeviceCollector {
    * not set them behaves exactly as before.
    */
   modules: PollModules = ALL_MODULES;
+  /**
+   * Send a fast poll's reads together (#301): one round trip instead of one
+   * per read. Settings → Polling can turn it off.
+   */
+  pipelineReads = true;
 
   async collectFast(): Promise<void> {
+    if (this.pipelineReads) {
+      // The reads every fast poll makes, sent together; the collectors below
+      // are served from the answers and ask the device for anything else.
+      const reads: ReadSpec[] = [
+        { command: '/interface/print', params: { stats: '' } },
+        { command: '/interface/ethernet/print', params: { stats: '' } },
+        { command: '/system/resource/print' },
+      ];
+      if (this.modules.clients) {
+        reads.push(
+          { command: '/interface/wifi/print' }, { command: '/interface/wireless/print' },
+          { command: '/ip/arp/print' }, { command: '/ip/dhcp-server/lease/print' },
+          { command: '/interface/wifi/registration-table/print' }, { command: '/interface/bridge/host/print' },
+        );
+      }
+      if (this.device.device_type === 'switch') reads.push({ command: '/interface/ethernet/poe/print' });
+      await this.client.prefetch(reads).catch(() => { /* read one by one instead */ });
+    }
+    try {
+      await this.collectFastReads();
+    } finally {
+      this.client.endPrefetch();
+    }
+  }
+
+  private async collectFastReads(): Promise<void> {
     await this.collectInterfaceTraffic();
     await this.collectResourceUsage();
     if (this.modules.clients) await this.updateClients();

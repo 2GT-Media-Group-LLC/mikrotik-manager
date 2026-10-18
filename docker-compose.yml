@@ -58,7 +58,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    environment:
+    environment: &backend-environment
       NODE_ENV: production
       TZ: ${TZ:-UTC}
       # The password is passed on its own, so any characters work in it (O3).
@@ -91,6 +91,9 @@ services:
       POLLER_INTERVAL_MS: ${POLLER_INTERVAL_MS:-10000}
       POLLER_JOB_RETENTION_SEC: ${POLLER_JOB_RETENTION_SEC:-3600}
       POLLER_JOB_RETENTION_COUNT: ${POLLER_JOB_RETENTION_COUNT:-5000}
+      # all (default): API, schedule and poll workers. api: leave polling to
+      # poller containers. See docs/scaling.md#more-workers (#301).
+      POLLER_ROLE: ${POLLER_ROLE:-all}
     ports:
       # NetFlow/IPFIX collector — UDP goes straight to the backend (nginx not involved).
       # Host port must match the netflow_collector_port app setting (default 2055).
@@ -131,6 +134,45 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  # Extra poll workers for a large fleet (#301). Off unless asked for:
+  #   docker compose --profile workers up -d --scale poller=3
+  # Each runs POLLER_CONCURRENCY polls at once alongside the backend's own.
+  # The backend keeps the schedule, the API and every other timer; set
+  # POLLER_ROLE=api on it to leave all polling to these. See docs/scaling.md.
+  poller:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    profiles: ["workers"]
+    environment:
+      <<: *backend-environment
+      POLLER_ROLE: worker
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      # The secrets the backend generated (encryption key for device logins).
+      - app_data:/app/data:ro
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - app-network
+      - data-network
+      - device-ipv6
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   postgres:
     image: postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81

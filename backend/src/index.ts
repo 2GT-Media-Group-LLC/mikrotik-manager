@@ -21,6 +21,7 @@ import { runMigrations } from './db/migrate';
 import { startProxyBackfillsInBackground } from './services/ProxyBackfillService';
 import { errorHandler } from './middleware/errorHandler';
 import { PollerService } from './services/PollerService';
+import { POLLER_ROLE } from './services/pollerRole';
 import { setSharedPollerService } from './services/pollerRef';
 import {
   setBulkAddPollerService,
@@ -468,6 +469,36 @@ app.use('/api/security/cves', cveRoutes);
 app.use(errorHandler);
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
+/**
+ * POLLER_ROLE=worker (#301): poll workers only, against the shared Redis and
+ * Postgres. Live updates go to the API container through Redis; a small
+ * health endpoint answers the container healthcheck. Started after the API
+ * container is healthy (docker-compose), so the schema is current and the
+ * secrets file it made is there to read.
+ */
+async function startPollWorker(): Promise<void> {
+  await redis.connect().catch(() => console.warn('Redis connection warning'));
+  const poller = new PollerService();
+  setSharedPollerService(poller);
+  await poller.start();
+  const health = createServer((req, res) => {
+    const ok = req.url === '/api/health';
+    res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(ok ? { status: 'ok', role: 'worker' } : { error: 'Not found' }));
+  });
+  health.listen(PORT, () => console.log(`✓ Poll worker running (health on port ${PORT})`));
+  const stop = async () => {
+    console.log('Shutting down poll worker...');
+    health.close();
+    await poller.stop();
+    await redis.quit().catch(() => {});
+    await pool.end();
+    process.exit(0);
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+}
+
 async function start(): Promise<void> {
   provisionSecrets();
 
@@ -481,6 +512,13 @@ async function start(): Promise<void> {
       console.log(`Waiting for database... (${i + 1}/10)`);
       await new Promise((r) => setTimeout(r, 3000));
     }
+  }
+
+  // A worker container (#301) polls and nothing else: the API container has
+  // run the migrations and owns the schedule and every other timer.
+  if (POLLER_ROLE === 'worker') {
+    await startPollWorker();
+    return;
   }
 
   // Run migrations

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIsFleetAdmin } from '../../hooks/useCanWrite';
 import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCw, Trash2 } from 'lucide-react';
@@ -164,7 +165,9 @@ export default function PollerHealthCard() {
         <Stat
           label="Workers"
           value={String(workers.concurrency)}
-          hint={workers.fast_interval_sec ? `fast poll every ${workers.fast_interval_sec}s` : `${(workers.poll_interval_ms || 0) / 1000}s interval`}
+          hint={(workers.processes?.length ?? 0) > 1
+            ? `in ${workers.processes!.length} processes · fast poll every ${workers.fast_interval_sec ?? '?'}s`
+            : workers.fast_interval_sec ? `fast poll every ${workers.fast_interval_sec}s` : `${(workers.poll_interval_ms || 0) / 1000}s interval`}
         />
       </div>
 
@@ -278,30 +281,103 @@ export default function PollerHealthCard() {
 function PhasesPanel({ phases, onSaved }: { phases: PollerPhases; onSaved: () => void }) {
   const isFleetAdmin = useIsFleetAdmin();
   const save = useMutation({
-    mutationFn: (on: boolean) => settingsApi.update({ poller_persistent_sessions: on }),
+    mutationFn: (v: { key: 'poller_persistent_sessions' | 'poller_pipelined_reads'; on: boolean }) => settingsApi.update({ [v.key]: v.on }),
     onSuccess: onSaved,
   });
-  const ms = (v: number | null) => (v == null ? '—' : `${v} ms`);
+  const ms = (v: number | null | undefined) => (v == null ? '—' : `${v} ms`);
+  const other = phases.avg_collect_ms != null && phases.avg_device_ms != null ? Math.max(0, phases.avg_collect_ms - phases.avg_device_ms) : null;
+  const slowest = phases.slowest ?? [];
+  const widest = Math.max(1, ...slowest.map((r) => r.total_ms));
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3 space-y-2">
+    <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3 space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="text-xs font-medium text-gray-700 dark:text-slate-200">Where a fast poll’s time goes</div>
-        <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300" title="Reuse one API session per device between polls instead of connecting each time">
-          <input type="checkbox" checked={phases.persistent_sessions} disabled={!isFleetAdmin || save.isPending}
-            onChange={(e) => save.mutate(e.target.checked)} />
-          Keep sessions open between polls
-        </label>
+        <div className="flex items-center gap-4 flex-wrap">
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300" title="Off by default: each poll opens its own connection. On: one API session per device is kept open and reused, which saves the handshake and login on every poll">
+            <input type="checkbox" checked={phases.persistent_sessions} disabled={!isFleetAdmin || save.isPending}
+              onChange={(e) => save.mutate({ key: 'poller_persistent_sessions', on: e.target.checked })} />
+            Keep sessions open between polls
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300" title="Send a fast poll’s reads together, in one round trip, instead of one after another">
+            <input type="checkbox" checked={phases.pipelined_reads} disabled={!isFleetAdmin || save.isPending}
+              onChange={(e) => save.mutate({ key: 'poller_pipelined_reads', on: e.target.checked })} />
+            Send reads together
+          </label>
+        </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-        <div><div className="text-gray-500">New session</div><div className="font-medium tabular-nums">{ms(phases.avg_connect_new_ms)}</div></div>
-        <div><div className="text-gray-500">Reused session</div><div className="font-medium tabular-nums">{ms(phases.avg_connect_reused_ms)}</div></div>
-        <div><div className="text-gray-500">Collecting</div><div className="font-medium tabular-nums">{ms(phases.avg_collect_ms)}</div></div>
-        <div><div className="text-gray-500">Polls reusing a session</div><div className="font-medium tabular-nums">{phases.reused_pct == null ? '—' : `${phases.reused_pct}%`} · {phases.open_sessions} open</div></div>
+        <div><div className="text-gray-500">Connecting</div><div className="font-medium tabular-nums">{ms(phases.avg_connect_new_ms)}</div></div>
+        <div><div className="text-gray-500">Waiting on the device</div><div className="font-medium tabular-nums">{ms(phases.avg_device_ms)}</div></div>
+        <div><div className="text-gray-500">Database and processing</div><div className="font-medium tabular-nums">{ms(other)}</div></div>
+        <div>
+          <div className="text-gray-500">Sessions kept open</div>
+          <div className="font-medium tabular-nums">
+            {phases.persistent_sessions
+              ? <>{phases.reused_pct == null ? '—' : `${phases.reused_pct}% reused`} · {phases.open_sessions} open{phases.avg_connect_reused_ms != null ? ` · ${phases.avg_connect_reused_ms} ms` : ''}</>
+              : 'Off'}
+          </div>
+        </div>
       </div>
       <p className="text-[11px] text-gray-400">
-        A new session costs a TCP and TLS handshake and a login, mostly work on the router’s CPU, plus network round trips.
-        Averages over the last fast poll of {phases.devices_measured === 1 ? 'one device' : `${phases.devices_measured} devices`}.
+        Connecting is a TCP and TLS handshake and a login: a few round trips, plus work on the router’s CPU. Waiting on the
+        device is the round trips and the router answering; the rest is this server. Averages over the last fast poll of{' '}
+        {phases.devices_measured === 1 ? 'one device' : `${phases.devices_measured} devices`}.
       </p>
+
+      {slowest.length > 0 && (
+        <div>
+          <div className="flex items-center gap-3 text-[11px] text-gray-500 mb-1.5 flex-wrap">
+            <span className="font-medium text-gray-700 dark:text-slate-200">Slowest fast polls</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-400" />connecting</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" />waiting on the device</span>
+            <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-gray-400" />database and processing</span>
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="text-gray-500 sticky top-0 bg-white dark:bg-slate-800">
+                <tr>
+                  <th className="text-left font-medium py-1">Device</th>
+                  <th className="text-right font-medium px-2">Total</th>
+                  <th className="text-right font-medium px-2">Connect</th>
+                  <th className="text-right font-medium px-2">Device</th>
+                  <th className="text-right font-medium px-2">Other</th>
+                  <th className="font-medium w-40" />
+                </tr>
+              </thead>
+              <tbody>
+                {slowest.map((r) => {
+                  const w = (v: number | null) => `${((v ?? 0) / widest) * 100}%`;
+                  return (
+                    <tr key={r.id} className="border-t border-gray-100 dark:border-slate-700/50" title={r.error ?? undefined}>
+                      <td className="py-1 pr-2 min-w-0">
+                        <Link to={`/devices/${r.id}`} className="hover:underline text-gray-900 dark:text-white">{r.name}</Link>
+                        {r.site && <span className="text-gray-400"> · {r.site}</span>}
+                        {r.reused && <span className="text-gray-400"> · reused session</span>}
+                        {r.error && <span className="text-red-500"> · failed</span>}
+                      </td>
+                      <td className="text-right px-2 tabular-nums font-medium">{r.total_ms} ms</td>
+                      <td className="text-right px-2 tabular-nums">{ms(r.connect_ms)}</td>
+                      <td className="text-right px-2 tabular-nums">{ms(r.device_ms)}</td>
+                      <td className="text-right px-2 tabular-nums">{ms(r.other_ms)}</td>
+                      <td className="pl-2">
+                        <div className="flex h-2 rounded-sm overflow-hidden bg-gray-100 dark:bg-slate-700" style={{ width: w(r.total_ms) }}>
+                          {r.connect_ms != null && r.device_ms != null ? (
+                            <>
+                              <div className="bg-amber-400" style={{ width: `${(r.connect_ms / Math.max(1, r.total_ms)) * 100}%` }} />
+                              <div className="bg-blue-500" style={{ width: `${(r.device_ms / Math.max(1, r.total_ms)) * 100}%` }} />
+                              <div className="bg-gray-400 flex-1" />
+                            </>
+                          ) : <div className="bg-gray-300 flex-1" />}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

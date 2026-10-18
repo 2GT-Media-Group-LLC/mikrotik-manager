@@ -352,3 +352,121 @@ describe('streaming cancel', () => {
     expect(internals.poisoned).toBe(true);
   }, 10_000);
 });
+
+// ── Reads sent together (#301) ───────────────────────────────────────────────
+
+describe('executeMany and prefetch', () => {
+  const tagged = (type: string, tag: string, ...kv: string[]): Buffer =>
+    Buffer.concat([word(type), ...kv.map(p => word('=' + p)), word(`.tag=${tag}`), Buffer.from([0x00])]);
+  type Internals = { buffer: Buffer; connected: boolean; poisoned: boolean; socket: unknown; processBuffer(): void };
+
+  /** A client whose fake device answers each sentence written with `reply(command, tag)`. */
+  function batchClient(reply: (command: string, tag: string | undefined) => Buffer | null, opts: { hold?: boolean } = {}) {
+    const client = new RouterOSClient('127.0.0.1', 8728, 'x', 'x');
+    const internals = client as unknown as Internals;
+    const written: string[] = [];
+    const held: Buffer[] = [];
+    internals.connected = true;
+    internals.socket = {
+      destroy() {},
+      write: (data: Buffer, cb: () => void) => {
+        cb();
+        const text = data.toString('latin1');
+        const command = /\/[\w/-]+/.exec(text)![0];
+        const tag = /\.tag=(\d+)/.exec(text)?.[1];
+        written.push(command);
+        const out = reply(command, tag);
+        if (!out) return;
+        if (opts.hold) held.push(out);
+        else setImmediate(() => { internals.buffer = Buffer.concat([internals.buffer, out]); internals.processBuffer(); });
+      },
+    };
+    /** Deliver held replies in the given order (to interleave them). */
+    const release = (order: number[]) => setImmediate(() => {
+      internals.buffer = Buffer.concat([internals.buffer, ...order.map((i) => held[i])]);
+      internals.processBuffer();
+    });
+    return { client, internals, written, release };
+  }
+
+  it('sorts interleaved replies back to their commands; one failing read fails only itself', async () => {
+    const { client, release } = batchClient((cmd, tag) => {
+      if (cmd === '/interface/print') return Buffer.concat([tagged('!re', tag!, 'name=ether1'), tagged('!re', tag!, 'name=ether2'), tagged('!done', tag!)]);
+      if (cmd === '/system/resource/print') return Buffer.concat([tagged('!re', tag!, 'cpu-load=7'), tagged('!done', tag!)]);
+      return Buffer.concat([tagged('!trap', tag!, 'message=no such command prefix'), tagged('!done', tag!)]);
+    }, { hold: true });
+    const p = client.executeMany([
+      { command: '/interface/print', params: { stats: '' } },
+      { command: '/system/resource/print' },
+      { command: '/interface/wireless/print' },
+    ]);
+    await new Promise((r) => setImmediate(r));
+    release([2, 1, 0]);
+    const [ifaces, res, wl] = await p;
+    expect(ifaces.rows).toEqual([{ name: 'ether1' }, { name: 'ether2' }]);
+    expect(res.rows).toEqual([{ 'cpu-load': '7' }]);
+    expect(wl.error?.message).toBe('no such command prefix');
+  });
+
+  it('drops the connection on a reply for no command it sent', async () => {
+    const { client, internals } = batchClient((_cmd, tag) => Buffer.concat([tagged('!re', '999', 'x=1'), tagged('!done', tag!)]));
+    await expect(client.executeMany([{ command: '/system/resource/print' }])).rejects.toThrow('Unexpected reply');
+    expect(internals.poisoned).toBe(true);
+  });
+
+  it('refuses writes', async () => {
+    const { client } = batchClient(() => null);
+    await expect(client.executeMany([{ command: '/interface/set', params: { numbers: 'ether1', disabled: 'yes' } }]))
+      .rejects.toThrow('reads only');
+  });
+
+  it('serves the same read from a prefetch, each caller its own copy, and nothing else', async () => {
+    const { client, written } = batchClient((cmd, tag) => tag
+      ? Buffer.concat([tagged('!re', tag, 'name=a'), tagged('!done', tag)])
+      : Buffer.concat([sentence(`name=fresh-${cmd}`), done()]));
+    await client.prefetch([{ command: '/interface/print', params: { stats: '' } }]);
+    expect(written).toEqual(['/interface/print']);
+
+    const first = await client.execute('/interface/print', { stats: '' });
+    first[0].name = 'changed';
+    expect(await client.execute('/interface/print', { stats: '' })).toEqual([{ name: 'a' }]);
+    expect(written).toHaveLength(1);
+
+    // Different parameters: asked of the device.
+    expect(await client.execute('/interface/print')).toEqual([{ name: 'fresh-/interface/print' }]);
+    expect(written).toHaveLength(2);
+  });
+
+  it('a write, or the end of the poll, forgets the prefetch', async () => {
+    const { client, written } = batchClient((cmd, tag) => tag
+      ? Buffer.concat([tagged('!re', tag, 'v=old'), tagged('!done', tag)])
+      : Buffer.concat([cmd.endsWith('/print') ? sentence('v=new') : Buffer.alloc(0), done()]));
+    await client.prefetch([{ command: '/system/identity/print' }]);
+    await client.execute('/system/identity/set', { name: 'x' });
+    expect(await client.execute('/system/identity/print')).toEqual([{ v: 'new' }]);
+
+    await client.prefetch([{ command: '/system/identity/print' }]);
+    client.endPrefetch();
+    expect(await client.execute('/system/identity/print')).toEqual([{ v: 'new' }]);
+    expect(written.filter((c) => c === '/system/identity/print')).toHaveLength(4);
+  });
+
+  it('counts time waiting on the device, but not answers served from a prefetch (#301)', async () => {
+    const { client } = batchClient((_cmd, tag) => tag
+      ? Buffer.concat([tagged('!re', tag, 'v=1'), tagged('!done', tag)])
+      : Buffer.concat([sentence('v=2'), done()]));
+    client.takeDeviceTime();
+    await client.prefetch([{ command: '/system/resource/print' }]);
+    await client.execute('/system/identity/print');
+    const waited = client.takeDeviceTime();
+    expect(waited).toBeGreaterThanOrEqual(0);
+    await client.execute('/system/resource/print'); // from the prefetch
+    expect(client.takeDeviceTime()).toBe(0);
+  });
+
+  it('rethrows a prefetched read that failed, as the device would have', async () => {
+    const { client } = batchClient((_cmd, tag) => Buffer.concat([tagged('!trap', tag!, 'message=no such command'), tagged('!done', tag!)]));
+    await client.prefetch([{ command: '/interface/wifi/print' }]);
+    await expect(client.execute('/interface/wifi/print')).rejects.toThrow('no such command');
+  });
+});

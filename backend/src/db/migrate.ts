@@ -1578,6 +1578,8 @@ CREATE INDEX IF NOT EXISTS idx_platform_backups_created ON platform_backups (cre
 ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_connect_ms INTEGER;
 ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_collect_ms INTEGER;
 ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_session_reused BOOLEAN;
+-- Of the collecting, the time spent waiting on the device's answers; the rest is the database and processing.
+ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_device_ms INTEGER;
 
 -- Groups of sites (#306): a customer with several sites. A site belongs to at
 -- most one group; devices belong through their site. Access can be given per

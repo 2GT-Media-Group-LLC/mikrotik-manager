@@ -51,6 +51,18 @@ export class RouterOSTrapError extends RouterOSError {
   }
 }
 
+/** A read for executeMany() and prefetch(). */
+export interface ReadSpec {
+  command: string;
+  params?: Record<string, string>;
+  queries?: string[];
+}
+
+/** The same read, whatever order its parameters were given in. */
+function readKey(command: string, params: Record<string, string>, queries: string[]): string {
+  return JSON.stringify([command, Object.entries(params).sort(([a], [b]) => a.localeCompare(b)), queries]);
+}
+
 export class RouterOSClient extends EventEmitter {
   private socket: net.Socket | null = null;
   private buffer: Buffer = Buffer.alloc(0);
@@ -71,6 +83,22 @@ export class RouterOSClient extends EventEmitter {
   private poisoned = false;
 
   private tagCounter = 0;
+
+  /**
+   * Answers to reads sent together at the start of a poll (#301), served to
+   * the same reads made during it. Null outside a poll; any write clears it.
+   */
+  private prefetched: Map<string, { rows?: Record<string, string>[]; error?: Error }> | null = null;
+
+  /** Time spent waiting on the device's answers, for a poll's breakdown (#301). */
+  private waitedMs = 0;
+
+  /** The time spent waiting on the device since the last call, and start again. */
+  takeDeviceTime(): number {
+    const ms = this.waitedMs;
+    this.waitedMs = 0;
+    return ms;
+  }
 
   private readonly useTls: boolean;
 
@@ -245,6 +273,15 @@ export class RouterOSClient extends EventEmitter {
     if (preview && !isReadCommand(command, params)) {
       return this.recordPreviewWrite(preview, command, params);
     }
+    if (this.prefetched) {
+      if (!isReadCommand(command, params)) this.prefetched = null;
+      else {
+        const hit = this.prefetched.get(readKey(command, params, queries));
+        if (hit?.error) throw hit.error;
+        // Each caller gets its own rows, as from the device.
+        if (hit?.rows) return hit.rows.map((r) => Object.assign(Object.create(null) as Record<string, string>, r));
+      }
+    }
 
     let result!: Record<string, string>[];
     let error!: Error;
@@ -252,7 +289,8 @@ export class RouterOSClient extends EventEmitter {
     await new Promise<void>((resolve) => {
       this.operationChain = this.operationChain.then(async () => {
         try {
-          result = await this._executeRaw(command, params, queries, opts.timeoutMs);
+          const t = Date.now();
+          try { result = await this._executeRaw(command, params, queries, opts.timeoutMs); } finally { this.waitedMs += Date.now() - t; }
         } catch (err) {
           error = err as Error;
         }
@@ -262,6 +300,97 @@ export class RouterOSClient extends EventEmitter {
 
     if (error) throw error;
     return result;
+  }
+
+  /**
+   * Several reads in one round trip (#301). Each is sent with its own tag
+   * straight after the last, and the replies, which RouterOS may interleave,
+   * are sorted back by tag. Reads only, so the order they run in can't matter.
+   * One failing read (a menu this device doesn't have) fails that entry, not
+   * the rest. Anything that doesn't fit (a reply for no command sent, a
+   * timeout) drops the connection, as for any read.
+   */
+  async executeMany(
+    reads: ReadSpec[],
+    opts: { timeoutMs?: number } = {}
+  ): Promise<Array<{ rows?: Record<string, string>[]; error?: Error }>> {
+    for (const r of reads) {
+      if (!isReadCommand(r.command, r.params ?? {})) throw new RouterOSError(`executeMany is for reads only: ${r.command}`);
+    }
+    if (reads.length === 0) return [];
+    let result!: Array<{ rows?: Record<string, string>[]; error?: Error }>;
+    let error!: Error;
+    await new Promise<void>((resolve) => {
+      this.operationChain = this.operationChain.then(async () => {
+        try {
+          const t = Date.now();
+          try { result = await this._executeManyRaw(reads, opts.timeoutMs); } finally { this.waitedMs += Date.now() - t; }
+        } catch (err) {
+          error = err as Error;
+        }
+        resolve();
+      });
+    });
+    if (error) throw error;
+    return result;
+  }
+
+  private async _executeManyRaw(
+    reads: ReadSpec[],
+    timeoutMs?: number
+  ): Promise<Array<{ rows?: Record<string, string>[]; error?: Error }>> {
+    if (!this.socket || !this.connected) throw new RouterOSError('Not connected');
+    const tags = reads.map(() => String(++this.tagCounter));
+    for (let i = 0; i < reads.length; i++) {
+      const r = reads[i];
+      const words = [r.command];
+      for (const [key, value] of Object.entries(r.params ?? {})) words.push(`=${key}=${value}`);
+      for (const q of r.queries ?? []) words.push(q);
+      words.push(`.tag=${tags[i]}`);
+      await this.sendSentence(words);
+    }
+    const index = new Map(tags.map((t, i) => [t, i]));
+    const out = reads.map(() => ({ rows: [] as Record<string, string>[], error: undefined as Error | undefined, done: false }));
+    let remaining = reads.length;
+    while (remaining > 0) {
+      const sentence = await this.readNextSentence(timeoutMs);
+      if (sentence.type === '!fatal') {
+        this.connected = false;
+        throw new RouterOSError(sentence.words['message'] || 'Fatal error received');
+      }
+      const i = sentence.tag === undefined ? undefined : index.get(sentence.tag);
+      if (i === undefined || out[i].done) {
+        this.poison('a reply did not belong to any command waiting for one');
+        throw new RouterOSError('Unexpected reply from the device');
+      }
+      const o = out[i];
+      if (sentence.type === '!re') o.rows.push(sentence.words);
+      else if (sentence.type === '!trap') {
+        // The first trap's message, as execute() reports it; !done follows.
+        o.error ??= new RouterOSTrapError(
+          sentence.words['message'] || `Command failed: ${reads[i].command}`, sentence.words['category']);
+      } else if (sentence.type === '!done') {
+        o.done = true;
+        remaining--;
+      }
+      // !empty (RouterOS 7.18+): no rows; its !done follows.
+    }
+    return out.map((o) => (o.error ? { error: o.error } : { rows: o.rows }));
+  }
+
+  /**
+   * Send a poll's reads together and keep the answers for the rest of the
+   * poll (#301): the same read made during it is served from them, and
+   * anything else goes to the device as before. endPrefetch() forgets them.
+   * Fails quietly: the reads are then made one by one, as without it.
+   */
+  async prefetch(reads: ReadSpec[], opts: { timeoutMs?: number } = {}): Promise<void> {
+    const results = await this.executeMany(reads, opts);
+    this.prefetched = new Map(reads.map((r, i) => [readKey(r.command, r.params ?? {}, r.queries ?? []), results[i]]));
+  }
+
+  endPrefetch(): void {
+    this.prefetched = null;
   }
 
   /** Record a write a preview would have sent, with the item as it is now. */
@@ -685,7 +814,8 @@ export class RouterOSClient extends EventEmitter {
     await new Promise<void>((resolve) => {
       this.operationChain = this.operationChain.then(async () => {
         try {
-          result = await this._executeStreamingRaw(command, params, maxDurationMs, opts);
+          const t = Date.now();
+          try { result = await this._executeStreamingRaw(command, params, maxDurationMs, opts); } finally { this.waitedMs += Date.now() - t; }
         } catch (err) {
           error = err as Error;
         }

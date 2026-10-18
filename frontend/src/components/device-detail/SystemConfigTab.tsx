@@ -719,7 +719,8 @@ export default function SystemConfigTab({ deviceId, device }: Props) {
           </div>
         )}
 
-        <div className="card p-5">
+        {/* Spaced from the RouterOS section below (#308). */}
+        <div className="card p-5 mb-6">
 
           {/* No SSH login stored means the key is installed for the API user (see resolveKeyCredentials). */}
           <SshKeyCard deviceId={deviceId} sshUsername={device.ssh_username || device.api_username} />
