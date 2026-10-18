@@ -47,6 +47,27 @@ run "backend: lint"        backend  npm run lint
 run "backend: type-check"  backend  npx tsc --noEmit
 run "backend: build"       backend  npm run build
 run "backend: tests"       backend  npx jest --silent
+
+# The platform-backup round trip against a real Postgres, as CI runs it with its
+# service database. A throwaway container on a spare port; skipped without Docker.
+e2e_pg() {
+  local name=mtm-preflight-pg port=55433
+  docker rm -f "$name" >/dev/null 2>&1
+  docker run -d --name "$name" -e POSTGRES_PASSWORD=e2e -e POSTGRES_DB=mtm_e2e \
+    -p "127.0.0.1:$port:5432" postgres:15-alpine >/dev/null || return 1
+  local ok=1
+  for _ in $(seq 1 30); do docker exec "$name" pg_isready -U postgres >/dev/null 2>&1 && { ok=0; break; }; sleep 1; done
+  [[ $ok -eq 0 ]] && PG_E2E_URL="postgres://postgres:e2e@127.0.0.1:$port/mtm_e2e" \
+    npx jest --silent src/services/platformBackup/__tests__/roundtrip.pg.test.ts
+  local rc=$?
+  docker rm -f "$name" >/dev/null 2>&1
+  return $rc
+}
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  run "backend: backup round trip"  backend  e2e_pg
+else
+  printf '  %-34s%s\n' "backend: backup round trip" "skipped (no Docker)"
+fi
 run "frontend: lint"       frontend npm run lint
 run "frontend: type-check" frontend npx tsc --noEmit
 run "frontend: tests"      frontend npm test

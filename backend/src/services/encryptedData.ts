@@ -220,3 +220,8 @@ export async function countUnreadable(): Promise<number> {
   const status = await encryptionStatus(false);
   return status.reduce((n, l) => n + l.unreadable, 0);
 }
+
+/** Which table columns hold encrypted values (read-only), for comparing backups (#2 of 2026-10-18). */
+export function encryptedColumns(): ReadonlyArray<{ table: string; column: string; label: string }> {
+  return COLUMNS.map(({ table, column, label }) => ({ table, column, label }));
+}

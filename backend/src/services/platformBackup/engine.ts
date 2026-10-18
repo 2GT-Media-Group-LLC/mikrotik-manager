@@ -20,7 +20,7 @@ import { readHeader, readRecords, type BackupContents, type BackupRecord } from 
 const FETCH = 2000;
 const INSERT_BATCH = 1000;
 
-const qi = (name: string) => `"${name.replace(/"/g, '""')}"`;
+export const qi = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
 /** Is backup version a no newer than b? "0.62.0-beta" style, numeric parts only. */
 export function versionNotNewer(a: string, b: string): boolean {
@@ -33,14 +33,14 @@ export function versionNotNewer(a: string, b: string): boolean {
   return true;
 }
 
-async function publicTables(client: PoolClient): Promise<string[]> {
+export async function publicTables(client: PoolClient): Promise<string[]> {
   const r = await client.query<{ relname: string }>(
     `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY c.relname`);
   return r.rows.map((x) => x.relname);
 }
 
-async function tableColumns(client: PoolClient, table: string): Promise<string[]> {
+export async function tableColumns(client: PoolClient, table: string): Promise<string[]> {
   const r = await client.query<{ column_name: string }>(
     `SELECT column_name FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`, [table]);
@@ -65,7 +65,7 @@ async function jsonNotNullColumns(client: PoolClient): Promise<Map<string, Map<s
   return out;
 }
 
-async function primaryKey(client: PoolClient, table: string): Promise<string[]> {
+export async function primaryKey(client: PoolClient, table: string): Promise<string[]> {
   const r = await client.query<{ attname: string }>(
     `SELECT a.attname FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
       WHERE i.indrelid = $1::regclass AND i.indisprimary ORDER BY array_position(i.indkey, a.attnum)`, [qi(table)]);

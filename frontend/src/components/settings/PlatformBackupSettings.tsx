@@ -9,7 +9,7 @@ import { formatDistanceToNow } from 'date-fns';
 import {
   platformBackupApi, alertsApi,
   type PlatformBackupContents, type PlatformBackupDestination, type PlatformBackupRow, type PlatformBackupHeader,
-  type PlatformBackupSchedule, type PlatformRestoreState,
+  type PlatformBackupSchedule, type PlatformRestoreState, type PlatformBackupCompare, type PlatformBackupTableDiff,
 } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 
@@ -349,6 +349,44 @@ function DestinationsCard({ destinations, onChange }: { destinations: PlatformBa
 
 type RestoreSource = { backup_id?: number; upload_id?: string; label: string; header: PlatformBackupHeader };
 
+/** What restoring would change here, from /compare. */
+function CompareView({ result, mode }: { result: PlatformBackupCompare; mode: 'config' | 'full' }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const counts = (d: PlatformBackupTableDiff) => [
+    d.added ? `${d.added} added` : '', d.removed ? `${d.removed} removed` : '', d.changed ? `${d.changed} changed` : '',
+  ].filter(Boolean).join(', ');
+  return (
+    <div className="rounded-md border border-gray-200 dark:border-slate-700 p-3 space-y-2 max-h-72 overflow-y-auto">
+      <p className="text-xs font-semibold text-gray-700 dark:text-slate-200">Restoring this backup would change:</p>
+      {result.identical ? (
+        <p className="text-xs text-green-700 dark:text-green-400">Nothing in the configuration: it matches this server{mode === 'full' && result.history.length ? ' (history differs, below)' : ''}.</p>
+      ) : result.tables.map((d) => (
+        <div key={d.table} className="text-xs">
+          <button type="button" className="flex items-center gap-1 w-full text-left hover:underline" onClick={() => setOpen(open === d.table ? null : d.table)}>
+            <span className="font-medium text-gray-800 dark:text-slate-200">{d.label}</span>
+            <span className="text-gray-500">{counts(d)}</span>
+          </button>
+          {open === d.table && (
+            <ul className="ml-3 mt-1 space-y-0.5 text-gray-600 dark:text-slate-400">
+              {d.samples.added.map((r) => <li key={`a${r}`}><span className="text-green-600">+</span> {r}</li>)}
+              {d.samples.removed.map((r) => <li key={`r${r}`}><span className="text-red-600">−</span> {r}</li>)}
+              {d.samples.changed.map((c) => <li key={`c${c.row}`}><span className="text-amber-600">~</span> {c.row}: {c.fields.join(', ')}</li>)}
+              {(d.added + d.removed + d.changed) > (d.samples.added.length + d.samples.removed.length + d.samples.changed.length) && <li className="italic">and more</li>}
+            </ul>
+          )}
+        </div>
+      ))}
+      {mode === 'full' && result.history.length > 0 && (
+        <div className="text-xs text-gray-500 dark:text-slate-400 pt-1 border-t border-gray-100 dark:border-slate-700">
+          History replaced too: {result.history.slice(0, 6).map((h) => `${h.table} ${h.current.toLocaleString()} → ${h.backup.toLocaleString()}`).join(', ')}{result.history.length > 6 ? ', …' : ''}
+        </div>
+      )}
+      {mode === 'config' && <p className="text-[11px] text-gray-400">Live state polling keeps up to date (status, versions, last seen) isn’t counted. Devices the backup doesn’t have go with their history.</p>}
+      {result.skippedTables.length > 0 && <p className="text-[11px] text-gray-400">Not restored here (this version doesn’t have them): {result.skippedTables.join(', ')}</p>}
+    </div>
+  );
+}
+
 function RestoreDialog({ source, appVersion, onClose, onStarted }: { source: RestoreSource; appVersion: string; onClose: () => void; onStarted: () => void }) {
   const [pass, setPass] = useState('');
   const [mode, setMode] = useState<'config' | 'full'>(source.header.contents === 'config+database' ? 'full' : 'config');
@@ -362,6 +400,7 @@ function RestoreDialog({ source, appVersion, onClose, onStarted }: { source: Res
     onError: (e) => { setChecked(false); setErr(errText(e)); },
   });
   const go = useMutation({ mutationFn: () => platformBackupApi.restore(src, pass, mode), onSuccess: onStarted, onError: (e) => setErr(errText(e)) });
+  const compare = useMutation({ mutationFn: () => platformBackupApi.compare(src, pass).then((r) => r.data), onError: (e) => setErr(errText(e)) });
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="card w-full max-w-lg mx-4 border-2 border-red-500">
@@ -394,6 +433,13 @@ function RestoreDialog({ source, appVersion, onClose, onStarted }: { source: Res
             </button>
           ) : (
             <>
+              {compare.data ? <CompareView result={compare.data} mode={mode} /> : (
+                <button className="btn-secondary text-sm flex items-center gap-2" disabled={compare.isPending} onClick={() => compare.mutate()}
+                  title="Read the backup and list what restoring it would add, remove or change here. Nothing is changed.">
+                  {compare.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  {compare.isPending ? 'Comparing…' : 'Compare with this server'}
+                </button>
+              )}
               <label className="block">Type <span className="font-mono font-semibold">RESTORE</span> to confirm
                 <input className="input mt-1 font-mono" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="RESTORE" /></label>
               <div className="flex justify-end gap-2">

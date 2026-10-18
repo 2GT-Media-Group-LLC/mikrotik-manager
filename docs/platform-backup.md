@@ -89,6 +89,25 @@ restore, and type `RESTORE` to confirm.
 | **Configuration only** | Devices, users, settings and the rest of the setup are replaced with the backup's. History is kept for devices that are in the backup. Devices that aren't in the backup are removed, with their history |
 | **Everything** | The whole database is replaced with the backup, history included. Only for configuration + database backups. Use this to move MikroTik Manager to a new server |
 
+### Seeing what a restore would change
+
+After **Check passphrase**, **Compare with this server** reads the backup and lists what
+restoring it would change here, without changing anything:
+
+- for each kind of configuration (devices, users, settings, alert rules and so on), how many
+  entries the restore would **add**, **remove** and **change**, and which; click a line to see
+  them, with the fields that differ;
+- for an **Everything** restore, which history tables would change size (events, clients...).
+
+Only what someone configured counts. Timestamps, and the state polling keeps up to date (a
+device's status, RouterOS version, health, last seen), are left out, or every device would
+always differ. Passwords and other secrets are compared after decryption and reported as
+"(secret)", never shown.
+
+It's also a way to check a backup is complete: compare one made a moment ago and it should
+match. Every push runs the same check in CI: a backup of a test database is compared, restored
+both ways, and restored under a different encryption key, and must come back identical.
+
 Then:
 
 1. The current state is backed up first, with the passphrase you entered, so you can go

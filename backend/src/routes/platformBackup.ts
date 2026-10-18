@@ -17,6 +17,7 @@ import {
 } from '../services/platformBackup/service';
 import { readHeader, unlock, WrongPassphraseError, type BackupContents } from '../services/platformBackup/format';
 import { versionNotNewer } from '../services/platformBackup/engine';
+import { compareWithFile } from '../services/platformBackup/compare';
 import { LOCAL_DIR, UPLOAD_DIR, ensureLocalDir, testDestination, type DestinationType } from '../services/platformBackup/destinations';
 
 const router = Router();
@@ -195,6 +196,20 @@ router.post('/check', async (req: Request, res: Response) => {
     const { header } = await readHeader(src.file);
     unlock(header, String(req.body?.passphrase ?? ''));
     res.json({ ok: true, header, restorable: versionNotNewer(header.app_version, APP_VERSION) });
+  } catch (err) {
+    fail(res, err instanceof WrongPassphraseError ? 400 : 422, (err as Error).message);
+  }
+});
+
+// POST /compare { backup_id | upload_id, passphrase } — what a restore would change; reads only.
+router.post('/compare', async (req: Request, res: Response) => {
+  const src = await sourceFile(req.body ?? {});
+  if (!src) return fail(res, 404, 'Backup not found');
+  if (isRestoring()) return fail(res, 409, 'A restore is running.');
+  try {
+    const { header } = await readHeader(src.file);
+    unlock(header, String(req.body?.passphrase ?? ''));
+    res.json(await compareWithFile(src.file, String(req.body.passphrase)));
   } catch (err) {
     fail(res, err instanceof WrongPassphraseError ? 400 : 422, (err as Error).message);
   }

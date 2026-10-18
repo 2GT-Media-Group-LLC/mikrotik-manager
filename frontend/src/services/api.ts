@@ -2467,6 +2467,17 @@ export interface PlatformRestoreState {
   phase: 'idle' | 'pre-backup' | 'restoring' | 'restarting' | 'failed'; message: string; startedAt?: string | null;
   error?: string; result?: { mode: string; tables: number; rows: number; reencrypted: number; unreadable: number };
 }
+export interface PlatformBackupTableDiff {
+  table: string; label: string; added: number; removed: number; changed: number;
+  samples: { added: string[]; removed: string[]; changed: { row: string; fields: string[] }[] };
+}
+export interface PlatformBackupCompare {
+  contents: PlatformBackupContents; appVersion: string; createdAt: string;
+  tables: PlatformBackupTableDiff[];
+  history: { table: string; current: number; backup: number }[];
+  skippedTables: string[];
+  identical: boolean;
+}
 export interface PlatformBackupOverview {
   app_version: string; min_passphrase: number; schedule: PlatformBackupSchedule;
   destinations: PlatformBackupDestination[]; backups: PlatformBackupRow[]; restore: PlatformRestoreState;
@@ -2486,6 +2497,9 @@ export const platformBackupApi = {
     }),
   check: (src: { backup_id?: number; upload_id?: string }, passphrase: string) =>
     api.post<{ ok: boolean; header: PlatformBackupHeader; restorable: boolean }>('/platform-backup/check', { ...src, passphrase }),
+  // What a restore would change, read-only. Reads the whole file, so allow time.
+  compare: (src: { backup_id?: number; upload_id?: string }, passphrase: string) =>
+    api.post<PlatformBackupCompare>('/platform-backup/compare', { ...src, passphrase }, { timeout: 600_000 }),
   restore: (src: { backup_id?: number; upload_id?: string }, passphrase: string, mode: 'config' | 'full') =>
     api.post('/platform-backup/restore', { ...src, passphrase, mode, confirm: 'RESTORE' }),
   restoreProgress: () => api.get<{ phase: PlatformRestoreState['phase']; message: string }>('/platform-backup/restore/progress'),

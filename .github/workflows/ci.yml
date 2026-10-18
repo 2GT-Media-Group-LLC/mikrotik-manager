@@ -64,6 +64,21 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # A throwaway Postgres for the platform-backup round-trip test, the same
+    # image the stack runs (pinned to the same digest as docker-compose.yml).
+    services:
+      postgres:
+        image: postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
+        env:
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: mtm_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -86,8 +101,12 @@ jobs:
 
       # The crypto, secrets, auth and Change Guard tests. They used to run only
       # in the local preflight, so main could break them without CI noticing.
+      # PG_E2E_URL turns on the platform-backup round trip against the
+      # service database above (backup, compare, restore, restore under a new key).
       - name: Tests
         run: npm test
+        env:
+          PG_E2E_URL: postgres://postgres:e2e@localhost:5432/mtm_e2e
 
       - name: Build
         run: npm run build
