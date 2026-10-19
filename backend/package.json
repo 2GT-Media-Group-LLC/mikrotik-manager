@@ -15,7 +15,7 @@
   "dependencies": {
     "@influxdata/influxdb-client": "^1.33.2",
     "@influxdata/influxdb-client-apis": "^1.35.0",
-    "@peculiar/x509": "2.1.0",
+    "@peculiar/x509": "2.2.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.81.2",
     "compression": "^1.8.2",
