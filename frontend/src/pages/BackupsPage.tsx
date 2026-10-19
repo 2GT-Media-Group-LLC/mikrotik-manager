@@ -634,7 +634,7 @@ export default function BackupsPage() {
               <div className="p-5 space-y-4">
                 <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300 space-y-1">
                   <p className="font-semibold">
-                    Restore runs this backup's commands on the device's running configuration.
+                    Restore runs this backup&apos;s commands on the device&apos;s running configuration.
                   </p>
                   <p>
                     Settings in the backup are applied over the current ones; the device may drop your connection
