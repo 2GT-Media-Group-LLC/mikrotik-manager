@@ -33,7 +33,7 @@
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "reflect-metadata": "0.2.2",
-    "socket.io": "^4.6.1",
+    "socket.io": "^4.8.4",
     "ssh2": "^1.14.0"
   },
   "devDependencies": {
