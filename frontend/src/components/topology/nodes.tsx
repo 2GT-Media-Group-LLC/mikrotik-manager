@@ -143,16 +143,33 @@ function ManualNode({ data }: { data: Record<string, unknown> }) {
 function ClientGroupNode({ data }: { data: Record<string, unknown> }) {
   const g = data as { count: number; wireless: number; expanded?: boolean; label?: string };
   return (
-    <div className="px-2.5 py-1.5 text-xs rounded-full bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 shadow-sm select-none cursor-pointer flex items-center gap-1.5"
-      style={{ border: '1px solid #7dd3fc' }} title={g.expanded ? 'Click to fold them back into a count' : 'Click to show each client'}>
+    <div className="px-2.5 py-1.5 text-xs rounded-full bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 shadow-sm select-none cursor-pointer flex items-center gap-1.5 max-w-[225px]"
+      style={{ border: '1px solid #7dd3fc' }}
+      title={`${g.label ? `${g.label}: ` : ''}${g.count} client${g.count === 1 ? '' : 's'}. ${g.expanded ? 'Click to fold them back into a count' : 'Click to show each client'}`}>
       <Handles connectable={false} />
-      <Users className="w-3.5 h-3.5" />
-      {g.label && <span className="font-semibold">{g.label} ·</span>}
-      <span className="font-medium">{g.count} client{g.count === 1 ? '' : 's'}</span>
+      <Users className="w-3.5 h-3.5 flex-shrink-0" />
+      {/* A long VLAN name is cut short; the whole of it is in the hover (#296). */}
+      {g.label && <span className="font-semibold truncate min-w-0">{g.label} ·</span>}
+      <span className="font-medium whitespace-nowrap flex-shrink-0">{g.count} client{g.count === 1 ? '' : 's'}</span>
       {g.wireless > 0 && <span className="text-sky-500/80 flex items-center gap-0.5"><Wifi className="w-3 h-3" />{g.wireless}</span>}
       {g.expanded ? <ChevronUp className="w-3 h-3 opacity-60" /> : <ChevronDown className="w-3 h-3 opacity-60" />}
     </div>
   );
+}
+
+/** What a client card's hover tells (#296): where and when it was seen. */
+function clientHover(c: TopologyClient): string {
+  const lines = [
+    c.name,
+    c.ip ? `IP ${c.ip}` : null,
+    `MAC ${c.mac}`,
+    c.vendor ? `Vendor ${c.vendor}` : null,
+    c.vlan ? `VLAN ${c.vlan.replace(/^VLAN\s+/i, '')}` : null,
+    c.interface ? `${c.wireless ? 'Wireless on' : 'Port'} ${c.interface}` : (c.wireless ? 'Wireless' : 'Wired'),
+    c.lastSeen ? `Last seen ${new Date(c.lastSeen).toLocaleString()}` : null,
+    c.portKnown ? 'Click to open the client' : 'Only seen in ARP or on an uplink, so where it plugs in is a guess. Click to open the client',
+  ];
+  return lines.filter(Boolean).join('\n');
 }
 
 function ClientNode({ data }: { data: Record<string, unknown> }) {
@@ -160,13 +177,15 @@ function ClientNode({ data }: { data: Record<string, unknown> }) {
   return (
     <div className="px-2.5 py-1.5 min-w-[120px] max-w-[170px] text-[11px] rounded-md bg-white dark:bg-slate-800 shadow-sm select-none cursor-pointer"
       style={{ border: '1px solid #bae6fd' }}
-      title={c.portKnown ? 'Click to open the client' : 'Only seen in ARP or on an uplink, so where it plugs in is a guess. Click to open the client'}>
+      title={clientHover(c)}>
       <Handles connectable={false} />
       <div className="flex items-center gap-1">
         {c.wireless ? <Wifi className="w-3 h-3 text-sky-500 flex-shrink-0" /> : <Cable className="w-3 h-3 text-gray-400 flex-shrink-0" />}
         <span className="font-medium truncate text-gray-800 dark:text-slate-200">{c.name}</span>
       </div>
       {c.ip && <div className="font-mono text-gray-400 dark:text-slate-500 truncate">{c.ip}</div>}
+      <div className="font-mono text-[10px] text-gray-400 dark:text-slate-500 truncate">{c.mac}</div>
+      {c.vendor && c.vendor !== c.name && <div className="text-[10px] text-gray-400 dark:text-slate-500 truncate">{c.vendor}</div>}
       {!c.portKnown && <div className="text-[10px] text-gray-400 italic">port not known</div>}
     </div>
   );

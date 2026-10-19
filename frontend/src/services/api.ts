@@ -2256,6 +2256,9 @@ export const sitesApi = {
   update: (id: number, payload: SitePayload) =>
     api.put<import('../store/siteStore').Site>(`/sites/${id}`, payload),
   remove: (id: number) => api.delete<{ ok: boolean }>(`/sites/${id}`),
+  /** Move devices into this site, several at once (#306). */
+  moveDevices: (id: number, deviceIds: number[]) =>
+    api.post<{ ok: boolean; moved: number }>(`/sites/${id}/devices`, { deviceIds }),
   /** Settings this site overrides (#261); null in a PUT clears one. */
   getPollSettings: (id: number) => api.get<PollSettings>(`/sites/${id}/poll-settings`),
   setPollSettings: (id: number, data: Record<string, number | boolean | null>) => api.put<PollSettings>(`/sites/${id}/poll-settings`, data),

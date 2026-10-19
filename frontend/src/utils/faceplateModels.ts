@@ -86,7 +86,29 @@ export function stackCages<T>(cages: T[]): StaggerBlock<T>[] {
   return out;
 }
 
-/** The boxes a cage draws: its one real port, or its real breakout lanes. */
-export function cageTiles<T>(cage: { lanes: T[]; singlePort?: T }): T[] {
-  return cage.singlePort ? [cage.singlePort] : cage.lanes;
+/** A rate like "100Gbps" or "25G" in Gbit/s; null when it isn't known. */
+function gbps(rate: string | null | undefined): number | null {
+  const m = /^([\d.]+)\s*([GM])/i.exec(rate ?? '');
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  return m[2].toUpperCase() === 'G' ? n : n / 1000;
+}
+
+interface LaneState { name?: string; running?: boolean; disabled?: boolean; link_rate?: string | null; speed?: string }
+
+/**
+ * The boxes a cage draws: its one real port, or its breakout lanes.
+ *
+ * A 40G or 100G module in a breakout-capable cage still shows in RouterOS as
+ * four lanes, with only the first running and the rest unusable. That's one
+ * port in use, so it's drawn as that one port. Otherwise every lane is drawn
+ * with its own state: the faceplate used to paint all four green whenever one
+ * lane ran, including a breakout cable with three of its ends unplugged
+ * (discussion #85).
+ */
+export function cageTiles<T extends LaneState>(cage: { lanes: T[]; singlePort?: T }): T[] {
+  if (cage.singlePort) return [cage.singlePort];
+  const running = cage.lanes.filter((l) => l.running && !l.disabled);
+  if (running.length === 1 && (gbps(running[0].link_rate ?? running[0].speed) ?? 0) >= 40) return [running[0]];
+  return cage.lanes;
 }

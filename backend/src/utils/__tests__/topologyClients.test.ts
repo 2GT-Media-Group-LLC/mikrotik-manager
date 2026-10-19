@@ -15,7 +15,7 @@ describe('clientAttachments', () => {
       s({ device_id: 1, interface_name: 'bridge' }),
       s({ device_id: 2, interface_name: 'ether5', hostname: 'laptop' }),
     ], uplinks, types);
-    expect(r).toEqual([{ mac: 'AA:BB:CC:00:00:01', name: 'laptop', ip: '10.0.0.5', deviceId: 2, interface: 'ether5', wireless: false, portKnown: true, behindNeighbour: false, vlan: null }]);
+    expect(r).toEqual([{ mac: 'AA:BB:CC:00:00:01', name: 'laptop', ip: '10.0.0.5', deviceId: 2, interface: 'ether5', wireless: false, portKnown: true, behindNeighbour: false, vlan: null, vendor: null, lastSeen: '2026-10-10T12:00:00Z' }]);
   });
 
   it('puts a wireless client on its AP, though the switch learns it on the AP uplink', () => {

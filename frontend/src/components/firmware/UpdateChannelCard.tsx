@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Radio, Loader2 } from 'lucide-react';
 import { firmwareApi, settingsApi, type FirmwareDeviceRow } from '../../services/api';
+import DevicePicker from '../common/DevicePicker';
 
 /**
  * RouterOS update channel: a fleet default, plus overrides for a tag or a
@@ -25,6 +26,8 @@ export default function UpdateChannelCard({ devices, canWrite }: Props) {
   const isFleetAdmin = useIsFleetAdmin();
   const qc = useQueryClient();
   const [target, setTarget] = useState('');
+  // A tag, or one device chosen from a searchable list (#304).
+  const [targetKind, setTargetKind] = useState<'tag' | 'dev'>('dev');
   const [channel, setChannel] = useState<string>('stable');
   const [message, setMessage] = useState('');
 
@@ -126,17 +129,25 @@ export default function UpdateChannelCard({ devices, canWrite }: Props) {
           <div className="text-sm">
             <span className="text-gray-700 dark:text-slate-300">Override for a tag or device</span>
             <div className="flex gap-2 mt-1">
-              <select className="input flex-1 min-w-0" value={target} onChange={(e) => { setTarget(e.target.value); setMessage(''); }}>
-                <option value="">Choose…</option>
-                {tags.length > 0 && (
-                  <optgroup label="Tags">
-                    {tags.map((t) => <option key={t.id} value={`tag:${t.id}`}>{t.name} ({t.ids.length})</option>)}
-                  </optgroup>
-                )}
-                <optgroup label="Devices">
-                  {devices.map((d) => <option key={d.id} value={`dev:${d.id}`}>{d.name.trim()}</option>)}
-                </optgroup>
-              </select>
+              {tags.length > 0 && (
+                <select className="input w-auto" value={targetKind} aria-label="Override for"
+                  onChange={(e) => { setTargetKind(e.target.value as 'tag' | 'dev'); setTarget(''); setMessage(''); }}>
+                  <option value="dev">Device</option>
+                  <option value="tag">Tag</option>
+                </select>
+              )}
+              {targetKind === 'tag' && tags.length > 0 ? (
+                <select className="input flex-1 min-w-0" value={target} onChange={(e) => { setTarget(e.target.value); setMessage(''); }}>
+                  <option value="">Choose a tag…</option>
+                  {tags.map((t) => <option key={t.id} value={`tag:${t.id}`}>{t.name} ({t.ids.length})</option>)}
+                </select>
+              ) : (
+                <DevicePicker
+                  className="flex-1 min-w-0" devices={devices} placeholder="Choose a device…" aria-label="Device"
+                  value={target.startsWith('dev:') ? Number(target.slice(4)) : null}
+                  onChange={(id) => { setTarget(id == null ? '' : `dev:${id}`); setMessage(''); }}
+                />
+              )}
               <select className="input w-auto" value={channel} onChange={(e) => setChannel(e.target.value)}>
                 {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
                 <option value="fleet">follow fleet default</option>

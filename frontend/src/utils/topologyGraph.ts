@@ -331,10 +331,13 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     return { rootId: root, children };
   });
 
-  // Clients and their count chips are smaller cards than devices.
+  // Clients and their count chips are smaller cards than devices. A chip
+  // naming its VLAN ("VLAN 300 · guests · 14 clients") needs a full slot, or
+  // neighbouring chips overlap (#296).
   const clientIds = new Set(clientNodes.map((c) => c.id));
+  const labelledChips = new Set(clientNodes.filter((c) => c.kind === 'clientGroup' && c.data.label).map((c) => c.id));
   const laid = layoutForest(trees, loose, undefined, undefined,
-    (id) => (clientIds.has(id) ? { w: 0.75, h: 0.5 } : { w: 1, h: 1 }));
+    (id) => (labelledChips.has(id) ? { w: 1, h: 0.5 } : clientIds.has(id) ? { w: 0.75, h: 0.6 } : { w: 1, h: 1 }));
   // Automatic positions, in pixels.
   const auto = (id: string) => {
     const p = laid.positions.get(id) ?? { x: 0, y: 0 };

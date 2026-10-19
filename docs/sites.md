@@ -42,7 +42,8 @@ With many sites, the switcher has a search box, and the Sites page can be filter
 ## Moving devices
 
 A device belongs to exactly one site. Move it from **Device → Physical Details → Site**;
-the picker only appears when more than one site exists.
+the picker only appears when more than one site exists. To move several at once, tick them on
+the Devices page and choose **Move to site…** in the bar above the list (#306).
 
 Moving a device takes its history with it — clients, events, backups, interface
 statistics. Nothing is copied or lost, because none of that data carries a site of its

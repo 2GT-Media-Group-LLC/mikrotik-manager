@@ -74,4 +74,26 @@ describe('QSFP cages', () => {
     const lanes = [1, 2, 3, 4].map((n) => ({ name: `qsfp28-1-${n}` }));
     expect(cageTiles({ lanes })).toEqual(lanes);
   });
+  it('a 100G module in a breakout cage is one port, not four green ones (discussion #85)', () => {
+    const lanes = [
+      { name: 'qsfp28-4-1', running: true, disabled: false, link_rate: '100Gbps' },
+      { name: 'qsfp28-4-2', running: false, disabled: true },
+      { name: 'qsfp28-4-3', running: false, disabled: true },
+      { name: 'qsfp28-4-4', running: false, disabled: true },
+    ];
+    expect(cageTiles({ lanes }).map((l) => l.name)).toEqual(['qsfp28-4-1']);
+  });
+  it('a breakout cable with one end plugged in shows every lane as it is', () => {
+    const lanes = [
+      { name: 'qsfp28-1-1', running: true, disabled: false, link_rate: '25Gbps' },
+      { name: 'qsfp28-1-2', running: false, disabled: false },
+      { name: 'qsfp28-1-3', running: false, disabled: false },
+      { name: 'qsfp28-1-4', running: false, disabled: true },
+    ];
+    expect(cageTiles({ lanes })).toHaveLength(4);
+  });
+  it('an unknown rate keeps the lanes', () => {
+    const lanes = [{ name: 'a', running: true }, { name: 'b', running: false }];
+    expect(cageTiles({ lanes })).toHaveLength(2);
+  });
 });

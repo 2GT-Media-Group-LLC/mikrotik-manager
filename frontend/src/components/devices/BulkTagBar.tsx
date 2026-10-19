@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Tag as TagIcon, X, Loader2, KeyRound } from 'lucide-react';
-import { tagsApi } from '../../services/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Tag as TagIcon, X, Loader2, KeyRound, Building2 } from 'lucide-react';
+import { tagsApi, sitesApi } from '../../services/api';
 import type { Device, Tag } from '../../types';
 
 /**
@@ -40,6 +40,32 @@ export default function BulkTagBar({ devices, tags, onClear, onChangeLogin }: {
     onError: () => setNote({ ok: false, text: 'Could not update tags.' }),
   });
 
+  // Move every selected device into one site (#306). Changes who can reach
+  // them, so it asks first; the server checks the account may.
+  const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: () => sitesApi.list().then((r) => r.data), staleTime: 60_000 });
+  const move = useMutation({
+    mutationFn: async (site: { id: number; name: string }) => {
+      const r = await sitesApi.moveDevices(site.id, devices.map((d) => d.id));
+      return { site, moved: r.data.moved };
+    },
+    onSuccess: ({ site, moved }) => {
+      qc.invalidateQueries({ queryKey: ['devices'] });
+      qc.invalidateQueries({ queryKey: ['sites'] });
+      qc.invalidateQueries({ queryKey: ['site-groups'] });
+      setNote({ ok: true, text: `Moved ${moved} device${moved === 1 ? '' : 's'} to ${site.name}.` });
+    },
+    onError: (e: unknown) => setNote({ ok: false, text: (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Could not move the devices.' }),
+  });
+  const pickSite = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const site = sites.find((s) => s.id === Number(e.target.value));
+    e.target.value = '';
+    if (!site) return;
+    const n = devices.length;
+    if (!window.confirm(`Move ${n} device${n === 1 ? '' : 's'} to ${site.name}? Their history moves with them, and who can see them follows the site.`)) return;
+    setNote(null);
+    move.mutate(site);
+  };
+
   const pick = (action: 'add' | 'remove') => (e: React.ChangeEvent<HTMLSelectElement>) => {
     const tag = tags.find((t) => t.id === Number(e.target.value));
     e.target.value = '';
@@ -73,12 +99,21 @@ export default function BulkTagBar({ devices, tags, onClear, onChangeLogin }: {
           </select>
         </>
       )}
+      {sites.length > 1 && (
+        <label className="flex items-center gap-1.5" style={{ color: 'var(--ink-3)' }}>
+          <Building2 className="w-3.5 h-3.5" />
+          <select className="text-[12px] px-2 py-1 rounded" style={selectStyle} defaultValue="" onChange={pickSite} disabled={move.isPending} aria-label="Move to site">
+            <option value="" disabled>Move to site…</option>
+            {sites.map((s) => <option key={s.id} value={s.id}>{s.name}{s.group_name ? ` (${s.group_name})` : ''}</option>)}
+          </select>
+        </label>
+      )}
       {onChangeLogin && (
         <button onClick={onChangeLogin} className="flex items-center gap-1.5 text-[12px] px-2 py-1 rounded" style={selectStyle}>
           <KeyRound className="w-3.5 h-3.5" /> Change login…
         </button>
       )}
-      {apply.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--ink-3)' }} />}
+      {(apply.isPending || move.isPending) && <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--ink-3)' }} />}
       {note && (
         <span style={{ color: note.ok ? 'var(--ok, #16a34a)' : '#dc2626' }}>{note.text}</span>
       )}

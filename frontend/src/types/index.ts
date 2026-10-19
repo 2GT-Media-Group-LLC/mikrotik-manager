@@ -395,6 +395,8 @@ export interface TopologyClient {
   behindNeighbour?: boolean;
   /** The VLAN it was seen in, labelled ("VLAN 1212 · guest" or a VLAN interface name), for grouping (#296). */
   vlan?: string | null;
+  vendor?: string | null;
+  lastSeen?: string | null;
 }
 
 export interface ExternalTopologyNode {

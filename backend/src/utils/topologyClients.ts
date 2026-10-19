@@ -44,6 +44,9 @@ export interface TopoClient {
   behindNeighbour: boolean;
   /** The VLAN it was seen in, labelled (#296); null when not known. */
   vlan: string | null;
+  /** For the card and its hover (#296). */
+  vendor: string | null;
+  lastSeen: string | null;
 }
 
 /**
@@ -108,6 +111,8 @@ export function clientAttachments(
       portKnown: r < 3,
       behindNeighbour: r === 2,
       vlan: best.vlan ?? null,
+      vendor: best.vendor ?? null,
+      lastSeen: best.last_seen ?? null,
     });
   }
   return out.sort((a, b) => a.deviceId - b.deviceId || a.name.localeCompare(b.name));

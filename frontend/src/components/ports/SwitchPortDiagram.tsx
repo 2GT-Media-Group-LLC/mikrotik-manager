@@ -160,8 +160,8 @@ interface QsfpCage {
 }
 
 /** Group QSFP ports into cage objects.
- *  - Breakout (qsfp28-1-1..4): real lanes with individual statuses, but if only 1 lane is
- *    running treat it as a single-cable connection and show all lanes green.
+ *  - Breakout (qsfp28-1-1..4): real lanes with individual statuses; a 40G/100G module
+ *    using the whole cage draws as its one running lane (cageTiles).
  *  - Single mode (qsfp28-1): one cage holding the single real port.
  */
 function groupQsfpCages(ports: SwitchPort[]): { cages: QsfpCage[]; individual: SwitchPort[] } {
@@ -1559,18 +1559,13 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
               <div key={gi} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[...group.top, ...group.bottom].map(cage => {
               const tiles = cageTiles(cage);
-              const isSingleMode = !!cage.singlePort;
-              const runningLanes = cage.lanes.filter(p => p.running && !p.disabled).length;
-              const isSingleCable = !isSingleMode && runningLanes === 1;
-              const refPort = cage.singlePort ?? cage.lanes[0];
               return (
                 <div key={cage.key}>
                   <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em', marginBottom: 6 }}>{cage.label}</div>
                   <div style={{ display: 'flex', gap: 4 }}>
                     {tiles.map((lane) => {
-                      const visualPort: SwitchPort = isSingleCable ? { ...refPort, running: refPort.running, disabled: refPort.disabled } : lane;
                       return (
-                        <PortTile key={lane.name} port={visualPort} selected={selectedPorts.has(lane.name)} hovered={hoveredPort === lane.name} watts={poeWattsMap[lane.name]} errors={portErrMap[lane.name]} optic={opticMap[lane.name]} onClick={e => togglePort(lane.name, e)} onMouseEnter={() => setHoveredPort(lane.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(lane)} />
+                        <PortTile key={lane.name} port={lane} selected={selectedPorts.has(lane.name)} hovered={hoveredPort === lane.name} watts={poeWattsMap[lane.name]} errors={portErrMap[lane.name]} optic={opticMap[lane.name]} onClick={e => togglePort(lane.name, e)} onMouseEnter={() => setHoveredPort(lane.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(lane)} />
                       );
                     })}
                   </div>
