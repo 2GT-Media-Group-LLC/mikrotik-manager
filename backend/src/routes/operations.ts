@@ -764,9 +764,13 @@ router.get('/security-posture', async (req: Request, res: Response) => {
   const live = await liveForDevices('posture', devices as unknown as DeviceRow[], (c, d) => securityPosture(c, d as unknown as PostureDevice),
     { maxAgeMs: 15 * 60_000, refresh: req.query.refresh === '1', waitMs: 3000 });
   res.json({
-    devices: devices.flatMap((d) => {
+    // Every device in view: one not read yet, or that couldn't be, comes with
+    // no score and its error, so the Security page can say which (#302).
+    devices: devices.map((d) => {
       const e = live.get(d.id)!;
-      return e.data ? [{ id: d.id, name: d.name, score: e.data.score, checks: e.data.checks, fetched_at: e.fetchedAt }] : [];
+      return e.data
+        ? { id: d.id, name: d.name, ip_address: d.ip_address, device_type: d.device_type, score: e.data.score, checks: e.data.checks, fetched_at: e.fetchedAt, error: null }
+        : { id: d.id, name: d.name, ip_address: d.ip_address, device_type: d.device_type, score: null, checks: [], fetched_at: null, error: e.error ?? (e.refreshing ? 'Reading now' : null) };
     }),
     refreshing: [...live.values()].filter((e) => e.refreshing).length,
   });

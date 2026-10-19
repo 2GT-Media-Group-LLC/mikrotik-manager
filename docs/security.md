@@ -5,6 +5,13 @@
 The Security page brings together the fleet's firewall posture, certificates, and known
 vulnerabilities in the RouterOS versions it runs.
 
+Each device's checks are read in the background, a few devices at a time, and kept for up to
+15 minutes, so the page opens at once on a large fleet and fills in as readings arrive (#302).
+**Re-scan fleet** reads every device again. A change made to a device drops its cached reading,
+so a fixed finding clears straight away. The **IPv6 input firewall** check flags a device that has
+a routable IPv6 address but no drop or reject rule on the IPv6 input chain, as the IPv4 check does
+for IPv4 (#312).
+
 ## Encrypted management (API-SSL)
 
 The manager talks to each device over the RouterOS API. On the plain API (port 8728) the

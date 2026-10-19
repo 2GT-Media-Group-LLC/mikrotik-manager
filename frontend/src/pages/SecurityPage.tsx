@@ -6,7 +6,7 @@ import {
   Shield, ShieldCheck, ShieldAlert, RefreshCw, ChevronDown, ChevronRight,
   Gauge, Server, AlertTriangle, ListChecks, KeyRound,
 } from 'lucide-react';
-import { devicesApi, certificatesApi } from '../services/api';
+import { devicesApi, certificatesApi, operationsApi } from '../services/api';
 import { activeChecks, countFindings, mutedCount } from '../utils/securityFindings';
 import type { SecurityCheck } from '../services/api';
 import type { Device } from '../types';
@@ -76,22 +76,21 @@ export default function SecurityPage() {
   const online = (devices as Device[]).filter(d => d.status === 'online');
   const onlineKey = online.map(d => d.id).join(',');
 
-  const { data: fleet = [], isLoading, refetch, isFetching, isError: fleetError, error: fleetErr } = useQuery({
-    queryKey: ['security-fleet', onlineKey],
-    queryFn: async (): Promise<DevicePosture[]> => {
-      const results = await Promise.allSettled(
-        online.map(async (d) => {
-          const r = await devicesApi.getSecurityPosture(d.id);
-          return { id: d.id, name: d.name, ip_address: d.ip_address, device_type: d.device_type, score: r.data.score, checks: r.data.checks };
-        })
-      );
-      return results.map((r, i) =>
-        r.status === 'fulfilled' ? r.value
-          : { id: online[i].id, name: online[i].name, ip_address: online[i].ip_address, device_type: online[i].device_type, score: null, checks: [], error: (r.reason as Error)?.message });
-    },
+  // From the server's cache of each device's checks, refreshed a few devices
+  // at a time, rather than asking every online device on every load: on a
+  // large fleet that was hundreds of connections per page view (#302).
+  // "Re-scan fleet" reads every device again, still a few at a time.
+  const [rescan, setRescan] = useState(0);
+  const { data: postureData, isLoading, isFetching, isError: fleetError, error: fleetErr } = useQuery({
+    queryKey: ['security-fleet', onlineKey, rescan],
+    queryFn: () => operationsApi.securityPosture(rescan > 0).then((r) => r.data),
     enabled: online.length > 0,
-    refetchInterval: 120_000,
+    refetchInterval: (q) => ((q.state.data?.refreshing ?? 0) > 0 ? 5_000 : 120_000),
   });
+  const fleet: DevicePosture[] = (postureData?.devices ?? []).map((d) => ({
+    id: d.id, name: d.name, ip_address: d.ip_address ?? '', device_type: d.device_type ?? 'router',
+    score: d.score, checks: d.checks, ...(d.error ? { error: d.error } : {}),
+  }));
 
   const scored = fleet.filter(f => f.score !== null);
   const avgScore = scored.length ? Math.round(scored.reduce((s, f) => s + (f.score ?? 0), 0) / scored.length) : null;
@@ -198,7 +197,7 @@ export default function SecurityPage() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><Shield className="w-5 h-5 text-blue-500" /> Security</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400">Fleet-wide firewall posture and access control</p>
         </div>
-        <button onClick={() => refetch()} disabled={isFetching} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors">
+        <button onClick={() => setRescan((n) => n + 1)} disabled={isFetching} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors">
           <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Re-scan fleet
         </button>
       </div>

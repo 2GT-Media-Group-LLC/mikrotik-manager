@@ -50,6 +50,7 @@ import { siteScopeDevices, andSite } from '../utils/siteScope';
 import { activeSite, targetSite } from '../middleware/site';
 import { resolveSiteChoice } from '../services/deviceSite';
 import { romonSettingFor, romonChecks, romonSetParams } from '../services/romon';
+import { missingIpv6InputFirewall } from '../utils/ipv6InputFirewall';
 
 /** Postgres interval text to milliseconds, for the few windows we offer. */
 function intervalToMs(interval: string): number {
@@ -90,6 +91,22 @@ router.param('id', (_req, res, next, id) => {
 router.use(maskSecretsForReadOnly);
 // One write at a time per device, so a Change Guard revert can't undo another write.
 router.use(deviceWriteLock(deviceIdFromPath));
+
+// A change to a device makes what fleet pages cached about it out of date
+// (#302): its security checks, services and the rest. Dropped after any
+// successful write, so the Security page doesn't show a fixed finding for the
+// rest of the cache's 15 minutes.
+router.use((req, res, next) => {
+  if (req.method === 'GET') { next(); return; }
+  const m = /^\/(\d+)(?:\/|$)/.exec(req.path);
+  const id = m ? Number(m[1]) : null;
+  if (id != null) {
+    res.on('finish', () => {
+      if (res.statusCode < 400) void query(`DELETE FROM device_live_cache WHERE device_id = $1`, [id]).catch(() => {});
+    });
+  }
+  next();
+});
 
 let pollerService: PollerService | null = null;
 export function setPollerService(p: PollerService): void {
@@ -2011,13 +2028,16 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
   const mgmtService = managementService(device);
   const isRouter = device.device_type === 'router';
 
-    const [servicesRaw, fwRules, snmp, romonRow, romonSetting] = await Promise.all([
+    const [servicesRaw, fwRules, snmp, romonRow, romonSetting, v6Addresses, v6Rules] = await Promise.all([
       c.getServices().catch(() => [] as Record<string, string>[]),
       c.getFirewallRules().catch(() => [] as Record<string, string>[]),
       c.getSnmpConfig().catch(() => ({} as Record<string, string>)),
       // RoMON against its site's (or group's, or the fleet's) setting (#311).
       c.commandRunner().execute('/tool/romon/print').then((r) => r[0] ?? null).catch(() => null),
       romonSettingFor((device as { site_id?: number | null }).site_id ?? null).catch(() => null),
+      // IPv6 has its own filter (#312); null where the menus can't be read.
+      c.commandRunner().execute('/ipv6/address/print').catch(() => null),
+      c.commandRunner().execute('/ipv6/firewall/filter/print').catch(() => null),
     ]);
 
     // De-duplicate /ip/service rows by name (some devices report duplicates,
@@ -2076,6 +2096,16 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
         detail: isRouter
           ? 'This router has no enabled drop/reject rule on the input chain, leaving its own services exposed. Add a baseline input firewall.'
           : 'No input-chain firewall on this device. Switches/APs often rely on an upstream router firewall — confirm that is the case.',
+      });
+    }
+
+    if (missingIpv6InputFirewall(v6Addresses, v6Rules)) {
+      checks.push({
+        id: 'no-input-firewall-v6', severity: isRouter ? 'high' : 'low',
+        title: 'No IPv6 input-chain firewall rule',
+        detail: isRouter
+          ? 'This router has a routable IPv6 address but no enabled drop/reject rule on the IPv6 input chain, so its own services are open over IPv6 whatever the IPv4 firewall says. Add a baseline IPv6 input firewall (/ipv6/firewall/filter).'
+          : 'This device has a routable IPv6 address and no IPv6 input-chain firewall. If it relies on an upstream router, confirm that router filters IPv6 too.',
       });
     }
 

@@ -1429,7 +1429,8 @@ export const operationsApi = {
   insights: () => api.get<OpsInsights>('/operations/insights'),
   /** Every online device's hardening score, cached and refreshed a few at a time (#302). */
   securityPosture: (refresh = false) => api.get<{
-    devices: { id: number; name: string; score: number; checks: SecurityCheck[]; fetched_at: string | null }[];
+    /** Every online device in view; one not read yet, or that couldn't be, has score null and its error. */
+    devices: { id: number; name: string; ip_address?: string; device_type?: string; score: number | null; checks: SecurityCheck[]; fetched_at: string | null; error?: string | null }[];
     refreshing: number;
   }>('/operations/security-posture', { params: refresh ? { refresh: '1' } : undefined, timeout: 60_000 }),
   dismissInsight: (fingerprint: string, hours: number, category?: string, title?: string) =>
