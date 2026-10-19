@@ -1210,7 +1210,6 @@ export const eventsApi = {
     api.get<{
       events: FirewallEvent[];
       total: number;
-      totalCapped?: boolean;
     }>('/events/firewall', { params }),
   clear: (deviceId?: number) => api.delete('/events', { params: deviceId ? { deviceId } : {} }),
 };

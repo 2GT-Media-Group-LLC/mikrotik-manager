@@ -19,8 +19,9 @@ const monitorItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/topology',  icon: GitBranch,       label: 'Topology' },
   { to: '/traffic',   icon: Activity,        label: 'Traffic' },
-  { to: '/events',    icon: Bell,            label: 'Events' },
-  { to: '/firewall-events', icon: ShieldCheck, label: 'Firewall Events' },
+];
+
+const monitorAfterEventsItems = [
   { to: '/security',  icon: Shield,          label: 'Security' },
   // Reported as unreachable (#148): the only route to this page was the
   // "All sites" entry in the selector under the logo, itself hidden unless more
@@ -28,6 +29,11 @@ const monitorItems = [
   // Shown unconditionally now. One sidebar row does not impose the concept on
   // anyone the way an unreachable page frustrates the people who want it.
   { to: '/sites',     icon: Globe,           label: 'Sites' },
+];
+
+const eventsSubItems = [
+  { to: '/events',          icon: FileText,    label: 'Device Logs' },
+  { to: '/firewall-events', icon: ShieldCheck, label: 'Firewall Logs' },
 ];
 
 const wirelessSubItems = [
@@ -200,6 +206,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [devicesOpenPref, setDevicesOpenPref] = useState<boolean | null>(null);
   const devicesOpen = devicesOpenPref ?? devicesActive;
 
+  const eventsActive =
+    location.pathname === '/events' ||
+    location.pathname === '/firewall-events';
+  const [eventsOpenPref, setEventsOpenPref] = useState<boolean | null>(null);
+  const eventsOpen = eventsOpenPref ?? eventsActive;
+
   const wirelessActive = location.pathname.startsWith('/wireless');
   const [wirelessOpenPref, setWirelessOpenPref] = useState<boolean | null>(null);
   const wirelessOpen = wirelessOpenPref ?? wirelessActive;
@@ -270,6 +282,48 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         <SectionLabel label="Monitor" isCollapsed={isCollapsed} />
         {/* Traffic analytics is fleet-wide, so it isn't offered to site-limited accounts (P1-7). */}
         {monitorItems.map(({ to, icon, label }) => (
+          <NavItem key={to} to={to} icon={icon} label={label} isCollapsed={isCollapsed} onClick={handleNavClick} />
+        ))}
+
+        {isCollapsed ? (
+          <CollapsedGroupLink
+            to="/events"
+            icon={Bell}
+            label="Events"
+            groupActive={eventsActive}
+            onClick={handleNavClick}
+          />
+        ) : (
+          <>
+            <GroupHeader
+              icon={Bell}
+              label="Events"
+              isActive={eventsActive}
+              isOpen={eventsOpen}
+              onToggle={() => setEventsOpenPref(!eventsOpen)}
+            />
+            {eventsOpen && (
+              <div
+                className="ml-4 pl-3 space-y-[1px]"
+                style={{ borderLeft: '1px solid var(--line)' }}
+              >
+                {eventsSubItems.map(({ to, icon, label }) => (
+                  <NavItem
+                    key={to}
+                    to={to}
+                    end
+                    icon={icon}
+                    label={label}
+                    isCollapsed={false}
+                    onClick={handleNavClick}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {monitorAfterEventsItems.map(({ to, icon, label }) => (
           <NavItem key={to} to={to} icon={icon} label={label} isCollapsed={isCollapsed} onClick={handleNavClick} />
         ))}
 

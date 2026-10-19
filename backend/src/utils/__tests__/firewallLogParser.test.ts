@@ -65,6 +65,36 @@ describe('parseFirewallLog', () => {
     expect(event?.dstPort).toBeUndefined();
   });
 
+  it('parses an IPv6 TCP firewall log', () => {
+    const event = parseFirewallLog(
+      'FW-ACCEPT forward: in:wan out:lan, connection-state:new, ' +
+      'proto TCP (SYN), ' +
+      '[2001:db8:1::10]:54321->[2001:db8:2::20]:443, len 60'
+    );
+
+    expect(event?.action).toBe('accept');
+    expect(event?.protocol).toBe('tcp');
+    expect(event?.srcIp).toBe('2001:db8:1::10');
+    expect(event?.srcPort).toBe(54321);
+    expect(event?.dstIp).toBe('2001:db8:2::20');
+    expect(event?.dstPort).toBe(443);
+  });
+
+  it('parses an ICMPv6 firewall log without ports', () => {
+    const event = parseFirewallLog(
+      'FW-DROP input: in:wan, proto ICMPv6 (type 128, code 0), ' +
+      '[2001:db8::10]->[2001:db8::1], len 64'
+    );
+
+    expect(event?.action).toBe('drop');
+    expect(event?.protocol).toBe('icmpv6');
+    expect(event?.tcpFlags).toBe('type 128, code 0');
+    expect(event?.srcIp).toBe('2001:db8::10');
+    expect(event?.dstIp).toBe('2001:db8::1');
+    expect(event?.srcPort).toBeUndefined();
+    expect(event?.dstPort).toBeUndefined();
+  });
+
   it('returns null for a normal RouterOS log', () => {
     expect(
       parseFirewallLog('user operator logged in from 192.0.2.50 via api')

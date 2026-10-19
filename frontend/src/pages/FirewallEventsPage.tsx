@@ -12,6 +12,7 @@ import { useCanWrite } from '../hooks/useCanWrite';
 import FirewallMonitoringModal from '../components/firewall/FirewallMonitoringModal';
 
 const PAGE_SIZE = 100;
+const FIREWALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function actionClass(action: FirewallEvent['action']): string {
   switch (action) {
@@ -57,6 +58,7 @@ export default function FirewallEventsPage() {
       eventsApi
         .firewall({
           search: search || undefined,
+          since: new Date(Date.now() - FIREWALL_WINDOW_MS).toISOString(),
           deviceId: deviceId ? Number(deviceId) : undefined,
           action: action
             ? (action as FirewallEvent['action'])
@@ -76,7 +78,7 @@ export default function FirewallEventsPage() {
 
   const events = data?.events ?? [];
   const total = data?.total ?? 0;
-  const totalLabel = `${total.toLocaleString()}${data?.totalCapped ? '+' : ''}`;
+  const totalLabel = total.toLocaleString();
 
   return (
     <div className="space-y-4">
@@ -293,7 +295,7 @@ export default function FirewallEventsPage() {
 
             <button
               onClick={() => setPage((p) => p + 1)}
-              disabled={!data?.totalCapped && (page + 1) * PAGE_SIZE >= total}
+              disabled={(page + 1) * PAGE_SIZE >= total}
               className="btn-secondary py-1 text-xs"
             >
               Next →
