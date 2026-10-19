@@ -62,8 +62,8 @@ or 2FA changes.
 | `GET /api/topology` | Graph of devices, links, external nodes, and distrusted identifiers |
 | `GET /api/operations/insights` | The dashboard's "things to handle" feed |
 | `GET /api/sites` | Sites with device counts (see [Sites](sites.md)) |
-| `GET /api/metrics/resources/latest` | Newest CPU and memory point per device: `{"devices": {"<deviceId>": {"cpu_load", "memory_used", "memory_total", "time"}}}`. `cpu_load` is a percentage, memory is in bytes, `time` is ISO 8601. Devices with no point in the last 15 minutes are omitted. Read-only; honours site scoping |
-| `GET /api/metrics/interfaces/latest` | Newest byte counters per device and interface: `{"devices": {"<deviceId>": {"<interface>": {"rx_bytes", "tx_bytes", "time"}}}}`. See [Interface counters](#interface-counters). Read-only; honours site scoping |
+| `GET /api/metrics/resources/latest` | Newest CPU and memory point per device: `{"devices": {"<deviceId>": {"cpu_load", "memory_used", "memory_total", "time"}}}`. `cpu_load` is a percentage, memory is in bytes, `time` is ISO 8601. Devices with no point in the last 15 minutes are omitted. Returns `503` if the metrics database cannot be read. Read-only; honours site scoping |
+| `GET /api/metrics/interfaces/latest` | Newest byte counters per device and interface: `{"devices": {"<deviceId>": {"<interface>": {"rx_bytes", "tx_bytes", "time"}}}}`. See [Interface counters](#interface-counters). Returns `503` if the metrics database cannot be read. Read-only; honours site scoping |
 
 ### Interface counters
 

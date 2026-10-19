@@ -41,8 +41,12 @@ function run(flux: string, onRow: (o: Record<string, unknown>) => void): Promise
   });
 }
 
-/** Latest CPU/memory per device id, from the last 15 minutes. Influx unavailable → empty. */
-export async function latestResources(): Promise<Map<string, LatestResources>> {
+/**
+ * Latest CPU/memory per device id, from the last 15 minutes. By default an
+ * unreadable Influx gives an empty map (the insights feed relies on that); with
+ * `{ strict: true }` it throws so the caller can report it.
+ */
+export async function latestResources(opts: { strict?: boolean } = {}): Promise<Map<string, LatestResources>> {
   const out = new Map<string, LatestResources>();
   const flux = `
     from(bucket: ${fluxString(bucket)})
@@ -64,7 +68,10 @@ export async function latestResources(): Promise<Map<string, LatestResources>> {
       e.time = newer(e.time, timeOf(o));
       out.set(id, e);
     });
-  } catch { /* influx unavailable → empty */ }
+  } catch (err) {
+    if (opts.strict) throw err;
+    /* influx unavailable → empty */
+  }
   return out;
 }
 
