@@ -378,10 +378,13 @@ router.get('/device/:deviceId/availability', async (req: Request, res: Response)
 // GET /api/metrics/resources/latest - newest CPU/memory point per device (read-only, site-scoped)
 router.get('/resources/latest', async (req: Request, res: Response) => {
   const devFilter = siteScopeDevices(activeSite(req));
-  const [allowed, latest] = await Promise.all([
-    query<{ id: number }>(`SELECT id FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`),
-    latestResources(),
-  ]);
+  let latest;
+  try {
+    latest = await latestResources({ strict: true });
+  } catch {
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
+  }
+  const allowed = await query<{ id: number }>(`SELECT id FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`);
   const devices: Record<string, { cpu_load: number; memory_used: number; memory_total: number; time: string }> = {};
   for (const d of allowed) {
     const r = latest.get(String(d.id));
@@ -435,7 +438,8 @@ router.get('/interfaces/latest', async (req: Request, res: Response) => {
   for (const d of allowed) {
     const ifaces = latest.get(String(d.id));
     if (!ifaces) continue;
-    const out: Record<string, { rx_bytes: number; tx_bytes: number; time: string }> = {};
+    // No prototype: an interface named __proto__ or constructor is an ordinary key.
+    const out: Record<string, { rx_bytes: number; tx_bytes: number; time: string }> = Object.create(null);
     for (const [name, v] of ifaces) {
       if (v.time) out[name] = { rx_bytes: v.rx, tx_bytes: v.tx, time: v.time };
     }

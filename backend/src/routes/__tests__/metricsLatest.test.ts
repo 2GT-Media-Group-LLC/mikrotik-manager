@@ -52,11 +52,17 @@ describe('GET /api/metrics/resources/latest', () => {
     });
   });
 
-  it('is empty when Influx cannot be read', async () => {
+  it('reports 503 rather than an empty fleet when Influx fails', async () => {
     fakeInflux([], new Error('down'));
     const res = await request(app()).get('/api/metrics/resources/latest');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ devices: {} });
+    expect(res.status).toBe(503);
+  });
+
+  it('the shared helper stays lenient by default (insights feed) and throws when strict', async () => {
+    const { latestResources } = await import('../../services/latestMetrics');
+    fakeInflux([], new Error('down'));
+    await expect(latestResources()).resolves.toEqual(new Map());
+    await expect(latestResources({ strict: true })).rejects.toThrow('down');
   });
 });
 
@@ -94,5 +100,20 @@ describe('GET /api/metrics/interfaces/latest', () => {
     fakeInflux([], new Error('down'));
     const res = await request(app()).get('/api/metrics/interfaces/latest');
     expect(res.status).toBe(503);
+  });
+
+  it('keeps interfaces named __proto__ and constructor in the JSON output', async () => {
+    fakeInflux([
+      { device_id: '1', interface: '__proto__', _field: 'rx_bytes', _value: 11, _time: '2026-10-17T10:00:00Z' },
+      { device_id: '1', interface: 'constructor', _field: 'rx_bytes', _value: 22, _time: '2026-10-17T10:00:00Z' },
+      { device_id: '1', interface: 'ether1', _field: 'rx_bytes', _value: 33, _time: '2026-10-17T10:00:00Z' },
+    ]);
+    const res = await request(app()).get('/api/metrics/interfaces/latest');
+    expect(res.status).toBe(200);
+    const raw = JSON.parse(res.text) as { devices: Record<string, Record<string, { rx_bytes: number }>> };
+    const dev = raw.devices['1'];
+    expect(Object.keys(dev).sort()).toEqual(['__proto__', 'constructor', 'ether1']);
+    expect(Object.getOwnPropertyDescriptor(dev, '__proto__')?.value.rx_bytes).toBe(11);
+    expect(dev.constructor).toEqual(expect.objectContaining({ rx_bytes: 22 }));
   });
 });
