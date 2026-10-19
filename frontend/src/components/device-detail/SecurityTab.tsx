@@ -31,6 +31,7 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [serviceError, setServiceError] = useState('');
+  const [fleetMute, setFleetMute] = useState<SecurityCheck | null>(null);
   const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
   const { data: posture, isLoading, refetch, isFetching, isError: postureError, error: postureErr } = useQuery({
@@ -313,9 +314,9 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                           <button onClick={() => suppress.mutate({ checkId: c.id, scope: 'device' })} disabled={suppress.isPending}
                             title="Stop counting this check on this device"
                             className="btn-secondary text-xs py-1 flex items-center gap-1.5"><BellOff className="w-3 h-3" /> Mute</button>
-                          <button onClick={() => suppress.mutate({ checkId: c.id, scope: 'fleet' })} disabled={suppress.isPending}
-                            title="Stop counting this check on every device"
-                            className="btn-secondary text-xs py-1">Fleet</button>
+                          <button onClick={() => setFleetMute(c)} disabled={suppress.isPending}
+                            title="Stop counting this check on every device (changes nothing on the devices)"
+                            className="btn-secondary text-xs py-1">Mute fleet-wide</button>
                         </>
                       ))}
                     </div>
@@ -412,6 +413,32 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
         </div>
       )}
 
+      {fleetMute && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="card w-full max-w-md mx-4 p-5 space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Mute this check on every device?
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-slate-300">
+              <span className="font-medium">{fleetMute.title}</span> will stop counting toward the security score on
+              <span className="font-medium"> all devices</span>. This only hides the finding in the manager;
+              it does not change any device configuration. You can unmute it later.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setFleetMute(null)}>Cancel</button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={suppress.isPending}
+                onClick={() => suppress.mutate({ checkId: fleetMute.id, scope: 'fleet' }, { onSettled: () => setFleetMute(null) })}
+              >
+                Mute on all devices
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {lockout && (
         <LockoutVerdictDialog
           deviceId={deviceId}
