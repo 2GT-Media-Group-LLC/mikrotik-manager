@@ -11,7 +11,7 @@ import { activeSite } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { lookupVendor } from '../utils/oui';
 import { settleWithConcurrency, FLEET_ACTION_CONCURRENCY } from '../utils/concurrency';
-import { aggregateAPScanRows } from '../utils/apScan';
+import { aggregateAPScanRows, mergeScanRows } from '../utils/apScan';
 import { analyzeSpectrum, summarize, BAND_RANGES, parseChannelSpec } from '../utils/rfSpectrum';
 import { fluxString } from '@influxdata/influxdb-client';
 
@@ -689,7 +689,8 @@ router.post('/:id/scan/:iface', requireWrite, async (req: Request, res: Response
   const collector = new DeviceCollector(ap);
   try {
     await collector.connect();
-    const results = await collector.scanWireless(req.params.iface);
+    // One row per network, with every update the scan sent for it (#295).
+    const results = mergeScanRows(await collector.scanWireless(req.params.iface));
     return res.json(results);
   } catch (err) {
     return res.status(502).json({ error: (err as Error).message });

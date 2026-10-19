@@ -1581,6 +1581,18 @@ ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_session_reused BOOLE
 -- Of the collecting, the time spent waiting on the device's answers; the rest is the database and processing.
 ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_device_ms INTEGER;
 
+-- When each device last booted, worked out from its uptime on every fast
+-- poll, and the reboots that implies (#326): a reboot quicker than the poll
+-- interval never shows as an outage, so availability alone missed it.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS boot_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS device_reboots (
+  id          BIGSERIAL PRIMARY KEY,
+  device_id   INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  boot_at     TIMESTAMPTZ NOT NULL,
+  detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_device_reboots_device ON device_reboots(device_id, boot_at DESC);
+
 -- Groups of sites (#306): a customer with several sites. A site belongs to at
 -- most one group; devices belong through their site. Access can be given per
 -- group, which reaches every site in it, including sites added later.
@@ -1601,6 +1613,22 @@ CREATE TABLE IF NOT EXISTS user_group_roles (
   PRIMARY KEY (user_id, group_id)
 );
 CREATE INDEX IF NOT EXISTS idx_user_group_roles_group ON user_group_roles(group_id);
+
+-- RoMON per site or group, with a fleet default (#311): keep it on, and the
+-- secret devices use (encrypted; NULL leaves devices' secrets alone).
+CREATE TABLE IF NOT EXISTS romon_settings (
+  id               SERIAL PRIMARY KEY,
+  site_id          INTEGER REFERENCES sites(id) ON DELETE CASCADE,
+  group_id         INTEGER REFERENCES site_groups(id) ON DELETE CASCADE,
+  enabled          BOOLEAN NOT NULL DEFAULT TRUE,
+  secret_encrypted TEXT,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (site_id IS NULL OR group_id IS NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_romon_site ON romon_settings(site_id) WHERE site_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_romon_group ON romon_settings(group_id) WHERE group_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_romon_fleet ON romon_settings((TRUE)) WHERE site_id IS NULL AND group_id IS NULL;
+
 
 -- What fleet pages show per device that only the device can tell (#302):
 -- the last answer and when it was read, refreshed a few at a time in the

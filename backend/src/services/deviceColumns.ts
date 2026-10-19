@@ -16,5 +16,5 @@ export const DEVICE_BASE_COLUMNS = `
   firmware_version, ros_version, device_type, status, last_seen, notes, site_id,
   health_status, health_issues, health_checked_at, health_ignored,
   intermittent, intermittent_alert_after_min, ros_identity,
-  ssh_only, api_checked_at, api_check_error
+  ssh_only, api_checked_at, api_check_error, boot_at
 `.trim();

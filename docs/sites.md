@@ -39,6 +39,9 @@ access to the site.
 
 With many sites, the switcher has a search box, and the Sites page can be filtered.
 
+The Sites page also holds the **RoMON** settings, per site, per group and fleet-wide; see
+[RoMON](security.md#romon).
+
 ## Moving devices
 
 A device belongs to exactly one site. Move it from **Device → Physical Details → Site**;

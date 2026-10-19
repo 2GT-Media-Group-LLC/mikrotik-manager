@@ -34,6 +34,7 @@ const COLUMNS: Array<{ table: string; id: string; column: string; label: string 
   { table: 'credential_presets', id: 'id', column: 'api_password_encrypted', label: 'Credential preset API passwords' },
   { table: 'credential_presets', id: 'id', column: 'ssh_password_encrypted', label: 'Credential preset SSH passwords' },
   { table: 'device_ssh_keys', id: 'device_id', column: 'private_key_encrypted', label: 'Device SSH private keys' },
+  { table: 'romon_settings', id: 'id', column: 'secret_encrypted', label: 'RoMON secrets' },
 ];
 
 const OIDC_KEY = 'oidc_config';

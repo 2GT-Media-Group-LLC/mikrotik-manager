@@ -124,6 +124,11 @@ export interface Device {
   /** Detected wireless role: none | standalone | cap | controller | controller_cap. */
   wifi_role?: string | null;
   has_lte?: boolean;
+  /** When it last booted, from its uptime (#326). */
+  boot_at?: string | null;
+  /** Reboots in the last 30 days, including ones too quick to show as outages (device detail only). */
+  reboots_30d?: number;
+  last_reboot_at?: string | null;
   /** Runs User Manager, RouterOS's RADIUS server (#251); null until checked. */
   user_manager?: boolean | null;
   created_at: string;

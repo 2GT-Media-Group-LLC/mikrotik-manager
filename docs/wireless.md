@@ -68,7 +68,13 @@ Scans run on demand or on a schedule; spectral scans are configured per radio.
 With the newer **wifi** package a network's security shows its authentication types (for example
 `wpa2-psk,wpa3-psk`). The older **wireless** package only reports whether a network is
 encrypted, so those show **secured** or **open**, or **unknown** where the scan doesn't report
-it (#295).
+it (#295). A scan sends updates for each network as it hears more of it; before 0.73.0 updates
+that didn't repeat the network's address were dropped, which is how the encryption flag went
+missing.
+
+A scan takes the radio off its channel: its clients drop for a few seconds, and so does the
+radio's own link if it is itself connected to another access point (a wireless link, say). Avoid
+scanning a radio the manager reaches the device through.
 
 ## CAPsMAN
 

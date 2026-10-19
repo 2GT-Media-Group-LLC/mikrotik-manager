@@ -151,7 +151,7 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
 function HealthBar({
   summary, wirelessCount, clientSparkline,
 }: {
-  summary: { devices: { total: number; online: number; offline: number }; clients: { active: number; total: number }; alerts: { critical: number; warning: number }; availability?: { fleetUptimePct30d: number } } | undefined;
+  summary: { devices: { total: number; online: number; offline: number }; clients: { active: number; total: number }; alerts: { critical: number; warning: number }; availability?: { fleetUptimePct30d: number; reboots30d?: number } } | undefined;
   wirelessCount: number;
   clientSparkline: number[];
 }) {
@@ -228,17 +228,24 @@ function HealthBar({
             color: (summary?.alerts.critical ?? 0) > 0 ? 'var(--bad)' : 'var(--ink-3)',
           },
           {
-            label: 'Uptime 30d',
+            // Availability, not time since boot (#326), with the reboots the
+            // polls were too slow to see as outages.
+            label: 'Availability 30d',
+            title: 'Share of the last 30 days the manager could reach your devices. A device’s Uptime is time since it last booted.',
             value: summary?.availability != null
               ? `${summary.availability.fleetUptimePct30d.toFixed(1)}%`
               : '—',
+            sub: (summary?.availability?.reboots30d ?? 0) > 0
+              ? `${summary!.availability!.reboots30d} reboot${summary!.availability!.reboots30d === 1 ? '' : 's'}`
+              : undefined,
             spark: [] as number[],
             color: (summary?.availability?.fleetUptimePct30d ?? 100) >= 99 ? 'var(--accent)' : (summary?.availability?.fleetUptimePct30d ?? 100) >= 95 ? 'var(--warn)' : 'var(--bad)',
           },
-        ].map(({ label, value, spark, color }) => (
-          <div key={label} style={{ minWidth: 110, paddingLeft: 20, borderLeft: '1px solid var(--line)' }}>
+        ].map(({ label, value, spark, color, title, sub }: { label: string; value: string; spark: number[]; color: string; title?: string; sub?: string }) => (
+          <div key={label} style={{ minWidth: 110, paddingLeft: 20, borderLeft: '1px solid var(--line)' }} title={title}>
             <div className="text-[11px] mb-[2px]" style={{ color: 'var(--ink-3)' }}>{label}</div>
             <div className="text-[18px] font-semibold num-tab mb-[4px]" style={{ color: 'var(--ink)' }}>{value}</div>
+            {sub && <div className="text-[11px] -mt-[2px] mb-[2px]" style={{ color: 'var(--ink-3)' }}>{sub}</div>}
             {spark.length >= 2 && <Sparkline data={spark} w={100} h={18} color={color} />}
           </div>
         ))}

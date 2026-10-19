@@ -162,6 +162,14 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
     },
   });
 
+  // RoMON to its site's setting (#311).
+  const [romonNote, setRomonNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const romon = useMutation({
+    mutationFn: () => devicesApi.applyRomon(deviceId),
+    onSuccess: (res) => { setRomonNote({ ok: true, text: res.data.message }); invalidate(); },
+    onError: (err: unknown) => setRomonNote({ ok: false, text: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not apply the RoMON setting' }),
+  });
+
   const checks: SecurityCheck[] = posture?.checks ?? [];
 
   const activeCount = activeChecks(checks).length;
@@ -230,7 +238,10 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
               {plainApiNote.text}
             </div>
           )}
-          {sslError && (
+          {romonNote && (
+        <p className={clsx('text-xs', romonNote.ok ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>{romonNote.text}</p>
+      )}
+      {sslError && (
             <div className="p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400">{sslError}</div>
           )}
           {sslResult && (
@@ -289,6 +300,14 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                           className="btn-primary text-xs py-1 flex items-center gap-1.5">
                           {wwwSsl.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
                           {wwwSsl.isPending ? 'Switching…' : 'Switch to HTTPS'}
+                        </button>
+                      )}
+                      {canWrite && c.fix === 'romon' && !c.suppressed && (
+                        <button onClick={() => { setRomonNote(null); romon.mutate(); }} disabled={romon.isPending}
+                          title="Apply the RoMON setting for this device's site (on, with its secret if one is set)"
+                          className="btn-primary text-xs py-1 flex items-center gap-1.5">
+                          {romon.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <KeyRound className="w-3 h-3" />}
+                          {romon.isPending ? 'Applying…' : c.id === 'romon-off' ? 'Turn RoMON on' : 'Set the secret'}
                         </button>
                       )}
                       {canWrite && c.fix === 'api-off' && !c.suppressed && (

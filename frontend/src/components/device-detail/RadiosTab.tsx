@@ -341,6 +341,11 @@ function ScanWarningModal({
           <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
             All wireless clients connected to this AP will be briefly disconnected during the scan.
           </p>
+          {/* Seen on a legacy-package radio in station mode (#295): the scan dropped its own uplink. */}
+          <p className="text-sm text-gray-700 dark:text-slate-300">
+            If this radio is itself connected to another access point (a wireless link or a client of
+            another AP), that connection drops too, so avoid it on a link the manager reaches the device through.
+          </p>
           <p className="text-xs text-gray-500 dark:text-slate-400">
             The scan takes approximately {isSpectral ? '10' : '20'} seconds. Clients will
             reconnect automatically once the radio returns to its channel.

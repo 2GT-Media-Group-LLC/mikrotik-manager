@@ -341,6 +341,12 @@ export default function DeviceDetailPage() {
               <div className="text-xl font-bold text-gray-900 dark:text-white truncate">
                 {resources ? formatUptime(resources['uptime'] || '') : '—'}
               </div>
+              {/* Time since it last booted, not availability (#326). */}
+              {device.boot_at && (
+                <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5" title="Worked out from the device's uptime counter">
+                  since {new Date(device.boot_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                </div>
+              )}
             </div>
 
             <div className="card p-4">
@@ -373,11 +379,16 @@ export default function DeviceDetailPage() {
                   )}>
                     {availability.uptimePct.toFixed(2)}%
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Uptime</div>
+                  <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5" title="Share of the last 30 days the manager could reach this device">Availability</div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">{availability.totalOutages}</div>
                   <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Outages</div>
+                </div>
+                {/* Reboots, seen from the uptime counter: one quicker than a poll never shows as an outage (#326). */}
+                <div title={device.last_reboot_at ? `Last: ${new Date(device.last_reboot_at).toLocaleString()}` : 'Counted from the device’s uptime, including reboots too quick to show as outages'}>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">{device.reboots_30d ?? 0}</div>
+                  <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Reboots</div>
                 </div>
                 {availability.longestOutageSec > 0 && (
                   <div>

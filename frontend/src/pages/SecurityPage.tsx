@@ -144,6 +144,27 @@ export default function SecurityPage() {
     void qc.invalidateQueries({ queryKey: ['security-fleet'] });
   };
 
+  // RoMON to each device's site setting (#311), one device at a time.
+  const [romonRun, setRomonRun] = useState<{ running: boolean; results: { name: string; ok: boolean; message: string }[] } | null>(null);
+  const applyRomonAll = async (ids: number[]) => {
+    if (!window.confirm(`Apply the RoMON setting on ${ids.length} device${ids.length === 1 ? '' : 's'}? Each gets its site's setting (on, with its secret if one is set).`)) return;
+    const names = new Map(fleet.map((f) => [f.id, f.name.trim()]));
+    setRomonRun({ running: true, results: [] });
+    for (const id of ids) {
+      let r: { name: string; ok: boolean; message: string };
+      try {
+        const res = await devicesApi.applyRomon(id);
+        r = { name: names.get(id) ?? `#${id}`, ok: true, message: res.data.message };
+      } catch (err) {
+        r = { name: names.get(id) ?? `#${id}`, ok: false,
+          message: (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not apply the RoMON setting' };
+      }
+      setRomonRun((cur) => ({ running: true, results: [...(cur?.results ?? []), r] }));
+    }
+    setRomonRun((cur) => ({ running: false, results: cur?.results ?? [] }));
+    void qc.invalidateQueries({ queryKey: ['security-fleet'] });
+  };
+
   // Turn plain API off across the fleet (#201), one device at a time. Each is
   // checked first (API-SSL login works, nothing else on plain API); a device
   // where Change Guard predicts trouble is skipped for doing by hand.
@@ -308,6 +329,20 @@ export default function SecurityPage() {
                           {apiOffRun?.running ? 'Turning off…' : `Turn off plain API on ${c.deviceIds.length === 1 ? 'it' : `all ${c.deviceIds.length}`}`}
                         </button>
                         {apiOffRun && apiOffRun.results.map((r, i) => (
+                          <p key={i} className={clsx('text-xs', r.ok ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
+                            {r.name}: {r.message}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {open && c.fix === 'romon' && canWrite && (
+                      <div className="px-5 pb-2 pl-12 space-y-1.5">
+                        <button className="btn-primary text-xs py-1" disabled={romonRun?.running}
+                          title="Apply each device's site RoMON setting, one device at a time"
+                          onClick={() => { void applyRomonAll(c.deviceIds); }}>
+                          {romonRun?.running ? 'Applying…' : `Apply the RoMON setting on ${c.deviceIds.length === 1 ? 'it' : `all ${c.deviceIds.length}`}`}
+                        </button>
+                        {romonRun && romonRun.results.map((r, i) => (
                           <p key={i} className={clsx('text-xs', r.ok ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
                             {r.name}: {r.message}
                           </p>

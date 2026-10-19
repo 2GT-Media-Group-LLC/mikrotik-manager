@@ -145,6 +145,23 @@ A related finding, *HTTPS WebFig (www-ssl) has no certificate*, appears when `ww
 enabled without one. It can't complete an HTTPS connection like that; the same button fixes
 it.
 
+## RoMON
+
+RoMON reaches a device over layer 2 when its IP path fails, from WinBox or another router's
+`/tool romon ssh`, but only if it was turned on beforehand (#311). Set what's expected on the
+**Sites** page under **RoMON**: keep it on, and the secret its RoMON network uses, as a fleet
+default and per group or site (a site's setting wins over its group's, and both over the fleet
+default). Secrets are stored encrypted and never shown again.
+
+Each device's checks then include **RoMON is off**, or **RoMON secret differs from its site's**,
+with a button that applies the setting. On this page, the finding offers to apply it on every
+device it names, one at a time, after asking. Nothing is changed on its own. The secret is
+compared only where the device shows it (the API user needs the *sensitive* policy); RoMON
+ports are left as they are, so with the default entry every interface takes part.
+
+RoMON authenticates with its secret but doesn't encrypt; WinBox and SSH over it are encrypted
+as usual.
+
 ## RouterOS vulnerabilities
 
 Every RouterOS version in use in the current site is listed with the known vulnerabilities

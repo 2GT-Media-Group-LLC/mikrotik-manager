@@ -62,6 +62,28 @@ suite('site groups and access against Postgres', () => {
       [ids.onlyGroup, ids.G, ids.both]);
   });
 
+  it('RoMON: the site setting wins, then its group, then the fleet default (#311)', async () => {
+    const romon: typeof import('../../services/romon') = require('../../services/romon');
+    expect(await romon.romonSettingFor(ids.Alpha)).toBeNull();
+    await romon.saveRomonSetting('fleet', null, true, 'fleet-secret');
+    expect(await romon.romonSettingFor(ids.Beta)).toMatchObject({ secret: 'fleet-secret', source: { scope: 'fleet' } });
+    await romon.saveRomonSetting('group', ids.G, true, 'group-secret');
+    expect(await romon.romonSettingFor(ids.Alpha)).toMatchObject({ secret: 'group-secret', source: { scope: 'group', name: 'Customer G' } });
+    await romon.saveRomonSetting('site', ids.Alpha, true, 'site-secret');
+    expect(await romon.romonSettingFor(ids.Alpha)).toMatchObject({ secret: 'site-secret', source: { scope: 'site', name: 'Alpha' } });
+    // Saving without a secret keeps the stored one; null removes it.
+    await romon.saveRomonSetting('site', ids.Alpha, false, undefined);
+    expect(await romon.romonSettingFor(ids.Alpha)).toMatchObject({ enabled: false, secret: 'site-secret' });
+    await romon.saveRomonSetting('site', ids.Alpha, true, null);
+    expect(await romon.romonSettingFor(ids.Alpha)).toMatchObject({ enabled: true, secret: null });
+    // Stored encrypted, never in the clear.
+    const raw = await one<{ s: string }>(`SELECT string_agg(COALESCE(secret_encrypted, ''), ' ') AS s FROM romon_settings`);
+    expect(raw.s).not.toContain('secret');
+    expect((await romon.listRomonSettings()).map((r) => [r.scope, r.has_secret])).toEqual([['fleet', true], ['group', true], ['site', false]]);
+    await romon.deleteRomonSetting('site', ids.Alpha);
+    expect((await romon.romonSettingFor(ids.Alpha))?.source.scope).toBe('group');
+  });
+
   afterAll(async () => {
     await db?.pool.end();
     fs.rmSync(dir, { recursive: true, force: true });

@@ -7,6 +7,7 @@ import { lease, dropSessions, type Lease, type SessionLane } from './sessionPool
 import { RouterOSClient, RouterOSTrapError, type ReadSpec } from './RouterOSClient';
 import { usesApiTls } from '../../utils/apiTls';
 import { query, queryOne } from '../../config/database';
+import { bootChange } from '../../utils/bootTime';
 import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { verifyDeviceSerial, IdentityMismatchError } from '../identityPins';
@@ -827,10 +828,33 @@ export class DeviceCollector {
         .timestamp(new Date());
 
       writeApi.writePoint(point);
+      if (r['uptime']) await this.noteBootTime(this.parseUptime(r['uptime']));
       await writeApi.flush().catch((e) => console.error('InfluxDB flush error:', e));
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect resources:`, err);
     }
+  }
+
+  /**
+   * When the device booted, from its uptime, and whether it has rebooted
+   * since we last looked (#326). The boot time moving later by more than a
+   * couple of minutes means a reboot, however quick, and however long since
+   * the last poll (the manager being down included). It's stored only when it
+   * moves, so a large fleet doesn't pay a write per poll.
+   */
+  private async noteBootTime(uptimeSec: number): Promise<void> {
+    if (!Number.isFinite(uptimeSec) || uptimeSec <= 0) return;
+    const bootAt = new Date(Date.now() - uptimeSec * 1000);
+    const known = (this.device as unknown as { boot_at?: string | Date | null }).boot_at;
+    const change = bootChange(known ? new Date(known).getTime() : null, bootAt.getTime());
+    if (change === 'same') return;
+    try {
+      if (change === 'reboot') {
+        await query(`INSERT INTO device_reboots (device_id, boot_at) VALUES ($1, $2)`, [this.device.id, bootAt.toISOString()]);
+      }
+      await query(`UPDATE devices SET boot_at = $2 WHERE id = $1`, [this.device.id, bootAt.toISOString()]);
+      (this.device as unknown as { boot_at?: string }).boot_at = bootAt.toISOString();
+    } catch { /* bookkeeping only */ }
   }
 
   private parseUptime(uptime: string): number {

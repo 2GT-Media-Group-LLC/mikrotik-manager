@@ -49,6 +49,7 @@ import { buildSegments, summarise, summariseBands } from '../utils/lteDwell';
 import { siteScopeDevices, andSite } from '../utils/siteScope';
 import { activeSite, targetSite } from '../middleware/site';
 import { resolveSiteChoice } from '../services/deviceSite';
+import { romonSettingFor, romonChecks, romonSetParams } from '../services/romon';
 
 /** Postgres interval text to milliseconds, for the few windows we offer. */
 function intervalToMs(interval: string): number {
@@ -467,7 +468,11 @@ router.get('/:id', async (req: Request, res: Response) => {
   );
   if (!device) return res.status(404).json({ error: 'Device not found' });
   const [withLoc] = await withEffectiveLocation([device as { site_id: number | null }]);
-  return res.json(withLoc);
+  // Reboots in the last 30 days, worked out from the uptime counter (#326).
+  const reboots = await queryOne<{ n: string; last: string | null }>(
+    `SELECT COUNT(*)::text AS n, MAX(boot_at) AS last FROM device_reboots
+      WHERE device_id = $1 AND boot_at > NOW() - INTERVAL '30 days'`, [req.params.id]).catch(() => null);
+  return res.json({ ...withLoc, reboots_30d: Number(reboots?.n ?? 0), last_reboot_at: reboots?.last ?? null });
 });
 
 // PATCH /api/devices/:id/monitoring — health and intermittent settings (#168)
@@ -1946,6 +1951,29 @@ router.post('/:id/www-ssl', requireWrite, async (req: Request, res: Response) =>
   }
 });
 
+// POST /api/devices/:id/romon — apply the device's RoMON setting (#311): its
+// site's, its group's or the fleet default. Under Change Guard like any other
+// write, though RoMON doesn't touch the IP path the manager uses.
+router.post('/:id/romon', requireWrite, async (req: Request, res: Response) => {
+  const device = await queryOne<DeviceRow & { site_id: number | null }>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const setting = await romonSettingFor(device.site_id ?? null);
+  if (!setting) return res.status(400).json({ error: 'No RoMON setting applies to this device. Set one on the Sites page first.' });
+  // Said as it applies to any device: RoMON may already be on, wanting only the secret.
+  const summary = setting.enabled
+    ? `Apply the RoMON setting (on${setting.secret != null ? ', with the site\u2019s secret' : ''})`
+    : 'Apply the RoMON setting (off)';
+  return withGuardedChange(req.params.id, req, res, { kind: 'romon.set', summary },
+    async (c) => {
+      await c.commandRunner().execute('/tool/romon/set', romonSetParams(setting));
+      return { message: `${summary}: done` };
+    },
+    async () => {
+      // The security score reads it again on the next look.
+      await query(`DELETE FROM device_live_cache WHERE kind = 'posture' AND device_id = $1`, [device.id]).catch(() => {});
+    });
+});
+
 // GET /api/devices/:id/security-posture — computes a hardening checklist.
 // Heuristic, not standards-based: graduated weighting that won't saturate to 0,
 // de-duplicated services, and it never proposes disabling the management
@@ -1983,10 +2011,13 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
   const mgmtService = managementService(device);
   const isRouter = device.device_type === 'router';
 
-    const [servicesRaw, fwRules, snmp] = await Promise.all([
+    const [servicesRaw, fwRules, snmp, romonRow, romonSetting] = await Promise.all([
       c.getServices().catch(() => [] as Record<string, string>[]),
       c.getFirewallRules().catch(() => [] as Record<string, string>[]),
       c.getSnmpConfig().catch(() => ({} as Record<string, string>)),
+      // RoMON against its site's (or group's, or the fleet's) setting (#311).
+      c.commandRunner().execute('/tool/romon/print').then((r) => r[0] ?? null).catch(() => null),
+      romonSettingFor((device as { site_id?: number | null }).site_id ?? null).catch(() => null),
     ]);
 
     // De-duplicate /ip/service rows by name (some devices report duplicates,
@@ -1994,7 +2025,7 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
     const services = Array.from(new Map(servicesRaw.map(s => [s['name'] ?? s['.id'], s])).values());
 
     type Sev = 'high' | 'medium' | 'low';
-    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string; fix?: 'api-ssl' | 'www-ssl' | 'api-off' };
+    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string; fix?: 'api-ssl' | 'www-ssl' | 'api-off' | 'romon' };
     const checks: Check[] = [];
 
     for (const s of services) {
@@ -2071,6 +2102,8 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
         detail: `The bootloader (${device.firmware_version || 'current'}) has an available upgrade${device.upgrade_firmware_version ? ` to ${device.upgrade_firmware_version}` : ''}. Apply it after the next RouterOS upgrade from the device's Config tab.`,
       });
     }
+
+    checks.push(...romonChecks(romonRow, romonSetting));
 
     // Suppressions (issue #101). A finding the operator has judged inapplicable is
     // marked rather than hidden: it stays visible, greyed, and stops counting

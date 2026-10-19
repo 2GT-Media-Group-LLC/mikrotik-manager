@@ -49,6 +49,29 @@ export function scanSecurity(row: Record<string, string>): string {
   return 'open';
 }
 
+/**
+ * One row per network the scan saw, combining every update the router sent
+ * for it (#295). A streaming scan sends a row when it first hears a network
+ * and then updates for the same `.id`; an update can carry only what changed
+ * or arrived late (the legacy package's `privacy` flag, say) without the
+ * address. Those updates were dropped for having no address, so a network's
+ * encryption was never seen. Rows are merged by `.id` (by address where
+ * there's no id), later values winning; a row the router marks dead is gone.
+ */
+export function mergeScanRows(rows: Record<string, string>[]): Record<string, string>[] {
+  const byKey = new Map<string, Record<string, string>>();
+  for (const row of rows) {
+    const key = row['.id'] ? `id:${row['.id']}` : row['address'] ? `mac:${row['address'].toLowerCase()}` : null;
+    if (!key) continue;
+    if (row['.dead'] === 'true' || row['.dead'] === 'yes') { byKey.delete(key); continue; }
+    const prev = byKey.get(key);
+    const merged: Record<string, string> = Object.assign(Object.create(null) as Record<string, string>, prev ?? {});
+    for (const [k, v] of Object.entries(row)) if (v !== undefined && v !== '') merged[k] = v;
+    byKey.set(key, merged);
+  }
+  return [...byKey.values()];
+}
+
 export function aggregateAPScanRows(
   allRows: { iface: string; rows: Record<string, string>[] }[],
   lookupVendor: (mac: string) => string,
@@ -56,7 +79,7 @@ export function aggregateAPScanRows(
   const byKey = new Map<string, APNetworkEntry>();
 
   for (const { rows } of allRows) {
-    for (const row of rows) {
+    for (const row of mergeScanRows(rows)) {
       const ssid = row['network-name'] || row['ssid'] || '';
       const bssid = (row['address'] || row['bssid'] || '').toLowerCase();
       if (!bssid) continue;

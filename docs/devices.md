@@ -343,6 +343,21 @@ powered devices, or anything else that drops out normally. Such a device:
 - alerts once if it stays offline longer than its limit (24 hours by default; 0 means never),
   and then sends a recovery alert when it returns
 
+### Availability, uptime and reboots
+
+Two figures sound alike and aren't (#326):
+
+- **Availability** (the dashboard's *Availability 30d*, and the device page's 30-day card) is the
+  share of the last 30 days the manager could reach the device.
+- **Uptime** (on the device page) is how long since the device last booted, with the boot time
+  under it.
+
+A reboot that's over before the next poll never shows as an outage, so availability alone misses
+it. The manager also watches each device's uptime counter: when the boot time it implies moves
+later, the device rebooted since the last look, however quickly. Those are counted as **Reboots**
+on the device page (hover for the last one) and next to *Availability 30d* on the dashboard.
+Counting starts from the upgrade to 0.73.0.
+
 ### Resetting a device's outage count
 
 The dashboard lists a device that went offline several times in the last week as *had N

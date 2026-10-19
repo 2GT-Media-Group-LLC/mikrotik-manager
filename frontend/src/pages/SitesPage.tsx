@@ -8,6 +8,7 @@ import { sitesApi, settingsApi, siteGroupsApi } from '../services/api';
 import { useSiteStore, type Site } from '../store/siteStore';
 import { useCanWrite, useIsSiteScoped } from '../hooks/useCanWrite';
 import GroupsCard from '../components/sites/GroupsCard';
+import RomonCard from '../components/sites/RomonCard';
 import { geocodeAddress, OSM_TILE_URL, OSM_ATTRIBUTION } from '../utils/geocode';
 import { escapeHtml } from '../utils/escapeHtml';
 import PollOverridesCard from '../components/common/PollOverridesCard';
@@ -255,6 +256,9 @@ export default function SitesPage() {
 
       {/* Groups of sites, one per customer (#306) */}
       <GroupsCard sites={sites} canManage={canWrite && !isScoped} onOpen={openGroup} />
+
+      {/* RoMON per site or group (#311) */}
+      <RomonCard sites={sites} />
 
       {sites.length > 10 && (
         <input className="input max-w-sm" placeholder="Find a site by name, address or group" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Find a site" />

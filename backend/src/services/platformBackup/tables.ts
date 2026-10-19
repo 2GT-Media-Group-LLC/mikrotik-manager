@@ -11,6 +11,7 @@
 export const CONFIG_TABLES = [
   'site_groups',
   'sites',
+  'romon_settings',
   'users',
   'tags',
   'credential_presets',
