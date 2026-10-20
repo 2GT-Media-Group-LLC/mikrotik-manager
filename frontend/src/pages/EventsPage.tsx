@@ -30,7 +30,12 @@ export default function EventsPage() {
   // ?search= lets other pages (e.g. the dashboard proxy card) deep-link a filter.
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') ?? '');
-  const [severities, setSeverities] = useState<Set<string>>(new Set(ALL_SEVERITIES));
+  const [severities, setSeverities] = useState<Set<string>>(() => {
+    // ?severity=error deep-links from the dashboard's alert count.
+    const wanted = (searchParams.get('severity') ?? '').split(',')
+      .filter((x): x is (typeof ALL_SEVERITIES)[number] => (ALL_SEVERITIES as readonly string[]).includes(x));
+    return new Set<string>(wanted.length ? wanted : ALL_SEVERITIES);
+  });
   const [topic, setTopic] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [page, setPage] = useState(0);
