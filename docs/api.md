@@ -122,6 +122,11 @@ applied or verified, a write returns **409** with `code: "device_busy"`; retry a
 seconds. It is told apart from a lockout by `code`, and a lockout always carries
 `lockout: true`.
 
+`POST /api/devices/:id/routing` takes `dst_address`, `gateway`, optional `distance`,
+`comment` and `routing_table`. `routing_table` must be a table that exists on the device
+(`/routing/table`); omit it for the `main` table. `GET /api/devices/:id/routing` rows
+include `routing-table`, `vrf-interface` and `type`.
+
 Firewall, NAT, address-list, routing and WireGuard writes return a short `message` and the
 `guard` block rather than the updated table; read the table again with the matching GET.
 

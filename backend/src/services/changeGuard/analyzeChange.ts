@@ -38,6 +38,8 @@ export type PlannedChange =
   /** Delete a bridge; only empty ones are, but the model doesn't assume it. */
   | { kind: 'bridge.delete'; bridge: string }
   | { kind: 'route.remove'; routeId: string }
+  /** A static route; `table` is the routing table (blank = main). */
+  | { kind: 'route.add'; dstAddress: string; gateway: string; distance?: number; table?: string }
   | { kind: 'service.toggle'; serviceId: string; disabled: boolean }
   /**
    * Firewall filter edits. `fields` use RouterOS names; in firewall.set an
@@ -255,6 +257,19 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
     case 'bond.delete': {
       s.interfaces = s.interfaces.filter((i) => i['name'] !== change.name);
       s.bridgePorts = s.bridgePorts.filter((p) => p['interface'] !== change.name);
+      break;
+    }
+
+    case 'route.add': {
+      const row: RosRow = {
+        '.id': '*simulated',
+        'dst-address': change.dstAddress,
+        gateway: change.gateway,
+        distance: String(change.distance ?? 1),
+        'routing-table': change.table || 'main',
+        active: 'true',
+      };
+      s.routes = [...s.routes, row];
       break;
     }
 

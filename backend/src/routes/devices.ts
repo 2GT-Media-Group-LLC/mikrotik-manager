@@ -2730,19 +2730,60 @@ router.put('/:id/clock', requireWrite, async (req: Request, res: Response) => {
 
 // POST /api/devices/:id/routing (add static route)
 // Guarded: a new low-distance default route can re-point the path back to the manager.
+// Optional routing_table places the route in a VRF / routing table; omitted = main.
+const ROUTING_TABLE_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
 router.post('/:id/routing', requireWrite, async (req: Request, res: Response) => {
   const { dst_address, gateway, distance, comment } = req.body;
+  const routingTable = typeof req.body.routing_table === 'string' ? req.body.routing_table.trim() : '';
   if (!dst_address || !gateway) {
     return res.status(400).json({ error: 'dst_address and gateway are required' });
+  }
+  if (req.body.routing_table !== undefined && req.body.routing_table !== null && typeof req.body.routing_table !== 'string') {
+    return res.status(400).json({ error: 'routing_table must be a string' });
+  }
+  if (routingTable && !ROUTING_TABLE_NAME.test(routingTable)) {
+    return res.status(400).json({ error: 'routing_table contains characters that are not allowed' });
+  }
+  const dist = distance === undefined || distance === null || distance === '' ? undefined : Number(distance);
+  const tableName = routingTable && routingTable !== 'main' ? routingTable : undefined;
+
+  // Checked before the guard arms anything: a typo'd table is a 400, not a failed apply.
+  if (tableName) {
+    const deviceRow = await queryOne<any>(
+      `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted FROM devices WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+    const probe = new DeviceCollector(deviceRow);
+    try {
+      await probe.connect();
+      if (!(await probe.routingTableExists(tableName))) {
+        return res.status(400).json({ error: `Routing table "${tableName}" does not exist on this device` });
+      }
+    } catch (err) {
+      return res.status(502).json({ error: `Could not verify routing table: ${(err as Error).message}` });
+    } finally {
+      probe.disconnect();
+    }
   }
 
   await withGuardedChange(
     req.params.id,
     req,
     res,
-    { kind: 'route.add', summary: `Add route ${dst_address} via ${gateway}` },
+    {
+      kind: 'route.add',
+      summary: `Add route ${dst_address} via ${gateway}${routingTable ? ` in table ${routingTable}` : ''}`,
+      change: {
+        kind: 'route.add',
+        dstAddress: String(dst_address),
+        gateway: String(gateway),
+        distance: dist !== undefined && Number.isFinite(dist) ? dist : undefined,
+        table: routingTable || undefined,
+      },
+    },
     async (c) => {
-      await c.addRoute(dst_address, gateway, distance, comment);
+      await c.addRoute(dst_address, gateway, distance, comment, tableName);
       return { message: 'Route added' };
     }
   );

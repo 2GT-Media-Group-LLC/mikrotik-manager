@@ -14,7 +14,7 @@
  * (which is why effective `current-*` membership is what we test).
  */
 import { evaluateInputChain } from './firewallPath';
-import { vlanMembership, routeFor, routeActive, routeDiscards, type DeviceSnapshot, type ManagementPath } from './pathModel';
+import { vlanMembership, bareGateway, routeFor, routeActive, routeDiscards, type DeviceSnapshot, type ManagementPath } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
 import { managementService } from '../../utils/apiTls';
 
@@ -407,9 +407,9 @@ export const INVARIANTS: Invariant[] = [
       // route pointing somewhere else entirely.
       const target = path.managerIp ?? '0.0.0.0';
       const best = path.managerIp
-        ? routeFor(snap, path.managerIp)
+        ? routeFor(snap, path.managerIp, path.mgmtTable)
         : snap.routes
-          .filter((r) => (r['dst-address'] || '') === '0.0.0.0/0' && routeActive(r))
+          .filter((r) => (r['dst-address'] || '') === '0.0.0.0/0' && routeActive(r, path.mgmtTable))
           .sort((x, y) => (parseInt(x['distance'] || '255', 10) || 255) - (parseInt(y['distance'] || '255', 10) || 255))[0] ?? null;
       if (!best) {
         return path.managerIp
@@ -422,14 +422,17 @@ export const INVARIANTS: Invariant[] = [
           detail: `The route that would carry traffic back to the manager (${best['dst-address']}) discards it (${best['type'] || 'blackhole'}).`,
         };
       }
-      const gw = (best['gateway'] || '').split('%')[0].trim();
-      const via = [gw, (best['immediate-gw'] || '').split('%')[0].trim()];
+      const gw = bareGateway(best['gateway']);
+      const via = [gw, bareGateway(best['immediate-gw'])];
       if (!via.includes(path.managerGateway)) {
         return {
           ok: true,
           uncertain: true,
           detail: `The route back toward the manager would go through ${gw || best['dst-address']} instead of ${path.managerGateway}. That may be fine, but the model cannot confirm the manager is reachable that way.`,
         };
+      }
+      if (!path.mgmtTableCertain) {
+        return { ok: true, uncertain: true, detail: `A route in ${path.mgmtTable} remains, but the routing table management uses could not be confirmed.` };
       }
       return ok();
     },

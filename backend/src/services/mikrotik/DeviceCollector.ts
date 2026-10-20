@@ -5083,11 +5083,18 @@ export class DeviceCollector {
 
   // ─── Route management ─────────────────────────────────────────────────────
 
-  async addRoute(dstAddress: string, gateway: string, distance?: number, comment?: string): Promise<void> {
+  async addRoute(dstAddress: string, gateway: string, distance?: number, comment?: string, routingTable?: string): Promise<void> {
     const params: Record<string, string> = { 'dst-address': dstAddress, gateway };
+    if (routingTable) params['routing-table'] = routingTable;
     if (distance !== undefined) params['distance'] = String(distance);
     if (comment) params['comment'] = comment;
     await this.client.execute('/ip/route/add', params);
+  }
+
+  /** True when `name` is a routing table on the device (/routing/table). */
+  async routingTableExists(name: string): Promise<boolean> {
+    const rows = await this.client.execute('/routing/table/print', { '.proplist': 'name' });
+    return rows.some((r) => r['name'] === name);
   }
 
   async removeRoute(routeId: string): Promise<void> {
