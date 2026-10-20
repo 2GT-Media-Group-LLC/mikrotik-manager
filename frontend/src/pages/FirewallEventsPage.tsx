@@ -303,12 +303,14 @@ export default function FirewallEventsPage() {
           </div>
         </div>
       )}
-      <FirewallMonitoringModal
-        open={monitoringOpen}
-        onClose={() => setMonitoringOpen(false)}
-        devices={devices}
-        initialDeviceId={deviceId ? Number(deviceId) : null}
-      />
+      {monitoringOpen && (
+        <FirewallMonitoringModal
+          open
+          onClose={() => setMonitoringOpen(false)}
+          devices={devices}
+          initialDeviceId={deviceId ? Number(deviceId) : null}
+        />
+      )}
     </div>
   );
 }

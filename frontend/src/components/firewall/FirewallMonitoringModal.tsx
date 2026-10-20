@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -134,14 +134,6 @@ export default function FirewallMonitoringModal({
   );
   const [allowRisky, setAllowRisky] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (open) {
-      setDeviceId(initialDeviceId ?? null);
-      setAllowRisky(false);
-      setError('');
-    }
-  }, [open, initialDeviceId]);
 
   const selectedDevice = devices.find((d) => d.id === deviceId);
 
