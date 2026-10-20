@@ -155,7 +155,10 @@ function HealthBar({
   wirelessCount: number;
   clientSparkline: number[];
 }) {
+  const navigate = useNavigate();
   const status = fleetStatus(summary?.devices);
+  const alertsHref = (summary?.alerts.critical ?? 0) > 0 ? '/events?severity=error'
+    : (summary?.alerts.warning ?? 0) > 0 ? '/events?severity=warning' : null;
   const reachFraction = summary?.devices.total
     ? (summary.devices.online / summary.devices.total)
     : 1;
@@ -181,7 +184,19 @@ function HealthBar({
             </div>
             <div className="text-[12px]" style={{ color: 'var(--ink-3)' }}>
               {summary?.devices.online ?? 0} of {summary?.devices.total ?? 0} reachable
-              {(summary?.alerts.critical ?? 0) > 0 && ` · ${summary!.alerts.critical} critical alert`}
+              {(summary?.alerts.critical ?? 0) > 0 && (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    className="underline hover:no-underline"
+                    onClick={() => navigate('/events?severity=error')}
+                    title="Show the error events from the last 24 hours"
+                  >
+                    {summary!.alerts.critical} critical alert{summary!.alerts.critical === 1 ? '' : 's'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -226,6 +241,7 @@ function HealthBar({
               : 'none',
             spark: [] as number[],
             color: (summary?.alerts.critical ?? 0) > 0 ? 'var(--bad)' : 'var(--ink-3)',
+            href: alertsHref,
           },
           {
             // Availability, not time since boot (#326), with the reboots the
@@ -241,8 +257,17 @@ function HealthBar({
             spark: [] as number[],
             color: (summary?.availability?.fleetUptimePct30d ?? 100) >= 99 ? 'var(--accent)' : (summary?.availability?.fleetUptimePct30d ?? 100) >= 95 ? 'var(--warn)' : 'var(--bad)',
           },
-        ].map(({ label, value, spark, color, title, sub }: { label: string; value: string; spark: number[]; color: string; title?: string; sub?: string }) => (
-          <div key={label} style={{ minWidth: 110, paddingLeft: 20, borderLeft: '1px solid var(--line)' }} title={title}>
+        ].map(({ label, value, spark, color, title, sub, href }: { label: string; value: string; spark: number[]; color: string; title?: string; sub?: string; href?: string | null }) => (
+          <div
+            key={label}
+            role={href ? 'link' : undefined}
+            tabIndex={href ? 0 : undefined}
+            title={title ?? (href ? 'Show these events' : undefined)}
+            onClick={href ? () => navigate(href) : undefined}
+            onKeyDown={href ? (e) => { if (e.key === 'Enter') navigate(href); } : undefined}
+            className={href ? 'cursor-pointer hover:opacity-80' : undefined}
+            style={{ minWidth: 110, paddingLeft: 20, borderLeft: '1px solid var(--line)' }}
+          >
             <div className="text-[11px] mb-[2px]" style={{ color: 'var(--ink-3)' }}>{label}</div>
             <div className="text-[18px] font-semibold num-tab mb-[4px]" style={{ color: 'var(--ink)' }}>{value}</div>
             {sub && <div className="text-[11px] -mt-[2px] mb-[2px]" style={{ color: 'var(--ink-3)' }}>{sub}</div>}
