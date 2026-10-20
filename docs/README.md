@@ -10,6 +10,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Clients](clients.md) | Where client data comes from, identification, history, and per-port clients |
 | [Topology](topology.md) | How links are discovered, spanning-tree resolution, client devices, your own nodes and hand-drawn links |
 | [Traffic analytics](traffic.md) | The NetFlow collector, top talkers, application breakdown, retention |
+| [Firewall logs](firewall-events.md) | Structured RouterOS firewall events and per-rule monitoring |
 | [Wireless](wireless.md) | Radios and SSIDs, RF health, signal bands, rogue APs, guest WiFi |
 | [Network services](network-services.md) | DHCP, DNS, NTP, WireGuard, logging, discovery and SNMP |
 | [Adopting devices](adoption.md) | Adding configured devices, and configuring factory-default ones so they can be managed |

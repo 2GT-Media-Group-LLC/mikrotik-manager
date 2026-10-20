@@ -5,6 +5,7 @@ import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeByNullableDevice } from '../utils/siteScope';
 import { activeSite, writableScope } from '../middleware/site';
 import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
+import { parseFirewallLog } from '../utils/firewallLogParser';
 
 /** Most events the list's total counts; past it the page shows "N+". */
 export const EVENTS_COUNT_CAP = 100_000;
@@ -37,6 +38,282 @@ router.get('/topics', async (req: Request, res: Response) => {
     ORDER BY COUNT(*) DESC, token ASC
     LIMIT 40`);
   res.json(rows.map((r) => ({ topic: r.token.trim(), count: Number(r.n) })));
+});
+
+
+type FirewallEventRow = {
+  id: number;
+  device_id: number | null;
+  severity: string;
+  topic: string | null;
+  message: string;
+  event_time: Date | string;
+  device_name: string | null;
+};
+
+const DEFAULT_FIREWALL_WINDOW_MS = 24 * 60 * 60 * 1000;
+const FIREWALL_MAX_LIMIT = 200;
+
+const FIREWALL_ACTION_REGEX = {
+  fasttrack: String.raw`\m(fasttrack|fast-track)\M`,
+  drop: String.raw`\m(drop|deny|denied|block|blocked)\M`,
+  reject: String.raw`\mreject(ed)?\M`,
+  accept: String.raw`\m(accept|accepted|allow|allowed|permit|permitted)\M`,
+} as const;
+
+const FIREWALL_ACTIONS = new Set([
+  'accept',
+  'drop',
+  'reject',
+  'fasttrack',
+  'unknown',
+]);
+
+function singleQueryValue(value: unknown): string | undefined | null {
+  if (value === undefined) return undefined;
+  return typeof value === 'string' ? value : null;
+}
+
+function strictInteger(
+  value: string,
+  min: number,
+  max?: number
+): number | null {
+  if (!/^\d+$/.test(value)) return null;
+
+  const parsed = Number(value);
+
+  if (!Number.isSafeInteger(parsed) || parsed < min) return null;
+  if (max !== undefined && parsed > max) return null;
+
+  return parsed;
+}
+
+// GET /api/events/firewall
+router.get('/firewall', async (req: Request, res: Response) => {
+  const deviceIdRaw = singleQueryValue(req.query.deviceId);
+  const sinceRaw = singleQueryValue(req.query.since);
+  const searchRaw = singleQueryValue(req.query.search);
+  const actionRaw = singleQueryValue(req.query.action);
+  const protocolRaw = singleQueryValue(req.query.protocol);
+  const limitRaw = singleQueryValue(req.query.limit);
+  const offsetRaw = singleQueryValue(req.query.offset);
+
+  if (deviceIdRaw === null) {
+    return res.status(400).json({ error: 'Invalid deviceId' });
+  }
+  if (sinceRaw === null) {
+    return res.status(400).json({ error: 'Invalid since' });
+  }
+  if (searchRaw === null) {
+    return res.status(400).json({ error: 'Invalid search' });
+  }
+  if (actionRaw === null) {
+    return res.status(400).json({ error: 'Invalid action' });
+  }
+  if (protocolRaw === null) {
+    return res.status(400).json({ error: 'Invalid protocol' });
+  }
+  if (limitRaw === null) {
+    return res.status(400).json({ error: 'Invalid limit' });
+  }
+  if (offsetRaw === null) {
+    return res.status(400).json({ error: 'Invalid offset' });
+  }
+
+  const deviceId =
+    deviceIdRaw === undefined
+      ? undefined
+      : strictInteger(deviceIdRaw, 1);
+
+  if (deviceIdRaw !== undefined && deviceId === null) {
+    return res.status(400).json({ error: 'Invalid deviceId' });
+  }
+
+  const requestedLimit =
+    limitRaw === undefined
+      ? 100
+      : strictInteger(limitRaw, 1, FIREWALL_MAX_LIMIT);
+
+  if (requestedLimit === null) {
+    return res.status(400).json({
+      error: `Invalid limit; expected an integer from 1 to ${FIREWALL_MAX_LIMIT}`,
+    });
+  }
+
+  const requestedOffset =
+    offsetRaw === undefined
+      ? 0
+      : strictInteger(offsetRaw, 0);
+
+  if (requestedOffset === null) {
+    return res.status(400).json({
+      error: 'Invalid offset; expected a non-negative integer',
+    });
+  }
+
+  const sinceDate =
+    sinceRaw === undefined
+      ? new Date(Date.now() - DEFAULT_FIREWALL_WINDOW_MS)
+      : new Date(sinceRaw);
+
+  if (Number.isNaN(sinceDate.getTime())) {
+    return res.status(400).json({
+      error: 'Invalid since; expected a valid date/time',
+    });
+  }
+
+  const actionFilter = actionRaw?.trim().toLowerCase() ?? '';
+
+  if (actionFilter && !FIREWALL_ACTIONS.has(actionFilter)) {
+    return res.status(400).json({ error: 'Invalid action' });
+  }
+
+  const protocolFilter = protocolRaw?.trim().toLowerCase() ?? '';
+
+  if (
+    protocolFilter &&
+    !/^[a-z0-9_-]{1,32}$/.test(protocolFilter)
+  ) {
+    return res.status(400).json({ error: 'Invalid protocol' });
+  }
+
+  const filters: string[] = [
+    `'firewall' = ANY(string_to_array(e.topic, ','))`,
+    `e.message ~* '(input|forward|output):'`,
+    `e.message ~* '(^|[[:space:],])proto[[:space:]]+'`,
+    `e.message LIKE '%->%'`,
+  ];
+
+  const params: unknown[] = [];
+  let idx = 1;
+
+  filters.push(`e.event_time >= $${idx++}`);
+  params.push(sinceDate.toISOString());
+
+  if (deviceId !== undefined) {
+    filters.push(`e.device_id = $${idx++}`);
+    params.push(deviceId);
+  }
+
+  const siteFilter = siteScopeByNullableDevice(
+    activeSite(req),
+    'e.device_id'
+  );
+  if (siteFilter) filters.push(siteFilter);
+
+  const searchTerm = searchRaw?.trim();
+
+  if (searchTerm) {
+    filters.push(
+      `(e.message ILIKE $${idx} OR COALESCE(d.name, '') ILIKE $${idx})`
+    );
+    params.push(`%${searchTerm}%`);
+    idx++;
+  }
+
+  // RouterOS packet logs place the configured log-prefix before the chain.
+  // Restrict action matching to that prefix so words elsewhere in the packet
+  // details do not change the inferred action.
+  const prefixSql = `COALESCE(
+    NULLIF(split_part(e.message, ' input:', 1), e.message),
+    NULLIF(split_part(e.message, ' forward:', 1), e.message),
+    NULLIF(split_part(e.message, ' output:', 1), e.message),
+    ''
+  )`;
+
+  const addActionMatch = (
+    pattern: string,
+    negate = false
+  ) => {
+    filters.push(
+      `${prefixSql} ${negate ? '!~*' : '~*'} $${idx++}`
+    );
+    params.push(pattern);
+  };
+
+  if (actionFilter === 'fasttrack') {
+    addActionMatch(FIREWALL_ACTION_REGEX.fasttrack);
+  } else if (actionFilter === 'drop') {
+    addActionMatch(FIREWALL_ACTION_REGEX.fasttrack, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.drop);
+  } else if (actionFilter === 'reject') {
+    addActionMatch(FIREWALL_ACTION_REGEX.fasttrack, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.drop, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.reject);
+  } else if (actionFilter === 'accept') {
+    addActionMatch(FIREWALL_ACTION_REGEX.fasttrack, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.drop, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.reject, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.accept);
+  } else if (actionFilter === 'unknown') {
+    addActionMatch(FIREWALL_ACTION_REGEX.fasttrack, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.drop, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.reject, true);
+    addActionMatch(FIREWALL_ACTION_REGEX.accept, true);
+  }
+
+  if (protocolFilter) {
+    filters.push(`e.message ~* $${idx++}`);
+    params.push(
+      String.raw`\mproto[[:space:]]+${protocolFilter}([[:space:](,]|$)`
+    );
+  }
+
+  const where = filters.join(' AND ');
+
+  const rowsQuery = query<FirewallEventRow>(
+    `SELECT
+       e.id,
+       e.device_id,
+       e.severity,
+       e.topic,
+       e.message,
+       e.event_time,
+       d.name AS device_name
+     FROM events e
+     LEFT JOIN devices d ON d.id = e.device_id
+     WHERE ${where}
+     ORDER BY e.event_time DESC
+     LIMIT $${idx} OFFSET $${idx + 1}`,
+    [...params, requestedLimit, requestedOffset]
+  );
+
+  const countQuery = query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total
+     FROM events e
+     LEFT JOIN devices d ON d.id = e.device_id
+     WHERE ${where}`,
+    params
+  );
+
+  const [rows, totalRows] = await Promise.all([
+    rowsQuery,
+    countQuery,
+  ]);
+
+  // SQL has already narrowed and paged the result. Node only parses the
+  // rows that are actually returned to this request.
+  const events = rows.flatMap((row) => {
+    const event = parseFirewallLog(row.message);
+    if (!event) return [];
+
+    return [{
+      id: row.id,
+      deviceId: row.device_id,
+      deviceName: row.device_name,
+      eventTime: row.event_time,
+      severity: row.severity,
+      topic: row.topic,
+      rawMessage: row.message,
+      ...event,
+    }];
+  });
+
+  res.json({
+    events,
+    total: Number(totalRows[0]?.total ?? 0),
+  });
 });
 
 router.get('/', async (req: Request, res: Response) => {

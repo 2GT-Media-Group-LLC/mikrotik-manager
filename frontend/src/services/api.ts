@@ -1153,6 +1153,36 @@ export const systemApi = {
 };
 
 // ─── Events ───────────────────────────────────────────────────────────────────
+
+export interface FirewallEvent {
+  id: number;
+  deviceId: number | null;
+  deviceName: string | null;
+  eventTime: string;
+  severity: string;
+  topic: string | null;
+  rawMessage: string;
+
+  action: 'accept' | 'drop' | 'reject' | 'fasttrack' | 'unknown';
+  prefix: string;
+  chain: 'input' | 'forward' | 'output';
+
+  inInterface?: string;
+  outInterface?: string;
+  connectionState?: string;
+  srcMac?: string;
+
+  protocol: string;
+  tcpFlags?: string;
+
+  srcIp: string;
+  srcPort?: number;
+  dstIp: string;
+  dstPort?: number;
+
+  length?: number;
+}
+
 export const eventsApi = {
   topics: () => api.get<{ topic: string; count: number }[]>('/events/topics'),
   list: (params?: {
@@ -1170,6 +1200,19 @@ export const eventsApi = {
   /** The newest events only, without the totals the list endpoint also computes. */
   recent: (params: { severity?: string; limit: number }) =>
     api.get<{ events: DeviceEvent[] }>('/events', { params: { ...params, counts: 0 } }),
+  firewall: (params?: {
+    deviceId?: number;
+    search?: string;
+    since?: string;
+    action?: FirewallEvent['action'];
+    protocol?: string;
+    limit?: number;
+    offset?: number;
+  }) =>
+    api.get<{
+      events: FirewallEvent[];
+      total: number;
+    }>('/events/firewall', { params }),
   clear: (deviceId?: number) => api.delete('/events', { params: deviceId ? { deviceId } : {} }),
 };
 
