@@ -88,8 +88,13 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
     queryFn: () => devicesApi.getRouting(deviceId).then(r => r.data),
   });
 
+  const { data: tableRows = [] } = useQuery({
+    queryKey: ['routing-tables', deviceId],
+    queryFn: () => dApi.getRoutingTables(deviceId).then(r => r.data),
+  });
+  const [tableFilter, setTableFilter] = useState('all');
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ dst_address: '', gateway: '', distance: '1', comment: '' });
+  const [form, setForm] = useState({ dst_address: '', gateway: '', distance: '1', comment: '', routing_table: '' });
   const [addError, setAddError] = useState('');
   const [deleteError, setDeleteError] = useState('');
   // 409 + verdict from the lockout predictor, with the retry that confirms it.
@@ -100,13 +105,15 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
     gateway: form.gateway,
     distance: form.distance ? parseInt(form.distance, 10) : undefined,
     comment: form.comment || undefined,
+    // Blank = the device default (main); sent only when a table was picked.
+    ...(form.routing_table ? { routing_table: form.routing_table } : {}),
     ...(confirm ? { confirm_lockout: true } : {}),
   });
   const addMutation = useMutation({
     mutationFn: addRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['routing', deviceId] });
-      setForm({ dst_address: '', gateway: '', distance: '1', comment: '' });
+      setForm({ dst_address: '', gateway: '', distance: '1', comment: '', routing_table: '' });
       setShowAdd(false);
       setAddError('');
       setLockout(null);
@@ -139,12 +146,27 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
   const isDynamic = (r: Record<string, string>) =>
     r['dynamic'] === 'true' || (r['flags'] && /[DCBOE]/.test(r['flags']));
 
+  const tableOf = (r: Record<string, string>) => r['routing-table'] || 'main';
+  const typeOf = (r: Record<string, string>) =>
+    r['blackhole'] === 'true' ? 'blackhole' : (r['type'] && r['type'] !== 'unicast' ? r['type'] : '');
+  // Tables the device defines, plus any a route names that the table list doesn't.
+  const tableNames = Array.from(new Set([
+    'main',
+    ...tableRows.map(t => t['name']).filter(Boolean),
+    ...(routes as Record<string, string>[]).map(tableOf),
+  ])).sort((a, b) => (a === 'main' ? -1 : b === 'main' ? 1 : a.localeCompare(b)));
+  const shownRoutes = (routes as Record<string, string>[]).filter(r => tableFilter === 'all' || tableOf(r) === tableFilter);
+
   if (isLoading) return <div className="text-center py-8 text-gray-400">Loading...</div>;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-3">
+          <select className="input text-sm py-1" value={tableFilter} onChange={e => setTableFilter(e.target.value)} aria-label="Filter by routing table">
+            <option value="all">All tables</option>
+            {tableNames.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
           {deleteError && (
             <span className="text-sm text-red-500 flex items-center gap-1">
               <AlertCircle className="w-4 h-4" />{deleteError}
@@ -166,7 +188,12 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
       {canWrite && showAdd && (
         <div className="card p-4 space-y-3">
           <h4 className="text-sm font-semibold text-gray-900 dark:text-white">New Static Route</h4>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div><label className="label">Routing table</label>
+              <select className="input" value={form.routing_table} onChange={e => setForm(f => ({ ...f, routing_table: e.target.value }))}>
+                <option value="">main (default)</option>
+                {tableNames.filter(t => t !== 'main').map(t => <option key={t} value={t}>{t}</option>)}
+              </select></div>
             <div><label className="label">Destination (CIDR)</label>
               <input className="input font-mono" value={form.dst_address} onChange={e => setForm(f => ({ ...f, dst_address: e.target.value }))} placeholder="0.0.0.0/0" /></div>
             <div><label className="label">Gateway</label>
@@ -198,6 +225,7 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
                 <th className="table-header px-4 py-2.5 text-left">Destination</th>
                 <th className="table-header px-4 py-2.5 text-left">Gateway</th>
                 <th className="table-header px-4 py-2.5 text-left">Interface</th>
+                <th className="table-header px-4 py-2.5 text-left">Table</th>
                 <th className="table-header px-4 py-2.5 text-left">Dist.</th>
                 <th className="table-header px-4 py-2.5 text-left">Status</th>
                 <th className="table-header px-4 py-2.5 text-left">Comment</th>
@@ -205,7 +233,8 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
-              {(routes as Record<string, string>[]).map((r, i) => {
+              {shownRoutes.map((r, i) => {
+                const rtype = typeOf(r);
                 const active = r['active'] === 'true' || r['flags']?.includes('A');
                 const dynamic = isDynamic(r);
                 const routeId = r['.id'] || '';
@@ -214,6 +243,10 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
                     <td className="px-4 py-2.5 font-mono text-gray-900 dark:text-white">{r['dst-address'] || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-gray-500 dark:text-slate-400">{r['gateway'] || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-gray-500 dark:text-slate-400">{r['interface'] || '—'}</td>
+                    <td className="px-4 py-2.5 font-mono text-gray-500 dark:text-slate-400">
+                      {tableOf(r)}
+                      {r['vrf-interface'] && <span className="ml-1 text-xs text-gray-400 dark:text-slate-500">({r['vrf-interface']})</span>}
+                    </td>
                     <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">{r['distance'] || '—'}</td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-1.5">
@@ -221,6 +254,7 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
                           {active ? 'Active' : 'Inactive'}
                         </span>
                         {dynamic && <span className="text-xs text-gray-400 dark:text-slate-500">(dynamic)</span>}
+                        {rtype && <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{rtype}</span>}
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-gray-400 dark:text-slate-500 text-xs">{r['comment'] || ''}</td>

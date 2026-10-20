@@ -65,6 +65,10 @@ export interface DeviceSnapshot {
   deviceMode?: RosRow | null;
   /** /interface/ethernet/switch: the switch chip(s) and their L3 offload setting (#254). */
   switches?: RosRow[];
+  /** /ip/vrf: VRF name (its routing table) and the interfaces placed in it. */
+  vrfs?: RosRow[];
+  /** False when /ip/vrf could not be read, so a VRF-bound path can't be confirmed. */
+  vrfsRead?: boolean;
 }
 
 export type HopKind = 'address' | 'vlan-interface' | 'bridge' | 'bond' | 'port';
@@ -117,6 +121,14 @@ export interface ManagementPath {
   ingressTagged: boolean;
   /** Gateway the device uses to reach the manager, when the manager is off-subnet. */
   managerGateway: string | null;
+  /**
+   * Routing table the management session is carried in: the API service's `vrf`
+   * (or, failing that, the VRF its interface sits in). `main` for a device
+   * without VRFs. Route changes in any other table don't touch management.
+   */
+  mgmtTable: string;
+  /** False when the table could not be pinned down; route checks then report uncertain. */
+  mgmtTableCertain: boolean;
   hops: PathHop[];
   /** Things we could not determine; callers should degrade to conservative checks. */
   warnings: string[];
@@ -172,6 +184,11 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       optional('/system/device-mode/print'),
       optional('/interface/ethernet/switch/print'),
     ]);
+    // Absent on builds without VRF support; a failed read is recorded so a
+    // service bound to a VRF is then reported as unconfirmed rather than assumed.
+    let vrfs: RosRow[] = [];
+    let vrfsRead = true;
+    try { vrfs = await client.execute('/ip/vrf/print', { detail: '' }); } catch { vrfsRead = false; }
 
     // Only the manager's connection, and only the routes that could carry
     // traffic back to it, never the whole tables: a BGP router has hundreds of
@@ -209,6 +226,8 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
       managerLocalPort: client.localPort,
       deviceMode: deviceModeRows[0] ?? null,
       switches,
+      vrfs,
+      vrfsRead,
     };
   } finally {
     client.disconnect();
@@ -265,11 +284,21 @@ export function vlanMembership(
   };
 }
 
-/** An active route in the main table: one the device can select for forwarding. */
-export function routeActive(r: RosRow): boolean {
+export const MAIN_TABLE = 'main';
+
+/** Routing table a route lives in; RouterOS 6 rows and fixtures leave it blank (main). */
+export function routeTable(r: RosRow): string {
+  return (r['routing-table'] || '').trim() || MAIN_TABLE;
+}
+
+/**
+ * An active route in `table` (default main): one the device can select for
+ * forwarding traffic in that table. A route in another table never carries the
+ * management session, so it doesn't count either way.
+ */
+export function routeActive(r: RosRow, table: string = MAIN_TABLE): boolean {
   if (isTrue(r['disabled']) || r['active'] === 'false') return false;
-  const table = (r['routing-table'] || '').trim();
-  return table === '' || table === 'main';
+  return routeTable(r) === (table || MAIN_TABLE);
 }
 
 /** A route that wins selection but throws traffic away rather than forwarding it. */
@@ -278,22 +307,27 @@ export function routeDiscards(r: RosRow): boolean {
 }
 
 /** Can this route carry the manager's traffic? */
-export function routeUsable(r: RosRow): boolean {
-  return routeActive(r) && !routeDiscards(r);
+export function routeUsable(r: RosRow, table: string = MAIN_TABLE): boolean {
+  return routeActive(r, table) && !routeDiscards(r);
+}
+
+/** Gateway address with an interface (`%if`) or table (`@vrf`) qualifier removed. */
+export function bareGateway(gw: string | undefined): string {
+  return (gw || '').split(/[%@]/)[0].trim();
 }
 
 /**
- * Longest-prefix match (then lowest distance): the route the device would use for
- * `ip`. Discard routes take part in the selection, because that is what the device
- * does: a covering blackhole beats a default route, and the caller must treat a
- * winning discard as no way back (`routeDiscards`).
+ * Longest-prefix match (then lowest distance) in `table`: the route the device
+ * would use for `ip`. Discard routes take part in the selection, because that is
+ * what the device does: a covering blackhole beats a default route, and the
+ * caller must treat a winning discard as no way back (`routeDiscards`).
  */
-export function routeFor(snap: DeviceSnapshot, ip: string): RosRow | null {
+export function routeFor(snap: DeviceSnapshot, ip: string, table: string = MAIN_TABLE): RosRow | null {
   let best: RosRow | null = null;
   let bestLen = -1;
   let bestDist = Infinity;
   for (const r of snap.routes) {
-    if (!routeActive(r)) continue;
+    if (!routeActive(r, table)) continue;
     const dst = r['dst-address'] || '';
     const [net, lenStr] = dst.split('/');
     const len = parseInt(lenStr ?? '32', 10);
@@ -305,6 +339,35 @@ export function routeFor(snap: DeviceSnapshot, ip: string): RosRow | null {
     }
   }
   return best;
+}
+
+/**
+ * Which routing table the management session uses. The API (or API-SSL) service
+ * listening on the device's API port carries a `vrf`; where that is the default
+ * the VRF that holds the management interface decides. Pure over the snapshot.
+ */
+export function resolveMgmtTable(
+  snap: DeviceSnapshot,
+  apiPort: number,
+  mgmtInterfaces: (string | null)[],
+): { table: string; certain: boolean; note: string | null } {
+  const svc = snap.services.find(
+    (x) => /^api(-ssl)?$/.test(x['name'] || '') && !isTrue(x['disabled']) && parseInt(x['port'] || '', 10) === apiPort
+  );
+  const svcVrf = (svc?.['vrf'] || '').trim();
+  const ifaces = new Set(mgmtInterfaces.filter((x): x is string => !!x));
+  const ifaceVrf = (snap.vrfs ?? []).find((v) => csv(v['interfaces']).some((i) => ifaces.has(i)))?.['name']?.trim() || '';
+
+  if (svcVrf && svcVrf !== MAIN_TABLE) {
+    const known = snap.vrfsRead !== false;
+    if (ifaceVrf && ifaceVrf !== svcVrf) {
+      return { table: svcVrf, certain: false, note: `The API service is bound to VRF ${svcVrf} but ${[...ifaces].join('/')} is in VRF ${ifaceVrf}; the table management uses is ambiguous.` };
+    }
+    if (!known) return { table: svcVrf, certain: false, note: `The API service is bound to VRF ${svcVrf}, but /ip/vrf could not be read to confirm it.` };
+    return { table: svcVrf, certain: true, note: null };
+  }
+  if (ifaceVrf && ifaceVrf !== MAIN_TABLE) return { table: ifaceVrf, certain: true, note: null };
+  return { table: MAIN_TABLE, certain: true, note: null };
 }
 
 function ipToInt(ip: string): number | null {
@@ -462,6 +525,18 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
     });
   }
 
+  // 2b. Which routing table carries the management session?
+  const tableRes = resolveMgmtTable(snap, device.api_port, [mgmtInterface, bridge, mgmtParent]);
+  const mgmtTable = tableRes.table;
+  if (tableRes.note) warnings.push(tableRes.note);
+  if (mgmtTable !== MAIN_TABLE) {
+    hops.push({
+      kind: 'address',
+      name: mgmtTable,
+      reason: `Management is carried in routing table (VRF) ${mgmtTable}; only routes in that table matter for reaching the manager.`,
+    });
+  }
+
   // 3. Where does the manager's traffic physically enter?
   const managerIp = managerIpFromConntrack(snap, device.api_port);
   if (!managerIp && new Set(apiConnectionSources(snap, device.api_port).map((c) => c.ip)).size > 1) {
@@ -480,14 +555,14 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
   let viaDefaultGw = false;
 
   if (managerIp) {
-    const route = routeFor(snap, managerIp);
-    const gw = route?.['gateway'] ? route['gateway'].split('%')[0].trim() : null;
+    const route = routeFor(snap, managerIp, mgmtTable);
+    const gw = route?.['gateway'] ? bareGateway(route['gateway']) || null : null;
     const onLink = snap.arp.some((a) => a['address'] === managerIp);
     lookupIp = onLink ? managerIp : gw;
     if (!onLink && gw && ipToInt(gw) !== null) managerGateway = gw;
   } else {
-    const defaultRoute = snap.routes.find((r) => (r['dst-address'] || '') === '0.0.0.0/0' && routeUsable(r));
-    const gw = defaultRoute?.['gateway'] ? defaultRoute['gateway'].split('%')[0].trim() : null;
+    const defaultRoute = snap.routes.find((r) => (r['dst-address'] || '') === '0.0.0.0/0' && routeUsable(r, mgmtTable));
+    const gw = defaultRoute?.['gateway'] ? bareGateway(defaultRoute['gateway']) || null : null;
     if (gw && ipToInt(gw) !== null) { lookupIp = gw; viaDefaultGw = true; managerGateway = gw; }
   }
 
@@ -590,6 +665,8 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
     mgmtParent,
     ingressTagged,
     managerGateway,
+    mgmtTable,
+    mgmtTableCertain: tableRes.certain,
     hops,
     warnings,
   };

@@ -221,8 +221,12 @@ What the model follows:
 - the port holding the address, or the parent port of its VLAN interface, being moved into
   a bridge, where it would stop receiving management (#281);
 - the route back to an off-subnet manager: the one the device would actually pick (longest
-  prefix, then distance), so a default route elsewhere doesn't count, and a blackhole
-  route counts as no way back;
+  prefix, then distance) in the routing table (VRF) the management session uses (the API
+  service's `vrf`, or the VRF its interface is in, else `main`), so a default route elsewhere
+  doesn't count, and a blackhole route counts as no way back. The router is asked for the
+  routes covering the manager's address in every table; the table is chosen afterwards. A
+  route in any other table is not treated as affecting management, and if the table can't be
+  confirmed (for example `/ip/vrf` is unreadable) the check reports uncertain;
 - the API service and the input firewall chain.
 
 A failed read during the check is never taken as "nothing there": the check fails, and the

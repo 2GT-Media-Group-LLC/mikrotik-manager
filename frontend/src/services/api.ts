@@ -808,7 +808,7 @@ export const devicesApi = {
   getClock: (id: number) => api.get<{ date: string; time: string; timezone: string }>(`/devices/${id}/clock`),
   setClock: (id: number, data: { date?: string; time?: string; timezone?: string }) =>
     api.put(`/devices/${id}/clock`, data),
-  addRoute: (id: number, data: { dst_address: string; gateway: string; distance?: number; comment?: string; confirm_lockout?: boolean }) =>
+  addRoute: (id: number, data: { dst_address: string; gateway: string; distance?: number; comment?: string; routing_table?: string; confirm_lockout?: boolean }) =>
     api.post(`/devices/${id}/routing`, data),
   deleteRoute: (id: number, routeId: string, confirmLockout = false) =>
     api.delete(`/devices/${id}/routing/${encodeURIComponent(routeId)}`,
