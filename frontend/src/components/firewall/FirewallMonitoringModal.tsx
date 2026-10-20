@@ -225,7 +225,7 @@ export default function FirewallMonitoringModal({
             </h3>
             <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
               Enable RouterOS logging for firewall rules you want to see in
-              Firewall Events.
+              Firewall Logs.
             </p>
           </div>
 

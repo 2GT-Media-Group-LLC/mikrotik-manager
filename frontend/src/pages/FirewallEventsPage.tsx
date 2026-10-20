@@ -84,7 +84,7 @@ export default function FirewallEventsPage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-          Firewall Events
+          Firewall Logs
           {total > 0 && (
             <span className="ml-2 text-sm font-normal text-gray-500 dark:text-slate-400">
               ({totalLabel})
