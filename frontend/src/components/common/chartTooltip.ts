@@ -16,3 +16,13 @@ export const chartTooltip: { contentStyle: CSSProperties; labelStyle: CSSPropert
   },
   labelStyle: { color: 'var(--ink-2)', fontWeight: 600, marginBottom: 2 },
 };
+
+/**
+ * For pie charts: Recharts colours each item's text with its series colour,
+ * which a pie doesn't pass, so the text fell back to black, unreadable on the
+ * dark tooltip (#331).
+ */
+export const pieTooltip: typeof chartTooltip & { itemStyle: CSSProperties } = {
+  ...chartTooltip,
+  itemStyle: { color: 'var(--ink)' },
+};

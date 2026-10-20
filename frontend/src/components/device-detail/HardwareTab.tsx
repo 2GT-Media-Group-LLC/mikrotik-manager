@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRememberedRange } from '../../hooks/useRememberedRange';
 import { useQuery } from '@tanstack/react-query';
 import { Thermometer, Zap, Wind, Power, Activity, HelpCircle, RefreshCw, HardDrive } from 'lucide-react';
 import { devicesApi, metricsApi } from '../../services/api';
@@ -227,7 +228,7 @@ function toDisplayTemp(celsius: number, unit: 'C' | 'F'): string {
 const RESOURCE_RANGES = ['6h', '12h', '24h', '7d'] as const;
 
 function ResourceChart({ deviceId }: { deviceId: number }) {
-  const [range, setRange] = useState<string>('24h');
+  const [range, setRange] = useRememberedRange<string>('hardware', '24h');
 
   const { data: rawResources = [] } = useQuery({
     queryKey: ['resources-history', deviceId, range],

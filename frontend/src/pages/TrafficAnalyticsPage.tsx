@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRememberedRange } from '../hooks/useRememberedRange';
 import { Link } from 'react-router-dom';
 import LoadError from '../components/common/LoadError';
 import { useQuery } from '@tanstack/react-query';
@@ -7,7 +8,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
-import { chartTooltip } from '../components/common/chartTooltip';
+import { chartTooltip, pieTooltip } from '../components/common/chartTooltip';
 import { Activity, ArrowDown, ArrowUp, BarChart3, Router as RouterIcon, Settings2, AlertTriangle } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
@@ -55,7 +56,7 @@ function clientLabel(c: { mac: string; custom_name: string | null; hostname: str
 }
 
 export default function TrafficAnalyticsPage() {
-  const [range, setRange] = useState<Range>('24h');
+  const [range, setRange] = useRememberedRange<Range>('traffic-analytics', '24h', RANGES);
   // Top Talkers was a fixed list of ten with no way to look anything up, which
   // is unusable on a network of any size — you could see the loudest ten and
   // nothing else. Filtering happens client-side because the rows are already
@@ -340,7 +341,7 @@ export default function TrafficAnalyticsPage() {
                               `${formatBytes(value)}${totalAppBytes > 0 ? ` · ${((value / totalAppBytes) * 100).toFixed(1)}%` : ''}`,
                               name,
                             ]}
-                            {...chartTooltip}
+                            {...pieTooltip}
                           />
                         </PieChart>
                       </ResponsiveContainer>

@@ -8,6 +8,7 @@ import { RouterOSClient, RouterOSTrapError, type ReadSpec } from './RouterOSClie
 import { usesApiTls } from '../../utils/apiTls';
 import { query, queryOne } from '../../config/database';
 import { bootChange } from '../../utils/bootTime';
+import { logSafe } from '../../utils/logSafe';
 import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { verifyDeviceSerial, IdentityMismatchError } from '../identityPins';
@@ -3626,8 +3627,22 @@ export class DeviceCollector {
 
   async scanWireless(iface: string, durationMs = 5_000): Promise<Record<string, string>[]> {
     const pkg = await this.detectWifiPackage();
-    const cmd = pkg === 'wifi' ? '/interface/wifi/scan' : '/interface/wireless/scan';
-    return this.client.executeStreaming(cmd, { '.id': iface }, durationMs).catch(() => []);
+    if (pkg === 'wifi') {
+      return this.client.executeStreaming('/interface/wifi/scan', { '.id': iface }, durationMs).catch(() => []);
+    }
+    // The legacy package, as a timed scan (#295): `/interface wireless scan
+    // wlan1 duration=5` reports each network's privacy flag, where the
+    // open-ended scan we used to cancel apparently doesn't. It ends by itself
+    // with !done; the read limit is a little longer, as a backstop.
+    const seconds = Math.max(1, Math.round(durationMs / 1000));
+    const rows = await this.client
+      .executeStreaming('/interface/wireless/scan', { '.id': iface, duration: String(seconds) }, durationMs + 5_000)
+      .catch(() => [] as Record<string, string>[]);
+    // Which fields the router sent (names only, never values), so a report
+    // like #295 can be settled from one log line.
+    const fields = [...new Set(rows.flatMap((r) => Object.keys(r)))].sort();
+    console.log(`[ap-scan] ${logSafe(this.device.name)} ${logSafe(iface)}: ${rows.length} rows, fields: ${fields.join(',') || '(none)'}`);
+    return rows;
   }
 
   // Run a spectral scan on a wifi interface for ~10 s and return the raw rows.

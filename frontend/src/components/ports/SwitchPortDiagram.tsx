@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useRememberedRange } from '../../hooks/useRememberedRange';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -763,7 +764,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
   const [editingPort, setEditingPort] = useState<SwitchPort | null>(null);
   const [editingBridge, setEditingBridge] = useState<SwitchPort | null>(null);
   const [bridgeError, setBridgeError] = useState('');
-  const [trafficRange, setTrafficRange] = useState('1h');
+  const [trafficRange, setTrafficRange] = useRememberedRange<string>('port-traffic', '1h');
   const [showCreateTrunkModal, setShowCreateTrunkModal] = useState(false);
   const [editingBond, setEditingBond] = useState<SwitchPort | null>(null);
   const [confirmDestroyBond, setConfirmDestroyBond] = useState<string | null>(null);

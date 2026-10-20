@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRememberedRange } from '../hooks/useRememberedRange';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -55,7 +56,7 @@ function deviceIcon(type?: string) {
 // ─── Connectivity Timeline ────────────────────────────────────────────────────
 
 function ConnectivityTimeline({ mac }: { mac: string }) {
-  const [range, setRange] = useState<'2h' | '24h' | '7d'>('24h');
+  const [range, setRange] = useRememberedRange<'2h' | '24h' | '7d'>('client-connectivity', '24h', ['2h', '24h', '7d']);
 
   const { data: points = [], isLoading } = useQuery({
     queryKey: ['client-presence', mac, range],
@@ -607,7 +608,7 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
 // ─── Traffic Graph ────────────────────────────────────────────────────────────
 
 function TrafficCard({ mac }: { mac: string }) {
-  const [range, setRange] = useState<'2h' | '24h' | '7d'>('24h');
+  const [range, setRange] = useRememberedRange<'2h' | '24h' | '7d'>('client-traffic', '24h', ['2h', '24h', '7d']);
 
   const { data: points = [], isLoading } = useQuery({
     queryKey: ['client-traffic', mac, range],
@@ -717,7 +718,7 @@ const APP_COLORS = [
 ];
 
 function AppTrafficCard({ mac }: { mac: string }) {
-  const [range, setRange] = useState<'2h' | '24h' | '7d'>('24h');
+  const [range, setRange] = useRememberedRange<'2h' | '24h' | '7d'>('client-apps', '24h', ['2h', '24h', '7d']);
 
   const { data, isLoading } = useQuery({
     queryKey: ['client-app-traffic', mac, range],
@@ -850,7 +851,7 @@ function qualityColor(dbm: number): string {
 }
 
 function SignalCard({ mac }: { mac: string }) {
-  const [range, setRange] = useState<'2h' | '24h' | '7d'>('24h');
+  const [range, setRange] = useRememberedRange<'2h' | '24h' | '7d'>('client-signal', '24h', ['2h', '24h', '7d']);
 
   const { data: raw = [], isLoading } = useQuery({
     queryKey: ['client-signal', mac, range],

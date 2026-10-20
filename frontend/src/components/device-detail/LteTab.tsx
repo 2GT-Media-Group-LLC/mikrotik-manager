@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRememberedRange } from '../../hooks/useRememberedRange';
 import { useQuery } from '@tanstack/react-query';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -210,8 +211,8 @@ function HistoryList({ events }: { events: LteHistoryEvent[] }) {
 }
 
 export default function LteTab({ deviceId }: Props) {
-  const [range, setRange] = useState<string>('6h');
-  const [dwellRange, setDwellRange] = useState<string>('7d');
+  const [range, setRange] = useRememberedRange<string>('lte', '6h');
+  const [dwellRange, setDwellRange] = useRememberedRange<string>('lte-dwell', '7d');
   // The raw event list is kept, but folded away: it answers a different and
   // narrower question than the totals above it (#120).
   const [showEvents, setShowEvents] = useState(false);

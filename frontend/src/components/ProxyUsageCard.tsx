@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRememberedRange } from '../hooks/useRememberedRange';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
@@ -21,7 +22,7 @@ const formatBytes = (b: number) =>
 export default function ProxyUsageCard() {
   const navigate = useNavigate();
   const [by, setBy] = useState<By>('client');
-  const [range, setRange] = useState<(typeof RANGES)[number]>('24h');
+  const [range, setRange] = useRememberedRange<(typeof RANGES)[number]>('proxy-usage', '24h', RANGES);
   const [instance, setInstance] = useState('');
 
   const { data: sources = [] } = useQuery({

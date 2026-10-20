@@ -69,6 +69,9 @@ selection that includes every device, nothing is filtered and all of it shows (0
 Application classification is by port and protocol. It identifies what a flow *looks* like, not
 what it is: anything on 443 reads as HTTPS whether or not it is a browser.
 
+Each chart remembers the time range you last picked, in this browser, rather than going back to
+its default (#331). That goes for the charts on device, client and port pages too.
+
 ## Retention
 
 Two settings, both in **Settings**:

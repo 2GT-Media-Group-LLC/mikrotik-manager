@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRememberedRange } from '../../hooks/useRememberedRange';
 import { useQuery } from '@tanstack/react-query';
 import { metricsApi, devicesApi } from '../../services/api';
 import type { Interface, TrafficPoint, ResourcePoint } from '../../types';
@@ -69,8 +70,8 @@ function RangeButtons({
 
 export default function GraphsTab({ deviceId }: Props) {
   const [trafficIface, setTrafficIface] = useState('');
-  const [trafficRange, setTrafficRange] = useState<string>('1h');
-  const [resourceRange, setResourceRange] = useState<string>('24h');
+  const [trafficRange, setTrafficRange] = useRememberedRange<string>('device-traffic', '1h');
+  const [resourceRange, setResourceRange] = useRememberedRange<string>('device-resources', '24h');
 
   const { data: interfaces = [] } = useQuery({
     queryKey: ['interfaces', deviceId],

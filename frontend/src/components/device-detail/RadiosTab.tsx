@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useRememberedRange } from '../../hooks/useRememberedRange';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -211,7 +212,7 @@ const RANGES = ['1h', '3h', '6h', '12h', '24h', '7d'] as const;
 
 function WirelessCharts({ deviceId, ifaces }: { deviceId: number; ifaces: WirelessInterface[] }) {
   const [selectedIface, setSelectedIface] = useState(ifaces[0]?.name || '');
-  const [range, setRange] = useState<string>('6h');
+  const [range, setRange] = useRememberedRange<string>('radios', '6h');
 
   const { data: raw = [] } = useQuery({
     queryKey: ['wireless-metrics', deviceId, selectedIface, range],

@@ -70,7 +70,9 @@ With the newer **wifi** package a network's security shows its authentication ty
 encrypted, so those show **secured** or **open**, or **unknown** where the scan doesn't report
 it (#295). A scan sends updates for each network as it hears more of it; before 0.73.0 updates
 that didn't repeat the network's address were dropped, which is how the encryption flag went
-missing.
+missing. From 0.74.0 the legacy package's scan is a timed one (`duration=`), the form that reports
+the flag, and the backend log notes which fields each scan returned (`[ap-scan] … fields: …`),
+names only, to settle a report quickly.
 
 A scan takes the radio off its channel: its clients drop for a few seconds, and so does the
 radio's own link if it is itself connected to another access point (a wireless link, say). Avoid
