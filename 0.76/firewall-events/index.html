@@ -616,6 +616,39 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Enabling firewall monitoring">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rule-activity-estimate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rule activity estimate
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#device-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device Logs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#retention-and-clearing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Retention and clearing
+    </span>
+  </a>
+  
 </li>
       
     </ul>
@@ -1153,6 +1186,39 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Enabling firewall monitoring">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rule-activity-estimate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rule activity estimate
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#device-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Device Logs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#retention-and-clearing" class="md-nav__link">
+    <span class="md-ellipsis">
+      Retention and clearing
+    </span>
+  </a>
+  
 </li>
       
     </ul>
@@ -1203,6 +1269,17 @@ order.</p>
 <p>Rules managed by MikroTik Manager use an <code>MTM-FW-*</code> log prefix so their action
 can be identified when the log entry is parsed.</p>
 <p>Existing custom logging is not overwritten.</p>
+<h3 id="rule-activity-estimate">Rule activity estimate<a class="headerlink" href="#rule-activity-estimate" title="Permanent link">&para;</a></h3>
+<p>Before logging is enabled, MikroTik Manager samples the rule's packet counter
+for approximately 5 seconds and shows an estimated packets-per-minute rate in
+the <strong>Activity</strong> column.</p>
+<p>The estimate is intended as a quick indication of how much log traffic a rule
+may produce. Rules matching <strong>1,000 packets/min or more</strong> are treated as
+high-volume and require the explicit <strong>Allow high-volume rules</strong> option before
+monitoring can be enabled.</p>
+<p>The existing structural safety checks still apply. FastTrack rules cannot be
+monitored, and rules such as broad ACCEPT or established/related rules also
+require the high-volume override.</p>
 <p>For safety:</p>
 <ul>
 <li>dynamic rules cannot be changed</li>
@@ -1215,6 +1292,20 @@ can be identified when the log entry is parsed.</p>
 logging automatically.</p>
 <p>Disabling monitoring for a rule that MikroTik Manager previously enabled turns
 off its managed logging and removes the managed prefix.</p>
+<h2 id="device-logs">Device Logs<a class="headerlink" href="#device-logs" title="Permanent link">&para;</a></h2>
+<p>Firewall packet logs have their own <strong>Events → Firewall Logs</strong> page, so they
+are hidden from <strong>Device Logs</strong> by default.</p>
+<p>Enable the <strong>Firewall packets</strong> toggle on Device Logs to include them in that
+view when needed.</p>
+<h2 id="retention-and-clearing">Retention and clearing<a class="headerlink" href="#retention-and-clearing" title="Permanent link">&para;</a></h2>
+<p>Firewall packet logs have a separate retention setting under <strong>Settings → Data
+Retention</strong>. The default firewall log retention is <strong>7 days</strong>.</p>
+<p>Other device events continue to use the normal <code>retention_events_days</code> setting.</p>
+<p>Users with write access can use <strong>Clear</strong> on the Firewall Logs page to delete
+stored firewall packet events. When a device is selected, only that device's
+firewall logs are cleared. Without a selected device, the operation is limited
+to the user's current writable site scope.</p>
+<p>Clearing Firewall Logs does not delete ordinary Device Logs.</p>
 
 
 
