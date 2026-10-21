@@ -66,6 +66,8 @@ export default function DeviceDetailPage() {
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [addrCopied, setAddrCopied] = useState(false);
+  // Why Web Admin couldn't open, or a caveat about where it went (#335).
+  const [webNote, setWebNote] = useState<string | null>(null);
 
   const deviceId = parseInt(id!);
 
@@ -124,6 +126,32 @@ export default function DeviceDetailPage() {
         </button>
       </div>
     );
+  }
+
+  // Web Admin opens where WebFig actually answers: HTTPS when www-ssl is on,
+  // each on its configured port (#335). The tab is opened before the lookup so
+  // the popup blocker sees a click, and its opener is cut before it navigates.
+  async function openWebAdmin() {
+    if (!device) return;
+    setWebNote(null);
+    // An IPv6 literal needs brackets in a URL (addresses can be IPv6 since #170).
+    const host = device.ip_address.includes(':') ? `[${device.ip_address}]` : device.ip_address;
+    const fallback = `http://${host}/`;
+    const tab = window.open('about:blank', '_blank');
+    if (tab) tab.opener = null;
+    const go = (url: string) => {
+      if (tab) tab.location.href = url;
+      else window.open(url, '_blank', 'noopener,noreferrer');
+    };
+    try {
+      const { data } = await devicesApi.getWebAdmin(deviceId);
+      setWebNote(data.note);
+      if (data.url) go(data.url);
+      else tab?.close();
+    } catch {
+      // The device didn't answer the API; the old guess is better than nothing.
+      go(fallback);
+    }
   }
 
   // Show the Radios tab when the device actually has radios, not when someone
@@ -227,16 +255,16 @@ export default function DeviceDetailPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap sm:ml-auto sm:flex-shrink-0">
           <button
-            onClick={() => window.open(
-              // An IPv6 literal needs brackets in a URL (addresses can be IPv6 since #170).
-              `http://${device.ip_address.includes(':') ? `[${device.ip_address}]` : device.ip_address}/`,
-              '_blank', 'noopener,noreferrer')}
+            onClick={() => void openWebAdmin()}
             className="btn-secondary flex items-center gap-2 text-sm"
             title="Open device web interface"
           >
             <ExternalLink className="w-4 h-4" />
             <span className="hidden sm:inline">Web Admin</span>
           </button>
+          {webNote && (
+            <span className="text-xs text-amber-600 dark:text-amber-400 max-w-xs" role="status">{webNote}</span>
+          )}
           {/* This device's part of the map (#305). */}
           <Link
             to={`/topology?device=${device.id}`}

@@ -68,6 +68,7 @@ import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
 import { clientAddressListView } from '../utils/addressLists';
 import { l3hwView } from '../utils/l3hw';
 import { switchVlanView } from '../utils/switchVlans';
+import { webAdminUrl } from '../utils/webAdminUrl';
 import { vlanInterfacesView } from '../utils/vlanInterfaces';
 import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
@@ -1798,6 +1799,14 @@ router.delete('/:id/queues/:queueId', requireWrite, async (req, res) => {
 // ─── IP Services + Security Posture audit ────────────────────────────────────────
 router.get('/:id/services', async (req, res) => {
   await withCollector(req.params.id, res, (c) => c.getServices());
+});
+
+// GET /api/devices/:id/web-admin — where WebFig answers (#335): HTTPS when
+// www-ssl is on, else plain www, each on its configured port.
+router.get('/:id/web-admin', async (req, res) => {
+  const row = await queryOne<{ ip_address: string }>(`SELECT ip_address FROM devices WHERE id = $1`, [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'Device not found' });
+  await withCollector(req.params.id, res, async (c) => webAdminUrl(row.ip_address, await c.getServices()));
 });
 
 router.put('/:id/services/:serviceId', requireWrite, async (req, res) => {

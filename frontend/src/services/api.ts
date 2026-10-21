@@ -889,6 +889,8 @@ export const devicesApi = {
   getAddressLists: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/address-lists`),
   /** The switch chip's own VLAN table, on older chips (#278). Read-only. */
   getSwitchVlans: (id: number) => api.get<SwitchVlanView>(`/devices/${id}/switch-vlans`),
+  /** Where the device's web interface answers (#335); url null when www and www-ssl are off. */
+  getWebAdmin: (id: number) => api.get<{ url: string | null; note: string | null }>(`/devices/${id}/web-admin`),
   getVlanInterfaces: (id: number) => api.get<VlanInterface[]>(`/devices/${id}/vlan-interfaces`),
   getIpv6Routes: (id: number) => api.get<{ supported: boolean; disabled?: boolean; routes: Ipv6Route[] }>(`/devices/${id}/routing/ipv6`),
   /** Switch chip VLAN edits (#278); each requires Change Guard's auto-revert. */

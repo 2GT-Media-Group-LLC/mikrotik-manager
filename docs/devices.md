@@ -634,6 +634,16 @@ the device sits.
 | Packet capture | 5–60s sniff, downloaded as `.pcap`. Requires SSH |
 | Bandwidth test | Between two managed devices; the target's test server is enabled and disabled for you |
 
+### Web Admin
+
+**Web Admin** at the top of a device's page opens its web interface (WebFig) in a new tab. It
+asks the device where WebFig answers: over HTTPS when `www-ssl` is on (even with plain `www`
+off, as [WebFig over HTTPS](security.md#webfig-over-https) leaves it), otherwise over HTTP,
+each on the port the device uses (#335). If both are off it says so instead, and if `www-ssl`
+has no certificate it warns that HTTPS may not answer (the Security tab's **Switch to HTTPS**
+sets one up). When the device doesn't answer
+the manager, it falls back to `http://` on the device's address.
+
 ### Terminal
 
 The terminal opens an SSH shell on the device, for operators and admins in the device's site.
