@@ -604,6 +604,25 @@ describe('review fixes: verdict severity and blind spots (M3, M4, M5, M7)', () =
     expect(v.severity).toBe('critical');
   });
 
+  it('M5: a RouterOS 7 blackhole (blackhole="") is not a way back either', () => {
+    // As RouterOS 7.24.5 returns it: the property is present and empty on a
+    // blackhole route, and absent on every other route.
+    const snap = baseSnapshot({
+      routes: [
+        { '.id': '*A', 'dst-address': '0.0.0.0/0', gateway: '192.168.0.1', active: 'true' },
+        { '.id': '*S', 'dst-address': '10.9.1.5/32', gateway: '192.168.0.1', active: 'true' },
+        { '.id': '*H', 'dst-address': '10.9.0.0/16', blackhole: '', 'immediate-gw': '', active: 'true', distance: '1' },
+      ],
+      mgmtConnections: [{ protocol: 'tcp', 'src-address': '10.9.1.5:50000', 'dst-address': '192.168.0.40:8728' }],
+    });
+    const v = analyzeChange(snap, device, { kind: 'route.remove', routeId: '*S' });
+    expect(v.severity).toBe('critical');
+    expect(v.violations.map((x) => x.id)).toContain('route-to-manager');
+    // ...while the same layout without the blackhole is safe.
+    const clean = baseSnapshot({ ...snap, routes: snap.routes.filter((r) => r['.id'] !== '*H') });
+    expect(analyzeChange(clean, device, { kind: 'route.remove', routeId: '*S' }).severity).toBe('safe');
+  });
+
   it('M5: a more specific discard route beats the default route that remains', () => {
     const snap = baseSnapshot({
       routes: [

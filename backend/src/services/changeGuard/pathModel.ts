@@ -303,7 +303,17 @@ export function routeActive(r: RosRow, table: string = MAIN_TABLE): boolean {
 
 /** A route that wins selection but throws traffic away rather than forwarding it. */
 export function routeDiscards(r: RosRow): boolean {
-  return isTrue(r['blackhole']) || /^(blackhole|unreachable|prohibit)$/.test(r['type'] || '');
+  return isBlackhole(r) || /^(blackhole|unreachable|prohibit)$/.test(r['type'] || '');
+}
+
+/**
+ * RouterOS 7 marks a blackhole route with an empty `blackhole` property
+ * (`blackhole=""`) and leaves it off every other route, so "present" is the
+ * test, not "true". Older builds and our fixtures say `true`.
+ */
+export function isBlackhole(r: RosRow): boolean {
+  const v = r['blackhole'];
+  return v !== undefined && v !== 'false' && v !== 'no';
 }
 
 /** Can this route carry the manager's traffic? */

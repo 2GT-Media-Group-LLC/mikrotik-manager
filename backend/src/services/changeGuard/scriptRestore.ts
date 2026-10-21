@@ -205,7 +205,16 @@ function settable(def: MenuDef, row: RosRow): [string, string][] {
     .map(([k, v]) => [k, v === 'true' ? 'yes' : v === 'false' ? 'no' : v]);
 }
 
-const assign = (props: [string, string][]): string => props.map(([k, v]) => `${k}=${rosQuote(v)}`).join(' ');
+/**
+ * One `key=value` for a script. `blackhole` is a flag in RouterOS scripts:
+ * only the bare word works, and `blackhole=""` or `blackhole=yes` are dropped
+ * without an error, so a deleted blackhole route came back as nothing.
+ */
+function pair(k: string, v: string): string {
+  if (k === 'blackhole') return v === 'no' ? '' : 'blackhole';
+  return `${k}=${rosQuote(v)}`;
+}
+const assign = (props: [string, string][]): string => props.map(([k, v]) => pair(k, v)).filter(Boolean).join(' ');
 const isStatic = (row: RosRow): boolean => row['dynamic'] !== 'true' && ROS_ID.test(row['.id'] ?? '');
 
 /** RouterOS refuses a script or scheduler body of 64 KB; stay well under it. */
@@ -282,7 +291,7 @@ export function buildRestorePlan(captured: CapturedMenu[], schedulerName: string
       const clearComment = def.only?.includes('comment') && !('comment' in row) ? [['comment', ''] as [string, string]] : [];
       const unsets = (def.unsetIfAbsent ?? []).filter((k) => !(k in row))
         .map((k) => `; :do { ${c} unset ${id} ${k} } on-error={}`).join('');
-      const one = (target: string, [k, v]: [string, string]) => `:do { ${c} set ${target} ${k}=${rosQuote(v)} } on-error={}`;
+      const one = (target: string, [k, v]: [string, string]) => `:do { ${c} set ${target} ${pair(k, v)} } on-error={}`;
       const failed = say('warning', `could not set back ${c} ${id}`);
       const setProps = [...props, ...clearComment];
       const setBack = (def.fallback

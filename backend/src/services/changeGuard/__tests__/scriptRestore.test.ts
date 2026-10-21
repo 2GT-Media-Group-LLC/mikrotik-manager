@@ -52,6 +52,18 @@ describe('buildRestorePlan', () => {
     expect(p.indexOf('/interface bonding set *5')).toBeLessThan(p.indexOf('/interface bridge port set *1'));
   });
 
+  it('writes a blackhole route back with the bare flag RouterOS scripts accept', () => {
+    // RouterOS 7 prints blackhole="" on a blackhole route; in a script only the
+    // bare word works (blackhole="" and blackhole=yes are silently ignored).
+    const p = all(plan([{ menu: 'ipRoute', rows: [
+      { '.id': '*80000005', 'dst-address': '203.0.113.0/24', blackhole: '', distance: '1', comment: 'bh', dynamic: 'false' },
+      { '.id': '*80000006', 'dst-address': '0.0.0.0/0', gateway: '192.168.0.1', distance: '1', dynamic: 'false' },
+    ] }]));
+    expect(p).toContain('/ip route add dst-address="203.0.113.0/24" blackhole distance="1" comment="bh"');
+    expect(p).not.toMatch(/blackhole="/);
+    expect(p).toContain('/ip route add dst-address="0.0.0.0/0" gateway="192.168.0.1" distance="1"');
+  });
+
   it('clears a comment the snapshot did not have', () => {
     const p = all(plan([{ menu: 'interface', rows: [{ '.id': '*3', name: 'ether3', disabled: 'false', mtu: '1500' }] }]));
     expect(p).toContain('/interface set *3 disabled="no" mtu="1500" comment=""');
