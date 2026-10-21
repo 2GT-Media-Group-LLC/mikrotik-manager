@@ -12,6 +12,7 @@ import { getWriteApi } from '../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { alertService } from './AlertService';
 import { logAlertCandidates } from '../utils/logAlerts';
+import { firewallPacketLogSql } from '../utils/firewallEventSql';
 import { runConfigHealth } from './changeGuard/configHealth';
 import type { GuardDevice } from './changeGuard/ChangeGuard';
 import { cronMatches } from '../utils/cron';
@@ -858,37 +859,64 @@ export class PollerService {
   }
 
   /**
-   * Delete events older than retention_events_days.
+   * Delete ordinary events and firewall packet logs using separate retention.
    *
-   * Deleted in bounded batches rather than one statement: on a fleet that has
-   * been accumulating unpruned events for months the first run has a great deal
-   * to remove, and a single unbounded DELETE would hold locks and bloat WAL for
-   * as long as it took.
+   * Both are deleted in bounded batches so a busy or long-unpruned install
+   * does not hold locks or generate excessive WAL in one statement.
    */
   private async pruneOldEvents(settings: Record<string, unknown>): Promise<void> {
-    const days = Number(settings['retention_events_days']);
-    if (!Number.isFinite(days) || days <= 0) return;
+    const eventDays = Number(settings['retention_events_days']);
+    const firewallDays = Number(
+      settings['retention_firewall_events_days'] ?? 7
+    );
 
     const BATCH = 20_000;
-    const MAX_BATCHES = 50; // ~1M rows per run; the next hourly run continues
-    let total = 0;
-    for (let i = 0; i < MAX_BATCHES; i++) {
-      const deleted = await query<{ id: number }>(
-        `DELETE FROM events
-          WHERE id IN (
-            SELECT id FROM events
-             WHERE event_time < NOW() - ($1 || ' days')::interval
-             LIMIT $2
-          )
-        RETURNING id`,
-        [String(days), BATCH]
-      );
-      total += deleted.length;
-      if (deleted.length < BATCH) break;
-    }
-    if (total > 0) {
-      console.log(`[Poller] Pruned ${total} events older than ${days} days`);
-    }
+    const MAX_BATCHES = 50; // ~1M rows per class/run; hourly runs continue
+
+    const prune = async (
+      label: string,
+      days: number,
+      predicate: string
+    ): Promise<void> => {
+      if (!Number.isFinite(days) || days <= 0) return;
+
+      let total = 0;
+
+      for (let i = 0; i < MAX_BATCHES; i++) {
+        const deleted = await query<{ id: number }>(
+          `DELETE FROM events
+            WHERE id IN (
+              SELECT id FROM events
+               WHERE ${predicate}
+                 AND event_time < NOW() - ($1 || ' days')::interval
+               LIMIT $2
+            )
+           RETURNING id`,
+          [String(days), BATCH]
+        );
+
+        total += deleted.length;
+        if (deleted.length < BATCH) break;
+      }
+
+      if (total > 0) {
+        console.log(
+          `[Poller] Pruned ${total} ${label} older than ${days} days`
+        );
+      }
+    };
+
+    await prune(
+      'non-firewall events',
+      eventDays,
+      `NOT ${firewallPacketLogSql()}`
+    );
+
+    await prune(
+      'firewall events',
+      firewallDays,
+      firewallPacketLogSql()
+    );
   }
 
   /**

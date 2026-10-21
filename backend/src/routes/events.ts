@@ -6,6 +6,7 @@ import { siteScopeByNullableDevice } from '../utils/siteScope';
 import { activeSite, writableScope } from '../middleware/site';
 import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
 import { parseFirewallLog } from '../utils/firewallLogParser';
+import { firewallPacketLogSql } from '../utils/firewallEventSql';
 
 /** Most events the list's total counts; past it the page shows "N+". */
 export const EVENTS_COUNT_CAP = 100_000;
@@ -24,6 +25,8 @@ router.use(requireAuth);
  */
 router.get('/topics', async (req: Request, res: Response) => {
   const siteFilter = siteScopeByNullableDevice(activeSite(req), 'device_id');
+  const includeFirewall = req.query.firewall === '1';
+
   const rows = await query<{ token: string; n: string }>(`
     SELECT token, COUNT(*) AS n
     FROM (
@@ -31,6 +34,7 @@ router.get('/topics', async (req: Request, res: Response) => {
       FROM events
       WHERE topic IS NOT NULL AND topic <> ''
         AND event_time > NOW() - INTERVAL '30 days'
+        ${includeFirewall ? '' : `AND NOT ${firewallPacketLogSql()}`}
         ${siteFilter ? `AND ${siteFilter}` : ''}
     ) t
     WHERE btrim(token) <> ''
@@ -179,10 +183,7 @@ router.get('/firewall', async (req: Request, res: Response) => {
   }
 
   const filters: string[] = [
-    `'firewall' = ANY(string_to_array(e.topic, ','))`,
-    `e.message ~* '(input|forward|output):'`,
-    `e.message ~* '(^|[[:space:],])proto[[:space:]]+'`,
-    `e.message LIKE '%->%'`,
+    firewallPacketLogSql('e'),
   ];
 
   const params: unknown[] = [];
@@ -326,6 +327,7 @@ router.get('/', async (req: Request, res: Response) => {
     limit = '200',
     offset = '0',
     clock,
+    firewall,
   } = req.query;
 
   const filters: string[] = ['1=1'];
@@ -375,6 +377,12 @@ router.get('/', async (req: Request, res: Response) => {
   // they were reclassified as info are hidden the same way.
   if (clock !== '1') filters.push(`NOT ${CLOCK_CHANGE_SQL.replace('message', 'e.message')}`);
 
+  // Firewall packet logs have their own page and can be extremely high-volume.
+  // Keep them out of Device Logs unless explicitly requested.
+  if (firewall !== '1') {
+    filters.push(`NOT ${firewallPacketLogSql('e')}`);
+  }
+
   const where = filters.join(' AND ');
 
   const rowsQuery = query(
@@ -407,6 +415,7 @@ router.get('/', async (req: Request, res: Response) => {
       `SELECT COUNT(*) as count FROM events
        WHERE severity IN ('error','critical') AND event_time > NOW() - INTERVAL '24 hours'
          AND NOT ${CLOCK_CHANGE_SQL}
+         ${firewall === '1' ? '' : `AND NOT ${firewallPacketLogSql()}`}
          ${siteFilterBare ? `AND ${siteFilterBare}` : ''}`
     ),
   ]);
@@ -418,6 +427,57 @@ router.get('/', async (req: Request, res: Response) => {
     // True when there are more than EVENTS_COUNT_CAP matching events (total is the cap).
     totalCapped: counted > EVENTS_COUNT_CAP,
     criticalCount: parseInt(criticalCount[0]?.count || '0', 10),
+  });
+});
+
+// DELETE /api/events/firewall
+// Clear only RouterOS firewall packet logs, with the same device/site scope as
+// the generic event clear endpoint.
+router.delete('/firewall', requireWrite, async (req: Request, res: Response) => {
+  const deviceIdRaw = singleQueryValue(req.query.deviceId);
+
+  if (deviceIdRaw === null) {
+    return res.status(400).json({ error: 'Invalid deviceId' });
+  }
+
+  const deviceId =
+    deviceIdRaw === undefined
+      ? undefined
+      : strictInteger(deviceIdRaw, 1);
+
+  if (deviceIdRaw !== undefined && deviceId === null) {
+    return res.status(400).json({ error: 'Invalid deviceId' });
+  }
+
+  const filters: string[] = [firewallPacketLogSql()];
+  const params: unknown[] = [];
+
+  if (deviceId != null) {
+    if (!roleAtLeast(await roleOnDevice(req.user!, deviceId), 'operator')) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    filters.push(`device_id = $1`);
+    params.push(deviceId);
+  } else {
+    const scope = siteScopeByNullableDevice(
+      writableScope(req),
+      'device_id'
+    );
+
+    if (scope) filters.push(scope);
+  }
+
+  const deleted = await query<{ id: number }>(
+    `DELETE FROM events
+      WHERE ${filters.join(' AND ')}
+      RETURNING id`,
+    params
+  );
+
+  return res.json({
+    message: 'Firewall events cleared',
+    deleted: deleted.length,
   });
 });
 

@@ -41,12 +41,17 @@ export default function EventsPage() {
   const [page, setPage] = useState(0);
   // NTP/cloud clock adjustments are routine and hidden by default (#213).
   const [showClock, setShowClock] = useState(false);
+  // Firewall packet logs have their own high-volume page (#334).
+  const [showFirewall, setShowFirewall] = useState(false);
   // RouterOS reports topics as a comma-separated list, so the server splits them
   // into individual tokens and counts them across the whole table — the operator
   // picks from what actually exists rather than guessing a spelling (#108).
   const { data: topicList = [] } = useQuery({
-    queryKey: ['event-topics'],
-    queryFn: () => eventsApi.topics().then(r => r.data),
+    queryKey: ['event-topics', showFirewall],
+    queryFn: () =>
+      eventsApi
+        .topics(showFirewall ? { firewall: 1 } : undefined)
+        .then(r => r.data),
     staleTime: 300_000,
   });
   const PAGE_SIZE = 100;
@@ -67,7 +72,7 @@ export default function EventsPage() {
       : [...severities].join(',');
 
   const { data: eventsData, isLoading } = useQuery({
-    queryKey: ['events', { search, severityParam, topic, deviceId, page, showClock }],
+    queryKey: ['events', { search, severityParam, topic, deviceId, page, showClock, showFirewall }],
     queryFn: () =>
       eventsApi
         .list({
@@ -78,6 +83,7 @@ export default function EventsPage() {
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
           ...(showClock ? { clock: 1 as const } : {}),
+          ...(showFirewall ? { firewall: 1 as const } : {}),
         })
         .then((r) => r.data),
     refetchInterval: 30_000,
@@ -181,6 +187,26 @@ export default function EventsPage() {
               onChange={(e) => { setShowClock(e.target.checked); setPage(0); }}
               className="w-3.5 h-3.5 rounded accent-current cursor-pointer" />
             <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Clock changes</span>
+          </label>
+
+          <span className="w-px h-4 bg-gray-200 dark:bg-slate-600" />
+
+          <label
+            className="flex items-center gap-1.5 cursor-pointer select-none"
+            title="Show RouterOS firewall packet logs in Device Logs"
+          >
+            <input
+              type="checkbox"
+              checked={showFirewall}
+              onChange={(e) => {
+                setShowFirewall(e.target.checked);
+                setPage(0);
+              }}
+              className="w-3.5 h-3.5 rounded accent-current cursor-pointer"
+            />
+            <span className="text-xs font-medium text-gray-500 dark:text-slate-400">
+              Firewall packets
+            </span>
           </label>
         </div>
 

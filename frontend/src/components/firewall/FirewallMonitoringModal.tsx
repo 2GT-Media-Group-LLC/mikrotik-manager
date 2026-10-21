@@ -13,6 +13,13 @@ import type { Device } from '../../types';
 import DevicePicker from '../common/DevicePicker';
 import { ruleSummary } from '../../utils/firewallSummary';
 import {
+  estimateFirewallActivity,
+  FIREWALL_ACTIVITY_SAMPLE_MS,
+  firewallPacketCount,
+  HIGH_VOLUME_PACKETS_PER_MINUTE,
+  type FirewallRuleActivity,
+} from '../../utils/firewallActivity';
+import {
   GuardedWriteUi,
   useGuardedWrite,
 } from '../ChangeGuardDialog';
@@ -63,12 +70,21 @@ function connectionStates(rule: Rule): string[] {
     .filter(Boolean);
 }
 
-function riskReason(rule: Rule): string | null {
+function riskReason(
+  rule: Rule,
+  activity?: FirewallRuleActivity
+): string | null {
   const action = (rule.action ?? '').toLowerCase();
   const states = connectionStates(rule);
 
   if (action === 'fasttrack-connection') {
     return 'FastTrack rules are not monitored — logging them can generate very high event volume.';
+  }
+
+  if (activity?.highVolume) {
+    return `This rule is currently matching about ${Math.round(
+      activity.packetsPerMinute
+    ).toLocaleString()} packets/min and may flood the RouterOS log buffer.`;
   }
 
   if (action === 'accept' && states.length === 0) {
@@ -134,6 +150,7 @@ export default function FirewallMonitoringModal({
   );
   const [allowRisky, setAllowRisky] = useState(false);
   const [error, setError] = useState('');
+  const [activityGeneration, setActivityGeneration] = useState(0);
 
   const selectedDevice = devices.find((d) => d.id === deviceId);
 
@@ -148,6 +165,47 @@ export default function FirewallMonitoringModal({
       devicesApi.getFirewall(deviceId!).then((r) => r.data as Rule[]),
     enabled: open && deviceId != null,
     staleTime: 10_000,
+  });
+
+  const rules = firewallRules as Rule[];
+
+  const {
+    data: ruleActivity = {},
+    isLoading: isActivityLoading,
+  } = useQuery({
+    queryKey: ['firewall-monitor-activity', deviceId, activityGeneration],
+    queryFn: async () => {
+      const before = rules.filter(
+        (rule) =>
+          !blockedReason(rule) &&
+          firewallPacketCount(rule) !== null
+      );
+      const startedAt = Date.now();
+
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, FIREWALL_ACTIVITY_SAMPLE_MS)
+      );
+
+      const after = await devicesApi
+        .getFirewall(deviceId!)
+        .then((r) => r.data as Rule[]);
+
+      return estimateFirewallActivity(
+        before,
+        after,
+        Date.now() - startedAt
+      );
+    },
+    enabled:
+      open &&
+      deviceId != null &&
+      rules.some(
+        (rule) =>
+          !blockedReason(rule) &&
+          firewallPacketCount(rule) !== null
+      ),
+    staleTime: Infinity,
+    retry: false,
   });
 
   const updateRule = useMutation({
@@ -212,7 +270,6 @@ export default function FirewallMonitoringModal({
 
   if (!open) return null;
 
-  const rules = firewallRules as Rule[];
   const managedCount = rules.filter(isManaged).length;
 
   return (
@@ -255,7 +312,10 @@ export default function FirewallMonitoringModal({
             {deviceId != null && (
               <>
                 <button
-                  onClick={() => refetch()}
+                  onClick={async () => {
+                    await refetch();
+                    setActivityGeneration((value) => value + 1);
+                  }}
                   disabled={isFetching}
                   className="btn-secondary flex items-center gap-2"
                 >
@@ -299,9 +359,10 @@ export default function FirewallMonitoringModal({
                 Allow high-volume rules
               </div>
               <div className="text-xs text-gray-500 dark:text-slate-400">
-                Allows monitoring ACCEPT rules without a new-connection filter
-                and rules matching established/related traffic. This can create
-                large amounts of log data.
+                Allows monitoring structurally risky rules and rules currently
+                matching {HIGH_VOLUME_PACKETS_PER_MINUTE.toLocaleString()}+
+                packets/min. High-volume logging can quickly fill the RouterOS
+                log buffer.
               </div>
             </div>
           </label>
@@ -339,6 +400,12 @@ export default function FirewallMonitoringModal({
                   <th className="table-header px-4 py-2.5 text-left">
                     Rule
                   </th>
+                  <th
+                    className="table-header px-4 py-2.5 text-left w-32"
+                    title={`Estimated from a ${FIREWALL_ACTIVITY_SAMPLE_MS / 1000}-second packet-counter sample`}
+                  >
+                    Activity
+                  </th>
                   <th className="table-header px-4 py-2.5 text-left w-44">
                     Logging
                   </th>
@@ -352,11 +419,39 @@ export default function FirewallMonitoringModal({
                 {rules.map((rule) => {
                   const managed = isManaged(rule);
                   const blocked = blockedReason(rule);
-                  const risk = riskReason(rule);
+                  const packetCount = firewallPacketCount(rule);
+                  const activity = ruleActivity[rule['.id']];
+
+                  const activityPending =
+                    !managed &&
+                    !blocked &&
+                    packetCount !== null &&
+                    isActivityLoading;
+
+                  const activityUnavailable =
+                    !managed &&
+                    !blocked &&
+                    packetCount !== null &&
+                    !isActivityLoading &&
+                    !activity;
+
+                  const risk =
+                    riskReason(rule, activity) ??
+                    (activityUnavailable
+                      ? 'Rule activity could not be measured. Treat it as potentially high-volume.'
+                      : null);
 
                   const canToggle =
                     managed ||
-                    (!blocked && (!risk || allowRisky));
+                    (!blocked &&
+                      !activityPending &&
+                      (!risk || allowRisky));
+
+                  const unavailableReason =
+                    blocked ||
+                    (activityPending
+                      ? 'Measuring rule activity before enabling logging'
+                      : risk || 'Monitoring unavailable');
 
                   const pending =
                     updateRule.isPending &&
@@ -416,6 +511,44 @@ export default function FirewallMonitoringModal({
                       </td>
 
                       <td className="px-4 py-3">
+                        {blocked ? (
+                          <span className="text-xs text-gray-400 dark:text-slate-500">
+                            —
+                          </span>
+                        ) : packetCount === null ? (
+                          <span className="text-xs text-gray-400 dark:text-slate-500">
+                            —
+                          </span>
+                        ) : isActivityLoading ? (
+                          <span className="text-xs text-gray-500 dark:text-slate-400">
+                            Measuring…
+                          </span>
+                        ) : activity ? (
+                          <div>
+                            <span
+                              className={clsx(
+                                'text-xs font-medium',
+                                activity.highVolume
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-gray-700 dark:text-slate-300'
+                              )}
+                            >
+                              ~{Math.round(
+                                activity.packetsPerMinute
+                              ).toLocaleString()}/min
+                            </span>
+                            <div className="mt-0.5 text-[11px] text-gray-400 dark:text-slate-500">
+                              {packetCount.toLocaleString()} total
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-amber-600 dark:text-amber-400">
+                            Unknown
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
                         {managed ? (
                           <div>
                             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
@@ -451,7 +584,7 @@ export default function FirewallMonitoringModal({
                               ? managed
                                 ? 'Disable monitoring'
                                 : 'Enable monitoring'
-                              : blocked || risk || 'Monitoring unavailable'
+                              : unavailableReason
                           }
                           disabled={!canToggle || pending}
                           onClick={() => setMonitoring(rule, !managed)}

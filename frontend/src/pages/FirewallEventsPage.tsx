@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, Search, Settings2, ShieldCheck } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { RefreshCw, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 
@@ -71,6 +71,19 @@ export default function FirewallEventsPage() {
     refetchInterval: 30_000,
   });
 
+  const clearMutation = useMutation({
+    mutationFn: () =>
+      eventsApi.clearFirewall(
+        deviceId ? Number(deviceId) : undefined
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['firewall-events'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['event-topics'] });
+      setPage(0);
+    },
+  });
+
   useSocket({
     'events:updated': () =>
       queryClient.invalidateQueries({ queryKey: ['firewall-events'] }),
@@ -112,6 +125,29 @@ export default function FirewallEventsPage() {
             />
             Refresh
           </button>
+
+          {canWrite && (
+            <button
+              onClick={() => {
+                const scope = deviceId
+                  ? 'for this device'
+                  : 'in the current scope';
+
+                if (
+                  confirm(
+                    `Clear firewall logs ${scope}? This cannot be undone.`
+                  )
+                ) {
+                  clearMutation.mutate();
+                }
+              }}
+              disabled={clearMutation.isPending}
+              className="btn-secondary flex items-center gap-2 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear
+            </button>
+          )}
 
           {canWrite && (
             <button

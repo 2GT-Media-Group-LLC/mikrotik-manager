@@ -1769,6 +1769,7 @@ const DEFAULT_SETTINGS = [
   { key: 'polling_slow_interval', value: 300 },
   { key: 'polling_logs_interval', value: 60 },
   { key: 'retention_events_days', value: 30 },
+  { key: 'retention_firewall_events_days', value: 7 },
   { key: 'retention_proxy_days', value: 30 },
   { key: 'backup_schedule_enabled', value: false },
   { key: 'backup_schedule_cron', value: '0 2 * * *' },
