@@ -889,6 +889,8 @@ export const devicesApi = {
   getAddressLists: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/address-lists`),
   /** The switch chip's own VLAN table, on older chips (#278). Read-only. */
   getSwitchVlans: (id: number) => api.get<SwitchVlanView>(`/devices/${id}/switch-vlans`),
+  getVlanInterfaces: (id: number) => api.get<VlanInterface[]>(`/devices/${id}/vlan-interfaces`),
+  getIpv6Routes: (id: number) => api.get<{ supported: boolean; disabled?: boolean; routes: Ipv6Route[] }>(`/devices/${id}/routing/ipv6`),
   /** Switch chip VLAN edits (#278); each requires Change Guard's auto-revert. */
   addSwitchVlan: (id: number, data: { switch: string; vlan_id: number; ports: string[]; disabled?: boolean }) =>
     api.post(`/devices/${id}/switch-vlans`, data, { timeout: 120_000 }),
@@ -2670,6 +2672,36 @@ export const routingApi = {
 };
 
 /** The switch chip's own VLAN table and port VLAN settings (#278). */
+/** An /interface/vlan entry (#309). */
+export interface VlanInterface {
+  id: string;
+  name: string;
+  vlanId: number | null;
+  parent: string;
+  parentKind: 'bridge-filtering' | 'bridge' | 'bond' | 'vlan' | 'port' | 'unknown';
+  mtu: string;
+  running: boolean;
+  disabled: boolean;
+  addresses: string[];
+  comment: string;
+}
+
+/** An /ipv6/route row (#312). */
+export interface Ipv6Route {
+  id: string;
+  dst: string;
+  gateway: string;
+  immediateGw: string;
+  distance: string;
+  table: string;
+  active: boolean;
+  disabled: boolean;
+  dynamic: boolean;
+  source: string;
+  type: string;
+  comment: string;
+}
+
 export interface SwitchVlanView {
   supported: boolean;
   switches: { name: string; type: string }[];

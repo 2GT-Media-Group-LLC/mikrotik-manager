@@ -68,6 +68,8 @@ import { portErrorSummaries, thresholds } from '../services/interfaceErrors';
 import { clientAddressListView } from '../utils/addressLists';
 import { l3hwView } from '../utils/l3hw';
 import { switchVlanView } from '../utils/switchVlans';
+import { vlanInterfacesView } from '../utils/vlanInterfaces';
+import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit } from '../utils/ipAddressEdit';
 import { parseBgpConnection } from '../utils/bgpConnection';
@@ -1556,6 +1558,41 @@ router.get('/:id/switch-vlans', async (req, res) => {
       run.execute('/interface/bridge/print').catch(none),
     ]);
     return switchVlanView(switches, vlanTable, ports, bridges);
+  });
+});
+
+// GET /api/devices/:id/vlan-interfaces — /interface/vlan entries (#309), the
+// router-on-a-stick VLANs a bridge VLAN table doesn't show, with their parent
+// and addresses. Read live, read-only.
+router.get('/:id/vlan-interfaces', async (req, res) => {
+  await withCollector(req.params.id, res, async (c) => {
+    const run = c.commandRunner();
+    const none = () => [] as Record<string, string>[];
+    const [vlans, bridges, interfaces, ipv4, ipv6] = await Promise.all([
+      run.execute('/interface/vlan/print'),
+      run.execute('/interface/bridge/print', { '.proplist': 'name,vlan-filtering' }).catch(none),
+      run.execute('/interface/print', { '.proplist': 'name,type' }).catch(none),
+      run.execute('/ip/address/print', { '.proplist': 'address,interface,disabled,invalid' }).catch(none),
+      // Absent when the ipv6 package is off (RouterOS 6) or disabled.
+      run.execute('/ipv6/address/print', { '.proplist': 'address,interface,disabled,invalid' }).catch(none),
+    ]);
+    return vlanInterfacesView(vlans, bridges, interfaces, ipv4, ipv6);
+  });
+});
+
+// GET /api/devices/:id/routing/ipv6 — the IPv6 routing table (#312), read-only.
+// supported is false when the device has no /ipv6/route menu (the ipv6
+// package off on RouterOS 6), which is different from an empty table.
+router.get('/:id/routing/ipv6', async (req, res) => {
+  await withCollector(req.params.id, res, async (c) => {
+    const run = c.commandRunner();
+    const [rows, settings] = await Promise.all([
+      run.execute('/ipv6/route/print', { detail: '' }).catch(() => null),
+      run.execute('/ipv6/settings/print').catch(() => [] as Record<string, string>[]),
+    ]);
+    // disable-ipv6=yes (RouterOS 7) leaves an empty table that isn't "no routes".
+    const off = settings[0]?.['disable-ipv6'] === 'true' || settings[0]?.['disable-ipv6'] === 'yes';
+    return rows ? { supported: true, disabled: off, routes: ipv6RoutesView(rows) } : { supported: false, disabled: false, routes: [] };
   });
 });
 

@@ -10,6 +10,7 @@ import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import L3HwCard from './L3HwCard';
 import SwitchVlanCard from './SwitchVlanCard';
+import VlanInterfacesCard from './VlanInterfacesCard';
 
 interface PortForm {
   tagged_ports: string;
@@ -48,6 +49,14 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
     retry: false,
   });
   const chipVlans = !!switchVlans?.supported;
+  // /interface/vlan entries (#309); same query as the card, so one read.
+  const { data: vlanInterfaces = [] } = useQuery({
+    queryKey: ['vlan-interfaces', deviceId],
+    queryFn: () => devicesApi.getVlanInterfaces(deviceId).then((r) => r.data),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+  });
 
   // Find bridges where vlan-filtering is not enabled (stored as 'yes' from RouterOS or 'true' after toggle)
   const bridgesWithoutFiltering = ports.filter(
@@ -408,7 +417,9 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
           <div className="text-center py-8 text-gray-400 dark:text-slate-500">
             {chipVlans
               ? 'No bridge VLANs. On this switch chip, VLANs are set in the switch chip table above.'
-              : 'No VLANs configured on this device, or device not synced yet.'}
+              : vlanInterfaces.length > 0
+                ? 'No bridge VLANs. This device’s VLANs are VLAN interfaces, listed below.'
+                : 'No VLANs configured on this device, or device not synced yet.'}
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -496,6 +507,9 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
           </table>
         )}
       </div>
+
+      {/* /interface/vlan entries: router-on-a-stick VLANs (#309) */}
+      <VlanInterfacesCard deviceId={deviceId} />
 
       {lockout && (
         <LockoutVerdictDialog

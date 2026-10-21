@@ -26,7 +26,7 @@ const dApi = devicesApi as typeof devicesApi & {
   removeFilterRule: (id: number, itemId: string) => Promise<unknown>;
 };
 
-const SUB_TABS = ['Routes', 'OSPF', 'BGP', 'Route Filters', 'Tables'] as const;
+const SUB_TABS = ['IPv4 Routes', 'IPv6 Routes', 'OSPF', 'BGP', 'Route Filters', 'Tables'] as const;
 type SubTab = (typeof SUB_TABS)[number];
 
 // ─── Reusable helpers ─────────────────────────────────────────────────────────
@@ -148,7 +148,8 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
 
   const tableOf = (r: Record<string, string>) => r['routing-table'] || 'main';
   const typeOf = (r: Record<string, string>) =>
-    r['blackhole'] === 'true' ? 'blackhole' : (r['type'] && r['type'] !== 'unicast' ? r['type'] : '');
+    // RouterOS 7 sends blackhole="" on a blackhole route and omits it elsewhere.
+    (r['blackhole'] !== undefined && r['blackhole'] !== 'false' && r['blackhole'] !== 'no') ? 'blackhole' : (r['type'] && r['type'] !== 'unicast' ? r['type'] : '');
   // Tables the device defines, plus any a route names that the table list doesn't.
   const tableNames = Array.from(new Set([
     'main',
@@ -289,6 +290,82 @@ function RoutesSubTab({ deviceId, deviceName }: { deviceId: number; deviceName?:
           onCancel={() => setLockout(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── IPv6 Routes sub-tab (#312), read-only ───────────────────────────────────
+function Ipv6RoutesSubTab({ deviceId }: { deviceId: number }) {
+  const { data, isLoading, refetch, isFetching, error } = useQuery({
+    queryKey: ['routing-ipv6', deviceId],
+    queryFn: () => devicesApi.getIpv6Routes(deviceId).then(r => r.data),
+  });
+  const [tableFilter, setTableFilter] = useState('all');
+  const routes = data?.routes ?? [];
+  const tableNames = Array.from(new Set(['main', ...routes.map(r => r.table)]))
+    .sort((a, b) => (a === 'main' ? -1 : b === 'main' ? 1 : a.localeCompare(b)));
+  const shown = routes.filter(r => tableFilter === 'all' || r.table === tableFilter);
+
+  if (isLoading) return <div className="text-center py-8 text-gray-400">Loading...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {tableNames.length > 1 && (
+            <select className="input text-sm py-1" value={tableFilter} onChange={e => setTableFilter(e.target.value)} aria-label="Filter IPv6 routes by routing table">
+              <option value="all">All tables</option>
+              {tableNames.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+          <span className="text-xs text-gray-400 dark:text-slate-500">Read-only</span>
+        </div>
+        <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary flex items-center gap-2 text-sm">
+          <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh
+        </button>
+      </div>
+      <div className="card overflow-hidden">
+        {error ? (
+          <Empty text={`Could not read IPv6 routes: ${errMsg(error)}`} />
+        ) : data && !data.supported ? (
+          <Empty text="IPv6 isn't available on this device (the ipv6 package is off or not installed)." />
+        ) : routes.length === 0 ? (
+          <Empty text={data?.disabled ? 'IPv6 is turned off on this device (IPv6, Settings in WinBox).' : 'No IPv6 routes.'} />
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/50">
+                <th className="table-header px-4 py-2.5 text-left">Destination</th>
+                <th className="table-header px-4 py-2.5 text-left">Gateway</th>
+                <th className="table-header px-4 py-2.5 text-left">Table</th>
+                <th className="table-header px-4 py-2.5 text-left">Dist.</th>
+                <th className="table-header px-4 py-2.5 text-left">Status</th>
+                <th className="table-header px-4 py-2.5 text-left">Comment</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
+              {shown.map((r, i) => (
+                <tr key={r.id || i} className={clsx('hover:bg-gray-50 dark:hover:bg-slate-700/30', r.disabled && 'opacity-60')}>
+                  <td className="px-4 py-2.5 font-mono text-gray-900 dark:text-white">{r.dst || '—'}</td>
+                  <td className="px-4 py-2.5 font-mono text-gray-500 dark:text-slate-400" title={r.immediateGw && r.immediateGw !== r.gateway ? `via ${r.immediateGw}` : undefined}>{r.gateway || '—'}</td>
+                  <td className="px-4 py-2.5 font-mono text-gray-500 dark:text-slate-400">{r.table}</td>
+                  <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">{r.distance || '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className={clsx('text-xs font-medium', r.disabled ? 'text-gray-400' : r.active ? 'text-green-600 dark:text-green-400' : 'text-gray-400')}>
+                        {r.disabled ? 'Disabled' : r.active ? 'Active' : 'Inactive'}
+                      </span>
+                      {r.source && <span className="text-xs text-gray-400 dark:text-slate-500">({r.source})</span>}
+                      {r.type && <span className="text-xs font-medium text-amber-600 dark:text-amber-400">{r.type}</span>}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-400 dark:text-slate-500 text-xs">{r.comment}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
@@ -787,7 +864,7 @@ function TablesSubTab({ deviceId }: { deviceId: number }) {
 
 // ─── Main RoutingTab with sub-tabs ────────────────────────────────────────────
 export default function RoutingTab({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>('Routes');
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>('IPv4 Routes');
 
   return (
     <div className="space-y-4">
@@ -810,7 +887,8 @@ export default function RoutingTab({ deviceId, deviceName }: { deviceId: number;
       </div>
 
       {/* Sub-tab content */}
-      {activeSubTab === 'Routes'        && <RoutesSubTab deviceId={deviceId} deviceName={deviceName} />}
+      {activeSubTab === 'IPv4 Routes'   && <RoutesSubTab deviceId={deviceId} deviceName={deviceName} />}
+      {activeSubTab === 'IPv6 Routes'   && <Ipv6RoutesSubTab deviceId={deviceId} />}
       {activeSubTab === 'OSPF'          && <OspfSubTab deviceId={deviceId} />}
       {activeSubTab === 'BGP'           && <BgpSubTab deviceId={deviceId} />}
       {activeSubTab === 'Route Filters' && <RouteFiltersSubTab deviceId={deviceId} />}

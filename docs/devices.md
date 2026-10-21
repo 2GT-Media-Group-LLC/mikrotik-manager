@@ -374,10 +374,10 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **Overview** | Status, uptime, model, firmware, resource graphs, location |
 | **Ports** | The switch faceplate, per-port configuration, bonds, VLAN membership |
 | **Bridges** | Every bridge, its ports, VLAN filtering and spanning tree; create, rename, edit, delete |
-| **VLANs** | The bridge VLAN table, and copying VLANs between switches |
+| **VLANs** | The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (`/interface vlan`, read-only) with their parent and addresses |
 | **Radios** | Wireless interfaces, SSIDs, channels, connected clients |
 | **Firewall** | Filter, NAT and mangle rules, with reordering and counters |
-| **Routing** | Routes, OSPF, BGP, routing tables and filters |
+| **Routing** | IPv4 routes, IPv6 routes (read-only), OSPF, BGP, routing tables and filters |
 | **Queues** | Traffic shaping |
 | **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing) |
 | **Hardware** | Health sensors, PoE, SFP module detail |
@@ -548,6 +548,25 @@ change is refused rather than run unprotected. Chips that do VLAN
 filtering in hardware on RouterOS 7 (CRS3xx and other Marvell switches, and the hEX's MT7621)
 use bridge VLAN filtering as described above and don't show the card.
 
+### VLAN interfaces
+
+Routers often carry VLANs as VLAN interfaces (`/interface vlan`, **Interfaces, VLAN** in WinBox)
+on a port, with no bridge VLAN table at all: the router-on-a-stick layout on a CCR, CHR or RB.
+When a device has any, the **VLANs** tab lists them in a **VLAN interfaces** card (#309): VLAN
+ID, name, parent, addresses (IPv4, and IPv6 other than link-local), MTU, state and comment.
+
+The label next to the parent says what it is:
+
+- **port**: a physical port, the usual router-on-a-stick layout
+- **bridge, filtering**: a bridge with VLAN filtering; the VLAN interface is how the device
+  itself joins that VLAN, and the bridge VLAN table above decides which ports carry it
+- **bridge, no filtering**: a bridge without VLAN filtering; only the device itself sees the
+  tag, nothing is enforced on the bridge's ports
+- **bond**, or **Q-in-Q** for a VLAN stacked on another VLAN interface
+
+The card is read-only for now; it's read live from the device each time the tab opens and every
+minute while it's open.
+
 ## Bridges
 
 The **Bridges** tab lists every bridge on the device (#284): whether it's running, its spanning
@@ -591,6 +610,15 @@ offloaded on chips that support it.
 When a supported device routes between two or more VLANs with offloading off, Config Health
 reports *Routing between VLANs runs on the CPU*. There's no one-click fix: whether to trade the
 firewall for speed is your call.
+
+## Routes
+
+The **Routing** tab's **IPv4 Routes** lists the device's routes with their routing table (VRF),
+and adds or removes static routes through [Change Guard](change-guard.md); a route can be put in
+any routing table the device has (#328). **IPv6 Routes** lists the IPv6 routing table (#312):
+destination, gateway, table, distance, whether it's active and how it was learned (static,
+connected, OSPF, BGP and so on), and blackhole or unreachable routes. It's read-only for now.
+Devices with IPv6 turned off, or without the ipv6 package, say so rather than showing an empty table.
 
 ## Tools
 
