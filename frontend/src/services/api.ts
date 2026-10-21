@@ -1188,7 +1188,8 @@ export interface FirewallEvent {
 }
 
 export const eventsApi = {
-  topics: () => api.get<{ topic: string; count: number }[]>('/events/topics'),
+  topics: (params?: { firewall?: 1 }) =>
+    api.get<{ topic: string; count: number }[]>('/events/topics', { params }),
   list: (params?: {
     deviceId?: number;
     severity?: string;
@@ -1199,6 +1200,8 @@ export const eventsApi = {
     offset?: number;
     /** 1 includes NTP/cloud clock adjustments, hidden by default (#213). */
     clock?: 1;
+    /** 1 includes firewall packet logs, hidden by default (#334). */
+    firewall?: 1;
   }) =>
     api.get<{ events: DeviceEvent[]; total: number; totalCapped: boolean; criticalCount: number }>('/events', { params }),
   /** The newest events only, without the totals the list endpoint also computes. */
@@ -1217,7 +1220,12 @@ export const eventsApi = {
       events: FirewallEvent[];
       total: number;
     }>('/events/firewall', { params }),
-  clear: (deviceId?: number) => api.delete('/events', { params: deviceId ? { deviceId } : {} }),
+  clearFirewall: (deviceId?: number) =>
+    api.delete<{ message: string; deleted: number }>('/events/firewall', {
+      params: deviceId ? { deviceId } : {},
+    }),
+  clear: (deviceId?: number) =>
+    api.delete('/events', { params: deviceId ? { deviceId } : {} }),
 };
 
 // ─── Backups ──────────────────────────────────────────────────────────────────

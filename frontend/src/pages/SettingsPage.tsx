@@ -859,7 +859,8 @@ export default function SettingsPage() {
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Data Retention</h3>
             <div className="space-y-3">
               {[
-                { key: 'retention_events_days', label: 'Events retention', desc: 'Auto-delete event log entries older than this many days' },
+                { key: 'retention_events_days', label: 'Events retention', desc: 'Auto-delete non-firewall event log entries older than this many days' },
+                { key: 'retention_firewall_events_days', label: 'Firewall logs retention', desc: 'Auto-delete firewall packet logs older than this many days' },
                 { key: 'retention_proxy_days', label: 'Proxy log retention', desc: 'Auto-delete parsed proxy connection records older than this many days' },
                 { key: 'retention_clients_days', label: 'Client retention', desc: 'Auto-delete inactive client records not seen within this many days' },
                 { key: 'retention_scan_days', label: 'Scan retention', desc: 'Auto-delete spectral and nearby-AP scan results older than this many days' },
