@@ -722,6 +722,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#web-admin" class="md-nav__link">
+    <span class="md-ellipsis">
+      Web Admin
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#terminal" class="md-nav__link">
     <span class="md-ellipsis">
       Terminal
@@ -1721,6 +1730,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#web-admin" class="md-nav__link">
+    <span class="md-ellipsis">
+      Web Admin
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#terminal" class="md-nav__link">
     <span class="md-ellipsis">
       Terminal
@@ -2434,6 +2452,14 @@ the device sits.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="web-admin">Web Admin<a class="headerlink" href="#web-admin" title="Permanent link">&para;</a></h3>
+<p><strong>Web Admin</strong> at the top of a device's page opens its web interface (WebFig) in a new tab. It
+asks the device where WebFig answers: over HTTPS when <code>www-ssl</code> is on (even with plain <code>www</code>
+off, as <a href="../security/#webfig-over-https">WebFig over HTTPS</a> leaves it), otherwise over HTTP,
+each on the port the device uses (#335). If both are off it says so instead, and if <code>www-ssl</code>
+has no certificate it warns that HTTPS may not answer (the Security tab's <strong>Switch to HTTPS</strong>
+sets one up). When the device doesn't answer
+the manager, it falls back to <code>http://</code> on the device's address.</p>
 <h3 id="terminal">Terminal<a class="headerlink" href="#terminal" title="Permanent link">&para;</a></h3>
 <p>The terminal opens an SSH shell on the device, for operators and admins in the device's site.
 The audit log records each session's start, who opened it, from which address, and when it

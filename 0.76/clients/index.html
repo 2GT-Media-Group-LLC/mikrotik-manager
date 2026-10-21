@@ -1267,6 +1267,8 @@ interval and <strong>Purge stale</strong> sit beside the page title.</p>
 sort too; Signal sorts strongest first on the first click. <strong>Rate</strong> is the client's current link
 rate, seen from the access point: TX is towards the client, RX from it. It's also on the client's
 page, and comes from the newer Wi-Fi package, the legacy wireless driver and legacy CAPsMAN alike.</p>
+<p>The list has a minimum width, so in a narrow window it scrolls sideways rather than cutting off
+IP addresses (#336). Hover a shortened name, vendor, SSID, interface or device to see all of it.</p>
 <p><strong>Active</strong> means the client was present at the most recent poll of the device it is attached
 to. Clients that disappear are kept and marked inactive rather than deleted, so history
 survives a laptop closing its lid; <code>retention_clients_days</code> (default 7) decides how long an
