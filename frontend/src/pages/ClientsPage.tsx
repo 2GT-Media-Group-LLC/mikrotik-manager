@@ -478,13 +478,15 @@ export default function ClientsPage() {
         <>
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm table-fixed">
+            {/* A floor on the width, so a narrow window scrolls sideways rather than
+                cutting addresses off; the IP column is sized for a full IPv4 address (#336). */}
+            <table className="w-full min-w-[1100px] text-sm table-fixed">
               <colgroup>
                 {(isWireless
-                  ? ['18%', '10%', '10%', '10%', '12%', '8%', '5%', '10%', '8%', '9%']
+                  ? ['18%', '10.5rem', '10%', '10%', '12%', '8%', '5%', '10%', '8%', '9%']
                   : isWired
-                    ? ['26%', '14%', '13%', '8%', '15%', '11%', '13%']
-                    : ['22%', '12%', '13%', '11%', '7%', '13%', '10%', '12%']
+                    ? ['26%', '10.5rem', '13%', '8%', '15%', '11%', '13%']
+                    : ['22%', '10.5rem', '13%', '11%', '7%', '13%', '10%', '12%']
                 ).map((w, i) => <col key={i} style={{ width: w }} />)}
                 {showAll && <col style={{ width: '6%' }} />}
               </colgroup>
@@ -543,6 +545,7 @@ export default function ClientsPage() {
                         <button
                           onClick={() => navigate(`/clients/${encodeURIComponent(client.mac_address)}`)}
                           className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-left truncate"
+                          title={client.custom_name || client.hostname || undefined}
                         >
                           {client.custom_name || client.hostname || (
                             <span className="text-gray-400 dark:text-slate-500 italic">No hostname</span>
@@ -571,18 +574,18 @@ export default function ClientsPage() {
                         )}
                       </div>
                       {client.vendor && (
-                        <div className="text-xs text-gray-400 dark:text-slate-500 truncate">{client.vendor}</div>
+                        <div className="text-xs text-gray-400 dark:text-slate-500 truncate" title={client.vendor}>{client.vendor}</div>
                       )}
                       <div className="text-xs font-mono text-gray-400 dark:text-slate-500 truncate">
                         {client.mac_address}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-gray-600 dark:text-slate-400 truncate">
+                    <td className="px-4 py-2.5 font-mono text-gray-600 dark:text-slate-400 truncate" title={client.ip_address || undefined}>
                       {client.ip_address || '—'}
                     </td>
                     {isWireless ? (
                       <>
-                        <td className="px-4 py-2.5 text-xs text-gray-600 dark:text-slate-400 truncate">
+                        <td className="px-4 py-2.5 text-xs text-gray-600 dark:text-slate-400 truncate" title={(client as Client & { ssid?: string }).ssid || undefined}>
                           {(client as Client & { ssid?: string }).ssid || '—'}
                         </td>
                         <td className="px-4 py-2.5 text-xs whitespace-nowrap">
@@ -627,7 +630,7 @@ export default function ClientsPage() {
                         </span>
                       </td>
                     )}
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400 truncate">
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400 truncate" title={client.interface_name || undefined}>
                       {client.interface_name || '—'}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400">
@@ -635,7 +638,7 @@ export default function ClientsPage() {
                         ? <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded font-mono">{client.vlan_id}</span>
                         : '—'}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 truncate">
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 truncate" title={client.device_name || undefined}>
                       {client.device_name || '—'}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">

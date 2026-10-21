@@ -27,6 +27,9 @@ sort too; Signal sorts strongest first on the first click. **Rate** is the clien
 rate, seen from the access point: TX is towards the client, RX from it. It's also on the client's
 page, and comes from the newer Wi-Fi package, the legacy wireless driver and legacy CAPsMAN alike.
 
+The list has a minimum width, so in a narrow window it scrolls sideways rather than cutting off
+IP addresses (#336). Hover a shortened name, vendor, SSID, interface or device to see all of it.
+
 **Active** means the client was present at the most recent poll of the device it is attached
 to. Clients that disappear are kept and marked inactive rather than deleted, so history
 survives a laptop closing its lid; `retention_clients_days` (default 7) decides how long an
