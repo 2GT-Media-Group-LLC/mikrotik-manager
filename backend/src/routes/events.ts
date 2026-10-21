@@ -468,16 +468,19 @@ router.delete('/firewall', requireWrite, async (req: Request, res: Response) => 
     if (scope) filters.push(scope);
   }
 
-  const deleted = await query<{ id: number }>(
-    `DELETE FROM events
-      WHERE ${filters.join(' AND ')}
-      RETURNING id`,
+  const deleted = await query<{ count: string }>(
+    `WITH deleted AS (
+      DELETE FROM events
+        WHERE ${filters.join(' AND ')}
+        RETURNING 1
+    )
+    SELECT COUNT(*)::text AS count FROM deleted`,
     params
   );
 
   return res.json({
     message: 'Firewall events cleared',
-    deleted: deleted.length,
+    deleted: parseInt(deleted[0]?.count || '0', 10),
   });
 });
 

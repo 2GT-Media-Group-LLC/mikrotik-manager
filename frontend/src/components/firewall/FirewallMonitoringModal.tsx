@@ -175,12 +175,17 @@ export default function FirewallMonitoringModal({
   } = useQuery({
     queryKey: ['firewall-monitor-activity', deviceId, activityGeneration],
     queryFn: async () => {
-      const before = rules.filter(
+      const before = await devicesApi
+        .getFirewall(deviceId!)
+        .then((r) => r.data as Rule[]);
+
+      const startedAt = Date.now();
+
+      const eligibleBefore = before.filter(
         (rule) =>
           !blockedReason(rule) &&
           firewallPacketCount(rule) !== null
       );
-      const startedAt = Date.now();
 
       await new Promise<void>((resolve) =>
         setTimeout(resolve, FIREWALL_ACTIVITY_SAMPLE_MS)
@@ -191,7 +196,7 @@ export default function FirewallMonitoringModal({
         .then((r) => r.data as Rule[]);
 
       return estimateFirewallActivity(
-        before,
+        eligibleBefore,
         after,
         Date.now() - startedAt
       );

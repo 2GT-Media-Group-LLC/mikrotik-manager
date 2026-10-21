@@ -39,6 +39,21 @@ can be identified when the log entry is parsed.
 
 Existing custom logging is not overwritten.
 
+### Rule activity estimate
+
+Before logging is enabled, MikroTik Manager samples the rule's packet counter
+for approximately 5 seconds and shows an estimated packets-per-minute rate in
+the **Activity** column.
+
+The estimate is intended as a quick indication of how much log traffic a rule
+may produce. Rules matching **1,000 packets/min or more** are treated as
+high-volume and require the explicit **Allow high-volume rules** option before
+monitoring can be enabled.
+
+The existing structural safety checks still apply. FastTrack rules cannot be
+monitored, and rules such as broad ACCEPT or established/related rules also
+require the high-volume override.
+
 For safety:
 
 - dynamic rules cannot be changed
@@ -52,3 +67,25 @@ logging automatically.
 
 Disabling monitoring for a rule that MikroTik Manager previously enabled turns
 off its managed logging and removes the managed prefix.
+
+## Device Logs
+
+Firewall packet logs have their own **Events → Firewall Logs** page, so they
+are hidden from **Device Logs** by default.
+
+Enable the **Firewall packets** toggle on Device Logs to include them in that
+view when needed.
+
+## Retention and clearing
+
+Firewall packet logs have a separate retention setting under **Settings → Data
+Retention**. The default firewall log retention is **7 days**.
+
+Other device events continue to use the normal `retention_events_days` setting.
+
+Users with write access can use **Clear** on the Firewall Logs page to delete
+stored firewall packet events. When a device is selected, only that device's
+firewall logs are cleared. Without a selected device, the operation is limited
+to the user's current writable site scope.
+
+Clearing Firewall Logs does not delete ordinary Device Logs.
