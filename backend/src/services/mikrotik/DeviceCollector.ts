@@ -3875,6 +3875,28 @@ export class DeviceCollector {
     return this.client.execute('/ip/hotspot/active/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
   }
 
+  /**
+   * Kick a wireless client off (#338): remove its registration-table entries,
+   * as WinBox's Remove does, so it reassociates. Every table this device might
+   * list it in is checked: the wifi package's (which on a CAPsMAN controller
+   * holds its CAPs' clients too), legacy wireless, and a legacy CAPsMAN
+   * controller's. A menu the device doesn't have is skipped. Returns how many
+   * entries were removed; `mac` is lower-case colon form.
+   */
+  async disconnectWirelessClient(mac: string): Promise<number> {
+    let removed = 0;
+    for (const menu of ['/interface/wifi/registration-table', '/interface/wireless/registration-table', '/caps-man/registration-table']) {
+      const rows = await this.client.execute(`${menu}/print`, { '.proplist': '.id,mac-address' }).catch(() => null);
+      if (!rows) continue;
+      for (const r of rows) {
+        if ((r['mac-address'] || '').toLowerCase() !== mac || !r['.id']) continue;
+        await this.client.execute(`${menu}/remove`, { '.id': r['.id'] });
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   async disconnectHotspotActive(id: string): Promise<void> {
     await this.client.execute('/ip/hotspot/active/remove', { '.id': id });
   }

@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Wifi, Network, Router, Layers, Activity,
-  Power, Save, Clock, ChevronRight, AlertCircle, Pencil, X, Gauge, Check,
+  Power, Save, Clock, ChevronRight, AlertCircle, Pencil, X, Gauge, Check, WifiOff,
 } from 'lucide-react';
 import { useCanWrite } from '../hooks/useCanWrite';
 import {
@@ -21,6 +21,7 @@ import type { SignalPoint } from '../services/api';
 import clsx from 'clsx';
 import { formatRatePair } from '../utils/wifiRate';
 import ClientAddressLists from '../components/clients/ClientAddressLists';
+import { disconnectClient } from '../utils/disconnectClient';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -315,6 +316,7 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
   const [notes, setNotes] = useState(client.comment || '');
   const [notesChanged, setNotesChanged] = useState(false);
   const [wolStatus, setWolStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [kick, setKick] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(client.custom_name || '');
 
@@ -347,6 +349,17 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
       qc.invalidateQueries({ queryKey: ['wireless-clients-page'] });
     },
   });
+
+  // Disconnect from the access point (#338).
+  const handleDisconnect = async () => {
+    setKick({ busy: true });
+    const r = await disconnectClient(client.mac_address, client.custom_name || client.hostname || client.mac_address, client.device_name);
+    setKick(r ? { busy: false, ok: r.ok, message: r.message } : { busy: false });
+    if (r?.ok) {
+      qc.invalidateQueries({ queryKey: ['client-detail', client.mac_address] });
+      qc.invalidateQueries({ queryKey: ['clients'] });
+    }
+  };
 
   const handleWol = async () => {
     setWolStatus('sending');
@@ -564,6 +577,26 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
           </button>
           <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">
             Sends a UDP broadcast magic packet to wake this client.
+          </p>
+        </div>
+      )}
+
+      {/* Disconnect a wireless client from its access point (#338) */}
+      {canWrite && client.client_type === 'wireless' && client.active && (
+        <div className="pt-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-gray-700 dark:text-slate-300">Disconnect</span>
+          </div>
+          <button
+            onClick={() => void handleDisconnect()}
+            disabled={kick.busy}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50"
+          >
+            <WifiOff className="w-3.5 h-3.5" />
+            {kick.busy ? 'Disconnecting…' : 'Disconnect from access point'}
+          </button>
+          <p className={clsx('text-[10px] mt-1', kick.message ? (kick.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400') : 'text-gray-400 dark:text-slate-500')} role="status">
+            {kick.message ?? 'Removes it from the access point’s registration table, as WinBox does; it normally reconnects within seconds.'}
           </p>
         </div>
       )}

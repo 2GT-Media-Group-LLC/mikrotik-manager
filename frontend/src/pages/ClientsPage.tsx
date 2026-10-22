@@ -4,8 +4,9 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Wifi, Network, Users, X, Pencil, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, ListChecks,
-  ChevronLeft, ChevronRight, RefreshCw,
+  ChevronLeft, ChevronRight, RefreshCw, WifiOff,
 } from 'lucide-react';
+import { disconnectClient } from '../utils/disconnectClient';
 import { CATEGORY_META } from '../utils/clientCategories';
 import { RSSI_ZONES } from '../utils/wifiChannels';
 import { clientsApi, devicesApi } from '../services/api';
@@ -241,6 +242,14 @@ export default function ClientsPage() {
   const [page, setPage] = useState(0);
   // Firewall address lists for one client (#145).
   const [listsFor, setListsFor] = useState<Client | null>(null);
+  // Result of disconnecting a wireless client from its access point (#338).
+  const [kickNote, setKickNote] = useState<{ ok: boolean; message: string } | null>(null);
+  const kickClient = async (client: Client) => {
+    const r = await disconnectClient(client.mac_address, client.custom_name || client.hostname || client.mac_address, client.device_name);
+    if (!r) return;
+    setKickNote(r);
+    if (r.ok) queryClient.invalidateQueries({ queryKey: ['clients'] });
+  };
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [sortCol, setSortCol] = useState<string>('last_seen');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -477,6 +486,14 @@ export default function ClientsPage() {
       ) : (
         <>
           <div className="card overflow-hidden">
+            {kickNote && (
+              <div role="status" className={clsx('flex items-center gap-2 px-4 py-2 text-xs border-b',
+                kickNote.ok ? 'text-green-700 dark:text-green-400 border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-900/20'
+                  : 'text-red-700 dark:text-red-400 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20')}>
+                <span className="flex-1">{kickNote.message}</span>
+                <button type="button" onClick={() => setKickNote(null)} className="opacity-60 hover:opacity-100" aria-label="Dismiss"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            )}
             <div className="overflow-x-auto">
             {/* A floor on the width, so a narrow window scrolls sideways rather than
                 cutting addresses off; the IP column is sized for a full IPv4 address (#336). */}
@@ -570,6 +587,16 @@ export default function ClientsPage() {
                             title="Firewall address lists for this client's address"
                           >
                             <ListChecks className="w-3 h-3 text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400" />
+                          </button>
+                        )}
+                        {canWrite && client.client_type === 'wireless' && client.active && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); void kickClient(client); }}
+                            className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-slate-700 flex-shrink-0"
+                            title="Disconnect from the access point (it normally reconnects within seconds)"
+                            aria-label="Disconnect from the access point"
+                          >
+                            <WifiOff className="w-3 h-3 text-gray-300 dark:text-slate-600 hover:text-amber-500 dark:hover:text-amber-400" />
                           </button>
                         )}
                       </div>

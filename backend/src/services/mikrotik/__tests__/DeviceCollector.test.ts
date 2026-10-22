@@ -566,3 +566,60 @@ describe('bond create/remove failures', () => {
     expect(isPartialApply(err)).toBe(true);
   });
 });
+
+// ── disconnectWirelessClient (#338) ───────────────────────────────────────────
+
+describe('disconnectWirelessClient', () => {
+  function withTables(tables: Record<string, Record<string, string>[] | null>) {
+    const collector = new DeviceCollector(testDevice);
+    const removed: Array<[string, string]> = [];
+    const execute = jest.fn(async (cmd: string, params?: Record<string, string>) => {
+      const menu = cmd.replace(/\/(print|remove)$/, '');
+      if (cmd.endsWith('/print')) {
+        const rows = tables[menu];
+        if (rows === null || rows === undefined) throw new Error('no such command prefix');
+        return rows;
+      }
+      removed.push([menu, params?.['.id'] ?? '']);
+      return [];
+    });
+    (collector as unknown as { client: { execute: typeof execute } }).client = { execute };
+    return { collector, removed };
+  }
+
+  it('removes the matching entry from the wifi package table, case-insensitively', async () => {
+    const { collector, removed } = withTables({
+      '/interface/wifi/registration-table': [
+        { '.id': '*A', 'mac-address': 'AA:BB:CC:00:11:22' },
+        { '.id': '*B', 'mac-address': 'AA:BB:CC:00:11:33' },
+      ],
+      '/interface/wireless/registration-table': null,
+      '/caps-man/registration-table': null,
+    });
+    expect(await collector.disconnectWirelessClient('aa:bb:cc:00:11:22')).toBe(1);
+    expect(removed).toEqual([['/interface/wifi/registration-table', '*A']]);
+  });
+
+  it('covers legacy wireless and a legacy CAPsMAN controller, every matching entry', async () => {
+    const { collector, removed } = withTables({
+      '/interface/wifi/registration-table': null,
+      '/interface/wireless/registration-table': [{ '.id': '*1', 'mac-address': 'AA:BB:CC:00:11:22' }],
+      '/caps-man/registration-table': [
+        { '.id': '*7', 'mac-address': 'aa:bb:cc:00:11:22' },
+        { '.id': '*8', 'mac-address': 'AA:BB:CC:00:11:99' },
+      ],
+    });
+    expect(await collector.disconnectWirelessClient('aa:bb:cc:00:11:22')).toBe(2);
+    expect(removed).toEqual([['/interface/wireless/registration-table', '*1'], ['/caps-man/registration-table', '*7']]);
+  });
+
+  it('returns 0 and removes nothing when the client is not registered', async () => {
+    const { collector, removed } = withTables({
+      '/interface/wifi/registration-table': [{ '.id': '*A', 'mac-address': 'AA:BB:CC:00:11:33' }],
+      '/interface/wireless/registration-table': null,
+      '/caps-man/registration-table': null,
+    });
+    expect(await collector.disconnectWirelessClient('aa:bb:cc:00:11:22')).toBe(0);
+    expect(removed).toEqual([]);
+  });
+});

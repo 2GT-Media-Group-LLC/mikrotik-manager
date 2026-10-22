@@ -84,6 +84,13 @@ table is one click away if you want it.
       Change Guard, which asks before anything it predicts would lock the manager out.
     - If the address is a **dynamic** DHCP lease, a warning says so: the lists follow the
       address, not the device. Make the lease static to keep them together.
+- **Disconnect** (#338), on a wireless client's page or the Wi-Fi-off icon on its row, removes it
+  from its access point's registration table, as **Remove** does in WinBox, so it reassociates,
+  normally within seconds. It works with the Wi-Fi package, the legacy wireless driver and legacy
+  CAPsMAN, and is for operators and admins in the client's site. If the client is one of your
+  managed devices (a wireless backhaul in station mode, say), it asks again first, since that
+  drops the device and everything reached through it until it reconnects. Each disconnect is in
+  the audit log.
 - **Wake-on-LAN** sends a magic packet from the MikroTik nearest the client, not from the
   manager, so it reaches devices the manager cannot route to.
 - **Notes** are free text kept against the MAC.

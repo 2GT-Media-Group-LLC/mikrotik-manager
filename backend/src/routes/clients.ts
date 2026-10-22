@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { decodedPath } from '../utils/requestPath';
 import * as dgram from 'dgram';
-import { query } from '../config/database';
+import { query, queryOne } from '../config/database';
+import { DeviceCollector, type DeviceRow } from '../services/mikrotik/DeviceCollector';
+import { normalizeMac } from '../utils/fit';
 import { logSafe } from '../utils/logSafe';
 import { requireAuth, requireAdmin, requireWrite } from '../middleware/auth';
 import { siteList, siteScopeByDevice, siteScopeByNullableDevice } from '../utils/siteScope';
@@ -503,6 +505,73 @@ router.post('/:mac/wol', requireWrite, async (req: Request, res: Response) => {
       });
     });
   });
+});
+
+/**
+ * POST /api/clients/:mac/disconnect { confirm_managed? } — kick a wireless
+ * client off its access point (#338), as WinBox's Remove on the registration
+ * table does; it reassociates by itself, normally within seconds. No config
+ * changes, so it doesn't go through Change Guard.
+ *
+ * A "client" can be a managed MikroTik in station mode (a wireless backhaul):
+ * dropping it drops everything behind it, the manager's path included, so that
+ * case needs confirm_managed and is otherwise answered 409 with the device.
+ */
+router.post('/:mac/disconnect', requireWrite, async (req: Request, res: Response) => {
+  const mac = normalizeMac(req.params.mac);
+  if (!mac) return res.status(400).json({ error: 'Invalid MAC address' });
+
+  // Only where the account may make changes, and only where it's connected now.
+  const scope = siteScopeByDevice(writableScope(req), 'c.device_id');
+  const where = await query<{ device_id: number; name: string }>(
+    `SELECT DISTINCT c.device_id, d.name
+       FROM clients c JOIN devices d ON d.id = c.device_id
+      WHERE LOWER(c.mac_address) = $1 AND c.client_type = 'wireless' AND c.active
+        ${scope ? `AND ${scope}` : ''}`,
+    [mac]
+  );
+  if (where.length === 0) {
+    return res.status(404).json({ error: 'This client isn’t connected to a wireless device you can manage right now.' });
+  }
+
+  if (req.body?.confirm_managed !== true) {
+    const managed = await queryOne<{ name: string }>(
+      `SELECT d.name FROM interfaces i JOIN devices d ON d.id = i.device_id WHERE LOWER(i.mac_address) = $1 LIMIT 1`,
+      [mac]
+    );
+    if (managed) {
+      return res.status(409).json({
+        managed_device: managed.name,
+        error: `This is ${managed.name}, a managed device. Disconnecting it drops it and anything reached through it until it reconnects, possibly including the manager's connection to them.`,
+      });
+    }
+  }
+
+  let removed = 0;
+  const from: string[] = [];
+  const failed: string[] = [];
+  for (const w of where) {
+    const device = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [w.device_id]);
+    if (!device) continue;
+    const c = new DeviceCollector(device);
+    try {
+      await c.connect();
+      const n = await c.disconnectWirelessClient(mac);
+      if (n > 0) { removed += n; from.push(w.name); }
+    } catch (err) {
+      failed.push(`${w.name}: ${(err as Error).message}`);
+    } finally {
+      try { c.disconnect(); } catch { /* ignore */ }
+    }
+  }
+  console.log(`[clients] disconnect ${logSafe(mac)} by ${logSafe(req.user?.username ?? '?')}: removed ${removed} from ${logSafe(from.join(',') || '-')}${failed.length ? `; failed ${logSafe(failed.join('; '))}` : ''}`);
+
+  if (removed === 0) {
+    return failed.length
+      ? res.status(502).json({ error: `Couldn't reach the access point: ${failed.join('; ')}` })
+      : res.status(404).json({ error: 'The client wasn’t in the access point’s registration table; it may have just left.' });
+  }
+  return res.json({ message: `Disconnected from ${from.join(', ')}. It normally reconnects within a few seconds.`, removed, failed });
 });
 
 /**

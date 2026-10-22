@@ -1119,6 +1119,9 @@ export const clientsApi = {
   getSignal: (mac: string, range = '24h') =>
     api.get<SignalPoint[]>(`/clients/${encodeURIComponent(mac)}/signal`, { params: { range } }),
   wol: (mac: string) => api.post<{ success: boolean; message: string }>(`/clients/${encodeURIComponent(mac)}/wol`),
+  /** Kick a wireless client off its access point (#338); confirmManaged when it is a managed device. */
+  disconnect: (mac: string, confirmManaged = false) =>
+    api.post<{ message: string; removed: number; failed: string[] }>(`/clients/${encodeURIComponent(mac)}/disconnect`, confirmManaged ? { confirm_managed: true } : {}),
   updateNotes: (mac: string, notes: string) =>
     api.put<Client>(`/clients/${encodeURIComponent(mac)}/notes`, { notes }),
   updateHostname: (mac: string, hostname: string) =>
