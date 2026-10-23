@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import {
   Wifi, CheckCircle, XCircle, HelpCircle, Users, RefreshCw, ExternalLink,
 } from 'lucide-react';
@@ -41,6 +42,8 @@ export default function WirelessPage() {
     queryFn: () => wirelessApi.list().then(r => r.data as WirelessAP[]),
     refetchInterval: 30_000,
   });
+  // Refresh asks the devices in view for a fresh poll, then reads again as it lands.
+  const { refresh, refreshing } = useFleetRefresh(['fast', 'slow'], refetch);
 
   const online  = aps.filter(a => a.status === 'online').length;
   const offline = aps.filter(a => a.status === 'offline').length;
@@ -74,11 +77,11 @@ export default function WirelessPage() {
           </p>
         </div>
         <button
-          onClick={() => refetch()}
-          disabled={isFetching}
+          onClick={() => void refresh()}
+          disabled={isFetching || refreshing}
           className="btn-secondary flex items-center gap-2 text-sm"
         >
-          <RefreshCw className={clsx('w-4 h-4', isFetching && 'animate-spin')} />
+          <RefreshCw className={clsx('w-4 h-4', (isFetching || refreshing) && 'animate-spin')} />
           Refresh
         </button>
       </div>

@@ -633,6 +633,25 @@ export class DeviceCollector {
 
   // ─── Full initial collection ───────────────────────────────────────────────
 
+  /**
+   * A Sync of just what one tab shows, so its Refresh brings fresh data from
+   * the device in a second or two instead of re-reading what the last poll
+   * stored. 'vlans': interfaces, addresses and the bridge VLAN table (the
+   * VLANs and Ports tabs); 'wireless': radios, security profiles and CAPsMAN.
+   */
+  async collectScope(scope: 'vlans' | 'wireless'): Promise<void> {
+    if (scope === 'vlans') {
+      await this.collectInterfaces();
+      await this.collectIpAddressesCache();
+      await this.collectVlans();
+    } else if (this.shouldCollectWireless()) {
+      await this.collectWirelessInterfaces();
+      await this.collectSecurityProfiles();
+      await this.collectCapsman();
+    }
+    this.assertStillConnected();
+  }
+
   async collectAll(): Promise<void> {
     await this.collectSystemInfo();
     await this.collectInterfaces();

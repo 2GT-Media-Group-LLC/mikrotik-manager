@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import LoadError from '../components/common/LoadError';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import {
   Wifi, Network, Users, X, Pencil, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, ListChecks,
   ChevronLeft, ChevronRight, RefreshCw, WifiOff,
@@ -300,6 +301,8 @@ export default function ClientsPage() {
     // flight so the table doesn't blank out and jump.
     placeholderData: keepPreviousData,
   });
+  // Refresh asks the devices in view for a fresh poll, then reads again as it lands.
+  const { refresh, refreshing } = useFleetRefresh(['fast'], refetch);
 
   // Devices clients can be connected to, for the device filter (#222).
   const { data: allDevices = [] } = useQuery({
@@ -389,11 +392,11 @@ export default function ClientsPage() {
             </button>
           )}
           <button
-            onClick={() => void refetch()}
-            disabled={isFetching}
+            onClick={() => void refresh()}
+            disabled={isFetching || refreshing}
             className="btn-secondary flex items-center gap-1.5 text-[12px] py-[6px] disabled:opacity-60"
           >
-            <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />
+            <RefreshCw className={clsx('w-3.5 h-3.5', (isFetching || refreshing) && 'animate-spin')} />
             Refresh
           </button>
           <select

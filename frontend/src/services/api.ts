@@ -746,7 +746,8 @@ export const devicesApi = {
     }
   ) => api.put<Device>(`/devices/${id}`, data),
   delete: (id: number) => api.delete(`/devices/${id}`),
-  sync: (id: number) => api.post(`/devices/${id}/sync`, undefined, { timeout: 60_000 }),
+  /** A full sync, or with scope just what one tab shows ('vlans', 'wireless'). */
+  sync: (id: number, scope?: 'vlans' | 'wireless') => api.post(`/devices/${id}/sync`, scope ? { scope } : undefined, { timeout: 60_000 }),
   /** SSH-only device (#174): does the API answer now? It becomes an ordinary device if so. */
   checkApi: (id: number) =>
     api.post<{ api: boolean; port?: number; message?: string; reason?: string }>(`/devices/${id}/check-api`, undefined, { timeout: 30_000 }),
@@ -1484,6 +1485,8 @@ export interface OpsInsights {
 export interface OpsActionResult { total: number; results: { name: string; ok: boolean; error?: string }[] }
 
 export const operationsApi = {
+  /** A fleet page's Refresh: ask the online devices in view for a fresh poll. */
+  pollNow: (kind: 'fast' | 'slow' | 'logs') => api.post<{ queued: number; recent?: boolean }>('/operations/poll-now', { kind }),
   insights: () => api.get<OpsInsights>('/operations/insights'),
   /** Every online device's hardening score, cached and refreshed a few at a time (#302). */
   securityPosture: (refresh = false) => api.get<{

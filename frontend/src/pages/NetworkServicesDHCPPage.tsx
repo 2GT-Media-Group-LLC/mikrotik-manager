@@ -653,7 +653,8 @@ export default function NetworkServicesDHCPPage() {
           <p className="text-sm text-gray-500 dark:text-slate-400">Manage DHCP servers, address pools, and leases</p>
         </div>
         {deviceId > 0 && (
-          <button onClick={() => refetch()} disabled={isFetching}
+          // Servers and both lease tables, not just the servers.
+          <button onClick={() => { void refetch(); void qc.invalidateQueries({ queryKey: ['ns-leases', deviceId] }); }} disabled={isFetching}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors">
             <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />
             Refresh

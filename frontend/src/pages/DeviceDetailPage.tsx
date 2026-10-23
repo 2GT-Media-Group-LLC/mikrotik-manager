@@ -7,6 +7,7 @@ import {
 import { hostPort, winboxAddress } from '../utils/deviceAddress';
 import { devicesApi, metricsApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { invalidateDevice } from '../utils/invalidateDevice';
 import SwitchPortDiagram from '../components/ports/SwitchPortDiagram';
 import DeviceTagPicker from '../components/devices/DeviceTagPicker';
 import TerminalModal from '../components/TerminalModal';
@@ -68,6 +69,7 @@ export default function DeviceDetailPage() {
   const [addrCopied, setAddrCopied] = useState(false);
   // Why Web Admin couldn't open, or a caveat about where it went (#335).
   const [webNote, setWebNote] = useState<string | null>(null);
+  const [syncNote, setSyncNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   const deviceId = parseInt(id!);
 
@@ -101,12 +103,18 @@ export default function DeviceDetailPage() {
     },
   });
 
+  // Sync reads everything from the device, then every tab reloads what it shows:
+  // it used to refresh only the header and interfaces, so a tab such as VLANs
+  // kept its old content after a sync.
   const syncMutation = useMutation({
+    meta: { inlineError: true },
     mutationFn: () => devicesApi.sync(deviceId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['device', deviceId] });
-      queryClient.invalidateQueries({ queryKey: ['interfaces', deviceId] });
+      setSyncNote({ ok: true, text: 'Synced' });
+      window.setTimeout(() => setSyncNote((n) => (n?.ok ? null : n)), 5_000);
+      void invalidateDevice(queryClient, deviceId);
     },
+    onError: (e: unknown) => setSyncNote({ ok: false, text: (e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Sync failed' }),
   });
 
   if (isLoading) {
@@ -286,13 +294,19 @@ export default function DeviceDetailPage() {
           )}
           {canWrite && (
             <button
-              onClick={() => syncMutation.mutate()}
+              onClick={() => { setSyncNote(null); syncMutation.mutate(); }}
               disabled={syncMutation.isPending}
               className="btn-secondary flex items-center gap-2 text-sm"
+              title="Read everything from the device now"
             >
               <RefreshCw className={clsx('w-4 h-4', syncMutation.isPending && 'animate-spin')} />
-              <span className="hidden sm:inline">Sync</span>
+              <span className="hidden sm:inline">{syncMutation.isPending ? 'Syncing…' : 'Sync'}</span>
             </button>
+          )}
+          {syncNote && !syncMutation.isPending && (
+            <span role="status" className={clsx('text-xs max-w-xs', syncNote.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+              {syncNote.text}
+            </span>
           )}
         </div>
       </div>

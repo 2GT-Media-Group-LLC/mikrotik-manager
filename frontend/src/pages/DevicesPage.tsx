@@ -19,6 +19,7 @@ import TryAllDiscoveredModal from '../components/devices/TryAllDiscoveredModal';
 import CsvImportModal from '../components/devices/CsvImportModal';
 import BulkTagBar from '../components/devices/BulkTagBar';
 import ColumnPicker from '../components/devices/ColumnPicker';
+import { invalidateDevice } from '../utils/invalidateDevice';
 import { loadColumnPrefs, saveColumnPrefs, visibleColumns, clampWidth, type ColumnPrefs, type DeviceColumnId } from '../utils/deviceColumns';
 import { displayState, STATE_COLOR } from '../utils/deviceState';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
@@ -218,7 +219,8 @@ export default function DevicesPage() {
 
   const syncMutation = useMutation({
     mutationFn: (id: number) => devicesApi.sync(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['devices'] }),
+    // The list, and anything already loaded for that device's page.
+    onSuccess: (_r, id) => { void queryClient.invalidateQueries({ queryKey: ['devices'] }); void invalidateDevice(queryClient, id); },
   });
 
   // Reboot from the row (#292), with a confirmation naming the device.

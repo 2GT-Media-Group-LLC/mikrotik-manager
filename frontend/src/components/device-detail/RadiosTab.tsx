@@ -11,8 +11,9 @@ import {
   ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts';
 import { chartTooltip } from '../common/chartTooltip';
-import { wirelessApi } from '../../services/api';
+import { wirelessApi, devicesApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import { invalidateDevice } from '../../utils/invalidateDevice';
 import RfHealth from '../wireless/RfHealth';
 import type { WirelessInterface, WirelessMetricPoint } from '../../types';
 import clsx from 'clsx';
@@ -956,10 +957,19 @@ export default function RadiosTab({ deviceId, deviceStatus }: Props) {
       return next;
     });
 
-  const { data: ifaces = [], isLoading, refetch } = useQuery({
+  const { data: ifaces = [], isLoading } = useQuery({
     queryKey: ['device-wireless', deviceId],
     queryFn: () => wirelessApi.getCachedInterfaces(deviceId).then(r => r.data as WirelessInterface[]),
     refetchInterval: 30_000,
+  });
+  // Refresh reads the radios from the device (a scoped sync), then reloads the
+  // tab; the radio list is stored by the poller, so a plain reload showed the
+  // last slow poll's data. Viewers get the reload.
+  const qc = useQueryClient();
+  const refresh = useMutation({
+    meta: { inlineError: true },
+    mutationFn: async () => { if (canWrite) await devicesApi.sync(deviceId, 'wireless'); },
+    onSettled: () => invalidateDevice(qc, deviceId),
   });
 
   const isOffline = deviceStatus !== 'online';
@@ -1015,11 +1025,12 @@ export default function RadiosTab({ deviceId, deviceStatus }: Props) {
               {expandedCards.size === ifaces.length ? 'Collapse all' : 'Expand all'}
             </button>
             <button
-              onClick={() => refetch()}
+              onClick={() => refresh.mutate()}
+              disabled={refresh.isPending}
               className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
-              title="Refresh"
+              title={canWrite ? 'Read the radios from the device now' : 'Reload'}
             >
-              <RefreshCw className={clsx('w-4 h-4', isLoading && 'animate-spin')} />
+              <RefreshCw className={clsx('w-4 h-4', (isLoading || refresh.isPending) && 'animate-spin')} />
             </button>
           </div>
         </div>

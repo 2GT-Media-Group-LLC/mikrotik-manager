@@ -359,7 +359,7 @@ export default function GuestWifiPage() {
   );
   const devId = typeof deviceId === 'number' ? deviceId : (online[0]?.id ?? 0);
 
-  const { data: overview, isLoading, refetch, isFetching } = useQuery({
+  const { data: overview, isLoading, isFetching } = useQuery({
     queryKey: ['guest-wifi-overview', devId],
     queryFn: () => guestWifiApi.overview(devId).then(r => r.data),
     enabled: devId > 0,
@@ -420,7 +420,8 @@ export default function GuestWifiPage() {
             value={devId ?? null}
             onChange={(id) => { if (id != null) setDeviceId(id); }}
           />
-          <button className="btn-secondary flex items-center gap-2" onClick={() => refetch()} disabled={isFetching}>
+          {/* Every section, not just the overview: users, sessions and the walled garden too. */}
+          <button className="btn-secondary flex items-center gap-2" onClick={() => invalidateAll()} disabled={isFetching}>
             <RefreshCw className={clsx('w-4 h-4', isFetching && 'animate-spin')} />Refresh
           </button>
         </div>

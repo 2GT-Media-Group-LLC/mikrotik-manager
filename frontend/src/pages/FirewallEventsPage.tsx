@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import clsx from 'clsx';
 
 import { devicesApi, eventsApi } from '../services/api';
@@ -70,6 +71,8 @@ export default function FirewallEventsPage() {
         .then((r) => r.data),
     refetchInterval: 30_000,
   });
+  // Refresh asks the devices for their logs now, then reads again as they land.
+  const { refresh, refreshing } = useFleetRefresh(['logs'], refetch);
 
   const clearMutation = useMutation({
     mutationFn: () =>
@@ -113,14 +116,14 @@ export default function FirewallEventsPage() {
           )}
 
           <button
-            onClick={() => refetch()}
-            disabled={isFetching}
+            onClick={() => void refresh()}
+            disabled={isFetching || refreshing}
             className="btn-secondary flex items-center gap-2"
           >
             <RefreshCw
               className={clsx(
                 'w-4 h-4',
-                isFetching && 'animate-spin'
+                (isFetching || refreshing) && 'animate-spin'
               )}
             />
             Refresh

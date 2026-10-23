@@ -819,11 +819,20 @@ router.post('/:id/sync', requireWrite, async (req: Request, res: Response) => {
     }
   }
 
+  // { scope } syncs just what one tab shows (its Refresh button); none is everything.
+  const scope = req.body?.scope;
+  if (scope !== undefined && scope !== 'vlans' && scope !== 'wireless') {
+    return res.status(400).json({ error: 'scope must be vlans or wireless' });
+  }
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
-    await collector.collectAll();
-    await runHealthCheck(collector, deviceRow);
+    if (scope) {
+      await collector.collectScope(scope);
+    } else {
+      await collector.collectAll();
+      await runHealthCheck(collector, deviceRow);
+    }
     return res.json({ message: 'Sync completed' });
   } catch (err) {
     return res.status(500).json({ error: `Sync failed: ${(err as Error).message}` });

@@ -10,6 +10,7 @@ import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import L3HwCard from './L3HwCard';
 import SwitchVlanCard from './SwitchVlanCard';
+import { invalidateDevice } from '../../utils/invalidateDevice';
 import VlanInterfacesCard from './VlanInterfacesCard';
 
 interface PortForm {
@@ -29,7 +30,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
   // that re-sends the same change with confirm_lockout once the user accepts.
   const [lockout, setLockout] = useState<{ verdict: LockoutVerdict; retry: () => void } | null>(null);
 
-  const { data: vlans = [], isLoading, refetch, isFetching } = useQuery({
+  const { data: vlans = [], isLoading, isFetching } = useQuery({
     queryKey: ['vlans', deviceId],
     queryFn: () => devicesApi.getVlans(deviceId).then((r) => r.data),
     refetchInterval: 60_000,
@@ -62,6 +63,16 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
   const bridgesWithoutFiltering = ports.filter(
     (p) => p.type === 'bridge' && p.config_json?.['vlan-filtering'] !== 'yes' && p.config_json?.['vlan-filtering'] !== 'true'
   );
+
+  // Refresh reads interfaces and VLANs from the device (a scoped sync), then
+  // reloads the tab. The bridge VLAN table and ports are stored by the poller,
+  // so a plain reload showed the same rows until the next slow poll. Viewers
+  // can't start a sync and get the reload.
+  const refresh = useMutation({
+    meta: { inlineError: true },
+    mutationFn: async () => { if (canWrite) await devicesApi.sync(deviceId, 'vlans'); },
+    onSettled: () => invalidateDevice(queryClient, deviceId),
+  });
 
   // ── Copy VLAN modal ──
   const [showCopyModal, setShowCopyModal] = useState(false);
@@ -224,11 +235,12 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => refetch()}
-            disabled={isFetching}
+            onClick={() => refresh.mutate()}
+            disabled={isFetching || refresh.isPending}
             className="btn-secondary flex items-center gap-2 text-sm"
+            title={canWrite ? 'Read interfaces and VLANs from the device now' : 'Reload'}
           >
-            <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} />
+            <RefreshCw className={clsx('w-3.5 h-3.5', (isFetching || refresh.isPending) && 'animate-spin')} />
             Refresh
           </button>
           {/* Bridge VLANs aren't how this switch chip does VLANs (#278): no adding or copying them here. */}

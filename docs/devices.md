@@ -661,3 +661,10 @@ for switching individual collectors off.
 
 **Sync** forces a full collection immediately rather than waiting for the next cycle. It
 honours the collector settings, so a collector you have switched off stays off.
+When it finishes, every tab on the device's page reloads, so what you're looking at reflects
+the sync straight away.
+
+A tab's own **Refresh** reads what that tab shows. Most tabs read the device live each time.
+The **VLANs** and **Radios** tabs show what the poller stored, so for operators and admins their
+Refresh first reads just that part from the device (interfaces and VLANs, or the radios), then
+reloads; for read-only accounts it reloads what's stored.

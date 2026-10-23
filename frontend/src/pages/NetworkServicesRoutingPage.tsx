@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import { RefreshCw, Route as RouteIcon } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
@@ -30,6 +31,8 @@ export default function NetworkServicesRoutingPage() {
     queryFn: () => routingApi.peers().then((r) => r.data),
     refetchInterval: 60_000,
   });
+  // Refresh asks the devices in view for a fresh poll, then reads again as it lands.
+  const { refresh, refreshing } = useFleetRefresh(['slow'], refetch);
 
   const shown = useMemo(() => peers.filter((p) => {
     if (protocol && p.protocol !== protocol) return false;
@@ -56,8 +59,8 @@ export default function NetworkServicesRoutingPage() {
             to hear when one drops.
           </p>
         </div>
-        <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary flex items-center gap-2 text-sm">
-          <RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh
+        <button onClick={() => void refresh()} disabled={isFetching || refreshing} className="btn-secondary flex items-center gap-2 text-sm">
+          <RefreshCw className={clsx('w-3.5 h-3.5', (isFetching || refreshing) && 'animate-spin')} /> Refresh
         </button>
       </div>
 

@@ -24,6 +24,33 @@ const router = Router();
 
 router.use(requireAuth);
 
+/**
+ * POST /api/operations/poll-now { kind: 'fast' | 'slow' | 'logs' } — a fleet page's
+ * Refresh (Clients, Wireless, Routing peers, Firewall Logs): ask every online device in view
+ * for a fresh poll instead of re-reading what the last one stored. 'fast'
+ * brings clients and wireless stats, 'slow' interfaces, radios and routing
+ * peers, 'logs' the devices' logs (and with them firewall events). Jobs are de-duplicated per device and kind, so a second press queues
+ * nothing extra, and a short cooldown per site keeps it from becoming a load
+ * generator. The page refetches as the polls land.
+ */
+const pollNowAt = new Map<string, number>();
+const POLL_NOW_COOLDOWN_MS = 20_000;
+router.post('/poll-now', async (req: Request, res: Response) => {
+  const kind = req.body?.kind;
+  if (kind !== 'fast' && kind !== 'slow' && kind !== 'logs') return res.status(400).json({ error: 'kind must be fast, slow or logs' });
+  const site = activeSite(req);
+  const key = `${kind}:${JSON.stringify(site ?? 'all')}`;
+  if (Date.now() - (pollNowAt.get(key) ?? 0) < POLL_NOW_COOLDOWN_MS) return res.json({ queued: 0, recent: true });
+  const { pollerService } = await import('../services/pollerRef');
+  if (!pollerService) return res.status(503).json({ error: 'The poller isn’t running yet' });
+  pollNowAt.set(key, Date.now());
+  const scope = siteScopeDevices(site);
+  const devices = await query<{ id: number }>(
+    `SELECT id FROM devices WHERE status = 'online' AND NOT COALESCE(ssh_only, FALSE) ${scope ? `AND ${scope}` : ''}`);
+  for (const d of devices) await pollerService.scheduleDeviceSync(d.id, kind);
+  return res.json({ queued: devices.length });
+});
+
 const backupService = new BackupService();
 
 const bucket = process.env.INFLUXDB_BUCKET || 'mikrotik';
