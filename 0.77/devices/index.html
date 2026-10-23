@@ -2471,7 +2471,13 @@ use bulk commands, whose commands and output are kept.</p>
 <p>Devices are polled on three cadences — see <a href="../scaling/">Polling and scaling</a> for the model and
 for switching individual collectors off.</p>
 <p><strong>Sync</strong> forces a full collection immediately rather than waiting for the next cycle. It
-honours the collector settings, so a collector you have switched off stays off.</p>
+honours the collector settings, so a collector you have switched off stays off.
+When it finishes, every tab on the device's page reloads, so what you're looking at reflects
+the sync straight away.</p>
+<p>A tab's own <strong>Refresh</strong> reads what that tab shows. Most tabs read the device live each time.
+The <strong>VLANs</strong> and <strong>Radios</strong> tabs show what the poller stored, so for operators and admins their
+Refresh first reads just that part from the device (interfaces and VLANs, or the radios), then
+reloads; for read-only accounts it reloads what's stored.</p>
 
 
 
