@@ -32,6 +32,8 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 
 ## Conventions used here
 
+For ChatGPT and other MCP clients, see the [read-only MCP review connector](mcp.md).
+
 - **Settings in the UI** are stored in the database and apply without a restart.
 - **Environment variables** live in `.env` and require a container restart to change.
 - Anything described as *read-only* makes no writes to your devices.
