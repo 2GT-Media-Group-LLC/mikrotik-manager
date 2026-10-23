@@ -93,6 +93,7 @@ import deviceCertsRoutes from './routes/deviceCerts';
 import { verifyManagedCertificate, adoptCaCertificate } from './services/deviceCa';
 import { isRestoring } from './services/platformBackup/service';
 import cveRoutes from './routes/cves';
+import mcpRoutes, { mcpMetadataRoutes } from './routes/mcp';
 import adoptionRoutes, { setPollerService as setAdoptionPoller } from './routes/adoption';
 import { siteContext } from './middleware/site';
 import { changePreview } from './middleware/changePreview';
@@ -445,6 +446,8 @@ app.get('/api/health', (_req, res) => {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth/oidc', oidcRoutes);
+app.use(mcpMetadataRoutes);
+app.use('/api/mcp', mcpRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/auth/time-format', timeFormatRoutes);
 app.use('/api/devices', devicesRoutes);

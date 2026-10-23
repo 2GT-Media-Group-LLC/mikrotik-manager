@@ -121,12 +121,13 @@ export interface FleetCveReport {
 }
 
 /** Every RouterOS version in the site, with the stored CVEs that list it. */
-export async function fleetCveReport(siteId: SiteScope | undefined): Promise<FleetCveReport> {
+export async function fleetCveReport(siteId: SiteScope | undefined, deviceIds?: number[]): Promise<FleetCveReport> {
   const siteFilter = siteScopeDevices(siteId ?? null);
   const [devices, stored, settings, enabled, notes, details] = await Promise.all([
     query<{ id: number; name: string; ros_version: string | null }>(
       `SELECT id, name, ros_version FROM devices WHERE ros_version IS NOT NULL AND ros_version <> ''
-         ${siteFilter ? `AND ${siteFilter}` : ''} ORDER BY name`
+         ${siteFilter ? `AND ${siteFilter}` : ''} ${deviceIds ? 'AND id = ANY($1::int[])' : ''} ORDER BY name`,
+      deviceIds ? [deviceIds] : undefined
     ),
     query<StoredCve>(`SELECT * FROM ros_cves`),
     query<{ key: string; value: unknown }>(

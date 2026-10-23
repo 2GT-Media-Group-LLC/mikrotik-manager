@@ -88,6 +88,12 @@ services:
       # effect only while SSO is configured; set it back to true to get in if
       # SSO breaks. See docs/sso-oidc.md.
       PASSWORD_LOGIN: ${PASSWORD_LOGIN:-true}
+      # Optional read-only MCP review connector (docs/mcp.md).
+      MCP_ENABLED: ${MCP_ENABLED:-false}
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL:-}
+      MCP_OAUTH_ISSUER: ${MCP_OAUTH_ISSUER:-}
+      MCP_INTROSPECTION_CLIENT_ID: ${MCP_INTROSPECTION_CLIENT_ID:-}
+      MCP_INTROSPECTION_CLIENT_SECRET: ${MCP_INTROSPECTION_CLIENT_SECRET:-}
       PORT: 3001
       NETFLOW_BIND_PORT: 2055
       # Poller tuning. These were documented in .env.example but never passed
