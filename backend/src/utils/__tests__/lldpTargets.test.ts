@@ -4,6 +4,8 @@ describe('parseDeviceTypes', () => {
   it('means every type, access points included, when omitted', () => {
     expect(parseDeviceTypes(undefined)).toEqual([...LLDP_DEVICE_TYPES]);
     expect(parseDeviceTypes('')).toContain('wireless_ap');
+    expect(parseDeviceTypes('')).toContain('wisp');
+    expect(parseDeviceTypes('wisp')).toEqual(['wisp']);
   });
   it('accepts a query string or an array', () => {
     expect(parseDeviceTypes('router,wireless_ap')).toEqual(['router', 'wireless_ap']);

@@ -20,6 +20,7 @@ const deviceIcon: Record<string, string> = {
   router: '⇌',
   switch: '⊞',
   wireless_ap: '⊙',
+  wisp: '⊙',
   other: '◈',
 };
 

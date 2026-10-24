@@ -319,6 +319,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                 <option value="router">Router</option>
                 <option value="switch">Switch</option>
                 <option value="wireless_ap">Wireless AP</option>
+                <option value="wisp">Wireless Systems (PTP / PtMP / CPE)</option>
                 <option value="other">Other</option>
               </select>
             </div>
