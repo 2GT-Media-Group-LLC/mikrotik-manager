@@ -6,9 +6,11 @@
 # notes, so the note is the commit body rather than a generated list of subjects.
 name: Release
 
+# main is the stable line (1.0.x); dev carries the next minor as betas, which
+# are marked pre-release below and never become GitHub's "Latest".
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:

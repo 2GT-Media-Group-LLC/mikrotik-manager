@@ -34,12 +34,12 @@ const IMAGE_SWAPS = [
   {
     service: 'nginx',
     build: '    build:\n      context: .\n      dockerfile: nginx/Dockerfile\n',
-    image: `    image: ${REGISTRY}/mikrotik-manager-nginx:latest\n`,
+    image: `    image: ${REGISTRY}/mikrotik-manager-nginx:\${MTM_TAG:-latest}\n`,
   },
   {
     service: 'backend',
     build: '    build:\n      context: ./backend\n      dockerfile: Dockerfile\n',
-    image: `    image: ${REGISTRY}/mikrotik-manager-backend:latest\n`,
+    image: `    image: ${REGISTRY}/mikrotik-manager-backend:\${MTM_TAG:-latest}\n`,
   },
 ];
 

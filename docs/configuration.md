@@ -391,9 +391,11 @@ so that's the address for `TRUSTED_PROXIES`.
 ## Updating and image versions
 
 Images are published to GHCR only after CI has passed on that commit:
-`ghcr.io/2gt-media-group-llc/mikrotik-manager-backend` and `…-nginx`. Each is tagged
-`latest`, its version (for example `0.24.37-beta`) and `sha-<commit>`. To stay on a
-version, replace `latest` with the version tag in `docker-compose.ghcr.yml`.
+`ghcr.io/2gt-media-group-llc/mikrotik-manager-backend` and `…-nginx`. Each is tagged with
+its version (for example `1.0.0`) and `sha-<commit>`, and the newest build of each channel
+also carries `latest` (stable) or `beta` (see [Release channels](#release-channels)). The
+GHCR compose file uses `MTM_TAG` from `.env`, `latest` when it isn't set: set it to a version
+tag to stay on that version, or to `beta` for the beta channel.
 
 **Update the compose file too, not only the images.** `docker compose pull` fetches new images
 but leaves your compose file as it was, and some releases add settings that only work if the
@@ -408,6 +410,32 @@ redirects. So when updating:
   then pull and start as above.
 
 To check that a setting arrived, ask the container: `docker compose exec nginx printenv TLS_MODE`.
+
+### Release channels
+
+From 1.0 there are two lines, and you choose which one you follow:
+
+| Channel | Git branch | Image tag | What it gets |
+|---|---|---|---|
+| **Stable** (default) | `main` | `:latest` | 1.0.x: fixes only, including security fixes |
+| **Beta** | `dev` | `:beta` | The next minor version as betas (1.1.0-beta.1, ...), with new features as they land |
+
+Stable is what you get unless you change something, and what production fleets should run.
+New features are built on `dev` and reach stable in the next minor release; fixes go to both.
+
+To follow the beta channel:
+
+- from a git checkout: `git checkout dev`, then update as above (`git pull`, then
+  `docker compose pull && docker compose up -d`);
+- with the GHCR compose file: add `MTM_TAG=beta` to your `.env`, then pull and start as above.
+
+To go back to stable, `git checkout main` (or remove `MTM_TAG`) and update. Going back only works
+once stable has caught up with the version you were on, because the database is migrated
+forwards, not back; until then, stay on beta or restore a platform backup taken on stable.
+
+The update notice in the app follows your channel: a stable install is told about stable
+releases, a beta install about the next beta. A specific version can be pinned with its image
+tag (`MTM_TAG=1.0.0`).
 
 From 0.24.51 each image carries an SBOM and build provenance, and is signed with
 [cosign](https://docs.sigstore.dev/) by the workflow that built it. To check an image before

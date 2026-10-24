@@ -9,7 +9,7 @@ name: Documentation
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
@@ -87,9 +87,20 @@ jobs:
 
       # Aliased to "latest" so links stay stable while older series remain
       # readable at their own URLs.
+      # main (the stable line) moves "latest"; dev publishes its beta series
+      # under its own number only, so a beta install's in-app docs links work
+      # while stable readers keep landing on stable docs.
       - name: Deploy
+        env:
+          BRANCH: ${{ github.ref_name }}
         run: |
-          mike deploy --push --update-aliases \
-            "${{ steps.v.outputs.series }}" latest \
-            --title "${{ steps.v.outputs.series }} (${{ steps.v.outputs.full }})"
-          mike set-default --push latest
+          if [ "$BRANCH" = "main" ]; then
+            mike deploy --push --update-aliases \
+              "${{ steps.v.outputs.series }}" latest \
+              --title "${{ steps.v.outputs.series }} (${{ steps.v.outputs.full }})"
+            mike set-default --push latest
+          else
+            mike deploy --push \
+              "${{ steps.v.outputs.series }}" \
+              --title "${{ steps.v.outputs.series }} beta (${{ steps.v.outputs.full }})"
+          fi

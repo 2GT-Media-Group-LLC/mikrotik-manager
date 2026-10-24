@@ -18,7 +18,7 @@ x-logging: &default-logging
 
 services:
   nginx:
-    image: ghcr.io/2gt-media-group-llc/mikrotik-manager-nginx:latest
+    image: ghcr.io/2gt-media-group-llc/mikrotik-manager-nginx:${MTM_TAG:-latest}
     ports:
       # BIND_ADDRESS limits the web UI to one host address (e.g. a LAN or VPN
       # address). Unset, it listens on every interface, IPv4 and IPv6. Docker
@@ -63,7 +63,7 @@ services:
       - app-network
 
   backend:
-    image: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:latest
+    image: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:${MTM_TAG:-latest}
     environment: &backend-environment
       NODE_ENV: production
       TZ: ${TZ:-UTC}
@@ -147,7 +147,7 @@ services:
   # The backend keeps the schedule, the API and every other timer; set
   # POLLER_ROLE=api on it to leave all polling to these. See docs/scaling.md.
   poller:
-    image: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:latest
+    image: ghcr.io/2gt-media-group-llc/mikrotik-manager-backend:${MTM_TAG:-latest}
     profiles: ["workers"]
     environment:
       <<: *backend-environment

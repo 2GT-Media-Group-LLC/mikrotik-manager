@@ -9,7 +9,8 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [main]
+    # main is the stable line (:latest); dev carries the next minor's betas (:beta).
+    branches: [main, dev]
   workflow_dispatch:
 
 concurrency:
@@ -38,18 +39,26 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      # :latest only moves if this commit is still the tip of main, so a slow
-      # CI run for an older commit can't publish over a newer one. Every build
-      # also gets its version tag (e.g. 0.24.37-beta), which can be pinned.
+      # :latest (main) or :beta (dev) only moves if this commit is still the tip
+      # of its branch, so a slow CI run for an older commit can't publish over a
+      # newer one. Every build also gets its version tag, which can be pinned.
       - name: Work out tags
         id: tags
         env:
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
           echo "version=$(node -p "require('./backend/package.json').version")" >> "$GITHUB_OUTPUT"
           echo "short=${SHA:0:7}" >> "$GITHUB_OUTPUT"
-          TIP=$(git ls-remote "https://github.com/${{ github.repository }}" refs/heads/main | cut -f1)
-          if [ "$TIP" = "$SHA" ]; then echo "latest=true" >> "$GITHUB_OUTPUT"; else echo "latest=false" >> "$GITHUB_OUTPUT"; fi
+          # The moving tag follows the branch: main -> :latest, dev -> :beta.
+          # Only the tip of that branch moves it, so a slow run can't go back.
+          TIP=$(git ls-remote "https://github.com/${{ github.repository }}" "refs/heads/$BRANCH" | cut -f1)
+          LATEST=false; BETA=false
+          if [ "$TIP" = "$SHA" ]; then
+            if [ "$BRANCH" = "main" ]; then LATEST=true; elif [ "$BRANCH" = "dev" ]; then BETA=true; fi
+          fi
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "beta=$BETA" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -65,6 +74,7 @@ jobs:
           images: ${{ env.BACKEND_IMAGE }}
           tags: |
             type=raw,value=latest,enable=${{ steps.tags.outputs.latest }}
+            type=raw,value=beta,enable=${{ steps.tags.outputs.beta }}
             type=raw,value=${{ steps.tags.outputs.version }}
             type=raw,value=sha-${{ steps.tags.outputs.short }}
 
@@ -119,18 +129,26 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      # :latest only moves if this commit is still the tip of main, so a slow
-      # CI run for an older commit can't publish over a newer one. Every build
-      # also gets its version tag (e.g. 0.24.37-beta), which can be pinned.
+      # :latest (main) or :beta (dev) only moves if this commit is still the tip
+      # of its branch, so a slow CI run for an older commit can't publish over a
+      # newer one. Every build also gets its version tag, which can be pinned.
       - name: Work out tags
         id: tags
         env:
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
           echo "version=$(node -p "require('./backend/package.json').version")" >> "$GITHUB_OUTPUT"
           echo "short=${SHA:0:7}" >> "$GITHUB_OUTPUT"
-          TIP=$(git ls-remote "https://github.com/${{ github.repository }}" refs/heads/main | cut -f1)
-          if [ "$TIP" = "$SHA" ]; then echo "latest=true" >> "$GITHUB_OUTPUT"; else echo "latest=false" >> "$GITHUB_OUTPUT"; fi
+          # The moving tag follows the branch: main -> :latest, dev -> :beta.
+          # Only the tip of that branch moves it, so a slow run can't go back.
+          TIP=$(git ls-remote "https://github.com/${{ github.repository }}" "refs/heads/$BRANCH" | cut -f1)
+          LATEST=false; BETA=false
+          if [ "$TIP" = "$SHA" ]; then
+            if [ "$BRANCH" = "main" ]; then LATEST=true; elif [ "$BRANCH" = "dev" ]; then BETA=true; fi
+          fi
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "beta=$BETA" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -146,6 +164,7 @@ jobs:
           images: ${{ env.NGINX_IMAGE }}
           tags: |
             type=raw,value=latest,enable=${{ steps.tags.outputs.latest }}
+            type=raw,value=beta,enable=${{ steps.tags.outputs.beta }}
             type=raw,value=${{ steps.tags.outputs.version }}
             type=raw,value=sha-${{ steps.tags.outputs.short }}
 
