@@ -19,11 +19,15 @@ const dnsLookup = dns.promises.lookup;
 // against SSRF to internal services.
 export { isBlockedAddress };
 
-async function assertPublicHost(hostname: string): Promise<string> {
+export async function assertPublicHost(hostname: string): Promise<string> {
+  // URL.hostname keeps the brackets of an IPv6 literal ("[::ffff:7f00:1]"),
+  // which isIP doesn't accept: without stripping them every IPv6 webhook fell
+  // through to a DNS lookup of the bracketed text.
+  const host = hostname.replace(/^\[|\]$/g, '');
   // Already an IP literal — check directly.
-  if (isIP(hostname)) {
-    if (isBlockedAddress(hostname)) throw new Error('URL resolves to a blocked (private/internal) address');
-    return hostname;
+  if (isIP(host)) {
+    if (isBlockedAddress(host)) throw new Error('URL resolves to a blocked (private/internal) address');
+    return host;
   }
   const results = await dnsLookup(hostname, { all: true }).catch(() => {
     throw new Error('Could not resolve webhook host');
