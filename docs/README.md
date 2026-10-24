@@ -5,6 +5,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 
 | Document | Covers |
 |---|---|
+| [Release notes (1.0)](release-notes.md) | What 1.0 includes, upgrading from a beta, release channels, known issues |
 | [Configuration](configuration.md) | Environment variables, secret management and key rotation |
 | [Devices](devices.md) | The device list, the tabs on a device, ports and VLANs, and the per-device tools |
 | [Clients](clients.md) | Where client data comes from, identification, history, and per-port clients |
