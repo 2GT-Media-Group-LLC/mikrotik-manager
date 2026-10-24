@@ -11,6 +11,7 @@ import { bootChange } from '../../utils/bootTime';
 import { logSafe } from '../../utils/logSafe';
 import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
+import { AntennaAlignmentReader } from './antennaAlignment';
 import { verifyDeviceSerial, IdentityMismatchError } from '../identityPins';
 import { fit, normalizeMac } from '../../utils/fit';
 import { rosDurationSeconds } from '../../utils/rosDuration';
@@ -213,14 +214,14 @@ const MAX_LOG_MESSAGE = 4096;
 export class DeviceCollector {
   private client: RouterOSClient;
 
-  constructor(private device: DeviceRow) {
+  constructor(private device: DeviceRow, timeouts: { connectTimeoutMs?: number; readTimeoutMs?: number } = {}) {
     this.client = new RouterOSClient(
       device.ip_address,
       device.api_port,
       device.api_username,
       decrypt(device.api_password_encrypted),
-      15000,
-      30000,
+      timeouts.connectTimeoutMs ?? 15000,
+      timeouts.readTimeoutMs ?? 30000,
       usesApiTls(device),
     );
     // Lets the poller cancel this session if its job runs out of time.
@@ -333,6 +334,12 @@ export class DeviceCollector {
     this.client.disconnect();
   }
 
+  private alignmentReader = new AntennaAlignmentReader((command, params) => this.client.execute(command, params));
+
+  readAntennaAlignment() {
+    return this.alignmentReader.read();
+  }
+
   /**
    * Stop a poll that ran past its time limit (utils/pollJobContext.ts). The
    * connection is closed, and the device is not marked online afterwards: the
@@ -425,7 +432,7 @@ export class DeviceCollector {
    * both probing forever and never noticing a controller.
    */
   private shouldCollectWireless(): boolean {
-    if (this.device.device_type === 'wireless_ap') return true;
+    if (this.device.device_type === 'wireless_ap' || this.device.device_type === 'wisp') return true;
     const d = this.device as unknown as { wifi_role?: string | null; wifi_role_probe?: number | null };
     const role = d.wifi_role;
     if (role == null) return true;                 // never determined — probe once

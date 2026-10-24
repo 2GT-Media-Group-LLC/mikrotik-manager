@@ -476,6 +476,15 @@ describe('C9 adoption edge cases', () => {
     expect(detectDeviceType('RB5009UG+S+', [{ type: 'ether', name: 'ether1' }])).toBe('router');
   });
 
+  it.each(['LHG XL 52 ac', 'RBLHGG-5acD', 'SXTsq 5 ac', 'QRT 5', 'NetMetal 5', 'Cube 60Pro ac'])(
+    'adopts dedicated outdoor radio %s as WISP', board => {
+      expect(detectDeviceType(board, [{ type: 'wlan', name: 'wlan1' }])).toBe('wisp');
+    });
+  it('recognizes W60G interfaces and leaves general-purpose access points alone', () => {
+    expect(detectDeviceType('wAP 60G', [{ type: 'w60g', name: 'wlan60-1' }])).toBe('wisp');
+    expect(detectDeviceType('hAP ax3', [{ type: 'wifi', name: 'wifi1' }])).toBe('wireless_ap');
+  });
+
   it('matches the target by MAC', () => {
     expect(hasMac([{ 'mac-address': 'd4:01:c3:00:00:01' }], 'D4:01:C3:00:00:01')).toBe(true);
     expect(hasMac([{ 'mac-address': 'D4:01:C3:00:00:02' }], 'D4:01:C3:00:00:01')).toBe(false);

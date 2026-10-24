@@ -1,7 +1,8 @@
 import axios, { AxiosError } from 'axios';
-import type { TimeFormatPreference, TimeFormatPreferences } from '../types/timeFormat';
 import { useAuthStore } from '../store/authStore';
 import { useSiteStore } from '../store/siteStore';
+import type { AlignmentSnapshot } from '../types/antennaAlignment';
+import type { TimeFormatPreference, TimeFormatPreferences } from '../types/timeFormat';
 import type {
   Device,
   Interface,
@@ -1958,6 +1959,8 @@ export interface CapsmanController {
 }
 
 export const wirelessApi = {
+  alignment: (deviceId: number, signal?: AbortSignal) =>
+    api.get<AlignmentSnapshot>(`/wireless/${deviceId}/alignment`, { signal, timeout: 20_000 }),
   // Section overview
   list: () => api.get('/wireless'),
   // CAPsMAN controllers with the APs they provision (read-only)

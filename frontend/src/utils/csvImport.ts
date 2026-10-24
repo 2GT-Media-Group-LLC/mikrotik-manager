@@ -19,6 +19,7 @@ const DEVICE_TYPES: Record<string, string> = {
   router: 'router', rtr: 'router',
   switch: 'switch', sw: 'switch',
   wireless_ap: 'wireless_ap', ap: 'wireless_ap', wireless: 'wireless_ap', wap: 'wireless_ap',
+  wisp: 'wisp', ptp: 'wisp', ptmp: 'wisp', cpe: 'wisp',
   other: 'other',
 };
 
@@ -247,7 +248,7 @@ export function parseDeviceCsv(
     let deviceType: string | undefined;
     if (f.device_type) {
       deviceType = DEVICE_TYPES[f.device_type.toLowerCase()];
-      if (!deviceType) errors.push(`Unknown type "${f.device_type}". Use router, switch, ap or other.`);
+      if (!deviceType) errors.push(`Unknown type "${f.device_type}". Use router, switch, ap, wisp or other.`);
     }
 
     let sshOnly = false;

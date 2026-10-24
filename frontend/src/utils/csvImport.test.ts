@@ -10,6 +10,11 @@ describe('splitCsvLine', () => {
 });
 
 describe('parseDeviceCsv', () => {
+  it.each(['wisp', 'ptp', 'ptmp', 'cpe'])('imports %s as a WISP radio', type => {
+    const r = parseDeviceCsv(`name,ip,type,preset\nradio,192.0.2.1,${type},Default\n`, presets);
+    expect(r.rows[0].errors).toEqual([]);
+    expect(r.rows[0].item?.device_type).toBe('wisp');
+  });
   it('accepts a bracketed IPv6 address and sends it without brackets (#178)', () => {
     const r = parseDeviceCsv('name,ip,type,preset\nsw6,[2001:db8::2],switch,Default\n', presets);
     expect(r.rows[0].errors).toEqual([]);

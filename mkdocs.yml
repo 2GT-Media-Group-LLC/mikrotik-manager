@@ -78,6 +78,7 @@ nav:
       - Device certificates: certificates.md
   - Devices:
       - Wireless: wireless.md
+      - Antenna aligner: antenna-aligner.md
       - Network services: network-services.md
       - User Manager (RADIUS): user-manager.md
       - Cellular (LTE): cellular.md

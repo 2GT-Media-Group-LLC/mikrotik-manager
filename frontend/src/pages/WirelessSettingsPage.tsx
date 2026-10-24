@@ -948,9 +948,9 @@ export default function WirelessSettingsPage() {
       {/* AP selector */}
       {aps.length > 1 && (
         <div className="flex items-center gap-3">
-          <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Access Point:</label>
+          <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Wireless device:</label>
           <DevicePicker
-            className="w-auto min-w-[18rem]" devices={aps} aria-label="Access point"
+            className="w-auto min-w-[18rem]" devices={aps} aria-label="Wireless device"
             value={selectedApId ?? null}
             onChange={(id) => { if (id != null) setSelectedApId(id); }}
           />
@@ -959,7 +959,7 @@ export default function WirelessSettingsPage() {
 
       {aps.length === 0 && (
         <div className="card p-8 text-center text-gray-400 dark:text-slate-500 text-sm">
-          No wireless APs found. Add a device with type <strong>Wireless AP</strong> in Devices.
+          No wireless devices found. Add a <strong>Wireless AP</strong> or <strong>Wireless Systems</strong> device in Devices.
         </div>
       )}
 

@@ -5,6 +5,8 @@ describe('hasRadios', () => {
   it('counts an all-in-one router with its own radios', () => {
     expect(hasRadios({ device_type: 'router', wifi_role: 'standalone' })).toBe(true);
     expect(hasRadios({ device_type: 'wireless_ap', wifi_role: null })).toBe(true);
+    expect(hasRadios({ device_type: 'wisp', wifi_role: null })).toBe(true);
+    expect(isWirelessDevice({ device_type: 'wisp', wifi_role: 'none' })).toBe(true);
     expect(hasRadios({ device_type: 'router', wifi_role: 'none' })).toBe(false);
     expect(hasRadios({ device_type: 'router' })).toBe(false);
   });

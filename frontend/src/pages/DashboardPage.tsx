@@ -331,6 +331,7 @@ function SummaryView(props: Record<string, any>) {
   const typeConfig: Record<string, { label: string; color: string }> = {
     switch:      { label: 'Switches',    color: 'var(--accent)' },
     wireless_ap: { label: 'Wireless APs', color: 'var(--info)' },
+    wisp:        { label: 'Wireless Systems', color: 'var(--warn)' },
     router:      { label: 'Routers',     color: 'var(--violet)' },
   };
 

@@ -21,6 +21,8 @@ import ConfigHistoryTab from '../components/device-detail/ConfigHistoryTab';
 import HardwareTab from '../components/device-detail/HardwareTab';
 import ToolsTab from '../components/device-detail/ToolsTab';
 import RadiosTab from '../components/device-detail/RadiosTab';
+import AntennaAlignerTab from '../components/device-detail/AntennaAlignerTab';
+import { canAlignAntenna } from '../utils/antennaAlignment';
 import LteTab from '../components/device-detail/LteTab';
 import ConnectionsTab from '../components/device-detail/ConnectionsTab';
 import QueuesTab from '../components/device-detail/QueuesTab';
@@ -34,7 +36,7 @@ import { DeviceIdentityBanner } from '../components/security/IdentityChange';
 import { isWirelessDevice } from '../utils/wireless';
 import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
 
-type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
+type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'alignment' | 'lte';
 
 function formatUptime(raw: string): string {
   if (!raw) return '—';
@@ -63,7 +65,7 @@ export default function DeviceDetailPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [searchParams] = useSearchParams();
-  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios', 'lte'];
+  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios', 'alignment', 'lte'];
   const requestedTab = searchParams.get('tab') as TabKey | null;
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
@@ -185,6 +187,7 @@ export default function DeviceDetailPage() {
     { key: 'config-history', label: 'Config History' },
     { key: 'hardware', label: 'Hardware' },
     ...(isWirelessAP ? [{ key: 'radios' as TabKey, label: 'Radios' }] : []),
+    ...(canAlignAntenna(device) ? [{ key: 'alignment' as TabKey, label: 'Antenna aligner' }] : []),
     // Cellular is a property of the hardware, not the device type: a modem turns
     // up on routers, CPE and travel gear alike, so the flag is set from the
     // interface list rather than inferred (discussion #85).
@@ -495,7 +498,7 @@ export default function DeviceDetailPage() {
                 ['Serial Number', device.serial_number || '—'],
                 ['RouterOS Version', device.ros_version || '—'],
                 ['Firmware', device.firmware_version || '—'],
-                ['Type', device.device_type],
+                ['Type', device.device_type === 'wisp' ? 'WS' : device.device_type],
                 ['API Port', device.ssh_only ? 'Not enabled yet' : String(device.api_port)],
                 ['Added', new Date(device.created_at).toLocaleDateString()],
                 ['Last Seen', device.last_seen ? formatDateTime(new Date(device.last_seen), { month: 'numeric', second: '2-digit' }) : '—'],
@@ -549,6 +552,7 @@ export default function DeviceDetailPage() {
       {shownTab === 'config-history' && <ConfigHistoryTab deviceId={deviceId} />}
       {shownTab === 'hardware' && <HardwareTab deviceId={deviceId} />}
       {shownTab === 'radios' && <RadiosTab deviceId={deviceId} deviceStatus={device.status} />}
+      {shownTab === 'alignment' && <AntennaAlignerTab key={deviceId} device={device} />}
       {shownTab === 'lte' && <LteTab deviceId={deviceId} />}
       {shownTab === 'tools' && <ToolsTab deviceId={deviceId} />}
 

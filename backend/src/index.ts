@@ -1,4 +1,5 @@
 import 'express-async-errors';
+import { antennaAlignment } from './services/AntennaAlignmentService';
 import { clientIpBehindProxy } from './utils/clientIp';
 import express from 'express';
 import cors from 'cors';
@@ -631,6 +632,7 @@ async function start(): Promise<void> {
   // Graceful shutdown
   const shutdown = async () => {
     console.log('Shutting down...');
+    antennaAlignment.close();
     await stopBulkAddWorker();
     await stopSshKeyFleetWorker();
     await netflowCollector.stop();
