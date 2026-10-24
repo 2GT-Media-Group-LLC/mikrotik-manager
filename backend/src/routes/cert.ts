@@ -1,3 +1,4 @@
+import { parseCertificateBundle, parsePrivateKey } from '../utils/pemBundle';
 import { Router, Request, Response } from 'express';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -103,27 +104,33 @@ router.post('/upload', requireAdmin, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Both certificate and private_key are required' });
   }
 
-  // Validate PEM format
-  if (!certificate.includes('-----BEGIN CERTIFICATE-----')) {
-    return res.status(400).json({ error: 'certificate does not appear to be a valid PEM certificate' });
+  // Every block checked, not just the first (GHSA-28hr-v457-cc6g): the whole
+  // field goes into nginx's certificate file.
+  let bundle: ReturnType<typeof parseCertificateBundle>;
+  let keyPem: string;
+  let privKey: crypto.KeyObject;
+  try {
+    bundle = parseCertificateBundle(certificate);
+  } catch (err) {
+    return res.status(400).json({ error: `certificate: ${(err as Error).message}` });
   }
-  if (!private_key.includes('-----BEGIN')) {
-    return res.status(400).json({ error: 'private_key does not appear to be a valid PEM key' });
+  try {
+    ({ pem: keyPem, key: privKey } = parsePrivateKey(private_key));
+  } catch (err) {
+    return res.status(400).json({ error: `private_key: ${(err as Error).message}` });
   }
 
   // Parse the certificate
   let certInfo;
   try {
-    certInfo = parseCertInfo(certificate);
+    certInfo = parseCertInfo(bundle.pem);
   } catch {
     return res.status(400).json({ error: 'Failed to parse certificate — ensure it is valid PEM format' });
   }
 
-  // Verify the private key matches the certificate's public key
+  // Verify the private key matches the certificate's public key (the leaf, first)
   try {
-    const certObj = new crypto.X509Certificate(certificate);
-    const privKey = crypto.createPrivateKey(private_key);
-    const certPubKey = certObj.publicKey;
+    const certPubKey = bundle.certs[0].publicKey;
 
     // Sign test data with private key, verify with cert's public key
     const sign = crypto.createSign('SHA256');
@@ -149,8 +156,9 @@ router.post('/upload', requireAdmin, async (req: Request, res: Response) => {
   const tmpKey  = KEY_PATH + '.tmp';
   const release = await acquireInstallLock();
   try {
-    await writeFile(tmpCert, certificate.trim() + '\n', { mode: 0o644 });
-    await writeFile(tmpKey,  private_key.trim() + '\n', { mode: 0o600 });
+    // Rebuilt from the parsed blocks, never the pasted text as-is.
+    await writeFile(tmpCert, bundle.pem, { mode: 0o644 });
+    await writeFile(tmpKey,  keyPem, { mode: 0o600 });
 
     // Rename into place
     const { rename } = await import('fs/promises');

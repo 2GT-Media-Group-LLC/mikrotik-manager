@@ -75,3 +75,17 @@ export function maskSecretsForReadOnly(req: Request, res: Response, next: NextFu
   res.json = ((body: unknown) => send(maskSecrets(body))) as Response['json'];
   next();
 }
+
+/**
+ * A URL cut to its scheme and host, "https://hooks.example.com/…", for
+ * read-only accounts: a webhook URL often carries its credential in the path
+ * or query (GHSA-28hr-v457-cc6g).
+ */
+export function maskUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}/…`;
+  } catch {
+    return '…';
+  }
+}

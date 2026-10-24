@@ -7,6 +7,7 @@
 // This module is the single place that decides what counts as a usable
 // device address, shared by device creation/update and the frontend forms.
 
+import { expandIpv6, embeddedIpv4, isUnspecifiedOrLoopback6 } from './ipv6';
 import { isIPv4, isIPv6 } from 'net';
 
 // RFC 1123 hostname/FQDN: labels of 1-63 chars, alphanumeric with internal
@@ -99,14 +100,17 @@ export function isBlockedAddress(ip: string): boolean {
     return false;
   }
   if (isIPv6(ip)) {
-    const lower = ip.toLowerCase();
-    if (lower === '::1' || lower === '::') return true;
-    // IPv4-mapped (::ffff:1.2.3.4) — validate the embedded IPv4
-    const mapped = lower.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return isBlockedAddress(mapped[1]);
-    const head = lower.split(':')[0];
-    if (head.startsWith('fe8') || head.startsWith('fe9') || head.startsWith('fea') || head.startsWith('feb')) return true; // fe80::/10
-    if (head.startsWith('fc') || head.startsWith('fd')) return true; // fc00::/7 unique-local
+    // Parsed, not matched as text (GHSA-28hr-v457-cc6g): an IPv4 address
+    // embedded in any form (::ffff:7f00:1, ::ffff:127.0.0.1, 64:ff9b::a00:1)
+    // is judged as that IPv4 address.
+    const groups = expandIpv6(ip);
+    if (!groups) return true;
+    if (isUnspecifiedOrLoopback6(groups)) return true;
+    const v4 = embeddedIpv4(groups);
+    if (v4) return isBlockedAddress(v4);
+    if ((groups[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+    if ((groups[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 unique-local
+    if ((groups[0] & 0xff00) === 0xff00) return true; // multicast
     return false;
   }
   return true; // not a valid IP literal → treat as non-public (caller decides what that means)

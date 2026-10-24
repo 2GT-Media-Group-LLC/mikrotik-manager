@@ -1,5 +1,6 @@
 import * as dns from 'dns';
 import { isIP, isIPv4, isIPv6 } from 'net';
+import { expandIpv6, embeddedIpv4, isUnspecifiedOrLoopback6 } from './ipv6';
 
 /**
  * Where an alert channel (Slack, Discord, ntfy, Gotify) may send.
@@ -23,13 +24,15 @@ export function isInternalOnlyAddress(ip: string): boolean {
     return false;
   }
   if (isIPv6(ip)) {
-    const lower = ip.toLowerCase();
-    if (lower === '::1' || lower === '::') return true;
-    const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return isInternalOnlyAddress(mapped[1]);
-    const head = lower.split(':')[0];
-    if (/^fe[89ab]/.test(head)) return true;        // fe80::/10 link-local
-    if (head.startsWith('ff')) return true;         // multicast
+    // Parsed, not matched as text (GHSA-28hr-v457-cc6g): ::ffff:7f00:1 is
+    // 127.0.0.1 just as ::ffff:127.0.0.1 is.
+    const groups = expandIpv6(ip);
+    if (!groups) return true;
+    if (isUnspecifiedOrLoopback6(groups)) return true;
+    const v4 = embeddedIpv4(groups);
+    if (v4) return isInternalOnlyAddress(v4);
+    if ((groups[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+    if ((groups[0] & 0xff00) === 0xff00) return true; // multicast
     return false;
   }
   return true;

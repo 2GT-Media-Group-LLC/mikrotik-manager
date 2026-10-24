@@ -2,6 +2,7 @@
 // top clients, updates, backups) delivered over the SMTP settings of the first
 // enabled email alert channel. An hourly scheduler sends whatever is due.
 
+import { escapeHtml } from '../utils/html';
 import { outageOverlapsSql, outageSecondsSql } from '../utils/outageWindow';
 import { openConfig } from '../utils/alertChannelSecrets';
 import nodemailer from 'nodemailer';
@@ -142,14 +143,14 @@ export class ReportService {
     const d = devices[0];
     const outageMin = Math.round(parseInt(outages[0]?.secs || '0', 10) / 60);
     const row = (label: string, value: string) =>
-      `<tr><td style="padding:6px 12px;color:#64748b;">${label}</td><td style="padding:6px 12px;font-weight:600;color:#0f172a;">${value}</td></tr>`;
+      `<tr><td style="padding:6px 12px;color:#64748b;">${escapeHtml(label)}</td><td style="padding:6px 12px;font-weight:600;color:#0f172a;">${escapeHtml(value)}</td></tr>`;
 
     const clientRows = topClients.map((c, i) =>
-      `<tr><td style="padding:4px 12px;color:#64748b;">${i + 1}. ${c.name}</td><td style="padding:4px 12px;color:#0f172a;">${fmtBytes(parseInt(c.bytes, 10))}</td></tr>`).join('');
+      `<tr><td style="padding:4px 12px;color:#64748b;">${i + 1}. ${escapeHtml(c.name)}</td><td style="padding:4px 12px;color:#0f172a;">${fmtBytes(parseInt(c.bytes, 10))}</td></tr>`).join('');
 
     return `
 <div style="font-family:-apple-system,system-ui,sans-serif;max-width:560px;margin:0 auto;">
-  <h2 style="color:#0f172a;">MikroTik Manager — ${frequency} report</h2>
+  <h2 style="color:#0f172a;">MikroTik Manager — ${escapeHtml(frequency)} report</h2>
   <p style="color:#64748b;font-size:13px;">Covering the last ${days} day${days !== 1 ? 's' : ''} · generated ${new Date().toUTCString()}</p>
   <table style="border-collapse:collapse;width:100%;background:#f8fafc;border-radius:8px;">
     ${row('Devices online', `${d?.online ?? 0} / ${d?.total ?? 0}`)}

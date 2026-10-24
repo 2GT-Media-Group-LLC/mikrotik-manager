@@ -41,3 +41,12 @@ describe('maskSecrets', () => {
     expect(canSeeDeviceSecrets(undefined)).toBe(false);
   });
 });
+
+describe('maskUrl (GHSA-28hr-v457-cc6g)', () => {
+  it('keeps only scheme and host', () => {
+    const { maskUrl } = jest.requireActual('../redactSecrets') as typeof import('../redactSecrets');
+    expect(maskUrl('https://hooks.slack.com/services/T000/B000/XXXXSECRET')).toBe('https://hooks.slack.com/…');
+    expect(maskUrl('http://10.0.0.5:8080/hook?token=abc')).toBe('http://10.0.0.5:8080/…');
+    expect(maskUrl('not a url')).toBe('…');
+  });
+});
