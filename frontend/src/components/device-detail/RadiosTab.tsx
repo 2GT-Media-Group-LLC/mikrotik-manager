@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState, useEffect, useRef } from 'react';
 import { useRememberedRange } from '../../hooks/useRememberedRange';
 import ReviewChangesButton from '../common/ReviewChangesButton';
@@ -17,7 +18,6 @@ import { invalidateDevice } from '../../utils/invalidateDevice';
 import RfHealth from '../wireless/RfHealth';
 import type { WirelessInterface, WirelessMetricPoint } from '../../types';
 import clsx from 'clsx';
-import { format } from 'date-fns';
 import { changedFields } from '../../utils/formDiff';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -212,6 +212,7 @@ function RadioEditModal({
 const RANGES = ['1h', '3h', '6h', '12h', '24h', '7d'] as const;
 
 function WirelessCharts({ deviceId, ifaces }: { deviceId: number; ifaces: WirelessInterface[] }) {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const [selectedIface, setSelectedIface] = useState(ifaces[0]?.name || '');
   const [range, setRange] = useRememberedRange<string>('radios', '6h');
 
@@ -225,7 +226,7 @@ function WirelessCharts({ deviceId, ifaces }: { deviceId: number; ifaces: Wirele
   });
 
   const chartData = raw.map(p => ({
-    time: format(new Date(p.time), range === '7d' ? 'MMM d HH:mm' : 'HH:mm'),
+    time: range === '7d' ? formatDateTime(new Date(p.time), { year: undefined }) : formatTime(new Date(p.time)),
     clients:     p.registered_clients ?? null,
     noise_floor: p.noise_floor ?? null,
   }));
@@ -399,6 +400,7 @@ function parseSpectralRows(rows: Record<string, string | number>[]): SpectralPoi
 }
 
 function SpectrumAnalyzer({ deviceId, ifaces }: { deviceId: number; ifaces: WirelessInterface[] }) {
+  const { formatDateTime } = useDateTimeFormat();
   const [selectedIface, setSelectedIface] = useState(ifaces[0]?.name || '');
   const [scanning, setScanning]           = useState(false);
   const [scanError, setScanError]         = useState<string | null>(null);
@@ -467,7 +469,7 @@ function SpectrumAnalyzer({ deviceId, ifaces }: { deviceId: number; ifaces: Wire
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Spectrum Analyzer</h2>
           {scanTime && (
             <span className="text-xs text-gray-400 dark:text-slate-500">
-              {format(new Date(scanTime), 'MMM d HH:mm')}
+              {formatDateTime(new Date(scanTime), { year: undefined })}
             </span>
           )}
         </div>
@@ -502,7 +504,7 @@ function SpectrumAnalyzer({ deviceId, ifaces }: { deviceId: number; ifaces: Wire
             >
               {history.map(s => (
                 <option key={s.id} value={s.id}>
-                  {format(new Date(s.scanned_at), 'MMM d HH:mm')} ({s.scan_type})
+                  {formatDateTime(new Date(s.scanned_at), { year: undefined })} ({s.scan_type})
                 </option>
               ))}
             </select>
@@ -646,6 +648,7 @@ function BandPill({ band }: { band: string }) {
 }
 
 function APScanner({ deviceId }: { deviceId: number }) {
+  const { formatDateTime } = useDateTimeFormat();
   const [scanning, setScanning]                   = useState(false);
   const [scanError, setScanError]                 = useState<string | null>(null);
   const [networks, setNetworks]                   = useState<APNetworkEntry[] | null>(null);
@@ -703,7 +706,7 @@ function APScanner({ deviceId }: { deviceId: number }) {
           {networks !== null && (
             <span className="text-xs text-gray-400 dark:text-slate-500">
               {totalNets} network{totalNets !== 1 ? 's' : ''}
-              {scanTime ? ` · ${format(new Date(scanTime), 'MMM d HH:mm')}` : ''}
+              {scanTime ? ` · ${formatDateTime(new Date(scanTime), { year: undefined })}` : ''}
             </span>
           )}
         </div>
@@ -720,7 +723,7 @@ function APScanner({ deviceId }: { deviceId: number }) {
             >
               {history.map(s => (
                 <option key={s.id} value={s.id}>
-                  {format(new Date(s.scanned_at), 'MMM d HH:mm')} ({s.scan_type})
+                  {formatDateTime(new Date(s.scanned_at), { year: undefined })} ({s.scan_type})
                 </option>
               ))}
             </select>

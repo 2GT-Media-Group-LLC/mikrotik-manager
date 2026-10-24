@@ -1,9 +1,11 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { maintenanceApi, devicesApi, type MaintenanceWindow } from '../../services/api';
 import DevicePicker from '../devices/DevicePicker';
+import type { DateTimeFormatters } from '../../utils/dateTimeFormat';
 
 /**
  * Maintenance windows (P2-26).
@@ -32,10 +34,10 @@ function cronFor(repeat: Repeat, start: Date, timeZone: string): string | null {
 }
 
 /** "Every Sunday at 02:00" for the crons this form writes; the raw cron otherwise. */
-function describeRepeat(cron: string, timeZone: string): string {
+function describeRepeat(cron: string, timeZone: string, formatClockTime: DateTimeFormatters['formatClockTime']): string {
   const m = cron.trim().match(/^(\d+) (\d+) \* \* (\*|\d)$/);
   if (!m) return `Repeats (${cron})`;
-  const time = `${m[2].padStart(2, '0')}:${m[1].padStart(2, '0')}`;
+  const time = formatClockTime(Number(m[2]), Number(m[1]));
   const day = m[3] === '*' ? 'Every day' : `Every ${WEEKDAYS[Number(m[3]) % 7]}`;
   return `${day} at ${time} (${timeZone})`;
 }
@@ -48,6 +50,7 @@ function formatSpan(ms: number): string {
 }
 
 export default function MaintenanceWindowsCard({ isAdmin, timeZone }: { isAdmin: boolean; timeZone: string }) {
+  const { formatClockTime, formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const [form, setForm] = useState({ name: '', start: '', end: '', repeat: 'none' as Repeat });
   const [deviceIds, setDeviceIds] = useState<number[]>([]);
@@ -133,7 +136,7 @@ export default function MaintenanceWindowsCard({ isAdmin, timeZone }: { isAdmin:
             </select>
             {form.repeat !== 'none' && form.start && (
               <span className="text-xs text-gray-500 dark:text-slate-400">
-                {describeRepeat(cronFor(form.repeat, new Date(form.start), timeZone)!, timeZone)}, starting {new Date(form.start).toLocaleDateString()}
+                {describeRepeat(cronFor(form.repeat, new Date(form.start), timeZone)!, timeZone, formatClockTime)}, starting {new Date(form.start).toLocaleDateString()}
               </span>
             )}
           </div>
@@ -184,8 +187,8 @@ export default function MaintenanceWindowsCard({ isAdmin, timeZone }: { isAdmin:
                 </div>
                 <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
                   {repeating
-                    ? `${describeRepeat(mw.recurring_cron!, timeZone)} for ${formatSpan(end.getTime() - start.getTime())}, from ${start.toLocaleDateString()}`
-                    : `${start.toLocaleString()} – ${end.toLocaleString()}`}
+                    ? `${describeRepeat(mw.recurring_cron!, timeZone, formatClockTime)} for ${formatSpan(end.getTime() - start.getTime())}, from ${start.toLocaleDateString()}`
+                    : `${formatDateTime(start, { month: 'numeric', second: '2-digit' })} – ${formatDateTime(end, { month: 'numeric', second: '2-digit' })}`}
                   {' · '}
                   {mw.device_ids.length === 0
                     ? 'All devices'

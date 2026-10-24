@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import type { TimeFormatPreference, TimeFormatPreferences } from '../types/timeFormat';
 import { useAuthStore } from '../store/authStore';
 import { useSiteStore } from '../store/siteStore';
 import type {
@@ -180,6 +181,9 @@ export const authApi = {
   totpStatus: () =>
     api.get<{ totp_enabled: boolean }>('/auth/totp/status'),
   me: () => api.get('/auth/me'),
+  timeFormat: () => api.get<TimeFormatPreferences>('/auth/time-format'),
+  setTimeFormat: (preference: TimeFormatPreference) =>
+    api.put<TimeFormatPreferences>('/auth/time-format', { preference }),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.put<{ message: string; token?: string; user?: import('../types').User }>('/auth/password', { currentPassword, newPassword }),
   /** Public: whether the login page should still show the default credentials. */

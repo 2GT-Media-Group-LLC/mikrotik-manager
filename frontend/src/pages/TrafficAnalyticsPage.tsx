@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useRememberedRange } from '../hooks/useRememberedRange';
 import { Link } from 'react-router-dom';
@@ -11,6 +12,7 @@ import {
 import { chartTooltip, pieTooltip } from '../components/common/chartTooltip';
 import { Activity, ArrowDown, ArrowUp, BarChart3, Router as RouterIcon, Settings2, AlertTriangle } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
+import type { DateTimeFormatters } from '../utils/dateTimeFormat';
 import clsx from 'clsx';
 import { trafficApi } from '../services/api';
 
@@ -38,11 +40,11 @@ function formatCount(n: number): string {
   return `${(n / 1_000_000_000).toFixed(2)}B`;
 }
 
-function timeFormatter(range: Range) {
+function timeFormatter(range: Range, formatTime: DateTimeFormatters['formatTime']) {
   return (t: string) => {
     try {
       const d = parseISO(t);
-      return range === '7d' || range === '30d' ? format(d, 'MMM d') : format(d, 'HH:mm');
+      return range === '7d' || range === '30d' ? format(d, 'MMM d') : formatTime(d);
     } catch {
       return t;
     }
@@ -56,6 +58,7 @@ function clientLabel(c: { mac: string; custom_name: string | null; hostname: str
 }
 
 export default function TrafficAnalyticsPage() {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<Range>('traffic-analytics', '24h', RANGES);
   // Top Talkers was a fixed list of ten with no way to look anything up, which
   // is unusable on a network of any size — you could see the loudest ten and
@@ -210,10 +213,10 @@ export default function TrafficAnalyticsPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700" />
-                <XAxis dataKey="time" tickFormatter={timeFormatter(range)} tick={{ fontSize: 11 }} stroke="currentColor" />
+                <XAxis dataKey="time" tickFormatter={timeFormatter(range, formatTime)} tick={{ fontSize: 11 }} stroke="currentColor" />
                 <YAxis tickFormatter={v => formatBytes(v)} tick={{ fontSize: 11 }} width={70} stroke="currentColor" />
                 <Tooltip
-                  labelFormatter={t => { try { return format(parseISO(String(t)), 'MMM d, HH:mm'); } catch { return String(t); } }}
+                  labelFormatter={t => { try { return formatDateTime(parseISO(String(t)), { year: undefined }); } catch { return String(t); } }}
                   formatter={(value: number, name: string) => [formatBytes(value), name === 'download' ? 'Download' : 'Upload']}
                   {...chartTooltip}
                 />
@@ -236,10 +239,10 @@ export default function TrafficAnalyticsPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700" />
-                <XAxis dataKey="time" tickFormatter={timeFormatter(range)} tick={{ fontSize: 11 }} stroke="currentColor" />
+                <XAxis dataKey="time" tickFormatter={timeFormatter(range, formatTime)} tick={{ fontSize: 11 }} stroke="currentColor" />
                 <YAxis tickFormatter={v => formatCount(v)} tick={{ fontSize: 11 }} width={55} stroke="currentColor" />
                 <Tooltip
-                  labelFormatter={t => { try { return format(parseISO(String(t)), 'MMM d, HH:mm'); } catch { return String(t); } }}
+                  labelFormatter={t => { try { return formatDateTime(parseISO(String(t)), { year: undefined }); } catch { return String(t); } }}
                   formatter={(value: number) => [`${formatCount(value)} pkts`, 'Inbound']}
                   {...chartTooltip}
                 />

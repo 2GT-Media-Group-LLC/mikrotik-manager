@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +23,7 @@ const EMPTY: Draft = { id: null, name: '', description: '', command: '' };
 export default function TemplatesPage() {
   // Secrets are fleet-admin only (#259), so is the card that manages them.
   const isFleetAdmin = useAuthStore((st) => st.user?.role === 'admin' && !(st.user as { siteRoles?: Record<string, string> | null })?.siteRoles);
+  const { formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [search, setSearch] = useState('');
@@ -162,7 +164,7 @@ export default function TemplatesPage() {
                 {t.command}
               </pre>
               <div className="text-[11px] text-gray-400">
-                Updated {new Date(t.updated_at).toLocaleString()}
+                Updated {formatDateTime(new Date(t.updated_at), { month: 'numeric', second: '2-digit' })}
                 {t.created_by && t.created_by !== 'converted' ? ` · by ${t.created_by}` : ''}
               </div>
             </div>

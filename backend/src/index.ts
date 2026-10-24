@@ -46,6 +46,7 @@ import { reconcileStaleGuards } from './services/changeGuard/ChangeGuard';
 import { corsMiddlewareOptions, socketIoCorsOptions } from './utils/corsOrigins';
 
 import authRoutes from './routes/auth';
+import timeFormatRoutes from './routes/timeFormat';
 import oidcRoutes from './routes/oidc';
 import auditLogRoutes from './routes/auditLog';
 import tagsRoutes from './routes/tags';
@@ -423,6 +424,7 @@ app.get('/api/health', (_req, res) => {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth/oidc', oidcRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/auth/time-format', timeFormatRoutes);
 app.use('/api/devices', devicesRoutes);
 app.use('/api/adoption', adoptionRoutes);
 app.use('/api/clients', clientsRoutes);

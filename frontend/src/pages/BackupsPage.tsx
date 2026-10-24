@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
@@ -10,7 +11,6 @@ import { useAuthStore } from '../store/authStore';
 import type { Backup } from '../types';
 import BackupViewerModal from '../components/backups/BackupViewerModal';
 import { orderForDiff } from '../utils/backupCompare';
-import { format } from 'date-fns';
 import clsx from 'clsx';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import TagChips from '../components/devices/TagChips';
@@ -32,6 +32,7 @@ function formatBytes(bytes?: number): string {
 }
 
 export default function BackupsPage() {
+  const { formatDateTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const isAdmin = useAuthStore((st) => st.user?.role === 'admin');
@@ -435,7 +436,7 @@ export default function BackupsPage() {
                     {formatBytes(backup.size_bytes)}
                   </td>
                   <td className="px-4 py-2.5 text-gray-500 dark:text-slate-400">
-                    {format(new Date(backup.created_at), 'MMM d, yyyy HH:mm')}
+                    {formatDateTime(new Date(backup.created_at))}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-gray-400 dark:text-slate-500 italic">
                     {backup.notes || ''}
@@ -644,7 +645,7 @@ export default function BackupsPage() {
                   <dt className="text-gray-500 dark:text-slate-400">Backup</dt>
                   <dd className="font-mono text-xs break-all text-gray-700 dark:text-slate-300">{restoreConfirm.filename}</dd>
                   <dt className="text-gray-500 dark:text-slate-400">Taken</dt>
-                  <dd className="text-gray-700 dark:text-slate-300">{format(new Date(restoreConfirm.created_at), 'MMM d, yyyy HH:mm')}</dd>
+                  <dd className="text-gray-700 dark:text-slate-300">{formatDateTime(restoreConfirm.created_at)}</dd>
                 </dl>
                 <label className="block text-sm text-gray-700 dark:text-slate-300">
                   Type <span className="font-mono font-semibold">{target}</span> to confirm

@@ -1,7 +1,9 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, RefreshCw, ShieldCheck, ShieldAlert, Route, Loader2 } from 'lucide-react';
 import { devicesApi } from '../services/api';
+import { createDateTimeFormat, type DateTimeFormatters } from '../utils/dateTimeFormat';
 
 /**
  * Whether this device can arm auto-revert right now, checked when a risky-change
@@ -327,7 +329,7 @@ export interface GuardResult {
 }
 
 /** Human-readable outcome for a guarded change, or null when nothing to say. */
-export function guardOutcomeMessage(guard?: GuardResult): { tone: 'ok' | 'warn'; text: string } | null {
+export function guardOutcomeMessage(guard?: GuardResult, formatTime: DateTimeFormatters['formatTime'] = createDateTimeFormat().formatTime): { tone: 'ok' | 'warn'; text: string } | null {
   if (!guard) return null;
   if (guard.revert_may_have_fired) {
     return {
@@ -350,7 +352,7 @@ export function guardOutcomeMessage(guard?: GuardResult): { tone: 'ok' | 'warn';
       tone: 'warn',
       text: 'Applied and the device is reachable, but the auto-revert could not be confirmed as '
         + 'removed. The device may restore its previous configuration (and restart) at about '
-        + `${new Date(guard.revert_may_fire_at).toLocaleTimeString()}. Check its scheduler for an `
+        + `${formatTime(guard.revert_may_fire_at, { second: '2-digit' })}. Check its scheduler for an `
         + 'entry starting "mtm-revert-".',
     };
   }
@@ -378,6 +380,7 @@ export interface PendingLockout {
  * Pair with <GuardedWriteUi>.
  */
 export function useGuardedWrite() {
+  const { formatTime } = useDateTimeFormat();
   const [lockout, setLockout] = useState<PendingLockout | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -391,7 +394,7 @@ export function useGuardedWrite() {
   /** onSuccess for a mutation: shows the guard outcome when it needs attention. */
   const onSuccess = (res: unknown) => {
     setLockout(null);
-    const msg = guardOutcomeMessage((res as { data?: { guard?: GuardResult } } | undefined)?.data?.guard);
+    const msg = guardOutcomeMessage((res as { data?: { guard?: GuardResult } } | undefined)?.data?.guard, formatTime);
     setNotice(msg?.tone === 'warn' ? msg.text : null);
   };
 

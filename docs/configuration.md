@@ -83,6 +83,24 @@ still accept the old one. The login page shows the
 default credentials only until then. An existing install still using admin/admin gets
 the same prompt at its next login.
 
+## Time display
+
+Choose **Settings → General → Time format**. Fleet admins can set a system default:
+**Browser default**, **12-hour (AM/PM)** or **24-hour**. Browser default is the initial
+system setting and follows each browser's preferred hour cycle.
+
+Every account, including site-scoped and SSO-only users, can choose **System default**
+or a personal **Browser default**, **12-hour** or **24-hour** override. Personal choices
+are stored on the account and follow it across browsers; changing the system default
+preserves those overrides. Timestamps, charts and schedule descriptions update
+immediately after a personal change. Other sessions pick up defaults on reload or
+when their cached preferences refresh. Earlier browser-local choices should be
+selected again after upgrading to account preferences.
+
+This changes display only. Scheduled work still uses the timezone selected under
+**Settings → General**, API timestamps remain unchanged, and native date/time
+input pickers continue to follow the browser's own regional settings.
+
 ## Sessions
 
 A sign-in lasts up to 24 hours, but every request checks the account as it is now, so a

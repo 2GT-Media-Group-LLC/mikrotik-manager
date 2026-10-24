@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, CheckCircle, XCircle, Clock, HardDrive, ShieldAlert, Rocket, Ban, ChevronRight, Cpu, Zap, Server } from 'lucide-react';
@@ -9,6 +10,7 @@ import { ITEM_STATUS, ROLLOUT_STATUS } from './rolloutStatus';
 // ─── Rollout progress panel ────────────────────────────────────────────────────
 
 export default function RolloutPanel({ rolloutId, canWrite }: { rolloutId: number; canWrite: boolean }) {
+  const { formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const { data: rollout } = useQuery({
     queryKey: ['fw-rollout', rolloutId],
@@ -52,7 +54,7 @@ export default function RolloutPanel({ rolloutId, canWrite }: { rolloutId: numbe
         {rollout.scheduled_at && rollout.status === 'pending' && (
           <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
             <Clock className="w-3 h-3" />starts {formatDistanceToNow(new Date(rollout.scheduled_at), { addSuffix: true })}
-            {' '}(not after {new Date(rollout.scheduled_until ?? new Date(rollout.scheduled_at).getTime() + 60 * 60_000).toLocaleString()})
+            {' '}(not after {formatDateTime(new Date(rollout.scheduled_until ?? new Date(rollout.scheduled_at).getTime() + 60 * 60_000), { month: 'numeric', second: '2-digit' })})
           </span>
         )}
         {rollout.status === 'missed' && (

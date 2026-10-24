@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -296,6 +297,7 @@ function downsample<T>(arr: T[], max: number): T[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function SummaryView(props: Record<string, any>) {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   // Privacy switch for map tiles and geocoding (#106). Read here because this
   // card renders a map unprompted, unlike the device page where the operator
   // has navigated to a location panel.
@@ -389,13 +391,13 @@ function SummaryView(props: Record<string, any>) {
                   tick={{ fontSize: 10, fill: 'var(--ink-4)', fontFamily: 'Geist Mono' }}
                   interval={tickEvery}
                   minTickGap={20}
-                  tickFormatter={(t) => format(new Date(t as number), chartRange === '7d' ? 'MMM d' : 'HH:mm')}
+                  tickFormatter={(t) => chartRange === '7d' ? format(new Date(t as number), 'MMM d') : formatTime(new Date(t as number))}
                 />
                 <YAxis tick={{ fontSize: 10, fill: 'var(--ink-4)' }} allowDecimals={false} />
                 <Tooltip
                   cursor={{ fill: 'var(--surface-3)', opacity: 0.4 }}
                   formatter={(v: number) => [v, 'Clients']}
-                  labelFormatter={(t) => format(new Date(t as number), 'MMM d, HH:mm')}
+                  labelFormatter={(t) => formatDateTime(new Date(t as number), { year: undefined })}
                   contentStyle={{
                     background: 'var(--surface)',
                     border: '1px solid var(--line)',
@@ -578,13 +580,13 @@ function SummaryView(props: Record<string, any>) {
                   key={ev.id}
                   className="grid gap-[10px] py-[5px]"
                   style={{
-                    gridTemplateColumns: '60px 1fr',
+                    gridTemplateColumns: 'max-content minmax(0, 1fr)',
                     fontSize: 11.5,
                     borderTop: i ? '1px solid var(--line-soft)' : 'none',
                   }}
                 >
-                  <div className="mono" style={{ color: 'var(--ink-4)' }}>
-                    {format(new Date(ev.event_time), 'HH:mm:ss')}
+                  <div className="mono whitespace-nowrap" style={{ color: 'var(--ink-4)' }}>
+                    {formatTime(new Date(ev.event_time), { second: '2-digit' })}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-[6px] mb-[2px]">
