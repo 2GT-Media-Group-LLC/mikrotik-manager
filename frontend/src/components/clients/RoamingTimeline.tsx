@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useRememberedRange } from '../../hooks/useRememberedRange';
 import { useQuery } from '@tanstack/react-query';
@@ -17,8 +18,6 @@ function duration(sec: number | null): string {
   return `${h}h ${Math.round((sec % 3600) / 60)}m`;
 }
 
-const time = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const day = (iso: string) =>
   new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
@@ -28,6 +27,7 @@ function Signal({ dbm }: { dbm: number | null }) {
 }
 
 function Session({ s }: { s: RoamSession }) {
+  const { formatTime } = useDateTimeFormat();
   const [open, setOpen] = useState(false);
   // Roams per hour is only computed for sessions long enough to have a rate.
   const flapping = (s.roamsPerHour ?? 0) >= 6;
@@ -41,10 +41,10 @@ function Session({ s }: { s: RoamSession }) {
       <button onClick={() => setOpen(o => !o)} className="w-full text-left">
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <span className="text-gray-400">{day(s.startedAt)}</span>
-          <span className="mono text-gray-700 dark:text-slate-200">{time(s.startedAt)}</span>
+          <span className="mono text-gray-700 dark:text-slate-200">{formatTime(s.startedAt, { second: '2-digit' })}</span>
           <span className="text-gray-400">→</span>
           <span className="mono text-gray-700 dark:text-slate-200">
-            {s.endedAt ? time(s.endedAt) : 'now'}
+            {s.endedAt ? formatTime(s.endedAt, { second: '2-digit' }) : 'now'}
           </span>
           <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300">
             {duration(s.durationSec)}
@@ -88,7 +88,7 @@ function Session({ s }: { s: RoamSession }) {
         <div className="mt-3 pt-2 border-t border-gray-100 dark:border-slate-700 space-y-1">
           {s.events.map((e, i) => (
             <div key={i} className="flex items-center gap-2 text-[11px]">
-              <span className="mono text-gray-400 w-16 flex-shrink-0">{time(e.at)}</span>
+              <span className="mono text-gray-400 whitespace-nowrap flex-shrink-0">{formatTime(e.at, { second: '2-digit' })}</span>
               <span className={clsx('w-20 flex-shrink-0 font-medium',
                 e.kind === 'disconnected' ? 'text-red-600 dark:text-red-400'
                   : e.kind === 'roamed' ? 'text-blue-600 dark:text-blue-400'

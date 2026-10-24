@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import clsx from 'clsx';
 
@@ -35,6 +35,7 @@ function endpoint(ip: string, port?: number): string {
 }
 
 export default function FirewallEventsPage() {
+  const { formatTime, formatDateTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [monitoringOpen, setMonitoringOpen] = useState(false);
@@ -111,7 +112,7 @@ export default function FirewallEventsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           {dataUpdatedAt > 0 && (
             <span className="text-xs text-gray-400 dark:text-slate-500">
-              Updated {format(new Date(dataUpdatedAt), 'HH:mm:ss')}
+              Updated {formatTime(dataUpdatedAt, { second: '2-digit' })}
             </span>
           )}
 
@@ -266,7 +267,7 @@ export default function FirewallEventsPage() {
                     )}
                   >
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                      {format(new Date(event.eventTime), 'MMM d, HH:mm:ss')}
+                      {formatDateTime(event.eventTime, { year: undefined, second: '2-digit' })}
                     </td>
 
                     <td className="px-4 py-2.5">

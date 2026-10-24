@@ -1,3 +1,5 @@
+import { createDateTimeFormat, type TimeFormat } from './dateTimeFormat';
+
 // Friendly <-> cron translation for the Scheduled Backups setting. The backend
 // still consumes a 5-field cron string (backup_schedule_cron); this keeps the UI
 // to simple Frequency / time / day choices and hides cron from the user.
@@ -60,15 +62,13 @@ export function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export function formatTime(hour: number, minute: number): string {
-  const ampm = hour < 12 ? 'AM' : 'PM';
-  const hr = hour % 12 === 0 ? 12 : hour % 12;
-  return `${hr}:${String(minute).padStart(2, '0')} ${ampm}`;
+export function formatTime(hour: number, minute: number, timeFormat: TimeFormat = 'browser', locales?: string | string[]): string {
+  return createDateTimeFormat(timeFormat, locales).formatClockTime(hour, minute);
 }
 
 /** Human description, e.g. "Every Sunday at 3:00 AM". */
-export function describeBackupSchedule(s: BackupSchedule): string {
-  const t = formatTime(s.hour, s.minute);
+export function describeBackupSchedule(s: BackupSchedule, timeFormat: TimeFormat = 'browser', locales?: string | string[]): string {
+  const t = formatTime(s.hour, s.minute, timeFormat, locales);
   if (s.frequency === 'weekly') return `Every ${WEEKDAY_NAMES[s.weekday]} at ${t}`;
   if (s.frequency === 'monthly') return `Monthly on the ${ordinal(s.dayOfMonth)} at ${t}`;
   return `Every day at ${t}`;

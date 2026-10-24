@@ -1120,6 +1120,9 @@ UPDATE device_configs SET contains_secrets = TRUE WHERE contains_secrets IS NULL
 -- first login before anything else works.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- NULL inherits the fleet default; an explicit value belongs to this account across browsers.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS time_format VARCHAR(10);
+
 -- RouterOS vulnerabilities (#175): from NIST's NVD, refreshed daily, with the
 -- ones CISA lists as actively exploited marked. Replaced as a whole on refresh.
 CREATE TABLE IF NOT EXISTS ros_cves (
@@ -1773,6 +1776,7 @@ CREATE TABLE IF NOT EXISTS dhcp_pool_usage (
 `;
 
 const DEFAULT_SETTINGS = [
+  { key: 'time_format_default', value: 'browser' },
   { key: 'polling_fast_interval', value: 30 },
   { key: 'polling_slow_interval', value: 300 },
   { key: 'polling_logs_interval', value: 60 },

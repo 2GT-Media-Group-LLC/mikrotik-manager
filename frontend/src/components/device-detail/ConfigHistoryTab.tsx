@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,7 +7,6 @@ import {
 import { configHistoryApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { lineDiff } from '../../utils/lineDiff';
-import { format } from 'date-fns';
 import clsx from 'clsx';
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
 }
 
 export default function ConfigHistoryTab({ deviceId }: Props) {
+  const { formatDateTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
 
@@ -156,7 +157,7 @@ export default function ConfigHistoryTab({ deviceId }: Props) {
               {history.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
                   <td className="px-4 py-2.5 text-gray-900 dark:text-white whitespace-nowrap">
-                    {format(new Date(s.collected_at), 'MMM d, yyyy HH:mm:ss')}
+                    {formatDateTime(new Date(s.collected_at), { second: '2-digit' })}
                   </td>
                   <td className="px-4 py-2.5 text-gray-600 dark:text-slate-300 text-xs">
                     {s.change_summary || '—'}
@@ -239,7 +240,7 @@ export default function ConfigHistoryTab({ deviceId }: Props) {
             >
               <option value="">Base (older)…</option>
               {history.map((s) => (
-                <option key={s.id} value={s.id}>{format(new Date(s.collected_at), 'MMM d HH:mm:ss')}</option>
+                <option key={s.id} value={s.id}>{formatDateTime(new Date(s.collected_at), { year: undefined, second: '2-digit' })}</option>
               ))}
             </select>
             <span className="text-gray-400">→</span>
@@ -250,7 +251,7 @@ export default function ConfigHistoryTab({ deviceId }: Props) {
             >
               <option value="">Compare (newer)…</option>
               {history.map((s) => (
-                <option key={s.id} value={s.id}>{format(new Date(s.collected_at), 'MMM d HH:mm:ss')}</option>
+                <option key={s.id} value={s.id}>{formatDateTime(new Date(s.collected_at), { year: undefined, second: '2-digit' })}</option>
               ))}
             </select>
             {diff && (
