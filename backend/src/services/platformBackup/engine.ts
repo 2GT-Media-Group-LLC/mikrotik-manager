@@ -10,6 +10,7 @@
  * Restore runs in one transaction that only commits once the file's GCM tag
  * has verified, so a damaged or altered file changes nothing.
  */
+import { compareMtmVersions } from '../../utils/mtmVersion';
 import type { PoolClient } from 'pg';
 import { pool } from '../../config/database';
 import { allDecryptionKeys, setExtraDecryptionKeys } from '../../utils/secrets';
@@ -22,15 +23,12 @@ const INSERT_BATCH = 1000;
 
 export const qi = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
-/** Is backup version a no newer than b? "0.62.0-beta" style, numeric parts only. */
+/**
+ * Is backup version a no newer than b? Release candidates sort before their
+ * release ("1.0.0-rc.1" < "1.0.0"), so a 1.0.0 backup isn't restored into an RC.
+ */
 export function versionNotNewer(a: string, b: string): boolean {
-  const parse = (v: string) => (v.match(/\d+/g) ?? []).slice(0, 3).map(Number);
-  const [x, y] = [parse(a), parse(b)];
-  for (let i = 0; i < 3; i++) {
-    const d = (x[i] ?? 0) - (y[i] ?? 0);
-    if (d !== 0) return d < 0;
-  }
-  return true;
+  return compareMtmVersions(a, b) <= 0;
 }
 
 export async function publicTables(client: PoolClient): Promise<string[]> {

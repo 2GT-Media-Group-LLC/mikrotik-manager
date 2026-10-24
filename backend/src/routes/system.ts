@@ -1,3 +1,4 @@
+import { compareMtmVersions, releaseBranch } from '../utils/mtmVersion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { readFileSync } from 'fs';
@@ -32,26 +33,13 @@ function resolveCurrentVersion(): string {
 }
 
 const CURRENT_VERSION = resolveCurrentVersion();
-const RAW_URL = 'https://raw.githubusercontent.com/2GT-Media-Group-LLC/mikrotik-manager/main/frontend/package.json';
+const RAW_URL = `https://raw.githubusercontent.com/2GT-Media-Group-LLC/mikrotik-manager/${releaseBranch(CURRENT_VERSION)}/frontend/package.json`;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// Normalise "0.11.7-beta" or "v0.11.7 Beta" → [0, 11, 7]
-function parseVersion(v: string): number[] {
-  return v
-    .toLowerCase()
-    .replace(/[^0-9.]/g, ' ')
-    .trim()
-    .split(/[\s.]+/)
-    .slice(0, 3)
-    .map(Number);
-}
-
-function isNewer(latest: number[], current: number[]): boolean {
-  for (let i = 0; i < 3; i++) {
-    if ((latest[i] ?? 0) > (current[i] ?? 0)) return true;
-    if ((latest[i] ?? 0) < (current[i] ?? 0)) return false;
-  }
-  return false;
+// "0.77.1-beta", "1.0.0-rc.1", "v1.0.0 RC 1", "1.0.0": a release candidate
+// sorts before its release, which three numbers alone couldn't tell apart.
+function isNewer(latest: string, current: string): boolean {
+  return compareMtmVersions(latest, current) > 0;
 }
 
 // GET /api/system/version-check
@@ -162,12 +150,11 @@ router.get('/version-check', async (_req: Request, res: Response) => {
     );
     const row = cached[0]?.value;
     if (row && Date.now() - new Date(row.checked_at).getTime() < CACHE_TTL_MS) {
-      const latestParsed = parseVersion(row.version);
-      const currentParsed = parseVersion(CURRENT_VERSION);
+
       return res.json({
         current: CURRENT_VERSION,
         latest: row.version,
-        update_available: isNewer(latestParsed, currentParsed),
+        update_available: isNewer(row.version, CURRENT_VERSION),
       });
     }
 
@@ -195,7 +182,7 @@ router.get('/version-check', async (_req: Request, res: Response) => {
     return res.json({
       current: CURRENT_VERSION,
       latest: latestVersion,
-      update_available: isNewer(parseVersion(latestVersion), parseVersion(CURRENT_VERSION)),
+      update_available: isNewer(latestVersion, CURRENT_VERSION),
     });
   } catch {
     // Fail silently — air-gapped or unreachable GitHub

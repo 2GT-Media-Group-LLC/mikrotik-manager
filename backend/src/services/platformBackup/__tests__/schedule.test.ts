@@ -24,6 +24,10 @@ describe('versionNotNewer', () => {
     expect(versionNotNewer('0.61.2-beta', '0.62.0-beta')).toBe(true);
     expect(versionNotNewer('0.62.0-beta', '0.62.0-beta')).toBe(true);
     expect(versionNotNewer('0.62.1-beta', '0.62.0-beta')).toBe(false);
+    // Release candidates (1.0): an RC is older than its release.
+    expect(versionNotNewer('1.0.0-rc.1', '1.0.0')).toBe(true);
+    expect(versionNotNewer('1.0.0', '1.0.0-rc.1')).toBe(false);
+    expect(versionNotNewer('1.0.0-rc.2', '1.0.0-rc.1')).toBe(false);
     expect(versionNotNewer('1.0.0', '0.99.9')).toBe(false);
     expect(versionNotNewer('0.9.0', '0.10.0')).toBe(true);
   });
