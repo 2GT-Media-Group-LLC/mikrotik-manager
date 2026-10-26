@@ -64,7 +64,7 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
  * learned to abandon a timed-out connection, desynchronised the session (#137).
  */
 const LOG_READ_TIMEOUT_MS = 120_000;
-import { selectNewLogLines, highestStoredId, surrogateLogId, storedLogId, type RawLogLine } from '../../utils/logDedup';
+import { selectNewLogLines, highestStoredId, surrogateLogId, storedLogId, resumePoint, bufferMark, type RawLogLine } from '../../utils/logDedup';
 import {
   parseUpdateStatus, latestFromStream, peakPercent, type UpdateStatus,
 } from '../../utils/updateStatus';
@@ -1505,14 +1505,27 @@ export class DeviceCollector {
          ORDER BY id DESC LIMIT 2000`,
         [this.device.id]
       );
-      const lastIdNum = highestStoredId(storedIds.map((r) => r.log_id));
-
       // Always get the latest stored event time — needed for timestamp fallback.
       const latestStored = await queryOne<{ event_time: Date }>(
         `SELECT event_time FROM events WHERE device_id = $1 ORDER BY event_time DESC LIMIT 1`,
         [this.device.id]
       );
-      const latestTime = latestStored?.event_time ? new Date(latestStored.event_time) : new Date(0);
+      // And what was last seen on the device, so clearing events doesn't send
+      // the next poll back to the start of the buffer (#361).
+      const mark = await queryOne<{ log_watermark_id: string | null; log_watermark_at: Date | null }>(
+        `SELECT log_watermark_id, log_watermark_at FROM devices WHERE id = $1`, [this.device.id]);
+      const resume = resumePoint(
+        {
+          lastId: highestStoredId(storedIds.map((r) => r.log_id)),
+          latestTime: latestStored?.event_time ? new Date(latestStored.event_time) : new Date(0),
+        },
+        {
+          lastId: mark?.log_watermark_id != null ? Number(mark.log_watermark_id) : null,
+          latestTime: mark?.log_watermark_at ? new Date(mark.log_watermark_at) : null,
+        },
+      );
+      const lastIdNum = resume.lastId;
+      const latestTime = resume.latestTime;
 
 
       // Collect the candidates first, then insert them in batches.
@@ -1612,6 +1625,13 @@ export class DeviceCollector {
       } catch (err) {
         console.error(`[${this.device.name}] Failed to store proxy connections:`, err);
       }
+
+      // Remember how far this read got, whatever was kept (#361).
+      const seen = bufferMark(logs as RawLogLine[], (raw) => this.parseLogTime(raw));
+      await query(
+        `UPDATE devices SET log_watermark_id = $2, log_watermark_at = COALESCE($3, log_watermark_at) WHERE id = $1`,
+        [this.device.id, seen.lastId || null, seen.latestTime ? seen.latestTime.toISOString() : null],
+      );
 
       // Old events are pruned by the scheduled sweep, which follows the
       // retention setting. A hard 30-day delete here ignored it (P2-18).

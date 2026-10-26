@@ -1585,6 +1585,11 @@ ALTER TABLE device_poll_stats ADD COLUMN IF NOT EXISTS last_device_ms INTEGER;
 -- poll, and the reboots that implies (#326): a reboot quicker than the poll
 -- interval never shows as an outage, so availability alone missed it.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS boot_at TIMESTAMPTZ;
+-- The newest log line seen on the device, kept on the device rather than read
+-- back from events, so clearing events (or firewall logs) doesn't make the
+-- next poll re-import the router's whole log buffer (#361).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS log_watermark_id BIGINT;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS log_watermark_at TIMESTAMPTZ;
 CREATE TABLE IF NOT EXISTS device_reboots (
   id          BIGSERIAL PRIMARY KEY,
   device_id   INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,

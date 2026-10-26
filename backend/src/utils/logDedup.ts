@@ -130,3 +130,37 @@ export function storedLogId(rosId: string, time: string, topics: string, message
 export function isSurrogateLogId(id: string | null | undefined): boolean {
   return typeof id === 'string' && id.startsWith('#');
 }
+
+/**
+ * Where to resume reading a device's log (#361): the later of what is still
+ * stored in events and what was last seen on the device. Read from events
+ * alone, clearing them (or the firewall logs) reset the mark and the next
+ * poll re-imported the whole log buffer.
+ */
+export function resumePoint(
+  stored: { lastId: number; latestTime: Date },
+  seen: { lastId: number | null; latestTime: Date | null },
+): { lastId: number; latestTime: Date } {
+  const seenTime = seen.latestTime ? seen.latestTime.getTime() : 0;
+  return {
+    lastId: Math.max(stored.lastId, seen.lastId ?? 0),
+    latestTime: new Date(Math.max(stored.latestTime.getTime(), seenTime)),
+  };
+}
+
+/**
+ * What this read of the buffer has now seen: its highest id and newest line
+ * time. Stored on the device as the next poll's resume point. After a reboot
+ * the ids start again, so the highest id can be lower than before; that is
+ * the new mark.
+ */
+export function bufferMark(logs: RawLogLine[], parseTime: (raw: string) => Date): { lastId: number; latestTime: Date | null } {
+  let lastId = 0;
+  let latest = 0;
+  for (const l of logs) {
+    lastId = Math.max(lastId, parseRosId(l['.id']));
+    const t = parseTime(l.time || '').getTime();
+    if (Number.isFinite(t) && t > latest) latest = t;
+  }
+  return { lastId, latestTime: latest > 0 ? new Date(latest) : null };
+}

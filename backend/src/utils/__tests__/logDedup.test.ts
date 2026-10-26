@@ -155,3 +155,41 @@ describe('storedLogId', () => {
     expect(parseRosId(id)).toBe(0xffffffff);
   });
 });
+
+describe('resume point kept on the device (#361)', () => {
+  const { resumePoint, bufferMark, selectNewLogLines } = jest.requireActual('../logDedup') as typeof import('../logDedup');
+  const parse = (t: string) => new Date(t);
+  const buffer = [
+    { '.id': '*1F2', time: '2026-10-26T10:00:00Z', topics: 'system,info', message: 'a' },
+    { '.id': '*1F3', time: '2026-10-26T10:01:00Z', topics: 'system,info', message: 'b' },
+    { '.id': '*1F4', time: '2026-10-26T10:02:00Z', topics: 'system,info', message: 'c' },
+  ];
+
+  it('after events are cleared, the next read takes nothing already seen', () => {
+    const seen = bufferMark(buffer, parse);
+    expect(seen).toEqual({ lastId: 0x1f4, latestTime: new Date('2026-10-26T10:02:00Z') });
+    // Events cleared: nothing stored, so the old way resumed from the start.
+    const cleared = { lastId: 0, latestTime: new Date(0) };
+    expect(selectNewLogLines(buffer, { lastStoredId: cleared.lastId, latestStoredTime: cleared.latestTime, parseTime: parse })).toHaveLength(3);
+    const resume = resumePoint(cleared, seen);
+    expect(selectNewLogLines(buffer, { lastStoredId: resume.lastId, latestStoredTime: resume.latestTime, parseTime: parse })).toHaveLength(0);
+    const next = [...buffer, { '.id': '*1F5', time: '2026-10-26T10:03:00Z', topics: 'system,info', message: 'd' }];
+    expect(selectNewLogLines(next, { lastStoredId: resume.lastId, latestStoredTime: resume.latestTime, parseTime: parse }).map((l) => l.message)).toEqual(['d']);
+  });
+
+  it('takes the later of stored and seen', () => {
+    const r = resumePoint({ lastId: 10, latestTime: new Date('2026-10-26T09:00:00Z') }, { lastId: 7, latestTime: new Date('2026-10-26T11:00:00Z') });
+    expect(r).toEqual({ lastId: 10, latestTime: new Date('2026-10-26T11:00:00Z') });
+    expect(resumePoint({ lastId: 3, latestTime: new Date(0) }, { lastId: null, latestTime: null })).toEqual({ lastId: 3, latestTime: new Date(0) });
+  });
+
+  it('after a reboot (ids start again) falls back to time and records the new, lower mark', () => {
+    const rebooted = [
+      { '.id': '*1', time: '2026-10-26T10:01:30Z', topics: 'system,info', message: 'old-ish' },
+      { '.id': '*2', time: '2026-10-26T10:05:00Z', topics: 'system,info', message: 'after reboot' },
+    ];
+    const resume = resumePoint({ lastId: 0, latestTime: new Date(0) }, { lastId: 0x1f4, latestTime: new Date('2026-10-26T10:02:00Z') });
+    expect(selectNewLogLines(rebooted, { lastStoredId: resume.lastId, latestStoredTime: resume.latestTime, parseTime: parse }).map((l) => l.message)).toEqual(['after reboot']);
+    expect(bufferMark(rebooted, parse).lastId).toBe(2);
+  });
+});
