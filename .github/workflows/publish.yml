@@ -13,8 +13,10 @@ on:
     branches: [main, dev]
   workflow_dispatch:
 
+# One queue per branch: a dev build waiting behind a main build used to
+# replace (cancel) it, leaving :latest a commit behind.
 concurrency:
-  group: publish
+  group: publish-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -59,6 +61,13 @@ jobs:
           fi
           echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
           echo "beta=$BETA" >> "$GITHUB_OUTPUT"
+          # The version tag belongs to main, or to dev once it carries a beta
+          # version; right after a release dev has main's version, and its
+          # build would take the tag over.
+          VERSION_TAG=false
+          case "$BRANCH" in main) VERSION_TAG=true ;; esac
+          case "$(node -p "require('./backend/package.json').version")" in *beta*) VERSION_TAG=true ;; esac
+          echo "version_tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -75,7 +84,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ steps.tags.outputs.latest }}
             type=raw,value=beta,enable=${{ steps.tags.outputs.beta }}
-            type=raw,value=${{ steps.tags.outputs.version }}
+            type=raw,value=${{ steps.tags.outputs.version }},enable=${{ steps.tags.outputs.version_tag }}
             type=raw,value=sha-${{ steps.tags.outputs.short }}
 
       - name: Set up QEMU
@@ -149,6 +158,13 @@ jobs:
           fi
           echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
           echo "beta=$BETA" >> "$GITHUB_OUTPUT"
+          # The version tag belongs to main, or to dev once it carries a beta
+          # version; right after a release dev has main's version, and its
+          # build would take the tag over.
+          VERSION_TAG=false
+          case "$BRANCH" in main) VERSION_TAG=true ;; esac
+          case "$(node -p "require('./backend/package.json').version")" in *beta*) VERSION_TAG=true ;; esac
+          echo "version_tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -165,7 +181,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ steps.tags.outputs.latest }}
             type=raw,value=beta,enable=${{ steps.tags.outputs.beta }}
-            type=raw,value=${{ steps.tags.outputs.version }}
+            type=raw,value=${{ steps.tags.outputs.version }},enable=${{ steps.tags.outputs.version_tag }}
             type=raw,value=sha-${{ steps.tags.outputs.short }}
 
       - name: Set up QEMU
