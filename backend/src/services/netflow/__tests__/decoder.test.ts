@@ -428,3 +428,32 @@ describe('malformed / hostile packets', () => {
     expect(result.flows[0].bytes).toBe(120);
   });
 });
+
+// ─── Post-NAT addresses (#345) ────────────────────────────────────────────────
+describe('post-NAT addresses (#345)', () => {
+  // The IPFIX layout RouterOS uses with nat-src-address/nat-dst-address on:
+  // 8, 12, 7, 11, 4, 1, 2, 225, 226.
+  const NAT_FIELDS: FieldSpec[] = [...V9_FIELDS, { id: 225, length: 4 }, { id: 226, length: 4 }];
+  const natRecord = (src: string, dst: string, natSrc: string, natDst: string, bytes: number) => Buffer.concat([
+    ipv4(src), ipv4(dst), u16(443), u16(51515), Buffer.from([6]), u32(bytes), u32(10), ipv4(natSrc), ipv4(natDst),
+  ]);
+
+  it('keeps the post-NAT destination of a download recorded at the WAN', () => {
+    const cache: TemplateCache = new Map();
+    const pkt = ipfixPacket(1, [
+      flowset(2, templateBody(300, NAT_FIELDS)),
+      flowset(300, Buffer.concat([
+        natRecord('93.184.216.34', '203.0.113.7', '0.0.0.0', '10.200.10.27', 150000), // download, NAT reversed
+        natRecord('10.200.10.27', '93.184.216.34', '203.0.113.7', '0.0.0.0', 900),     // upload, src-NATed
+        natRecord('10.200.20.5', '10.200.10.27', '0.0.0.0', '0.0.0.0', 500),           // inter-VLAN, no NAT
+      ])),
+    ]);
+    const { flows } = decodePacket(pkt, '10.0.0.1', cache);
+    expect(flows[0]).toMatchObject({ srcAddr: '93.184.216.34', dstAddr: '203.0.113.7', natDstAddr: '10.200.10.27', bytes: 150000 });
+    expect(flows[0].natSrcAddr).toBeUndefined();
+    expect(flows[1]).toMatchObject({ srcAddr: '10.200.10.27', natSrcAddr: '203.0.113.7' });
+    expect(flows[1].natDstAddr).toBeUndefined();
+    // Untranslated records look exactly as before.
+    expect(flows[2]).toEqual({ srcAddr: '10.200.20.5', dstAddr: '10.200.10.27', srcPort: 443, dstPort: 51515, protocol: 6, bytes: 500, packets: 10 });
+  });
+});

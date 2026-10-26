@@ -64,6 +64,7 @@ const UPDATE_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
  * learned to abandon a timed-out connection, desynchronised the session (#137).
  */
 const LOG_READ_TIMEOUT_MS = 120_000;
+import { rememberManagerAddress } from '../../utils/managerAddresses';
 import { selectNewLogLines, highestStoredId, surrogateLogId, storedLogId, resumePoint, bufferMark, type RawLogLine } from '../../utils/logDedup';
 import {
   parseUpdateStatus, latestFromStream, peakPercent, type UpdateStatus,
@@ -1649,18 +1650,10 @@ export class DeviceCollector {
    * are kept, for a manager that reaches the device over more than one path.
    */
   private async learnManagerAddresses(): Promise<ReadonlySet<string>> {
-    let known = DeviceCollector.managerAddresses.get(this.device.id);
-    if (!known) { known = new Set(); DeviceCollector.managerAddresses.set(this.device.id, known); }
     const active = await this.client.execute('/user/active/print').catch(() => null);
     const addr = active ? managerAddressFromActive(active, this.device.api_username) : null;
-    if (addr && !known.has(addr)) {
-      known.add(addr);
-      while (known.size > 4) known.delete(known.values().next().value as string);
-    }
-    return known;
+    return rememberManagerAddress(this.device.id, addr);
   }
-
-  private static managerAddresses = new Map<number, Set<string>>();
 
   /**
    * A log timestamp as a real instant, using the device's own clock.

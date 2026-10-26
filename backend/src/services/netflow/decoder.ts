@@ -12,6 +12,14 @@ export interface FlowRecord {
   protocol: number;
   bytes: number;
   packets: number;
+  /**
+   * Post-NAT addresses (IPFIX 225/226, IPv6 281/282), present only when NAT
+   * changed them. RouterOS records a download where it enters the WAN, before
+   * NAT is reversed: the destination is the router's public address and the
+   * LAN client is only in natDstAddr (#345).
+   */
+  natSrcAddr?: string;
+  natDstAddr?: string;
 }
 
 interface TemplateField {
@@ -79,7 +87,14 @@ const FIELD = {
   DST_IPV4: 12, // IPV4_DST_ADDR / destinationIPv4Address
   SRC_IPV6: 27, // IPV6_SRC_ADDR / sourceIPv6Address
   DST_IPV6: 28, // IPV6_DST_ADDR / destinationIPv6Address
+  NAT_SRC_IPV4: 225, // postNATSourceIPv4Address
+  NAT_DST_IPV4: 226, // postNATDestinationIPv4Address
+  NAT_SRC_IPV6: 281, // postNATSourceIPv6Address
+  NAT_DST_IPV6: 282, // postNATDestinationIPv6Address
 } as const;
+
+/** RouterOS fills a post-NAT field with zeros when nothing was translated. */
+const NO_ADDRESS = new Set(['0.0.0.0', '::']);
 
 function readUInt(buf: Buffer, offset: number, length: number): number {
   if (length === 8) {
@@ -188,6 +203,8 @@ function parseDataSet(
     const recordStart = off;
     let srcAddr = '';
     let dstAddr = '';
+    let natSrcAddr = '';
+    let natDstAddr = '';
     let srcPort = 0;
     let dstPort = 0;
     let protocol = 0;
@@ -221,6 +238,10 @@ function parseDataSet(
           case FIELD.DST_IPV4: if (len === 4) dstAddr = formatIPv4(buf, off); break;
           case FIELD.SRC_IPV6: if (len === 16 && !srcAddr) srcAddr = formatIPv6(buf, off); break;
           case FIELD.DST_IPV6: if (len === 16 && !dstAddr) dstAddr = formatIPv6(buf, off); break;
+          case FIELD.NAT_SRC_IPV4: if (len === 4) natSrcAddr = formatIPv4(buf, off); break;
+          case FIELD.NAT_DST_IPV4: if (len === 4) natDstAddr = formatIPv4(buf, off); break;
+          case FIELD.NAT_SRC_IPV6: if (len === 16 && !natSrcAddr) natSrcAddr = formatIPv6(buf, off); break;
+          case FIELD.NAT_DST_IPV6: if (len === 16 && !natDstAddr) natDstAddr = formatIPv6(buf, off); break;
         }
       }
       off += len;
@@ -233,7 +254,12 @@ function parseDataSet(
     if (off <= recordStart) break;
     // Only emit records that look like flows (options/stats records lack these)
     if (srcAddr && dstAddr && bytes >= 0) {
-      flows.push({ srcAddr, dstAddr, srcPort, dstPort, protocol, bytes, packets });
+      const flow: FlowRecord = { srcAddr, dstAddr, srcPort, dstPort, protocol, bytes, packets };
+      // Only when NAT actually changed the address, so untranslated records
+      // (and the existing tests) look exactly as before.
+      if (natSrcAddr && !NO_ADDRESS.has(natSrcAddr) && natSrcAddr !== srcAddr) flow.natSrcAddr = natSrcAddr;
+      if (natDstAddr && !NO_ADDRESS.has(natDstAddr) && natDstAddr !== dstAddr) flow.natDstAddr = natDstAddr;
+      flows.push(flow);
     }
   }
 }

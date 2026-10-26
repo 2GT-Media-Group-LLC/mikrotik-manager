@@ -89,3 +89,15 @@ describe('canonicalIp (#233)', () => {
   });
 });
 
+
+describe('attributionDestination (#345)', () => {
+  const { attributionDestination } = jest.requireActual('../attribution') as typeof import('../attribution');
+  it('uses the post-NAT destination for a download through NAT', () => {
+    expect(attributionDestination({ dstAddr: '203.0.113.7', natDstAddr: '10.200.10.27' })).toBe('10.200.10.27');
+  });
+  it('leaves a local destination, or a public post-NAT one, alone', () => {
+    expect(attributionDestination({ dstAddr: '10.200.10.27' })).toBe('10.200.10.27');
+    expect(attributionDestination({ dstAddr: '10.200.10.27', natDstAddr: '10.200.99.1' })).toBe('10.200.10.27');
+    expect(attributionDestination({ dstAddr: '93.184.216.34', natDstAddr: '198.51.100.9' })).toBe('93.184.216.34');
+  });
+});

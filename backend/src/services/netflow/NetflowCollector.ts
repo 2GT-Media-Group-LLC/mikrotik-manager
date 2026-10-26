@@ -4,6 +4,7 @@
 // aggregates into 60-second windows written to InfluxDB (time series) and
 // Postgres (daily per-client rollups).
 
+import { managerAddressesFor } from '../../utils/managerAddresses';
 import * as dgram from 'dgram';
 import { Point } from '@influxdata/influxdb-client';
 import { query } from '../../config/database';
@@ -13,7 +14,7 @@ import { classifyApp, APP_LAN } from './appCategories';
 import { FlowAggregator, CLIENT_UNKNOWN, Direction } from './FlowAggregator';
 import { PacketRateLimiter } from './rateLimiter';
 import {
-  AMBIGUOUS, buildAttributionMaps, isLocalAddress, matchClient,
+  AMBIGUOUS, attributionDestination, buildAttributionMaps, isLocalAddress, matchClient,
   type AttributionMaps, type ClientRow, type DeviceRow, type ExporterInfo,
   canonicalIp,
 } from './attribution';
@@ -302,8 +303,13 @@ export class NetflowCollector {
     stats.deviceName = statsName;
     if (result.flows.length > 0) stats.lastSeen = new Date().toISOString();
 
+    // The manager's own traffic with this exporter (polling, backups, an SSTP
+    // or VPN path to it) isn't a client's (#345).
+    const manager = identified ? managerAddressesFor(statsId) : null;
     for (const flow of result.flows) {
-      this.attribute(statsId, identified, flow.srcAddr, flow.dstAddr, flow.srcPort, flow.dstPort, flow.protocol, flow.bytes, flow.packets);
+      const dstAddr = attributionDestination(flow);
+      if (manager && (manager.has(flow.srcAddr) || manager.has(dstAddr))) continue;
+      this.attribute(statsId, identified, flow.srcAddr, dstAddr, flow.srcPort, flow.dstPort, flow.protocol, flow.bytes, flow.packets);
     }
   }
 
