@@ -48,11 +48,22 @@ and report what they found.
   with certificate and host-key pinning, Change Guard refusing what it can't protect, honest
   restore results and signed, digest-pinned images, among much else. Novus Insight supports
   schools, municipalities and non-profit organizations, and runs MikroTik throughout.
+- **Onur Alp Akin ([@otuva](https://github.com/otuva))** found that a viewer account could open an SSH terminal,
+  the device's admin command line, on any managed device
+  ([GHSA-9jf3-mmv2-wh47](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-9jf3-mmv2-wh47)).
+  Fixed in 0.16.8.
 - **Artur Chlebicki ([@Artur12555](https://github.com/Artur12555))** found that a user limited
   to one site could reach devices on other sites through the way device ids were read from the
   request path
   ([GHSA-6xq3-q9m5-7hxp](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-6xq3-q9m5-7hxp)).
   Fixed in 0.45.1.
+- **David Coulson ([@davidcoulson](https://github.com/davidcoulson))** found that alert and
+  webhook address checks could be bypassed with IPv4-mapped IPv6 addresses written in hex, that
+  alert and report emails inserted device and client text as HTML, that webhook URLs were
+  readable by viewers and automation settings by site-limited accounts, and that the HTTPS
+  certificate upload checked only its first block
+  ([GHSA-28hr-v457-cc6g](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-28hr-v457-cc6g)).
+  Fixed in 1.0.0-rc.1.
 
 ## Security Considerations for Self-Hosted Deployments
 
