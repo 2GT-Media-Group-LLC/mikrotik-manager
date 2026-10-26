@@ -1,3 +1,4 @@
+import { logSafe } from '../utils/logSafe';
 import { Queue, Worker, Job } from 'bullmq';
 import { hasRadios } from './mikrotik/capsman';
 import { checkApi, promoteToApi, recordApiCheck, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
@@ -1511,7 +1512,11 @@ export class PollerService {
       `SELECT name FROM wireless_interfaces WHERE device_id = $1 AND disabled = FALSE`,
       [device.id]
     );
-    if (ifaces.length === 0) return;
+    if (ifaces.length === 0) {
+      // Said once per run, so a scan that never happens shows in the log (#295).
+      console.log(`[ap-scan] ${logSafe(device.name)}: no enabled wireless interfaces on record, nothing to scan`);
+      return;
+    }
 
     const { lookupVendor } = await import('../utils/oui');
     const collector = new DeviceCollector(device);

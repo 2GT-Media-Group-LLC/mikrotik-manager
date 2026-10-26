@@ -3659,8 +3659,16 @@ export class DeviceCollector {
 
   async scanWireless(iface: string, durationMs = 5_000): Promise<Record<string, string>[]> {
     const pkg = await this.detectWifiPackage();
+    // Which fields the router sent (names only, never values), on every path,
+    // so a report like #295 can be settled from one log line.
+    const report = (path: string, rows: Record<string, string>[]) => {
+      const fields = [...new Set(rows.flatMap((r) => Object.keys(r)))].sort();
+      console.log(`[ap-scan] ${logSafe(this.device.name)} ${logSafe(iface)} (${path}): ${rows.length} rows, fields: ${fields.join(',') || '(none)'}`);
+    };
     if (pkg === 'wifi') {
-      return this.client.executeStreaming('/interface/wifi/scan', { '.id': iface }, durationMs).catch(() => []);
+      const rows = await this.client.executeStreaming('/interface/wifi/scan', { '.id': iface }, durationMs).catch(() => [] as Record<string, string>[]);
+      report('wifi package', rows);
+      return rows;
     }
     // The legacy package, as a timed scan (#295): `/interface wireless scan
     // wlan1 duration=5` reports each network's privacy flag, where the
@@ -3670,10 +3678,7 @@ export class DeviceCollector {
     const rows = await this.client
       .executeStreaming('/interface/wireless/scan', { '.id': iface, duration: String(seconds) }, durationMs + 5_000)
       .catch(() => [] as Record<string, string>[]);
-    // Which fields the router sent (names only, never values), so a report
-    // like #295 can be settled from one log line.
-    const fields = [...new Set(rows.flatMap((r) => Object.keys(r)))].sort();
-    console.log(`[ap-scan] ${logSafe(this.device.name)} ${logSafe(iface)}: ${rows.length} rows, fields: ${fields.join(',') || '(none)'}`);
+    report(`legacy wireless, detected as ${pkg}`, rows);
     return rows;
   }
 
