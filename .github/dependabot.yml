@@ -1,8 +1,12 @@
 version: 2
+# From 1.0, main is the stable line (fixes only) and new work lands on dev, so
+# routine updates go to dev and reach stable with the next minor release.
+# Security updates still open against main, the default branch.
 updates:
   # Frontend npm dependencies
   - package-ecosystem: "npm"
     directory: "/frontend"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -11,6 +15,7 @@ updates:
   # Backend npm dependencies
   - package-ecosystem: "npm"
     directory: "/backend"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -19,12 +24,14 @@ updates:
   # Docker dependencies (docker-compose.yml base images)
   - package-ecosystem: "docker"
     directory: "/backend"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
 
   - package-ecosystem: "docker"
     directory: "/nginx"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -33,6 +40,7 @@ updates:
   # Regenerate docker-compose.ghcr.yml in the same PR: npm run compose:generate.
   - package-ecosystem: "docker-compose"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -54,6 +62,7 @@ updates:
   # GitHub Actions workflow dependencies (pinned by commit SHA)
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
