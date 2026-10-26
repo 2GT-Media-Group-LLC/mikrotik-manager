@@ -9,13 +9,28 @@
   <img src="https://img.shields.io/badge/version-1.0.0_RC_1-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
-  <img src="https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/built%20with-TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/built%20with-Claude%20AI-blueviolet?logo=anthropic&logoColor=white" alt="Built with Claude" />
 </p>
 
 <p align="center">
   <img src=".github/images/Dashboard.png" alt="MikroTik Manager Dashboard" width="100%" />
 </p>
+
+> [!IMPORTANT]
+> **1.0 release candidate: testing until Saturday 31 October.** v1.0.0-rc.1, the release candidate
+> for the first stable release, is out, and the feature freeze has started. Stable 1.0.0 is planned
+> for **Sunday 1 November** if testing turns up nothing serious.
+>
+> - **Updating:** if you update from `main` or run the `:latest` images, your normal update brings the
+>   RC. Take a platform backup first (Settings → Backup &amp; Restore).
+> - **Testing:** please report anything that looks wrong as an
+>   [issue](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues). The plan and the
+>   discussion are in [#316](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/316).
+> - **What's in it:** [release notes](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/release-notes/).
+> - **From 1.0, two release channels:** `main` and `:latest` are the stable line (1.0.x, fixes only);
+>   `dev` and `:beta` carry the next version's betas. See
+>   [release channels](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/configuration/#release-channels).
 
 ---
 
@@ -215,7 +230,7 @@ docker compose -f docker-compose.ghcr.yml up -d
 Open **https://localhost** (or your server's hostname) and sign in with `admin` / `admin`.
 **Change that password immediately** under Settings → Users.
 
-> **Updating:** `docker compose -f docker-compose.ghcr.yml pull && docker compose -f docker-compose.ghcr.yml up -d`
+> **Updating:** `docker compose -f docker-compose.ghcr.yml pull && docker compose -f docker-compose.ghcr.yml up -d`. This follows the stable channel (`:latest`); add `MTM_TAG=beta` to `.env` for betas of the next version. See [release channels](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/configuration/#release-channels).
 
 ### Option B — build from source
 
@@ -230,7 +245,7 @@ First run builds the frontend and backend, initialises PostgreSQL and InfluxDB, 
 self-signed TLS certificate. Accept the browser warning, or upload a real certificate under
 **Settings → TLS Certificate**.
 
-> **Updating:** `git pull && docker compose up -d --build backend nginx` — migrations run automatically on startup.
+> **Updating:** `git pull && docker compose up -d --build backend nginx`. Migrations run automatically on startup. `main` is the stable channel; `git checkout dev` for betas of the next version. See [release channels](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/configuration/#release-channels).
 
 ### If a device won't connect
 
@@ -369,11 +384,11 @@ Each network service supports multi-device management with conflict detection:
 ## Documentation
 
 Deeper reference material lives at **[the documentation site](https://2gt-media-group-llc.github.io/mikrotik-manager/)**, published per release so it matches the version you are running. The same pages are in [`docs/`](docs/README.md) if you would rather read them here.
-so it moves when behaviour does.
 
 | Document | Covers |
 |---|---|
-| [Configuration](docs/configuration.md) | Environment variables, secret management, key rotation, TLS |
+| [Release notes (1.0)](docs/release-notes.md) | What 1.0 includes, upgrading from a beta, release channels, known issues |
+| [Configuration](docs/configuration.md) | Environment variables, secret management, key rotation, TLS, release channels |
 | [Devices](docs/devices.md) | The device list, device tabs, ports and VLANs, per-device tools |
 | [Clients](docs/clients.md) | Where client data comes from, identification, history, per-port clients |
 | [Topology](docs/topology.md) | How links are discovered, spanning-tree resolution, manual links |
