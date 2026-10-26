@@ -99,8 +99,12 @@ jobs:
               "${{ steps.v.outputs.series }}" latest \
               --title "${{ steps.v.outputs.series }} (${{ steps.v.outputs.full }})"
             mike set-default --push latest
-          else
+          elif echo "${{ steps.v.outputs.full }}" | grep -q beta; then
             mike deploy --push \
               "${{ steps.v.outputs.series }}" \
               --title "${{ steps.v.outputs.series }} beta (${{ steps.v.outputs.full }})"
+          else
+            # dev still on the stable version (right after a release): its docs
+            # are main's, and publishing them would race main's for the series.
+            echo "dev is on ${{ steps.v.outputs.full }}, not a beta: main publishes these docs."
           fi
