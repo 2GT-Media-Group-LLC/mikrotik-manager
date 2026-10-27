@@ -22,6 +22,13 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
   return null;
 }
 
+/**
+ * Said after a save when the address couldn't be placed, instead of quietly
+ * leaving the site or device off the map (#362).
+ */
+export const NOT_ON_MAP =
+  "Saved, but that address couldn't be found on the map (or the lookup didn't answer), so there's no pin. A simpler form, such as street, town and country, usually works.";
+
 /** The tile source used by every map in the app, so attribution stays consistent. */
 export const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const OSM_ATTRIBUTION =

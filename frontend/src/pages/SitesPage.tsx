@@ -9,7 +9,7 @@ import { useSiteStore, type Site } from '../store/siteStore';
 import { useCanWrite, useIsSiteScoped } from '../hooks/useCanWrite';
 import GroupsCard from '../components/sites/GroupsCard';
 import RomonCard from '../components/sites/RomonCard';
-import { geocodeAddress, OSM_TILE_URL, OSM_ATTRIBUTION } from '../utils/geocode';
+import { geocodeAddress, NOT_ON_MAP, OSM_TILE_URL, OSM_ATTRIBUTION } from '../utils/geocode';
 import { escapeHtml } from '../utils/escapeHtml';
 import PollOverridesCard from '../components/common/PollOverridesCard';
 
@@ -81,6 +81,8 @@ export default function SitesPage() {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
+  // A saved site whose address couldn't be placed on the map (#362).
+  const [mapNote, setMapNote] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -124,6 +126,8 @@ export default function SitesPage() {
       let coords: { lat: number; lng: number } | null = null;
       const addressChanged = addr && addr !== (editing?.address ?? '');
       if (mapsEnabled && addressChanged) coords = await geocodeAddress(addr);
+      // Saved either way; say so when the address couldn't be placed (#362).
+      setMapNote(mapsEnabled && addressChanged && !coords ? `${trimmed}: ${NOT_ON_MAP}` : '');
 
       const payload = {
         name: trimmed,
@@ -195,6 +199,13 @@ export default function SitesPage() {
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           <span className="flex-1">{error}</span>
           <button onClick={() => setError('')}><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {mapNote && (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5 text-sm text-amber-800 dark:text-amber-300">
+          <p className="flex-1">{mapNote}</p>
+          <button type="button" onClick={() => setMapNote('')} className="opacity-60 hover:opacity-100 text-xs" aria-label="Dismiss">✕</button>
         </div>
       )}
 

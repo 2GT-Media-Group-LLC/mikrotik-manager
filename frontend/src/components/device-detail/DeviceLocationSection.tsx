@@ -8,7 +8,7 @@ import 'leaflet/dist/leaflet.css';
 import { devicesApi, settingsApi, sitesApi } from '../../services/api';
 import type { Device } from '../../types';
 import { useCanWrite } from '../../hooks/useCanWrite';
-import { geocodeAddress, OSM_TILE_URL, OSM_ATTRIBUTION } from '../../utils/geocode';
+import { geocodeAddress, NOT_ON_MAP, OSM_TILE_URL, OSM_ATTRIBUTION } from '../../utils/geocode';
 import { escapeHtml } from '../../utils/escapeHtml';
 import { Network } from 'lucide-react';
 
@@ -97,6 +97,8 @@ export default function DeviceLocationSection({ device }: Props) {
   const [editing, setEditing] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [saveError, setSaveError] = useState('');
+  // The address saved but couldn't be placed on the map (#362).
+  const [mapNote, setMapNote] = useState('');
   const [form, setForm] = useState<LocationForm>({
     location_address: device.location_address ?? '',
     rack_name: device.rack_name ?? '',
@@ -113,6 +115,7 @@ export default function DeviceLocationSection({ device }: Props) {
   const mutation = useMutation({
     mutationFn: async (f: LocationForm) => {
       setSaveError('');
+      setMapNote('');
       let lat: number | null = device.location_lat ?? null;
       let lng: number | null = device.location_lng ?? null;
 
@@ -128,6 +131,7 @@ export default function DeviceLocationSection({ device }: Props) {
         } else {
           lat = null;
           lng = null;
+          setMapNote(NOT_ON_MAP);
         }
       }
       // Clear coords if address was cleared
@@ -180,6 +184,9 @@ export default function DeviceLocationSection({ device }: Props) {
             </button>
           )}
         </div>
+        {mapNote && !editing && (
+          <p role="status" className="mb-3 text-xs text-amber-700 dark:text-amber-400">{mapNote}</p>
+        )}
 
         {editing ? (
           <div className="space-y-4">
