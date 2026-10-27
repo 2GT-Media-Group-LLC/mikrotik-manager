@@ -1277,7 +1277,7 @@
 
 <h1 id="mikrotik-manager-10">MikroTik Manager 1.0<a class="headerlink" href="#mikrotik-manager-10" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p><strong>Release candidate.</strong> 1.0.0-rc.1 came out on Sunday 25 October 2026; rc.2 to rc.4, with the
+<p><strong>Release candidate.</strong> 1.0.0-rc.1 came out on Sunday 25 October 2026; rc.2 to rc.5, with the
 fixes from testing, followed during the week. Stable 1.0.0 is planned
 for Sunday 1 November if testing turns up nothing serious. Please report anything odd as a
 <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues">GitHub issue</a>.</p>
@@ -1340,8 +1340,8 @@ channel.</p>
 <ul>
 <li>On access points using the legacy wireless driver with RouterOS 6, the security of
   neighbouring networks in AP scans shows as <em>unknown</em>: their scan doesn't report encryption
-  over the API, and RouterOS 6 can't return it any other way. On RouterOS 7, from rc.4,
-  MikroTik Manager reads it from the scan run as a script
+  over the API, and RouterOS 6 can't return a script's output the way RouterOS 7 can. On
+  RouterOS 7, from rc.4, MikroTik Manager reads it from the scan run as a script
   (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/295">#295</a>,
   <a href="../wireless/">Wireless</a>).</li>
 </ul>

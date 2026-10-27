@@ -1404,6 +1404,12 @@ link does not appear twice.</p>
 <p>Neighbours are matched to managed devices <strong>by MAC before IP</strong>, because a MAC is unique across
 the fleet and an address is not. Bidirectional pairs — where each device reports the other —
 are merged into one edge showing both port names.</p>
+<p>The match is also stored with the link for the rest of the app (a client's upstream, firmware
+rollout waves), within the device's site: by address, then by MAC, then by identity, each only
+where exactly one device fits. A core switch managed out of band has no address on its fabric
+ports, so its links are matched by MAC or name (#363). A MAC two devices share, such as a VRRP
+virtual MAC, matches neither.</p>
+<p>Device names wrap onto a second line rather than being cut off, and show in full on hover.</p>
 <p>CDP and MNDP are broadcasts, so a port can hear many neighbours at once: everything in the same
 broadcast domain, not only what's cabled to it. A port with a single such neighbour is drawn as
 a link. A port that hears several draws nothing, because the protocol can't say which of them

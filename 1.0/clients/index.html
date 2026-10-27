@@ -1275,10 +1275,14 @@ usually appears in more than one of these, and they are merged by MAC address.</
 <p>When several devices know a client, it's shown where it's connected: the access point it's
 registered to, or else the switch that sees it on an edge port. Every switch between the client
 and the router learns its MAC, most of them on an uplink, so a sighting on a port facing another
-managed device (an uplink, bond or peer link) comes last (#363). On the client's page,
-<strong>Connection Path</strong> shows that device and its way up: the spanning-tree root port where there is
-one, otherwise a link on a bridge port rather than an out-of-band management port. Names wrap
-in full and link to the device.</p>
+managed device (an uplink, bond or peer link) comes last (#363).</p>
+<p>A sighting from the last day counts for where a client is, even if it has gone quiet: overnight
+a switch forgets an idle PC while the router's ARP table still lists it, and the PC stays on its
+switch port rather than moving to the router. Whether a client is online, and when it was last
+seen, come from all of its sightings: online if any device sees it now.</p>
+<p>On the client's page, <strong>Connection Path</strong> shows that device and its way up: the spanning-tree
+root port where there is one, otherwise a link on a bridge port (or a member of a bonded one)
+rather than an out-of-band management port. Names wrap in full and link to the device.</p>
 <div class="admonition note">
 <p class="admonition-title">This can be switched off</p>
 <p>Client tracking is the heaviest collector on most fleets. <strong>Settings → Polling →
