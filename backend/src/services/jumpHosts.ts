@@ -216,7 +216,7 @@ async function recordHostKeyMismatch(row: JumpHostRow, fp: string): Promise<void
   await query(
     `UPDATE jump_hosts SET seen_host_key_fingerprint = $2, host_key_mismatch_at = NOW() WHERE id = $1`, [row.id, fp]);
   const message = `${label(row)} presented a different SSH host key, so the manager stopped before sending its ` +
-    `login. Devices behind it are offline until an admin checks the new key and trusts it under Settings → Jump hosts.`;
+    `login. Devices behind it are offline until an admin checks the new key and trusts it under Operations → Credentials → Jump hosts.`;
   await query(
     `INSERT INTO events (device_id, event_time, severity, topic, message) VALUES (NULL, NOW(), 'critical', 'manager,security', $1)`,
     [message]).catch(() => {});
@@ -252,7 +252,7 @@ async function checkHostKey(row: JumpHostRow, key: Buffer): Promise<string> {
   throw new JumpHostError(
     `${label(row)} presented SSH host key ${sshFingerprintDisplay(fp)}, not the pinned ` +
     `${sshFingerprintDisplay(row.host_key_fingerprint!)}, so the manager stopped before sending its login. ` +
-    'If the router was reset or its host key regenerated, trust the new key under Settings → Jump hosts.');
+    'If the router was reset or its host key regenerated, trust the new key under Operations → Credentials → Jump hosts.');
 }
 
 function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {

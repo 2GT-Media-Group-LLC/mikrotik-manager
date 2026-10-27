@@ -75,6 +75,8 @@ export interface Device {
    * over SSH; the API is retried and the flag clears once it answers.
    */
   ssh_only?: boolean;
+  /** The SSH jump host it's reached through; null for a direct connection. */
+  jump_host_id?: number | null;
   /** When the API was last tried, and why it didn't work (SSH-only devices). */
   api_checked_at?: string | null;
   api_check_error?: string | null;

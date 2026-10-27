@@ -9,6 +9,7 @@ import { parsePort } from '../../utils/parsePort';
 import { API_SSL_PORT, portFieldError } from '../../utils/apiTls';
 import { isValidDeviceAddress, classifyAddress, addressFieldValue, sameAddress } from '../../utils/deviceAddress';
 import type { Device, DeviceType, IpAddress } from '../../types';
+import JumpHostField from './JumpHostField';
 
 interface Props {
   device: Device;
@@ -64,6 +65,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   const selectedPreset = presetId != null ? presets.find((p) => p.id === presetId) ?? null : null;
   // api-ssl on this port (#257). Null follows the port (TLS on 8729) until
   // the user ticks or unticks it, and is then sent with the save.
+  const [jumpHostId, setJumpHostId] = useState<number | null>(device.jump_host_id ?? null);
   const [apiSslChoice, setApiSslChoice] = useState<boolean | null>(
     typeof device.api_tls === 'boolean' ? device.api_tls : null);
   const apiSsl = apiSslChoice ?? parsePort(form.api_port, 8728) === API_SSL_PORT;
@@ -166,6 +168,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
         notes: form.notes,
       };
       if (apiSslChoice !== null) payload.api_tls = apiSslChoice;
+      if (jumpHostId !== (device.jump_host_id ?? null)) payload.jump_host_id = jumpHostId;
       if (selectedPreset) {
         // The server takes the login (and SSH login, and port) from the preset,
         // and logs in with it before saving.
@@ -307,6 +310,10 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                   )}
                 </div>
               )}
+            </div>
+
+            <div className="col-span-2 empty:hidden">
+              <JumpHostField siteId={device.site_id ?? null} value={jumpHostId} onChange={(v) => setJumpHostId(v ?? null)} />
             </div>
 
             <div className="col-span-2">

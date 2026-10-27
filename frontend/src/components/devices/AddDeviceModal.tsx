@@ -12,6 +12,7 @@ import { API_SSL_PORT, portFieldError } from '../../utils/apiTls';
 import { isValidDeviceAddress, classifyAddress, addressFieldValue } from '../../utils/deviceAddress';
 import { useSitePresets } from '../../hooks/useSitePresets';
 import SiteField, { siteFieldPayload, useDefaultSiteField, type SiteFieldValue } from './SiteField';
+import JumpHostField from './JumpHostField';
 
 interface Props {
   onClose: () => void;
@@ -58,6 +59,8 @@ export default function AddDeviceModal({
 
   // The site it joins, chosen here or the one in view (#306).
   const [site, setSite] = useState<SiteFieldValue>(useDefaultSiteField());
+  // Left unset, the server uses the site's default jump host (if any).
+  const [jumpHostId, setJumpHostId] = useState<number | null | undefined>(undefined);
   // Only presets that can apply in the site the device joins (#228).
   const { presets } = useSitePresets(site.newSite != null ? 'new' : site.siteId);
 
@@ -101,6 +104,7 @@ export default function AddDeviceModal({
       ...(tagIds.length ? { tag_ids: tagIds } : {}),
       ...(sshOnly ? { ssh_only: true } : {}),
       ...siteFieldPayload(site),
+      ...(jumpHostId !== undefined ? { jump_host_id: jumpHostId } : {}),
     };
     if (selectedPreset) {
       return {
@@ -244,7 +248,15 @@ export default function AddDeviceModal({
               )}
             </div>
             <div className="sm:col-span-2">
-              <SiteField value={site} onChange={setSite} />
+              <SiteField value={site} onChange={(v) => { setSite(v); setJumpHostId(undefined); }} />
+            </div>
+            <div className="sm:col-span-2 empty:hidden">
+              <JumpHostField
+                siteId={site.newSite != null ? 'new' : site.siteId}
+                value={jumpHostId}
+                onChange={setJumpHostId}
+                allowSiteDefault
+              />
             </div>
             <div>
               <label className="label">Device Type</label>
