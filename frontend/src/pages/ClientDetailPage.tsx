@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useRememberedRange } from '../hooks/useRememberedRange';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -57,6 +58,7 @@ function deviceIcon(type?: string) {
 // ─── Connectivity Timeline ────────────────────────────────────────────────────
 
 function ConnectivityTimeline({ mac }: { mac: string }) {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<'2h' | '24h' | '7d'>('client-connectivity', '24h', ['2h', '24h', '7d']);
 
   const { data: points = [], isLoading } = useQuery({
@@ -123,7 +125,7 @@ function ConnectivityTimeline({ mac }: { mac: string }) {
             {points.map((p, i) => (
               <div
                 key={i}
-                title={`${format(parseISO(p.time), 'MMM d HH:mm')} — ${p.online ? 'Online' : 'Offline'}`}
+                title={`${formatDateTime(parseISO(p.time), { year: undefined })} — ${p.online ? 'Online' : 'Offline'}`}
                 className={clsx(
                   'flex-1 transition-colors',
                   p.online ? 'bg-green-500 dark:bg-green-600' : 'bg-gray-200 dark:bg-slate-700'
@@ -132,7 +134,7 @@ function ConnectivityTimeline({ mac }: { mac: string }) {
             ))}
           </div>
           <div className="flex justify-between text-[10px] text-gray-400 dark:text-slate-500">
-            <span>{points.length > 0 ? format(parseISO(points[0].time), range === '7d' ? 'MMM d' : 'HH:mm') : ''}</span>
+            <span>{points.length > 0 ? range === '7d' ? format(parseISO(points[0].time), 'MMM d') : formatTime(parseISO(points[0].time)) : ''}</span>
             <span>now</span>
           </div>
           <div className="flex items-center gap-3 text-[10px] text-gray-500 dark:text-slate-400">
@@ -649,6 +651,7 @@ function ClientDetailsCard({ client, canWrite }: { client: ClientDetail; canWrit
 // ─── Traffic Graph ────────────────────────────────────────────────────────────
 
 function TrafficCard({ mac }: { mac: string }) {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<'2h' | '24h' | '7d'>('client-traffic', '24h', ['2h', '24h', '7d']);
 
   const { data: points = [], isLoading } = useQuery({
@@ -667,7 +670,7 @@ function TrafficCard({ mac }: { mac: string }) {
     time: p.time,
     Upload: p.tx_bytes,
     Download: p.rx_bytes,
-    label: format(parseISO(p.time), range === '7d' ? 'MMM d HH:mm' : 'HH:mm'),
+    label: range === '7d' ? formatDateTime(parseISO(p.time), { year: undefined }) : formatTime(parseISO(p.time)),
   }));
 
   return (
@@ -759,6 +762,7 @@ const APP_COLORS = [
 ];
 
 function AppTrafficCard({ mac }: { mac: string }) {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<'2h' | '24h' | '7d'>('client-apps', '24h', ['2h', '24h', '7d']);
 
   const { data, isLoading } = useQuery({
@@ -790,7 +794,7 @@ function AppTrafficCard({ mac }: { mac: string }) {
     time: p.time,
     Upload: p.upload,
     Download: p.download,
-    label: format(parseISO(p.time), range === '7d' ? 'MMM d HH:mm' : 'HH:mm'),
+    label: range === '7d' ? formatDateTime(parseISO(p.time), { year: undefined }) : formatTime(parseISO(p.time)),
   }));
 
   const totalAppBytes = apps.reduce((s, a) => s + a.bytes, 0);
@@ -892,6 +896,7 @@ function qualityColor(dbm: number): string {
 }
 
 function SignalCard({ mac }: { mac: string }) {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<'2h' | '24h' | '7d'>('client-signal', '24h', ['2h', '24h', '7d']);
 
   const { data: raw = [], isLoading } = useQuery({
@@ -912,7 +917,7 @@ function SignalCard({ mac }: { mac: string }) {
   const BASELINE = -100;
   const chartData = raw.map((p: SignalPoint) => ({
     ...p,
-    label: format(parseISO(p.time), range === '7d' ? 'MMM d HH:mm' : 'HH:mm'),
+    label: range === '7d' ? formatDateTime(parseISO(p.time), { year: undefined }) : formatTime(parseISO(p.time)),
     bar_value: p.signal_strength - BASELINE,   // always positive
   }));
 

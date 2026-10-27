@@ -1,8 +1,8 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Router, Wifi, AlertTriangle, X } from 'lucide-react';
 import { searchApi } from '../../services/api';
-import { format } from 'date-fns';
 import clsx from 'clsx';
 
 type SearchDevice = {
@@ -27,6 +27,7 @@ const SEVERITY_ICON_CLS: Record<string, string> = {
 };
 
 export default function GlobalSearch() {
+  const { formatDateTime } = useDateTimeFormat();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -277,7 +278,7 @@ export default function GlobalSearch() {
                           <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{ev.message}</div>
                           <div className="text-xs text-gray-400 dark:text-slate-500">
                             {ev.device_name ? `${ev.device_name} · ` : ''}
-                            {format(new Date(ev.event_time), 'MMM d, HH:mm')}
+                            {formatDateTime(new Date(ev.event_time), { year: undefined })}
                           </div>
                         </div>
                         <span className={clsx(

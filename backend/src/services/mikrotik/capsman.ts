@@ -57,13 +57,13 @@ export function chooseWifiPackage(wifiCount: number | null, wirelessCount: numbe
 
 /** Does this device have radios, whatever type it was added as? */
 export function hasRadios(d: { device_type?: string; wifi_role?: string | null }): boolean {
-  return d.device_type === 'wireless_ap' || RADIO_ROLES.includes((d.wifi_role ?? 'none') as WifiRole);
+  return d.device_type === 'wireless_ap' || d.device_type === 'wisp' || RADIO_ROLES.includes((d.wifi_role ?? 'none') as WifiRole);
 }
 
 /** SQL: a device the wireless pages cover. `alias` is the devices table alias, if any. */
 export function wirelessDeviceSql(alias = ''): string {
   const a = alias ? `${alias}.` : '';
-  return `(${a}device_type = 'wireless_ap' OR ${a}wifi_role IN (${WIRELESS_ROLES.map((r) => `'${r}'`).join(',')}))`;
+  return `(${a}device_type IN ('wireless_ap','wisp') OR ${a}wifi_role IN (${WIRELESS_ROLES.map((r) => `'${r}'`).join(',')}))`;
 }
 
 export interface CapsmanStatus {

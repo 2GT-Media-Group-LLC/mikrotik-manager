@@ -5,6 +5,11 @@ what each tab of a device does, and the parts that write to hardware.
 
 ## Adding devices
 
+Use **Wireless Systems** for outdoor PTP/PtMP bridges, antennas and CPE. It has a
+dedicated device filter and an **Antenna aligner** tab for watching both ends of
+a link. Existing devices can be reclassified in Edit Device. See the
+[antenna aligner guide](antenna-aligner.md).
+
 **Devices → Discover** finds MikroTik hardware your managed devices can already see, over
 LLDP, CDP and MNDP. Each discovered device offers one button, **Adopt Device**, and the
 platform decides what that means — a factory-default unit is configured first, an already
@@ -154,7 +159,7 @@ closed browser tab and reports progress and failures per device.
 |---|---|---|
 | `ip_address` | Required | The device's IP address or hostname |
 | `name` | Optional | What to call it. Blank uses the address |
-| `type` | Optional | `router`, `switch`, `ap` or `other`. Blank means router |
+| `type` | Optional | `router`, `switch`, `ap`, `wisp` or `other`. Blank means router |
 | `preset` | Login | The name of a saved [credential preset](#device-credentials) |
 | `username`, `password` | Login | The RouterOS login, if not using a preset |
 | `port` | Optional | The API port. Blank tries API-SSL (8729), then 8728 |

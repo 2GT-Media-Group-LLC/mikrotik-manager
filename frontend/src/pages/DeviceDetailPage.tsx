@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -20,6 +21,8 @@ import ConfigHistoryTab from '../components/device-detail/ConfigHistoryTab';
 import HardwareTab from '../components/device-detail/HardwareTab';
 import ToolsTab from '../components/device-detail/ToolsTab';
 import RadiosTab from '../components/device-detail/RadiosTab';
+import AntennaAlignerTab from '../components/device-detail/AntennaAlignerTab';
+import { canAlignAntenna } from '../utils/antennaAlignment';
 import LteTab from '../components/device-detail/LteTab';
 import ConnectionsTab from '../components/device-detail/ConnectionsTab';
 import QueuesTab from '../components/device-detail/QueuesTab';
@@ -33,7 +36,7 @@ import { DeviceIdentityBanner } from '../components/security/IdentityChange';
 import { isWirelessDevice } from '../utils/wireless';
 import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
 
-type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'lte';
+type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'alignment' | 'lte';
 
 function formatUptime(raw: string): string {
   if (!raw) return '—';
@@ -56,12 +59,13 @@ function formatUptime(raw: string): string {
 }
 
 export default function DeviceDetailPage() {
+  const { formatDateTime } = useDateTimeFormat();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [searchParams] = useSearchParams();
-  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios', 'lte'];
+  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios', 'alignment', 'lte'];
   const requestedTab = searchParams.get('tab') as TabKey | null;
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
@@ -183,6 +187,7 @@ export default function DeviceDetailPage() {
     { key: 'config-history', label: 'Config History' },
     { key: 'hardware', label: 'Hardware' },
     ...(isWirelessAP ? [{ key: 'radios' as TabKey, label: 'Radios' }] : []),
+    ...(canAlignAntenna(device) ? [{ key: 'alignment' as TabKey, label: 'Antenna aligner' }] : []),
     // Cellular is a property of the hardware, not the device type: a modem turns
     // up on routers, CPE and travel gear alike, so the flag is set from the
     // interface list rather than inferred (discussion #85).
@@ -386,7 +391,7 @@ export default function DeviceDetailPage() {
               {/* Time since it last booted, not availability (#326). */}
               {device.boot_at && (
                 <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5" title="Worked out from the device's uptime counter">
-                  since {new Date(device.boot_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                  since {formatDateTime(device.boot_at)}
                 </div>
               )}
             </div>
@@ -428,7 +433,7 @@ export default function DeviceDetailPage() {
                   <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Outages</div>
                 </div>
                 {/* Reboots, seen from the uptime counter: one quicker than a poll never shows as an outage (#326). */}
-                <div title={device.last_reboot_at ? `Last: ${new Date(device.last_reboot_at).toLocaleString()}` : 'Counted from the device’s uptime, including reboots too quick to show as outages'}>
+                <div title={device.last_reboot_at ? `Last: ${formatDateTime(device.last_reboot_at)}` : 'Counted from the device’s uptime, including reboots too quick to show as outages'}>
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">{device.reboots_30d ?? 0}</div>
                   <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Reboots</div>
                 </div>
@@ -493,10 +498,10 @@ export default function DeviceDetailPage() {
                 ['Serial Number', device.serial_number || '—'],
                 ['RouterOS Version', device.ros_version || '—'],
                 ['Firmware', device.firmware_version || '—'],
-                ['Type', device.device_type],
+                ['Type', device.device_type === 'wisp' ? 'WS' : device.device_type],
                 ['API Port', device.ssh_only ? 'Not enabled yet' : String(device.api_port)],
                 ['Added', new Date(device.created_at).toLocaleDateString()],
-                ['Last Seen', device.last_seen ? new Date(device.last_seen).toLocaleString() : '—'],
+                ['Last Seen', device.last_seen ? formatDateTime(new Date(device.last_seen), { month: 'numeric', second: '2-digit' }) : '—'],
               ] as [string, string][]).map(([k, v]) => (
                 <div key={k} className="flex justify-between py-1 border-b border-gray-100 dark:border-slate-700">
                   <span className="text-gray-500 dark:text-slate-400">{k}</span>
@@ -547,6 +552,7 @@ export default function DeviceDetailPage() {
       {shownTab === 'config-history' && <ConfigHistoryTab deviceId={deviceId} />}
       {shownTab === 'hardware' && <HardwareTab deviceId={deviceId} />}
       {shownTab === 'radios' && <RadiosTab deviceId={deviceId} deviceStatus={device.status} />}
+      {shownTab === 'alignment' && <AntennaAlignerTab key={deviceId} device={device} />}
       {shownTab === 'lte' && <LteTab deviceId={deviceId} />}
       {shownTab === 'tools' && <ToolsTab deviceId={deviceId} />}
 

@@ -148,7 +148,7 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
                 {[
                   ['ip_address', 'Required', 'The device\'s IP address or hostname.'],
                   ['name', 'Optional', 'What to call it here. Blank uses the address.'],
-                  ['type', 'Optional', 'router, switch, ap or other. Blank means router.'],
+                  ['type', 'Optional', 'router, switch, ap, wisp or other. Blank means router.'],
                   ['preset', 'Login', presets.length
                     ? `A saved credential preset, by name (yours: ${presets.map((x) => x.name).join(', ')}).`
                     : 'A saved credential preset, by name. You have none yet; use username and password.'],

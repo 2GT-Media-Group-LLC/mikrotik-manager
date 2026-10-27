@@ -8,8 +8,8 @@ import { networkServicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import clsx from 'clsx';
 
-type Scope = 'all' | 'routers' | 'switches' | 'aps';
-type Kind = 'router' | 'switch' | 'wireless_ap' | 'other';
+type Scope = 'all' | 'routers' | 'switches' | 'aps' | 'wisp';
+type Kind = 'router' | 'switch' | 'wireless_ap' | 'wisp' | 'other';
 
 interface LldpRow {
   id: number; name: string; ip_address: string;
@@ -58,17 +58,18 @@ const SCOPES: { key: Scope; label: string }[] = [
   { key: 'routers',  label: 'Routers' },
   { key: 'switches', label: 'Switches' },
   { key: 'aps',      label: 'Wireless APs' },
+  { key: 'wisp',     label: 'Wireless Systems' },
 ];
 
 /** LLDP and SNMP both cover every RouterOS device, access points included. */
 function scopeNoun(scope: Scope): string {
-  return scope === 'routers' ? 'routers' : scope === 'switches' ? 'switches' : scope === 'aps' ? 'wireless APs' : 'devices';
+  return scope === 'routers' ? 'routers' : scope === 'switches' ? 'switches' : scope === 'aps' ? 'wireless APs' : scope === 'wisp' ? 'wireless systems' : 'devices';
 }
 
-const SCOPE_KIND: Record<Exclude<Scope, 'all'>, Kind> = { routers: 'router', switches: 'switch', aps: 'wireless_ap' };
+const SCOPE_KIND: Record<Exclude<Scope, 'all'>, Kind> = { routers: 'router', switches: 'switch', aps: 'wireless_ap', wisp: 'wisp' };
 
 function toKind(t: string): Kind {
-  return t === 'router' || t === 'switch' || t === 'wireless_ap' ? t : 'other';
+  return t === 'router' || t === 'switch' || t === 'wireless_ap' || t === 'wisp' ? t : 'other';
 }
 
 function KindPill({ kind }: { kind: Kind }) {
@@ -76,6 +77,7 @@ function KindPill({ kind }: { kind: Kind }) {
     router:      { cls: 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300', icon: <RouterIcon className="w-3 h-3" />, label: 'Router' },
     switch:      { cls: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300', icon: <Layers className="w-3 h-3" />, label: 'Switch' },
     wireless_ap: { cls: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300', icon: <Wifi className="w-3 h-3" />, label: 'AP' },
+    wisp:        { cls: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300', icon: <Radio className="w-3 h-3" />, label: 'WS' },
     other:       { cls: 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300', icon: <Box className="w-3 h-3" />, label: 'Other' },
   }[kind];
   return (
@@ -133,7 +135,7 @@ export default function NetworkServicesDiscoveryPage() {
   const lldpFetching = lldpQuery.isFetching;
   const refetchLldp  = () => { lldpQuery.refetch(); };
 
-  const kindOrder: Kind[] = ['router', 'switch', 'wireless_ap', 'other'];
+  const kindOrder: Kind[] = ['router', 'switch', 'wireless_ap', 'wisp', 'other'];
   const lldpAll: LldpRow[] = (lldpQuery.data ?? [])
     .map(r => ({ ...r, kind: toKind(r.device_type) }))
     .sort((a, b) => kindOrder.indexOf(a.kind) - kindOrder.indexOf(b.kind) || a.name.localeCompare(b.name));

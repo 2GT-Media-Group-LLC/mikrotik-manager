@@ -1,9 +1,10 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { firmwareApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import RolloutPanel from '../components/firmware/RolloutPanel';
@@ -14,6 +15,7 @@ const PAGE = 25;
 
 /** Every firmware rollout, a page at a time (#202). */
 export default function FirmwareHistoryPage() {
+  const { formatDateTime } = useDateTimeFormat();
   const canWrite = useCanWrite();
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<number | null>(null);
@@ -55,7 +57,7 @@ export default function FirmwareHistoryPage() {
                       {r.success_count}/{r.device_count} succeeded{(r.failed_count ?? 0) > 0 ? ` · ${r.failed_count} failed` : ''}
                     </span>
                     <span className="ml-auto text-[11px] text-gray-400 dark:text-slate-500 flex-shrink-0"
-                      title={format(new Date(r.created_at), 'PPpp')}>
+                      title={formatDateTime(new Date(r.created_at), { second: '2-digit' })}>
                       {formatDistanceToNow(new Date(r.created_at), { addSuffix: true })}
                     </span>
                   </button>

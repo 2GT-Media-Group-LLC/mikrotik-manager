@@ -10,6 +10,7 @@ import RfHealth from '../components/wireless/RfHealth';
 import RogueApsCard from '../components/wireless/RogueApsCard';
 import CapsmanPanel from '../components/wireless/CapsmanPanel';
 import clsx from 'clsx';
+import DeviceTypePill from '../components/devices/DeviceTypePill';
 
 function timeAgo(ts: string | undefined): string {
   if (!ts) return 'Never';
@@ -51,7 +52,7 @@ export default function WirelessPage() {
   const totalClients = aps.reduce((s, a) => s + (Number(a.client_count) || 0), 0);
 
   const kpis = [
-    { label: 'Total APs',       value: aps.length,    icon: Wifi,        color: 'text-blue-600 dark:text-blue-400',   bg: 'bg-blue-50 dark:bg-blue-900/20' },
+    { label: 'Wireless Devices', value: aps.length,    icon: Wifi,        color: 'text-blue-600 dark:text-blue-400',   bg: 'bg-blue-50 dark:bg-blue-900/20' },
     { label: 'Online',          value: online,         icon: CheckCircle, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/20' },
     { label: 'Offline',         value: offline,        icon: XCircle,     color: 'text-red-600 dark:text-red-400',     bg: 'bg-red-50 dark:bg-red-900/20' },
     { label: 'Unknown',         value: unknown,        icon: HelpCircle,  color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-50 dark:bg-yellow-900/20' },
@@ -61,7 +62,7 @@ export default function WirelessPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400">
-        <RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading wireless APs…
+        <RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading wireless devices…
       </div>
     );
   }
@@ -73,7 +74,7 @@ export default function WirelessPage() {
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Wireless</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
-            Overview of all managed wireless access points
+            Overview of managed access points, wireless systems and CAPsMAN controllers
           </p>
         </div>
         <button
@@ -114,12 +115,12 @@ export default function WirelessPage() {
       {/* AP table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-200 dark:border-slate-700">
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Access Points</h2>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Wireless Devices</h2>
         </div>
 
         {aps.length === 0 ? (
           <div className="p-10 text-center text-gray-400 dark:text-slate-500 text-sm">
-            No wireless APs found — add a device with type <strong>Wireless AP</strong> in Devices.
+            No wireless devices found — add a <strong>Wireless AP</strong> or <strong>Wireless Systems</strong> device in Devices.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -148,6 +149,9 @@ export default function WirelessPage() {
                       >
                         {ap.name}
                       </Link>
+                      <span className="ml-2"><DeviceTypePill type={ap.device_type} /></span>
+                      {ap.device_type === 'wisp' && <Link to={`/devices/${ap.id}?tab=alignment`}
+                        className="block mt-1 text-xs text-blue-600 dark:text-blue-400 hover:underline">Antenna aligner</Link>}
                       {ap.rack_name && (
                         <div className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
                           {ap.rack_name}{ap.rack_slot ? ` / ${ap.rack_slot}` : ''}

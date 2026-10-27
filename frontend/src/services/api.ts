@@ -1,6 +1,8 @@
 import axios, { AxiosError } from 'axios';
 import { useAuthStore } from '../store/authStore';
 import { useSiteStore } from '../store/siteStore';
+import type { AlignmentSnapshot } from '../types/antennaAlignment';
+import type { TimeFormatPreference, TimeFormatPreferences } from '../types/timeFormat';
 import type {
   Device,
   Interface,
@@ -180,6 +182,9 @@ export const authApi = {
   totpStatus: () =>
     api.get<{ totp_enabled: boolean }>('/auth/totp/status'),
   me: () => api.get('/auth/me'),
+  timeFormat: () => api.get<TimeFormatPreferences>('/auth/time-format'),
+  setTimeFormat: (preference: TimeFormatPreference) =>
+    api.put<TimeFormatPreferences>('/auth/time-format', { preference }),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.put<{ message: string; token?: string; user?: import('../types').User }>('/auth/password', { currentPassword, newPassword }),
   /** Public: whether the login page should still show the default credentials. */
@@ -1954,6 +1959,8 @@ export interface CapsmanController {
 }
 
 export const wirelessApi = {
+  alignment: (deviceId: number, signal?: AbortSignal) =>
+    api.get<AlignmentSnapshot>(`/wireless/${deviceId}/alignment`, { signal, timeout: 20_000 }),
   // Section overview
   list: () => api.get('/wireless'),
   // CAPsMAN controllers with the APs they provision (read-only)

@@ -13,6 +13,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Traffic analytics](traffic.md) | The NetFlow collector, top talkers, application breakdown, retention |
 | [Firewall logs](firewall-events.md) | Structured RouterOS firewall events and per-rule monitoring |
 | [Wireless](wireless.md) | Radios and SSIDs, RF health, signal bands, rogue APs, guest WiFi |
+| [Antenna aligner](antenna-aligner.md) | Wireless Systems, live signal from both ends of a PTP link and alignment tone |
 | [Network services](network-services.md) | DHCP, DNS, NTP, WireGuard, logging, discovery and SNMP |
 | [Adopting devices](adoption.md) | Adding configured devices, and configuring factory-default ones so they can be managed |
 | [Sites](sites.md) | Grouping devices into sites, switching between them, and what each site scopes |

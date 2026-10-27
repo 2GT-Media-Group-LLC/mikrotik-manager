@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useEffect, useMemo, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react';
 import { usesApiTls } from '../utils/apiTls';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -108,6 +109,7 @@ const LOGIN_TITLE: Record<LoginKind, string> = {
 };
 
 export default function DevicesPage() {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
@@ -161,11 +163,11 @@ export default function DevicesPage() {
     dir: 'desc',
   });
   const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline' | 'updates'>('all');
-  // Type filter lives in the URL (?type=AP|SW|RTR) so the sidebar and legacy
+  // Type filter lives in the URL (?type=AP|WISP|SW|RTR) so the sidebar and legacy
   // /routers and /switches routes can deep-link to a pre-filtered view.
   const [searchParams, setSearchParams] = useSearchParams();
   const rawType = searchParams.get('type');
-  const typeFilter = rawType === 'AP' || rawType === 'SW' || rawType === 'RTR' ? rawType : null;
+  const typeFilter = rawType === 'AP' || rawType === 'SW' || rawType === 'RTR' || rawType === 'WISP' ? rawType : null;
   const setTypeFilter = (t: string | null) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
@@ -279,6 +281,7 @@ export default function DevicesPage() {
       if (statusFilter === 'offline' && d.status !== 'offline') return false;
       if (statusFilter === 'updates' && !d.firmware_update_available && !d.routerboard_upgrade_available) return false;
       if (typeFilter === 'AP' && d.device_type !== 'wireless_ap') return false;
+      if (typeFilter === 'WISP' && d.device_type !== 'wisp') return false;
       if (typeFilter === 'SW' && d.device_type !== 'switch') return false;
       if (typeFilter === 'RTR' && d.device_type !== 'router') return false;
       if (tagFilter != null && !d.tags?.some(t => t.id === tagFilter)) return false;
@@ -473,8 +476,8 @@ export default function DevicesPage() {
           );
         })}
         <div className="w-px h-[18px] mx-1" style={{ background: 'var(--line)' }} />
-        {(['AP', 'SW', 'RTR'] as const).map(t => {
-          const colors: Record<string, string> = { AP: 'var(--info)', SW: 'var(--accent)', RTR: 'var(--violet)' };
+        {(['AP', 'WISP', 'SW', 'RTR'] as const).map(t => {
+          const colors: Record<string, string> = { AP: 'var(--info)', WISP: 'var(--warn)', SW: 'var(--accent)', RTR: 'var(--violet)' };
           return (
             <button
               key={t}
@@ -488,7 +491,7 @@ export default function DevicesPage() {
                 border: '1px solid var(--line)',
               }}
             >
-              {t}
+              {t === 'WISP' ? 'WS' : t}
             </button>
           );
         })}
@@ -725,7 +728,7 @@ export default function DevicesPage() {
                           <>
                         <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
                           {device.last_seen
-                            ? new Date(device.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            ? formatTime(new Date(device.last_seen), { hour: '2-digit', minute: '2-digit' })
                             : '—'}
                         </span>
                           </>
@@ -942,7 +945,7 @@ export default function DevicesPage() {
                     </td>
                     <td className="px-4 py-[11px]">
                       <span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>
-                        {new Date(d.discovered_at).toLocaleString()}
+                        {formatDateTime(new Date(d.discovered_at), { month: 'numeric', second: '2-digit' })}
                       </span>
                     </td>
                     <td className="px-4 py-[11px]">

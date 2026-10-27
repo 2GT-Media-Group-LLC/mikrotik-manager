@@ -14,8 +14,10 @@ import { settleWithConcurrency, FLEET_ACTION_CONCURRENCY } from '../utils/concur
 import { aggregateAPScanRows, mergeScanRows } from '../utils/apScan';
 import { analyzeSpectrum, summarize, BAND_RANGES, parseChannelSpec } from '../utils/rfSpectrum';
 import { fluxString } from '@influxdata/influxdb-client';
+import antennaAlignmentRoutes from './antennaAlignment';
 
 const router = Router();
+router.use(antennaAlignmentRoutes);
 router.use(requireAuth);
 // A site-scoped account only reaches devices in its own sites, with its role there (P1-7).
 router.use(deviceSiteAccess(deviceIdParam));

@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import NumberSetting from '../components/settings/NumberSetting';
 import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -8,6 +9,7 @@ import {
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
 import { docsUrl } from '../version';
 import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
+import TimeFormatSetting from '../components/settings/TimeFormatSetting';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
 import PollerHealthCard from '../components/system/PollerHealthCard';
 import { useAuthStore } from '../store/authStore';
@@ -55,6 +57,7 @@ interface EditUserState {
 }
 
 export default function SettingsPage() {
+  const { formatDateTime, formatTime, timeFormat } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const { theme, setTheme } = useThemeStore();
@@ -82,7 +85,7 @@ export default function SettingsPage() {
   }, []);
 
   const siteScoped = useIsSiteScoped();
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys' | 'platformbackup'>(siteScoped ? 'security' : 'general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys' | 'platformbackup'>('general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -429,8 +432,8 @@ export default function SettingsPage() {
 
   // Tabs are grouped by audience: platform administration, the signed-in
   // user's own account, and fleet-facing operational configuration.
-  // An account limited to particular sites only manages its own password here:
-  // everything else on this page is fleet-wide (P1-7).
+  // Site-scoped accounts can manage their own time format and password here.
+  // Fleet-wide controls remain hidden from those accounts (P1-7).
   const allTabGroups = [
     {
       label: 'Platform',
@@ -476,7 +479,10 @@ export default function SettingsPage() {
   const passwordLogin = loginHints?.password_login !== false;
   const visibleGroups = passwordLogin ? allTabGroups : allTabGroups.filter((g) => g.label !== 'My Account');
   const tabGroups = siteScoped
-    ? visibleGroups.filter((g) => g.label === 'My Account')
+    ? [{ label: 'My Account', tabs: [
+        { key: 'general' as const, label: 'General', icon: Settings },
+        ...(passwordLogin ? [{ key: 'security' as const, label: 'My Password', icon: Key }] : []),
+      ] }]
     : visibleGroups;
 
   return (
@@ -534,12 +540,15 @@ export default function SettingsPage() {
         <div className="flex-1 min-w-0 w-full space-y-4">
 
       {/* ── General ── */}
-      {activeTab === 'general' && (
+      {activeTab === 'general' && (siteScoped ? (
+        <div className="max-w-2xl"><TimeFormatSetting /></div>
+      ) : (
         // Two flowing columns on wide screens. A single 512px column of eight
         // cards left most of a monitor empty and made this the longest scroll in
         // the app. Columns rather than a grid, so a short card such as
         // Appearance does not leave a hole the height of its taller neighbour.
         <div className="max-w-6xl xl:columns-2 xl:gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+          <TimeFormatSetting />
           {isAdmin && <EncryptionKeyCard />}
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Appearance</h3>
@@ -941,9 +950,7 @@ export default function SettingsPage() {
               // obvious immediately, rather than at 2am three days later.
               let currentTimeInAppTz = '';
               try {
-                currentTimeInAppTz = new Intl.DateTimeFormat(undefined, {
-                  timeZone: appTimezone, hour: '2-digit', minute: '2-digit', hour12: false,
-                }).format(new Date());
+                currentTimeInAppTz = formatTime(new Date(), { timeZone: appTimezone });
               } catch { currentTimeInAppTz = 'unknown zone'; }
               const apply = (next: typeof sched) =>
                 updateSettingsMutation.mutate({ backup_schedule_cron: scheduleToCron(next) });
@@ -1063,7 +1070,7 @@ export default function SettingsPage() {
 
                   <p className={clsx('text-xs', enabled ? 'text-gray-500 dark:text-slate-400' : 'text-gray-400 dark:text-slate-600')}>
                     {enabled
-                      ? <>Runs <span className="font-medium text-gray-700 dark:text-slate-300">{describeBackupSchedule(sched).toLowerCase()}</span>{' '}
+                      ? <>Runs <span className="font-medium text-gray-700 dark:text-slate-300">{describeBackupSchedule(sched, timeFormat).toLowerCase()}</span>{' '}
                           in <span className="font-medium text-gray-700 dark:text-slate-300">{appTimezone}</span>
                           {' '}(currently {currentTimeInAppTz}).</>
                       : 'Enable to choose a backup schedule.'}
@@ -1078,7 +1085,7 @@ export default function SettingsPage() {
             })()}
           </div>
         </div>
-      )}
+      ))}
 
       {/* ── Users ── */}
       {activeTab === 'darksite' && (
@@ -1988,7 +1995,7 @@ export default function SettingsPage() {
                     {alertHistory.map((h) => (
                       <tr key={h.id} className="border-b border-gray-50 dark:border-slate-800">
                         <td className="py-2 pr-3 text-gray-400 whitespace-nowrap">
-                          {new Date(h.sent_at).toLocaleString()}
+                          {formatDateTime(new Date(h.sent_at), { month: 'numeric', second: '2-digit' })}
                         </td>
                         <td className="py-2 pr-3 font-mono text-gray-600 dark:text-slate-300 whitespace-nowrap">
                           {h.event_type}
@@ -2309,7 +2316,7 @@ export default function SettingsPage() {
                   {(auditData?.rows ?? []).map((row) => (
                     <tr key={row.id} className="border-b border-gray-100 dark:border-slate-700/50">
                       <td className="py-2 pr-4 font-mono text-xs text-gray-400 whitespace-nowrap">
-                        {new Date(row.created_at).toLocaleString()}
+                        {formatDateTime(new Date(row.created_at), { month: 'numeric', second: '2-digit' })}
                       </td>
                       <td className="py-2 pr-4 font-medium">{row.username ?? '—'}</td>
                       <td className="py-2 pr-4 font-mono text-xs">

@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useRememberedRange } from '../../hooks/useRememberedRange';
 import { useQuery } from '@tanstack/react-query';
@@ -24,17 +25,6 @@ function formatBps(val: number): string {
   if (val >= 1e6) return `${(val / 1e6).toFixed(2)} MB/s`;
   if (val >= 1e3) return `${(val / 1e3).toFixed(1)} KB/s`;
   return `${Math.round(val)} B/s`;
-}
-
-function formatTime(iso: string, compact: boolean): string {
-  const d = new Date(iso);
-  if (compact) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  return d.toLocaleString([], {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
 }
 
 const TRAFFIC_RANGES = ['1h', '3h', '6h', '12h', '24h'] as const;
@@ -69,6 +59,7 @@ function RangeButtons({
 }
 
 export default function GraphsTab({ deviceId }: Props) {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const [trafficIface, setTrafficIface] = useState('');
   const [trafficRange, setTrafficRange] = useRememberedRange<string>('device-traffic', '1h');
   const [resourceRange, setResourceRange] = useRememberedRange<string>('device-resources', '24h');
@@ -97,7 +88,7 @@ export default function GraphsTab({ deviceId }: Props) {
   const resourceCompact = resourceRange === '6h' || resourceRange === '12h' || resourceRange === '24h';
 
   const trafficData = (rawTraffic as TrafficPoint[]).map((p) => ({
-    time: formatTime(p.time, compact),
+    time: compact ? formatTime(p.time) : formatDateTime(p.time, { year: undefined }),
     rx: Math.round(p.rx),
     tx: Math.round(p.tx),
   }));
@@ -108,7 +99,7 @@ export default function GraphsTab({ deviceId }: Props) {
         ? Math.round(((p.memory_used || 0) / p.memory_total) * 100)
         : 0;
     return {
-      time: formatTime(p.time, resourceCompact),
+      time: resourceCompact ? formatTime(p.time) : formatDateTime(p.time, { year: undefined }),
       cpu: Math.round(p.cpu_load || 0),
       mem: memPct,
     };

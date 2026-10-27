@@ -218,7 +218,7 @@ export class DeviceAdoptionService {
     // the read-back is lost (outside review C9).
     let temp: string | null = null;
     let learnedIp: string | null = null;
-    let deviceType: 'router' | 'switch' | 'wireless_ap' | undefined;
+    let deviceType: ReturnType<typeof detectDeviceType> | undefined;
 
     try {
       client = await this.connect(jump);

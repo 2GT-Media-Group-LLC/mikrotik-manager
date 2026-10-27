@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   HardDrive, Download, RotateCcw, Trash2, Plus, Pencil, Check, X, RefreshCw, AlertTriangle, CheckCircle2,
@@ -388,6 +389,7 @@ function CompareView({ result, mode }: { result: PlatformBackupCompare; mode: 'c
 }
 
 function RestoreDialog({ source, appVersion, onClose, onStarted }: { source: RestoreSource; appVersion: string; onClose: () => void; onStarted: () => void }) {
+  const { formatDateTime } = useDateTimeFormat();
   const [pass, setPass] = useState('');
   const [mode, setMode] = useState<'config' | 'full'>(source.header.contents === 'config+database' ? 'full' : 'config');
   const [checked, setChecked] = useState(false);
@@ -411,7 +413,7 @@ function RestoreDialog({ source, appVersion, onClose, onStarted }: { source: Res
         <div className="p-5 space-y-4 text-sm">
           <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
             <dt className="text-gray-500">Backup</dt><dd className="font-mono text-xs break-all">{source.label}</dd>
-            <dt className="text-gray-500">Made</dt><dd>{new Date(source.header.created_at).toLocaleString()} by MikroTik Manager {source.header.app_version}</dd>
+            <dt className="text-gray-500">Made</dt><dd>{formatDateTime(source.header.created_at)} by MikroTik Manager {source.header.app_version}</dd>
             <dt className="text-gray-500">Holds</dt><dd>{CONTENTS_LABEL[source.header.contents]}</dd>
           </dl>
           <div><label className="label">Passphrase</label><PassphraseInput value={pass} autoFocus onChange={(v) => { setPass(v); setChecked(false); }} /></div>
@@ -504,6 +506,7 @@ function RestoreProgress({ initial }: { initial: PlatformRestoreState }) {
 // ─── The tab ────────────────────────────────────────────────────────────────
 
 export default function PlatformBackupSettings() {
+  const { formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ['platform-backup'],
@@ -580,7 +583,7 @@ export default function PlatformBackupSettings() {
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
               {data.backups.map((b) => (
                 <tr key={b.id}>
-                  <td className="px-3 py-2" title={b.file_name}>{new Date(b.created_at).toLocaleString()}<div className="text-xs text-gray-400">{b.app_version}{b.created_by ? ` · ${b.created_by}` : ''}</div></td>
+                  <td className="px-3 py-2" title={b.file_name}>{formatDateTime(b.created_at)}<div className="text-xs text-gray-400">{b.app_version}{b.created_by ? ` · ${b.created_by}` : ''}</div></td>
                   <td className="px-3 py-2">{CONTENTS_LABEL[b.contents]}</td>
                   <td className="px-3 py-2 capitalize">{b.trigger.replace('-', ' ')}</td>
                   <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{mb(b.size_bytes)}</td>

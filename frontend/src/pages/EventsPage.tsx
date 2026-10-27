@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -5,7 +6,6 @@ import { Bell, Search, Trash2, AlertCircle, Info, AlertTriangle } from 'lucide-r
 import { eventsApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useSocket } from '../hooks/useSocket';
-import { format } from 'date-fns';
 import type { EventSeverity } from '../types';
 import clsx from 'clsx';
 import DevicePicker from '../components/common/DevicePicker';
@@ -25,6 +25,7 @@ const severityColor = (severity: EventSeverity): string => {
 const ALL_SEVERITIES = ['error', 'warning', 'info'] as const;
 
 export default function EventsPage() {
+  const { formatDateTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   // ?search= lets other pages (e.g. the dashboard proxy card) deep-link a filter.
@@ -250,7 +251,7 @@ export default function EventsPage() {
                     )}
                   >
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                      {format(new Date(ev.event_time), 'MMM d, HH:mm:ss')}
+                      {formatDateTime(new Date(ev.event_time), { year: undefined, second: '2-digit' })}
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={clsx('inline-flex items-center gap-1 text-xs font-medium', severityColor(ev.severity))}>

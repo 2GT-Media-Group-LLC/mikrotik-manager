@@ -5,6 +5,7 @@
  */
 const TYPES: Record<string, { label: string; color: string }> = {
   wireless_ap: { label: 'AP',  color: 'var(--info)' },
+  wisp:        { label: 'WS', color: 'var(--warn)' },
   switch:      { label: 'SW',  color: 'var(--accent)' },
   router:      { label: 'RTR', color: 'var(--violet)' },
 };
@@ -17,6 +18,7 @@ export default function DeviceTypePill({ type }: { type: string | null | undefin
   const color = TYPES[type ?? '']?.color ?? 'var(--ink-3)';
   return (
     <span
+      title={type === 'wisp' ? 'Wireless Systems' : undefined}
       className="mono text-[10.5px] font-medium px-[6px] py-[2px] rounded-full"
       style={{ color, border: '1px solid var(--line)' }}
     >

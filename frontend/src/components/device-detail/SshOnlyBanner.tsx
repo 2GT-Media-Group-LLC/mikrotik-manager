@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { TerminalSquare, RefreshCw, CheckCircle } from 'lucide-react';
@@ -11,6 +12,7 @@ import type { Device } from '../../types';
  * every minute, and every 15 after a refused login).
  */
 export default function SshOnlyBanner({ device }: { device: Device }) {
+  const { formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -41,7 +43,7 @@ export default function SshOnlyBanner({ device }: { device: Device }) {
           </p>
           <p className="text-xs text-gray-500 dark:text-slate-400">
             The API is tried with the login <span className="mono">{device.api_username}</span>; change it in Edit Device if the API uses another one.
-            {checked && <> Last checked {checked.toLocaleString()}{lastReason ? `: ${lastReason}` : '.'}</>}
+            {checked && <> Last checked {formatDateTime(checked, { month: 'numeric', second: '2-digit' })}{lastReason ? `: ${lastReason}` : '.'}</>}
           </p>
           {result && (
             <p className={result.ok ? 'flex items-center gap-1.5 text-green-700 dark:text-green-400' : 'text-amber-800 dark:text-amber-300'}>
