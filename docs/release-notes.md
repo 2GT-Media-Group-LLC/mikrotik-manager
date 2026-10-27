@@ -1,7 +1,7 @@
 # MikroTik Manager 1.0
 
-> **Release candidate.** 1.0.0-rc.1 came out on Sunday 25 October 2026, and 1.0.0-rc.2, with the
-> fixes from the first days of testing, on Monday 26 October. Stable 1.0.0 is planned
+> **Release candidate.** 1.0.0-rc.1 came out on Sunday 25 October 2026; 1.0.0-rc.2 and rc.3, with
+> the fixes from testing, followed on 26 and 27 October. Stable 1.0.0 is planned
 > for Sunday 1 November if testing turns up nothing serious. Please report anything odd as a
 > [GitHub issue](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues).
 
