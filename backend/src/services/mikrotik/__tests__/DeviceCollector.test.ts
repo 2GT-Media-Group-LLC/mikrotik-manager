@@ -623,3 +623,49 @@ describe('disconnectWirelessClient', () => {
     expect(removed).toEqual([]);
   });
 });
+
+// ── legacy wireless scan: privacy flag via a script (#295) ────────────────────
+
+describe('scanWireless on the legacy package (#295)', () => {
+  const apiRows = [{ '.section': '0', address: 'A4:16:E7:92:06:78', channel: '2412/20-Ce/gn', ssid: 'Home', sig: '-83', nf: '-101', snr: '18' }];
+  const scriptOut = 'A4:16:E7:92:06:78|true|-83|-101|18|2412/20-Ce/gn|Home\r\n';
+
+  function make(id: number, opts: { api?: Record<string, string>[]; script?: () => Promise<string> }) {
+    const c = new DeviceCollector({ ...testDevice, id });
+    (c as unknown as { detectWifiPackage: () => Promise<string> }).detectWifiPackage = async () => 'wireless';
+    const client = {
+      executeStreaming: jest.fn(async () => opts.api ?? apiRows),
+      runScript: jest.fn(opts.script ?? (async () => scriptOut)),
+    };
+    (c as unknown as { client: typeof client }).client = client;
+    return { c, client };
+  }
+
+  it('runs the scan as a script when the API reply has no privacy flag, then goes straight to the script', async () => {
+    const first = make(9101, {});
+    const rows = await first.c.scanWireless('wlan1', 5_000);
+    expect(rows[0]).toMatchObject({ address: 'A4:16:E7:92:06:78', privacy: 'true' });
+    expect(first.client.executeStreaming).toHaveBeenCalledTimes(1);
+    expect(first.client.runScript).toHaveBeenCalledTimes(1);
+
+    const second = make(9101, {});
+    await second.c.scanWireless('wlan1', 5_000);
+    expect(second.client.executeStreaming).not.toHaveBeenCalled();
+    expect(second.client.runScript).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the API rows, and stops trying the script, when the script fails', async () => {
+    const first = make(9102, { script: async () => { throw new Error('no such command'); } });
+    expect(await first.c.scanWireless('wlan1', 5_000)).toEqual(apiRows);
+    const second = make(9102, {});
+    expect(await second.c.scanWireless('wlan1', 5_000)).toEqual(apiRows);
+    expect(second.client.runScript).not.toHaveBeenCalled();
+  });
+
+  it('never runs the script when the API reply already has the privacy flag', async () => {
+    const withPrivacy = [{ ...apiRows[0], privacy: 'true' }];
+    const { c, client } = make(9103, { api: withPrivacy });
+    expect(await c.scanWireless('wlan1', 5_000)).toEqual(withPrivacy);
+    expect(client.runScript).not.toHaveBeenCalled();
+  });
+});

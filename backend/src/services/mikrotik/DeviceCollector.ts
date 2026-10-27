@@ -9,6 +9,7 @@ import { usesApiTls } from '../../utils/apiTls';
 import { query, queryOne } from '../../config/database';
 import { bootChange } from '../../utils/bootTime';
 import { logSafe } from '../../utils/logSafe';
+import { legacyScanScript, parseLegacyScanOutput } from '../../utils/apScan';
 import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { verifyDeviceSerial, IdentityMismatchError } from '../identityPins';
@@ -26,6 +27,13 @@ import {
   legacyManagerEnabled, legacyCapInterfaces, legacyRadios, hasRadios, chooseWifiPackage,
   type WifiRole,
 } from './capsman';
+
+/**
+ * How each device's legacy wireless scan is read (#295), learned on the first
+ * scan: 'script' when its API reply leaves out the privacy flag and the
+ * script form has it, 'api' when the script form didn't help either.
+ */
+const legacyScanMode = new Map<number, 'script' | 'api'>();
 
 /**
  * Version of the wireless role check. Devices classified by an older version
@@ -3670,16 +3678,48 @@ export class DeviceCollector {
       report('wifi package', rows);
       return rows;
     }
-    // The legacy package, as a timed scan (#295): `/interface wireless scan
-    // wlan1 duration=5` reports each network's privacy flag, where the
-    // open-ended scan we used to cancel apparently doesn't. It ends by itself
-    // with !done; the read limit is a little longer, as a backstop.
+    // The legacy package, as a timed scan. It ends by itself with !done; the
+    // read limit is a little longer, as a backstop.
     const seconds = Math.max(1, Math.round(durationMs / 1000));
+    // Some routers leave the privacy flag out of the API's scan reply (#295),
+    // though the same scan in the terminal has it. On those the scan runs as
+    // a script, whose output does; a device found to need that goes straight
+    // to the script next time.
+    const deviceId = this.device.id;
+    if (legacyScanMode.get(deviceId) === 'script') {
+      const viaScript = await this.legacyScanViaScript(iface, seconds);
+      if (viaScript) { report('legacy wireless, as a script', viaScript); return viaScript; }
+      legacyScanMode.delete(deviceId);
+    }
     const rows = await this.client
       .executeStreaming('/interface/wireless/scan', { '.id': iface, duration: String(seconds) }, durationMs + 5_000)
       .catch(() => [] as Record<string, string>[]);
     report(`legacy wireless, detected as ${pkg}`, rows);
+    if (rows.length > 0 && !rows.some((r) => 'privacy' in r) && legacyScanMode.get(deviceId) !== 'api') {
+      const viaScript = await this.legacyScanViaScript(iface, seconds);
+      if (viaScript && viaScript.some((r) => 'privacy' in r)) {
+        legacyScanMode.set(deviceId, 'script');
+        report('legacy wireless, as a script', viaScript);
+        return viaScript;
+      }
+      // The script didn't help (no /execute as-string before RouterOS 7, or
+      // no permission); don't run the scan twice on every poll.
+      legacyScanMode.set(deviceId, 'api');
+    }
     return rows;
+  }
+
+  /** The legacy scan run as a script (#295); null when that didn't work. */
+  private async legacyScanViaScript(iface: string, seconds: number): Promise<Record<string, string>[] | null> {
+    const script = legacyScanScript(iface, seconds);
+    if (!script) return null;
+    try {
+      const rows = parseLegacyScanOutput(await this.client.runScript(script, seconds * 1000 + 15_000));
+      return rows.length > 0 ? rows : null;
+    } catch (err) {
+      console.log(`[ap-scan] ${logSafe(this.device.name)} ${logSafe(iface)}: scan as a script failed: ${logSafe((err as Error).message)}`);
+      return null;
+    }
   }
 
   // Run a spectral scan on a wifi interface for ~10 s and return the raw rows.

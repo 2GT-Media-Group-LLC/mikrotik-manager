@@ -106,3 +106,35 @@ export function aggregateAPScanRows(
   return Array.from(byKey.values()).sort((a, b) =>
     Math.max(...b.entries.map((e) => e.signal)) - Math.max(...a.entries.map((e) => e.signal)));
 }
+
+/**
+ * The legacy scan as a script, for routers whose API reply leaves the
+ * `privacy` flag out (#295: a hAP ac² sends only address, channel, ssid,
+ * sig, nf and snr over the API, while the same scan in the terminal, with
+ * `as-value`, includes privacy=true/false). One line per network, fields
+ * separated by "|", SSID last so a "|" in a network name can't shift the
+ * others. null when the interface name isn't safe to put in a script.
+ */
+const LEGACY_SCAN_FIELDS = ['address', 'privacy', 'sig', 'nf', 'snr', 'channel'] as const;
+
+export function legacyScanScript(iface: string, seconds: number): string | null {
+  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(iface)) return null;
+  const secs = Math.min(60, Math.max(1, Math.round(seconds)));
+  const parts = [...LEGACY_SCAN_FIELDS, 'ssid'].map((f) => `($r->"${f}")`).join(' . "|" . ');
+  return `:foreach r in=[/interface wireless scan "${iface}" duration=${secs} as-value] do={:put (${parts})}`;
+}
+
+/** Rows from legacyScanScript()'s output, shaped like the API's scan rows. */
+export function parseLegacyScanOutput(output: string): Record<string, string>[] {
+  const rows: Record<string, string>[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    const parts = line.split('|');
+    if (parts.length < LEGACY_SCAN_FIELDS.length + 1) continue;
+    const row: Record<string, string> = Object.create(null) as Record<string, string>;
+    LEGACY_SCAN_FIELDS.forEach((f, i) => { if (parts[i] !== '') row[f] = parts[i]; });
+    row['ssid'] = parts.slice(LEGACY_SCAN_FIELDS.length).join('|');
+    if (!/^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$/.test(row['address'] ?? '')) continue;
+    rows.push(row);
+  }
+  return rows;
+}

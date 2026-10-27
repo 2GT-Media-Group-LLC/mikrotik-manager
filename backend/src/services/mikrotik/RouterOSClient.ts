@@ -303,6 +303,33 @@ export class RouterOSClient extends EventEmitter {
   }
 
   /**
+   * Run a RouterOS script and return what it printed (#295). `/execute` with
+   * `as-string` waits for the script and returns its output on !done as
+   * `ret` (RouterOS 7). Used to read values the API leaves out of a reply,
+   * so it's for read-only scripts; it never runs during a preview.
+   */
+  async runScript(source: string, timeoutMs = 30_000): Promise<string> {
+    if (previewContext()) throw new RouterOSError('This action runs a script on the device, so it can\'t be previewed');
+    let ret = '';
+    let error!: Error;
+    await new Promise<void>((resolve) => {
+      this.operationChain = this.operationChain.then(async () => {
+        try {
+          const t = Date.now();
+          try {
+            await this._executeRaw('/execute', { script: source, 'as-string': '' }, [], timeoutMs, (done) => { ret = done['ret'] ?? ''; });
+          } finally { this.waitedMs += Date.now() - t; }
+        } catch (err) {
+          error = err as Error;
+        }
+        resolve();
+      });
+    });
+    if (error) throw error;
+    return ret;
+  }
+
+  /**
    * Several reads in one round trip (#301). Each is sent with its own tag
    * straight after the last, and the replies, which RouterOS may interleave,
    * are sorted back by tag. Reads only, so the order they run in can't matter.
@@ -413,7 +440,8 @@ export class RouterOSClient extends EventEmitter {
     command: string,
     params: Record<string, string>,
     queries: string[],
-    timeoutMs?: number
+    timeoutMs?: number,
+    onDone?: (words: Record<string, string>) => void,
   ): Promise<Record<string, string>[]> {
     if (!this.socket || !this.connected) {
       throw new RouterOSError('Not connected');
@@ -432,7 +460,7 @@ export class RouterOSClient extends EventEmitter {
     const results: Record<string, string>[] = [];
     while (true) {
       const sentence = await this.readNextSentence(timeoutMs);
-      if (sentence.type === '!done') break;
+      if (sentence.type === '!done') { onDone?.(sentence.words); break; }
       if (sentence.type === '!re') {
         results.push(sentence.words);
       } else if (sentence.type === '!trap') {

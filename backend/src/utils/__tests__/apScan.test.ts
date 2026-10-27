@@ -1,4 +1,4 @@
-import { aggregateAPScanRows, mergeScanRows, scanSignal, scanSecurity } from '../apScan';
+import { aggregateAPScanRows, mergeScanRows, scanSignal, scanSecurity, legacyScanScript, parseLegacyScanOutput } from '../apScan';
 
 const vendor = () => '';
 
@@ -77,5 +77,46 @@ describe('streamed scan updates (#295)', () => {
   it('rows with no id merge by address', () => {
     expect(mergeScanRows([{ address: 'AA:BB', sig: '-70' }, { address: 'aa:bb', privacy: 'true' }]))
       .toEqual([{ address: 'aa:bb', sig: '-70', privacy: 'true' }]);
+  });
+});
+
+describe('legacy scan as a script (#295)', () => {
+  it('builds the terminal scan with as-value, SSID last', () => {
+    const s = legacyScanScript('wlan1', 5)!;
+    expect(s).toContain('/interface wireless scan "wlan1" duration=5 as-value');
+    expect(s).toContain('($r->"privacy")');
+    expect(s.indexOf('"ssid"')).toBeGreaterThan(s.indexOf('"channel"'));
+  });
+
+  it('refuses an interface name that could break out of the script', () => {
+    expect(legacyScanScript('wlan1"] ; /system reboot ; ["', 5)).toBeNull();
+    expect(legacyScanScript('wlan 1', 5)).toBeNull();
+    expect(legacyScanScript('', 5)).toBeNull();
+  });
+
+  it('keeps the duration within bounds', () => {
+    expect(legacyScanScript('wlan1', 0)).toContain('duration=1 ');
+    expect(legacyScanScript('wlan1', 999)).toContain('duration=60 ');
+  });
+
+  it('parses the output into rows the aggregator reads as secured or open', () => {
+    const out = 'A4:16:E7:92:06:78|true|-83|-101|18|2412/20-Ce/gn|Home|Net\r\n'
+      + 'D0:F9:9B:45:A4:5A|false|-80|-101|21|2412/20-Ce/gn|Cafe\r\n'
+      + '11:22:33:44:55:66|true|-70|-101|31|5180/20-Ceee/ac|\r\n'
+      + 'garbage line\r\n';
+    const rows = parseLegacyScanOutput(out);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ address: 'A4:16:E7:92:06:78', privacy: 'true', sig: '-83', ssid: 'Home|Net' });
+    expect(rows[2].ssid).toBe('');
+    const nets = aggregateAPScanRows([{ iface: 'wlan1', rows }], () => '');
+    expect(nets.find((n) => n.ssid === 'Home|Net')?.security).toBe('secured');
+    expect(nets.find((n) => n.ssid === 'Cafe')?.security).toBe('open');
+    expect(nets.find((n) => n.hidden)?.security).toBe('secured');
+  });
+
+  it('leaves security unknown when the script output has no privacy value', () => {
+    const rows = parseLegacyScanOutput('A4:16:E7:92:06:78||-83|-101|18|2412/20-Ce/gn|Home');
+    expect('privacy' in rows[0]).toBe(false);
+    expect(aggregateAPScanRows([{ iface: 'wlan1', rows }], () => '')[0].security).toBe('unknown');
   });
 });

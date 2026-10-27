@@ -66,10 +66,20 @@ BSSID broadcasting one of your SSIDs is flagged as an evil twin.
 Scans run on demand or on a schedule; spectral scans are configured per radio.
 
 With the newer **wifi** package a network's security shows its authentication types (for example
-`wpa2-psk,wpa3-psk`). The older **wireless** package's scan doesn't report encryption over the
-API at all: on a hAP ac² it returns address, channel, SSID, signal, noise and SNR, and nothing
-about privacy (#295). Those networks show **unknown**, with an explanation on hover, rather than
-being guessed open or protected; betas before 0.73.0 showed them as open, which was wrong.
+`wpa2-psk,wpa3-psk`). The older **wireless** package only says whether a network is encrypted,
+so its networks show **secured** or **open**.
+
+Some routers on the older package leave that flag out of the scan's API reply: a hAP ac² returns
+address, channel, SSID, signal, noise and SNR, and nothing about privacy (#295), though the same
+scan in the terminal has it. On those, MikroTik Manager runs the scan as a script, as the
+terminal would, and reads the flag from its output; once a router is known to need this, later
+scans go straight to the script. The first scan of such a router after the manager starts runs
+twice, and a scan briefly takes the radio off its clients, as any scan on the older package does.
+
+Where even that doesn't work (RouterOS 6, which can't return a script's output over the API, or
+an API user without permission to run scripts), networks show **unknown**, with an explanation
+on hover, rather than being guessed open or protected; betas before 0.73.0 showed them as open,
+which was wrong.
 
 The backend log notes, for every scan, which path it took and which fields came back, names
 only (`[ap-scan] <device> <radio> (legacy wireless…): 179 rows, fields: …`), so a report like
