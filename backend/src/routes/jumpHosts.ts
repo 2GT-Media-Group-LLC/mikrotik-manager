@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { presetCaller, canManagePresetSite, canSeePreset, presetUseRefusal, type PresetCaller } from '../utils/presetAccess';
 import { encrypt } from '../utils/crypto';
 import { checkPort } from '../utils/apiTls';
+import { normalizeDeviceAddress } from '../utils/deviceAddress';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
 import { sshFingerprintDisplay } from '../services/identityPins';
 import {
@@ -106,16 +107,31 @@ interface Body {
   notes?: string | null;
 }
 
-/** Check what a create or edit sends; an error message, or null. */
-async function invalid(b: Body, caller: PresetCaller, siteId: number | null): Promise<string | null> {
+/**
+ * The address and SSH port a create or edit sends, as stored. The address is
+ * read as a device's is, so brackets around IPv6, a pasted URL or a ":port"
+ * come off; such a port is the SSH port, unless a different one is given.
+ */
+function addressOf(b: Body): { ok: true; host?: string; port: number | null } | { ok: false; error: string } {
+  const pc = checkPort(b.port, 'SSH port');
+  if (!pc.ok) return { ok: false, error: pc.error };
+  if (b.host === undefined) return { ok: true, port: pc.port };
+  const n = typeof b.host === 'string' ? normalizeDeviceAddress(b.host) : null;
+  if (!n?.ok) return { ok: false, error: n?.reason ?? 'The address must be an IP address or host name.' };
+  if (n.address.length > 253) return { ok: false, error: 'The address is too long.' };
+  const ap = checkPort(n.port, 'The port in the address');
+  if (!ap.ok) return { ok: false, error: ap.error };
+  if (n.port && pc.port !== null && n.port !== pc.port) {
+    return { ok: false, error: `The address includes port ${n.port}, but the SSH port is ${pc.port}. Use one or the other.` };
+  }
+  return { ok: true, host: n.address, port: n.port ?? pc.port };
+}
+
+/** Check what a create or edit sends, for a jump host of `siteId` logging in with `presetId`; an error message, or null. */
+async function invalid(b: Body, caller: PresetCaller, siteId: number | null, presetId: number | null | undefined): Promise<string | null> {
   if (b.name !== undefined && (typeof b.name !== 'string' || !b.name.trim() || b.name.length > 100)) {
     return 'The name must be 1 to 100 characters.';
   }
-  if (b.host !== undefined && (typeof b.host !== 'string' || !/^[A-Za-z0-9.:\-[\]%]{1,253}$/.test(b.host.trim()))) {
-    return 'The address must be an IP address or host name.';
-  }
-  const pc = checkPort(b.port, 'SSH port');
-  if (!pc.ok) return pc.error;
   if (b.username != null && (typeof b.username !== 'string' || b.username.length > 50)) {
     return 'The username can be at most 50 characters.';
   }
@@ -126,9 +142,9 @@ async function invalid(b: Body, caller: PresetCaller, siteId: number | null): Pr
   if (b.host_key_fingerprint && !parseHostKeyFingerprint(b.host_key_fingerprint)) {
     return 'The host key fingerprint must be SHA256:… as ssh-keygen -l prints it, or 64 hex digits.';
   }
-  if (b.credential_preset_id != null) {
+  if (presetId != null) {
     const preset = await queryOne<{ site_id: number | null; allow_operator_use: boolean }>(
-      `SELECT site_id, allow_operator_use FROM credential_presets WHERE id = $1`, [b.credential_preset_id]);
+      `SELECT site_id, allow_operator_use FROM credential_presets WHERE id = $1`, [presetId]);
     if (!preset) return 'That credential preset does not exist.';
     // The same rules as applying it to a device of the jump host's site.
     const refusal = presetUseRefusal(caller, preset, siteId);
@@ -157,11 +173,13 @@ router.post('/', mutationLimiter, async (req, res) => {
   if (!canManagePresetSite(caller, siteId)) return res.status(403).json({ error: MANAGE_REFUSED });
 
   if (!b.name || !b.host) return res.status(400).json({ error: 'name and host are required' });
+  const addr = addressOf(b);
+  if (!addr.ok) return res.status(400).json({ error: addr.error });
   const usesPreset = b.credential_preset_id != null;
   if (!usesPreset && !b.username) return res.status(400).json({ error: 'A username is required unless a credential preset is used.' });
   const secrets = [usesPreset, !!b.password, !!b.private_key].filter(Boolean).length;
   if (secrets !== 1) return res.status(400).json({ error: 'Give exactly one of: a password, a private key, or a credential preset.' });
-  const bad = await invalid(b, caller, siteId);
+  const bad = await invalid(b, caller, siteId, b.credential_preset_id);
   if (bad) return res.status(400).json({ error: bad });
 
   const clash = await queryOne<{ id: number }>(
@@ -173,7 +191,7 @@ router.post('/', mutationLimiter, async (req, res) => {
                              passphrase_encrypted, credential_preset_id, host_key_fingerprint, notes)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
     [
-      b.name.trim(), siteId, b.host.trim(), portOf(b.port) ?? 22, b.username || null,
+      b.name.trim(), siteId, addr.host, addr.port ?? 22, b.username || null,
       b.password ? encrypt(b.password) : null,
       b.private_key ? encrypt(b.private_key) : null,
       b.private_key && b.passphrase ? encrypt(b.passphrase) : null,
@@ -183,12 +201,6 @@ router.post('/', mutationLimiter, async (req, res) => {
     ]);
   return res.status(201).json(toPublic((await loadRow(rows[0].id))!, caller));
 });
-
-/** The port a request sends (already checked), or null when it sends none. */
-function portOf(v: unknown): number | null {
-  const pc = checkPort(v, 'SSH port');
-  return pc.ok ? pc.port : null;
-}
 
 /** The jump host the request names, when the caller may manage it; otherwise the response is sent. */
 async function managed(req: Request<{ id: string }>, res: Response): Promise<{ row: Row; caller: PresetCaller } | null> {
@@ -211,14 +223,22 @@ router.put('/:id', mutationLimiter, async (req, res) => {
   if (movedTo !== undefined && !canManagePresetSite(caller, movedTo)) return res.status(403).json({ error: MANAGE_REFUSED });
   const siteId = movedTo === undefined ? row.site_id : movedTo;
   if (movedTo !== undefined && movedTo !== row.site_id && movedTo !== null) {
-    // Its devices would be left using another site's jump host.
-    const elsewhere = await queryOne<{ n: string }>(
-      `SELECT COUNT(*) AS n FROM devices WHERE jump_host_id = $1 AND site_id IS DISTINCT FROM $2`, [row.id, movedTo]);
-    if (Number(elsewhere?.n ?? 0) > 0) {
-      return res.status(409).json({ error: 'Devices in other sites use this jump host, so it can only be fleet-wide or stay where it is.' });
+    // Other sites' devices, or their new devices, would be left using another site's jump host.
+    const elsewhere = await queryOne<{ devices: string; sites: string }>(
+      `SELECT (SELECT COUNT(*) FROM devices WHERE jump_host_id = $1 AND site_id IS DISTINCT FROM $2) AS devices,
+              (SELECT COUNT(*) FROM sites WHERE default_jump_host_id = $1 AND id <> $2) AS sites`, [row.id, movedTo]);
+    if (Number(elsewhere?.devices ?? 0) > 0 || Number(elsewhere?.sites ?? 0) > 0) {
+      return res.status(409).json({
+        error: 'Devices in other sites use this jump host, or other sites have it as their default, so it can only be fleet-wide or stay where it is.',
+      });
     }
   }
-  const bad = await invalid(b, caller, siteId);
+  const addr = addressOf(b);
+  if (!addr.ok) return res.status(400).json({ error: addr.error });
+  // A preset it keeps must suit the site it moves to, as a new one must.
+  const keptPreset = movedTo !== undefined && movedTo !== row.site_id
+    && b.credential_preset_id === undefined && !b.password && !b.private_key ? row.credential_preset_id : null;
+  const bad = await invalid(b, caller, siteId, b.credential_preset_id ?? keptPreset);
   if (bad) return res.status(400).json({ error: bad });
 
   if ((b.name && b.name.trim() !== row.name) || movedTo !== undefined) {
@@ -231,7 +251,7 @@ router.put('/:id', mutationLimiter, async (req, res) => {
   // One login at a time: a new password, key or preset replaces the others.
   const authChange: 'password' | 'key' | 'preset' | null =
     b.credential_preset_id != null ? 'preset' : b.private_key ? 'key' : b.password ? 'password' : null;
-  if (authChange !== 'preset' && b.credential_preset_id === null && !b.password && !b.private_key) {
+  if (b.credential_preset_id === null && row.credential_preset_id != null && !b.password && !b.private_key) {
     return res.status(400).json({ error: 'Give a password or private key to stop using the credential preset.' });
   }
   const usernameAfter = b.username !== undefined ? b.username : row.username;
@@ -240,8 +260,7 @@ router.put('/:id', mutationLimiter, async (req, res) => {
 
   // A different router answers at a new address: its key is pinned afresh,
   // unless one was given with the change.
-  const moved = (b.host !== undefined && b.host.trim() !== row.host)
-    || (portOf(b.port) !== null && portOf(b.port) !== row.port);
+  const moved = (addr.host !== undefined && addr.host !== row.host) || (addr.port !== null && addr.port !== row.port);
   const fingerprint = b.host_key_fingerprint ? parseHostKeyFingerprint(b.host_key_fingerprint) : null;
   const sent = (v: unknown): boolean => v !== undefined;
 
@@ -264,7 +283,7 @@ router.put('/:id', mutationLimiter, async (req, res) => {
      WHERE id = $1`,
     [
       row.id, b.name?.trim() || null, movedTo !== undefined, movedTo ?? null,
-      b.host?.trim() || null, portOf(b.port), sent(b.username), b.username || null,
+      addr.host ?? null, addr.port, sent(b.username), b.username || null,
       authChange,
       authChange === 'password' ? encrypt(b.password!) : null,
       authChange === 'key' ? encrypt(b.private_key!) : null,
@@ -273,8 +292,9 @@ router.put('/:id', mutationLimiter, async (req, res) => {
       fingerprint, moved,
       sent(b.notes), b.notes || null,
     ]);
-  // Its connection was opened with the old settings.
-  dropJumpHost(row.id);
+  // Its connection was opened with the old address, login or pin; a new name,
+  // site or notes leave it, and the sessions through it, as they are.
+  if (moved || authChange || fingerprint || (sent(b.username) && (b.username || null) !== row.username)) dropJumpHost(row.id);
   return res.json(toPublic((await loadRow(row.id))!, caller));
 });
 

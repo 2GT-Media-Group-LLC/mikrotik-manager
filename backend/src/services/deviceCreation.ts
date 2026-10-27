@@ -377,6 +377,25 @@ async function createDevice(
         };
       }
 
+      // The device stays in its own site, so the route chosen here has to be
+      // one that site may use.
+      if (jumpHostId != null) {
+        try {
+          await chooseJumpHost(jumpHostId, existingBySerial.site_id, { siteDefault: false });
+        } catch (err) {
+          if ((err as { statusCode?: number }).statusCode !== 400) throw err;
+          return {
+            ok: false,
+            status: 409,
+            body: {
+              error: `${existingBySerial.name} is in another site, which can't use the jump host chosen here. ` +
+                'Move it to this site first, or choose a fleet-wide jump host.',
+              code: 'jump_host_other_site',
+            },
+          };
+        }
+      }
+
       const encryptedPass = encrypt(api_password);
       const encryptedSshPass = sshPassToStore ? encrypt(sshPassToStore) : null;
       await query(

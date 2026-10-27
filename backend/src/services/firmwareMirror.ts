@@ -230,7 +230,9 @@ async function serverDevice(mirror: MirrorRow): Promise<DeviceRow> {
 /** Upload one file into the mirror folder over SFTP. */
 function sftpUpload(device: DeviceRow, localFile: string, remoteFile: string): Promise<void> {
   const port = device.ssh_port || 22;
-  return Promise.all([resolveAuth(device), sshRoute(device, port)]).then(([{ username, auth }, route]) => new Promise<void>((resolve, reject) => {
+  // The login first: a channel opened for a login that can't be made would be left open.
+  return resolveAuth(device).then(async ({ username, auth }) => ({ username, auth, route: await sshRoute(device, port) }))
+    .then(({ username, auth, route }) => new Promise<void>((resolve, reject) => {
     const conn = new SSHClient();
     let settled = false;
     const finish = (err?: Error) => {

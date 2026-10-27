@@ -331,6 +331,8 @@ terminalNs.on('connection', (socket) => {
         socket.emit('error', `SSH error: ${(e as Error).message}`);
         return;
       }
+      // Closed meanwhile: nothing would end the session, or free the jump host's channel.
+      if (socket.disconnected) { route.sock?.destroy(); return; }
       sshClient = new SshClient();
 
       sshClient.on('ready', () => {

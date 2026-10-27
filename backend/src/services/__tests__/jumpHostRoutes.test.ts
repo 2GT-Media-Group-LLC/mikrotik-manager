@@ -30,13 +30,16 @@ function balanced(src: string, open: number): string {
 const lineOf = (src: string, index: number): number => src.slice(0, index).split('\n').length;
 
 /**
- * Connections that go to an address the manager doesn't manage yet, so there
- * is no route to give: logging in to a factory-default router on the
- * manager's own network while adopting it.
+ * Files that open sockets or HTTP requests of their own, and why each is
+ * allowed to. Anything else doing so would skip a device's route.
  */
-const DIRECT_BY_DESIGN = new Set([
-  'services/DeviceAdoptionService.ts:verifyDirect',
-  'services/DeviceAdoptionService.ts:removeFactoryAddress',
+const OWN_CONNECTIONS = new Map([
+  ['services/mikrotik/RouterOSClient.ts', 'the API connection itself: direct, or over the channel its jump host opened'],
+  ['services/wwwSsl.ts', "the WebFig check, over the device's jump host when it has one"],
+  ['services/firmwareMirror.ts', 'downloads from mikrotik.com only'],
+  ['utils/oui.ts', 'the IEEE vendor list'],
+  ['routes/clients.ts', 'a Wake-on-LAN broadcast, not a connection to a device'],
+  ['services/netflow/NetflowCollector.ts', 'listens for flows the devices send'],
 ]);
 
 /**
@@ -57,11 +60,7 @@ describe('every device connection names its route', () => {
       while ((m = re.exec(src)) !== null) {
         const args = balanced(src, re.lastIndex - 1);
         if (/routeOf\(|jumpHostId|jump_host_id|\bvia\b/.test(args)) continue;
-        // The method it's in, for the allowlist.
-        const before = src.slice(0, m.index);
-        const fn = [...before.matchAll(/(?:async\s+)?(\w+)\s*\([^)]*\)\s*(?::\s*[^{]+)?\{/g)].pop()?.[1] ?? '?';
-        if (DIRECT_BY_DESIGN.has(`${file}:${fn}`)) continue;
-        missing.push(`${file}:${lineOf(src, m.index)} (${fn})`);
+        missing.push(`${file}:${lineOf(src, m.index)}`);
       }
     }
     expect(missing).toEqual([]);
@@ -81,5 +80,16 @@ describe('every device connection names its route', () => {
       }
     }
     expect(missing).toEqual([]);
+  });
+
+  it('opens no sockets or HTTP requests anywhere else', () => {
+    const found: string[] = [];
+    for (const { file, src } of files) {
+      if (OWN_CONNECTIONS.has(file)) continue;
+      const re = /\b(?:net\.(?:connect|createConnection)|tls\.connect|https?\.(?:request|get)|dgram\.createSocket)\(|new net\.Socket\(/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(src)) !== null) found.push(`${file}:${lineOf(src, m.index)}`);
+    }
+    expect(found).toEqual([]);
   });
 });

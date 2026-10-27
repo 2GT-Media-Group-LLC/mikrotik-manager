@@ -51,8 +51,10 @@ or through one of the jump hosts. The device is checked through that route befor
 The field only appears once there is a jump host.
 
 A site can name a default jump host (edit the site under **Sites**). New devices added to the
-site use it unless they choose otherwise. It never changes devices already in the site, so the
-jump router itself, and anything reachable directly, stays as it is.
+site use it unless they choose otherwise, including [adopted](adoption.md) ones; with no default,
+an adopted device is reached the way the neighbour it was adopted through is. The default never
+changes devices already in the site, so the jump router itself, and anything reachable directly,
+stays as it is.
 
 Changing a device's route counts as changing its address: a non-admin has to enter the device's
 password again, because the same address behind a different jump host can be a different
@@ -75,6 +77,18 @@ minute (SSH keepalives).
 If the jump host is up but a device behind it isn't, the device's error names the device:
 
 > Jump host "branch-gw" (203.0.113.10:22) could not connect to 10.20.0.5:8729: nothing accepted the connection
+
+A device that doesn't answer at all fails after 20 seconds at most, whatever the jump router's
+own timeout.
+
+## Changing one
+
+A new address, port, login or host key closes the jump host's connection, ending the sessions
+through it (an open terminal, for example); the next connection uses the new settings. A new
+name, site or notes leave it open.
+
+A jump host can move to a site only while no device in another site uses it and no other site
+has it as its default; a fleet admin can always make it fleet-wide.
 
 ## Host keys
 
@@ -101,6 +115,15 @@ The path model sees the manager's connection as coming from the jump router, whi
 that matters to the device. Changes to the jump router itself are guarded like any other
 change, but Change Guard only checks the jump router's API; it does not check that devices
 behind it are still reachable.
+
+## Other connections
+
+Switching a device's WebFig to HTTPS (its **Security** tab) checks that WebFig answers before
+plain HTTP is turned off ([details](security.md#webfig-over-https)); for a device behind a jump
+host, that check goes through it too.
+
+[Platform backups](platform-backup.md) hold jump hosts and each device's route. Restoring one puts
+back the routes it holds, including jump hosts deleted since it was taken.
 
 ## Limits
 

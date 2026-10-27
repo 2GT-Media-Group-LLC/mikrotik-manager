@@ -14,7 +14,7 @@ import {
   type AdoptionCandidate, type NeighborRow, type RestOp, type ModeRecommendation,
   type AddressPlan,
 } from '../utils/adoption';
-import { routeOf } from './jumpHosts';
+import { chooseJumpHost, routeOf } from './jumpHosts';
 
 /**
  * Adopting a factory-default device by borrowing a managed neighbour.
@@ -183,6 +183,20 @@ export class DeviceAdoptionService {
          FROM devices WHERE id = $1`, [req.jumpHostId]
     );
     if (!jump) return { ok: false, steps, error: 'Jump host not found' };
+
+    // How the manager will reach the new device, settled before anything is
+    // changed and used for every connection to it.
+    let via: number | null;
+    try {
+      via = await this.routeForAdopted(jump, req.siteId ?? null);
+    } catch (err) {
+      if ((err as { statusCode?: number }).statusCode !== 400) throw err;
+      return {
+        ok: false, steps,
+        error: `${jump.name} is reached through a jump host of another site, which devices in this site can't use. ` +
+          `Adopt the device into ${jump.name}'s site. Nothing was changed.`,
+      };
+    }
 
     const planVerdict = validatePlan(req.plan);
     if (!planVerdict.ok) return { ok: false, steps, error: planVerdict.reason };
@@ -371,16 +385,18 @@ export class DeviceAdoptionService {
       }
     }
 
-    // From here the manager talks to the device directly; the jump host is done.
+    // From here the manager talks to the device itself, the way it will once
+    // it's registered (directly, or through its SSH jump host); the borrowed
+    // device is done.
     const ip = req.plan.mode === 'static' ? stripPrefix(req.plan.address) : (learnedIp as string);
-    const reachable = await this.verifyDirect(ip, req.username || 'admin', req.password);
-    note(`manager reached ${ip} over the API`, reachable);
+    const reachable = await this.verifyReachable(ip, req.username || 'admin', req.password, via);
+    note(`manager reached ${ip} over the API${via != null ? ' through its jump host' : ''}`, reachable);
     if (!reachable) {
       return { ok: false, steps, error: `Configured, but ${ip} is not answering the API from the manager` };
     }
 
     if (req.removeFactoryAddress) {
-      const dropped = await this.removeFactoryAddress(ip, req.username || 'admin', req.password);
+      const dropped = await this.removeFactoryAddress(ip, req.username || 'admin', req.password, via);
       note('removed factory 192.168.88.1 address', dropped.ok, dropped.detail);
     }
 
@@ -391,6 +407,7 @@ export class DeviceAdoptionService {
         api_username: req.username || 'admin',
         api_password: req.password,
         device_type: deviceType ?? 'router',
+        jump_host_id: via,
       },
       this.poller,
       { siteId: req.siteId ?? null }
@@ -520,8 +537,20 @@ export class DeviceAdoptionService {
     }
   }
 
-  private async verifyDirect(ip: string, user: string, pass: string): Promise<boolean> {
-    const c = new RouterOSClient(ip, 8728, user, pass, 15000);
+  /**
+   * The route for a device being adopted: the site's default jump host, as
+   * for any device added to the site; otherwise the route of the device it is
+   * adopted through, whose segment it sits on. Throws when that is a jump host
+   * the site may not use.
+   */
+  private async routeForAdopted(jump: DeviceRow, siteId: number | null): Promise<number | null> {
+    const siteDefault = await chooseJumpHost(undefined, siteId, { siteDefault: true });
+    if (siteDefault != null) return siteDefault;
+    return chooseJumpHost(routeOf(jump), siteId, { siteDefault: false });
+  }
+
+  private async verifyReachable(ip: string, user: string, pass: string, via: number | null): Promise<boolean> {
+    const c = new RouterOSClient(ip, 8728, user, pass, 15000, 30000, false, via);
     try {
       await c.connect();
       await c.execute('/system/resource/print');
@@ -534,9 +563,9 @@ export class DeviceAdoptionService {
   }
 
   private async removeFactoryAddress(
-    ip: string, user: string, pass: string
+    ip: string, user: string, pass: string, via: number | null
   ): Promise<{ ok: boolean; detail?: string }> {
-    const c = new RouterOSClient(ip, 8728, user, pass, 15000);
+    const c = new RouterOSClient(ip, 8728, user, pass, 15000, 30000, false, via);
     try {
       await c.connect();
       const addrs = await c.execute('/ip/address/print', { detail: '' });

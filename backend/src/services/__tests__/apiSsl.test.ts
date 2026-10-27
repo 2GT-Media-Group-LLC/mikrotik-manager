@@ -34,14 +34,14 @@ beforeEach(() => { jest.clearAllMocks(); mockQuery.mockResolvedValue([]); });
 describe('connectPreferringSsl', () => {
   it('uses API-SSL when it answers', async () => {
     clients({});
-    const r = await connectPreferringSsl('10.0.0.1', 'u', 'p');
+    const r = await connectPreferringSsl('10.0.0.1', 'u', 'p', { jumpHostId: null });
     expect(r.port).toBe(8729);
     expect(r.sslError).toBeUndefined();
   });
 
   it('falls back to the plain API, saying why', async () => {
     clients({ 8729: { connect: () => Promise.reject(new Error('Connection refused')) } });
-    const r = await connectPreferringSsl('10.0.0.1', 'u', 'p');
+    const r = await connectPreferringSsl('10.0.0.1', 'u', 'p', { jumpHostId: null });
     expect(r.port).toBe(8728);
     expect(r.sslError).toBeTruthy();
   });
@@ -58,7 +58,7 @@ describe('connectPreferringSsl', () => {
       8729: { connect: () => Promise.reject(new Error('Connection refused')) },
       8728: { connect: () => Promise.reject(new Error('invalid user name or password')) },
     });
-    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p')).rejects.toThrow(/invalid user name/);
+    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p', { jumpHostId: null })).rejects.toThrow(/invalid user name/);
   });
 
   // GHSA-63v6-w7qf-349f: the plain login sent the password in the clear even
@@ -74,33 +74,33 @@ describe('connectPreferringSsl', () => {
       }),
       disconnect: jest.fn(),
     }));
-    await connectPreferringSsl('10.0.0.1', 'u', 'p');
+    await connectPreferringSsl('10.0.0.1', 'u', 'p', { jumpHostId: null });
     expect(opened).toEqual([8729]);
   });
 
   it('does not try the plain API when API-SSL refuses the login', async () => {
     clients({ 8729: { connect: () => Promise.reject(new Error('invalid user name or password (6)')) } });
-    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p')).rejects.toThrow(/invalid user name/);
+    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p', { jumpHostId: null })).rejects.toThrow(/invalid user name/);
     expect((MockClient as unknown as jest.Mock).mock.calls.map((c) => c[1])).toEqual([8729]);
   });
 
   it('does not try the plain API when the certificate has changed', async () => {
     const { IdentityMismatchError } = jest.requireActual('../identityPins');
     clients({ 8729: { connect: () => Promise.reject(new IdentityMismatchError('api-tls', 'R1')) } });
-    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p')).rejects.toThrow(/changed/);
+    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p', { jumpHostId: null })).rejects.toThrow(/changed/);
     expect((MockClient as unknown as jest.Mock).mock.calls.map((c) => c[1])).toEqual([8729]);
   });
 
   it('never falls back for a device that has used API-SSL', async () => {
     clients({ 8729: { connect: () => Promise.reject(new Error('Connection timeout to 10.0.0.1:8729')) } });
-    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p', { sslOnly: true })).rejects.toThrow(/timeout/);
+    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p', { sslOnly: true, jumpHostId: null })).rejects.toThrow(/timeout/);
     expect((MockClient as unknown as jest.Mock).mock.calls.map((c) => c[1])).toEqual([8729]);
   });
 
   it('falls back when api-ssl has no certificate or is firewalled', async () => {
     for (const err of [new Error('ssl/tls alert handshake failure:SSL alert number 40'), new Error('Connection timeout to 10.0.0.1:8729')]) {
       clients({ 8729: { connect: () => Promise.reject(err) } });
-      expect((await connectPreferringSsl('10.0.0.1', 'u', 'p')).port).toBe(8728);
+      expect((await connectPreferringSsl('10.0.0.1', 'u', 'p', { jumpHostId: null })).port).toBe(8728);
     }
   });
 });

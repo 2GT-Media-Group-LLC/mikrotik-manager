@@ -7,15 +7,20 @@ import path from 'path';
 import { Client as SSHClient, Server as SSHServer, utils as sshUtils } from 'ssh2';
 import { query, queryOne } from '../../config/database';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
+import https from 'https';
 import {
-  openForwardedChannel, sshRoute, routeOf, dropJumpHost, trustNewJumpHostKey, testJumpHost,
-  parseHostKeyFingerprint, backoffMs, JumpHostError, type JumpHostRow,
+  openForwardedChannel, sshRoute, routeOf, dropJumpHost, trustNewJumpHostKey, testJumpHost, jumpHostStatus,
+  closeIdleJumpHosts, parseHostKeyFingerprint, backoffMs, JumpHostError, type JumpHostRow,
 } from '../jumpHosts';
 import { sshHostKeyFingerprint } from '../identityPins';
+import { httpsAnswers } from '../wwwSsl';
 
 jest.mock('../../config/database', () => ({ query: jest.fn(), queryOne: jest.fn() }));
 jest.mock('../../utils/crypto', () => ({ decrypt: (s: string) => s, encrypt: (s: string) => s }));
 jest.mock('../AlertService', () => ({ alertService: { dispatch: jest.fn() } }));
+// wwwSsl's own device work isn't under test here, only its HTTPS check.
+jest.mock('../mikrotik/DeviceCollector', () => ({ DeviceCollector: jest.fn() }));
+jest.mock('../apiSsl', () => ({ ensureCertificate: jest.fn(), certByName: jest.fn(), usable: jest.fn() }));
 
 /**
  * Devices behind an SSH jump host. A real SSH server (ssh2's) stands in for
@@ -38,6 +43,7 @@ const fingerprintOf = (privateKey: string): string => {
 // ─── A fake database: just the jump_hosts rows ──────────────────────────────
 
 const rows = new Map<number, JumpHostRow>();
+const presets = new Map<number, { api_username: string; api_password_encrypted: string; ssh_username: string | null; ssh_password_encrypted: string | null }>();
 
 function addJumpHost(id: number, port: number, over: Partial<JumpHostRow> = {}): JumpHostRow {
   const row: JumpHostRow = {
@@ -54,6 +60,10 @@ beforeEach(() => {
     if (/FROM jump_hosts WHERE id = \$1/.test(sql)) {
       const r = rows.get(params[0] as number);
       return r ? { ...r } : null;
+    }
+    if (/FROM credential_presets WHERE id = \$1/.test(sql)) {
+      const p = presets.get(params[0] as number);
+      return p ? { ...p } : null;
     }
     return null;
   }) as never);
@@ -82,6 +92,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const id of rows.keys()) dropJumpHost(id);
   rows.clear();
+  presets.clear();
   RouterOSClient.channelOpener = null;
   RouterOSClient.tlsVerifier = null;
 });
@@ -93,12 +104,20 @@ interface JumpServer {
   connections: number;
   logins: number;
   forwards: string[];
+  /** Forwarded channels the manager has closed. */
+  channelsClosed: number;
   close(): Promise<void>;
 }
 
-/** The jump router. `forwarding: false` is RouterOS without forwarding-enabled. */
-async function startJumpServer(opts: { forwarding?: boolean; hostKey?: string } = {}): Promise<JumpServer> {
-  const s: JumpServer = { port: 0, connections: 0, logins: 0, forwards: [], close: async () => {} };
+/**
+ * The jump router. `forwarding: false` is RouterOS without forwarding-enabled;
+ * `forwardDelayMs` is a router slow to reach the device, `loginDelayMs` one
+ * slow to accept the login.
+ */
+async function startJumpServer(
+  opts: { forwarding?: boolean; hostKey?: string; forwardDelayMs?: number; loginDelayMs?: number } = {},
+): Promise<JumpServer> {
+  const s: JumpServer = { port: 0, connections: 0, logins: 0, forwards: [], channelsClosed: 0, close: async () => {} };
   // Closed with the server: the manager keeps its jump connection open.
   const open = new Set<{ end(): unknown } | net.Socket>();
   const server = new SSHServer({ hostKeys: [opts.hostKey ?? JUMP_KEY] }, (client) => {
@@ -107,21 +126,25 @@ async function startJumpServer(opts: { forwarding?: boolean; hostKey?: string } 
     client.on('error', () => {});
     client.on('authentication', (ctx) => {
       if (ctx.method === 'password') s.logins++;
-      if (ctx.method === 'password' && ctx.username === 'jump' && ctx.password === 'jump-pass') ctx.accept();
-      else ctx.reject(['password']);
+      if (ctx.method === 'password' && ctx.username === 'jump' && ctx.password === 'jump-pass') {
+        setTimeout(() => ctx.accept(), opts.loginDelayMs ?? 0);
+      } else ctx.reject(['password']);
     });
     client.on('ready', () => {
       if (opts.forwarding === false) return; // no 'tcpip' listener: "administratively prohibited"
       client.on('tcpip', (accept, reject, info) => {
         s.forwards.push(`${info.destIP}:${info.destPort}`);
-        const sock = net.connect(info.destPort, info.destIP);
-        open.add(sock);
-        sock.once('connect', () => {
-          const ch = accept();
-          sock.pipe(ch).pipe(sock);
-          ch.on('error', () => sock.destroy());
-        });
-        sock.once('error', () => reject());
+        setTimeout(() => {
+          const sock = net.connect(info.destPort, info.destIP);
+          open.add(sock);
+          sock.once('connect', () => {
+            const ch = accept();
+            sock.pipe(ch).pipe(sock);
+            ch.on('error', () => sock.destroy());
+            ch.on('close', () => { s.channelsClosed++; sock.destroy(); });
+          });
+          sock.once('error', () => reject());
+        }, opts.forwardDelayMs ?? 0);
       });
     });
   });
@@ -258,6 +281,24 @@ describe('RouterOS API through a jump host', () => {
     for (const c of clients) c.disconnect();
   });
 
+  it('shows as connected only once logged in', async () => {
+    const slow = await startJumpServer({ loginDelayMs: 400 });
+    try {
+      const row = addJumpHost(6, slow.port);
+      expect(jumpHostStatus(6).state).toBe('idle');
+      const client = api(device.port, 6);
+      const connecting = client.connect();
+      // Its host key is accepted (and pinned) before the login is.
+      while (!row.host_key_fingerprint) await new Promise((r) => setTimeout(r, 10));
+      expect(jumpHostStatus(6).state).toBe('idle');
+      await connecting;
+      expect(jumpHostStatus(6)).toMatchObject({ state: 'connected', channels: 1 });
+      client.disconnect();
+    } finally {
+      await slow.close();
+    }
+  });
+
   it('keeps a working connection when tested', async () => {
     addJumpHost(5, jump.port);
     const client = api(device.port, 5);
@@ -331,6 +372,115 @@ describe('never falling back to a direct connection', () => {
   });
 });
 
+describe('a jump host slow to reach the device', () => {
+  it('gives up after its time, and closes the channel if it opens later', async () => {
+    const jump = await startJumpServer({ forwardDelayMs: 400 });
+    const device = await startDevice();
+    try {
+      addJumpHost(15, jump.port);
+      await expect(openForwardedChannel(15, '127.0.0.1', device.port, 150))
+        .rejects.toThrow(/could not connect to 127\.0\.0\.1:\d+: no answer within 1s/);
+      // Opened late on the router: closed by the manager, not left holding a connection to the device.
+      await new Promise((r) => setTimeout(r, 900));
+      expect(device.connections).toBe(1);
+      expect(jump.channelsClosed).toBe(1);
+      expect(jumpHostStatus(15)).toMatchObject({ state: 'connected', channels: 0 });
+    } finally {
+      await jump.close();
+      await device.close();
+    }
+  });
+});
+
+/** Wait, up to a point, for `done` to hold. */
+async function until(done: () => boolean, ms = 2_000): Promise<void> {
+  for (const end = Date.now() + ms; !done() && Date.now() < end;) await new Promise((r) => setTimeout(r, 10));
+}
+
+describe('counting channels', () => {
+  it('stops counting one a client gave up on, though it opened later and nothing read it', async () => {
+    const jump = await startJumpServer({ forwardDelayMs: 400 });
+    const device = await startDevice();
+    try {
+      addJumpHost(21, jump.port);
+      const c = new RouterOSClient('127.0.0.1', device.port, 'admin', 'secret', 150, 2_000, false, 21);
+      await expect(c.connect()).rejects.toThrow(/through its jump host/);
+      await until(() => jump.channelsClosed === 1);
+      await until(() => jumpHostStatus(21).channels === 0, 300);
+      expect(jump.channelsClosed).toBe(1);
+      expect(jumpHostStatus(21)).toMatchObject({ state: 'connected', channels: 0 });
+    } finally {
+      await jump.close();
+      await device.close();
+    }
+  });
+});
+
+describe('the idle sweep', () => {
+  const IDLE_MS = 15 * 60_000;
+
+  it('closes a connection nothing uses, but not one a device is opening a channel on', async () => {
+    const jump = await startJumpServer({ forwardDelayMs: 300 });
+    const device = await startDevice();
+    try {
+      addJumpHost(19, jump.port);
+      (await openForwardedChannel(19, '127.0.0.1', device.port)).destroy();
+      await until(() => jumpHostStatus(19).channels === 0);
+      const idleSince = Date.now();
+      await new Promise((r) => setTimeout(r, 50));
+      // A device asks for a channel just as the connection's idle time runs out.
+      const second = openForwardedChannel(19, '127.0.0.1', device.port);
+      await until(() => jump.forwards.length === 2);
+      closeIdleJumpHosts(idleSince + IDLE_MS + 10);
+      (await second).destroy();
+      expect(jump.connections).toBe(1);
+      // Nothing open and nothing used since: closed.
+      await until(() => jumpHostStatus(19).channels === 0);
+      closeIdleJumpHosts(Date.now() + IDLE_MS + 10);
+      expect(jumpHostStatus(19).state).toBe('idle');
+    } finally {
+      await jump.close();
+      await device.close();
+    }
+  });
+});
+
+describe('closing a connection on purpose', () => {
+  it('is not counted against the jump host: changed while connecting, it is tried again at once', async () => {
+    const jump = await startJumpServer({ loginDelayMs: 300 });
+    try {
+      const row = addJumpHost(17, jump.port);
+      const first = openForwardedChannel(17, '127.0.0.1', jump.port);
+      while (!row.host_key_fingerprint) await new Promise((r) => setTimeout(r, 10));
+      dropJumpHost(17); // as an edit of its login does
+      await expect(first).rejects.toThrow(/was changed or removed while connecting/);
+      const ch = await openForwardedChannel(17, '127.0.0.1', jump.port);
+      ch.destroy();
+      expect(jump.connections).toBe(2);
+    } finally {
+      await jump.close();
+    }
+  });
+});
+
+describe('a jump host logging in with a credential preset', () => {
+  it("tries again at once when the preset's login changes", async () => {
+    const jump = await startJumpServer();
+    try {
+      presets.set(1, { api_username: 'admin', api_password_encrypted: 'jump-pass', ssh_username: 'wrong', ssh_password_encrypted: null });
+      addJumpHost(16, jump.port, { username: null, password_encrypted: null, credential_preset_id: 1 });
+      await expect(openForwardedChannel(16, '127.0.0.1', 1)).rejects.toThrow(/refused the login/);
+      await expect(openForwardedChannel(16, '127.0.0.1', 1)).rejects.toThrow(/next attempt in/);
+      presets.get(1)!.ssh_username = 'jump';
+      const ch = await openForwardedChannel(16, '127.0.0.1', jump.port);
+      ch.destroy();
+      expect(jump.connections).toBe(2);
+    } finally {
+      await jump.close();
+    }
+  });
+});
+
 describe('the jump host refusing', () => {
   it('says how to allow forwarding on the router when it is off', async () => {
     const jump = await startJumpServer({ forwarding: false });
@@ -393,6 +543,49 @@ const tlsPair = makeCert();
     } finally {
       await jump.close();
       await device.close();
+    }
+  });
+});
+
+(tlsPair ? describe : describe.skip)('WebFig HTTPS check through a jump host', () => {
+  async function startHttps(): Promise<{ port: number; connections: number; close(): Promise<void> }> {
+    const h = { port: 0, connections: 0, close: async () => {} };
+    const server = https.createServer(tlsPair!, (_req, res) => { res.writeHead(302, { Location: '/webfig/' }); res.end(); });
+    server.on('secureConnection', () => { h.connections++; });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    h.port = (server.address() as AddressInfo).port;
+    h.close = () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); });
+    return h;
+  }
+
+  it('asks through the jump host, and the channel is closed after', async () => {
+    const jump = await startJumpServer();
+    const web = await startHttps();
+    try {
+      addJumpHost(50, jump.port);
+      expect(await httpsAnswers('127.0.0.1', web.port, 50)).toBeNull();
+      expect(jump.forwards).toEqual([`127.0.0.1:${web.port}`]);
+      expect(web.connections).toBe(1);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(jumpHostStatus(50)).toMatchObject({ state: 'connected', channels: 0 });
+    } finally {
+      await jump.close();
+      await web.close();
+    }
+  });
+
+  it('reports the jump host, and never asks the address directly, when the jump host is down', async () => {
+    const web = await startHttps();
+    const dead = net.createServer();
+    await new Promise<void>((r) => dead.listen(0, '127.0.0.1', r));
+    const deadPort = (dead.address() as AddressInfo).port;
+    await new Promise<void>((r) => dead.close(() => r()));
+    try {
+      addJumpHost(51, deadPort, { name: 'branch-gw' });
+      expect(await httpsAnswers('127.0.0.1', web.port, 51)).toMatch(/Jump host "branch-gw" .* is unreachable/);
+      expect(web.connections).toBe(0);
+    } finally {
+      await web.close();
     }
   });
 });

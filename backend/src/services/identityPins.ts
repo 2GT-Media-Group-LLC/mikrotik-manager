@@ -133,7 +133,7 @@ interface PinRow {
  * yet (a device being added) passes unpinned.
  */
 export async function verifyDeviceIdentity(
-  kind: IdentityKind, host: string, port: number, presented: string, jumpHostId: number | null = null,
+  kind: IdentityKind, host: string, port: number, presented: string, jumpHostId: number | null,
 ): Promise<void> {
   const fp = normalizeFingerprint(presented);
   // API-SSL on 8729 is checked against a device stored with the plain API's

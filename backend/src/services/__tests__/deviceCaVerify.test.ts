@@ -43,17 +43,17 @@ describe('connection check for devices with a certificate from the manager CA (#
 
   it('lets through a device that is not enrolled, without looking at the CA', async () => {
     db(null);
-    await expect(verifyManagedCertificate('10.0.0.5', 8729, rogueRaw)).resolves.toBeUndefined();
+    await expect(verifyManagedCertificate('10.0.0.5', 8729, rogueRaw, null)).resolves.toBeUndefined();
   });
 
   it('accepts the certificate the CA issued', async () => {
     db(goodFp);
-    await expect(verifyManagedCertificate('10.0.0.5', 8729, goodRaw)).resolves.toBeUndefined();
+    await expect(verifyManagedCertificate('10.0.0.5', 8729, goodRaw, null)).resolves.toBeUndefined();
   });
 
   it('refuses a certificate recorded for the device but not signed by the CA', async () => {
     db(rogueFp);
-    await expect(verifyManagedCertificate('10.0.0.5', 8729, rogueRaw)).rejects.toBeInstanceOf(IdentityMismatchError);
+    await expect(verifyManagedCertificate('10.0.0.5', 8729, rogueRaw, null)).rejects.toBeInstanceOf(IdentityMismatchError);
   });
 });
 
@@ -87,7 +87,7 @@ describe('adopting a CA certificate the manager has no record of (restored older
 
   it('takes up a renewed certificate for an enrolled device: record and pin updated, no alarm', async () => {
     db({ managed_fp: 'a'.repeat(64), pinned: 'a'.repeat(64) });
-    await adoptCaCertificate('10.0.0.5', 8729, renewed.raw);
+    await adoptCaCertificate('10.0.0.5', 8729, renewed.raw, null);
     expect(writes()).toEqual(expect.arrayContaining(['UPDATE managed_device_certs SET', 'INSERT INTO device_identity_pins']));
     const pin = mockedQuery.mock.calls.find((c) => String(c[0]).includes('device_identity_pins'))!;
     expect(pin[1]).toEqual([1, renewed.fp]);
@@ -95,16 +95,16 @@ describe('adopting a CA certificate the manager has no record of (restored older
 
   it('enrols a device that was enrolled after the backup was made', async () => {
     db({ managed_fp: null, pinned: 'b'.repeat(64) });
-    await adoptCaCertificate('10.0.0.5', 8729, renewed.raw);
+    await adoptCaCertificate('10.0.0.5', 8729, renewed.raw, null);
     expect(writes()).toEqual(expect.arrayContaining(['INSERT INTO managed_device_certs', 'INSERT INTO device_identity_pins']));
   });
 
   it('leaves alone a certificate from another CA, one for another address, and a device already in step', async () => {
     db({ managed_fp: 'a'.repeat(64), pinned: 'a'.repeat(64) });
-    await adoptCaCertificate('10.0.0.5', 8729, foreign);
-    await adoptCaCertificate('10.0.0.5', 8729, otherAddress);
+    await adoptCaCertificate('10.0.0.5', 8729, foreign, null);
+    await adoptCaCertificate('10.0.0.5', 8729, otherAddress, null);
     db({ managed_fp: renewed.fp, pinned: renewed.fp });
-    await adoptCaCertificate('10.0.0.5', 8729, renewed.raw);
+    await adoptCaCertificate('10.0.0.5', 8729, renewed.raw, null);
     expect(mockedQuery).not.toHaveBeenCalled();
   });
 });

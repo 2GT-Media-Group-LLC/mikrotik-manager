@@ -122,6 +122,12 @@ const BACKOFF_FIRST_MS = 5_000;
 const BACKOFF_MAX_MS = 5 * 60_000;
 const IDLE_MS = 15 * 60_000;
 const READY_TIMEOUT_MS = 15_000;
+/**
+ * How long the jump host may take to open a connection onward. A router gives
+ * up on a device that doesn't answer only after its own TCP timeout, which
+ * can be minutes.
+ */
+const CHANNEL_OPEN_TIMEOUT_MS = 20_000;
 
 /** Time to wait before the next attempt after `failures` failures in a row. */
 export function backoffMs(failures: number): number {
@@ -132,6 +138,10 @@ interface Live {
   configKey: string;
   ready: Promise<SSHClient>;
   client: SSHClient;
+  /** Logged in and usable. */
+  connected: boolean;
+  /** Closed on purpose (changed, removed or idle), which is no failure of the jump host's. */
+  closing: boolean;
   /** The host key this connection was accepted with. */
   fingerprint: string | null;
   channels: number;
@@ -147,6 +157,13 @@ interface Failure {
 
 const live = new Map<number, Live>();
 const failures = new Map<number, Failure>();
+
+/** Close a connection on purpose. */
+function closeLive(id: number, e: Live): void {
+  e.closing = true;
+  if (live.get(id) === e) live.delete(id);
+  e.client.end();
+}
 
 async function loadRow(id: number): Promise<JumpHostRow> {
   const row = await queryOne<JumpHostRow>(`SELECT * FROM jump_hosts WHERE id = $1`, [id]);
@@ -174,11 +191,8 @@ async function resolveAuth(row: JumpHostRow): Promise<JumpAuth & { presetKey: st
          FROM credential_presets WHERE id = $1`, [row.credential_preset_id]);
     if (!preset) throw new JumpHostError(`${label(row)} uses a credential preset that no longer exists`);
     const encrypted = preset.ssh_password_encrypted || preset.api_password_encrypted;
-    return {
-      username: row.username || preset.ssh_username || preset.api_username,
-      password: decrypt(encrypted),
-      presetKey: encrypted,
-    };
+    const username = row.username || preset.ssh_username || preset.api_username;
+    return { username, password: decrypt(encrypted), presetKey: `${username}|${encrypted}` };
   }
   if (!row.username) throw new JumpHostError(`${label(row)} has no username`);
   if (row.private_key_encrypted) {
@@ -259,18 +273,21 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
   const client = new SSHClient();
   let hostKeyError: JumpHostError | null = null;
   const entry: Live = {
-    configKey: key, client, fingerprint: null, channels: 0, lastUsed: Date.now(),
+    configKey: key, client, connected: false, closing: false, fingerprint: null, channels: 0, lastUsed: Date.now(),
     ready: Promise.resolve(client),
   };
   entry.ready = new Promise<SSHClient>((resolve, reject) => {
-    client.once('ready', () => resolve(client));
+    client.once('ready', () => { entry.connected = true; resolve(client); });
     // Kept for the connection's life: an 'error' with no listener would end the process.
     client.on('error', (err: Error & { code?: string; level?: string }) => {
       reject(hostKeyError ?? new JumpHostError(`${label(row)} is unreachable: ${describeSshFailure(err)}`, { cause: err }));
     });
     client.once('close', () => {
+      entry.connected = false;
       if (live.get(row.id) === entry) live.delete(row.id);
-      reject(hostKeyError ?? new JumpHostError(`${label(row)} closed the connection`));
+      reject(hostKeyError ?? new JumpHostError(entry.closing
+        ? `${label(row)} was changed or removed while connecting`
+        : `${label(row)} closed the connection`));
     });
     client.connect({
       host: row.host,
@@ -321,8 +338,7 @@ async function jumpClient(id: number): Promise<{ client: SSHClient; entry: Live;
     if (existing.configKey === key && !pinMoved) {
       return { client: await existing.ready, entry: existing, row };
     }
-    live.delete(id);
-    existing.client.end();
+    closeLive(id, existing);
   }
 
   const failed = failures.get(id);
@@ -341,8 +357,10 @@ async function jumpClient(id: number): Promise<{ client: SSHClient; entry: Live;
     if (live.get(id) === entry) live.delete(id);
     entry.client.end();
     const error = err instanceof JumpHostError ? err : new JumpHostError(`${label(row)}: ${(err as Error).message}`, { cause: err });
-    const attempts = failed && failed.configKey === key ? failed.attempts + 1 : 1;
-    failures.set(id, { configKey: key, error, attempts, retryAt: Date.now() + backoffMs(attempts) });
+    if (!entry.closing) {
+      const attempts = failed && failed.configKey === key ? failed.attempts + 1 : 1;
+      failures.set(id, { configKey: key, error, attempts, retryAt: Date.now() + backoffMs(attempts) });
+    }
     throw error;
   }
 }
@@ -350,11 +368,21 @@ async function jumpClient(id: number): Promise<{ client: SSHClient; entry: Live;
 /**
  * A new TCP connection to host:port, opened by the jump host. Each call is a
  * channel of its own, so a check that needs a fresh connection to the device
- * (Change Guard) gets one.
+ * (Change Guard) gets one. Fails after `timeoutMs` without one; a channel
+ * that opens after that is closed straight away.
  */
-export async function openForwardedChannel(jumpHostId: number, host: string, port: number): Promise<ClientChannel> {
+export async function openForwardedChannel(
+  jumpHostId: number, host: string, port: number, timeoutMs = CHANNEL_OPEN_TIMEOUT_MS,
+): Promise<ClientChannel> {
   const { client, entry, row } = await jumpClient(jumpHostId);
+  // In use from here, so the idle sweep leaves the connection alone while the channel opens.
+  entry.lastUsed = Date.now();
   return new Promise<ClientChannel>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      reject(new Error(`${label(row)} could not connect to ${host}:${port}: no answer within ${Math.max(1, Math.round(timeoutMs / 1000))}s`));
+    }, timeoutMs);
     const failed = (err: Error & { reason?: number | string }) => {
       // RFC 4254 reason codes; the description that comes with them may be empty.
       if (err.reason === OPEN_ADMINISTRATIVELY_PROHIBITED || /prohibited/i.test(err.message)) {
@@ -369,14 +397,27 @@ export async function openForwardedChannel(jumpHostId: number, host: string, por
     };
     try {
       client.forwardOut('127.0.0.1', 0, host, port, (err, channel) => {
+        clearTimeout(timer);
+        if (settled) {
+          channel?.destroy(); // too late: whoever asked has given up
+          return;
+        }
+        settled = true;
         if (err) return failed(err);
         entry.channels++;
         entry.lastUsed = Date.now();
         channel.once('close', () => { entry.channels--; entry.lastUsed = Date.now(); });
+        // ssh2 emits 'close' only once what arrived has been read, so a channel
+        // given up on unread (the device answered too late) would stay counted
+        // for good: destroying one drains it.
+        const destroy = channel.destroy.bind(channel);
+        channel.destroy = () => { channel.resume(); return destroy(); };
         resolve(channel);
       });
     } catch (err) {
       // The connection closed between being handed out and used.
+      clearTimeout(timer);
+      settled = true;
       reject(new JumpHostError(`${label(row)} closed the connection`, { cause: err }));
     }
   });
@@ -413,7 +454,7 @@ export async function testJumpHost(id: number): Promise<{ ok: true; fingerprint:
 export function dropJumpHost(id: number): void {
   failures.delete(id);
   const e = live.get(id);
-  if (e) { live.delete(id); e.client.end(); }
+  if (e) closeLive(id, e);
 }
 
 /** Accept the host key last refused as the jump host's pin. Returns false if none was pending. */
@@ -431,16 +472,16 @@ export async function trustNewJumpHostKey(id: number): Promise<boolean> {
 /** The state of each jump host's shared connection, for the settings page. */
 export function jumpHostStatus(id: number): { state: 'connected' | 'idle' | 'failing'; error?: string; retryAt?: number; channels?: number } {
   const e = live.get(id);
-  if (e && e.fingerprint !== null) return { state: 'connected', channels: e.channels };
+  if (e?.connected) return { state: 'connected', channels: e.channels };
   const f = failures.get(id);
   if (f) return { state: 'failing', error: f.error.message, retryAt: f.retryAt };
   return { state: 'idle' };
 }
 
-// Close connections nothing has used for a while.
-setInterval(() => {
-  const now = Date.now();
+/** Close the connections nothing has used for a while. */
+export function closeIdleJumpHosts(now = Date.now()): void {
   for (const [id, e] of live) {
-    if (e.channels === 0 && now - e.lastUsed > IDLE_MS) { live.delete(id); e.client.end(); }
+    if (e.channels === 0 && now - e.lastUsed > IDLE_MS) closeLive(id, e);
   }
-}, 60_000).unref();
+}
+setInterval(() => closeIdleJumpHosts(), 60_000).unref();

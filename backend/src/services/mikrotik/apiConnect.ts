@@ -21,12 +21,13 @@ export interface PreferredConnection {
 
 export async function connectPreferringSsl(
   address: string, username: string, password: string,
-  opts: { sslTimeoutMs?: number; plainTimeoutMs?: number; sslOnly?: boolean; jumpHostId?: number | null } = {},
+  /** jumpHostId: the device's route (null for direct). Required: a forgotten one would mean "direct". */
+  opts: { sslTimeoutMs?: number; plainTimeoutMs?: number; sslOnly?: boolean; jumpHostId: number | null },
 ): Promise<PreferredConnection> {
   // One after the other, never both at once: the plain API sends the login in
   // the clear as soon as its socket opens, so trying it alongside API-SSL gave
   // the password away even when API-SSL worked (GHSA-63v6-w7qf-349f).
-  const via = opts.jumpHostId ?? null;
+  const via = opts.jumpHostId;
   const ssl = new RouterOSClient(address, API_SSL_PORT, username, password, opts.sslTimeoutMs ?? 6_000, 30_000, true, via);
   let sslErr: unknown;
   try {

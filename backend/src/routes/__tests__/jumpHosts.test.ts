@@ -119,6 +119,25 @@ describe('POST /', () => {
     expect(res.status).toBe(403);
   });
 
+  it('stores an address as a device address is read: no brackets, and a port in it is the SSH port', async () => {
+    answer([[/FROM jump_hosts j/, row()]]);
+    mockedQuery.mockResolvedValue([{ id: 7 }] as never);
+    const app = makeApp(fleetAdmin);
+    expect((await request(app).post('/').send({ ...base, host: '[2001:db8::1]', password: 'x' })).status).toBe(201);
+    expect((await request(app).post('/').send({ ...base, host: 'GW.example.com:2222', password: 'x' })).status).toBe(201);
+    const inserts = mockedQuery.mock.calls.filter(([sql]) => /INSERT INTO jump_hosts/.test(String(sql))).map(([, p]) => (p as unknown[]).slice(2, 4));
+    expect(inserts).toEqual([['2001:db8::1', 22], ['gw.example.com', 2222]]);
+    const clash = await request(app).post('/').send({ ...base, host: '203.0.113.10:2222', port: 22, password: 'x' });
+    expect(clash.status).toBe(400);
+    expect(clash.body.error).toMatch(/includes port 2222, but the SSH port is 22/);
+    for (const host of ['203.0.113.10:99999', '203.0.113.10:99999999999']) {
+      const outOfRange = await request(app).post('/').send({ ...base, host, password: 'x' });
+      expect(outOfRange.status).toBe(400);
+      expect(outOfRange.body.error).toMatch(/port in the address must be a number from 1 to 65535/);
+    }
+    expect(mockedQuery.mock.calls.filter(([sql]) => /INSERT INTO jump_hosts/.test(String(sql)))).toHaveLength(2);
+  });
+
   it("refuses another site's credential preset", async () => {
     answer([[/FROM sites WHERE id/, { id: 5 }], [/FROM credential_presets WHERE id/, { site_id: 6, allow_operator_use: true }]]);
     const res = await request(makeApp(siteAdmin)).post('/').send({ name: 'r', host: '10.0.0.1', site_id: 5, credential_preset_id: 9 });
@@ -139,11 +158,38 @@ describe('PUT /:id', () => {
     expect(dropJumpHost).toHaveBeenCalledWith(7);
   });
 
-  it('keeps the pin for a change of notes', async () => {
+  it("won't move into one site while other sites have it as their default", async () => {
+    answer([[/default_jump_host_id/, { devices: '0', sites: '1' }], [/FROM sites WHERE id/, { id: 5 }], [/FROM jump_hosts j/, row()]]);
+    const res = await request(makeApp(fleetAdmin)).put('/7').send({ site_id: 5 });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/other sites have it as their default/);
+    expect(mockedQuery.mock.calls.some(([sql]) => /UPDATE jump_hosts SET/.test(String(sql)))).toBe(false);
+  });
+
+  it("won't move to another site with the preset it logs in with, if that site can't use it", async () => {
+    answer([
+      [/default_jump_host_id/, { devices: '0', sites: '0' }], [/FROM sites WHERE id/, { id: 6 }],
+      [/FROM credential_presets WHERE id/, { site_id: 5, allow_operator_use: true }],
+      [/FROM jump_hosts j/, row({ site_id: 5, credential_preset_id: 3, password_encrypted: null, username: null })],
+    ]);
+    const res = await request(makeApp(fleetAdmin)).put('/7').send({ site_id: 6 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/another site/);
+  });
+
+  it('keeps the pin, and the open connection with the sessions through it, for a change of name or notes', async () => {
     answer([[/FROM jump_hosts j/, row()]]);
-    await request(makeApp(fleetAdmin)).put('/7').send({ notes: 'rack 4' });
+    // As the form sends it: everything, the address and login unchanged.
+    await request(makeApp(fleetAdmin)).put('/7').send({ name: 'edge', notes: 'rack 4', site_id: null, host: '203.0.113.10', port: 22, username: 'jump' });
     const params = mockedQuery.mock.calls.find(([sql]) => /UPDATE jump_hosts SET/.test(String(sql)))![1] as unknown[];
     expect(params[14]).toBe(false);
+    expect(dropJumpHost).not.toHaveBeenCalled();
+  });
+
+  it('reconnects for a new login', async () => {
+    answer([[/FROM jump_hosts j/, row()]]);
+    await request(makeApp(fleetAdmin)).put('/7').send({ password: 'new-secret' });
+    expect(dropJumpHost).toHaveBeenCalledWith(7);
   });
 });
 

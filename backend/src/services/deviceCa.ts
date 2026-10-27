@@ -184,7 +184,7 @@ async function caCertPem(): Promise<string | null> {
  * must also be signed by the CA. Devices that aren't enrolled are unaffected.
  */
 export async function verifyManagedCertificate(
-  host: string, port: number, raw: Buffer, jumpHostId: number | null = null,
+  host: string, port: number, raw: Buffer, jumpHostId: number | null,
 ): Promise<void> {
   const row = await queryOne<{ device_id: number; name: string; fingerprint: string }>(
     `SELECT m.device_id, d.name, m.fingerprint FROM managed_device_certs m JOIN devices d ON d.id = m.device_id
@@ -213,7 +213,7 @@ export async function verifyManagedCertificate(
  * to the usual changed-identity handling.
  */
 export async function adoptCaCertificate(
-  host: string, port: number, raw: Buffer, jumpHostId: number | null = null,
+  host: string, port: number, raw: Buffer, jumpHostId: number | null,
 ): Promise<void> {
   const row = await queryOne<{
     device_id: number; name: string; ip_address: string; managed_fp: string | null; pinned: string | null;
