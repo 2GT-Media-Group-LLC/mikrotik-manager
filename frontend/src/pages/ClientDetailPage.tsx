@@ -153,6 +153,20 @@ function ConnectivityTimeline({ mac }: { mac: string }) {
 
 // ─── Connection Diagram ───────────────────────────────────────────────────────
 
+/**
+ * A node's name, wrapped rather than cut off (#363: "01-NIKITINA-ASW01-2F"
+ * showed as "01-NIKITINA-A…" with no way to read the rest), with the full
+ * name on hover and a link to the device where there is one.
+ */
+function NodeLabel({ text, to }: { text: string; to?: string }) {
+  const cls = 'text-[11px] text-center font-medium max-w-[160px] break-words';
+  return to ? (
+    <Link to={to} title={text} className={clsx(cls, 'text-blue-600 dark:text-blue-400 hover:underline')}>{text}</Link>
+  ) : (
+    <span title={text} className={clsx(cls, 'text-gray-700 dark:text-slate-300')}>{text}</span>
+  );
+}
+
 function ConnectionDiagram({ client }: { client: ClientDetail }) {
   const ClientIcon = client.client_type === 'wireless' ? Wifi : Network;
   const DeviceIcon = deviceIcon(client.device_type);
@@ -181,9 +195,7 @@ function ConnectionDiagram({ client }: { client: ClientDetail }) {
               client.active ? 'text-green-600 dark:text-green-400' : 'text-gray-400'
             )} />
           </div>
-          <span className="text-[11px] text-center text-gray-700 dark:text-slate-300 font-medium max-w-[90px] truncate">
-            {clientName}
-          </span>
+          <NodeLabel text={clientName} />
           {client.ip_address && (
             <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">
               {client.ip_address}
@@ -200,9 +212,7 @@ function ConnectionDiagram({ client }: { client: ClientDetail }) {
             {/* eslint-disable-next-line react-hooks/static-components */}
             <DeviceIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
-          <span className="text-[11px] text-center text-gray-700 dark:text-slate-300 font-medium max-w-[90px] truncate">
-            {client.device_name || 'Unknown'}
-          </span>
+          <NodeLabel text={client.device_name || 'Unknown'} to={client.device_id ? `/devices/${client.device_id}` : undefined} />
           {client.ssid && (
             <span className="text-[10px] text-blue-500 dark:text-blue-400 font-medium">
               {client.ssid}
@@ -224,9 +234,7 @@ function ConnectionDiagram({ client }: { client: ClientDetail }) {
                 {/* eslint-disable-next-line react-hooks/static-components */}
                 <UpstreamIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
               </div>
-              <span className="text-[11px] text-center text-gray-700 dark:text-slate-300 font-medium max-w-[90px] truncate">
-                {client.upstream_device_name}
-              </span>
+              <NodeLabel text={client.upstream_device_name} to={client.upstream_device_id ? `/devices/${client.upstream_device_id}` : undefined} />
               {client.upstream_device_ip && (
                 <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">
                   {client.upstream_device_ip}

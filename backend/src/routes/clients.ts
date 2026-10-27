@@ -15,6 +15,7 @@ import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/c
 import { parseRoamLine, buildSessions, flappingSessions } from '../utils/roaming';
 import { fluxString } from '@influxdata/influxdb-client';
 import { counterDeltas } from '../utils/counterDeltas';
+import { INFRA_PORTS_CTE, CLIENT_SIGHTING_ORDER, UPSTREAM_LINK_ORDER } from '../utils/clientPorts';
 
 // Effective category: the user's override wins; otherwise the fingerprint.
 function withCategory<T extends Record<string, unknown>>(row: T): T & { device_category: string; auto_category: string } {
@@ -212,9 +213,11 @@ router.get('/', async (req: Request, res: Response) => {
   const trafficSites = siteList(activeSite(req))?.filter((n) => Number.isSafeInteger(n)) ?? null;
   const outerWhere = outerFilters.length ? `WHERE ${outerFilters.join(' AND ')}` : '';
 
-  // Deduplicate by MAC address across devices: prefer active rows, then most recently seen.
+  // Deduplicate by MAC address across devices: the best sighting of each
+  // (CLIENT_SIGHTING_ORDER: live, wireless, on an edge port, latest).
   // The inner DISTINCT ON picks the best row per MAC; the outer query applies final sort + pagination.
   const sql = `
+    WITH ${INFRA_PORTS_CTE}
     SELECT deduped.*,
            -- float8 so node-pg returns a number (bigint would arrive as a string)
            COALESCE(ctd.bytes, 0)::float8 AS traffic_today_bytes
@@ -227,7 +230,7 @@ router.get('/', async (req: Request, res: Response) => {
       LEFT JOIN wireless_interfaces wi
         ON wi.device_id = c.device_id AND wi.name = c.interface_name
       ${where}
-      ORDER BY c.mac_address, c.active DESC, (c.client_type = 'wireless') DESC, c.last_seen DESC NULLS LAST
+      ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}
     ) deduped
     -- Today's traffic is kept per site (J4): add up the sites in view.
     LEFT JOIN (
@@ -243,11 +246,12 @@ router.get('/', async (req: Request, res: Response) => {
   const clients = await query(sql, [...filterParams, parseInt(String(limit), 10), parseInt(String(offset), 10)]);
 
   const countResult = await query<{ total: string }>(
-    `SELECT COUNT(*) as total FROM (
+    `WITH ${INFRA_PORTS_CTE}
+     SELECT COUNT(*) as total FROM (
        SELECT DISTINCT ON (c.mac_address) c.client_type, c.vlan_id, c.signal_strength
        FROM clients c
        ${where}
-       ORDER BY c.mac_address, c.active DESC, (c.client_type = 'wireless') DESC, c.last_seen DESC NULLS LAST
+       ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}
      ) deduped
      ${outerWhere}`,
     filterParams
@@ -257,11 +261,12 @@ router.get('/', async (req: Request, res: Response) => {
   // offers all of them (outside review U14). The VLAN filter itself isn't
   // applied, or choosing one would hide the others.
   const vlanRows = await query<{ vlan_id: number }>(
-    `SELECT DISTINCT deduped.vlan_id FROM (
+    `WITH ${INFRA_PORTS_CTE}
+     SELECT DISTINCT deduped.vlan_id FROM (
        SELECT DISTINCT ON (c.mac_address) c.vlan_id
        FROM clients c
        ${where}
-       ORDER BY c.mac_address, c.active DESC, (c.client_type = 'wireless') DESC, c.last_seen DESC NULLS LAST
+       ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}
      ) deduped
      WHERE deduped.vlan_id IS NOT NULL
      ORDER BY 1`,
@@ -280,10 +285,12 @@ router.get('/:mac', async (req: Request, res: Response) => {
   const mac = req.params.mac.toLowerCase();
 
   // Order: active records first, then wireless before wired (the AP knows the
-  // client best), then most recently seen. Wireless first regardless let a
+  // client best), then the switch that sees it on an edge port rather than an
+  // uplink (#363), then most recently seen. Wireless first regardless let a
   // stale wireless sighting outrank a live wired one (outside review J7). Use LATERAL for topology so we never multiply rows.
   const rows = await query<Record<string, unknown>>(
-    `SELECT c.*, d.name as device_name, d.device_type,
+    `WITH ${INFRA_PORTS_CTE}
+     SELECT c.*, d.name as device_name, d.device_type,
             wi.ssid as ssid,
             v.name as vlan_name,
             topo.upstream_device_id,
@@ -306,14 +313,13 @@ router.get('/:mac', async (req: Request, res: Response) => {
        FROM topology_links tl
        JOIN devices ud ON ud.id = tl.to_device_id
        WHERE tl.from_device_id = c.device_id
-       -- The device's way up: its spanning-tree root port when it has one,
-       -- rather than whichever link the database returned first (J7).
-       ORDER BY (tl.stp_role = 'root') DESC NULLS LAST, tl.id
+       -- The device's way up (J7, #363): see UPSTREAM_LINK_ORDER.
+       ORDER BY ${UPSTREAM_LINK_ORDER}
        LIMIT 1
      ) topo ON TRUE
      WHERE LOWER(c.mac_address) = $1
        ${siteScopeByDevice(activeSite(req), 'c.device_id') ? `AND ${siteScopeByDevice(activeSite(req), 'c.device_id')}` : ''}
-     ORDER BY c.active DESC, (c.client_type = 'wireless') DESC, c.last_seen DESC NULLS LAST
+     ORDER BY ${CLIENT_SIGHTING_ORDER}
      LIMIT 1`,
     [mac]
   );

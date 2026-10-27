@@ -10,6 +10,14 @@ usually appears in more than one of these, and they are merged by MAC address.
 
 That merge is why a client shows a switch port *and* an access point: the MAC is known to both.
 
+When several devices know a client, it's shown where it's connected: the access point it's
+registered to, or else the switch that sees it on an edge port. Every switch between the client
+and the router learns its MAC, most of them on an uplink, so a sighting on a port facing another
+managed device (an uplink, bond or peer link) comes last (#363). On the client's page,
+**Connection Path** shows that device and its way up: the spanning-tree root port where there is
+one, otherwise a link on a bridge port rather than an out-of-band management port. Names wrap
+in full and link to the device.
+
 !!! note "This can be switched off"
     Client tracking is the heaviest collector on most fleets. **Settings → Polling →
     Collectors** can disable it, at the cost of this page and everything fed by it. See
