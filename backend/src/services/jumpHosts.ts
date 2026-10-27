@@ -28,6 +28,7 @@
  * confirm, as for a device (identityPins.ts).
  */
 import { createHash } from 'crypto';
+import net from 'net';
 import type { Duplex } from 'stream';
 import { Client as SSHClient, type ClientChannel } from 'ssh2';
 import { query, queryOne } from '../config/database';
@@ -128,6 +129,21 @@ const READY_TIMEOUT_MS = 15_000;
  * can be minutes.
  */
 const CHANNEL_OPEN_TIMEOUT_MS = 20_000;
+
+/**
+ * Noticing a jump host that disappears without closing (a dropped link), so
+ * its devices go offline instead of hanging. After `intervalMs` with nothing
+ * heard from it, it is asked something it must answer; nothing heard for
+ * `misses` intervals more, the connection is closed. Shortened by tests.
+ *
+ * Not ssh2's keepalive: RouterOS never answers the keepalive@openssh.com
+ * requests it sends, so ssh2 would close a working connection to a RouterOS
+ * jump host every minute, taking whatever was using it along. What it asks
+ * instead is to open a Unix socket channel, which RouterOS refuses at once
+ * (it forwards none), as does OpenSSH for a socket that isn't there.
+ */
+export const keepalive = { intervalMs: 15_000, misses: 3 };
+const KEEPALIVE_SOCKET = '/nonexistent/mikrotik-manager-keepalive';
 
 /** Time to wait before the next attempt after `failures` failures in a row. */
 export function backoffMs(failures: number): number {
@@ -289,18 +305,32 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
         ? `${label(row)} was changed or removed while connecting`
         : `${label(row)} closed the connection`));
     });
+    // Our own socket, so anything arriving on it shows the jump host is there.
+    const sock = net.connect({ host: row.host, port: row.port });
+    let heard = Date.now();
+    sock.on('data', () => { heard = Date.now(); });
+    const watch = setInterval(() => {
+      const quiet = Date.now() - heard;
+      if (quiet > keepalive.intervalMs * (keepalive.misses + 1)) {
+        sock.destroy(); // gone: its channels close, and the next use connects again
+      } else if (quiet >= keepalive.intervalMs && entry.connected) {
+        try {
+          client.openssh_forwardOutStreamLocal(KEEPALIVE_SOCKET, (_err, ch) => ch?.destroy());
+        } catch { /* closing */ }
+      }
+    }, keepalive.intervalMs);
+    watch.unref();
+    sock.once('close', () => clearInterval(watch));
     client.connect({
-      host: row.host,
-      port: row.port,
+      sock,
       username: auth.username,
       ...(auth.password !== undefined ? { password: auth.password } : {}),
       ...(auth.privateKey !== undefined ? { privateKey: auth.privateKey } : {}),
       ...(auth.passphrase !== undefined ? { passphrase: auth.passphrase } : {}),
       readyTimeout: READY_TIMEOUT_MS,
-      // A jump host that disappears without closing (a dropped link) is noticed
-      // within a minute, so its devices go offline instead of hanging.
-      keepaliveInterval: 15_000,
-      keepaliveCountMax: 3,
+      keepaliveInterval: 0,
+      // ssh2 only sends the keepalive's Unix socket request to OpenSSH otherwise.
+      strictVendor: false,
       hostVerifier: (hostKey: Buffer, verify: (ok: boolean) => void) => {
         checkHostKey(row, hostKey).then(
           (fp) => { entry.fingerprint = fp; verify(true); },

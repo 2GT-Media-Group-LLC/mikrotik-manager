@@ -36,6 +36,7 @@ const lineOf = (src: string, index: number): number => src.slice(0, index).split
 const OWN_CONNECTIONS = new Map([
   ['services/mikrotik/RouterOSClient.ts', 'the API connection itself: direct, or over the channel its jump host opened'],
   ['services/wwwSsl.ts', "the WebFig check, over the device's jump host when it has one"],
+  ['services/jumpHosts.ts', 'the SSH connection to the jump host itself'],
   ['services/firmwareMirror.ts', 'downloads from mikrotik.com only'],
   ['utils/oui.ts', 'the IEEE vendor list'],
   ['routes/clients.ts', 'a Wake-on-LAN broadcast, not a connection to a device'],
@@ -91,5 +92,22 @@ describe('every device connection names its route', () => {
       while ((m = re.exec(src)) !== null) found.push(`${file}:${lineOf(src, m.index)}`);
     }
     expect(found).toEqual([]);
+  });
+
+  it('loads the route with every shared column list a device query uses', () => {
+    // `SELECT ${SOME_COLS} ... FROM devices`: the list is defined elsewhere, so
+    // a forgotten jump_host_id only shows when routeOf() refuses at run time.
+    const lists = new Map<string, string>();
+    for (const { src } of files) {
+      for (const m of src.matchAll(/\bconst ([A-Z][A-Z0-9_]*)\s*=\s*`([^`]*)`/g)) lists.set(m[1], m[2]);
+    }
+    const missing = new Set<string>();
+    for (const { file, src } of files) {
+      for (const m of src.matchAll(/`\s*SELECT \$\{([A-Z][A-Z0-9_]*)\}[^`]*\bFROM devices\b/g)) {
+        const cols = lists.get(m[1]);
+        if (cols === undefined || !/\bjump_host_id\b/.test(cols)) missing.add(`${m[1]} (${file}:${lineOf(src, m.index!)})`);
+      }
+    }
+    expect([...missing]).toEqual([]);
   });
 });

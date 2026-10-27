@@ -72,7 +72,8 @@ After a failure the manager waits before trying the jump host again: 5 seconds, 
 so on up to 5 minutes. Meanwhile its devices fail straight away with the last error, rather
 than each waiting out its own timeout. Editing the jump host, or **Test**, tries again at once.
 A jump host that stops answering without closing the connection is noticed within about a
-minute (SSH keepalives).
+minute. (RouterOS doesn't answer standard SSH keepalives, so the manager checks with a request
+RouterOS does answer, and only when nothing else has been heard for 15 seconds.)
 
 If the jump host is up but a device behind it isn't, the device's error names the device:
 

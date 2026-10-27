@@ -10,7 +10,7 @@ import { RouterOSClient } from '../mikrotik/RouterOSClient';
 import https from 'https';
 import {
   openForwardedChannel, sshRoute, routeOf, dropJumpHost, trustNewJumpHostKey, testJumpHost, jumpHostStatus,
-  closeIdleJumpHosts, parseHostKeyFingerprint, backoffMs, JumpHostError, type JumpHostRow,
+  closeIdleJumpHosts, keepalive, parseHostKeyFingerprint, backoffMs, JumpHostError, type JumpHostRow,
 } from '../jumpHosts';
 import { sshHostKeyFingerprint } from '../identityPins';
 import { httpsAnswers } from '../wwwSsl';
@@ -115,7 +115,7 @@ interface JumpServer {
  * slow to accept the login.
  */
 async function startJumpServer(
-  opts: { forwarding?: boolean; hostKey?: string; forwardDelayMs?: number; loginDelayMs?: number } = {},
+  opts: { forwarding?: boolean; hostKey?: string; forwardDelayMs?: number; loginDelayMs?: number; ignoresGlobalRequests?: boolean } = {},
 ): Promise<JumpServer> {
   const s: JumpServer = { port: 0, connections: 0, logins: 0, forwards: [], channelsClosed: 0, close: async () => {} };
   // Closed with the server: the manager keeps its jump connection open.
@@ -124,6 +124,10 @@ async function startJumpServer(
     s.connections++;
     open.add(client);
     client.on('error', () => {});
+    // RouterOS never answers a global request, keepalive@openssh.com included.
+    if (opts.ignoresGlobalRequests) {
+      (client as unknown as { _protocol: { requestFailure(): void } })._protocol.requestFailure = () => {};
+    }
     client.on('authentication', (ctx) => {
       if (ctx.method === 'password') s.logins++;
       if (ctx.method === 'password' && ctx.username === 'jump' && ctx.password === 'jump-pass') {
@@ -155,6 +159,28 @@ async function startJumpServer(
     for (const c of open) { if (c instanceof net.Socket) c.destroy(); else c.end(); }
   });
   return s;
+}
+
+/** A TCP relay in front of the jump router whose open connections can go silent, as over a dropped link. */
+async function startLink(target: number): Promise<{ port: number; drop(): void; close(): Promise<void> }> {
+  const pairs: net.Socket[][] = [];
+  const server = net.createServer((inbound) => {
+    const outbound = net.connect(target, '127.0.0.1');
+    for (const sock of [inbound, outbound]) sock.on('error', () => {});
+    inbound.pipe(outbound).pipe(inbound);
+    pairs.push([inbound, outbound]);
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  return {
+    port: (server.address() as AddressInfo).port,
+    drop: () => {
+      for (const [inbound, outbound] of pairs) { inbound.unpipe(); outbound.unpipe(); inbound.pause(); outbound.pause(); }
+    },
+    close: () => new Promise<void>((r) => {
+      server.close(() => r());
+      for (const pair of pairs) for (const sock of pair) sock.destroy();
+    }),
+  };
 }
 
 interface FakeDevice { port: number; connections: number; received: () => string; close(): Promise<void> }
@@ -412,6 +438,43 @@ describe('counting channels', () => {
     } finally {
       await jump.close();
       await device.close();
+    }
+  });
+});
+
+describe('noticing a jump host has gone', () => {
+  const saved = { ...keepalive };
+  beforeEach(() => { keepalive.intervalMs = 100; keepalive.misses = 3; });
+  afterEach(() => { Object.assign(keepalive, saved); });
+
+  it('keeps a working connection to a jump host that never answers keepalives, as RouterOS does', async () => {
+    const jump = await startJumpServer({ ignoresGlobalRequests: true });
+    const device = await startDevice();
+    try {
+      addJumpHost(23, jump.port);
+      (await openForwardedChannel(23, '127.0.0.1', device.port)).destroy();
+      await new Promise((r) => setTimeout(r, keepalive.intervalMs * (keepalive.misses + 4)));
+      expect(jumpHostStatus(23).state).toBe('connected');
+      (await openForwardedChannel(23, '127.0.0.1', device.port)).destroy();
+      expect(jump.connections).toBe(1);
+    } finally {
+      await jump.close();
+      await device.close();
+    }
+  });
+
+  it('closes the connection once nothing at all is heard from it', async () => {
+    const jump = await startJumpServer({ ignoresGlobalRequests: true });
+    const link = await startLink(jump.port);
+    try {
+      addJumpHost(24, link.port);
+      (await openForwardedChannel(24, '127.0.0.1', jump.port)).destroy();
+      link.drop();
+      await until(() => jumpHostStatus(24).state !== 'connected', keepalive.intervalMs * (keepalive.misses + 4));
+      expect(jumpHostStatus(24).state).toBe('idle');
+    } finally {
+      await link.close();
+      await jump.close();
     }
   });
 });

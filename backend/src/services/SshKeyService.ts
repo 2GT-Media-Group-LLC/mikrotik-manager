@@ -28,7 +28,7 @@ const CONNECT_TIMEOUT_MS = 20_000;
 /** The device columns an SshTarget needs. */
 export const SSH_TARGET_COLS =
   `id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
-   api_port, api_tls, api_username, api_password_encrypted`;
+   api_port, api_tls, api_username, api_password_encrypted, jump_host_id`;
 
 export interface SshTarget {
   id: number;
