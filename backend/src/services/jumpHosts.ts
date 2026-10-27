@@ -264,7 +264,8 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
   };
   entry.ready = new Promise<SSHClient>((resolve, reject) => {
     client.once('ready', () => resolve(client));
-    client.once('error', (err: Error & { code?: string; level?: string }) => {
+    // Kept for the connection's life: an 'error' with no listener would end the process.
+    client.on('error', (err: Error & { code?: string; level?: string }) => {
       reject(hostKeyError ?? new JumpHostError(`${label(row)} is unreachable: ${describeSshFailure(err)}`, { cause: err }));
     });
     client.once('close', () => {
@@ -298,7 +299,12 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
   return entry;
 }
 
-/** The shared SSH connection to a jump host, opened if need be. */
+/**
+ * The shared SSH connection to a jump host, opened if need be. Everything
+ * awaited comes before the check for an open connection, and the check and
+ * opening one happen together, so devices polled all at once (at startup)
+ * share the first connection, or its failure, rather than each opening one.
+ */
 async function jumpClient(id: number): Promise<{ client: SSHClient; entry: Live; row: JumpHostRow }> {
   const row = await loadRow(id);
   const auth = await resolveAuth(row).catch((err: unknown) => {
@@ -389,12 +395,12 @@ export async function sshRoute(device: Routed & { ip_address: string }, port: nu
 }
 
 /**
- * Connect to a jump host now, without the backoff, and report what happened:
- * for "Test connection" and after an admin changes or trusts it.
+ * Connect to a jump host now, without the backoff (or use its open
+ * connection), and report what happened: for "Test".
  */
 export async function testJumpHost(id: number): Promise<{ ok: true; fingerprint: string | null } | { ok: false; error: string }> {
+  // A working connection is kept: the devices behind it are using it.
   failures.delete(id);
-  dropJumpHost(id);
   try {
     const { entry } = await jumpClient(id);
     return { ok: true, fingerprint: entry.fingerprint };

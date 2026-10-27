@@ -247,6 +247,27 @@ describe('RouterOS API through a jump host', () => {
     b.disconnect();
   });
 
+  // Guards jumpClient(): nothing may be awaited between looking for the open
+  // connection and registering a new one.
+  it('opens one SSH connection when many devices connect at once', async () => {
+    addJumpHost(4, jump.port);
+    const clients = Array.from({ length: 5 }, () => api(device.port, 4));
+    await Promise.all(clients.map((c) => c.connect()));
+    expect(jump.connections).toBe(1);
+    expect(jump.forwards).toHaveLength(5);
+    for (const c of clients) c.disconnect();
+  });
+
+  it('keeps a working connection when tested', async () => {
+    addJumpHost(5, jump.port);
+    const client = api(device.port, 5);
+    await client.connect();
+    expect((await testJumpHost(5)).ok).toBe(true);
+    expect(jump.connections).toBe(1);
+    expect(client.isUsable()).toBe(true);
+    client.disconnect();
+  });
+
   it('pins the jump host key the first time and accepts it after', async () => {
     const row = addJumpHost(3, jump.port);
     await api(device.port, 3).connect();
@@ -295,6 +316,9 @@ describe('never falling back to a direct connection', () => {
       addJumpHost(12, jump.port, { password_encrypted: 'wrong' });
       await expect(openForwardedChannel(12, '127.0.0.1', 1)).rejects.toThrow(/refused the login/);
       await expect(openForwardedChannel(12, '127.0.0.1', 1)).rejects.toThrow(/next attempt in \d+s/);
+      // Several at once within the backoff: still no new attempt.
+      const many = await Promise.allSettled([1, 2, 3].map(() => openForwardedChannel(12, '127.0.0.1', 1)));
+      expect(many.every((r) => r.status === 'rejected')).toBe(true);
       expect(jump.connections).toBe(1);
       // Changing the jump host (here: its password) is a new attempt straight away.
       rows.get(12)!.password_encrypted = 'jump-pass';
