@@ -1,7 +1,7 @@
 # MikroTik Manager 1.0
 
-> **Release candidate.** 1.0.0-rc.1 came out on Sunday 25 October 2026; 1.0.0-rc.2 and rc.3, with
-> the fixes from testing, followed on 26 and 27 October. Stable 1.0.0 is planned
+> **Release candidate.** 1.0.0-rc.1 came out on Sunday 25 October 2026; rc.2 to rc.4, with the
+> fixes from testing, followed during the week. Stable 1.0.0 is planned
 > for Sunday 1 November if testing turns up nothing serious. Please report anything odd as a
 > [GitHub issue](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues).
 
@@ -64,11 +64,12 @@ channel.
 
 ## Known issues
 
-- On access points using the legacy wireless driver, the security of neighbouring networks in
-  AP scans shows as *unknown*. Their scan doesn't report whether a network is encrypted over the
-  API, so open and protected can't be told apart; earlier betas showed such networks as open,
-  which was wrong. Access points on the newer Wi-Fi package report it
-  ([#295](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/295)).
+- On access points using the legacy wireless driver with RouterOS 6, the security of
+  neighbouring networks in AP scans shows as *unknown*: their scan doesn't report encryption
+  over the API, and RouterOS 6 can't return it any other way. On RouterOS 7, from rc.4,
+  MikroTik Manager reads it from the scan run as a script
+  ([#295](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/295),
+  [Wireless](wireless.md)).
 
 ## After 1.0
 
