@@ -15,7 +15,7 @@ import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/c
 import { parseRoamLine, buildSessions, flappingSessions } from '../utils/roaming';
 import { fluxString } from '@influxdata/influxdb-client';
 import { counterDeltas } from '../utils/counterDeltas';
-import { INFRA_PORTS_CTE, CLIENT_SIGHTING_ORDER, CLIENT_MAC_COLUMNS, UPSTREAM_LINK_ORDER, withMacColumns } from '../utils/clientPorts';
+import { INFRA_PORTS_CTE, CLIENT_SIGHTINGS, CLIENT_SIGHTING_ORDER, CLIENT_MAC_COLUMNS, UPSTREAM_LINK_ORDER, withMacColumns } from '../utils/clientPorts';
 
 // Effective category: the user's override wins; otherwise the fingerprint.
 function withCategory<T extends Record<string, unknown>>(row: T): T & { device_category: string; auto_category: string } {
@@ -226,9 +226,9 @@ router.get('/', async (req: Request, res: Response) => {
     FROM (
       SELECT DISTINCT ON (c.mac_address)
         c.*, d.name as device_name,
-        wi.ssid as ssid,
+        COALESCE(c.capsman_ssid, wi.ssid) as ssid,
         ${CLIENT_MAC_COLUMNS}
-      FROM clients c
+      FROM ${CLIENT_SIGHTINGS} c
       JOIN devices d ON d.id = c.device_id
       LEFT JOIN wireless_interfaces wi
         ON wi.device_id = c.device_id AND wi.name = c.interface_name
@@ -253,7 +253,7 @@ router.get('/', async (req: Request, res: Response) => {
     `WITH ${INFRA_PORTS_CTE}
      SELECT COUNT(*) as total FROM (
        SELECT DISTINCT ON (c.mac_address) c.client_type, c.vlan_id, c.signal_strength, ${CLIENT_MAC_COLUMNS}
-       FROM clients c
+       FROM ${CLIENT_SIGHTINGS} c
        ${where}
        WINDOW mac AS (PARTITION BY c.mac_address)
        ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}
@@ -269,7 +269,7 @@ router.get('/', async (req: Request, res: Response) => {
     `WITH ${INFRA_PORTS_CTE}
      SELECT DISTINCT deduped.vlan_id FROM (
        SELECT DISTINCT ON (c.mac_address) c.vlan_id, ${CLIENT_MAC_COLUMNS}
-       FROM clients c
+       FROM ${CLIENT_SIGHTINGS} c
        ${where}
        WINDOW mac AS (PARTITION BY c.mac_address)
        ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}
@@ -297,19 +297,25 @@ router.get('/:mac', async (req: Request, res: Response) => {
     `WITH ${INFRA_PORTS_CTE}
      SELECT c.*, d.name as device_name, d.device_type,
             ${CLIENT_MAC_COLUMNS},
-            wi.ssid as ssid,
+            COALESCE(c.capsman_ssid, wi.ssid) as ssid,
             v.name as vlan_name,
             topo.upstream_device_id,
             topo.upstream_interface,
             topo.upstream_device_name,
             topo.upstream_device_type,
             topo.upstream_device_ip
-     FROM clients c
+     FROM ${CLIENT_SIGHTINGS} c
      JOIN devices d ON d.id = c.device_id
      LEFT JOIN wireless_interfaces wi
        ON wi.device_id = c.device_id AND wi.name = c.interface_name
-     LEFT JOIN vlans v
-       ON v.device_id = c.device_id AND v.vlan_id = c.vlan_id
+     -- The VLAN's name where the client is, or else on the device that
+     -- reported it (a CAPsMAN controller, #365).
+     LEFT JOIN LATERAL (
+       SELECT vv.name FROM vlans vv
+        WHERE vv.device_id IN (c.device_id, c.reported_by_device_id) AND vv.vlan_id = c.vlan_id
+        ORDER BY (vv.device_id = c.device_id) DESC
+        LIMIT 1
+     ) v ON TRUE
      LEFT JOIN LATERAL (
        SELECT tl.to_device_id   AS upstream_device_id,
               tl.to_interface   AS upstream_interface,

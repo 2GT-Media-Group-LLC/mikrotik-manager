@@ -1,6 +1,7 @@
 import { loadBondMembers } from '../services/topology/bondMembers';
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
+import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { stpDomains, resolveStpUpstreams } from '../utils/stpUpstream';
@@ -173,7 +174,7 @@ async function topologyClients(siteId: ReturnType<typeof activeSite>) {
     query<ClientSighting>(
       `SELECT c.mac_address, c.device_id, c.interface_name, c.client_type, c.last_seen,
               c.hostname, c.custom_name, c.ip_address, c.vendor, c.vlan_id
-         FROM clients c WHERE c.active ${scope ? `AND ${scope}` : ''}`
+         FROM ${CLIENT_SIGHTINGS} c WHERE c.active ${scope ? `AND ${scope}` : ''}`
     ),
     // Ports with a neighbour: facing another managed device (the client is
     // further along) or an unmanaged one (the client is behind it).

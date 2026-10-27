@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../config/database';
+import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
 import { requireAuth } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByNullableDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
@@ -33,7 +34,7 @@ router.get('/', async (req: Request, res: Response) => {
     query(
       `SELECT c.mac_address, c.hostname, c.ip_address, c.device_id, c.active,
               d.name as device_name
-       FROM clients c
+       FROM ${CLIENT_SIGHTINGS} c
        LEFT JOIN devices d ON d.id = c.device_id
        WHERE (c.mac_address ILIKE $1 OR c.hostname ILIKE $1 OR c.ip_address ILIKE $1)
          ${clientFilter ? `AND ${clientFilter}` : ''}

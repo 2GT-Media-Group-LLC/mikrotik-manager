@@ -64,6 +64,22 @@ know them:
   radio by following `master-interface`, since clients register on the virtual AP carrying
   the SSID rather than on the physical radio.
 
+**Clients are shown on the access point they're connected to**, even when the controller
+is the one listing them (#365). With traffic processed on the controller, its
+registration table names each CAP radio by the controller's copy of it (`WAP-5Ghz`). The
+client list, client detail, the AP density chart and the topology map put the client on
+the CAP that radio lives on, on the CAP's own interface for it (`wifi2_5Ghz`), with the
+CAP's way up as its connection path. A client on a virtual AP, such as a guest SSID,
+moves to the CAP too and keeps the controller's interface name. If the CAP isn't a
+managed device, the client stays on the controller.
+
+**A controller with no radios of its own isn't an access point.** It has its own section
+on the Wireless page, and isn't counted in **Total APs** or listed in the **Access
+Points** table. In **Channel Usage**, the controller's copy of a CAP radio is left out
+when the CAP is a managed device, since the CAP's own entry shows that radio. If the CAP
+isn't managed, the copy is the only view of that radio, so it stays, grouped under its
+controller.
+
 ## Write protection
 
 A provisioned radio is owned by the controller, so a local write to it is either rejected
@@ -96,8 +112,10 @@ can only be CAPs of this one, often managed from a CHR.
   without any difference.
 - **Clients:** under legacy CAPsMAN only the controller lists the clients
   (`/caps-man registration-table`); the access point's own table stays empty. They're
-  listed under the controller with their signal, traffic and last known address, named by
-  the comment given to them there when DHCP doesn't name them.
+  read from the controller with their signal, traffic and last known address, named by
+  the comment given to them there when DHCP doesn't name them. A client on one of a
+  managed access point's radios is shown on that access point. One on a virtual
+  interface, or on an access point that isn't managed, is shown on the controller.
 - **The CAP:** an access point whose `/interface wireless cap` is enabled is a CAP. The
   interfaces it hands to the controller are marked as managed by CAPsMAN and show the SSID
   from the controller rather than the AP's own, unused settings.

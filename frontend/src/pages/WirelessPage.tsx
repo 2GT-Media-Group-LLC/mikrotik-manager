@@ -37,11 +37,14 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function WirelessPage() {
-  const { data: aps = [], isLoading, refetch, isFetching } = useQuery({
+  const { data: devices = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['wireless-aps'],
     queryFn: () => wirelessApi.list().then(r => r.data as WirelessAP[]),
     refetchInterval: 30_000,
   });
+  // A CAPsMAN controller with no radios of its own has its own section below,
+  // and isn't an access point (#365).
+  const aps = devices.filter(a => a.has_radios !== false);
   // Refresh asks the devices in view for a fresh poll, then reads again as it lands.
   const { refresh, refreshing } = useFleetRefresh(['fast', 'slow'], refetch);
 
@@ -104,10 +107,10 @@ export default function WirelessPage() {
       </div>
 
       {/* RF Health — channel map, density, TX retries, connectivity */}
-      {aps.length > 0 && <RfHealth />}
+      {devices.length > 0 && <RfHealth />}
 
       {/* Rogue & neighbor AP detection (from stored AP scans) */}
-      {aps.length > 0 && <RogueApsCard />}
+      {devices.length > 0 && <RogueApsCard />}
 
       <CapsmanPanel />
 

@@ -66,6 +66,16 @@ export function wirelessDeviceSql(alias = ''): string {
   return `(${a}device_type = 'wireless_ap' OR ${a}wifi_role IN (${WIRELESS_ROLES.map((r) => `'${r}'`).join(',')}))`;
 }
 
+/**
+ * SQL: a device with radios of its own, an access point (hasRadios). A pure
+ * CAPsMAN controller isn't one: it has the wireless pages but no radios, and
+ * was counted as an AP (#365).
+ */
+export function radioDeviceSql(alias = ''): string {
+  const a = alias ? `${alias}.` : '';
+  return `(${a}device_type = 'wireless_ap' OR ${a}wifi_role IN (${RADIO_ROLES.map((r) => `'${r}'`).join(',')}))`;
+}
+
 export interface CapsmanStatus {
   /** MAC of the controller managing this radio, when it could be read. */
   controllerMac: string | null;

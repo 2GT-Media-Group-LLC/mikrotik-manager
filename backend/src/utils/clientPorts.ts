@@ -8,6 +8,53 @@
  * switch that sees the client on an edge port wins.
  */
 
+/**
+ * The `clients` table as a FROM item, use as `FROM ${CLIENT_SIGHTINGS} c`,
+ * with a wireless sighting on a CAPsMAN controller's copy of a CAP radio
+ * moved to the CAP (#365).
+ *
+ * With traffic processed on the controller, the registration table is the
+ * controller's: a client on the CAP is listed against the controller's name
+ * for the CAP radio ("WAP-5Ghz"), and was shown on the controller, with the
+ * CAP as its way up. capsman_radios knows which CAP that radio lives on. A
+ * client on the radio itself moves to the CAP's interface for it; one on a
+ * virtual AP (a guest SSID whose master is the radio) moves to the CAP and
+ * keeps the controller's interface name, since the CAP's isn't known.
+ *
+ * Every `clients` column, plus `reported_by_device_id` (the device that
+ * reported the sighting, which a disconnect has to go to) and `capsman_ssid`
+ * (the SSID of the controller interface it was on; the CAP holds none).
+ * A CAP that isn't a managed device leaves the sighting on the controller.
+ */
+export const CLIENT_SIGHTINGS = `(
+  SELECT r.*, c0.device_id AS reported_by_device_id, cap.ssid AS capsman_ssid
+    FROM clients c0
+    LEFT JOIN LATERAL (
+      SELECT cr.matched_device_id AS device_id,
+             CASE WHEN cr.interface_name = c0.interface_name
+                  THEN COALESCE(capwi.name, c0.interface_name)
+                  ELSE c0.interface_name END AS interface_name,
+             COALESCE(mwi.ssid, cr.ssid) AS ssid
+        FROM capsman_radios cr
+        LEFT JOIN wireless_interfaces mwi
+          ON mwi.device_id = c0.device_id AND mwi.name = c0.interface_name
+        LEFT JOIN wireless_interfaces capwi
+          ON capwi.device_id = cr.matched_device_id AND capwi.radio_mac = cr.radio_mac
+         AND COALESCE(capwi.config_json->>'master-interface', '') = ''
+       WHERE c0.client_type = 'wireless'
+         AND cr.controller_device_id = c0.device_id
+         AND cr.local = false
+         AND cr.matched_device_id IS NOT NULL
+         AND cr.matched_device_id <> c0.device_id
+         AND (cr.interface_name = c0.interface_name
+              OR cr.interface_name = mwi.config_json->>'master-interface')
+       ORDER BY (cr.interface_name = c0.interface_name) DESC, capwi.id
+       LIMIT 1
+    ) cap ON TRUE
+    CROSS JOIN LATERAL jsonb_populate_record(c0, CASE WHEN cap.device_id IS NULL THEN '{}'::jsonb
+      ELSE jsonb_build_object('device_id', cap.device_id, 'interface_name', cap.interface_name) END) r
+)`;
+
 /** A bond's member ports, as a text[] from the `interfaces` row aliased `alias`. */
 const BOND_MEMBERS = (alias: string) =>
   `string_to_array(replace(COALESCE(${alias}.config_json->>'slaves', ''), ' ', ''), ',')`;

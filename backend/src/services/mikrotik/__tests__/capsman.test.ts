@@ -1,7 +1,7 @@
 import {
   classifyWifiRole, parseCapsmanStatus, parseCapStatus, isCapsmanManaged,
   normalizeRadios, matchRadiosToDevices, lookupDeviceForMac, macIndexKeys, buildMacIndex,
-  hasRadios, wirelessDeviceSql, chooseWifiPackage,
+  hasRadios, wirelessDeviceSql, radioDeviceSql, chooseWifiPackage,
 } from '../capsman';
 
 describe('classifyWifiRole', () => {
@@ -414,6 +414,10 @@ describe('radios on any device type (hAP ac² added as a router)', () => {
     expect(hasRadios({ device_type: 'router', wifi_role: 'none' })).toBe(false);
     expect(hasRadios({ device_type: 'wireless_ap', wifi_role: null })).toBe(true);
     expect(wirelessDeviceSql('d')).toBe("(d.device_type = 'wireless_ap' OR d.wifi_role IN ('standalone','cap','controller_cap','controller'))");
+  });
+  it('an access point has radios: a pure controller is not one (#365)', () => {
+    expect(radioDeviceSql('d')).toBe("(d.device_type = 'wireless_ap' OR d.wifi_role IN ('standalone','cap','controller_cap'))");
+    expect(radioDeviceSql()).toBe("(device_type = 'wireless_ap' OR wifi_role IN ('standalone','cap','controller_cap'))");
   });
   it('calls a device standalone only when it lists radios', () => {
     expect(classifyWifiRole(null, null, true)).toBe('standalone');

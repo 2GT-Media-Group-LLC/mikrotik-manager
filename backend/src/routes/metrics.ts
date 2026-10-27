@@ -4,6 +4,7 @@ import { outageLengthSeconds, outageOverlapsSql, outageSecondsInWindow, outageSe
 import { deviceSiteAccess } from '../utils/siteAccess';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { query } from '../config/database';
+import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
 import { requireAuth } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, clientSeriesTag, siteList } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
@@ -141,7 +142,7 @@ router.get('/top-clients', async (req: Request, res: Response) => {
     `SELECT c.mac_address, c.hostname, c.ip_address, c.interface_name,
             c.tx_bytes + c.rx_bytes as total_bytes,
             c.tx_bytes, c.rx_bytes, c.client_type, d.name as device_name
-     FROM clients c JOIN devices d ON d.id = c.device_id
+     FROM ${CLIENT_SIGHTINGS} c JOIN devices d ON d.id = c.device_id
      WHERE c.active = TRUE AND (c.tx_bytes + c.rx_bytes) > 0
        ${topFilter ? `AND ${topFilter}` : ''}
      ORDER BY total_bytes DESC LIMIT $1`,

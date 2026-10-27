@@ -513,6 +513,9 @@ export interface WirelessAP {
   radio_count: number;
   client_count: number;
   ssid_count: number;
+  wifi_role?: string | null;
+  /** False for a CAPsMAN controller with no radios of its own: listed, not an AP (#365). */
+  has_radios?: boolean;
 }
 
 export interface WirelessMetricPoint {

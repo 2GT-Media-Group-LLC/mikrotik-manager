@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { wirelessDeviceSql } from '../services/mikrotik/capsman';
+import { wirelessDeviceSql, radioDeviceSql } from '../services/mikrotik/capsman';
 import { deviceSiteAccess, deviceIdParam, deviceIdQuery, devicesDenied } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
@@ -14,6 +14,7 @@ import { settleWithConcurrency, FLEET_ACTION_CONCURRENCY } from '../utils/concur
 import { aggregateAPScanRows, mergeScanRows } from '../utils/apScan';
 import { analyzeSpectrum, summarize, BAND_RANGES, parseChannelSpec } from '../utils/rfSpectrum';
 import { fluxString } from '@influxdata/influxdb-client';
+import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
 
 const router = Router();
 router.use(requireAuth);
@@ -148,12 +149,20 @@ const REMOTE_RADIO = `
           OR cr.interface_name = wi.config_json->>'master-interface'
           OR (wi.radio_mac IS NOT NULL AND cr.radio_mac = wi.radio_mac))`;
 
-// GET /api/wireless — all wireless_ap devices with aggregated stats
+/** REMOTE_RADIO, where the CAP is a managed device with rows of its own (#365). */
+const REMOTE_MANAGED_RADIO = `${REMOTE_RADIO}
+     AND cr.matched_device_id IS NOT NULL`;
+
+// GET /api/wireless — every device the wireless pages cover, with aggregated
+// stats. has_radios marks the access points: a pure CAPsMAN controller is
+// listed too (Wireless Settings edits its CAPs' interfaces), but isn't an AP
+// and isn't counted as one (#365).
 router.get('/', async (req: Request, res: Response) => {
   const siteFilter = siteScopeDevices(activeSite(req), 'd');
   const aps = await query(`
     SELECT d.id, d.name, d.ip_address, d.model, d.device_type, d.status, d.last_seen,
            d.ros_version, d.firmware_version, d.serial_number, d.rack_name, d.rack_slot,
+           d.wifi_role, ${radioDeviceSql('d')} AS has_radios,
            -- Radios are physical interfaces only: virtual APs carry a
            -- master-interface. And a controller's copies of its CAPs'
            -- interfaces (remote radios in capsman_radios, and the virtual
@@ -882,21 +891,34 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
   }>(`
     SELECT wi.device_id, d.name AS device_name, wi.name, wi.ssid,
            wi.frequency, wi.channel_width, wi.registered_clients,
-           cr.controller_device_id,
-           cd.name           AS controller_name,
-           cr.current_channel AS capsman_channel,
-           cr.registered_peers AS capsman_peers
+           COALESCE(cr.controller_device_id, mr.controller_device_id) AS controller_device_id,
+           COALESCE(cd.name, CASE WHEN mr.id IS NOT NULL THEN d.name END) AS controller_name,
+           COALESCE(cr.current_channel, mr.current_channel) AS capsman_channel,
+           COALESCE(cr.registered_peers, mr.registered_peers) AS capsman_peers
     FROM wireless_interfaces wi
     JOIN devices d ON d.id = wi.device_id
     LEFT JOIN capsman_radios cr ON cr.matched_device_id = wi.device_id
                                AND cr.radio_mac = wi.radio_mac
     LEFT JOIN devices cd ON cd.id = cr.controller_device_id
+    -- A controller's copy of the radio of a CAP that isn't a managed device:
+    -- the only view of that radio there is, so it stays, under its controller.
+    LEFT JOIN LATERAL (
+      SELECT r.id, r.controller_device_id, r.current_channel, r.registered_peers
+        FROM capsman_radios r
+       WHERE r.controller_device_id = wi.device_id AND r.local = false AND r.matched_device_id IS NULL
+         AND (r.interface_name = wi.name OR (wi.radio_mac IS NOT NULL AND r.radio_mac = wi.radio_mac))
+       LIMIT 1
+    ) mr ON cr.id IS NULL
     WHERE ${wirelessDeviceSql('d')}
       AND wi.disabled = FALSE
       AND (wi.config_json->>'master-interface') IS NULL
+      -- A controller's copy of a managed CAP's radio: the CAP's own row
+      -- stands for it, and the copy showed up again as a standalone AP (#365).
+      AND NOT EXISTS (${REMOTE_MANAGED_RADIO})
       AND (
         (wi.frequency IS NOT NULL AND wi.frequency > 0)
         OR cr.current_channel IS NOT NULL
+        OR mr.current_channel IS NOT NULL
       )
       ${deviceId ? 'AND wi.device_id = $1' : ''}
       ${siteFilter ? `AND ${siteFilter}` : ''}
@@ -959,14 +981,15 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
   res.json({ radios: analyzed, locations, bands: BAND_RANGES });
 });
 
-// GET /api/wireless/rf/signals — active wireless clients' RSSI (for density view)
+// GET /api/wireless/rf/signals — active wireless clients' RSSI (for density view),
+// each on the AP it's associated with, CAPsMAN included (#365)
 router.get('/rf/signals', async (req: Request, res: Response) => {
   const deviceId = deviceScope(req);
   const siteFilter = siteScopeByDevice(activeSite(req), 'c.device_id');
   const rows = await query(`
     SELECT c.mac_address, c.signal_strength, c.device_id, d.name AS device_name,
            c.custom_name, c.hostname
-    FROM clients c
+    FROM ${CLIENT_SIGHTINGS} c
     JOIN devices d ON d.id = c.device_id
     WHERE c.active = TRUE
       AND c.client_type = 'wireless'
