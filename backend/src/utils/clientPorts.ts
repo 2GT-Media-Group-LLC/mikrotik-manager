@@ -8,6 +8,10 @@
  * switch that sees the client on an edge port wins.
  */
 
+/** A bond's member ports, as a text[] from the `interfaces` row aliased `alias`. */
+const BOND_MEMBERS = (alias: string) =>
+  `string_to_array(replace(COALESCE(${alias}.config_json->>'slaves', ''), ' ', ''), ',')`;
+
 /**
  * `infra_ports(device_id, port)`: ports that face another managed device,
  * from the discovered neighbour links, for use in a WITH clause.
@@ -25,19 +29,30 @@
  * bridge isn't on any one port.
  */
 export const INFRA_PORTS_CTE = `infra_ports AS (
-  SELECT tl.from_device_id AS device_id, p AS port
-    FROM topology_links tl, unnest(string_to_array(tl.from_interface, '/')) AS p
-   WHERE tl.to_device_id IS NOT NULL
-      OR EXISTS (SELECT 1 FROM devices nd
-                  WHERE nd.id <> tl.from_device_id
-                    AND (nd.ip_address = tl.neighbor_address OR nd.name = tl.neighbor_identity))
+  WITH link_ports AS (
+    SELECT tl.from_device_id AS device_id, p AS port
+      FROM topology_links tl, unnest(string_to_array(tl.from_interface, '/')) AS p
+     WHERE tl.to_device_id IS NOT NULL
+        OR EXISTS (SELECT 1 FROM devices nd
+                    WHERE nd.id <> tl.from_device_id
+                      AND (nd.ip_address = tl.neighbor_address OR nd.name = tl.neighbor_identity))
+    UNION
+    SELECT nd.id, p
+      FROM topology_links tl
+      JOIN devices nd ON nd.id = tl.to_device_id
+                      OR (tl.to_device_id IS NULL AND (nd.ip_address = tl.neighbor_address OR nd.name = tl.neighbor_identity))
+      CROSS JOIN LATERAL unnest(string_to_array(tl.to_interface, '/')) AS p
+     WHERE nd.id <> tl.from_device_id
+  )
+  SELECT device_id, port FROM link_ports
   UNION
-  SELECT nd.id, p
-    FROM topology_links tl
-    JOIN devices nd ON nd.id = tl.to_device_id
-                    OR (tl.to_device_id IS NULL AND (nd.ip_address = tl.neighbor_address OR nd.name = tl.neighbor_identity))
-    CROSS JOIN LATERAL unnest(string_to_array(tl.to_interface, '/')) AS p
-   WHERE nd.id <> tl.from_device_id
+  -- The bond a link's member port belongs to: LLDP names the member
+  -- (sfp-sfpplus1), the bridge host table the bond (Po1).
+  SELECT bi.device_id, bi.name
+    FROM interfaces bi
+    JOIN link_ports lp ON lp.device_id = bi.device_id
+   WHERE bi.type = 'bond'
+     AND lp.port = ANY(${BOND_MEMBERS('bi')})
 )`;
 
 /**
@@ -57,12 +72,36 @@ export const CLIENT_PORT_RANK = `(CASE
   END)`;
 
 /**
- * The best sighting first: live before stale, the AP's view of a wireless
- * client before a switch's, then the edge port before an uplink, then the
- * latest. Columns of `clients c`.
+ * The sighting that says where a client is, best first. Columns of `clients c`.
+ *
+ * Current sightings (live, or seen in the last day) first. Then a live AP
+ * registration, since the AP knows a wireless client best. Then the edge port
+ * before an uplink (#363), then live before stale, then the latest.
+ *
+ * Live isn't first: overnight a switch's host table forgets a quiet PC while
+ * the router's ARP table still lists it, and the router's VLAN interface won
+ * over the switch port the PC is on (#363). Whether the client is online is a
+ * separate question, answered from all its sightings (CLIENT_MAC_WINDOW).
  */
 export const CLIENT_SIGHTING_ORDER =
-  `c.active DESC, (c.client_type = 'wireless') DESC, ${CLIENT_PORT_RANK} ASC, c.last_seen DESC NULLS LAST`;
+  `(c.active OR c.last_seen > NOW() - INTERVAL '24 hours') DESC, (c.active AND c.client_type = 'wireless') DESC, ` +
+  `${CLIENT_PORT_RANK} ASC, c.active DESC, c.last_seen DESC NULLS LAST`;
+
+/**
+ * Columns from all of a MAC's sightings, for a query that shows one row per
+ * client: online when any device sees it live, last seen when any last did.
+ * Needs `WINDOW mac AS (PARTITION BY c.mac_address)` in the query.
+ */
+export const CLIENT_MAC_COLUMNS =
+  `bool_or(COALESCE(c.active, FALSE)) OVER mac AS mac_active, MAX(c.last_seen) OVER mac AS mac_last_seen`;
+
+/** Put the per-client values over the chosen sighting's, for the response. */
+export function withMacColumns<T extends Record<string, unknown>>(row: T): T {
+  const out: Record<string, unknown> = { ...row };
+  if ('mac_active' in out) { out.active = out.mac_active; delete out.mac_active; }
+  if ('mac_last_seen' in out) { if (out.mac_last_seen != null) out.last_seen = out.mac_last_seen; delete out.mac_last_seen; }
+  return out as T;
+}
 
 /**
  * Order of a device's links (`tl`, from device `d`) when choosing its way
@@ -83,6 +122,11 @@ export const UPSTREAM_LINK_ORDER = `(tl.stp_role = 'root') DESC NULLS LAST,
        ) ASC,
        EXISTS (
          SELECT 1 FROM bridge_vlan_entries bp
-          WHERE bp.device_id = tl.from_device_id AND bp.port = ANY(string_to_array(tl.from_interface, '/'))
+          WHERE bp.device_id = tl.from_device_id
+            AND (bp.port = ANY(string_to_array(tl.from_interface, '/'))
+                 -- a member of a bonded bridge port (#363): LLDP names sfp-sfpplus1, the bridge Po1
+                 OR EXISTS (SELECT 1 FROM interfaces bi
+                             WHERE bi.device_id = bp.device_id AND bi.name = bp.port AND bi.type = 'bond'
+                               AND string_to_array(tl.from_interface, '/') && ${BOND_MEMBERS('bi')}))
        ) DESC,
        tl.id`;

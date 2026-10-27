@@ -15,7 +15,7 @@ import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/c
 import { parseRoamLine, buildSessions, flappingSessions } from '../utils/roaming';
 import { fluxString } from '@influxdata/influxdb-client';
 import { counterDeltas } from '../utils/counterDeltas';
-import { INFRA_PORTS_CTE, CLIENT_SIGHTING_ORDER, UPSTREAM_LINK_ORDER } from '../utils/clientPorts';
+import { INFRA_PORTS_CTE, CLIENT_SIGHTING_ORDER, CLIENT_MAC_COLUMNS, UPSTREAM_LINK_ORDER, withMacColumns } from '../utils/clientPorts';
 
 // Effective category: the user's override wins; otherwise the fingerprint.
 function withCategory<T extends Record<string, unknown>>(row: T): T & { device_category: string; auto_category: string } {
@@ -121,7 +121,7 @@ router.get('/', async (req: Request, res: Response) => {
     vlan_id: `deduped.vlan_id`,
     device_name: `LOWER(COALESCE(deduped.device_name, ''))`,
     traffic_today_bytes: `traffic_today_bytes`,
-    last_seen: `deduped.last_seen`,
+    last_seen: `deduped.mac_last_seen`,
     // Asked for by Stanley (discussion #85). Wired clients have no SSID or
     // signal; NULLIF keeps a blank SSID NULL so NULLS LAST puts them at the end
     // in both directions. Signal is dBm, so descending is strongest first.
@@ -142,10 +142,12 @@ router.get('/', async (req: Request, res: Response) => {
   // DISTINCT ON below reduces them to the single row the table displays. Which
   // side a filter belongs on therefore depends on what it means:
   //
-  //   * Filters that choose which *sightings* to consider (device, active) run
-  //     before, so they shape what deduplication has to pick from.
-  //   * Filters on values the table *shows* (type, VLAN, signal) run after, or
-  //     the filter and the column disagree.
+  //   * Filters that choose which *sightings* to consider (device, site,
+  //     search) run before, so they shape what deduplication has to pick from.
+  //   * Filters on values the table *shows* (online, type, VLAN, signal) run
+  //     after, or the filter and the column disagree. Online is whether any
+  //     sighting is live (#363): the row shown is the one that says where the
+  //     client is, which overnight can be a switch that has gone quiet on it.
   //
   // Both halves matter here. A wireless client's MAC is also learned by the
   // switch its AP uplinks to, so it holds both a wireless and a wired row — on
@@ -170,9 +172,6 @@ router.get('/', async (req: Request, res: Response) => {
   // does not join devices (issue #130).
   const siteFilter = siteScopeByDevice(activeSite(req), 'c.device_id');
   if (siteFilter) filters.push(siteFilter);
-  if (active === 'true') {
-    filters.push(`c.active = TRUE`);
-  }
   if (search) {
     filters.push(`(c.mac_address ILIKE $${idx} OR c.custom_name ILIKE $${idx} OR c.hostname ILIKE $${idx} OR c.ip_address ILIKE $${idx} OR c.vendor ILIKE $${idx})`);
     filterParams.push(`%${search}%`);
@@ -183,6 +182,8 @@ router.get('/', async (req: Request, res: Response) => {
   const preParams = [...filterParams];
 
   // ── After deduplication: must match the row on screen ──
+  const onlineFilter = active === 'true' ? `deduped.mac_active` : null;
+  if (onlineFilter) outerFilters.push(onlineFilter);
   if (client_type) {
     outerFilters.push(`deduped.client_type = $${idx++}`);
     filterParams.push(client_type);
@@ -213,8 +214,9 @@ router.get('/', async (req: Request, res: Response) => {
   const trafficSites = siteList(activeSite(req))?.filter((n) => Number.isSafeInteger(n)) ?? null;
   const outerWhere = outerFilters.length ? `WHERE ${outerFilters.join(' AND ')}` : '';
 
-  // Deduplicate by MAC address across devices: the best sighting of each
-  // (CLIENT_SIGHTING_ORDER: live, wireless, on an edge port, latest).
+  // Deduplicate by MAC address across devices: the sighting that says where
+  // each client is (CLIENT_SIGHTING_ORDER), with online and last seen from all
+  // of its sightings (CLIENT_MAC_COLUMNS).
   // The inner DISTINCT ON picks the best row per MAC; the outer query applies final sort + pagination.
   const sql = `
     WITH ${INFRA_PORTS_CTE}
@@ -224,12 +226,14 @@ router.get('/', async (req: Request, res: Response) => {
     FROM (
       SELECT DISTINCT ON (c.mac_address)
         c.*, d.name as device_name,
-        wi.ssid as ssid
+        wi.ssid as ssid,
+        ${CLIENT_MAC_COLUMNS}
       FROM clients c
       JOIN devices d ON d.id = c.device_id
       LEFT JOIN wireless_interfaces wi
         ON wi.device_id = c.device_id AND wi.name = c.interface_name
       ${where}
+      WINDOW mac AS (PARTITION BY c.mac_address)
       ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}
     ) deduped
     -- Today's traffic is kept per site (J4): add up the sites in view.
@@ -248,9 +252,10 @@ router.get('/', async (req: Request, res: Response) => {
   const countResult = await query<{ total: string }>(
     `WITH ${INFRA_PORTS_CTE}
      SELECT COUNT(*) as total FROM (
-       SELECT DISTINCT ON (c.mac_address) c.client_type, c.vlan_id, c.signal_strength
+       SELECT DISTINCT ON (c.mac_address) c.client_type, c.vlan_id, c.signal_strength, ${CLIENT_MAC_COLUMNS}
        FROM clients c
        ${where}
+       WINDOW mac AS (PARTITION BY c.mac_address)
        ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}
      ) deduped
      ${outerWhere}`,
@@ -263,18 +268,19 @@ router.get('/', async (req: Request, res: Response) => {
   const vlanRows = await query<{ vlan_id: number }>(
     `WITH ${INFRA_PORTS_CTE}
      SELECT DISTINCT deduped.vlan_id FROM (
-       SELECT DISTINCT ON (c.mac_address) c.vlan_id
+       SELECT DISTINCT ON (c.mac_address) c.vlan_id, ${CLIENT_MAC_COLUMNS}
        FROM clients c
        ${where}
+       WINDOW mac AS (PARTITION BY c.mac_address)
        ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}
      ) deduped
-     WHERE deduped.vlan_id IS NOT NULL
+     WHERE deduped.vlan_id IS NOT NULL${onlineFilter ? ` AND ${onlineFilter}` : ''}
      ORDER BY 1`,
     preParams
   ).catch(() => []);
 
   res.json({
-    clients: (clients as Record<string, unknown>[]).map(withCategory),
+    clients: (clients as Record<string, unknown>[]).map((r) => withCategory(withMacColumns(r))),
     total: parseInt(countResult[0]?.total || '0', 10),
     vlans: vlanRows.map((v) => v.vlan_id),
   });
@@ -284,13 +290,13 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:mac', async (req: Request, res: Response) => {
   const mac = req.params.mac.toLowerCase();
 
-  // Order: active records first, then wireless before wired (the AP knows the
-  // client best), then the switch that sees it on an edge port rather than an
-  // uplink (#363), then most recently seen. Wireless first regardless let a
-  // stale wireless sighting outrank a live wired one (outside review J7). Use LATERAL for topology so we never multiply rows.
+  // The sighting that says where the client is (CLIENT_SIGHTING_ORDER, #363);
+  // online and last seen come from all its sightings. Use LATERAL for topology
+  // so we never multiply rows.
   const rows = await query<Record<string, unknown>>(
     `WITH ${INFRA_PORTS_CTE}
      SELECT c.*, d.name as device_name, d.device_type,
+            ${CLIENT_MAC_COLUMNS},
             wi.ssid as ssid,
             v.name as vlan_name,
             topo.upstream_device_id,
@@ -319,13 +325,14 @@ router.get('/:mac', async (req: Request, res: Response) => {
      ) topo ON TRUE
      WHERE LOWER(c.mac_address) = $1
        ${siteScopeByDevice(activeSite(req), 'c.device_id') ? `AND ${siteScopeByDevice(activeSite(req), 'c.device_id')}` : ''}
+     WINDOW mac AS (PARTITION BY c.mac_address)
      ORDER BY ${CLIENT_SIGHTING_ORDER}
      LIMIT 1`,
     [mac]
   );
 
   if (!rows.length) return res.status(404).json({ error: 'Client not found' });
-  return res.json(withCategory(rows[0]));
+  return res.json(withCategory(withMacColumns(rows[0])));
 });
 
 // GET /api/clients/:mac/presence?range=2h|24h|7d — connectivity timeline from InfluxDB

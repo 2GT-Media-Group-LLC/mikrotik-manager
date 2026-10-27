@@ -10,6 +10,7 @@ import { query, queryOne } from '../../config/database';
 import { bootChange } from '../../utils/bootTime';
 import { logSafe } from '../../utils/logSafe';
 import { legacyScanScript, parseLegacyScanOutput } from '../../utils/apScan';
+import { resolveNeighbourDevices } from '../topology/resolveNeighbours';
 import { getWriteApi } from '../../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
 import { verifyDeviceSerial, IdentityMismatchError } from '../identityPins';
@@ -1358,7 +1359,11 @@ export class DeviceCollector {
                hostname=COALESCE($3, clients.hostname),
                ip_address=COALESCE(NULLIF($4,''), clients.ip_address),
                interface_name=COALESCE($5, clients.interface_name),
-               vlan_id=COALESCE($6, clients.vlan_id),
+               -- The VLAN of this sighting, not one kept from an earlier
+               -- sighting on another port: a client seen by ARP on vrrp20
+               -- kept VLAN 98 from the bridge (#363). Kept only when the
+               -- port isn't known either.
+               vlan_id=CASE WHEN $5::varchar IS NULL THEN clients.vlan_id ELSE $6::integer END,
                tx_bytes=$7,
                rx_bytes=$8,
                signal_strength=$9,
@@ -1864,26 +1869,7 @@ export class DeviceCollector {
         );
       }
 
-      // Resolve neighbor_address to a known device, but only one in this
-      // device's own site, and only when exactly one device there has that
-      // address. Matching across the fleet joined two customers' networks
-      // whenever both used the same management address, such as RouterOS's
-      // default 192.168.88.1 (outside review P2-19).
-      await query(
-        `UPDATE topology_links tl
-         SET to_device_id = m.id
-         FROM (
-           SELECT d.ip_address, MIN(d.id) AS id
-             FROM devices d
-            WHERE d.site_id IS NOT DISTINCT FROM (SELECT site_id FROM devices WHERE id = $1)
-            GROUP BY d.ip_address
-           HAVING COUNT(*) = 1
-         ) m
-         WHERE tl.from_device_id = $1
-           AND m.ip_address = tl.neighbor_address
-           AND tl.to_device_id IS DISTINCT FROM m.id`,
-        [this.device.id]
-      );
+      await resolveNeighbourDevices(this.device.id);
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect neighbors:`, err);
     }
@@ -1971,6 +1957,18 @@ export class DeviceCollector {
         await query(`DELETE FROM device_bridges WHERE device_id = $1`, [this.device.id]);
       }
 
+      // A bonded port's links are stored under its members' names, as LLDP
+      // reports them (sfp-sfpplus1, not Po1), so a bond's role goes to its
+      // members' links too (#363).
+      const bondMembers = new Map<string, string[]>();
+      const bondRows = await query<{ name: string; slaves: string | null }>(
+        `SELECT name, config_json->>'slaves' AS slaves FROM interfaces WHERE device_id = $1 AND type = 'bond'`,
+        [this.device.id]
+      ).catch(() => [] as { name: string; slaves: string | null }[]);
+      for (const b of bondRows) {
+        bondMembers.set(b.name, (b.slaves ?? '').split(',').map((m) => m.trim()).filter(Boolean));
+      }
+
       for (const port of bridgePorts) {
         const iface = (port['interface'] as string) || '';
         const bridgeName = (port['bridge'] as string) || '';
@@ -1986,8 +1984,8 @@ export class DeviceCollector {
         await query(
           `UPDATE topology_links
            SET stp_role=$3, stp_state=$4, bridge_name=$5
-           WHERE from_device_id=$1 AND from_interface=$2`,
-          [this.device.id, iface, role || null, state, bridgeName || null]
+           WHERE from_device_id=$1 AND (from_interface=$2 OR from_interface = ANY($6::text[]))`,
+          [this.device.id, iface, role || null, state, bridgeName || null, bondMembers.get(iface) ?? []]
         );
       }
     } catch (err) {

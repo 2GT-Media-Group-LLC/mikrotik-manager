@@ -25,6 +25,14 @@ Neighbours are matched to managed devices **by MAC before IP**, because a MAC is
 the fleet and an address is not. Bidirectional pairs — where each device reports the other —
 are merged into one edge showing both port names.
 
+The match is also stored with the link for the rest of the app (a client's upstream, firmware
+rollout waves), within the device's site: by address, then by MAC, then by identity, each only
+where exactly one device fits. A core switch managed out of band has no address on its fabric
+ports, so its links are matched by MAC or name (#363). A MAC two devices share, such as a VRRP
+virtual MAC, matches neither.
+
+Device names wrap onto a second line rather than being cut off, and show in full on hover.
+
 CDP and MNDP are broadcasts, so a port can hear many neighbours at once: everything in the same
 broadcast domain, not only what's cabled to it. A port with a single such neighbour is drawn as
 a link. A port that hears several draws nothing, because the protocol can't say which of them

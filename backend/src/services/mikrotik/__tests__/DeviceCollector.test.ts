@@ -669,3 +669,27 @@ describe('scanWireless on the legacy package (#295)', () => {
     expect(client.runScript).not.toHaveBeenCalled();
   });
 });
+
+// ── collectStp: a bond's role reaches its members' links (#363) ───────────────
+
+describe('collectStp with a bonded root port (#363)', () => {
+  it('marks the links stored under the bond members', async () => {
+    const c = new DeviceCollector({ ...testDevice, id: 9201 });
+    const execute = jest.fn(async (cmd: string) => {
+      if (cmd === '/interface/bridge/print') return [{ name: 'bridge' }];
+      if (cmd === '/interface/bridge/port/print') return [{ '.id': '*1', interface: 'Po1', bridge: 'bridge', role: 'root-port' }];
+      return [];
+    });
+    (c as unknown as { client: { execute: typeof execute } }).client = { execute };
+    const q = query as jest.Mock;
+    q.mockReset();
+    q.mockImplementation(async (sql: string) =>
+      /type = 'bond'/.test(sql) ? [{ name: 'Po1', slaves: 'sfp-sfpplus1,sfp-sfpplus2' }] : []);
+    await c.collectStp();
+    const update = q.mock.calls.find(([sql]) => /UPDATE topology_links/.test(sql) && /stp_role/.test(sql));
+    expect(update).toBeDefined();
+    expect(update![0]).toContain('from_interface = ANY($6::text[])');
+    expect(update![1]).toEqual([9201, 'Po1', 'root', 'forwarding', 'bridge', ['sfp-sfpplus1', 'sfp-sfpplus2']]);
+    q.mockReset();
+  });
+});

@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Client } from 'pg';
-import { INFRA_PORTS_CTE, CLIENT_PORT_RANK, CLIENT_SIGHTING_ORDER, UPSTREAM_LINK_ORDER } from '../clientPorts';
+import { INFRA_PORTS_CTE, CLIENT_PORT_RANK, CLIENT_SIGHTING_ORDER, CLIENT_MAC_COLUMNS, UPSTREAM_LINK_ORDER } from '../clientPorts';
 
 const PG = process.env.PG_E2E_URL;
 const suite = PG ? describe : describe.skip;
@@ -180,5 +180,103 @@ suite('client port and upstream choice against Postgres (#363)', () => {
         WHERE tl.from_device_id = $1 AND tl.to_device_id IS NOT NULL ORDER BY ${UPSTREAM_LINK_ORDER} LIMIT 1`, [id.asw]);
     expect(r[0].via).toBe('ether49');
     await db.query(`UPDATE topology_links SET stp_role = NULL WHERE from_device_id = $1`, [id.asw]);
+  });
+
+  // ── rc.4 follow-up from the reporter's site ─────────────────────────────────
+
+  async function upstreamOf(deviceId: number) {
+    return (await db.query<{ to: number; via: string }>(
+      `SELECT tl.to_device_id AS to, tl.from_interface AS via
+         FROM topology_links tl JOIN devices d ON d.id = tl.from_device_id
+         JOIN devices ud ON ud.id = tl.to_device_id
+        WHERE tl.from_device_id = $1
+        ORDER BY ${UPSTREAM_LINK_ORDER} LIMIT 1`, [deviceId]))[0];
+  }
+
+  it('matches core links that carry no address by MAC, then identity, and goes up through them', async () => {
+    const { resolveNeighbourDevices } = require('../../services/topology/resolveNeighbours') as typeof import('../../services/topology/resolveNeighbours');
+    const dev = async (n: string, ip: string, iface: string) => (await db.query<{ id: number }>(
+      `INSERT INTO devices (name, ip_address, api_username, api_password_encrypted, ip_addresses_jsonb)
+       VALUES ($1, $2, 'u', 'x', $3::jsonb) RETURNING id`,
+      [n, ip, JSON.stringify([{ address: `${ip}/24`, interface: iface, dynamic: false }])]))[0].id;
+    // Cores managed out of band: their only address is on ether1.
+    const coreA = await dev('01-CSA', '10.99.0.21', 'ether1');
+    const coreB = await dev('01-CSB', '10.99.0.22', 'ether1');
+    const access = await dev('01-ASW05', '10.99.0.25', 'ether49');
+    const iface = (d: number, n: string, mac: string, type = 'ether', cfg: object | null = null) => db.query(
+      `INSERT INTO interfaces (device_id, name, type, mac_address, config_json) VALUES ($1, $2, $3, $4, $5)`,
+      [d, n, type, mac, cfg ? JSON.stringify(cfg) : null]);
+    await iface(coreA, 'sfp-sfpplus7', '64:D1:54:00:00:07');
+    await iface(coreB, 'ether1', '64:D1:54:00:00:B1');
+    // A VRRP virtual MAC two devices share matches neither.
+    await iface(coreA, 'vrrp10', '00:00:5E:00:01:0A');
+    await iface(coreB, 'vrrp10', '00:00:5E:00:01:0A');
+    await iface(access, 'Po1', 'AA:00:00:00:05:01', 'bond', { slaves: 'sfp-sfpplus1,sfp-sfpplus2' });
+    await db.query(`INSERT INTO bridge_vlan_entries (device_id, bridge, port) VALUES ($1, 'bridge', 'Po1')`, [access]);
+
+    const link = (fromIf: string, toIf: string, addr: string | null, ident: string | null, mac: string | null) => db.query(
+      `INSERT INTO topology_links (from_device_id, from_interface, to_interface, neighbor_address, neighbor_identity, neighbor_mac)
+       VALUES ($1, $2, $3, $4, $5, $6)`, [access, fromIf, toIf, addr, ident, mac]);
+    // As stored on the reporter's site: the management link first, the core
+    // links with no address, named by the member port.
+    await link('ether49', 'vlan99', '10.99.0.1', '99-MGMT-RTR01', null);
+    await link('sfp-sfpplus1', 'bridge/Po7/sfp-sfpplus7', null, 'no-such-name', '64:d1:54:00:00:07');
+    await link('sfp-sfpplus2', 'bridge/Po7/sfp-sfpplus7', null, '01-CSB', '02:00:00:00:99:99');
+    await link('ether48', 'ether3', null, 'two-of-these', '00:00:5e:00:01:0a');
+
+    await resolveNeighbourDevices(access);
+    const to = async (fromIf: string) => (await db.query<{ to_device_id: number | null }>(
+      `SELECT to_device_id FROM topology_links WHERE from_device_id = $1 AND from_interface = $2`, [access, fromIf]))[0].to_device_id;
+    expect(await to('ether49')).toBe(id.mgmt);
+    expect(await to('sfp-sfpplus1')).toBe(coreA);
+    expect(await to('sfp-sfpplus2')).toBe(coreB);
+    expect(await to('ether48')).toBeNull();
+
+    // The member port counts as the bonded bridge port, and the management
+    // port's link ranks last.
+    expect(await upstreamOf(access)).toEqual({ to: coreA, via: 'sfp-sfpplus1' });
+  });
+
+  it("doesn't match by identity where two devices in the site share the name", async () => {
+    const { resolveNeighbourDevices } = require('../../services/topology/resolveNeighbours') as typeof import('../../services/topology/resolveNeighbours');
+    for (const ip of ['10.99.1.1', '10.99.1.2']) {
+      await db.query(`INSERT INTO devices (name, ip_address, api_username, api_password_encrypted) VALUES ('dup-name', $1, 'u', 'x')`, [ip]);
+    }
+    await db.query(
+      `INSERT INTO topology_links (from_device_id, from_interface, to_interface, neighbor_identity) VALUES ($1, 'ether40', 'ether1', 'dup-name')`, [id.asw]);
+    await resolveNeighbourDevices(id.asw);
+    const r = await db.query<{ to_device_id: number | null }>(
+      `SELECT to_device_id FROM topology_links WHERE from_device_id = $1 AND from_interface = 'ether40'`, [id.asw]);
+    expect(r[0].to_device_id).toBeNull();
+  });
+
+  it('keeps a quiet PC on its switch port overnight, and online while the router still lists it', async () => {
+    const seen = (d: string, mac: string, iface: string, ageSec: number, active: boolean) => db.query(
+      `INSERT INTO clients (device_id, mac_address, interface_name, active, client_type, last_seen)
+       VALUES ($1, $2, $3, $4, 'wired', NOW() - make_interval(secs => $5))`, [id[d], mac, iface, active, ageSec]);
+    // The switch forgot it three hours ago; the router's ARP entry is live.
+    await seen('asw', '02:00:00:00:01:01', 'ether5', 3 * 3600, false);
+    await seen('rtr', '02:00:00:00:01:01', 'vlan10', 30, true);
+    // Seen on the switch three days ago: too old to say where it is now.
+    await seen('asw', '02:00:00:00:01:02', 'ether5', 3 * 86_400, false);
+    await seen('rtr', '02:00:00:00:01:02', 'vlan10', 30, true);
+    // Gone everywhere.
+    await seen('asw', '02:00:00:00:01:03', 'ether5', 3600, false);
+    await seen('rtr', '02:00:00:00:01:03', 'vlan10', 60, false);
+
+    const rows = await db.query<{ mac_address: string; device_id: number; interface_name: string; mac_active: boolean; mac_last_seen: Date; last_seen: Date }>(
+      `WITH ${INFRA_PORTS_CTE}
+       SELECT DISTINCT ON (c.mac_address) c.mac_address, c.device_id, c.interface_name, c.last_seen, ${CLIENT_MAC_COLUMNS}
+         FROM clients c
+        WHERE c.mac_address LIKE '02:00:00:00:01:%'
+       WINDOW mac AS (PARTITION BY c.mac_address)
+        ORDER BY c.mac_address, ${CLIENT_SIGHTING_ORDER}`);
+    const by = Object.fromEntries(rows.map((r) => [r.mac_address, r]));
+    expect([by['02:00:00:00:01:01'].device_id, by['02:00:00:00:01:01'].interface_name]).toEqual([id.asw, 'ether5']);
+    expect(by['02:00:00:00:01:01'].mac_active).toBe(true);
+    // Last seen is the latest sighting anywhere, not the switch's.
+    expect(by['02:00:00:00:01:01'].mac_last_seen.getTime()).toBeGreaterThan(by['02:00:00:00:01:01'].last_seen.getTime());
+    expect(by['02:00:00:00:01:02'].device_id).toBe(id.rtr);
+    expect(by['02:00:00:00:01:03'].mac_active).toBe(false);
   });
 });
