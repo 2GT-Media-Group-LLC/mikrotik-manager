@@ -1358,6 +1358,20 @@ know them:</p>
   radio by following <code>master-interface</code>, since clients register on the virtual AP carrying
   the SSID rather than on the physical radio.</li>
 </ul>
+<p><strong>Clients are shown on the access point they're connected to</strong>, even when the controller
+is the one listing them (#365). With traffic processed on the controller, its
+registration table names each CAP radio by the controller's copy of it (<code>WAP-5Ghz</code>). The
+client list, client detail, the AP density chart and the topology map put the client on
+the CAP that radio lives on, on the CAP's own interface for it (<code>wifi2_5Ghz</code>), with the
+CAP's way up as its connection path. A client on a virtual AP, such as a guest SSID,
+moves to the CAP too and keeps the controller's interface name. If the CAP isn't a
+managed device, the client stays on the controller.</p>
+<p><strong>A controller with no radios of its own isn't an access point.</strong> It has its own section
+on the Wireless page, and isn't counted in <strong>Total APs</strong> or listed in the <strong>Access
+Points</strong> table. In <strong>Channel Usage</strong>, the controller's copy of a CAP radio is left out
+when the CAP is a managed device, since the CAP's own entry shows that radio. If the CAP
+isn't managed, the copy is the only view of that radio, so it stays, grouped under its
+controller.</p>
 <h2 id="write-protection">Write protection<a class="headerlink" href="#write-protection" title="Permanent link">&para;</a></h2>
 <p>A provisioned radio is owned by the controller, so a local write to it is either rejected
 outright or silently replaced at the next provision — while the API reports success.</p>
@@ -1384,8 +1398,10 @@ can only be CAPs of this one, often managed from a CHR.</p>
   without any difference.</li>
 <li><strong>Clients:</strong> under legacy CAPsMAN only the controller lists the clients
   (<code>/caps-man registration-table</code>); the access point's own table stays empty. They're
-  listed under the controller with their signal, traffic and last known address, named by
-  the comment given to them there when DHCP doesn't name them.</li>
+  read from the controller with their signal, traffic and last known address, named by
+  the comment given to them there when DHCP doesn't name them. A client on one of a
+  managed access point's radios is shown on that access point. One on a virtual
+  interface, or on an access point that isn't managed, is shown on the controller.</li>
 <li><strong>The CAP:</strong> an access point whose <code>/interface wireless cap</code> is enabled is a CAP. The
   interfaces it hands to the controller are marked as managed by CAPsMAN and show the SSID
   from the controller rather than the AP's own, unused settings.</li>
