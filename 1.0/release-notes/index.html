@@ -1277,8 +1277,8 @@
 
 <h1 id="mikrotik-manager-10">MikroTik Manager 1.0<a class="headerlink" href="#mikrotik-manager-10" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p><strong>Release candidate.</strong> 1.0.0-rc.1 came out on Sunday 25 October 2026, and 1.0.0-rc.2, with the
-fixes from the first days of testing, on Monday 26 October. Stable 1.0.0 is planned
+<p><strong>Release candidate.</strong> 1.0.0-rc.1 came out on Sunday 25 October 2026; 1.0.0-rc.2 and rc.3, with
+the fixes from testing, followed on 26 and 27 October. Stable 1.0.0 is planned
 for Sunday 1 November if testing turns up nothing serious. Please report anything odd as a
 <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues">GitHub issue</a>.</p>
 </blockquote>
@@ -1338,8 +1338,11 @@ anything. The update notice in the app now understands release candidates and fo
 channel.</p>
 <h2 id="known-issues">Known issues<a class="headerlink" href="#known-issues" title="Permanent link">&para;</a></h2>
 <ul>
-<li>On some legacy-wireless access points the security of neighbouring networks can show as
-  <em>unknown</em> (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/295">#295</a>).</li>
+<li>On access points using the legacy wireless driver, the security of neighbouring networks in
+  AP scans shows as <em>unknown</em>. Their scan doesn't report whether a network is encrypted over the
+  API, so open and protected can't be told apart; earlier betas showed such networks as open,
+  which was wrong. Access points on the newer Wi-Fi package report it
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/295">#295</a>).</li>
 </ul>
 <h2 id="after-10">After 1.0<a class="headerlink" href="#after-10" title="Permanent link">&para;</a></h2>
 <p>Planned for the next minor version, on the beta channel: finer user roles and permissions,
