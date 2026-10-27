@@ -12,6 +12,11 @@ import {
 } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
+import { useSiteView } from '../../hooks/useSiteView';
+import { inView, newEntrySite } from '../../utils/siteView';
+import { deviceFromJumpHost } from '../../utils/jumpHostDevice';
+import AddDeviceModal, { type AddDevicePrefill } from '../devices/AddDeviceModal';
+import SiteViewNote from './SiteViewNote';
 
 type AuthKind = JumpHost['auth'];
 
@@ -88,17 +93,24 @@ export default function JumpHostsSettings() {
     // Its status changes as devices behind it are polled.
     refetchInterval: 30_000,
   });
+  // The sites in the site selector, and fleet-wide jump hosts.
+  const { view, label } = useSiteView();
+  const shown = jumpHosts.filter((j) => inView(j.site_id, view));
 
   const [editing, setEditing] = useState<null | 'new' | JumpHost>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState('');
   const [rowNote, setRowNote] = useState<{ id: number; ok: boolean; text: string } | null>(null);
+  // Add the jump router as a device too, to monitor it.
+  const [addAsDevice, setAddAsDevice] = useState(false);
+  const [deviceDraft, setDeviceDraft] = useState<{ id: number; prefill: AddDevicePrefill } | null>(null);
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((s) => ({ ...s, [k]: v }));
   const refresh = () => qc.invalidateQueries({ queryKey: ['jump-hosts'] });
 
   const openAdd = () => {
-    setForm({ ...EMPTY_FORM, site_id: fleetAdmin ? '' : String(siteChoices[0]?.id ?? '') });
+    setForm({ ...EMPTY_FORM, site_id: newEntrySite(view, siteChoices, fleetAdmin) });
+    setAddAsDevice(false);
     setError('');
     setEditing('new');
   };
@@ -133,10 +145,14 @@ export default function JumpHostsSettings() {
       if (form.auth === 'password' && !form.password && !secretSaved) throw new Error('Enter the password');
       if (form.auth === 'key' && !form.private_key && !secretSaved) throw new Error('Paste the private key');
       const input = toInput(form, existing);
-      if (existing) await jumpHostsApi.update(existing.id, input);
-      else await jumpHostsApi.create(input);
+      if (existing) {
+        await jumpHostsApi.update(existing.id, input);
+        return null;
+      }
+      const { data } = await jumpHostsApi.create(input);
+      return addAsDevice ? { id: data.id, prefill: deviceFromJumpHost(data, form.password) } : null;
     },
-    onSuccess: () => { refresh(); setEditing(null); },
+    onSuccess: (draft) => { refresh(); setEditing(null); setDeviceDraft(draft); },
     onError: (err: unknown) => setError(errorText(err, 'Failed to save the jump host')),
   });
 
@@ -194,9 +210,11 @@ export default function JumpHostsSettings() {
           <div className="p-6 text-sm text-gray-400 flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading jump hosts…
           </div>
-        ) : jumpHosts.length === 0 ? (
+        ) : shown.length === 0 ? (
           <div className="p-6 text-sm text-gray-400 dark:text-slate-500 text-center">
-            No jump hosts. Every device is connected to directly.
+            {jumpHosts.length === 0
+              ? 'No jump hosts. Every device is connected to directly.'
+              : `No jump hosts for ${label ?? 'the sites in view'}.`}
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -213,7 +231,7 @@ export default function JumpHostsSettings() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
-              {jumpHosts.map((j) => (
+              {shown.map((j) => (
                 <tr key={j.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/30 align-top">
                   <td className="px-4 py-2.5 cell-primary">
                     {j.name}
@@ -308,6 +326,7 @@ export default function JumpHostsSettings() {
             </tbody>
           </table>
         )}
+        {!isLoading && <SiteViewNote label={label} hidden={jumpHosts.length - shown.length} noun="jump hosts" />}
       </div>
 
       {editing && (
@@ -440,6 +459,19 @@ export default function JumpHostsSettings() {
                 <textarea className="input" rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
               </div>
 
+              {!existing && (
+                <label className="flex items-start gap-2 text-sm text-gray-600 dark:text-slate-400 select-none">
+                  <input type="checkbox" className="rounded mt-0.5" checked={addAsDevice} onChange={(e) => setAddAsDevice(e.target.checked)} />
+                  <span>
+                    Also add it as a device, to monitor it
+                    <span className="block text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+                      Add Device opens next with its name, address, site and login filled in, connected to directly.
+                      {form.auth === 'key' && ' Devices log in with a password, so enter its password there.'}
+                    </span>
+                  </span>
+                </label>
+              )}
+
               {error && (
                 <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                   <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
@@ -462,6 +494,18 @@ export default function JumpHostsSettings() {
             </div>
           </div>
         </div>
+      )}
+
+      {deviceDraft && (
+        <AddDeviceModal
+          prefill={deviceDraft.prefill}
+          onClose={() => setDeviceDraft(null)}
+          onSuccess={() => {
+            setRowNote({ id: deviceDraft.id, ok: true, text: 'Added as a device too.' });
+            setDeviceDraft(null);
+            qc.invalidateQueries({ queryKey: ['devices'] });
+          }}
+        />
       )}
     </div>
   );

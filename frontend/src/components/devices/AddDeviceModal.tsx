@@ -14,10 +14,23 @@ import { useSitePresets } from '../../hooks/useSitePresets';
 import SiteField, { siteFieldPayload, useDefaultSiteField, type SiteFieldValue } from './SiteField';
 import JumpHostField from './JumpHostField';
 
+/** Fields to start with; the login ones when adding a jump host as a device too. */
+export interface AddDevicePrefill {
+  name?: string;
+  ip_address?: string;
+  site_id?: number;
+  credential_preset_id?: number;
+  api_username?: string;
+  api_password?: string;
+  ssh_port?: number;
+  /** null: connected to directly, whatever the site's default. */
+  jump_host_id?: number | null;
+}
+
 interface Props {
   onClose: () => void;
   onSuccess: () => void;
-  prefill?: { name?: string; ip_address?: string };
+  prefill?: AddDevicePrefill;
   /**
    * Render only the form, without its own overlay and header.
    *
@@ -38,15 +51,15 @@ export default function AddDeviceModal({
     ip_address: prefill?.ip_address || '',
     // Blank: the server tries API-SSL (8729) first, then the plain API (8728).
     api_port: '',
-    api_username: 'admin',
-    api_password: '',
-    ssh_port: '22',
+    api_username: prefill?.api_username ?? 'admin',
+    api_password: prefill?.api_password ?? '',
+    ssh_port: String(prefill?.ssh_port ?? 22),
     ssh_username: '',
     ssh_password: '',
     device_type: 'router',
     notes: '',
   });
-  const [presetId, setPresetId] = useState<number | null>(null);
+  const [presetId, setPresetId] = useState<number | null>(prefill?.credential_preset_id ?? null);
   // The API isn't enabled on the device yet (#174): add it over SSH.
   const [sshOnly, setSshOnly] = useState(false);
   // api-ssl on a port of the user's choosing (#257). Null follows the port:
@@ -58,9 +71,12 @@ export default function AddDeviceModal({
   const [duplicateSerial, setDuplicateSerial] = useState<DuplicateSerialError | null>(null);
 
   // The site it joins, chosen here or the one in view (#306).
-  const [site, setSite] = useState<SiteFieldValue>(useDefaultSiteField());
+  const defaultSite = useDefaultSiteField();
+  const [site, setSite] = useState<SiteFieldValue>(
+    prefill?.site_id != null ? { siteId: prefill.site_id, newSite: null, newGroup: '' } : defaultSite,
+  );
   // Left unset, the server uses the site's default jump host (if any).
-  const [jumpHostId, setJumpHostId] = useState<number | null | undefined>(undefined);
+  const [jumpHostId, setJumpHostId] = useState<number | null | undefined>(prefill?.jump_host_id);
   // Only presets that can apply in the site the device joins (#228).
   const { presets } = useSitePresets(site.newSite != null ? 'new' : site.siteId);
 

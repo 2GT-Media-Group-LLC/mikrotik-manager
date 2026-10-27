@@ -44,6 +44,14 @@ are re-encrypted when the key is rotated or a backup is restored on another serv
 
 **Test** connects straight away and shows the host key it was given.
 
+To monitor the jump router itself, tick **Also add it as a device**. Once the jump host is saved,
+Add Device opens with its name, address, site and login filled in (a private key's username
+only: enter the router's password there), connected to directly. Check and change anything
+before adding it.
+
+With a site or group chosen in the site selector, the list shows its jump hosts and the
+fleet-wide ones, and a new jump host starts in the chosen site.
+
 ## Using one
 
 In **Add Device** and **Edit Device**, **Connect via** chooses how a device is reached: directly,
