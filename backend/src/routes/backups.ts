@@ -191,7 +191,7 @@ router.post('/', requireWrite, async (req, res) => {
 
   const device = await queryOne<any>(
     `SELECT id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
-            api_username, api_password_encrypted
+            api_username, api_password_encrypted, jump_host_id
      FROM devices WHERE id = $1`,
     [deviceId]
   );

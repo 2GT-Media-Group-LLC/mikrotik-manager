@@ -27,6 +27,7 @@ import { decrypt } from '../../utils/crypto';
 import { expandVlanIds } from '../../utils/vlan';
 import type { GuardDevice } from './ChangeGuard';
 import { referencedAddressLists } from './firewallPath';
+import { routeOf } from '../jumpHosts';
 
 // Re-exported so the analysis modules keep importing VLAN handling from the path
 // model they reason about, while the collector shares the same implementation.
@@ -156,6 +157,7 @@ export async function captureSnapshot(device: GuardDevice): Promise<DeviceSnapsh
     15_000,
     30_000,
     usesApiTls(device),
+    routeOf(device),
   );
   try {
     await client.connect();

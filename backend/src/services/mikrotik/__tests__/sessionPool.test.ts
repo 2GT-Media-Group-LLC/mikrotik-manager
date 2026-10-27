@@ -7,8 +7,8 @@ function fakeClient() {
   return c as unknown as RouterOSClient & typeof c;
 }
 
-const dev = (id: number, over: Partial<{ ip_address: string; api_password_encrypted: string }> = {}) => ({
-  id, ip_address: '10.0.0.1', api_port: 8729, api_username: 'admin', api_password_encrypted: 'enc-1', ...over,
+const dev = (id: number, over: Partial<{ ip_address: string; api_password_encrypted: string; jump_host_id: number | null }> = {}) => ({
+  id, ip_address: '10.0.0.1', api_port: 8729, api_username: 'admin', api_password_encrypted: 'enc-1', jump_host_id: null, ...over,
 });
 
 describe('API session pool (#301)', () => {

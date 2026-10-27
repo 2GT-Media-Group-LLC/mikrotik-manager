@@ -21,6 +21,7 @@ import { fluxString } from '@influxdata/influxdb-client';
 import { stpDomains } from '../utils/stpUpstream';
 import { latestResources } from '../services/latestMetrics';
 import { channelUsage } from '../services/channelUsage';
+import { routeOf } from '../services/jumpHosts';
 
 const router = Router();
 
@@ -780,6 +781,7 @@ router.post('/backup-all', requireWrite, async (req, res) => {
       ssh_port: d.ssh_port ?? 22, ssh_username: d.ssh_username,
       ssh_password_encrypted: d.ssh_password_encrypted,
       api_username: d.api_username, api_password_encrypted: d.api_password_encrypted,
+      jump_host_id: routeOf(d),
     };
     return backupService.createBackup(dev, 'Operations: backup all');
   });

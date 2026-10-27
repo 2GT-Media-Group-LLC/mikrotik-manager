@@ -764,9 +764,9 @@ export class PollerService {
     const devices = await query<{
       id: number; name: string; ip_address: string; ssh_port: number;
       ssh_username: string; ssh_password_encrypted: string;
-      api_username: string; api_password_encrypted: string;
+      api_username: string; api_password_encrypted: string; jump_host_id: number | null;
     }>(`SELECT id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
-               api_username, api_password_encrypted
+               api_username, api_password_encrypted, jump_host_id
         FROM devices WHERE status = 'online'`);
     console.log(`[Poller] Starting scheduled backup for ${devices.length} online device(s)`);
     const results = await Promise.allSettled(

@@ -16,6 +16,7 @@ import { loadCredentialPreset } from './deviceCreation';
 import { readSshInfo } from './sshOnly';
 import { describeSshFailure } from '../utils/sshOnly';
 import type { PresetCaller } from '../utils/presetAccess';
+import { routeOf } from './jumpHosts';
 
 export interface BulkCredentialsInput {
   /** A saved preset; or the login below. */
@@ -40,6 +41,7 @@ interface DeviceRow {
   api_port: number; api_tls: boolean | null; ssh_only: boolean; ssh_port: number | null;
   ssh_username: string | null; ssh_password_encrypted: string | null;
   api_username: string; api_password_encrypted: string;
+  jump_host_id: number | null;
 }
 
 /** Devices tested at once: each test is a login, and a big fleet shouldn't flood the network. */
@@ -50,7 +52,7 @@ export async function bulkUpdateCredentials(
 ): Promise<BulkCredentialsResult[]> {
   const rows = await query<DeviceRow>(
     `SELECT id, name, ip_address, site_id, api_port, api_tls, ssh_only, ssh_port, ssh_username,
-            ssh_password_encrypted, api_username, api_password_encrypted
+            ssh_password_encrypted, api_username, api_password_encrypted, jump_host_id
        FROM devices WHERE id = ANY($1::int[]) ORDER BY name`, [ids]);
 
   const results: BulkCredentialsResult[] = [];
@@ -97,12 +99,13 @@ async function updateOne(
         id: d.id, name: d.name, ip_address: d.ip_address, ssh_port: d.ssh_port ?? 22,
         ssh_username: sshUser || apiUser,
         ssh_password_encrypted: encrypt(sshPass || apiPass),
+        jump_host_id: routeOf(d),
       });
     } catch (err) {
       return fail(describeSshFailure(err, d.ssh_port ?? 22));
     }
   } else {
-    const client = new RouterOSClient(d.ip_address, d.api_port, apiUser, apiPass, 10_000, 30_000, usesApiTls(d));
+    const client = new RouterOSClient(d.ip_address, d.api_port, apiUser, apiPass, 10_000, 30_000, usesApiTls(d), routeOf(d));
     try {
       await client.connect();
       await client.execute('/system/identity/print');

@@ -107,7 +107,7 @@ describe('connectPreferringSsl', () => {
 
 describe('enableApiSsl', () => {
   const device: ApiSslDevice = {
-    id: 8, name: 'sw1', ip_address: '10.0.0.8', api_port: 8728, api_username: 'admin', api_password_encrypted: 'pw',
+    id: 8, name: 'sw1', ip_address: '10.0.0.8', api_port: 8728, api_username: 'admin', api_password_encrypted: 'pw', jump_host_id: null,
   };
   const signedCert = { '.id': '*C', name: MTM_CERT_NAME, 'private-key': 'true', expired: 'false' };
 

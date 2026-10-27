@@ -32,6 +32,7 @@ import {
   isMirrorVersion, newestCompleteFrom, MIRROR_GROUP, MIRROR_GROUP_POLICY, mirrorPath, mirrorDisks,
   type FleetDevice, type NeededFile, type MirrorDisk,
 } from '../utils/firmwareMirror';
+import { sshRoute } from './jumpHosts';
 
 const CACHE_ROOT = path.join(process.env.SECRETS_DIR || '/app/data', 'firmware-cache');
 const MAX_PACKAGE_BYTES = 120 * 1024 * 1024;
@@ -228,10 +229,10 @@ async function serverDevice(mirror: MirrorRow): Promise<DeviceRow> {
 
 /** Upload one file into the mirror folder over SFTP. */
 function sftpUpload(device: DeviceRow, localFile: string, remoteFile: string): Promise<void> {
-  return resolveAuth(device).then(({ username, auth }) => new Promise<void>((resolve, reject) => {
+  const port = device.ssh_port || 22;
+  return Promise.all([resolveAuth(device), sshRoute(device, port)]).then(([{ username, auth }, route]) => new Promise<void>((resolve, reject) => {
     const conn = new SSHClient();
     let settled = false;
-    const port = device.ssh_port || 22;
     const finish = (err?: Error) => {
       if (settled) return;
       settled = true;
@@ -249,8 +250,11 @@ function sftpUpload(device: DeviceRow, localFile: string, remoteFile: string): P
         });
       });
     });
-    conn.on('error', (e) => finish(explainSshError(e, device.ip_address, port)));
-    conn.connect({ host: device.ip_address, port, username, ...sshHostCheck(device.ip_address, port), ...auth, readyTimeout: 15_000 });
+    conn.on('error', (e) => finish(explainSshError(e, device.ip_address, port, device.jump_host_id)));
+    conn.connect({
+      host: device.ip_address, port, username, ...route, ...sshHostCheck(device.ip_address, port, device.jump_host_id), ...auth,
+      readyTimeout: 15_000,
+    });
   }));
 }
 

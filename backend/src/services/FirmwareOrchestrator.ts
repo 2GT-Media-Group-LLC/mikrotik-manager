@@ -21,6 +21,7 @@ import { matchLocalUpdate, packageFileName } from '../utils/firmwareMirror';
 import { runSshCommand, looksLikeFailure, type SshExecDevice } from './sshExec';
 import { withSafeApply, type GuardDevice } from './changeGuard/ChangeGuard';
 import { fillSecrets, maskSecrets } from './commandSecrets';
+import { routeOf } from './jumpHosts';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 /**
@@ -346,6 +347,7 @@ export class FirmwareOrchestrator {
           ssh_port: device.ssh_port ?? 22, ssh_username: device.ssh_username,
           ssh_password_encrypted: device.ssh_password_encrypted,
           api_username: device.api_username, api_password_encrypted: device.api_password_encrypted,
+          jump_host_id: routeOf(device),
         }, `Pre-upgrade backup (rollout "${rollout.name}")`, 'pre-upgrade');
       } catch (e) {
         return fail(`Pre-upgrade backup failed: ${(e as Error).message}`);

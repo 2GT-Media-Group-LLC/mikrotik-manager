@@ -11,6 +11,7 @@ import { resolveAuth, type SshExecDevice } from './sshExec';
 import { parseImportOutput, type ImportResult } from '../utils/importResult';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
 import { deviceValues } from './pollSettings';
+import { sshRoute } from './jumpHosts';
 
 const BACKUPS_DIR = process.env.BACKUPS_DIR || '/app/backups';
 
@@ -23,6 +24,8 @@ export interface BackupDevice {
   ssh_password_encrypted?: string;
   api_username: string;
   api_password_encrypted: string;
+  /** The jump host it's reached through; null for direct. */
+  jump_host_id: number | null;
 }
 
 /** No output for this long fails an export. */
@@ -69,7 +72,7 @@ export class BackupService {
     ).catch(() => []);
     const plan = exportPlan(ver?.ros_version, !!opts.includeSecrets);
     const run = async (user: string, auth: { password: string } | { privateKey: string }) =>
-      ({ text: await this.sshExport(device.ip_address, port, user, auth, plan.command), containsSecrets: plan.containsSecrets });
+      ({ text: await this.sshExport(device, port, user, auth, plan.command), containsSecrets: plan.containsSecrets });
 
     const key = await queryOne<{ private_key_encrypted: string; ssh_username: string | null }>(
       `SELECT private_key_encrypted, ssh_username FROM device_ssh_keys
@@ -233,13 +236,16 @@ export class BackupService {
     return path.join(BACKUPS_DIR, String(deviceId), rows[0]);
   }
 
-  private sshExport(
-    host: string,
+  private async sshExport(
+    device: SshExecDevice,
     port: number,
     username: string,
     auth: { password: string } | { privateKey: string },
     command = '/export compact'
   ): Promise<string> {
+    const host = device.ip_address;
+    // A channel of its own each time: a fallback to the password is a second session.
+    const route = await sshRoute(device, port);
     // Timed by silence, not by total length. A fixed 30 seconds failed
     // large configurations that were exporting fine: tens of thousands of
     // address-list entries take a while on a busy router. The export fails
@@ -290,9 +296,9 @@ export class BackupService {
         });
       });
 
-      conn.on('error', (err) => fail(explainSshError(err, host, port)));
+      conn.on('error', (err) => fail(explainSshError(err, host, port, device.jump_host_id)));
 
-      conn.connect({ host, port, username, ...sshHostCheck(host, port), ...auth, readyTimeout: 10_000 });
+      conn.connect({ host, port, username, ...route, ...sshHostCheck(host, port, device.jump_host_id), ...auth, readyTimeout: 10_000 });
     });
   }
 
@@ -304,6 +310,7 @@ export class BackupService {
   private async sshImport(device: SshExecDevice, content: string): Promise<ImportResult> {
     const { username, auth } = await resolveAuth(device);
     const remoteFile = `mtm-restore-${randomBytes(6).toString('hex')}.rsc`;
+    const route = await sshRoute(device, device.ssh_port || 22);
 
     return new Promise((resolve, reject) => {
       const conn = new SSHClient();
@@ -358,10 +365,10 @@ export class BackupService {
         });
       });
 
-      conn.on('error', (err) => finish(() => reject(ambiguous(explainSshError(err, device.ip_address, device.ssh_port || 22) as Error))));
+      conn.on('error', (err) => finish(() => reject(ambiguous(explainSshError(err, device.ip_address, device.ssh_port || 22, device.jump_host_id) as Error))));
       conn.connect({
-        host: device.ip_address, port: device.ssh_port || 22, username,
-        ...sshHostCheck(device.ip_address, device.ssh_port || 22), ...auth, readyTimeout: 10_000,
+        host: device.ip_address, port: device.ssh_port || 22, username, ...route,
+        ...sshHostCheck(device.ip_address, device.ssh_port || 22, device.jump_host_id), ...auth, readyTimeout: 10_000,
       });
     });
   }

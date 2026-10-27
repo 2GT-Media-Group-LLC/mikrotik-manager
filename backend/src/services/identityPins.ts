@@ -13,7 +13,8 @@
  *
  * Pins are looked up by the address and port being connected to, which is how
  * every connection in the manager names its device, so no call site needs to
- * know about pinning.
+ * know about pinning. The route is part of that name: devices behind
+ * different jump hosts often share a private address.
  *
  * The serial number is pinned the same way (outside review P2-19), checked as
  * soon as the manager has logged in and before it reads or writes anything.
@@ -132,7 +133,7 @@ interface PinRow {
  * yet (a device being added) passes unpinned.
  */
 export async function verifyDeviceIdentity(
-  kind: IdentityKind, host: string, port: number, presented: string,
+  kind: IdentityKind, host: string, port: number, presented: string, jumpHostId: number | null = null,
 ): Promise<void> {
   const fp = normalizeFingerprint(presented);
   // API-SSL on 8729 is checked against a device stored with the plain API's
@@ -145,8 +146,8 @@ export async function verifyDeviceIdentity(
     `SELECT d.id AS device_id, d.name, p.fingerprint, p.seen_fingerprint
        FROM devices d
        LEFT JOIN device_identity_pins p ON p.device_id = d.id AND p.kind = $1
-      WHERE d.ip_address = $2 AND ${portMatch}`,
-    [kind, host, port],
+      WHERE d.ip_address = $2 AND ${portMatch} AND d.jump_host_id IS NOT DISTINCT FROM $4`,
+    [kind, host, port, jumpHostId],
   );
   for (const row of rows) {
     if (!row.fingerprint) {

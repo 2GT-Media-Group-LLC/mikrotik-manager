@@ -97,6 +97,7 @@ import { siteContext } from './middleware/site';
 import { changePreview } from './middleware/changePreview';
 import { auditMiddleware } from './middleware/auditMiddleware';
 import { sshHostCheck, explainSshError } from './services/sshHostCheck';
+import { openForwardedChannel, sshRoute, routeOf } from './services/jumpHosts';
 
 // ─── Secret hygiene ───────────────────────────────────────────────────────────
 // Self-healing: if JWT_SECRET / ENCRYPTION_KEY aren't set to strong values, we
@@ -129,13 +130,15 @@ function provisionSecrets(): void {
 // presented first, before sending the login (outside review P1-4); a device
 // carrying a certificate from the manager's CA must also present one the CA
 // signed (#200).
-RouterOSClient.tlsVerifier = async (host, port, fingerprint, raw) => {
+RouterOSClient.tlsVerifier = async (host, port, fingerprint, raw, jumpHostId) => {
   // First, take up a certificate the CA issued that isn't on record (after
   // restoring an older platform backup), so it isn't reported as a change.
-  await adoptCaCertificate(host, port, raw).catch((e) => console.error('[device-ca] adopt check failed:', (e as Error).message));
-  await verifyDeviceIdentity('api-tls', host, port, fingerprint);
-  await verifyManagedCertificate(host, port, raw);
+  await adoptCaCertificate(host, port, raw, jumpHostId).catch((e) => console.error('[device-ca] adopt check failed:', (e as Error).message));
+  await verifyDeviceIdentity('api-tls', host, port, fingerprint, jumpHostId);
+  await verifyManagedCertificate(host, port, raw, jumpHostId);
 };
+// Devices behind a jump host are reached through a channel it opens.
+RouterOSClient.channelOpener = openForwardedChannel;
 
 const app = express();
 // nginx sits exactly one hop in front; trust its X-Forwarded-For so req.ip is the real client IP
@@ -294,7 +297,7 @@ terminalNs.on('connection', (socket) => {
       }
       const device = await queryOne<SshExecDevice>(
         `SELECT id, name, ip_address, ssh_port, ssh_username, ssh_password_encrypted,
-                api_username, api_password_encrypted
+                api_username, api_password_encrypted, jump_host_id
            FROM devices WHERE id = $1`,
         [deviceId]
       );
@@ -317,6 +320,14 @@ terminalNs.on('connection', (socket) => {
         socket.emit('error',
           `${(e as Error).message}. Add an SSH username and password in device settings, ` +
           `or deploy an SSH key for this device.`);
+        return;
+      }
+      const sshPort = device.ssh_port ?? 22;
+      let route: Awaited<ReturnType<typeof sshRoute>>;
+      try {
+        route = await sshRoute(device, sshPort);
+      } catch (e) {
+        socket.emit('error', `SSH error: ${(e as Error).message}`);
         return;
       }
       sshClient = new SshClient();
@@ -345,15 +356,16 @@ terminalNs.on('connection', (socket) => {
       });
 
       sshClient.on('error', (err) => {
-        socket.emit('error', `SSH error: ${explainSshError(err, device.ip_address, device.ssh_port ?? 22).message}`);
+        socket.emit('error', `SSH error: ${explainSshError(err, device.ip_address, sshPort, routeOf(device)).message}`);
       });
 
       sshClient.connect({
         host: device.ip_address,
-        port: device.ssh_port ?? 22,
+        port: sshPort,
         username: auth.username,
         ...auth.auth,
-        ...sshHostCheck(device.ip_address, device.ssh_port ?? 22),
+        ...route,
+        ...sshHostCheck(device.ip_address, sshPort, routeOf(device)),
         readyTimeout: 10_000,
         algorithms: {
           kex: [

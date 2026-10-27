@@ -31,6 +31,7 @@ import { redis } from '../../config/redis';
 import { heldLockToken, restoreHeldLock } from './deviceLock';
 import { isPartialApply, PartialApplyRevertError } from './partialApply';
 import { restoreScopeFor, captureScope, buildRestorePlan, type RestorePlan } from './scriptRestore';
+import { routeOf } from '../jumpHosts';
 
 export type GuardMode = 'binary' | 'script';
 
@@ -42,6 +43,8 @@ export interface GuardDevice {
   api_tls?: boolean | null;
   api_username: string;
   api_password_encrypted: string;
+  /** The jump host it's reached through; null for direct. */
+  jump_host_id: number | null;
 }
 
 export interface ChangeMeta {
@@ -132,6 +135,10 @@ function newClient(device: GuardDevice, connectTimeoutMs = 15_000): RouterOSClie
     connectTimeoutMs,
     30_000,
     usesApiTls(device),
+    // Through a jump host, every client is a new channel: a new TCP connection
+    // from the jump host to the device, so the reachability check after a
+    // change proves a fresh path, as it does for a direct device.
+    routeOf(device),
   );
 }
 

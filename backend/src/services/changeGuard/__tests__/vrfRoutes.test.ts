@@ -5,7 +5,7 @@ import { readCoveringRoutes } from '../targetedReads';
 
 const device: GuardDevice = {
   id: 1, name: 'crs510', ip_address: '10.9.0.2', api_port: 8728,
-  api_username: 'admin', api_password_encrypted: 'x',
+  api_username: 'admin', api_password_encrypted: 'x', jump_host_id: null,
 };
 
 /** Management address on vlan-mgmt, which sits in VRF "mgmt"; the manager is off-subnet. */

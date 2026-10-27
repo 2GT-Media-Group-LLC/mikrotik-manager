@@ -15,6 +15,7 @@ import { presetUseRefusal, type PresetCaller } from '../utils/presetAccess';
 import { fit } from '../utils/fit';
 import { parseSshOnlyFlag, classifyApiFailure, describeSshFailure, type SshInfo } from '../utils/sshOnly';
 import { readSshInfo } from './sshOnly';
+import { chooseJumpHost } from './jumpHosts';
 
 export type CreateDeviceContext = {
   /** JWT role of the caller ('admin' | 'operator' | 'viewer'). Preset use may be restricted for operators. */
@@ -110,6 +111,11 @@ export interface CreateDeviceInput {
    * and with no port either, API-SSL is tried first.
    */
   api_tls?: unknown;
+  /**
+   * The jump host to reach the device through; null for direct. Left out, the
+   * site's default jump host is used (none: direct).
+   */
+  jump_host_id?: unknown;
 }
 
 export type CreateDeviceResult =
@@ -188,6 +194,15 @@ async function createDevice(
     return { ok: false, status, body: { error: (err as Error).message } };
   }
 
+  // Decided before anything connects: the checks below go the same way the
+  // poller will, never straight at an address behind a jump host.
+  let jumpHostId: number | null;
+  try {
+    jumpHostId = await chooseJumpHost(input.jump_host_id, ctx?.siteId ?? null, { siteDefault: true });
+  } catch (err) {
+    return { ok: false, status: 400, body: { error: (err as Error).message } };
+  }
+
   const sshOnlyRequested = parseSshOnlyFlag(input.ssh_only);
   // SSH only: one login is enough. It is used for SSH now and tried on the API
   // later, so the device can become ordinary without being edited (#174).
@@ -257,11 +272,11 @@ async function createDevice(
   try {
     if (portChosen) {
       testClient = new RouterOSClient(address, api_port, api_username, api_password, sshOnlyRequested ? 6_000 : 10_000,
-        30_000, usesApiTls({ api_port, api_tls: apiTls }));
+        30_000, usesApiTls({ api_port, api_tls: apiTls }), jumpHostId);
       await testClient.connect();
     } else {
       const chosen = await connectPreferringSsl(address, api_username, api_password,
-        sshOnlyRequested ? { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000 } : {});
+        { ...(sshOnlyRequested ? { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000 } : {}), jumpHostId });
       testClient = chosen.client;
       api_port = chosen.port;
       sslFallbackReason = chosen.sslError;
@@ -290,6 +305,7 @@ async function createDevice(
         id: 0, name, ip_address: address, ssh_port,
         ssh_username: ssh_username || api_username,
         ssh_password_encrypted: encrypt(ssh_password || api_password),
+        jump_host_id: jumpHostId,
       }, { onHostKey: (fp) => { sshHostKey = fp; } });
     } catch (sshErr) {
       console.warn(`[deviceCreation] SSH-only add of ${logSafe(address)} failed: ${logSafe((sshErr as Error).message)}`);
@@ -378,6 +394,7 @@ async function createDevice(
            notes=COALESCE($11,notes),
            ssh_only=$13,
            api_tls=$14,
+           jump_host_id=$15,
            updated_at=NOW()
          WHERE id = $12`,
         [
@@ -395,6 +412,7 @@ async function createDevice(
           existingBySerial.id,
           addedOverSsh,
           apiTls,
+          jumpHostId,
         ]
       );
 
@@ -437,17 +455,18 @@ async function createDevice(
       `INSERT INTO devices (name, name_locked, ip_address, api_port, api_username, api_password_encrypted,
                             ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status,
                             site_id, serial_number, ssh_only, last_seen, model, ros_version, firmware_version,
-                            architecture, ros_identity, api_checked_at, api_check_error, api_tls)
+                            architecture, ros_identity, api_checked_at, api_check_error, api_tls, jump_host_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, CASE WHEN $14::boolean THEN 'online' ELSE 'unknown' END,
                COALESCE($12::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)), $13,
                $14::boolean, CASE WHEN $14::boolean THEN NOW() END, $15, $16, $17, $18, $19,
-               CASE WHEN $14::boolean THEN NOW() END, $20, $21)
+               CASE WHEN $14::boolean THEN NOW() END, $20, $21, $22)
        RETURNING id`,
       [name, nameLocked, address, api_port, api_username, encryptedPass,
        ssh_port, sshUserToStore || null, encryptedSshPass, device_type, notes || null,
        ctx?.siteId ?? null, detectedSerial, addedOverSsh,
        fit(sshInfo?.model, 100), fit(sshInfo?.rosVersion, 20), fit(sshInfo?.firmware, 50),
-       fit(sshInfo?.architecture, 32), fit(sshInfo?.identity, 255), addedOverSsh ? apiUnavailable ?? null : null, apiTls]
+       fit(sshInfo?.architecture, 32), fit(sshInfo?.identity, 255), addedOverSsh ? apiUnavailable ?? null : null, apiTls,
+       jumpHostId]
     );
   } catch (err) {
     if ((err as { code?: string }).code === '23505' && /serial/i.test(String((err as { constraint?: string }).constraint ?? ''))) {

@@ -5,7 +5,7 @@ import type { GuardDevice } from '../ChangeGuard';
 
 const device: GuardDevice = {
   id: 1, name: 'test-switch', ip_address: '192.168.0.40', api_port: 8728,
-  api_username: 'admin', api_password_encrypted: 'x',
+  api_username: 'admin', api_password_encrypted: 'x', jump_host_id: null,
 };
 
 const conn: MgmtConnection = { srcIp: '10.9.0.5', dstIp: '192.168.0.40', dstPort: 8728, inInterface: 'bridge' };

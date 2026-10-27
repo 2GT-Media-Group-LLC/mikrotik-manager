@@ -35,6 +35,9 @@ const COLUMNS: Array<{ table: string; id: string; column: string; label: string 
   { table: 'credential_presets', id: 'id', column: 'ssh_password_encrypted', label: 'Credential preset SSH passwords' },
   { table: 'device_ssh_keys', id: 'device_id', column: 'private_key_encrypted', label: 'Device SSH private keys' },
   { table: 'romon_settings', id: 'id', column: 'secret_encrypted', label: 'RoMON secrets' },
+  { table: 'jump_hosts', id: 'id', column: 'password_encrypted', label: 'Jump host passwords' },
+  { table: 'jump_hosts', id: 'id', column: 'private_key_encrypted', label: 'Jump host private keys' },
+  { table: 'jump_hosts', id: 'id', column: 'passphrase_encrypted', label: 'Jump host key passphrases' },
 ];
 
 const OIDC_KEY = 'oidc_config';

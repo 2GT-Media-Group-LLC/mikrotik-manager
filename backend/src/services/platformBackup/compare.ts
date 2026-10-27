@@ -38,6 +38,7 @@ const RUNTIME_COLUMNS: Record<string, string[]> = {
   ],
   users: ['session_version'],
   managed_device_certs: ['last_error'],
+  jump_hosts: ['seen_host_key_fingerprint'],
 };
 /** Timestamps that are settings rather than bookkeeping: everything else timestamped is ignored. */
 const SETTING_TIMESTAMPS = new Set(['expires_at', 'start_at', 'end_at', 'not_before', 'not_after']);
@@ -49,7 +50,7 @@ const isVolatile = (table: string, column: string, timestamps: Set<string>) =>
 const SECRET_COLUMNS = new Set(['password_hash', 'token_hash', 'totp_secret', 'totp_pending_secret']);
 
 const TABLE_LABEL: Record<string, string> = {
-  sites: 'Sites', users: 'Users', tags: 'Tags', credential_presets: 'Credential presets', devices: 'Devices',
+  sites: 'Sites', users: 'Users', tags: 'Tags', credential_presets: 'Credential presets', jump_hosts: 'Jump hosts', devices: 'Devices',
   device_ca: 'Certificate authority', managed_device_certs: 'Device certificates', user_site_roles: 'Site roles', site_groups: 'Groups', user_group_roles: 'Group roles', romon_settings: 'RoMON settings',
   api_tokens: 'API tokens', device_tags: 'Device tags', device_ssh_keys: 'Device SSH keys',
   device_identity_pins: 'Pinned device identities', alert_channels: 'Alert channels', alert_rules: 'Alert rules',

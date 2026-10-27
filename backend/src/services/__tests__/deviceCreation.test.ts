@@ -82,6 +82,7 @@ describe('createDeviceFromBody (name_locked wiring)', () => {
       '/system/routerboard/print': [{ 'serial-number': 'ABC123' }],
       '/system/identity/print': [{ name: 'MikroTik' }],
     });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null }); // the site's default route: direct
     (queryOne as jest.Mock).mockResolvedValueOnce(null); // no existing device with this serial
     (query as jest.Mock).mockResolvedValue([{ id: 42 }]);
     (queryOne as jest.Mock).mockResolvedValueOnce({ id: 42, name: 'test' }); // post-insert reload
@@ -100,6 +101,7 @@ describe('createDeviceFromBody (name_locked wiring)', () => {
       '/system/routerboard/print': [{ 'serial-number': 'ABC123' }],
       '/system/identity/print': [{ name: 'Core-Switch' }],
     });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null }); // the site's default route: direct
     (queryOne as jest.Mock).mockResolvedValueOnce(null);
     (query as jest.Mock).mockResolvedValue([{ id: 43 }]);
     (queryOne as jest.Mock).mockResolvedValueOnce({ id: 43, name: 'Core-Switch' });
@@ -120,6 +122,7 @@ describe('createDeviceFromBody (name_locked wiring)', () => {
       '/system/routerboard/print': [{ 'serial-number': 'ABC123' }],
       // no '/system/identity/print' entry -> execute() resolves [] for it
     });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null }); // the site's default route: direct
     (queryOne as jest.Mock).mockResolvedValueOnce(null);
     (query as jest.Mock).mockResolvedValue([{ id: 44 }]);
     (queryOne as jest.Mock).mockResolvedValueOnce({ id: 44, name: 'test' });
@@ -143,6 +146,7 @@ describe('createDeviceFromBody (API-SSL on any port)', () => {
       disconnect: jest.fn(),
       execute: jest.fn().mockResolvedValue([]),
     }));
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null }); // the site's default route: direct
     (queryOne as jest.Mock).mockResolvedValueOnce(null);
     (query as jest.Mock).mockResolvedValue([{ id: 50 }]);
     (queryOne as jest.Mock).mockResolvedValueOnce({ id: 50, name: 'nat' });
@@ -151,23 +155,25 @@ describe('createDeviceFromBody (API-SSL on any port)', () => {
   afterEach(() => { (queryOne as jest.Mock).mockReset(); (query as jest.Mock).mockReset(); });
 
   const base = { name: 'nat', ip_address: '203.0.113.5', api_username: 'admin', api_password: 'secret' };
-  /** RouterOSClient(host, port, user, pass, connectMs, readMs, useTls). */
+  /** RouterOSClient(host, port, user, pass, connectMs, readMs, useTls, jumpHostId). */
   const ctorArgs = () => (RouterOSClient as unknown as jest.Mock).mock.calls[0];
   const insertParams = () => (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql))![1];
+  /** The INSERT ends (..., api_tls, jump_host_id). */
+  const insertedTls = () => insertParams()[insertParams().length - 2];
 
   it('connects with TLS on a custom port when asked, and stores the choice', async () => {
     const result = await createDeviceFromBody({ ...base, api_port: '18729', api_tls: true }, null);
     expect(result.ok).toBe(true);
     expect(ctorArgs()[1]).toBe(18729);
     expect(ctorArgs()[6]).toBe(true);
-    expect(insertParams()[insertParams().length - 1]).toBe(true);
+    expect(insertedTls()).toBe(true);
     expect((result as unknown as { body: { connection: { api_ssl: boolean } } }).body.connection.api_ssl).toBe(true);
   });
 
   it('keeps the old rule without a choice: plain on a custom port, nothing stored', async () => {
     await createDeviceFromBody({ ...base, api_port: 18728 }, null);
     expect(ctorArgs()[6]).toBe(false);
-    expect(insertParams()[insertParams().length - 1]).toBeNull();
+    expect(insertedTls()).toBeNull();
   });
 
   it('refuses a port out of range before connecting', async () => {

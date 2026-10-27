@@ -67,7 +67,7 @@ describe('verifyDeviceIdentity', () => {
     lookupReturns([]);
     await verifyDeviceIdentity('ssh-host', '10.0.0.1', 2222, FP_A);
     expect(sqlCalls()[0]).toMatch(/COALESCE\(d\.ssh_port, 22\) = \$3/);
-    expect(mockQuery.mock.calls[0][1]).toEqual(['ssh-host', '10.0.0.1', 2222]);
+    expect(mockQuery.mock.calls[0][1]).toEqual(['ssh-host', '10.0.0.1', 2222, null]);
   });
 
   it('names the device and what to do in the refusal', async () => {

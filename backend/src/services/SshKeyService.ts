@@ -21,6 +21,7 @@ import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { usesApiTls } from '../utils/apiTls';
 import { resolveKeyCredentials } from '../utils/sshKeyCredentials';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
+import { routeOf, sshRoute } from './jumpHosts';
 
 const CONNECT_TIMEOUT_MS = 20_000;
 
@@ -41,6 +42,8 @@ export interface SshTarget {
   api_tls?: boolean | null;
   api_username: string | null;
   api_password_encrypted: string | null;
+  /** The jump host it's reached through; null for direct. */
+  jump_host_id: number | null;
 }
 
 export interface DeviceKeyRow {
@@ -58,12 +61,13 @@ export interface DeviceKeyRow {
 type Auth = { password: string } | { privateKey: string };
 
 /** One SSH session, with whichever credential the caller chose. */
-function withSsh<T>(
+async function withSsh<T>(
   target: SshTarget,
   username: string,
   auth: Auth,
   work: (conn: SSHClient) => Promise<T>,
 ): Promise<T> {
+  const route = await sshRoute(target, target.ssh_port ?? 22);
   return new Promise<T>((resolve, reject) => {
     const conn = new SSHClient();
     const timer = setTimeout(() => {
@@ -76,14 +80,15 @@ function withSsh<T>(
         .then((r) => { clearTimeout(timer); conn.end(); resolve(r); })
         .catch((e) => { clearTimeout(timer); conn.end(); reject(e); });
     });
-    conn.on('error', (err) => { clearTimeout(timer); reject(explainSshError(err, target.ip_address, target.ssh_port ?? 22)); });
+    conn.on('error', (err) => { clearTimeout(timer); reject(explainSshError(err, target.ip_address, target.ssh_port ?? 22, target.jump_host_id)); });
 
     conn.connect({
       host: target.ip_address,
       port: target.ssh_port ?? 22,
       username,
       readyTimeout: CONNECT_TIMEOUT_MS,
-      ...sshHostCheck(target.ip_address, target.ssh_port ?? 22),
+      ...route,
+      ...sshHostCheck(target.ip_address, target.ssh_port ?? 22, target.jump_host_id),
       ...auth,
     });
   });
@@ -138,6 +143,7 @@ export class SshKeyService {
       target.ip_address, target.api_port ?? 8728,
       target.api_username, decrypt(target.api_password_encrypted),
       15000, 30000, usesApiTls(target),
+      routeOf(target),
     );
     // RouterOS keeps the key comment in `info`, not `key-owner` — matching the
     // latter silently matched nothing and left every rotation's old key behind.
@@ -200,6 +206,7 @@ export class SshKeyService {
       target.ip_address, target.api_port ?? 8728,
       target.api_username, decrypt(target.api_password_encrypted),
       15000, 30000, usesApiTls(target),
+      routeOf(target),
     );
     try {
       await client.connect();
@@ -335,6 +342,7 @@ export class SshKeyService {
       target.ip_address, target.api_port ?? 8728,
       target.api_username, decrypt(target.api_password_encrypted),
       15000, 30000, usesApiTls(target),
+      routeOf(target),
     );
     try {
       await client.connect();
