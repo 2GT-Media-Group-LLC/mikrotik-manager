@@ -1,8 +1,10 @@
 /**
  * SSH host key pinning for every SSH connection the manager makes (outside
- * review P1-4). Spread into ssh2's connect options:
+ * review P1-4). Spread into ssh2's connect options, after the device's route
+ * (jumpHosts.ts), which it is checked with:
  *
- *   conn.connect({ host, port, username, ...sshHostCheck(host, port, jumpHostId), ...auth });
+ *   conn.connect({ host, port, username, ...await sshRoute(device, port),
+ *     ...sshHostCheck(host, port, device.jump_host_id), ...auth });
  *
  * The first host key seen for a device is pinned; a different one refuses the
  * connection before authentication. ssh2 then reports only "Host denied", so

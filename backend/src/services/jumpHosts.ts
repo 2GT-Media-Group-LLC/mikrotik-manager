@@ -114,6 +114,10 @@ export function parseHostKeyFingerprint(input: string): string | null {
   return hex.length === 64 ? hex : null;
 }
 
+/** SSH_MSG_CHANNEL_OPEN_FAILURE reason codes (RFC 4254 §5.1). */
+const OPEN_ADMINISTRATIVELY_PROHIBITED = 1;
+const OPEN_CONNECT_FAILED = 2;
+
 const BACKOFF_FIRST_MS = 5_000;
 const BACKOFF_MAX_MS = 5 * 60_000;
 const IDLE_MS = 15 * 60_000;
@@ -345,13 +349,16 @@ async function jumpClient(id: number): Promise<{ client: SSHClient; entry: Live;
 export async function openForwardedChannel(jumpHostId: number, host: string, port: number): Promise<ClientChannel> {
   const { client, entry, row } = await jumpClient(jumpHostId);
   return new Promise<ClientChannel>((resolve, reject) => {
-    const failed = (err: Error) => {
-      if (/prohibited/i.test(err.message)) {
+    const failed = (err: Error & { reason?: number | string }) => {
+      // RFC 4254 reason codes; the description that comes with them may be empty.
+      if (err.reason === OPEN_ADMINISTRATIVELY_PROHIBITED || /prohibited/i.test(err.message)) {
         reject(new JumpHostError(`${label(row)} refused to forward connections. Allow it on that router with: ` +
           '/ip ssh set forwarding-enabled=local', { cause: err }));
       } else {
         // The jump host is up; what it couldn't reach is the device.
-        reject(new Error(`${label(row)} could not connect to ${host}:${port}: ${err.message.replace(/^\(SSH\) /, '')}`, { cause: err }));
+        const detail = err.message.replace(/^\(SSH\) Channel open failure:\s*/, '').trim()
+          || (err.reason === OPEN_CONNECT_FAILED ? 'nothing accepted the connection' : 'the jump host could not open the connection');
+        reject(new Error(`${label(row)} could not connect to ${host}:${port}: ${detail}`, { cause: err }));
       }
     };
     try {
