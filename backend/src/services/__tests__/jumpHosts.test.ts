@@ -103,6 +103,8 @@ interface JumpServer {
   port: number;
   connections: number;
   logins: number;
+  /** Every login method a client tried, in order. */
+  authMethods: string[];
   forwards: string[];
   /** Forwarded channels the manager has closed. */
   channelsClosed: number;
@@ -117,7 +119,7 @@ interface JumpServer {
 async function startJumpServer(
   opts: { forwarding?: boolean; hostKey?: string; forwardDelayMs?: number; loginDelayMs?: number; ignoresGlobalRequests?: boolean } = {},
 ): Promise<JumpServer> {
-  const s: JumpServer = { port: 0, connections: 0, logins: 0, forwards: [], channelsClosed: 0, close: async () => {} };
+  const s: JumpServer = { port: 0, connections: 0, logins: 0, authMethods: [], forwards: [], channelsClosed: 0, close: async () => {} };
   // Closed with the server: the manager keeps its jump connection open.
   const open = new Set<{ end(): unknown } | net.Socket>();
   const server = new SSHServer({ hostKeys: [opts.hostKey ?? JUMP_KEY] }, (client) => {
@@ -129,6 +131,7 @@ async function startJumpServer(
       (client as unknown as { _protocol: { requestFailure(): void } })._protocol.requestFailure = () => {};
     }
     client.on('authentication', (ctx) => {
+      s.authMethods.push(ctx.method);
       if (ctx.method === 'password') s.logins++;
       if (ctx.method === 'password' && ctx.username === 'jump' && ctx.password === 'jump-pass') {
         setTimeout(() => ctx.accept(), opts.loginDelayMs ?? 0);
@@ -323,6 +326,14 @@ describe('RouterOS API through a jump host', () => {
     } finally {
       await slow.close();
     }
+  });
+
+  it("logs in with its password alone, without the 'none' attempt RouterOS logs as a failed login", async () => {
+    addJumpHost(25, jump.port);
+    const c = api(device.port, 25);
+    await c.connect();
+    c.disconnect();
+    expect(jump.authMethods).toEqual(['password']);
   });
 
   it('keeps a working connection when tested', async () => {

@@ -327,6 +327,9 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
       ...(auth.password !== undefined ? { password: auth.password } : {}),
       ...(auth.privateKey !== undefined ? { privateKey: auth.privateKey } : {}),
       ...(auth.passphrase !== undefined ? { passphrase: auth.passphrase } : {}),
+      // Only the login it has. ssh2 otherwise tries "none" first, which RouterOS
+      // logs as a failed login (critical) every time the manager connects.
+      authHandler: [auth.privateKey !== undefined ? 'publickey' : 'password'],
       readyTimeout: READY_TIMEOUT_MS,
       keepaliveInterval: 0,
       // ssh2 only sends the keepalive's Unix socket request to OpenSSH otherwise.

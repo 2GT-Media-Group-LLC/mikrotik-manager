@@ -75,12 +75,15 @@ A jump host that stops answering without closing the connection is noticed withi
 minute. (RouterOS doesn't answer standard SSH keepalives, so the manager checks with a request
 RouterOS does answer, and only when nothing else has been heard for 15 seconds.)
 
-If the jump host is up but a device behind it isn't, the device's error names the device:
+If the jump host is up but a device behind it isn't, the error depends on the jump host. A
+RouterOS jump router accepts the connection before it tries the device, so the device's error is
+the connection closing (`Connection closed`, or a TLS connection closed before it was set up)
+when the device refuses it, or the device's usual connect timeout when nothing answers. Other
+SSH servers, such as OpenSSH, say what went wrong:
 
 > Jump host "branch-gw" (203.0.113.10:22) could not connect to 10.20.0.5:8729: nothing accepted the connection
 
-A device that doesn't answer at all fails after 20 seconds at most, whatever the jump router's
-own timeout.
+and give up after 20 seconds at most, whatever their own timeout.
 
 ## Changing one
 
