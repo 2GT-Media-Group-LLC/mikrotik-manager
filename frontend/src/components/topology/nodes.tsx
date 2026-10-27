@@ -87,10 +87,12 @@ function DeviceNode({ data }: { data: Record<string, unknown> }) {
       }}
     >
       <Handles connectable={!!device.connectMode} />
-      <div className="flex items-center gap-1.5 mb-1">
+      {/* Names wrap rather than cut off, with the full name on hover (#363):
+          site naming schemes run past 20 characters. */}
+      <div className="flex items-start gap-1.5 mb-1">
         <span className="text-base leading-none">{deviceIcon[device.device_type] || '◈'}</span>
-        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: statusColor[device.status] ?? '#94a3b8' }} />
-        <span className="font-semibold truncate text-gray-900 dark:text-white">{device.name}</span>
+        <span className="w-2 h-2 mt-1 rounded-full flex-shrink-0" style={{ background: statusColor[device.status] ?? '#94a3b8' }} />
+        <span className="font-semibold min-w-0 leading-tight [overflow-wrap:anywhere] text-gray-900 dark:text-white" title={device.name}>{device.name}</span>
         {device.isRootBridge && <span title="Spanning-tree root bridge" className="ml-auto text-amber-500 font-bold">★</span>}
       </div>
       <div className="font-mono text-gray-400 dark:text-slate-500">{device.ip_address}</div>
@@ -109,9 +111,9 @@ function ExternalNode({ data }: { data: Record<string, unknown> }) {
   return (
     <div className="px-3 py-2 min-w-[130px] max-w-[200px] text-xs rounded-lg bg-gray-100 dark:bg-slate-700/60 shadow-sm select-none" style={{ border: '1.5px dashed #94a3b8' }}>
       <Handles connectable={!!node.connectMode} />
-      <div className="flex items-center gap-1.5 mb-1">
+      <div className="flex items-start gap-1.5 mb-1">
         <span className="text-base leading-none text-gray-400">◌</span>
-        <span className="font-semibold truncate text-gray-600 dark:text-slate-300">{node.name}{cl ? ` (${cl})` : ''}</span>
+        <span className="font-semibold min-w-0 leading-tight [overflow-wrap:anywhere] text-gray-600 dark:text-slate-300" title={node.name}>{node.name}{cl ? ` (${cl})` : ''}</span>
       </div>
       {node.address && <div className="font-mono text-gray-400 dark:text-slate-500">{node.address}</div>}
       {node.platform && <div className="text-gray-400 dark:text-slate-500 truncate">{node.platform}</div>}
@@ -128,9 +130,9 @@ function ManualNode({ data }: { data: Record<string, unknown> }) {
     <div className={clsx('px-3 py-2 min-w-[140px] max-w-[200px] text-xs rounded-lg bg-white dark:bg-slate-800 shadow-sm select-none cursor-pointer', node.orphan && 'opacity-70')}
       style={{ border: '1.5px dashed #8b5cf6' }} title="Added by hand. Click to edit">
       <Handles connectable={!!node.connectMode} />
-      <div className="flex items-center gap-1.5 mb-1">
-        <Icon className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
-        <span className="font-semibold truncate text-gray-900 dark:text-white">{node.name}</span>
+      <div className="flex items-start gap-1.5 mb-1">
+        <Icon className="w-3.5 h-3.5 mt-px text-violet-500 flex-shrink-0" />
+        <span className="font-semibold min-w-0 leading-tight [overflow-wrap:anywhere] text-gray-900 dark:text-white">{node.name}</span>
       </div>
       {node.address && <div className="font-mono text-gray-400 dark:text-slate-500 truncate">{node.address}</div>}
       <div className="text-violet-500/80 dark:text-violet-400/80">{label}</div>
