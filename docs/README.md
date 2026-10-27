@@ -25,6 +25,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [User Manager](user-manager.md) | RouterOS's RADIUS server: sessions, users, groups and their attributes, and clearing a stuck session |
 | [Cellular (LTE)](cellular.md) | Signal, carriers, tower movement, and the data-cap reset SMS |
 | [SSH keys](ssh-keys.md) | Per-device keypairs, rotation, and what installing one costs |
+| [Jump hosts](jump-hosts.md) | Reaching devices through an SSH jump router, and what happens when it is down |
 | [Bulk commands](commands.md) | Running one command across a fleet, in waves |
 | [Firmware rollouts](firmware.md) | Waves, the upgrade pipeline, and what upgrading several at once costs |
 | [Backups](backups.md) | Finding, reading, comparing and deleting configuration backups |

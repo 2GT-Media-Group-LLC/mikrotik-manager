@@ -72,6 +72,7 @@ nav:
       - Polling and scaling: scaling.md
       - Alerting: alerting.md
       - SSH keys: ssh-keys.md
+      - Jump hosts: jump-hosts.md
       - Bulk commands: commands.md
       - Firmware rollouts: firmware.md
       - Backups: backups.md
