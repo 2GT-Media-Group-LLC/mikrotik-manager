@@ -61,8 +61,9 @@ suite('platform backup round trip against Postgres', () => {
     await db.query('CREATE SCHEMA public');
     await require('../../../db/migrate').runMigrations();
 
-    // A small fleet: a site, two users, two devices with encrypted logins,
-    // settings, an alert rule, a tag, and some history.
+    // A small fleet: a site, two users, two devices with encrypted logins (one
+    // behind a jump host, with its own), settings, an alert rule, a tag, and
+    // some history.
     const site = await one<{ id: number }>(`INSERT INTO sites (name) VALUES ('HQ') RETURNING id`);
     await db.query(`INSERT INTO users (username, password_hash, role) VALUES ('alice', 'x', 'operator'), ('bob', 'y', 'viewer')`);
     for (const [name, ip, pw] of [['core-sw', '10.0.0.1', 'pass-one'], ['edge-r', '10.0.0.2', 'pass-two']]) {
@@ -70,13 +71,17 @@ suite('platform backup round trip against Postgres', () => {
         `INSERT INTO devices (name, ip_address, api_port, api_username, api_password_encrypted, site_id, status)
          VALUES ($1, $2, 8729, 'admin', $3, $4, 'online')`, [name, ip, crypto.encrypt(pw), site!.id]);
     }
+    const jump = await one<{ id: number }>(
+      `INSERT INTO jump_hosts (name, host, username, password_encrypted) VALUES ('branch-gw', '203.0.113.10', 'jump', $1) RETURNING id`,
+      [crypto.encrypt('jump-secret')]);
+    await db.query(`UPDATE devices SET jump_host_id = $1 WHERE name = 'edge-r'`, [jump!.id]);
     await db.query(`INSERT INTO app_settings (key, value) VALUES ('e2e_setting', '"before"') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`);
     await db.query(`INSERT INTO tags (name, color) VALUES ('prod', '#ff0000')`);
     const dev = await one<{ id: number }>(`SELECT id FROM devices WHERE name = 'core-sw'`);
     for (let i = 0; i < 50; i++) {
       await db.query(`INSERT INTO events (device_id, event_time, severity, topic, message) VALUES ($1, NOW(), 'info', 'system', $2)`, [dev!.id, `event ${i}`]);
     }
-    for (const t of ['devices', 'users', 'sites', 'tags', 'app_settings', 'events']) snapshot[t] = await count(t);
+    for (const t of ['devices', 'users', 'sites', 'tags', 'app_settings', 'events', 'jump_hosts']) snapshot[t] = await count(t);
 
     await format.writeBackup(file, PASS, { appVersion: VERSION, contents: 'config+database' }, engine.exportRecords('config+database', VERSION));
   });
@@ -114,7 +119,7 @@ suite('platform backup round trip against Postgres', () => {
     expect(t('app_settings')!.samples.changed.map((c) => c.row)).toContain('e2e_setting');
     expect(r.history).toContainEqual({ table: 'events', current: snapshot.events + 5, backup: snapshot.events });
     const text = JSON.stringify(r);
-    for (const secret of ['pass-one', 'pass-two', 'pass-new', 'changed-pass', '"after"', '"before"']) expect(text).not.toContain(secret);
+    for (const secret of ['pass-one', 'pass-two', 'pass-new', 'changed-pass', 'jump-secret', '"after"', '"before"']) expect(text).not.toContain(secret);
   });
 
   it('restores the configuration, keeping history, and then compares identical', async () => {
@@ -157,6 +162,11 @@ suite('platform backup round trip against Postgres', () => {
       expect(crypto.decrypt(row!.api_password_encrypted)).toBe(pw);
       expect(crypto.ciphertextKeyState(row!.api_password_encrypted)).toBe('current');
     }
+    // The jump host's login too, and the device still reached through it.
+    const jump = await one<{ id: number; password_encrypted: string }>(`SELECT id, password_encrypted FROM jump_hosts WHERE name = 'branch-gw'`);
+    expect(crypto.decrypt(jump!.password_encrypted)).toBe('jump-secret');
+    expect(crypto.ciphertextKeyState(jump!.password_encrypted)).toBe('current');
+    expect((await one<{ jump_host_id: number }>(`SELECT jump_host_id FROM devices WHERE name = 'edge-r'`))!.jump_host_id).toBe(jump!.id);
     expect((await compare.compareWithFile(file, PASS)).identical).toBe(true);
   });
 });
