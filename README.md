@@ -379,7 +379,6 @@ so it moves when behaviour does.
 | [Topology](docs/topology.md) | How links are discovered, spanning-tree resolution, manual links |
 | [Traffic analytics](docs/traffic.md) | The NetFlow collector, top talkers, application breakdown, retention |
 | [Wireless](docs/wireless.md) | Radios and SSIDs, RF health, signal bands, rogue APs, guest WiFi |
-| [Antenna aligner](docs/antenna-aligner.md) | Wireless Systems, live signal from both ends of a PTP link and alignment tone |
 | [Network services](docs/network-services.md) | DHCP, DNS, NTP, WireGuard, logging, discovery and SNMP |
 | [Adopting devices](docs/adoption.md) | Adding configured devices, and configuring factory-default ones so they can be managed |
 | [Change Guard and Config Health](docs/change-guard.md) | How the safety system works, its settings, and what to expect when it fires |
