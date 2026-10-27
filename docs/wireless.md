@@ -66,13 +66,14 @@ BSSID broadcasting one of your SSIDs is flagged as an evil twin.
 Scans run on demand or on a schedule; spectral scans are configured per radio.
 
 With the newer **wifi** package a network's security shows its authentication types (for example
-`wpa2-psk,wpa3-psk`). The older **wireless** package only reports whether a network is
-encrypted, so those show **secured** or **open**, or **unknown** where the scan doesn't report
-it (#295). A scan sends updates for each network as it hears more of it; before 0.73.0 updates
-that didn't repeat the network's address were dropped, which is how the encryption flag went
-missing. From 0.74.0 the legacy package's scan is a timed one (`duration=`), the form that reports
-the flag, and the backend log notes which fields each scan returned (`[ap-scan] … fields: …`),
-names only, to settle a report quickly.
+`wpa2-psk,wpa3-psk`). The older **wireless** package's scan doesn't report encryption over the
+API at all: on a hAP ac² it returns address, channel, SSID, signal, noise and SNR, and nothing
+about privacy (#295). Those networks show **unknown**, with an explanation on hover, rather than
+being guessed open or protected; betas before 0.73.0 showed them as open, which was wrong.
+
+The backend log notes, for every scan, which path it took and which fields came back, names
+only (`[ap-scan] <device> <radio> (legacy wireless…): 179 rows, fields: …`), so a report like
+this can be settled from one line.
 
 A scan takes the radio off its channel: its clients drop for a few seconds, and so does the
 radio's own link if it is itself connected to another access point (a wireless link, say). Avoid

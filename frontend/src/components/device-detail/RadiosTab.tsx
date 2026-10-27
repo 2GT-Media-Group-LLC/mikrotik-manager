@@ -832,7 +832,14 @@ function APScanner({ deviceId }: { deviceId: number }) {
                     </td>
                     {/* Security */}
                     <td className="px-4 py-3 text-xs text-gray-600 dark:text-slate-400">
-                      {net.security || '—'}
+                      {net.security === 'unknown' ? (
+                        // The legacy wireless driver's scan doesn't report encryption over the
+                        // API, so open or protected can't be told from here (#295).
+                        <span className="underline decoration-dotted cursor-help"
+                          title="Not reported: this router's legacy wireless scan doesn't say whether a network is encrypted, so it can't be shown as open or protected.">
+                          unknown
+                        </span>
+                      ) : (net.security || '—')}
                     </td>
                   </tr>
                 );

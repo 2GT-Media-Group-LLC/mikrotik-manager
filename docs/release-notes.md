@@ -64,8 +64,11 @@ channel.
 
 ## Known issues
 
-- On some legacy-wireless access points the security of neighbouring networks can show as
-  *unknown* ([#295](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/295)).
+- On access points using the legacy wireless driver, the security of neighbouring networks in
+  AP scans shows as *unknown*. Their scan doesn't report whether a network is encrypted over the
+  API, so open and protected can't be told apart; earlier betas showed such networks as open,
+  which was wrong. Access points on the newer Wi-Fi package report it
+  ([#295](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/295)).
 
 ## After 1.0
 
