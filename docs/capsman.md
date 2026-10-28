@@ -27,6 +27,10 @@ controller is usually classified as a router, and `device_type` is a label a hum
 rather than a fact about the hardware. The Radios tab and the wireless section follow the
 detected role.
 
+A device found to have no wireless role (`none`) is checked again about once a day, and on a
+manual **Sync**, so a router where CAPsMAN is switched on after it was added becomes a
+controller (#365). A check where the device didn't answer isn't recorded.
+
 ## How CAPs are matched to devices
 
 The controller enumerates every radio it manages — local and remote — through
@@ -72,6 +76,9 @@ the CAP that radio lives on, on the CAP's own interface for it (`wifi2_5Ghz`), w
 CAP's way up as its connection path. A client on a virtual AP, such as a guest SSID,
 moves to the CAP too and keeps the controller's interface name. If the CAP isn't a
 managed device, the client stays on the controller.
+
+A controller with radios of its own (`controller_cap`) is listed with its own clients. Its copies
+of its CAPs' interfaces hold the CAPs' clients, and those are counted on the CAPs.
 
 **A controller with no radios of its own isn't an access point.** It has its own section
 on the Wireless page, and isn't counted in **Total APs** or listed in the **Access

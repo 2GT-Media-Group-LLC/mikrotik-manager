@@ -693,3 +693,67 @@ describe('collectStp with a bonded root port (#363)', () => {
     q.mockReset();
   });
 });
+
+// ── Wireless role checked again (#365) ───────────────────────────────────────
+
+describe('a device without a wireless role is checked again (#365)', () => {
+  const trap = () => { throw Object.create(RouterOSTrapError.prototype, { message: { value: 'no such command' } }); };
+  const timeout = () => { throw new Error('Timed out'); };
+  const make = (device: Partial<DeviceRow> & Record<string, unknown>, responses: Record<string, Record<string, string>[] | (() => never)> = {}) => {
+    const collector = new DeviceCollector({ ...testDevice, ...device } as DeviceRow);
+    (collector as unknown as { client: { execute: jest.Mock } }).client = {
+      execute: jest.fn(async (cmd: string) => {
+        const r = responses[cmd];
+        if (typeof r === 'function') return r();
+        return r ?? [];
+      }),
+    };
+    return collector;
+  };
+  const should = (c: DeviceCollector, recheck?: boolean) =>
+    (c as unknown as { shouldCollectWireless: (r?: boolean) => boolean }).shouldCollectWireless(recheck);
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+
+  beforeEach(() => { (query as jest.Mock).mockReset(); (query as jest.Mock).mockResolvedValue([]); });
+
+  it('looks again after a day, and on a manual Sync, not on every poll', () => {
+    const none = { wifi_role: 'none', wifi_role_probe: 4 };
+    expect(should(make({ ...none, wifi_role_checked_at: hoursAgo(2) }))).toBe(false);
+    expect(should(make({ ...none, wifi_role_checked_at: hoursAgo(2) }), true)).toBe(true);
+    expect(should(make({ ...none, wifi_role_checked_at: hoursAgo(25) }))).toBe(true);
+    // Recorded before the check was dated: looked at once more.
+    expect(should(make({ ...none, wifi_role_checked_at: null }))).toBe(true);
+    // A device with a role is read on every slow poll, as before.
+    expect(should(make({ wifi_role: 'controller', wifi_role_probe: 4, wifi_role_checked_at: hoursAgo(1) }))).toBe(true);
+  });
+
+  it('finds CAPsMAN switched on since, and dates the check', async () => {
+    const c = make({ wifi_role: 'none', wifi_role_probe: 4, wifi_role_checked_at: hoursAgo(30) }, {
+      '/interface/wifi/print': [], '/interface/wireless/print': trap,
+      '/interface/wifi/capsman/print': [{ enabled: 'yes' }], '/interface/wifi/cap/print': [{ enabled: 'no' }],
+      '/caps-man/manager/print': trap,
+    });
+    await c.collectWirelessInterfaces();
+    const update = (query as jest.Mock).mock.calls.find(([sql]) => String(sql).includes('UPDATE devices SET wifi_role'));
+    expect(update![0]).toContain('wifi_role_checked_at = NOW()');
+    expect(update![1].slice(0, 3)).toEqual([1, 'controller', 'wifi']);
+  });
+
+  it('records nothing when the wireless menus time out', async () => {
+    // Both time out: not "no wireless".
+    const both = make({ wifi_role: null }, { '/interface/wifi/print': timeout, '/interface/wireless/print': timeout });
+    await both.collectWirelessInterfaces();
+    // The wifi menu times out and the legacy one answers empty: not a router
+    // with the legacy package and no radios.
+    const wifiOnly = make({ wifi_role: null }, {
+      '/interface/wifi/print': timeout, '/interface/wireless/print': [], '/caps-man/manager/print': trap,
+    });
+    await wifiOnly.collectWirelessInterfaces();
+    expect((query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('UPDATE devices SET wifi_role'))).toHaveLength(0);
+    // A device that refuses both menus has no wireless, and that is recorded.
+    const neither = make({ wifi_role: null }, { '/interface/wifi/print': trap, '/interface/wireless/print': trap });
+    await neither.collectWirelessInterfaces();
+    const update = (query as jest.Mock).mock.calls.find(([sql]) => String(sql).includes('UPDATE devices SET wifi_role'));
+    expect(update![1].slice(0, 3)).toEqual([1, 'none', 'none']);
+  });
+});

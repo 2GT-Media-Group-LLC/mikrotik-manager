@@ -174,9 +174,11 @@ router.get('/', async (req: Request, res: Response) => {
            -- A CAP's own registration table is empty when the controller processes
            -- traffic centrally, so its per-interface counts read zero. GREATEST
            -- prefers whichever source actually has the clients without adding the
-           -- two together on a controller that is also a CAP.
+           -- two together on a controller that is also a CAP. The controller's
+           -- copies of its CAPs' interfaces hold the CAPs' clients, which are
+           -- counted on the CAPs (#365).
            GREATEST(
-             COALESCE(SUM(wi.registered_clients), 0),
+             COALESCE(SUM(wi.registered_clients) FILTER (WHERE NOT EXISTS (${REMOTE_RADIO})), 0),
              COALESCE((SELECT SUM(cr.registered_peers) FROM capsman_radios cr
                         WHERE cr.matched_device_id = d.id), 0)
            )                                              AS client_count,

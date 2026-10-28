@@ -47,6 +47,13 @@ const legacyScanMode = new Map<number, 'script' | 'api'>();
 const WIFI_ROLE_PROBE = 4;
 
 /**
+ * How often a device found to have no wireless role is checked again. CAPsMAN
+ * can be switched on after a router was added, and a 'none' was never looked
+ * at again, so the controller's CAPs and clients were never read (#365).
+ */
+const WIFI_ROLE_RECHECK_MS = 24 * 60 * 60 * 1000;
+
+/**
  * What one CAPsMAN reported, by key, for removing what's gone afterwards; null
  * where the read failed.
  */
@@ -430,19 +437,22 @@ export class DeviceCollector {
    *
    * `device_type` alone is wrong for CAPsMAN: a dedicated controller is usually
    * classified as a router, has no radios of its own, and yet owns the wireless
-   * configuration of the entire fleet. Probing every device once and remembering
-   * the answer costs one call on first sight and nothing afterwards, which beats
-   * both probing forever and never noticing a controller.
+   * configuration of the entire fleet. A device without a wireless role is
+   * checked again about once a day, and on a manual Sync (`recheck`), so CAPsMAN
+   * switched on later is noticed (#365): two calls a day, not every poll.
    */
-  private shouldCollectWireless(): boolean {
+  private shouldCollectWireless(recheck = false): boolean {
     if (this.device.device_type === 'wireless_ap') return true;
-    const d = this.device as unknown as { wifi_role?: string | null; wifi_role_probe?: number | null };
+    const d = this.device as unknown as { wifi_role?: string | null; wifi_role_probe?: number | null; wifi_role_checked_at?: string | Date | null };
     const role = d.wifi_role;
     if (role == null) return true;                 // never determined — probe once
     // Classified by an older role check: look once more (legacy CAPsMAN, #250).
     if ((d.wifi_role_probe ?? 0) < WIFI_ROLE_PROBE) return true;
     // 'standalone' is a device with its own radios (an all-in-one router, say).
-    return role !== 'none';
+    if (role !== 'none') return true;
+    if (recheck) return true;
+    const checked = d.wifi_role_checked_at ? new Date(d.wifi_role_checked_at).getTime() : 0;
+    return !(Date.now() - checked < WIFI_ROLE_RECHECK_MS);
   }
 
   async collectSlow(): Promise<void> {
@@ -654,7 +664,7 @@ export class DeviceCollector {
       await this.collectInterfaces();
       await this.collectIpAddressesCache();
       await this.collectVlans();
-    } else if (this.shouldCollectWireless()) {
+    } else if (this.shouldCollectWireless(true)) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
       await this.collectCapsman();
@@ -686,8 +696,9 @@ export class DeviceCollector {
     await this.collectRoutingPeers();
     // Wireless data belongs in a full resync too — without this, a manual sync
     // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
-    // the UI could only catch up on the 5-minute slow poll.
-    if (this.shouldCollectWireless()) {
+    // the UI could only catch up on the 5-minute slow poll. A device without a
+    // wireless role is checked again, so CAPsMAN switched on since is found.
+    if (this.shouldCollectWireless(true)) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
       await this.collectCapsman();
@@ -2502,8 +2513,10 @@ export class DeviceCollector {
     if (this.wifiRoleCache !== null) return this.wifiRoleCache;
     const pkg = await this.detectWifiPackage();
     if (pkg === 'none') {
-      this.wifiRoleCache = 'none';
-      return this.wifiRoleCache;
+      // Both menus failing to answer isn't "no wireless" (#365).
+      this.wifiRoleUncertain = this.wifiPackageUncertain;
+      if (!this.wifiRoleUncertain) this.wifiRoleCache = 'none';
+      return 'none';
     }
 
     // A refusal from the device (no such menu) means "not configured here"; a
@@ -2513,7 +2526,8 @@ export class DeviceCollector {
       if (!(err instanceof RouterOSTrapError)) this.wifiRoleUncertain = true;
       return null;
     };
-    this.wifiRoleUncertain = false;
+    // A package guessed from a read that timed out makes the role a guess too.
+    this.wifiRoleUncertain = this.wifiPackageUncertain;
     // Legacy CAPsMAN (#250) comes with the wireless package: /caps-man on a
     // controller (a CHR can carry it alongside the wifi package), and
     // /interface/wireless/cap on an access point that is one of its CAPs.
@@ -2818,18 +2832,28 @@ export class DeviceCollector {
   // ─── Wifi package detection ───────────────────────────────────────────────
 
   private wifiPackageCache: 'wifi' | 'wireless' | 'none' | null = null;
+  /** Set when a package read failed without the device refusing it (a timeout). */
+  private wifiPackageUncertain = false;
 
   async detectWifiPackage(): Promise<'wifi' | 'wireless' | 'none'> {
     if (this.wifiPackageCache !== null) return this.wifiPackageCache;
     // Both menus, because the wifi one answers on every RouterOS 7.13+ device
     // (CAPsMAN is built in) even when the radios are on the legacy wireless
     // package, as on a hAP ac². See chooseWifiPackage.
-    const [wifi, wireless] = await Promise.all([
-      this.client.execute('/interface/wifi/print').catch(() => null),
-      this.client.execute('/interface/wireless/print').catch(() => null),
-    ]);
-    this.wifiPackageCache = chooseWifiPackage(wifi?.length ?? null, wireless?.length ?? null);
-    return this.wifiPackageCache;
+    //
+    // A refusal (no such menu) is an answer; a timeout isn't. A wifi menu that
+    // timed out made a RouterOS 7 controller look like a router with no
+    // wireless, and the 'none' was recorded and never checked again (#365).
+    let uncertain = false;
+    const read = (cmd: string) => this.client.execute(cmd).catch((err: unknown) => {
+      if (!(err instanceof RouterOSTrapError)) uncertain = true;
+      return null;
+    });
+    const [wifi, wireless] = await Promise.all([read('/interface/wifi/print'), read('/interface/wireless/print')]);
+    const pkg = chooseWifiPackage(wifi?.length ?? null, wireless?.length ?? null);
+    this.wifiPackageUncertain = uncertain;
+    if (!uncertain) this.wifiPackageCache = pkg;
+    return pkg;
   }
 
   // Normalize RouterOS 7 wifi package dot-notation fields to flat keys
@@ -2866,7 +2890,8 @@ export class DeviceCollector {
       // wireless package, so the device isn't probed again on every poll.
       if (!this.wifiRoleUncertain) {
         await query(
-          `UPDATE devices SET wifi_role = $2, wifi_package = $3, capsman_flavor = $4, wifi_role_probe = $5 WHERE id = $1`,
+          `UPDATE devices SET wifi_role = $2, wifi_package = $3, capsman_flavor = $4, wifi_role_probe = $5,
+                              wifi_role_checked_at = NOW() WHERE id = $1`,
           [this.device.id, role, pkg, this.capsmanFlavor, WIFI_ROLE_PROBE]
         ).catch(() => { /* advisory; never fail collection over it */ });
       }

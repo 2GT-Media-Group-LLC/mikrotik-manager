@@ -156,9 +156,14 @@ export function withMacColumns<T extends Record<string, unknown>>(row: T): T {
  * that leaves through the interface holding the device's management address,
  * when that's a port of its own (an out-of-band management port; a bridge is
  * in-band and shares the uplinks); then links on a bridge port, which carry
- * the network, before links on ports outside the bridge; then the oldest.
+ * the network, before links on ports outside the bridge; then links heard over
+ * LLDP; then the oldest.
  * On an MLAG/LACP fabric nothing is the root port, and the neighbour heard on
  * a management port used to win (#363).
+ *
+ * LLDP because bridges don't forward it, so an LLDP neighbour is at the other
+ * end of the cable. MNDP and CDP pass through a bridge: an AP behind a switch
+ * also hears the router through it, on the same port, and the router won (#365).
  */
 export const UPSTREAM_LINK_ORDER = `(tl.stp_role = 'root') DESC NULLS LAST,
        EXISTS (
@@ -176,4 +181,5 @@ export const UPSTREAM_LINK_ORDER = `(tl.stp_role = 'root') DESC NULLS LAST,
                              WHERE bi.device_id = bp.device_id AND bi.name = bp.port AND bi.type = 'bond'
                                AND string_to_array(tl.from_interface, '/') && ${BOND_MEMBERS('bi')}))
        ) DESC,
+       (COALESCE(tl.discovered_by, '') ILIKE '%lldp%') DESC,
        tl.id`;

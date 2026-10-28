@@ -1397,6 +1397,9 @@ CREATE INDEX IF NOT EXISTS idx_optic_readings_at ON optic_readings (at);
 -- recorded as 'none' before #250 is found.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS capsman_flavor VARCHAR(8);
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_role_probe SMALLINT NOT NULL DEFAULT 0;
+-- When the role was last checked: a device with none is checked again about
+-- once a day, so CAPsMAN switched on after it was added is found (#365).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS wifi_role_checked_at TIMESTAMPTZ;
 
 -- The disk a mirror keeps its packages on (Discussion #85): a mount point such
 -- as sd1 or usb1. NULL: internal storage.

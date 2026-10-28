@@ -33,7 +33,7 @@ const RUNTIME_COLUMNS: Record<string, string[]> = {
     'model', 'serial_number', 'firmware_version', 'ros_version', 'status', 'firmware_update_available',
     'latest_ros_version', 'ip_addresses_jsonb', 'routerboard_upgrade_available', 'upgrade_firmware_version',
     'wifi_role', 'wifi_package', 'has_lte', 'time_zone_name', 'gmt_offset', 'reported_update_channel',
-    'health_status', 'health_issues', 'architecture', 'installed_packages', 'capsman_flavor', 'wifi_role_probe',
+    'health_status', 'health_issues', 'architecture', 'installed_packages', 'capsman_flavor', 'wifi_role_probe', 'wifi_role_checked_at',
     'user_manager', 'ros_identity', 'api_check_error',
   ],
   users: ['session_version'],

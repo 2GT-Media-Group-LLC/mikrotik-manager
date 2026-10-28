@@ -7,8 +7,10 @@
  * The site is the reporter's: R1, a router that's a CAPsMAN controller with no
  * radios; WAP, a CAP with two radios and traffic processed on the controller,
  * so the registration table is R1's and names the radios by R1's copies
- * (WAP-2.4Ghz, WAP-5Ghz); SW between them. Added: a guest SSID on a virtual
- * AP, a second controller whose CAP isn't a managed device, and a standalone AP.
+ * (WAP-2.4Ghz, WAP-5Ghz); SW between them. The WAP hears R1 through SW over
+ * MNDP as well as SW itself. Added: a guest SSID on a virtual AP, a second
+ * controller whose CAP isn't a managed device, a standalone AP, and a
+ * controller with a radio of its own (an RB4011) and one CAP.
  */
 jest.mock('../../middleware/auth', () => ({
   requireAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -68,6 +70,8 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
       ['sw', 'SW', '10.0.0.2', 'switch', null],
       ['r2', 'R2-CTRL', '10.0.1.1', 'router', 'controller'],
       ['ap', 'AP-STANDALONE', '10.0.0.9', 'wireless_ap', 'standalone'],
+      ['r3', 'R3-RB4011', '10.0.2.1', 'router', 'controller_cap'],
+      ['wap2', 'WAP2', '10.0.2.3', 'wireless_ap', 'cap'],
     ];
     for (const [key, n, ip, type, role] of devices) {
       id[key] = (await db.query<{ id: number }>(
@@ -77,11 +81,11 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
       ))[0].id;
     }
 
-    const wi = (d: string, n: string, radioMac: string | null, freq: number | null, ssid: string | null, master: string | null = null) =>
+    const wi = (d: string, n: string, radioMac: string | null, freq: number | null, ssid: string | null, master: string | null = null, clients = 0) =>
       db.query(
-        `INSERT INTO wireless_interfaces (device_id, name, ssid, frequency, disabled, radio_mac, managed_by_capsman, config_json)
-         VALUES ($1, $2, $3, $4, false, $5, $6, $7::jsonb)`,
-        [id[d], n, ssid, freq, radioMac, d === 'wap', JSON.stringify(master ? { 'master-interface': master } : {})],
+        `INSERT INTO wireless_interfaces (device_id, name, ssid, frequency, disabled, radio_mac, managed_by_capsman, config_json, registered_clients)
+         VALUES ($1, $2, $3, $4, false, $5, $6, $7::jsonb, $8)`,
+        [id[d], n, ssid, freq, radioMac, d === 'wap' || d === 'wap2', JSON.stringify(master ? { 'master-interface': master } : {}), clients],
       );
     // The CAP's own radios: no local configuration, so no SSID.
     await wi('wap', 'wifi1_2.4Ghz', 'AA:00:00:00:00:01', null, null);
@@ -94,28 +98,38 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
     await wi('r2', 'CAP3-5Ghz', 'BB:00:00:00:00:01', 5180, 'Other');
     // A standalone AP.
     await wi('ap', 'wlan1', 'CC:00:00:00:00:01', 2437, 'Home');
+    // R3's own radio, with 5 clients, and its copy of WAP2's, with WAP2's 90.
+    await wi('r3', 'wifi1', 'DD:00:00:00:00:01', 2412, 'Shop', null, 5);
+    await wi('r3', 'WAP2-5Ghz', 'DD:00:00:00:00:02', 5500, 'Shop', null, 90);
+    await wi('wap2', 'wifi1', 'DD:00:00:00:00:02', null, null);
 
-    const radio = (ctrl: string, mac: string, iface: string, matched: string | null, channel: string, peers: number) =>
+    const radio = (ctrl: string, mac: string, iface: string, matched: string | null, channel: string, peers: number, local = false) =>
       db.query(
         `INSERT INTO capsman_radios (controller_device_id, radio_mac, interface_name, local, matched_device_id, current_channel, registered_peers, ssid)
-         VALUES ($1, $2, $3, false, $4, $5, $6, 'Aura')`,
-        [id[ctrl], mac, iface, matched ? id[matched] : null, channel, peers],
+         VALUES ($1, $2, $3, $7, $4, $5, $6, 'Aura')`,
+        [id[ctrl], mac, iface, matched ? id[matched] : null, channel, peers, local],
       );
     await radio('r1', 'AA:00:00:00:00:01', 'WAP-2.4Ghz', 'wap', '2462/ax/Ce', 7);
     await radio('r1', 'AA:00:00:00:00:02', 'WAP-5Ghz', 'wap', '5320/ax/Ceee', 4);
     await radio('r2', 'BB:00:00:00:00:01', 'CAP3-5Ghz', null, '5180/ax/Ceee', 2);
+    await radio('r3', 'DD:00:00:00:00:01', 'wifi1', 'r3', '2412/ax/Ce', 5, true);
+    await radio('r3', 'DD:00:00:00:00:02', 'WAP2-5Ghz', 'wap2', '5500/ax/Ceee', 90);
 
-    const link = (from: string, fromIf: string, to: string, toIf: string) =>
+    const link = (from: string, fromIf: string, to: string, toIf: string, by = 'cdp,lldp,mndp') =>
       db.query(
-        `INSERT INTO topology_links (from_device_id, from_interface, to_device_id, to_interface, neighbor_address, neighbor_identity)
-         VALUES ($1, $2, $3, $4, (SELECT ip_address FROM devices WHERE id = $3), (SELECT name FROM devices WHERE id = $3))`,
-        [id[from], fromIf, id[to], toIf],
+        `INSERT INTO topology_links (from_device_id, from_interface, to_device_id, to_interface, neighbor_address, neighbor_identity, discovered_by)
+         VALUES ($1, $2, $3, $4, (SELECT ip_address FROM devices WHERE id = $3), (SELECT name FROM devices WHERE id = $3), $5)`,
+        [id[from], fromIf, id[to], toIf, by],
       );
+    // R1, heard through SW: bridges pass MNDP on. The oldest row, as on the
+    // reporter's site, and ether1 is a bridge port either way.
+    await link('wap', 'ether1', 'r1', 'bridge/bonding/sfp-sfpplus1', 'mndp');
+    await db.query(`INSERT INTO bridge_vlan_entries (device_id, bridge, port) VALUES ($1, 'bridge', 'ether1')`, [id.wap]);
     await link('wap', 'ether1', 'sw', 'ether5');
     await link('sw', 'ether5', 'wap', 'ether1');
     await link('sw', 'sfp-sfpplus1', 'r1', 'sfp-sfpplus1');
     await link('r1', 'sfp-sfpplus1', 'sw', 'sfp-sfpplus1');
-    await link('r1', 'ether2', 'wap', 'bridge/ether1');
+    await link('r1', 'sfp-sfpplus1', 'wap', 'bridge/ether1', 'mndp');
 
     const seen = (d: string, mac: string, iface: string, type: string, signal: number | null = null) =>
       db.query(
@@ -154,7 +168,10 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
     expect(byName['R2-CTRL']).toMatchObject({ has_radios: false });
     expect(byName.WAP).toMatchObject({ has_radios: true, radio_count: '2' });
     expect(byName['AP-STANDALONE']).toMatchObject({ has_radios: true });
-    expect(list.filter((d) => d.has_radios).length).toBe(2);
+    expect(list.filter((d) => d.has_radios).length).toBe(4);
+    // A controller with a radio of its own: its own clients, not its CAP's too.
+    expect(byName['R3-RB4011']).toMatchObject({ has_radios: true, radio_count: '1', client_count: '5' });
+    expect(byName.WAP2).toMatchObject({ has_radios: true, client_count: '90' });
   });
 
   it('Channel Usage shows each radio once, under the controller it belongs to', async () => {
@@ -164,15 +181,17 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
       'AP-STANDALONE/wlan1@-',
       // The CAP isn't managed: R2's copy is all there is, under R2.
       'R2-CTRL/CAP3-5Ghz@R2-CTRL',
+      'R3-RB4011/wifi1@R3-RB4011',
       'WAP/wifi1_2.4Ghz@R1',
       'WAP/wifi2_5Ghz@R1',
+      'WAP2/wifi1@R3-RB4011',
     ]);
     const wap5 = body.radios.find((r) => r.name === 'wifi2_5Ghz')!;
     expect(wap5).toMatchObject({ frequency: 5320, registered_clients: 4 });
     const r2 = body.radios.find((r) => r.name === 'CAP3-5Ghz')!;
     expect(r2).toMatchObject({ frequency: 5180, registered_clients: 2 });
     const locations = Object.fromEntries(body.locations.map((l) => [l.name, l.radios]));
-    expect(locations).toEqual({ R1: 2, 'R2-CTRL': 1, 'Standalone access points': 1 });
+    expect(locations).toEqual({ R1: 2, 'R2-CTRL': 1, 'R3-RB4011': 2, 'Standalone access points': 1 });
   });
 
   it('the signal map puts clients on the CAP', async () => {
@@ -207,7 +226,7 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
     expect(onR1.clients.map((c) => [c.mac_address, c.interface_name])).toEqual([['02:00:00:00:00:06', 'vlan20']]);
   });
 
-  it('client detail: on the CAP, with the switch as its way up', async () => {
+  it('client detail: on the CAP, with the switch as its way up, not the router heard through it', async () => {
     const c = await get('/api/clients/02:00:00:00:00:01') as Row;
     expect(c).toMatchObject({
       device_name: 'WAP', device_type: 'wireless_ap', interface_name: 'wifi2_5Ghz', ssid: 'Aura',

@@ -22,7 +22,10 @@ seen, come from all of its sightings: online if any device sees it now.
 
 On the client's page, **Connection Path** shows that device and its way up: the spanning-tree
 root port where there is one, otherwise a link on a bridge port (or a member of a bonded one)
-rather than an out-of-band management port. Names wrap in full and link to the device.
+rather than an out-of-band management port, and among those a neighbour heard over LLDP. Bridges
+pass MNDP and CDP on but not LLDP, so an access point behind a switch also hears the router
+through it, and only the LLDP neighbour, the switch, is at the other end of the cable. Names wrap
+in full and link to the device.
 
 !!! note "This can be switched off"
     Client tracking is the heaviest collector on most fleets. **Settings → Polling →
