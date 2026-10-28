@@ -1329,7 +1329,13 @@ rather than a fact about the hardware. The Radios tab and the wireless section f
 detected role.</p>
 <p>A device found to have no wireless role (<code>none</code>) is checked again about once a day, and on a
 manual <strong>Sync</strong>, so a router where CAPsMAN is switched on after it was added becomes a
-controller (#365). A check where the device didn't answer isn't recorded.</p>
+controller (#365). A check where the device didn't answer, or answered with an error other than
+"no such command", isn't recorded.</p>
+<p>A recorded role only changes when two checks in a row agree. Until then the device keeps its role,
+and a controller keeps its list of CAPs and radios. One bad read after a restart turned working
+controllers into <code>none</code> and moved their clients back onto them (#365). A controller where CAPsMAN
+really is switched off shows as <code>none</code> after the next slow poll (about 5 minutes), or a second
+<strong>Sync</strong>.</p>
 <h2 id="how-caps-are-matched-to-devices">How CAPs are matched to devices<a class="headerlink" href="#how-caps-are-matched-to-devices" title="Permanent link">&para;</a></h2>
 <p>The controller enumerates every radio it manages — local and remote — through
 <code>/interface/wifi/radio</code>, each with a <code>radio-mac</code>. Those MACs are matched against every
