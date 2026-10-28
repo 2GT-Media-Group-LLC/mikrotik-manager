@@ -1327,6 +1327,9 @@ for legacy CAPsMAN from <code>/caps-man/manager</code> and <code>/interface/wire
 controller is usually classified as a router, and <code>device_type</code> is a label a human typed
 rather than a fact about the hardware. The Radios tab and the wireless section follow the
 detected role.</p>
+<p>A device found to have no wireless role (<code>none</code>) is checked again about once a day, and on a
+manual <strong>Sync</strong>, so a router where CAPsMAN is switched on after it was added becomes a
+controller (#365). A check where the device didn't answer isn't recorded.</p>
 <h2 id="how-caps-are-matched-to-devices">How CAPs are matched to devices<a class="headerlink" href="#how-caps-are-matched-to-devices" title="Permanent link">&para;</a></h2>
 <p>The controller enumerates every radio it manages — local and remote — through
 <code>/interface/wifi/radio</code>, each with a <code>radio-mac</code>. Those MACs are matched against every
@@ -1366,6 +1369,8 @@ the CAP that radio lives on, on the CAP's own interface for it (<code>wifi2_5Ghz
 CAP's way up as its connection path. A client on a virtual AP, such as a guest SSID,
 moves to the CAP too and keeps the controller's interface name. If the CAP isn't a
 managed device, the client stays on the controller.</p>
+<p>A controller with radios of its own (<code>controller_cap</code>) is listed with its own clients. Its copies
+of its CAPs' interfaces hold the CAPs' clients, and those are counted on the CAPs.</p>
 <p><strong>A controller with no radios of its own isn't an access point.</strong> It has its own section
 on the Wireless page, and isn't counted in <strong>Total APs</strong> or listed in the <strong>Access
 Points</strong> table. In <strong>Channel Usage</strong>, the controller's copy of a CAP radio is left out
