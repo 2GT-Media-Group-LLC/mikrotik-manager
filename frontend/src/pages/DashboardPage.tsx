@@ -999,7 +999,7 @@ function OperationsView({
           ) : (
             <div className="px-5 py-3 space-y-3" style={showAllCapacity ? { maxHeight: 'min(52vh, 460px)', overflowY: 'auto' } : undefined}>
               {shownCapacity.map((c) => (
-                <button key={c.id} onClick={() => navigate(`/devices/${c.id}`)}
+                <button key={c.id} onClick={() => navigate(`/devices/${c.id}`)} title={c.name}
                   className="w-full text-left flex items-center gap-3 group">
                   <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--ink)', width: 130 }}>{c.name}</div>
                   <div className="flex-1 flex items-center gap-3">
