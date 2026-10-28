@@ -8,6 +8,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { validatePassword } from '../utils/passwordPolicy';
 import { OIDC_SETTINGS_KEY } from '../services/oidc/oidcConfig';
+import { isTimeFormat } from '../utils/timeFormat';
 
 const router = Router();
 router.use(requireAuth);
@@ -31,6 +32,9 @@ router.get('/', async (_req: Request, res: Response) => {
 // PUT /api/settings
 router.put('/', requireAdmin, async (req: Request, res: Response) => {
   const updates = req.body as Record<string, unknown>;
+  if ('time_format_default' in updates && !isTimeFormat(updates['time_format_default'])) {
+    return res.status(400).json({ error: 'time_format_default must be browser, 12h or 24h.' });
+  }
   // Change Guard is read on every protected change; refuse values it would misread.
   if ('change_guard_mode' in updates && !['binary', 'script'].includes(String(updates['change_guard_mode']))) {
     return res.status(400).json({ error: 'change_guard_mode must be binary or script.' });

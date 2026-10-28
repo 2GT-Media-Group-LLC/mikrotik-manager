@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { Handle, Position } from '@xyflow/react';
 import {
   Users, Wifi, Cable, Globe, Router, Shield, Network, Server, HardDrive, Printer, Camera, Phone, Monitor, Cloud, Box, ChevronDown, ChevronUp,
@@ -160,7 +161,7 @@ function ClientGroupNode({ data }: { data: Record<string, unknown> }) {
 }
 
 /** What a client card's hover tells (#296): where and when it was seen. */
-function clientHover(c: TopologyClient): string {
+function clientHover(c: TopologyClient, formatDateTime: (value: string) => string): string {
   const lines = [
     c.name,
     c.ip ? `IP ${c.ip}` : null,
@@ -168,18 +169,19 @@ function clientHover(c: TopologyClient): string {
     c.vendor ? `Vendor ${c.vendor}` : null,
     c.vlan ? `VLAN ${c.vlan.replace(/^VLAN\s+/i, '')}` : null,
     c.interface ? `${c.wireless ? 'Wireless on' : 'Port'} ${c.interface}` : (c.wireless ? 'Wireless' : 'Wired'),
-    c.lastSeen ? `Last seen ${new Date(c.lastSeen).toLocaleString()}` : null,
+    c.lastSeen ? `Last seen ${formatDateTime(c.lastSeen)}` : null,
     c.portKnown ? 'Click to open the client' : 'Only seen in ARP or on an uplink, so where it plugs in is a guess. Click to open the client',
   ];
   return lines.filter(Boolean).join('\n');
 }
 
 function ClientNode({ data }: { data: Record<string, unknown> }) {
+  const { formatDateTime } = useDateTimeFormat();
   const c = data as unknown as TopologyClient;
   return (
     <div className="px-2.5 py-1.5 min-w-[120px] max-w-[170px] text-[11px] rounded-md bg-white dark:bg-slate-800 shadow-sm select-none cursor-pointer"
       style={{ border: '1px solid #bae6fd' }}
-      title={clientHover(c)}>
+      title={clientHover(c, formatDateTime)}>
       <Handles connectable={false} />
       <div className="flex items-center gap-1">
         {c.wireless ? <Wifi className="w-3 h-3 text-sky-500 flex-shrink-0" /> : <Cable className="w-3 h-3 text-gray-400 flex-shrink-0" />}

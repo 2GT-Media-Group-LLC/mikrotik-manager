@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState, useEffect, useRef } from 'react';
 import { useRememberedRange } from '../../hooks/useRememberedRange';
 import ReviewChangesButton from '../common/ReviewChangesButton';
@@ -222,6 +223,7 @@ function PortTrafficGraph({
   range: string;
   onRangeChange: (r: string) => void;
 }) {
+  const { formatTime } = useDateTimeFormat();
   const { data: rawTraffic = [], isLoading } = useQuery({
     queryKey: ['traffic', deviceId, portName, range],
     queryFn: () => metricsApi.interfaceTraffic(deviceId, portName, range).then((r) => r.data),
@@ -230,7 +232,7 @@ function PortTrafficGraph({
 
   const compact = range === '1h' || range === '3h';
   const trafficData = (rawTraffic as TrafficPoint[]).map((p) => ({
-    time: new Date(p.time).toLocaleTimeString([], {
+    time: formatTime(new Date(p.time), {
       hour: '2-digit', minute: '2-digit',
       ...(compact ? {} : { month: 'short', day: 'numeric' }),
     }),
@@ -335,6 +337,7 @@ function PortPacketGraph({
   portName: string;
   range: string;
 }) {
+  const { formatTime } = useDateTimeFormat();
   const { data: rawPackets = [], isLoading } = useQuery({
     queryKey: ['packets', deviceId, portName, range],
     queryFn: () => metricsApi.interfacePackets(deviceId, portName, range).then((r) => r.data),
@@ -343,7 +346,7 @@ function PortPacketGraph({
 
   const compact = range === '1h' || range === '3h';
   const packetData = (rawPackets as TrafficPoint[]).map((p) => ({
-    time: new Date(p.time).toLocaleTimeString([], {
+    time: formatTime(new Date(p.time), {
       hour: '2-digit', minute: '2-digit',
       ...(compact ? {} : { month: 'short', day: 'numeric' }),
     }),
@@ -405,6 +408,7 @@ function PortPacketGraph({
 function OpticSection({ deviceId, portName, optic, dropDb, chartHeight = 110 }: {
   deviceId: number; portName: string; optic: OpticStatus; dropDb: number; chartHeight?: number;
 }) {
+  const { formatDateTime } = useDateTimeFormat();
   const { data: history = [] } = useQuery({
     queryKey: ['optic-history', deviceId, portName],
     queryFn: () => devicesApi.getOpticHistory(deviceId, portName, 7).then((r) => r.data),
@@ -422,7 +426,7 @@ function OpticSection({ deviceId, portName, optic, dropDb, chartHeight = 110 }: 
   const dropColor = (d: number | null) => (d === null ? undefined : Math.abs(d) >= dropDb ? 'var(--bad)' : Math.abs(d) >= dropDb / 2 ? 'var(--warn)' : undefined);
   const vsUsual = (d: number) => (d === 0 ? 'same' : `${Math.abs(d).toFixed(1)} dB ${d > 0 ? 'below' : 'above'}`);
   const data = history.map((h) => ({
-    time: new Date(h.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    time: formatDateTime(new Date(h.at), { year: undefined, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     rx: h.rx_dbm, tx: h.tx_dbm,
   }));
   return (
@@ -609,6 +613,7 @@ function PortInfoCard({ deviceId, portName, errors, errorsPerMin = 10, flapsPerH
 
 // Table of client rows, reused for the connected list and the "view MAC table" disclosure.
 function PortClientRows({ clients }: { clients: PortClient[] }) {
+  const { formatDateTime } = useDateTimeFormat();
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -644,7 +649,7 @@ function PortClientRows({ clients }: { clients: PortClient[] }) {
                     : '—'}
                 </td>
                 <td className="px-4 py-2.5 text-right text-xs text-gray-500 dark:text-slate-400"
-                  title={c.first_seen ? new Date(c.first_seen).toLocaleString() : undefined}>
+                  title={c.first_seen ? formatDateTime(new Date(c.first_seen), { month: 'numeric', second: '2-digit' }) : undefined}>
                   {c.first_seen ? formatDistanceToNow(new Date(c.first_seen), { addSuffix: false }) : '—'}
                 </td>
               </tr>
@@ -738,6 +743,7 @@ function PortClientsCard({ deviceId, portName }: { deviceId: number; portName: s
 }
 
 export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, autoOpenBridge, onBridgeOpened }: Props) {
+  const { formatTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   // PoE power-cycle (#291): which port is cycling, and how it went.
@@ -880,7 +886,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
       queryClient.invalidateQueries({ queryKey: ['interfaces', deviceId] });
-      const notice = guardOutcomeMessage((res?.data as { guard?: GuardResult } | undefined)?.guard);
+      const notice = guardOutcomeMessage((res?.data as { guard?: GuardResult } | undefined)?.guard, formatTime);
       if (notice?.tone === 'warn') setSaveNotice(notice.text);
     },
     onError: (err: unknown) => {
@@ -960,7 +966,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
       setBondError('');
       setLockout(null);
       // Report what the safety net did — especially "the device is restoring itself".
-      const notice = guardOutcomeMessage((res?.data as { guard?: GuardResult })?.guard);
+      const notice = guardOutcomeMessage((res?.data as { guard?: GuardResult })?.guard, formatTime);
       if (notice) {
         setGuardNotice(notice);
         if (notice.tone === 'ok') setTimeout(() => setGuardNotice(null), 6000);

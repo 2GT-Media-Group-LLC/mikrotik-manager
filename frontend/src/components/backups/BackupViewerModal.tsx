@@ -1,6 +1,6 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useQuery } from '@tanstack/react-query';
 import { X, FileText, GitCompare, Download, Loader2, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
 import clsx from 'clsx';
 import { backupsApi } from '../../services/api';
 import { lineDiff } from '../../utils/lineDiff';
@@ -25,6 +25,7 @@ function errorText(e: unknown): string {
 }
 
 export default function BackupViewerModal({ ids, onClose, onDownload }: Props) {
+  const { formatDateTime } = useDateTimeFormat();
   const comparing = ids.length === 2;
 
   const single = useQuery({
@@ -90,7 +91,7 @@ export default function BackupViewerModal({ ids, onClose, onDownload }: Props) {
             )}
             {!comparing && single.data && (
               <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-                {format(new Date(single.data.created_at), 'MMM d, yyyy HH:mm')}
+                {formatDateTime(new Date(single.data.created_at))}
                 {single.data.notes ? ` · ${single.data.notes}` : ''}
               </p>
             )}
@@ -99,8 +100,8 @@ export default function BackupViewerModal({ ids, onClose, onDownload }: Props) {
                 <span className="text-green-600 dark:text-green-400">+{added}</span>{' '}
                 <span className="text-red-600 dark:text-red-400">−{removed}</span>
                 <span className="text-gray-400 dark:text-slate-500">
-                  {' '}· {format(new Date(pair.data.from.created_at), 'MMM d HH:mm')}
-                  {' → '}{format(new Date(pair.data.to.created_at), 'MMM d HH:mm')}
+                  {' '}· {formatDateTime(new Date(pair.data.from.created_at), { year: undefined })}
+                  {' → '}{formatDateTime(new Date(pair.data.to.created_at), { year: undefined })}
                 </span>
               </p>
             )}

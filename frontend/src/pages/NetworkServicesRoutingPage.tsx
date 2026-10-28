@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useFleetRefresh } from '../hooks/useFleetRefresh';
@@ -23,6 +24,7 @@ function StateBadge({ p }: { p: RoutingPeerRow }) {
  * device's Routing tab; the "Routing peer down" alert rule reports drops.
  */
 export default function NetworkServicesRoutingPage() {
+  const { formatDateTime } = useDateTimeFormat();
   const [search, setSearch] = useState('');
   const [protocol, setProtocol] = useState('');
   const [state, setState] = useState('');
@@ -128,7 +130,7 @@ export default function NetworkServicesRoutingPage() {
                   <td className="px-4 py-2"><StateBadge p={p} /></td>
                   <td className="px-4 py-2 font-mono text-xs text-gray-600 dark:text-slate-300">{p.up && p.uptime ? (p.uptime.replace(/\d+ms$/, '') || p.uptime) : '—'}</td>
                   <td className="px-4 py-2 font-mono text-xs text-gray-600 dark:text-slate-300">{p.prefix_count ?? '—'}</td>
-                  <td className="px-4 py-2 text-xs text-gray-500 dark:text-slate-400" title={new Date(p.last_change_at).toLocaleString()}>
+                  <td className="px-4 py-2 text-xs text-gray-500 dark:text-slate-400" title={formatDateTime(p.last_change_at)}>
                     {formatDistanceToNow(new Date(p.last_change_at), { addSuffix: true })}
                     {!p.up && !p.disabled && !p.last_up_at && <div className="text-gray-400">never up</div>}
                   </td>

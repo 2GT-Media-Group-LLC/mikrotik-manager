@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, ShieldCheck, AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
@@ -14,6 +15,7 @@ import { sshKeyApi } from '../../services/api';
 export default function SshKeyCard(
   { deviceId, sshUsername }: { deviceId: number; sshUsername?: string },
 ) {
+  const { formatDateTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
@@ -87,7 +89,7 @@ export default function SshKeyCard(
           <div className="flex gap-2">
             <span className="text-gray-500 dark:text-slate-400 w-24 shrink-0">Last proved</span>
             <span className="text-gray-900 dark:text-white">
-              {data.last_verified_at ? new Date(data.last_verified_at).toLocaleString() : 'never'}
+              {data.last_verified_at ? formatDateTime(new Date(data.last_verified_at), { month: 'numeric', second: '2-digit' }) : 'never'}
             </span>
           </div>
           {data.last_error && (

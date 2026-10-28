@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, Send, RefreshCw, AlertTriangle } from 'lucide-react';
@@ -18,6 +19,7 @@ const GB = 1024 ** 3;
 const fmtGB = (bytes: number) => (bytes / GB).toFixed(2);
 
 export default function DataCapCard({ deviceId, interfaceName }: { deviceId: number; interfaceName: string }) {
+  const { formatDateTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -209,7 +211,7 @@ export default function DataCapCard({ deviceId, interfaceName }: { deviceId: num
             {sends.slice(0, 5).map((s, i) => (
               <li key={i} className="text-[11px] flex flex-wrap gap-x-2">
                 <span className="text-gray-500 dark:text-slate-400">
-                  {new Date(s.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {formatDateTime(new Date(s.at), { year: undefined, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </span>
                 <span className="text-gray-700 dark:text-slate-300">{s.trigger}</span>
                 {s.period_bytes != null && (

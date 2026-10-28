@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useEffect, useMemo, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react';
 import { usesApiTls } from '../utils/apiTls';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -108,6 +109,7 @@ const LOGIN_TITLE: Record<LoginKind, string> = {
 };
 
 export default function DevicesPage() {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
@@ -725,7 +727,7 @@ export default function DevicesPage() {
                           <>
                         <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
                           {device.last_seen
-                            ? new Date(device.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            ? formatTime(new Date(device.last_seen), { hour: '2-digit', minute: '2-digit' })
                             : '—'}
                         </span>
                           </>
@@ -942,7 +944,7 @@ export default function DevicesPage() {
                     </td>
                     <td className="px-4 py-[11px]">
                       <span className="mono text-[11px]" style={{ color: 'var(--ink-4)' }}>
-                        {new Date(d.discovered_at).toLocaleString()}
+                        {formatDateTime(new Date(d.discovered_at), { month: 'numeric', second: '2-digit' })}
                       </span>
                     </td>
                     <td className="px-4 py-[11px]">
