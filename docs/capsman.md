@@ -29,7 +29,14 @@ detected role.
 
 A device found to have no wireless role (`none`) is checked again about once a day, and on a
 manual **Sync**, so a router where CAPsMAN is switched on after it was added becomes a
-controller (#365). A check where the device didn't answer isn't recorded.
+controller (#365). A check where the device didn't answer, or answered with an error other than
+"no such command", isn't recorded.
+
+A recorded role only changes when two checks in a row agree. Until then the device keeps its role,
+and a controller keeps its list of CAPs and radios. One bad read after a restart turned working
+controllers into `none` and moved their clients back onto them (#365). A controller where CAPsMAN
+really is switched off shows as `none` after the next slow poll (about 5 minutes), or a second
+**Sync**.
 
 ## How CAPs are matched to devices
 

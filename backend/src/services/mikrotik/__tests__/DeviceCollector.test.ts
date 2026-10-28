@@ -1,7 +1,16 @@
 // Mock external deps before importing DeviceCollector
 jest.mock('../../../utils/crypto', () => ({ decrypt: (s: string) => s }));
-jest.mock('../RouterOSClient');
-import { RouterOSTrapError } from '../RouterOSClient';
+// The client is mocked; how its errors are told apart is real.
+jest.mock('../RouterOSClient', () => {
+  const actual = jest.requireActual('../RouterOSClient');
+  return {
+    ...jest.createMockFromModule<Record<string, unknown>>('../RouterOSClient'),
+    RouterOSError: actual.RouterOSError,
+    RouterOSTrapError: actual.RouterOSTrapError,
+    isNoSuchCommand: actual.isNoSuchCommand,
+  };
+});
+import { RouterOSTrapError, isNoSuchCommand } from '../RouterOSClient';
 jest.mock('../../../config/database');
 jest.mock('../../../config/influxdb');
 jest.mock('../../../utils/oui');
@@ -755,5 +764,79 @@ describe('a device without a wireless role is checked again (#365)', () => {
     await neither.collectWirelessInterfaces();
     const update = (query as jest.Mock).mock.calls.find(([sql]) => String(sql).includes('UPDATE devices SET wifi_role'));
     expect(update![1].slice(0, 3)).toEqual([1, 'none', 'none']);
+  });
+});
+
+describe('a recorded wireless role isn\'t dropped on one bad read (#365)', () => {
+  const missing = () => { throw new RouterOSTrapError('no such command or directory (caps-man)', '0'); };
+  const interrupted = () => { throw new RouterOSTrapError('interrupted', '2'); };
+  const make = (device: Partial<DeviceRow> & Record<string, unknown>, responses: Record<string, Record<string, string>[] | (() => never)>) => {
+    const collector = new DeviceCollector({ ...testDevice, ...device } as DeviceRow);
+    (collector as unknown as { client: { execute: jest.Mock } }).client = {
+      execute: jest.fn(async (cmd: string) => {
+        const r = responses[cmd];
+        if (typeof r === 'function') return r();
+        return r ?? [];
+      }),
+    };
+    return collector;
+  };
+  const sql = (text: string) => (query as jest.Mock).mock.calls.filter(([s]) => String(s).includes(text));
+  // An RB5009 on RouterOS 7.25: the wifi menu with no radios, no legacy package.
+  const rb5009 = (capsman: Record<string, string>[] | (() => never)) => ({
+    '/interface/wifi/print': [], '/interface/wireless/print': missing,
+    '/interface/wifi/capsman/print': capsman, '/interface/wifi/cap/print': [{ enabled: 'no' }],
+    '/caps-man/manager/print': missing,
+  });
+  const controller = (id: number) => ({ id, wifi_role: 'controller', wifi_role_probe: 4, capsman_flavor: 'wifi' });
+
+  beforeEach(() => { (query as jest.Mock).mockReset(); (query as jest.Mock).mockResolvedValue([]); });
+
+  it('tells "no such menu" from other traps', () => {
+    expect(isNoSuchCommand(new RouterOSTrapError('no such command or directory (wireless)', '0'))).toBe(true);
+    expect(isNoSuchCommand(new RouterOSTrapError('no such command prefix'))).toBe(true);
+    expect(isNoSuchCommand(new RouterOSTrapError('interrupted', '2'))).toBe(false);
+    expect(isNoSuchCommand(new RouterOSTrapError('not enough permissions (9)', '4'))).toBe(false);
+    expect(isNoSuchCommand(new Error('Timed out'))).toBe(false);
+  });
+
+  it('an interrupted read records nothing and keeps the CAP inventory', async () => {
+    const c = make(controller(101), rb5009(interrupted));
+    await c.collectWirelessInterfaces();
+    await c.collectCapsman();
+    expect(sql('UPDATE devices SET wifi_role')).toHaveLength(0);
+    expect(sql('DELETE FROM capsman_radios')).toHaveLength(0);
+    // An interrupted package read doesn't make a 'none' either.
+    const pkg = make(controller(102), { '/interface/wifi/print': interrupted, '/interface/wireless/print': missing });
+    await pkg.collectWirelessInterfaces();
+    expect(sql('UPDATE devices SET wifi_role')).toHaveLength(0);
+  });
+
+  it('a controller read as none once keeps its role until the next check agrees', async () => {
+    const first = make(controller(103), rb5009([{ enabled: 'no' }]));
+    expect(await first.detectWifiRole()).toBe('controller');
+    await first.collectWirelessInterfaces();
+    await first.collectCapsman();
+    expect(sql('UPDATE devices SET wifi_role')).toHaveLength(0);
+    expect(sql('DELETE FROM capsman_radios')).toHaveLength(0);
+
+    const second = make(controller(103), rb5009([{ enabled: 'no' }]));
+    await second.collectWirelessInterfaces();
+    await second.collectCapsman();
+    expect(sql('UPDATE devices SET wifi_role')[0][1].slice(0, 3)).toEqual([103, 'none', 'wifi']);
+    expect(sql('DELETE FROM capsman_radios')).toHaveLength(1);
+  });
+
+  it('an answer matching the recorded role clears a pending change', async () => {
+    await make(controller(104), rb5009([{ enabled: 'no' }])).detectWifiRole();     // held
+    expect(await make(controller(104), rb5009([{ enabled: 'yes' }])).detectWifiRole()).toBe('controller');
+    // The next 'none' is a first sighting again, not a second one.
+    expect(await make(controller(104), rb5009([{ enabled: 'no' }])).detectWifiRole()).toBe('controller');
+  });
+
+  it('a role found where none was recorded is taken at once', async () => {
+    const c = make({ id: 105, wifi_role: 'none', wifi_role_probe: 4 }, rb5009([{ enabled: 'yes' }]));
+    await c.collectWirelessInterfaces();
+    expect(sql('UPDATE devices SET wifi_role')[0][1].slice(0, 3)).toEqual([105, 'controller', 'wifi']);
   });
 });

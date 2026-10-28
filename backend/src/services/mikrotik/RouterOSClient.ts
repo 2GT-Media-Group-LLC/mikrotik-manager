@@ -51,6 +51,17 @@ export class RouterOSTrapError extends RouterOSError {
   }
 }
 
+/**
+ * The device said the menu or command doesn't exist: a trap of category 0
+ * ("no such command or directory", then "no such command prefix"). Other traps
+ * aren't an answer about the menu. A command cut off mid-reply traps with
+ * category 2, "interrupted", and taking that for "not there" recorded a
+ * CAPsMAN controller as having no wireless role (#365).
+ */
+export function isNoSuchCommand(err: unknown): boolean {
+  return err instanceof RouterOSTrapError && (err.code === '0' || /^no such command/i.test(err.message));
+}
+
 /** A read for executeMany() and prefetch(). */
 export interface ReadSpec {
   command: string;

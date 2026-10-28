@@ -4,7 +4,7 @@ import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
 import { lease, dropSessions, type Lease, type SessionLane } from './sessionPool';
-import { RouterOSClient, RouterOSTrapError, type ReadSpec } from './RouterOSClient';
+import { RouterOSClient, RouterOSTrapError, isNoSuchCommand, type ReadSpec } from './RouterOSClient';
 import { usesApiTls } from '../../utils/apiTls';
 import { query, queryOne } from '../../config/database';
 import { bootChange } from '../../utils/bootTime';
@@ -52,6 +52,15 @@ const WIFI_ROLE_PROBE = 4;
  * at again, so the controller's CAPs and clients were never read (#365).
  */
 const WIFI_ROLE_RECHECK_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A role seen once that would replace a device's recorded one, by device id.
+ * A recorded role is only changed when two checks in a row agree: one bad read
+ * after a restart turned working controllers into 'none' and cleared their CAP
+ * inventory (#365). Kept in memory, so the first check after a restart can't
+ * change a role on its own.
+ */
+const pendingWifiRole = new Map<number, WifiRole>();
 
 /**
  * What one CAPsMAN reported, by key, for removing what's gone afterwards; null
@@ -2511,19 +2520,47 @@ export class DeviceCollector {
    */
   async detectWifiRole(): Promise<WifiRole> {
     if (this.wifiRoleCache !== null) return this.wifiRoleCache;
+    this.wifiRoleHeld = false;
+    const role = await this.readWifiRole();
+    if (this.wifiRoleUncertain) return role;
+
+    // A change to a recorded role waits for a second check that agrees (#365).
+    // Until then the device keeps the role it had, and its radios and CAPsMAN
+    // inventory are left as they are. A role found where none was recorded
+    // ('none' or never checked) is taken at once: finding one takes real data.
+    const d = this.device as unknown as { id: number; wifi_role?: string | null; capsman_flavor?: string | null };
+    const recorded = (d.wifi_role ?? null) as WifiRole | null;
+    if (recorded !== null && recorded !== 'none' && role !== recorded && pendingWifiRole.get(d.id) !== role) {
+      pendingWifiRole.set(d.id, role);
+      this.wifiRoleHeld = true;
+      this.wifiRoleUncertain = true;
+      this.capsmanFlavor = (d.capsman_flavor ?? null) as 'wifi' | 'legacy' | 'both' | null;
+      this.wifiRoleCache = recorded;
+      return recorded;
+    }
+    pendingWifiRole.delete(d.id);
+    this.wifiRoleCache = role;
+    return role;
+  }
+
+  /** Set when the role read differs from the recorded one and waits for a second look. */
+  private wifiRoleHeld = false;
+
+  /** The role from the device's own menus, without the hold above. */
+  private async readWifiRole(): Promise<WifiRole> {
     const pkg = await this.detectWifiPackage();
     if (pkg === 'none') {
       // Both menus failing to answer isn't "no wireless" (#365).
       this.wifiRoleUncertain = this.wifiPackageUncertain;
-      if (!this.wifiRoleUncertain) this.wifiRoleCache = 'none';
       return 'none';
     }
 
-    // A refusal from the device (no such menu) means "not configured here"; a
-    // timeout says nothing. If either read didn't get an answer the role is
-    // a guess, and nothing may be deleted on the strength of it (P2-21).
+    // The device saying the menu doesn't exist means "not configured here"; a
+    // timeout, or any other trap ("interrupted"), says nothing. If a read didn't
+    // get an answer the role is a guess, and nothing may be deleted on the
+    // strength of it (P2-21, #365).
     const absentOrUnknown = (err: unknown): null => {
-      if (!(err instanceof RouterOSTrapError)) this.wifiRoleUncertain = true;
+      if (!isNoSuchCommand(err)) this.wifiRoleUncertain = true;
       return null;
     };
     // A package guessed from a read that timed out makes the role a guess too.
@@ -2551,7 +2588,6 @@ export class DeviceCollector {
       this.legacyCapIfaces.length > 0 ? [{ enabled: 'yes' }] : cap,
       (ifaces ?? []).length > 0,
     );
-    if (!this.wifiRoleUncertain) this.wifiRoleCache = role;
     return role;
   }
 
@@ -2572,6 +2608,9 @@ export class DeviceCollector {
   async collectCapsman(): Promise<void> {
     try {
       const role = await this.detectWifiRole();
+      // The role read differently this time: leave the inventory until the
+      // next check says whether it really changed (#365).
+      if (this.wifiRoleHeld) return;
       if (role !== 'controller' && role !== 'controller_cap') {
         // Couldn't tell: keep the inventory rather than wipe it on a timeout.
         if (this.wifiRoleUncertain) return;
@@ -2841,12 +2880,12 @@ export class DeviceCollector {
     // (CAPsMAN is built in) even when the radios are on the legacy wireless
     // package, as on a hAP ac². See chooseWifiPackage.
     //
-    // A refusal (no such menu) is an answer; a timeout isn't. A wifi menu that
-    // timed out made a RouterOS 7 controller look like a router with no
+    // "No such menu" is an answer; a timeout, or any other trap, isn't. A wifi
+    // menu that failed made a RouterOS 7 controller look like a router with no
     // wireless, and the 'none' was recorded and never checked again (#365).
     let uncertain = false;
     const read = (cmd: string) => this.client.execute(cmd).catch((err: unknown) => {
-      if (!(err instanceof RouterOSTrapError)) uncertain = true;
+      if (!isNoSuchCommand(err)) uncertain = true;
       return null;
     });
     const [wifi, wireless] = await Promise.all([read('/interface/wifi/print'), read('/interface/wireless/print')]);
@@ -2883,6 +2922,9 @@ export class DeviceCollector {
       // Recorded per device so the UI can explain a blank SSID as delegation to a
       // controller rather than leaving it looking like an unconfigured radio.
       const role = await this.detectWifiRole();
+      // The role read differently from the recorded one: keep the device's
+      // radios as they are until the next check agrees (#365).
+      if (this.wifiRoleHeld) return;
       // The package is recorded alongside the role because TX-retry data only
       // exists on the legacy 'wireless' driver, and a panel that can never have
       // data on this fleet should not occupy space (issue #96). A role that is

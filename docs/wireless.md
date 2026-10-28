@@ -10,7 +10,8 @@ pages, and live radio stats like any access point. CAPsMAN controllers are cover
 controller with no radios of its own isn't counted as an access point
 ([CAPsMAN](capsman.md)). The manager checks whether a device has radios when it first sees it,
 and checks a device with none again about once a day and on a manual **Sync**, so CAPsMAN switched
-on later is found. A check that times out isn't recorded. It looks in both places: radios under the
+on later is found. A check that times out, or that the device cuts off, isn't recorded, and a device
+that had a role only loses it when two checks in a row agree. It looks in both places: radios under the
 legacy package's `/interface/wireless`, or under `/interface/wifi`, which every RouterOS 7.13+
 device has because CAPsMAN is built in. A device counts only if one of those lists
 interfaces. Many RouterOS 6 routers have the legacy package and no radios, and a hAP ac² on the
