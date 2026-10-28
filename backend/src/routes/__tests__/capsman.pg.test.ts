@@ -10,7 +10,8 @@
  * (WAP-2.4Ghz, WAP-5Ghz); SW between them. The WAP hears R1 through SW over
  * MNDP as well as SW itself. Added: a guest SSID on a virtual AP, a second
  * controller whose CAP isn't a managed device, a standalone AP, and a
- * controller with a radio of its own (an RB4011) and one CAP.
+ * controller with a radio of its own (an RB4011) and one CAP. Last, the way
+ * up where links tie: SW as the STP root, an HQ switch pair, a branch's CAPs.
  */
 jest.mock('../../middleware/auth', () => ({
   requireAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -235,5 +236,62 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
       vlan_name: 'staff',
       reported_by_device_id: id.r1,
     });
+  });
+
+  // Last: adds devices, links and clients the counts above don't expect.
+  it("a switch with no root port goes up to the router, and two switches don't go up to each other", async () => {
+    const dev = async (n: string, ip: string, type: string) => (await db.query<{ id: number }>(
+      `INSERT INTO devices (name, ip_address, api_username, api_password_encrypted, device_type, status)
+       VALUES ($1, $2, 'u', 'x', $3, 'online') RETURNING id`, [n, ip, type]))[0].id;
+    const link = (from: number, fromIf: string, to: number, toIf: string, by = 'cdp,lldp,mndp') => db.query(
+      `INSERT INTO topology_links (from_device_id, from_interface, to_device_id, to_interface, neighbor_address, neighbor_identity, discovered_by)
+       VALUES ($1, $2, $3, $4, (SELECT ip_address FROM devices WHERE id = $3), (SELECT name FROM devices WHERE id = $3), $5)`,
+      [from, fromIf, to, toIf, by]);
+    const wired = (d: number, mac: string) => db.query(
+      `INSERT INTO clients (device_id, mac_address, interface_name, active, client_type, last_seen)
+       VALUES ($1, $2, 'ether2', true, 'wired', NOW())`, [d, mac]);
+    const upFor = async (mac: string) => (await get(`/api/clients/${mac}`) as Row).upstream_device_name;
+
+    // The reporter's SW is the STP root bridge: no root port, and its links to
+    // R1 and down to the WAP are both bridge ports heard over LLDP. The WAP's
+    // row is the older one.
+    for (const port of ['ether5', 'sfp-sfpplus1']) {
+      await db.query(`INSERT INTO bridge_vlan_entries (device_id, bridge, port) VALUES ($1, 'bridge', $2)`, [id.sw, port]);
+    }
+    await wired(id.sw, '02:00:00:00:01:01');
+    expect(await upFor('02:00:00:00:01:01')).toBe('R1');
+    // The WAP still goes up to SW, not to R1 heard through it.
+    expect(await upFor('02:00:00:00:00:01')).toBe('SW');
+
+    // HQ: two switches with no root port hear each other first; each also
+    // has a link that ties with it, to the core and to an AP below.
+    const hqR = await dev('HQ-R', '10.9.0.1', 'router');
+    const core = await dev('HQ-CORE', '10.9.0.2', 'switch');
+    const sw02 = await dev('SW02', '10.9.0.3', 'switch');
+    const ftc = await dev('FTC-SW01', '10.9.0.4', 'switch');
+    const sw03 = await dev('SW03', '10.9.0.5', 'switch');
+    await link(sw02, 'ether11', ftc, 'ether1');
+    await link(ftc, 'ether1', sw02, 'ether11');
+    await link(sw02, 'ether1', core, 'ether3');
+    await link(ftc, 'ether9', sw03, 'ether1');
+    await link(sw03, 'ether1', ftc, 'ether9');
+    await link(core, 'ether3', sw02, 'ether1');
+    await link(core, 'sfp1', hqR, 'sfp1');
+    await wired(sw02, '02:00:00:00:01:02');
+    await wired(ftc, '02:00:00:00:01:03');
+    expect(await upFor('02:00:00:00:01:02')).toBe('HQ-CORE');
+    expect(await upFor('02:00:00:00:01:03')).toBe('SW02');
+
+    // A branch with an unmanaged switch: the CAPs hear each other and the
+    // router over MNDP, on the same VLAN interface.
+    const brR = await dev('BR-R', '10.8.0.1', 'router');
+    const ap01 = await dev('AP01', '10.8.0.11', 'wireless_ap');
+    const ap02 = await dev('AP02', '10.8.0.12', 'wireless_ap');
+    await link(ap02, 'vlan10', ap01, 'vlan10', 'mndp');
+    await link(ap02, 'vlan10', brR, 'vlan10', 'mndp');
+    await link(ap01, 'vlan10', ap02, 'vlan10', 'mndp');
+    await link(ap01, 'vlan10', brR, 'vlan10', 'mndp');
+    await wired(ap02, '02:00:00:00:01:04');
+    expect(await upFor('02:00:00:00:01:04')).toBe('BR-R');
   });
 });

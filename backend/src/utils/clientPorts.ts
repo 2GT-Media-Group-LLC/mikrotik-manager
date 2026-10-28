@@ -151,35 +151,55 @@ export function withMacColumns<T extends Record<string, unknown>>(row: T): T {
 }
 
 /**
- * Order of a device's links (`tl`, from device `d`) when choosing its way
- * up: the spanning-tree root port when it has one (J7); then not the link
- * that leaves through the interface holding the device's management address,
- * when that's a port of its own (an out-of-band management port; a bridge is
- * in-band and shares the uplinks); then links on a bridge port, which carry
- * the network, before links on ports outside the bridge; then links heard over
- * LLDP; then the oldest.
+ * Order of a device's links (`tl`, from device `d`, to device `ud`) when
+ * choosing its way up: the spanning-tree root port when it has one (J7); then
+ * not the link that leaves through the interface holding the device's
+ * management address, when that's a port of its own (an out-of-band
+ * management port; a bridge is in-band and shares the uplinks); then links on
+ * a bridge port, which carry the network, before links on ports outside the
+ * bridge; then links heard over LLDP; then a router before a switch before
+ * anything else; then not a neighbour whose own way up is this device; then
+ * the oldest.
  * On an MLAG/LACP fabric nothing is the root port, and the neighbour heard on
  * a management port used to win (#363).
  *
  * LLDP because bridges don't forward it, so an LLDP neighbour is at the other
  * end of the cable. MNDP and CDP pass through a bridge: an AP behind a switch
  * also hears the router through it, on the same port, and the router won (#365).
+ *
+ * The last two only break ties. The STP root bridge has no root port, and its
+ * links up to the router and down to an AP tied, so it went up to the AP; two
+ * switches without a root port each went up to the other (#365).
  */
-export const UPSTREAM_LINK_ORDER = `(tl.stp_role = 'root') DESC NULLS LAST,
+function upstreamLinkOrder(d: string, tl: string, ud: string, mutual: boolean): string {
+  return `(${tl}.stp_role = 'root') DESC NULLS LAST,
        EXISTS (
-         SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.ip_addresses_jsonb) = 'array' THEN d.ip_addresses_jsonb ELSE '[]'::jsonb END) a
-          WHERE split_part(a->>'address', '/', 1) = d.ip_address
-            AND a->>'interface' = ANY(string_to_array(tl.from_interface, '/'))
-            AND NOT EXISTS (SELECT 1 FROM bridge_vlan_entries mb WHERE mb.device_id = d.id AND mb.bridge = a->>'interface')
+         SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(${d}.ip_addresses_jsonb) = 'array' THEN ${d}.ip_addresses_jsonb ELSE '[]'::jsonb END) a
+          WHERE split_part(a->>'address', '/', 1) = ${d}.ip_address
+            AND a->>'interface' = ANY(string_to_array(${tl}.from_interface, '/'))
+            AND NOT EXISTS (SELECT 1 FROM bridge_vlan_entries mb WHERE mb.device_id = ${d}.id AND mb.bridge = a->>'interface')
        ) ASC,
        EXISTS (
          SELECT 1 FROM bridge_vlan_entries bp
-          WHERE bp.device_id = tl.from_device_id
-            AND (bp.port = ANY(string_to_array(tl.from_interface, '/'))
+          WHERE bp.device_id = ${tl}.from_device_id
+            AND (bp.port = ANY(string_to_array(${tl}.from_interface, '/'))
                  -- a member of a bonded bridge port (#363): LLDP names sfp-sfpplus1, the bridge Po1
                  OR EXISTS (SELECT 1 FROM interfaces bi
                              WHERE bi.device_id = bp.device_id AND bi.name = bp.port AND bi.type = 'bond'
-                               AND string_to_array(tl.from_interface, '/') && ${BOND_MEMBERS('bi')}))
+                               AND string_to_array(${tl}.from_interface, '/') && ${BOND_MEMBERS('bi')}))
        ) DESC,
-       (COALESCE(tl.discovered_by, '') ILIKE '%lldp%') DESC,
-       tl.id`;
+       (COALESCE(${tl}.discovered_by, '') ILIKE '%lldp%') DESC,
+       CASE ${ud}.device_type WHEN 'router' THEN 0 WHEN 'switch' THEN 1 ELSE 2 END ASC,${mutual ? `
+       COALESCE((
+         SELECT nl.to_device_id = ${tl}.from_device_id
+           FROM topology_links nl
+           JOIN devices nd ON nd.id = nl.to_device_id
+          WHERE nl.from_device_id = ${tl}.to_device_id
+          ORDER BY ${upstreamLinkOrder(ud, 'nl', 'nd', false)}
+          LIMIT 1
+       ), FALSE) ASC,` : ''}
+       ${tl}.id`;
+}
+
+/** The ORDER BY for a device's way up. The query needs `topology_links tl`, `devices d` (from) and `devices ud` (to). */
+export const UPSTREAM_LINK_ORDER = upstreamLinkOrder('d', 'tl', 'ud', true);

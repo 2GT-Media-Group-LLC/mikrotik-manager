@@ -164,7 +164,8 @@ suite('client port and upstream choice against Postgres (#363)', () => {
     const up = async (d: string) => (await db.query<{ to: number; via: string }>(
       `SELECT tl.to_device_id AS to, tl.from_interface AS via
          FROM topology_links tl JOIN devices d ON d.id = tl.from_device_id
-        WHERE tl.from_device_id = $1 AND tl.to_device_id IS NOT NULL
+         JOIN devices ud ON ud.id = tl.to_device_id
+        WHERE tl.from_device_id = $1
         ORDER BY ${UPSTREAM_LINK_ORDER} LIMIT 1`, [id[d]]))[0];
     expect(await up('asw')).toEqual({ to: id.csw, via: 'bridge/Po1/sfp-sfpplus1' });
     // In-band management on the bridge: the bridge-port uplink still wins.
@@ -177,7 +178,8 @@ suite('client port and upstream choice against Postgres (#363)', () => {
     await db.query(`UPDATE topology_links SET stp_role = 'root' WHERE from_device_id = $1 AND from_interface = 'ether49'`, [id.asw]);
     const r = await db.query<{ via: string }>(
       `SELECT tl.from_interface AS via FROM topology_links tl JOIN devices d ON d.id = tl.from_device_id
-        WHERE tl.from_device_id = $1 AND tl.to_device_id IS NOT NULL ORDER BY ${UPSTREAM_LINK_ORDER} LIMIT 1`, [id.asw]);
+        JOIN devices ud ON ud.id = tl.to_device_id
+        WHERE tl.from_device_id = $1 ORDER BY ${UPSTREAM_LINK_ORDER} LIMIT 1`, [id.asw]);
     expect(r[0].via).toBe('ether49');
     await db.query(`UPDATE topology_links SET stp_role = NULL WHERE from_device_id = $1`, [id.asw]);
   });
