@@ -50,6 +50,7 @@ import { siteScopeDevices, andSite } from '../utils/siteScope';
 import { activeSite, targetSite } from '../middleware/site';
 import { resolveSiteChoice } from '../services/deviceSite';
 import { romonSettingFor, romonChecks, romonSetParams } from '../services/romon';
+import { updateChecks, markAndScore, type PostureCheck } from '../utils/postureScore';
 import { missingIpv6InputFirewall } from '../utils/ipv6InputFirewall';
 
 /** Postgres interval text to milliseconds, for the few windows we offer. */
@@ -2099,9 +2100,7 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
     // e.g. api/route_BFD twice) so a service is only ever counted once.
     const services = Array.from(new Map(servicesRaw.map(s => [s['name'] ?? s['.id'], s])).values());
 
-    type Sev = 'high' | 'medium' | 'low';
-    type Check = { id: string; severity: Sev; title: string; detail: string; serviceId?: string; fix?: 'api-ssl' | 'www-ssl' | 'api-off' | 'romon' };
-    const checks: Check[] = [];
+    const checks: PostureCheck[] = [];
 
     for (const s of services) {
       const name = s['name'] ?? '';
@@ -2169,24 +2168,8 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
         detail: 'Ensure SNMP uses a non-default community string and is restricted to trusted addresses.' });
     }
 
-    // Outdated firmware is a security exposure: RouterOS releases routinely
-    // ship security fixes, so a pending update counts against the posture.
-    // Titles stay version-free so the Security Center's "Common Findings"
-    // rollup aggregates devices on different versions into one row.
-    if (device.firmware_update_available && device.latest_ros_version) {
-      checks.push({
-        id: 'firmware-outdated', severity: 'medium',
-        title: 'RouterOS update available',
-        detail: `This device runs RouterOS ${device.ros_version || '(unknown)'} but ${device.latest_ros_version} is available. RouterOS releases regularly include security fixes — review the changelog and schedule the upgrade from the Firmware section.`,
-      });
-    }
-    if (device.routerboard_upgrade_available) {
-      checks.push({
-        id: 'routerboot-outdated', severity: 'low',
-        title: 'RouterBOOT upgrade pending',
-        detail: `The bootloader (${device.firmware_version || 'current'}) has an available upgrade${device.upgrade_firmware_version ? ` to ${device.upgrade_firmware_version}` : ''}. Apply it after the next RouterOS upgrade from the device's Config tab.`,
-      });
-    }
+    // Pending RouterOS / RouterBOOT updates, from the device row (#371).
+    checks.push(...updateChecks(device));
 
     checks.push(...romonChecks(romonRow, romonSetting));
 
@@ -2198,29 +2181,7 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
        WHERE device_id IS NULL OR device_id = $1`,
       [device.id]
     ).catch(() => []);
-    const suppressedBy = new Map<string, { scope: 'device' | 'fleet'; reason: string | null }>();
-    for (const row of supp) {
-      const scope = row.device_id == null ? 'fleet' : 'device';
-      // A device-specific row wins over a fleet-wide one, so the UI can offer the
-      // narrower undo.
-      if (scope === 'device' || !suppressedBy.has(row.check_id)) {
-        suppressedBy.set(row.check_id, { scope, reason: row.reason });
-      }
-    }
-
-    const marked = checks.map((c2) => {
-      const hit = suppressedBy.get(c2.id);
-      return hit ? { ...c2, suppressed: true, suppressed_scope: hit.scope, suppressed_reason: hit.reason } : c2;
-    });
-
-    // Graduated score: lighter weights + a floor of 5 so it never reads a hard
-    // 0 (which falsely implies "maximally insecure"). It's a relative hardening
-    // indicator, not an absolute grade.
-    const WEIGHT: Record<Sev, number> = { high: 15, medium: 7, low: 3 };
-    const counted = marked.filter((c2) => !('suppressed' in c2));
-    const penalty = counted.reduce((n, c2) => n + WEIGHT[c2.severity], 0);
-    const score = counted.length === 0 ? 100 : Math.max(5, 100 - penalty);
-    return { score, checks: marked };
+    return markAndScore(checks, device.id, supp);
 }
 
 

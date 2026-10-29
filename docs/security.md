@@ -8,7 +8,9 @@ vulnerabilities in the RouterOS versions it runs.
 Each device's checks are read in the background, a few devices at a time, and kept for up to
 15 minutes, so the page opens at once on a large fleet and fills in as readings arrive (#302).
 **Re-scan fleet** reads every device again. A change made to a device drops its cached reading,
-so a fixed finding clears straight away. The **IPv6 input firewall** check flags a device that has
+so a fixed finding clears straight away. **RouterOS update available** and **RouterBOOT upgrade
+pending** come from the manager's own record rather than the cached reading, so they always match
+the Firmware page, including straight after an upgrade (#371). The **IPv6 input firewall** check flags a device that has
 a routable IPv6 address but no drop or reject rule on the IPv6 input chain, as the IPv4 check does
 for IPv4 (#312).
 
