@@ -1332,7 +1332,9 @@ vulnerabilities in the RouterOS versions it runs.</p>
 <p>Each device's checks are read in the background, a few devices at a time, and kept for up to
 15 minutes, so the page opens at once on a large fleet and fills in as readings arrive (#302).
 <strong>Re-scan fleet</strong> reads every device again. A change made to a device drops its cached reading,
-so a fixed finding clears straight away. The <strong>IPv6 input firewall</strong> check flags a device that has
+so a fixed finding clears straight away. <strong>RouterOS update available</strong> and <strong>RouterBOOT upgrade
+pending</strong> come from the manager's own record rather than the cached reading, so they always match
+the Firmware page, including straight after an upgrade (#371). The <strong>IPv6 input firewall</strong> check flags a device that has
 a routable IPv6 address but no drop or reject rule on the IPv6 input chain, as the IPv4 check does
 for IPv4 (#312).</p>
 <h2 id="encrypted-management-api-ssl">Encrypted management (API-SSL)<a class="headerlink" href="#encrypted-management-api-ssl" title="Permanent link">&para;</a></h2>
