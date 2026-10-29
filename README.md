@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0_RC_8-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-1.0.0_RC_9-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/built%20with-TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -18,7 +18,7 @@
 </p>
 
 > [!IMPORTANT]
-> **1.0 release candidate: testing until Saturday 31 October.** v1.0.0-rc.8, the latest release
+> **1.0 release candidate: testing until Saturday 31 October.** v1.0.0-rc.9, the latest release
 > candidate for the first stable release, is out, and the feature freeze is in effect. Stable 1.0.0 is planned
 > for **Sunday 1 November** if testing turns up nothing serious.
 >
