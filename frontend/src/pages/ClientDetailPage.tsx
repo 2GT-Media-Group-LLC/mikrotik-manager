@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Wifi, Network, Router, Layers, Activity,
-  Power, Save, Clock, ChevronRight, AlertCircle, Pencil, X, Gauge, Check, WifiOff,
+  Power, Save, Clock, ChevronRight, AlertCircle, Pencil, X, Gauge, Check, WifiOff, Box,
 } from 'lucide-react';
 import { useCanWrite } from '../hooks/useCanWrite';
 import {
@@ -170,7 +170,9 @@ function NodeLabel({ text, to }: { text: string; to?: string }) {
 function ConnectionDiagram({ client }: { client: ClientDetail }) {
   const ClientIcon = client.client_type === 'wireless' ? Wifi : Network;
   const DeviceIcon = deviceIcon(client.device_type);
-  const UpstreamIcon = client.upstream_device_type ? deviceIcon(client.upstream_device_type) : Router;
+  // A neighbour the manager doesn't manage could be anything (#365).
+  const UpstreamIcon = client.upstream_managed === false ? Box
+    : client.upstream_device_type ? deviceIcon(client.upstream_device_type) : Router;
 
   const clientName = client.custom_name || client.hostname || client.mac_address;
 
@@ -235,6 +237,9 @@ function ConnectionDiagram({ client }: { client: ClientDetail }) {
                 <UpstreamIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
               </div>
               <NodeLabel text={client.upstream_device_name} to={client.upstream_device_id ? `/devices/${client.upstream_device_id}` : undefined} />
+              {client.upstream_managed === false && (
+                <span className="text-[10px] text-gray-400 dark:text-slate-500">not managed</span>
+              )}
               {client.upstream_device_ip && (
                 <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">
                   {client.upstream_device_ip}

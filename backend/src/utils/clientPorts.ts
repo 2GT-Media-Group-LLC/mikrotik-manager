@@ -170,9 +170,13 @@ export function withMacColumns<T extends Record<string, unknown>>(row: T): T {
  * The last two only break ties. The STP root bridge has no root port, and its
  * links up to the router and down to an AP tied, so it went up to the AP; two
  * switches without a root port each went up to the other (#365).
+ *
+ * Before all of it, a managed neighbour: one the manager doesn't manage is
+ * only the way up when there's no other (UPSTREAM_CANDIDATE).
  */
 function upstreamLinkOrder(d: string, tl: string, ud: string, mutual: boolean): string {
-  return `(${tl}.stp_role = 'root') DESC NULLS LAST,
+  return `(${tl}.to_device_id IS NULL) ASC,
+       (${tl}.stp_role = 'root') DESC NULLS LAST,
        EXISTS (
          SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(${d}.ip_addresses_jsonb) = 'array' THEN ${d}.ip_addresses_jsonb ELSE '[]'::jsonb END) a
           WHERE split_part(a->>'address', '/', 1) = ${d}.ip_address
@@ -189,17 +193,41 @@ function upstreamLinkOrder(d: string, tl: string, ud: string, mutual: boolean): 
                                AND string_to_array(${tl}.from_interface, '/') && ${BOND_MEMBERS('bi')}))
        ) DESC,
        (COALESCE(${tl}.discovered_by, '') ILIKE '%lldp%') DESC,
-       CASE ${ud}.device_type WHEN 'router' THEN 0 WHEN 'switch' THEN 1 ELSE 2 END ASC,${mutual ? `
-       COALESCE((
+       ${deviceTier(ud)} ASC,${mutual ? `
+       ${goesUpThrough(tl, ud)} ASC,` : ''}
+       ${tl}.id`;
+}
+
+/** Router, then switch, then anything else (a neighbour the manager doesn't manage too). */
+const deviceTier = (alias: string) => `CASE ${alias}.device_type WHEN 'router' THEN 0 WHEN 'switch' THEN 1 ELSE 2 END`;
+
+/** Whether the neighbour `ud` (at the far end of `tl`) would itself go up to `tl`'s device. */
+function goesUpThrough(tl: string, ud: string): string {
+  return `COALESCE((
          SELECT nl.to_device_id = ${tl}.from_device_id
            FROM topology_links nl
            JOIN devices nd ON nd.id = nl.to_device_id
           WHERE nl.from_device_id = ${tl}.to_device_id
           ORDER BY ${upstreamLinkOrder(ud, 'nl', 'nd', false)}
           LIMIT 1
-       ), FALSE) ASC,` : ''}
-       ${tl}.id`;
+       ), FALSE)`;
 }
+
+/**
+ * Links that can be a device's way up: to a managed device, or to one the
+ * manager doesn't manage that was heard over LLDP, so is at the other end of
+ * the cable. CAPs behind an unmanaged switch had no way up at all (#365).
+ */
+export const UPSTREAM_CANDIDATE = `(tl.to_device_id IS NOT NULL OR COALESCE(tl.discovered_by, '') ILIKE '%lldp%')`;
+
+/**
+ * The chosen link (`tl`, from `d` to `ud`) leads down, not up: the neighbour
+ * goes up through this device, and is a switch or AP under a router (or an AP
+ * under a switch). This device is then the top of the site and has no way up.
+ * The gateway router went up into its own LAN (#365). Two of a kind are left
+ * alone: there, which is on top can't be told.
+ */
+export const UPSTREAM_IS_TOP = `(${deviceTier('d')} < ${deviceTier('ud')} AND ${goesUpThrough('tl', 'ud')})`;
 
 /** The ORDER BY for a device's way up. The query needs `topology_links tl`, `devices d` (from) and `devices ud` (to). */
 export const UPSTREAM_LINK_ORDER = upstreamLinkOrder('d', 'tl', 'ud', true);

@@ -27,8 +27,14 @@ pass MNDP and CDP on but not LLDP, so an access point behind a switch also hears
 through it, and only the LLDP neighbour, the switch, is at the other end of the cable. When links
 still tie, a router comes before a switch, and a switch before anything else, and a neighbour whose
 own way up is this device comes last. That covers the spanning-tree root bridge, which has no root
-port, and two switches that would otherwise each go up to the other (#365). Names wrap in full and
-link to the device.
+port, and two switches that would otherwise each go up to the other (#365).
+
+The top of a site has no way up. When the best neighbour goes up through this device, and is a
+switch or access point under a router (or an access point under a switch), the device is the
+top, and Connection Path stops there rather than going back down into the LAN. A neighbour the
+manager doesn't manage is the way up only when there's no managed one, and only if it was heard
+over LLDP, so it's at the other end of the cable: an access point behind an unmanaged switch
+shows that switch, marked **not managed**. Names wrap in full and link to the device.
 
 !!! note "This can be switched off"
     Client tracking is the heaviest collector on most fleets. **Settings → Polling →

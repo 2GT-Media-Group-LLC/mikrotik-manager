@@ -294,4 +294,54 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
     await wired(ap02, '02:00:00:00:01:04');
     expect(await upFor('02:00:00:00:01:04')).toBe('BR-R');
   });
+
+  it('the gateway router has no way up, and an unmanaged switch on the cable is a way up when nothing else is', async () => {
+    const dev = async (n: string, ip: string, type: string) => (await db.query<{ id: number }>(
+      `INSERT INTO devices (name, ip_address, api_username, api_password_encrypted, device_type, status)
+       VALUES ($1, $2, 'u', 'x', $3, 'online') RETURNING id`, [n, ip, type]))[0].id;
+    const byName = async (n: string) => (await db.query<{ id: number }>(`SELECT id FROM devices WHERE name = $1`, [n]))[0].id;
+    const link = (from: number, fromIf: string, to: number | null, toIf: string, by: string, ident: string | null = null) => db.query(
+      `INSERT INTO topology_links (from_device_id, from_interface, to_device_id, to_interface, neighbor_address, neighbor_identity, discovered_by)
+       VALUES ($1, $2, $3, $4, COALESCE((SELECT ip_address FROM devices WHERE id = $3), '10.7.0.250'),
+               COALESCE((SELECT name FROM devices WHERE id = $3), $6), $5)`,
+      [from, fromIf, to, toIf, by, ident]);
+    const wired = (d: number, mac: string) => db.query(
+      `INSERT INTO clients (device_id, mac_address, interface_name, active, client_type, last_seen)
+       VALUES ($1, $2, 'ether2', true, 'wired', NOW())`, [d, mac]);
+    const up = async (mac: string) => {
+      const c = await get(`/api/clients/${mac}`) as Row;
+      return [c.upstream_device_name ?? null, c.upstream_managed ?? null];
+    };
+
+    // Home: a PC on R1. Everything R1 hears goes up through it: SW to R1, the
+    // WAP to SW. R1 used to go up to SW.
+    expect(await up('02:00:00:00:00:06')).toEqual([null, null]);
+    // SW, the switch under it, still goes up to R1.
+    expect(await up('02:00:00:00:01:01')).toEqual(['R1', true]);
+
+    // HQ: the router goes up to nothing, not to the core switch below it.
+    const hqR = await byName('HQ-R');
+    await link(hqR, 'sfp1', await byName('HQ-CORE'), 'sfp1', 'cdp,lldp,mndp');
+    await wired(hqR, '02:00:00:00:01:05');
+    expect(await up('02:00:00:00:01:05')).toEqual([null, null]);
+    expect(await up('02:00:00:00:01:02')).toEqual(['HQ-CORE', true]);
+
+    // A branch where the CAPs hang off an unmanaged switch, heard over LLDP.
+    const ap1 = await dev('UN-AP1', '10.7.0.11', 'wireless_ap');
+    await link(ap1, 'ether1', null, 'Port42', 'lldp', 'gs1920-48v2');
+    await wired(ap1, '02:00:00:00:01:06');
+    expect(await up('02:00:00:00:01:06')).toEqual(['gs1920-48v2', false]);
+    // With a managed neighbour too, the managed one is the way up, as before.
+    const brR2 = await dev('BR2-R', '10.7.0.1', 'router');
+    const ap2 = await dev('UN-AP2', '10.7.0.12', 'wireless_ap');
+    await link(ap2, 'ether1', null, 'Port43', 'lldp', 'gs1920-48v2');
+    await link(ap2, 'ether1', brR2, 'ether6', 'mndp');
+    await wired(ap2, '02:00:00:00:01:07');
+    expect(await up('02:00:00:00:01:07')).toEqual(['BR2-R', true]);
+    // An unmanaged neighbour heard only over MNDP could be anywhere: not a way up.
+    const ap3 = await dev('UN-AP3', '10.7.0.13', 'wireless_ap');
+    await link(ap3, 'ether1', null, 'eth0', 'mndp', 'some-other-ap');
+    await wired(ap3, '02:00:00:00:01:08');
+    expect(await up('02:00:00:00:01:08')).toEqual([null, null]);
+  });
 });

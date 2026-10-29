@@ -15,7 +15,7 @@ import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/c
 import { parseRoamLine, buildSessions, flappingSessions } from '../utils/roaming';
 import { fluxString } from '@influxdata/influxdb-client';
 import { counterDeltas } from '../utils/counterDeltas';
-import { INFRA_PORTS_CTE, CLIENT_SIGHTINGS, CLIENT_SIGHTING_ORDER, CLIENT_MAC_COLUMNS, UPSTREAM_LINK_ORDER, withMacColumns } from '../utils/clientPorts';
+import { INFRA_PORTS_CTE, CLIENT_SIGHTINGS, CLIENT_SIGHTING_ORDER, CLIENT_MAC_COLUMNS, UPSTREAM_LINK_ORDER, UPSTREAM_CANDIDATE, UPSTREAM_IS_TOP, withMacColumns } from '../utils/clientPorts';
 
 // Effective category: the user's override wins; otherwise the fingerprint.
 function withCategory<T extends Record<string, unknown>>(row: T): T & { device_category: string; auto_category: string } {
@@ -303,7 +303,8 @@ router.get('/:mac', async (req: Request, res: Response) => {
             topo.upstream_interface,
             topo.upstream_device_name,
             topo.upstream_device_type,
-            topo.upstream_device_ip
+            topo.upstream_device_ip,
+            topo.upstream_managed
      FROM ${CLIENT_SIGHTINGS} c
      JOIN devices d ON d.id = c.device_id
      LEFT JOIN wireless_interfaces wi
@@ -316,18 +317,24 @@ router.get('/:mac', async (req: Request, res: Response) => {
         ORDER BY (vv.device_id = c.device_id) DESC
         LIMIT 1
      ) v ON TRUE
+     -- The device's way up (J7, #363): see UPSTREAM_LINK_ORDER. None when it
+     -- leads down from the top of the site (UPSTREAM_IS_TOP, #365). A neighbour
+     -- the manager doesn't manage is named as discovery heard it.
      LEFT JOIN LATERAL (
-       SELECT tl.to_device_id   AS upstream_device_id,
-              tl.to_interface   AS upstream_interface,
-              ud.name           AS upstream_device_name,
-              ud.device_type    AS upstream_device_type,
-              ud.ip_address     AS upstream_device_ip
-       FROM topology_links tl
-       JOIN devices ud ON ud.id = tl.to_device_id
-       WHERE tl.from_device_id = c.device_id
-       -- The device's way up (J7, #363): see UPSTREAM_LINK_ORDER.
-       ORDER BY ${UPSTREAM_LINK_ORDER}
-       LIMIT 1
+       SELECT up.* FROM (
+         SELECT tl.to_device_id   AS upstream_device_id,
+                tl.to_interface   AS upstream_interface,
+                COALESCE(ud.name, NULLIF(TRIM(tl.neighbor_identity), ''), tl.neighbor_address) AS upstream_device_name,
+                ud.device_type    AS upstream_device_type,
+                COALESCE(ud.ip_address, tl.neighbor_address) AS upstream_device_ip,
+                (tl.to_device_id IS NOT NULL) AS upstream_managed,
+                ${UPSTREAM_IS_TOP} AS is_top
+         FROM topology_links tl
+         LEFT JOIN devices ud ON ud.id = tl.to_device_id
+         WHERE tl.from_device_id = c.device_id AND ${UPSTREAM_CANDIDATE}
+         ORDER BY ${UPSTREAM_LINK_ORDER}
+         LIMIT 1
+       ) up WHERE NOT up.is_top
      ) topo ON TRUE
      WHERE LOWER(c.mac_address) = $1
        ${siteScopeByDevice(activeSite(req), 'c.device_id') ? `AND ${siteScopeByDevice(activeSite(req), 'c.device_id')}` : ''}

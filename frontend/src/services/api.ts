@@ -1042,6 +1042,8 @@ export interface ClientDetail extends Client {
   upstream_device_name?: string;
   upstream_device_type?: string;
   upstream_device_ip?: string;
+  /** False for a neighbour the manager doesn't manage (an unmanaged switch heard over LLDP, #365). */
+  upstream_managed?: boolean;
   comment?: string;
 }
 
