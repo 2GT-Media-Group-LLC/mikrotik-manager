@@ -37,6 +37,7 @@ interface BridgeRow {
   protocol_mode: string | null;
   designated_bridge_id: string | null;
   designated_port_id: string | null;
+  site_id?: number | null;
 }
 
 // GET /api/topology
@@ -77,7 +78,8 @@ router.get('/', async (req: Request, res: Response) => {
     // reason the root is no longer guessed from port roles (#131).
     query<BridgeRow>(
       `SELECT device_id, bridge_name, bridge_id, root_bridge, root_bridge_id,
-              root_port, root_path_cost, protocol_mode, designated_bridge_id, designated_port_id
+              root_port, root_path_cost, protocol_mode, designated_bridge_id, designated_port_id,
+              (SELECT site_id FROM devices WHERE id = device_id) AS site_id
          FROM device_bridges ${brFilter ? `WHERE ${brFilter}` : ''}`
     ),
   ]);

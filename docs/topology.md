@@ -63,6 +63,12 @@ as the upstream (#260):
   under that neighbour, named from discovery where it was seen. Two switches on the same
   unmanaged switch show as siblings, not one below the other.
 
+Bridge ids can repeat across a fleet, typically where configs were cloned with a fixed
+`admin-mac`. When more than one managed bridge has the designated bridge's id, the one in the
+device's own site is used, then the one discovery saw on the root port. A match only at another
+site, with no link to it, isn't used, and several in the site that can't be told apart leave the
+upstream undecided. A device at one site was drawn under a router at another (#365).
+
 Data from before the designated bridge was read falls back to the older rule: the neighbour on
 the root port that is in the same STP domain and closer to the root, used only when exactly one
 qualifies. Where spanning tree proves a cable that discovery left out (a switch seen only by CDP

@@ -272,3 +272,46 @@ describe('designated bridge: the exact upstream, managed or not (#260)', () => {
     expect(macNear('E0:63:DA:C7:B3:23', 'E0:63:DA:C7:B4:23')).toBe(false);
   });
 });
+
+// The #365 reporter's HQ: two routers at different sites report the same
+// bridge id (configs cloned with a fixed admin-mac), and the designated bridge
+// on HQ-SW02's root port was matched to the branch router.
+describe('a designated bridge id that repeats across the fleet (#365)', () => {
+  const HQ_RTR = 1, HQ_SW02 = 2, BR_RTR = 3, BR_C_AP = 4, BR_C_RTR = 5;
+  const id = '0x8000.48:A9:8A:00:00:01';
+  const B = (device_id: number, site_id: number | null, extra: Partial<StpBridge> = {}): StpBridge => ({
+    device_id, site_id, bridge_name: 'bridge', bridge_id: id, root_bridge: true, root_bridge_id: id,
+    root_port: 'none', root_path_cost: 0, ...extra,
+  });
+  const below = (device_id: number, site_id: number | null, port: string) => B(device_id, site_id, {
+    bridge_id: `0x8000.48:A9:8A:00:00:${String(device_id).padStart(2, '0')}`, root_bridge: false,
+    root_port: port, root_path_cost: 10, designated_bridge_id: id,
+  });
+  const of = (vs: ReturnType<typeof resolveStpUpstreams>, d: number) => vs.find((v) => v.deviceId === d)!;
+
+  it('takes the match in the same site, not the first in the fleet', () => {
+    // The branch router is listed first, as it came first on the reporter's instance.
+    const bs = [B(BR_RTR, 20), B(HQ_RTR, 10), below(HQ_SW02, 10, 'ether14')];
+    expect(of(resolveStpUpstreams(bs, []), HQ_SW02)).toMatchObject({ confidence: 'resolved', upstreamDeviceId: HQ_RTR });
+  });
+
+  it("doesn't take a match only at another site with no link to it", () => {
+    const bs = [B(BR_RTR, 20), below(BR_C_AP, 30, 'ether1')];
+    expect(of(resolveStpUpstreams(bs, []), BR_C_AP)).toMatchObject({ confidence: 'external-upstream', upstreamDeviceId: null });
+    // Seen on the root port, it is that device, whatever its site.
+    const ls: StpLink[] = [{ from_device_id: BR_C_AP, from_interface: 'ether1', to_device_id: BR_RTR, link_type: 'lldp' }];
+    expect(of(resolveStpUpstreams(bs, ls), BR_C_AP)).toMatchObject({ confidence: 'resolved', upstreamDeviceId: BR_RTR });
+  });
+
+  it('two matches in the site: the one on the root port, else ambiguous', () => {
+    const bs = [B(BR_C_RTR, 30), B(BR_RTR, 30), below(BR_C_AP, 30, 'ether1')];
+    expect(of(resolveStpUpstreams(bs, []), BR_C_AP)).toMatchObject({ confidence: 'ambiguous', upstreamDeviceId: null });
+    const ls: StpLink[] = [{ from_device_id: BR_C_AP, from_interface: 'ether1', to_device_id: BR_C_RTR, link_type: 'lldp' }];
+    expect(of(resolveStpUpstreams(bs, ls), BR_C_AP)).toMatchObject({ confidence: 'resolved', upstreamDeviceId: BR_C_RTR });
+  });
+
+  it('without sites, a single match is taken as before', () => {
+    const bs = [B(HQ_RTR, null), below(HQ_SW02, null, 'ether14')];
+    expect(of(resolveStpUpstreams(bs, []), HQ_SW02)).toMatchObject({ confidence: 'resolved', upstreamDeviceId: HQ_RTR });
+  });
+});

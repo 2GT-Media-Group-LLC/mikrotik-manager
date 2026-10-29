@@ -280,7 +280,8 @@ router.get('/rollouts/upstream-check', async (req: Request, res: Response) => {
   // Spanning tree is what turns an ambiguous port into a definite upstream.
   const bridges = await query<StpBridge>(
     `SELECT device_id, bridge_name, bridge_id, root_bridge, root_bridge_id,
-            root_port, root_path_cost, designated_bridge_id, designated_port_id
+            root_port, root_path_cost, designated_bridge_id, designated_port_id,
+            (SELECT site_id FROM devices WHERE id = device_id) AS site_id
        FROM device_bridges`
   );
   const names = await query<{ id: number; name: string }>(
