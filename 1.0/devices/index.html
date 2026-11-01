@@ -1821,8 +1821,10 @@ works too — the port is pulled out into the API Port field automatically. The 
 address with a port sent through the API: it is used as the API port, and refused if a
 different port is also given.</p>
 <p>Leave <strong>API Port</strong> blank and the manager tries <strong>API-SSL (8729) first</strong>, falling back to the
-plain API (8728) if the device doesn't offer it. Both are tried at once, so a device without
-API-SSL isn't slower to add. A port you enter, or one in the credential preset, is used as
+plain API (8728) only if API-SSL isn't available (turned off, firewalled, or without a
+certificate). If API-SSL answers but refuses the login, or presents a different certificate from
+the one pinned, the manager stops there rather than trying the plain API. Before 1.0.1 both were
+tried at once, which sent the password unencrypted even when API-SSL worked. A port you enter, or one in the credential preset, is used as
 given. The plain API sends the login unencrypted on every poll, so a device that ended up on
 8728 is listed on the <a href="../security/#encrypted-management-api-ssl">Security page</a>, where it
 can be switched over. Choosing 8728 for a public address still shows a warning.</p>
@@ -2033,6 +2035,12 @@ never sent back to the browser.</p>
 <p><strong>Edit Device</strong> offers the same presets (#259): picking one replaces the device's login, SSH login
 included, with the preset's. The manager logs in with it first, and nothing is saved if that
 fails.</p>
+<p><strong>Changing a device's address.</strong> Anyone but a fleet admin has to enter the device's API password
+(or pick a preset) to move it to another address, and the saved passwords stay behind: after the
+move the device has only the passwords entered with it, and SSH uses the API password unless an
+SSH password was entered too. So moving a device can't send its saved passwords to a host
+someone else runs. A fleet admin may move a device with its saved passwords. Before 1.0.1 any API
+password was accepted and the saved SSH password went to the new address.</p>
 <h3 id="changing-the-login-for-many-devices">Changing the login for many devices<a class="headerlink" href="#changing-the-login-for-many-devices" title="Permanent link">&para;</a></h3>
 <p>Select devices in the device list and choose <strong>Change login…</strong> in the bar above it (#259). Pick a
 preset, or type a username and password (optionally an SSH login too). This changes the login the

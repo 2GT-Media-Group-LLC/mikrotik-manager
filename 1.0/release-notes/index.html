@@ -323,6 +323,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#101" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.0.1
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-it-does" class="md-nav__link">
     <span class="md-ellipsis">
       What it does
@@ -1198,6 +1207,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#101" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.0.1
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-it-does" class="md-nav__link">
     <span class="md-ellipsis">
       What it does
@@ -1281,6 +1299,38 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="101">1.0.1<a class="headerlink" href="#101" title="Permanent link">&para;</a></h2>
+<p>Released on Sunday 1 November 2026, the same day as 1.0.0. Security fixes, reported by
+<a href="https://github.com/pimlie">@pimlie</a>; update as soon as you can.</p>
+<ul>
+<li><strong>Site-scoped accounts could reach other sites' devices</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-j9x4-qwcj-p8v8">GHSA-j9x4-qwcj-p8v8</a>).
+  An id written in an unusual way (<code>"20"</code> in a list, <code>0x14</code>, <code>+5</code>, <code>5x</code>) passed the site check
+  but still reached the device, backup or rollout, so an operator limited to one site could run
+  commands on any device. Ids are now read one way everywhere, a second site check can't raise
+  the role the first one set, and security-check mutes are limited to the account's sites.
+  Installs without site-scoped accounts weren't affected.</li>
+<li><strong>Device passwords could be sent unencrypted, or to another address</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-63v6-w7qf-349f">GHSA-63v6-w7qf-349f</a>).<ul>
+<li>Adding a device with no port tried API-SSL and the plain API at the same time, so the
+  password crossed the network unencrypted even when API-SSL worked. The plain API is now
+  tried only when API-SSL isn't available (<a href="../devices/#adding-devices">Devices</a>).</li>
+<li>Moving a device to another address sent its saved SSH password there. Now only the
+  passwords entered with the move are used (<a href="../devices/#device-credentials">Devices</a>).</li>
+<li>Alert email didn't check the mail server's certificate. It does now, and requires STARTTLS
+  before sending a login; untick <strong>Check the server's certificate</strong> on the channel for a
+  server with a self-signed certificate (<a href="../alerting/#email">Alerting</a>).</li>
+<li>Two-factor codes are limited per account as well as per address, and each code signs in
+  once.</li>
+</ul>
+</li>
+<li><strong>RouterBOOT upgrades stayed pending after they were done</strong>, and after a RouterOS downgrade an
+  older RouterBOOT was offered as an upgrade
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/372">#372</a>).</li>
+</ul>
+<p><strong>Check after updating:</strong> if alert email stops arriving, open the channel and use <strong>Send test</strong>.
+A mail server with a self-signed certificate, or one that doesn't offer STARTTLS, now needs
+<strong>Check the server's certificate</strong> unticked.</p>
 <h2 id="what-it-does">What it does<a class="headerlink" href="#what-it-does" title="Permanent link">&para;</a></h2>
 <p>MikroTik Manager is a self-hosted manager for fleets of MikroTik routers, switches and access
 points on RouterOS 6 and 7.</p>
