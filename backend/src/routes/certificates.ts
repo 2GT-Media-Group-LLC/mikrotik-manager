@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
@@ -39,7 +39,7 @@ interface CertRow {
  *
  * `?deviceId=` narrows it to one device, which is how the device page uses it.
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const { deviceId } = req.query as { deviceId?: string };
 
   const filters: string[] = [];

@@ -2,7 +2,7 @@ import { mapWithConcurrency, settleWithConcurrency, FLEET_ACTION_CONCURRENCY } f
 import { liveForDevices } from '../services/liveCache';
 import { securityPosture, type PostureDevice } from './devices';
 import { withCurrentUpdates, type Suppression } from '../utils/postureScore';
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query } from '../config/database';
 import { getQueryApi } from '../config/influxdb';
 import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
@@ -36,7 +36,7 @@ router.use(requireAuth);
  */
 const pollNowAt = new Map<string, number>();
 const POLL_NOW_COOLDOWN_MS = 20_000;
-router.post('/poll-now', async (req: Request, res: Response) => {
+router.post('/poll-now', async (req, res) => {
   const kind = req.body?.kind;
   if (kind !== 'fast' && kind !== 'slow' && kind !== 'logs') return res.status(400).json({ error: 'kind must be fast, slow or logs' });
   const site = activeSite(req);
@@ -123,7 +123,7 @@ async function latestRetries(): Promise<{ device_id: string; device_name: string
 
 // GET /api/operations/insights — aggregated operational intelligence (no live
 // device connections; all from Postgres + InfluxDB so it's fast).
-router.get('/insights', async (req: Request, res: Response) => {
+router.get('/insights', async (req, res) => {
   const siteId = activeSite(req);
   const devFilter  = siteScopeDevices(siteId);
   const devFilterD = siteScopeDevices(siteId, 'd');
@@ -554,7 +554,7 @@ router.get('/insights', async (req: Request, res: Response) => {
  * item that is genuinely resolved stops being generated anyway — so a dismissal that
  * never lapsed would only ever hide things that are still true.
  */
-router.post('/insights/dismiss', requireWrite, fleetOnly, async (req: Request, res: Response) => {
+router.post('/insights/dismiss', requireWrite, fleetOnly, async (req, res) => {
   const { fingerprint, category, title, hours } = req.body as
     { fingerprint?: string; category?: string; title?: string; hours?: number };
   if (!fingerprint) return res.status(400).json({ error: 'fingerprint is required' });
@@ -572,7 +572,7 @@ router.post('/insights/dismiss', requireWrite, fleetOnly, async (req: Request, r
 });
 
 /** GET /api/operations/insights/dismissed — what is currently hidden, and until when. */
-router.get('/insights/dismissed', async (req: Request, res: Response) => {
+router.get('/insights/dismissed', async (req, res) => {
   await query(`DELETE FROM insight_dismissals WHERE expires_at < NOW()`).catch(() => []);
   // A site-scoped account sees only dismissals made in its own view, not other
   // sites' findings by title.
@@ -586,7 +586,7 @@ router.get('/insights/dismissed', async (req: Request, res: Response) => {
 });
 
 /** DELETE — bring an item back before its dismissal lapses. */
-router.delete('/insights/dismiss/:fingerprint', requireWrite, fleetOnly, async (req: Request, res: Response) => {
+router.delete('/insights/dismiss/:fingerprint', requireWrite, fleetOnly, async (req, res) => {
   await query(`DELETE FROM insight_dismissals WHERE fingerprint = $1`, [req.params.fingerprint]);
   res.status(204).end();
 });
@@ -753,7 +753,7 @@ async function buildActivity(siteId: SiteScope) {
 }
 
 // POST /api/operations/backup-all — back up every online device (parallel, best-effort)
-router.post('/backup-all', requireWrite, async (req: Request, res: Response) => {
+router.post('/backup-all', requireWrite, async (req, res) => {
   // Scoped to the active site. A bulk action that silently spans customers is
   // exactly the blast radius the bulk-command guards exist to contain (#130).
   const siteFilter = siteScopeDevices(writableScope(req));
@@ -785,7 +785,7 @@ router.post('/backup-all', requireWrite, async (req: Request, res: Response) => 
 // GET /api/operations/security-posture — every online device's hardening score,
 // for the dashboard (#302). Read through the live cache: the dashboard used to
 // ask each device separately, opening a connection to every one.
-router.get('/security-posture', async (req: Request, res: Response) => {
+router.get('/security-posture', async (req, res) => {
   const scope = siteScopeDevices(activeSite(req));
   const devices = await query<PostureDevice>(
     `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only ${scope ? `AND ${scope}` : ''} ORDER BY name`);
@@ -809,7 +809,7 @@ router.get('/security-posture', async (req: Request, res: Response) => {
 });
 
 // POST /api/operations/sync-all — pull latest config/state from every online device
-router.post('/sync-all', requireWrite, async (req: Request, res: Response) => {
+router.post('/sync-all', requireWrite, async (req, res) => {
   // Scoped to the active site. A bulk action that silently spans customers is
   // exactly the blast radius the bulk-command guards exist to contain (#130).
   const siteFilter = siteScopeDevices(writableScope(req));

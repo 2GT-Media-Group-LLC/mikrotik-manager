@@ -86,7 +86,7 @@ async function describe(m: MirrorRow, c: PresetCaller) {
 }
 
 // GET /api/firmware/mirrors
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const c = caller(req);
   const rows = await query<MirrorRow>(`SELECT * FROM firmware_mirrors ORDER BY site_id NULLS FIRST, id`);
   const visible = rows.filter((m) => canSee(c, m.site_id));
@@ -98,7 +98,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /api/firmware/mirrors/:id/devices — the devices it can serve, for switching them over
-router.get('/:id/devices', async (req: Request, res: Response) => {
+router.get('/:id/devices', async (req, res) => {
   const m = await loadVisible(req, res, false);
   if (!m) return;
   const devices = await scopeDevices(m);
@@ -121,7 +121,7 @@ router.get('/:id/devices', async (req: Request, res: Response) => {
 
 // GET /api/firmware/mirrors/disks?device_id= — where a mirror on this device
 // could keep its packages (Discussion #85), with the suggested one.
-router.get('/disks', async (req: Request, res: Response) => {
+router.get('/disks', async (req, res) => {
   const c = caller(req);
   const device = await queryOne<DeviceRow & { site_id: number | null }>(`SELECT * FROM devices WHERE id = $1`, [Number(req.query.device_id)]);
   if (!device) return res.status(404).json({ error: 'Device not found' });
@@ -136,7 +136,7 @@ router.get('/disks', async (req: Request, res: Response) => {
 });
 
 // GET /api/firmware/mirrors/:id/plan?version= — what a sync would fetch
-router.get('/:id/plan', async (req: Request, res: Response) => {
+router.get('/:id/plan', async (req, res) => {
   const m = await loadVisible(req, res, false);
   if (!m) return;
   try {
@@ -150,7 +150,7 @@ router.get('/:id/plan', async (req: Request, res: Response) => {
 });
 
 // POST /api/firmware/mirrors — choose a package server and set it up
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req, res) => {
   const c = caller(req);
   const body = req.body as { device_id?: number; site_id?: number | null; folder?: string; disk?: string | null; serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string };
   const siteId = body.site_id == null ? null : Number(body.site_id);
@@ -199,7 +199,7 @@ async function parseServeAddress(raw: unknown): Promise<{ value: string | null; 
 }
 
 // PUT /api/firmware/mirrors/:id — settings
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', async (req, res) => {
   const m = await loadVisible(req, res, true);
   if (!m) return;
   const body = req.body as { serve_address?: string | null; keep_versions?: number; auto_sync?: boolean; channel?: string; disk?: string | null };
@@ -239,7 +239,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/firmware/mirrors/:id/deploy — redo the package server login (new password), and tell the devices
-router.post('/:id/deploy', async (req: Request, res: Response) => {
+router.post('/:id/deploy', async (req, res) => {
   const m = await loadVisible(req, res, true);
   if (!m) return;
   try {
@@ -253,7 +253,7 @@ router.post('/:id/deploy', async (req: Request, res: Response) => {
 });
 
 // POST /api/firmware/mirrors/:id/sync { version? } — runs in the background; poll GET for status
-router.post('/:id/sync', async (req: Request, res: Response) => {
+router.post('/:id/sync', async (req, res) => {
   const m = await loadVisible(req, res, true);
   if (!m) return;
   const version = (req.body as { version?: string })?.version;
@@ -265,7 +265,7 @@ router.post('/:id/sync', async (req: Request, res: Response) => {
 });
 
 // POST /api/firmware/mirrors/:id/clients { device_ids, enable }
-router.post('/:id/clients', async (req: Request, res: Response) => {
+router.post('/:id/clients', async (req, res) => {
   const m = await loadVisible(req, res, true);
   if (!m) return;
   const body = req.body as { device_ids?: unknown; enable?: boolean };
@@ -282,7 +282,7 @@ router.post('/:id/clients', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/firmware/mirrors/:id
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', async (req, res) => {
   const m = await loadVisible(req, res, true);
   if (!m) return;
   try {

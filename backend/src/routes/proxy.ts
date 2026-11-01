@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { deviceSiteAccess, deviceIdQuery } from '../utils/siteAccess';
 import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
@@ -13,7 +13,7 @@ router.use(requireAuth);
 router.use(deviceSiteAccess(deviceIdQuery));
 
 // GET /api/proxy/top?by=client|user|destination|denied&range=24h&limit=10&source=&port=&deviceId=
-router.get('/top', async (req: Request, res: Response) => {
+router.get('/top', async (req, res) => {
   const choice = resolveProxyQuery(req.query.by, req.query.range);
   if ('error' in choice) return res.status(400).json({ error: choice.error });
   const { by, range, group, interval } = choice;
@@ -124,7 +124,7 @@ router.get('/top', async (req: Request, res: Response) => {
 // Read from proxy_sources (one row per instance per device) rather than aggregating
 // proxy_connections, which meant scanning every stored connection. Until the background
 // backfill has filled it (a short window after an upgrade) the aggregate is used.
-router.get('/sources', async (req: Request, res: Response) => {
+router.get('/sources', async (req, res) => {
   const siteFilter = siteScopeByDevice(activeSite(req), 'device_id');
   const rows = await useProxySourcesTable()
     ? await query(

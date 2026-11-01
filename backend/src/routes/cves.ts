@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { activeSite } from '../middleware/site';
 import { fleetCveReport, refreshCveFeed } from '../services/cveFeed';
@@ -8,12 +8,12 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/security/cves — the stored list matched against the site's versions
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   res.json(await fleetCveReport(activeSite(req)));
 });
 
 // POST /api/security/cves/refresh — fetch the lists now instead of waiting for the daily run
-router.post('/refresh', requireWrite, async (req: Request, res: Response) => {
+router.post('/refresh', requireWrite, async (req, res) => {
   try {
     await refreshCveFeed();
   } catch (err) {

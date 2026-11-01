@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite, requireAdmin } from '../middleware/auth';
 import { windowCovers } from '../utils/maintenance';
@@ -33,7 +33,7 @@ export async function isDeviceInMaintenance(deviceId: number): Promise<boolean> 
 }
 
 // GET /api/maintenance-windows
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (_req, res) => {
   const rows = await query<MaintenanceWindow>(
     `SELECT * FROM maintenance_windows ORDER BY start_at DESC`
   );
@@ -52,7 +52,7 @@ function validateWindow(startAt: string, endAt: string, cron?: string | null): s
 }
 
 // POST /api/maintenance-windows (admin)
-router.post('/', requireAdmin, async (req: Request, res: Response) => {
+router.post('/', requireAdmin, async (req, res) => {
   const { name, device_ids, start_at, end_at, recurring_cron } = req.body as {
     name: string; device_ids: number[]; start_at: string; end_at: string; recurring_cron?: string;
   };
@@ -71,7 +71,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // PUT /api/maintenance-windows/:id (admin)
-router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
+router.put('/:id', requireAdmin, async (req, res) => {
   const { name, device_ids, start_at, end_at, recurring_cron, active } = req.body as Partial<MaintenanceWindow>;
   const rows = await query<MaintenanceWindow>(
     `UPDATE maintenance_windows SET
@@ -89,13 +89,13 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/maintenance-windows/:id (admin)
-router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   await query(`DELETE FROM maintenance_windows WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
 });
 
 // GET /api/maintenance-windows/active — currently active windows (used by AlertService)
-router.get('/active', requireWrite, async (_req: Request, res: Response) => {
+router.get('/active', requireWrite, async (_req, res) => {
   const rows = await query<MaintenanceWindow>(
     `SELECT * FROM maintenance_windows WHERE active = true AND NOW() BETWEEN start_at AND end_at`
   );

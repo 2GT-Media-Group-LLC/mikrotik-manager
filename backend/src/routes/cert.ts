@@ -1,5 +1,5 @@
 import { parseCertificateBundle, parsePrivateKey } from '../utils/pemBundle';
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile, unlink } from 'fs/promises';
@@ -57,7 +57,7 @@ function parseCertInfo(pem: string) {
 }
 
 // GET /api/cert — current certificate info
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (_req, res) => {
   if (!existsSync(CERT_PATH)) {
     return res.json({ exists: false });
   }
@@ -70,7 +70,7 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // POST /api/cert/regenerate — generate a fresh self-signed certificate
-router.post('/regenerate', requireAdmin, async (_req: Request, res: Response) => {
+router.post('/regenerate', requireAdmin, async (_req, res) => {
   // Same lock as upload, so a regenerate can't interleave with an upload.
   const release = await acquireInstallLock();
   try {
@@ -97,7 +97,7 @@ router.post('/regenerate', requireAdmin, async (_req: Request, res: Response) =>
 });
 
 // POST /api/cert/upload — install a custom certificate and private key
-router.post('/upload', requireAdmin, async (req: Request, res: Response) => {
+router.post('/upload', requireAdmin, async (req, res) => {
   const { certificate, private_key } = req.body as { certificate?: string; private_key?: string };
 
   if (!certificate || !private_key) {

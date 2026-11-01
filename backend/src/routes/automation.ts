@@ -1,5 +1,5 @@
 import { seal } from '../utils/sealed';
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { randomBytes, createHash } from 'crypto';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireAdmin, requireWrite, fleetOnly } from '../middleware/auth';
@@ -25,14 +25,14 @@ function isValidEmail(addr: string): boolean {
 
 // ─── API tokens (admin only — a token can never mint more tokens) ─────────────
 
-router.get('/tokens', requireAdmin, async (_req: Request, res: Response) => {
+router.get('/tokens', requireAdmin, async (_req, res) => {
   const rows = await query(
     `SELECT id, name, prefix, scope, created_by, last_used_at, expires_at, created_at
      FROM api_tokens ORDER BY created_at DESC`);
   res.json(rows);
 });
 
-router.post('/tokens', requireAdmin, async (req: Request, res: Response) => {
+router.post('/tokens', requireAdmin, async (req, res) => {
   const { name, scope, expires_days } = req.body as { name?: string; scope?: string; expires_days?: number };
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
   if (scope !== 'read' && scope !== 'write') return res.status(400).json({ error: 'scope must be read or write' });
@@ -52,14 +52,14 @@ router.post('/tokens', requireAdmin, async (req: Request, res: Response) => {
   res.status(201).json({ id: row!.id, token });
 });
 
-router.delete('/tokens/:id', requireAdmin, async (req: Request, res: Response) => {
+router.delete('/tokens/:id', requireAdmin, async (req, res) => {
   await query(`DELETE FROM api_tokens WHERE id = $1`, [parseInt(req.params.id, 10)]);
   res.json({ ok: true });
 });
 
 // ─── Webhooks ──────────────────────────────────────────────────────────────────
 
-router.get('/webhooks', async (req: Request, res: Response) => {
+router.get('/webhooks', async (req, res) => {
   const rows = await query<{ url: string }>(
     `SELECT id, name, url, (secret IS NOT NULL AND secret != '') AS has_secret,
             events, enabled, last_status, last_fired_at, created_at
@@ -71,7 +71,7 @@ router.get('/webhooks', async (req: Request, res: Response) => {
 });
 
 
-router.post('/webhooks', requireWrite, async (req: Request, res: Response) => {
+router.post('/webhooks', requireWrite, async (req, res) => {
   const { name, url, secret, events } = req.body as { name?: string; url?: string; secret?: string; events?: string[] };
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
   if (!url || !/^https?:\/\//.test(url)) return res.status(400).json({ error: 'url must be http(s)' });
@@ -85,7 +85,7 @@ router.post('/webhooks', requireWrite, async (req: Request, res: Response) => {
   res.status(201).json({ id: row!.id });
 });
 
-router.put('/webhooks/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/webhooks/:id', requireWrite, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { name, url, secret, events, enabled } = req.body as {
     name?: string; url?: string; secret?: string | null; events?: string[]; enabled?: boolean;
@@ -112,12 +112,12 @@ router.put('/webhooks/:id', requireWrite, async (req: Request, res: Response) =>
   res.json({ ok: true });
 });
 
-router.delete('/webhooks/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/webhooks/:id', requireWrite, async (req, res) => {
   await query(`DELETE FROM webhooks WHERE id = $1`, [parseInt(req.params.id, 10)]);
   res.json({ ok: true });
 });
 
-router.post('/webhooks/:id/test', requireWrite, async (req: Request, res: Response) => {
+router.post('/webhooks/:id/test', requireWrite, async (req, res) => {
   try {
     const result = await webhookService.sendTest(parseInt(req.params.id, 10));
     res.json({ ok: result.status >= 200 && result.status < 300, status: result.status });
@@ -128,12 +128,12 @@ router.post('/webhooks/:id/test', requireWrite, async (req: Request, res: Respon
 
 // ─── Scheduled reports ─────────────────────────────────────────────────────────
 
-router.get('/reports', async (_req: Request, res: Response) => {
+router.get('/reports', async (_req, res) => {
   const rows = await query(`SELECT * FROM report_schedules ORDER BY created_at DESC`);
   res.json(rows);
 });
 
-router.post('/reports', requireWrite, async (req: Request, res: Response) => {
+router.post('/reports', requireWrite, async (req, res) => {
   const { name, frequency, recipients } = req.body as { name?: string; frequency?: string; recipients?: string };
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
   if (!['daily', 'weekly', 'monthly'].includes(frequency ?? '')) return res.status(400).json({ error: 'frequency must be daily, weekly or monthly' });
@@ -149,7 +149,7 @@ router.post('/reports', requireWrite, async (req: Request, res: Response) => {
   res.status(201).json({ id: row!.id });
 });
 
-router.put('/reports/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/reports/:id', requireWrite, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { enabled } = req.body as { enabled?: boolean };
   const result = await query(
@@ -159,13 +159,13 @@ router.put('/reports/:id', requireWrite, async (req: Request, res: Response) => 
   res.json({ ok: true });
 });
 
-router.delete('/reports/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/reports/:id', requireWrite, async (req, res) => {
   await query(`DELETE FROM report_schedules WHERE id = $1`, [parseInt(req.params.id, 10)]);
   res.json({ ok: true });
 });
 
 // POST /api/automation/reports/:id/send-now — immediate delivery (also validates SMTP)
-router.post('/reports/:id/send-now', requireWrite, async (req: Request, res: Response) => {
+router.post('/reports/:id/send-now', requireWrite, async (req, res) => {
   const row = await queryOne<{ name: string; frequency: 'daily' | 'weekly' | 'monthly'; recipients: string }>(
     `SELECT name, frequency, recipients FROM report_schedules WHERE id = $1`, [parseInt(req.params.id, 10)]);
   if (!row) return res.status(404).json({ error: 'Report schedule not found' });

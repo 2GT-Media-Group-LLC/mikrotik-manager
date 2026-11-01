@@ -72,13 +72,13 @@ function deviceIdParam(req: Request, res: Response): number | null {
 // switches. ?types= / device_types narrow it (router, switch, wireless_ap, other);
 // omitted means every type. Both are scoped to the active site.
 
-router.get('/lldp', async (req: Request, res: Response) => {
+router.get('/lldp', async (req, res) => {
   const types = parseDeviceTypes(req.query.types);
   if (!types) return res.status(400).json({ error: `types must be from: ${LLDP_DEVICE_TYPES.join(', ')}` });
   return res.json(await getLldpStatuses(types, activeSite(req)));
 });
 
-router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
+router.put('/lldp', requireWrite, async (req, res) => {
   const { enabled, device_types } = req.body ?? {};
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ error: '"enabled" (boolean) is required' });
@@ -94,18 +94,18 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
 // narrowed by device_types). There is no default: a request that doesn't say
 // which devices is refused.
 
-router.get('/snmp', async (req: Request, res: Response) => {
+router.get('/snmp', async (req, res) => {
   const types = req.query.types ? parseDeviceTypes(req.query.types) : undefined;
   if (types === null) return res.status(400).json({ error: `types must be from: ${LLDP_DEVICE_TYPES.join(', ')}` });
   return res.json(await getSnmpStatuses(activeSite(req), types));
 });
 
 // The contact / location / trap destination last applied, as typed (#164).
-router.get('/snmp/templates', async (_req: Request, res: Response) => {
+router.get('/snmp/templates', async (_req, res) => {
   return res.json(await getSnmpTemplates());
 });
 
-router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
+router.put('/snmp', requireWrite, async (req, res) => {
   const { device_ids, device_types, ...config } = (req.body ?? {}) as Record<string, unknown>;
   let target: SnmpTarget;
   if (device_ids === 'all') {
@@ -155,7 +155,7 @@ async function servicesSummary(collector: DeviceCollector) {
   };
 }
 
-router.get('/overview', async (req: Request, res: Response) => {
+router.get('/overview', async (req, res) => {
   const siteFilter = siteScopeDevices(activeSite(req));
   const devices = await query<DeviceRow>(
     `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only
@@ -179,7 +179,7 @@ router.get('/overview', async (req: Request, res: Response) => {
 // ─── DHCP ─────────────────────────────────────────────────────────────────────
 
 // GET /api/network-services/dhcp?deviceId=X
-router.get('/dhcp', async (req: Request, res: Response) => {
+router.get('/dhcp', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     const [v4, v6, pv4, pv6, ifaces] = await Promise.allSettled([
@@ -200,7 +200,7 @@ router.get('/dhcp', async (req: Request, res: Response) => {
 });
 
 // POST /api/network-services/dhcp/server?deviceId=X — create DHCP server
-router.post('/dhcp/server', requireWrite, async (req: Request, res: Response) => {
+router.post('/dhcp/server', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { protocol, ...params } = req.body;
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol must be "ipv4" or "ipv6"' });
@@ -212,7 +212,7 @@ router.post('/dhcp/server', requireWrite, async (req: Request, res: Response) =>
 });
 
 // PUT /api/network-services/dhcp/server/:id?deviceId=X — update DHCP server
-router.put('/dhcp/server/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/dhcp/server/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { protocol, ...params } = req.body;
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol required' });
@@ -224,7 +224,7 @@ router.put('/dhcp/server/:id', requireWrite, async (req: Request, res: Response)
 });
 
 // DELETE /api/network-services/dhcp/server/:id?deviceId=X&protocol=X — delete DHCP server
-router.delete('/dhcp/server/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/dhcp/server/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const protocol = req.query.protocol as string;
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol query param required' });
@@ -235,7 +235,7 @@ router.delete('/dhcp/server/:id', requireWrite, async (req: Request, res: Respon
 });
 
 // PUT /api/network-services/dhcp/server — toggle enable/disable (legacy compat)
-router.put('/dhcp/server', requireWrite, async (req: Request, res: Response) => {
+router.put('/dhcp/server', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { serverId, disabled, protocol } = req.body;
   if (!serverId) return res.status(400).json({ error: 'serverId is required' });
@@ -249,7 +249,7 @@ router.put('/dhcp/server', requireWrite, async (req: Request, res: Response) => 
 
 // GET /api/network-services/dhcp/pool-usage — how full each pool is, across
 // the devices in the active site (#156). From the slow poll, not live.
-router.get('/dhcp/pool-usage', async (req: Request, res: Response) => {
+router.get('/dhcp/pool-usage', async (req, res) => {
   const scope = siteScopeDevices(activeSite(req), 'd');
   const rows = await query<{ device_id: number; device_name: string; name: string; ranges: string | null; size: number | null; used: number; updated_at: string }>(
     `SELECT p.device_id, d.name AS device_name, p.name, p.ranges, p.size, p.used, p.updated_at
@@ -260,7 +260,7 @@ router.get('/dhcp/pool-usage', async (req: Request, res: Response) => {
 });
 
 // GET /api/network-services/dhcp/pools?deviceId=X&protocol=X
-router.get('/dhcp/pools', async (req: Request, res: Response) => {
+router.get('/dhcp/pools', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const protocol = req.query.protocol as string;
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol query param required' });
@@ -271,7 +271,7 @@ router.get('/dhcp/pools', async (req: Request, res: Response) => {
 });
 
 // POST /api/network-services/dhcp/pool?deviceId=X — add pool
-router.post('/dhcp/pool', requireWrite, async (req: Request, res: Response) => {
+router.post('/dhcp/pool', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { protocol, ...params } = req.body;
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol required' });
@@ -283,7 +283,7 @@ router.post('/dhcp/pool', requireWrite, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/network-services/dhcp/pool/:id?deviceId=X&protocol=X — remove pool
-router.delete('/dhcp/pool/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/dhcp/pool/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const protocol = req.query.protocol as string;
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol query param required' });
@@ -294,7 +294,7 @@ router.delete('/dhcp/pool/:id', requireWrite, async (req: Request, res: Response
 });
 
 // GET /api/network-services/dhcp/leases?deviceId=X&protocol=X
-router.get('/dhcp/leases', async (req: Request, res: Response) => {
+router.get('/dhcp/leases', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const protocol = (req.query.protocol as string) || 'ipv4';
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol must be ipv4 or ipv6' });
@@ -305,7 +305,7 @@ router.get('/dhcp/leases', async (req: Request, res: Response) => {
 });
 
 // POST /api/network-services/dhcp/static-lease?deviceId=X — add static lease
-router.post('/dhcp/static-lease', requireWrite, async (req: Request, res: Response) => {
+router.post('/dhcp/static-lease', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { protocol, ...params } = req.body;
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol required' });
@@ -319,7 +319,7 @@ router.post('/dhcp/static-lease', requireWrite, async (req: Request, res: Respon
 });
 
 // DELETE /api/network-services/dhcp/static-lease/:id?deviceId=X&protocol=X
-router.delete('/dhcp/static-lease/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/dhcp/static-lease/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const protocol = (req.query.protocol as string) || 'ipv4';
   if (protocol !== 'ipv4' && protocol !== 'ipv6') return res.status(400).json({ error: 'protocol required' });
@@ -332,7 +332,7 @@ router.delete('/dhcp/static-lease/:id', requireWrite, async (req: Request, res: 
 // ─── DNS ──────────────────────────────────────────────────────────────────────
 
 // GET /api/network-services/dns?deviceId=X
-router.get('/dns', async (req: Request, res: Response) => {
+router.get('/dns', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     const [settings, statics] = await Promise.allSettled([
@@ -347,7 +347,7 @@ router.get('/dns', async (req: Request, res: Response) => {
 });
 
 // PUT /api/network-services/dns?deviceId=X
-router.put('/dns', requireWrite, async (req: Request, res: Response) => {
+router.put('/dns', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.setDnsSettings(req.body);
@@ -357,7 +357,7 @@ router.put('/dns', requireWrite, async (req: Request, res: Response) => {
 });
 
 // POST /api/network-services/dns/flush?deviceId=X
-router.post('/dns/flush', requireWrite, async (req: Request, res: Response) => {
+router.post('/dns/flush', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.flushDnsCache();
@@ -366,7 +366,7 @@ router.post('/dns/flush', requireWrite, async (req: Request, res: Response) => {
 });
 
 // GET /api/network-services/dns/static?deviceId=X
-router.get('/dns/static', async (req: Request, res: Response) => {
+router.get('/dns/static', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     const entries = await collector.getDnsStaticEntries();
@@ -375,7 +375,7 @@ router.get('/dns/static', async (req: Request, res: Response) => {
 });
 
 // POST /api/network-services/dns/static?deviceId=X
-router.post('/dns/static', requireWrite, async (req: Request, res: Response) => {
+router.post('/dns/static', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.addDnsStaticEntry(req.body);
@@ -385,7 +385,7 @@ router.post('/dns/static', requireWrite, async (req: Request, res: Response) => 
 });
 
 // PUT /api/network-services/dns/static/:id?deviceId=X
-router.put('/dns/static/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/dns/static/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.updateDnsStaticEntry(req.params.id, req.body);
@@ -395,7 +395,7 @@ router.put('/dns/static/:id', requireWrite, async (req: Request, res: Response) 
 });
 
 // DELETE /api/network-services/dns/static/:id?deviceId=X
-router.delete('/dns/static/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/dns/static/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.removeDnsStaticEntry(req.params.id);
@@ -406,7 +406,7 @@ router.delete('/dns/static/:id', requireWrite, async (req: Request, res: Respons
 // ─── NTP ──────────────────────────────────────────────────────────────────────
 
 // GET /api/network-services/ntp?deviceId=X
-router.get('/ntp', async (req: Request, res: Response) => {
+router.get('/ntp', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     const settings = await collector.getNtpSettings();
@@ -415,7 +415,7 @@ router.get('/ntp', async (req: Request, res: Response) => {
 });
 
 // PUT /api/network-services/ntp?deviceId=X
-router.put('/ntp', requireWrite, async (req: Request, res: Response) => {
+router.put('/ntp', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.setNtpSettings(req.body);
@@ -427,7 +427,7 @@ router.put('/ntp', requireWrite, async (req: Request, res: Response) => {
 // ─── WireGuard ────────────────────────────────────────────────────────────────
 
 // GET /api/network-services/wireguard?deviceId=X
-router.get('/wireguard', async (req: Request, res: Response) => {
+router.get('/wireguard', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     const [interfaces, peers] = await Promise.allSettled([
@@ -477,14 +477,14 @@ const bodyIface = (req: Request): string | null => {
 };
 
 // POST /api/network-services/wireguard?deviceId=X — add interface
-router.post('/wireguard', requireWrite, async (req: Request, res: Response) => {
+router.post('/wireguard', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withGuardedChange(deviceId, req, res, { kind: 'wireguard.add', summary: 'Add WireGuard interface' },
     async (c) => { await c.addWireGuardInterface(req.body); return { success: true }; });
 });
 
 // PUT /api/network-services/wireguard/toggle — enable/disable (must be before /:id)
-router.put('/wireguard/toggle', requireWrite, async (req: Request, res: Response) => {
+router.put('/wireguard/toggle', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { interfaceId, disabled } = req.body;
   if (!interfaceId) return res.status(400).json({ error: 'interfaceId is required' });
@@ -497,7 +497,7 @@ router.put('/wireguard/toggle', requireWrite, async (req: Request, res: Response
 });
 
 // PUT /api/network-services/wireguard/:id?deviceId=X — update interface
-router.put('/wireguard/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/wireguard/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   if (!await tunnelGate(deviceId, res, (t) => tunnelWriteRule(t, { ifaceIdOrName: req.params.id }))) return;
   await withGuardedChange(deviceId, req, res,
@@ -507,7 +507,7 @@ router.put('/wireguard/:id', requireWrite, async (req: Request, res: Response) =
 });
 
 // DELETE /api/network-services/wireguard/:id?deviceId=X — delete interface
-router.delete('/wireguard/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/wireguard/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   if (!await tunnelGate(deviceId, res, (t) => tunnelWriteRule(t, { ifaceIdOrName: req.params.id }))) return;
   await withGuardedChange(deviceId, req, res,
@@ -524,7 +524,7 @@ const peerChange = (req: Request): PlannedChange | undefined => {
 };
 
 // POST /api/network-services/wireguard/peer?deviceId=X — add peer
-router.post('/wireguard/peer', requireWrite, async (req: Request, res: Response) => {
+router.post('/wireguard/peer', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   if (!await tunnelGate(deviceId, res, (t) => tunnelWriteRule(t, { targetIface: bodyIface(req) }))) return;
   await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.add', summary: 'Add WireGuard peer', change: peerChange(req) },
@@ -532,7 +532,7 @@ router.post('/wireguard/peer', requireWrite, async (req: Request, res: Response)
 });
 
 // PUT /api/network-services/wireguard/peer/:id?deviceId=X — update peer
-router.put('/wireguard/peer/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/wireguard/peer/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   if (!await tunnelGate(deviceId, res, (t) => tunnelWriteRule(t, { peerId: req.params.id, targetIface: bodyIface(req) }))) return;
   await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.set', summary: 'Edit WireGuard peer', change: peerChange(req) },
@@ -540,7 +540,7 @@ router.put('/wireguard/peer/:id', requireWrite, async (req: Request, res: Respon
 });
 
 // DELETE /api/network-services/wireguard/peer/:id?deviceId=X — delete peer
-router.delete('/wireguard/peer/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/wireguard/peer/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   if (!await tunnelGate(deviceId, res, (t) => tunnelWriteRule(t, { peerId: req.params.id }))) return;
   await withGuardedChange(deviceId, req, res, { kind: 'wireguard.peer.remove', summary: 'Delete WireGuard peer' },
@@ -550,7 +550,7 @@ router.delete('/wireguard/peer/:id', requireWrite, async (req: Request, res: Res
 // ─── Syslog ───────────────────────────────────────────────────────────────────
 
 // GET /api/network-services/syslog?deviceId=X
-router.get('/syslog', async (req: Request, res: Response) => {
+router.get('/syslog', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     const [actions, rules] = await Promise.allSettled([
@@ -565,7 +565,7 @@ router.get('/syslog', async (req: Request, res: Response) => {
 });
 
 // POST /api/network-services/syslog/action?deviceId=X
-router.post('/syslog/action', requireWrite, async (req: Request, res: Response) => {
+router.post('/syslog/action', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.addSyslogAction(req.body);
@@ -575,7 +575,7 @@ router.post('/syslog/action', requireWrite, async (req: Request, res: Response) 
 });
 
 // PUT /api/network-services/syslog/action/:id?deviceId=X
-router.put('/syslog/action/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/syslog/action/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.updateSyslogAction(req.params.id, req.body);
@@ -585,7 +585,7 @@ router.put('/syslog/action/:id', requireWrite, async (req: Request, res: Respons
 });
 
 // DELETE /api/network-services/syslog/action/:id?deviceId=X
-router.delete('/syslog/action/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/syslog/action/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.removeSyslogAction(req.params.id);
@@ -594,7 +594,7 @@ router.delete('/syslog/action/:id', requireWrite, async (req: Request, res: Resp
 });
 
 // PUT /api/network-services/syslog/rule/toggle?deviceId=X — must be before /:id
-router.put('/syslog/rule/toggle', requireWrite, async (req: Request, res: Response) => {
+router.put('/syslog/rule/toggle', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { ruleId, disabled } = req.body;
   if (!ruleId) return res.status(400).json({ error: 'ruleId is required' });
@@ -606,7 +606,7 @@ router.put('/syslog/rule/toggle', requireWrite, async (req: Request, res: Respon
 });
 
 // POST /api/network-services/syslog/rule?deviceId=X
-router.post('/syslog/rule', requireWrite, async (req: Request, res: Response) => {
+router.post('/syslog/rule', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.addSyslogRule(req.body);
@@ -616,7 +616,7 @@ router.post('/syslog/rule', requireWrite, async (req: Request, res: Response) =>
 });
 
 // PUT /api/network-services/syslog/rule/:id?deviceId=X
-router.put('/syslog/rule/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/syslog/rule/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.updateSyslogRule(req.params.id, req.body);
@@ -626,7 +626,7 @@ router.put('/syslog/rule/:id', requireWrite, async (req: Request, res: Response)
 });
 
 // DELETE /api/network-services/syslog/rule/:id?deviceId=X
-router.delete('/syslog/rule/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/syslog/rule/:id', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
     await collector.removeSyslogRule(req.params.id);
@@ -665,7 +665,7 @@ function targetMatchesCollector(
 }
 
 // GET /api/network-services/netflow/fleet — traffic-flow state for all online devices
-router.get('/netflow/fleet', async (req: Request, res: Response) => {
+router.get('/netflow/fleet', async (req, res) => {
   const settings = await getNetflowAppSettings();
   const stats = netflowCollector.getStats();
   const statsByDevice = new Map(stats.exporters.map((e) => [e.deviceId, e]));
@@ -708,7 +708,7 @@ router.get('/netflow/fleet', async (req: Request, res: Response) => {
 });
 
 // GET /api/network-services/netflow?deviceId=X — single device traffic-flow state
-router.get('/netflow', async (req: Request, res: Response) => {
+router.get('/netflow', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const settings = await getNetflowAppSettings();
   await withDevice(deviceId, res, async (collector) => {
@@ -728,7 +728,7 @@ router.get('/netflow', async (req: Request, res: Response) => {
 // Enable: upsert our export target (matched by dst-address + port) and turn
 // traffic-flow on. Disable: remove our target; only turn traffic-flow off if
 // no other (user-managed) targets remain.
-router.put('/netflow', requireWrite, async (req: Request, res: Response) => {
+router.put('/netflow', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   const { enabled } = req.body;
   if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) is required' });

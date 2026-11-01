@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { revokeSessionToken, forgetSessionAccount } from '../utils/sessionState';
 import bcrypt from 'bcryptjs';
 import * as OTPAuth from 'otpauth';
@@ -17,7 +17,7 @@ router.get(
   '/security-status',
   requireAuth,
   rateLimitRedis({ windowSec: 60, max: 10, keyPrefix: 'security-status', allMethods: true }),
-  async (_req: Request, res: Response) => {
+  async (_req, res) => {
     const warnings: string[] = [];
 
     // Secrets self-heal to strong auto-generated values, so the only remaining
@@ -47,7 +47,7 @@ router.get(
  */
 // GET /api/auth/login-hints — public. Whether the login page should still show
 // the default admin/admin credentials: only until that password is changed.
-router.get('/login-hints', async (_req: Request, res: Response) => {
+router.get('/login-hints', async (_req, res) => {
   const row = await queryOne<{ n: string }>(
     `SELECT COUNT(*)::text AS n FROM users WHERE username = 'admin' AND must_change_password = TRUE`
   ).catch(() => null);
@@ -64,7 +64,7 @@ async function refuseIfPasswordLoginOff(res: Response): Promise<boolean> {
 }
 
 // lgtm[js/missing-rate-limiting] - loginRateLimit() middleware handles per-IP rate limiting
-router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
+router.post('/login', loginRateLimit(), async (req, res) => {
   if (await refuseIfPasswordLoginOff(res)) return;
   const { username, password } = req.body;
 
@@ -94,7 +94,7 @@ router.post('/login', loginRateLimit(), async (req: Request, res: Response) => {
 });
 
 // Exchange partial TOTP token + code for a full session token
-router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: 'totp-verify', allMethods: true }), async (req: Request, res: Response) => {
+router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: 'totp-verify', allMethods: true }), async (req, res) => {
   if (await refuseIfPasswordLoginOff(res)) return;
   const { totp_token, code } = req.body as { totp_token?: string; code?: string };
   if (!totp_token || !code) {
@@ -130,7 +130,7 @@ router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: '
 // Generate a new TOTP secret + QR code for the current user (does not enable yet).
 // Requires the current password so a hijacked session can't enroll 2FA and lock
 // the legitimate user out.
-router.post('/totp/setup', requireAuth, async (req: Request, res: Response) => {
+router.post('/totp/setup', requireAuth, async (req, res) => {
   if (await refuseIfPasswordLoginOff(res)) return;
   const { password } = req.body as { password?: string };
   if (!password) return res.status(400).json({ error: 'Current password is required to set up 2FA' });
@@ -168,7 +168,7 @@ router.post('/totp/setup', requireAuth, async (req: Request, res: Response) => {
 // (outside review U8).
 
 // Confirm the TOTP setup by validating a code — enables TOTP
-router.post('/totp/confirm', requireAuth, async (req: Request, res: Response) => {
+router.post('/totp/confirm', requireAuth, async (req, res) => {
   if (await refuseIfPasswordLoginOff(res)) return;
   const { code } = req.body as { code?: string };
   if (!code) return res.status(400).json({ error: 'code is required' });
@@ -191,7 +191,7 @@ router.post('/totp/confirm', requireAuth, async (req: Request, res: Response) =>
 });
 
 // Disable TOTP — requires password confirmation
-router.post('/totp/disable', requireAuth, async (req: Request, res: Response) => {
+router.post('/totp/disable', requireAuth, async (req, res) => {
   if (await refuseIfPasswordLoginOff(res)) return;
   const { password } = req.body as { password?: string };
   if (!password) return res.status(400).json({ error: 'password is required' });
@@ -209,7 +209,7 @@ router.post('/totp/disable', requireAuth, async (req: Request, res: Response) =>
 });
 
 // Return current TOTP status for the authenticated user
-router.get('/totp/status', requireAuth, async (req: Request, res: Response) => {
+router.get('/totp/status', requireAuth, async (req, res) => {
   const user = await queryOne<{ totp_enabled: boolean }>(
     `SELECT totp_enabled FROM users WHERE id = $1`,
     [req.user!.userId]
@@ -217,18 +217,18 @@ router.get('/totp/status', requireAuth, async (req: Request, res: Response) => {
   return res.json({ totp_enabled: user?.totp_enabled ?? false });
 });
 
-router.get('/me', requireAuth, (req: Request, res: Response) => {
+router.get('/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
 // Ends this session on the server too; before, only the browser's copy was
 // discarded and the token kept working for the rest of its 24 hours (P2-1).
-router.post('/logout', requireAuth, async (req: Request, res: Response) => {
+router.post('/logout', requireAuth, async (req, res) => {
   await revokeSessionToken(req.user!);
   res.json({ message: 'Logged out' });
 });
 
-router.put('/password', requireAuth, async (req: Request, res: Response) => {
+router.put('/password', requireAuth, async (req, res) => {
   if (await refuseIfPasswordLoginOff(res)) return;
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) {

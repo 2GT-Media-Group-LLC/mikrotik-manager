@@ -2,7 +2,7 @@
  * Settings → Backup & Restore: backups of MikroTik Manager itself. Fleet
  * admins only (a backup holds every device credential, under the passphrase).
  */
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -38,7 +38,7 @@ router.get('/restore/progress', (_req, res) => {
 
 // GET /api/platform-backup/download/:token — a one-time, 2-minute link made by
 // an admin, so a large backup streams straight to disk instead of the browser.
-router.get('/download/:token', async (req: Request, res: Response) => {
+router.get('/download/:token', async (req, res) => {
   const token = String(req.params.token);
   if (!/^[a-f0-9]{48}$/.test(token)) return fail(res, 404, 'Not found');
   const id = await redis.getdel(`platform-backup:dl:${token}`).catch(() => null);
@@ -76,7 +76,7 @@ router.get('/', async (_req, res) => {
 
 // ─── Schedule ───────────────────────────────────────────────────────────────
 
-router.put('/schedule', async (req: Request, res: Response) => {
+router.put('/schedule', async (req, res) => {
   const b = req.body ?? {};
   const sets: string[] = [];
   const vals: unknown[] = [];
@@ -111,7 +111,7 @@ router.put('/schedule', async (req: Request, res: Response) => {
 // ─── Backups ────────────────────────────────────────────────────────────────
 
 // POST /backups { contents, passphrase? | use_saved_passphrase, destination_ids? } — runs in the background.
-router.post('/backups', async (req: Request, res: Response) => {
+router.post('/backups', async (req, res) => {
   const b = req.body ?? {};
   if (!CONTENTS.includes(b.contents)) return fail(res, 400, 'contents must be config or config+database');
   let passphrase = typeof b.passphrase === 'string' ? b.passphrase : '';
@@ -130,7 +130,7 @@ router.post('/backups', async (req: Request, res: Response) => {
   res.status(202).json({ message: 'Backup started' });
 });
 
-router.delete('/backups/:id', async (req: Request, res: Response) => {
+router.delete('/backups/:id', async (req, res) => {
   const b = await queryOne<{ id: number; file_name: string; status: string }>(`SELECT id, file_name, status FROM platform_backups WHERE id = $1`, [req.params.id]);
   if (!b) return fail(res, 404, 'Not found');
   if (b.status === 'running') return fail(res, 409, 'That backup is still running.');
@@ -138,7 +138,7 @@ router.delete('/backups/:id', async (req: Request, res: Response) => {
   res.json({ message: 'Deleted' });
 });
 
-router.post('/backups/:id/download-link', async (req: Request, res: Response) => {
+router.post('/backups/:id/download-link', async (req, res) => {
   const b = await queryOne<{ id: number }>(`SELECT id FROM platform_backups WHERE id = $1 AND status = 'success'`, [req.params.id]);
   if (!b) return fail(res, 404, 'Not found');
   const token = crypto.randomBytes(24).toString('hex');
@@ -149,7 +149,7 @@ router.post('/backups/:id/download-link', async (req: Request, res: Response) =>
 // ─── Upload, check, restore ─────────────────────────────────────────────────
 
 // POST /upload — the raw file as the body (streamed to disk, up to 20 GB).
-router.post('/upload', async (req: Request, res: Response) => {
+router.post('/upload', async (req, res) => {
   ensureLocalDir();
   fs.mkdirSync(UPLOAD_DIR, { recursive: true, mode: 0o700 });
   const id = crypto.randomBytes(16).toString('hex');
@@ -189,7 +189,7 @@ async function sourceFile(b: { backup_id?: unknown; upload_id?: unknown }): Prom
 }
 
 // POST /check { backup_id | upload_id, passphrase } — is this passphrase right, and what's in it?
-router.post('/check', async (req: Request, res: Response) => {
+router.post('/check', async (req, res) => {
   const src = await sourceFile(req.body ?? {});
   if (!src) return fail(res, 404, 'Backup not found');
   try {
@@ -202,7 +202,7 @@ router.post('/check', async (req: Request, res: Response) => {
 });
 
 // POST /compare { backup_id | upload_id, passphrase } — what a restore would change; reads only.
-router.post('/compare', async (req: Request, res: Response) => {
+router.post('/compare', async (req, res) => {
   const src = await sourceFile(req.body ?? {});
   if (!src) return fail(res, 404, 'Backup not found');
   if (isRestoring()) return fail(res, 409, 'A restore is running.');
@@ -216,7 +216,7 @@ router.post('/compare', async (req: Request, res: Response) => {
 });
 
 // POST /restore { backup_id | upload_id, passphrase, mode: config|full, confirm: "RESTORE" }
-router.post('/restore', async (req: Request, res: Response) => {
+router.post('/restore', async (req, res) => {
   const b = req.body ?? {};
   if (b.confirm !== 'RESTORE') return fail(res, 400, 'Type RESTORE to confirm.');
   if (!['config', 'full'].includes(b.mode)) return fail(res, 400, 'mode must be config or full');
@@ -273,7 +273,7 @@ function destinationInput(b: Record<string, unknown>, partial: boolean): { error
   return out;
 }
 
-router.post('/destinations', async (req: Request, res: Response) => {
+router.post('/destinations', async (req, res) => {
   const d = destinationInput(req.body ?? {}, false);
   if ('error' in d) return fail(res, 400, d.error);
   const row = await queryOne<{ id: number }>(
@@ -283,7 +283,7 @@ router.post('/destinations', async (req: Request, res: Response) => {
   res.status(201).json({ id: row!.id });
 });
 
-router.put('/destinations/:id', async (req: Request, res: Response) => {
+router.put('/destinations/:id', async (req, res) => {
   const cur = (await loadDestinations([Number(req.params.id)]))[0];
   if (!cur) return fail(res, 404, 'Not found');
   const d = destinationInput({ ...req.body, type: undefined }, true);
@@ -298,13 +298,13 @@ router.put('/destinations/:id', async (req: Request, res: Response) => {
   res.json({ message: 'Saved' });
 });
 
-router.delete('/destinations/:id', async (req: Request, res: Response) => {
+router.delete('/destinations/:id', async (req, res) => {
   await query(`DELETE FROM platform_backup_destinations WHERE id = $1`, [req.params.id]);
   await query(`UPDATE platform_backup_settings SET destination_ids = array_remove(destination_ids, $1::int) WHERE id = 1`, [req.params.id]);
   res.json({ message: 'Deleted' });
 });
 
-router.post('/destinations/:id/test', async (req: Request, res: Response) => {
+router.post('/destinations/:id/test', async (req, res) => {
   const row = await queryOne<Parameters<typeof toDestination>[0]>(`SELECT * FROM platform_backup_destinations WHERE id = $1`, [req.params.id]);
   if (!row) return fail(res, 404, 'Not found');
   try {

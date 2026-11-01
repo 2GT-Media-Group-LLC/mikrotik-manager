@@ -56,7 +56,7 @@ export function setPollerService(p: PollerService): void { pollerService = p; }
  * collection and works retroactively over whatever history exists. Roaming happens
  * between polls, so the log is the only place it is visible at all (issue #105).
  */
-router.get('/:mac/roaming', async (req: Request, res: Response) => {
+router.get('/:mac/roaming', async (req, res) => {
   const mac = String(req.params.mac).toUpperCase();
   if (!/^[0-9A-F:]{17}$/.test(mac)) return res.status(400).json({ error: 'Invalid MAC address' });
 
@@ -102,7 +102,7 @@ router.get('/:mac/roaming', async (req: Request, res: Response) => {
 });
 
 // GET /api/clients
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const {
     deviceId, active, search, client_type, limit = '100', offset = '0', sort, dir,
     vlan_id, signal_min, signal_max,
@@ -287,7 +287,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /api/clients/:mac — detail view with SSID, VLAN name, device type, upstream topology
-router.get('/:mac', async (req: Request, res: Response) => {
+router.get('/:mac', async (req, res) => {
   const mac = req.params.mac.toLowerCase();
 
   // The sighting that says where the client is (CLIENT_SIGHTING_ORDER, #363);
@@ -349,7 +349,7 @@ router.get('/:mac', async (req: Request, res: Response) => {
 });
 
 // GET /api/clients/:mac/presence?range=2h|24h|7d — connectivity timeline from InfluxDB
-router.get('/:mac/presence', async (req: Request, res: Response) => {
+router.get('/:mac/presence', async (req, res) => {
   const mac = req.params.mac.toLowerCase();
   const rangeRaw = String(req.query.range || '24h');
   const allowedRanges: Record<string, string> = { '2h': '2h', '24h': '24h', '7d': '7d' };
@@ -391,7 +391,7 @@ router.get('/:mac/presence', async (req: Request, res: Response) => {
 });
 
 // GET /api/clients/:mac/traffic?range=2h|24h|7d — wireless tx/rx rate graph
-router.get('/:mac/traffic', async (req: Request, res: Response) => {
+router.get('/:mac/traffic', async (req, res) => {
   const mac = req.params.mac.toLowerCase();
   const rangeRaw = String(req.query.range || '24h');
   const allowedRanges: Record<string, string> = { '2h': '2h', '24h': '24h', '7d': '7d' };
@@ -449,7 +449,7 @@ router.get('/:mac/traffic', async (req: Request, res: Response) => {
 });
 
 // GET /api/clients/:mac/signal?range=2h|24h|7d — signal strength over time
-router.get('/:mac/signal', async (req: Request, res: Response) => {
+router.get('/:mac/signal', async (req, res) => {
   const mac = req.params.mac.toLowerCase();
   const rangeRaw = String(req.query.range || '24h');
   const allowedRanges: Record<string, string> = { '2h': '2h', '24h': '24h', '7d': '7d' };
@@ -489,7 +489,7 @@ router.get('/:mac/signal', async (req: Request, res: Response) => {
 });
 
 // POST /api/clients/:mac/wol — send Wake-on-LAN magic packet
-router.post('/:mac/wol', requireWrite, async (req: Request, res: Response) => {
+router.post('/:mac/wol', requireWrite, async (req, res) => {
   const mac = req.params.mac.replace(/[^0-9a-fA-F:.-]/g, '');
   const hexMac = mac.replace(/[:\-.]/g, '');
   if (hexMac.length !== 12) {
@@ -543,7 +543,7 @@ router.post('/:mac/wol', requireWrite, async (req: Request, res: Response) => {
  * dropping it drops everything behind it, the manager's path included, so that
  * case needs confirm_managed and is otherwise answered 409 with the device.
  */
-router.post('/:mac/disconnect', requireWrite, async (req: Request, res: Response) => {
+router.post('/:mac/disconnect', requireWrite, async (req, res) => {
   const mac = normalizeMac(req.params.mac);
   if (!mac) return res.status(400).json({ error: 'Invalid MAC address' });
 
@@ -612,7 +612,7 @@ function inScope(req: Request): string {
 }
 
 // PUT /api/clients/:mac/hostname  (writes to custom_name — user-set names persist across collector cycles)
-router.put('/:mac/hostname', requireWrite, async (req: Request, res: Response) => {
+router.put('/:mac/hostname', requireWrite, async (req, res) => {
   const { hostname } = req.body as { hostname?: string };
   const mac = req.params.mac.toLowerCase();
 
@@ -625,7 +625,7 @@ router.put('/:mac/hostname', requireWrite, async (req: Request, res: Response) =
 });
 
 // PUT /api/clients/:mac/category — override (or clear) the fingerprinted device category
-router.put('/:mac/category', requireWrite, async (req: Request, res: Response) => {
+router.put('/:mac/category', requireWrite, async (req, res) => {
   const { category } = req.body as { category?: string | null };
   const mac = req.params.mac.toLowerCase();
 
@@ -643,7 +643,7 @@ router.put('/:mac/category', requireWrite, async (req: Request, res: Response) =
 });
 
 // PUT /api/clients/:mac/notes — update the comment/notes field
-router.put('/:mac/notes', requireWrite, async (req: Request, res: Response) => {
+router.put('/:mac/notes', requireWrite, async (req, res) => {
   const { notes } = req.body as { notes?: string };
   const mac = req.params.mac.toLowerCase();
 
@@ -656,7 +656,7 @@ router.put('/:mac/notes', requireWrite, async (req: Request, res: Response) => {
 });
 
 // POST /api/clients/purge — immediately delete inactive clients older than retention period
-router.post('/purge', requireAdmin, async (_req: Request, res: Response) => {
+router.post('/purge', requireAdmin, async (_req, res) => {
   if (!pollerService) return res.status(503).json({ error: 'Poller not available' });
   const count = await pollerService.pruneStaleClientsNow();
   return res.json({ message: `Purged ${count} stale client record(s)`, count });

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import type { ParamsDictionary } from 'express-serve-static-core';
 import jwt from 'jsonwebtoken';
 import { createHash, randomBytes } from 'crypto';
 import { query } from '../config/database';
@@ -133,7 +134,7 @@ async function authenticateApiToken(token: string): Promise<AuthPayload | null> 
   };
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+export function requireAuth<P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'No token provided' });
@@ -198,7 +199,7 @@ export function highestRole(roles: string[]): string {
  *
  * Returns false after sending a response when the request is refused.
  */
-function applySiteAccess(req: Request, res: Response, user: AuthPayload): boolean {
+function applySiteAccess<P>(req: Request<P>, res: Response, user: AuthPayload): boolean {
   if (!user.siteRoles) return true;
   const allowed = Object.keys(user.siteRoles).map(Number);
   // The account's own endpoints (who am I, log out, change password) aren't
@@ -242,7 +243,7 @@ export function isSiteScoped(user: AuthPayload | undefined): boolean {
  * settings (users, SSO, alerting, API tokens, encryption...) all use this, so a
  * site admin can never reach them by accident (P1-7).
  */
-export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+export function requireAdmin<P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction): void {
   if (!req.user || req.user.role !== 'admin' || isSiteScoped(req.user)) {
     res.status(403).json({ error: 'Admin access required' });
     return;
@@ -254,7 +255,7 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
  * An admin for the device or site the request is about: a fleet admin, or a
  * site admin whose role deviceSiteAccess has already narrowed to that site.
  */
-export function requireSiteAdmin(req: Request, res: Response, next: NextFunction): void {
+export function requireSiteAdmin<P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction): void {
   if (!req.user || req.user.role !== 'admin') {
     res.status(403).json({ error: 'Admin access required' });
     return;
@@ -262,7 +263,7 @@ export function requireSiteAdmin(req: Request, res: Response, next: NextFunction
   next();
 }
 
-export function requireWrite(req: Request, res: Response, next: NextFunction): void {
+export function requireWrite<P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction): void {
   // An allow-list, not "anything but viewer": a token with no role or an
   // unexpected one must not be treated as a writer.
   if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'operator')) {
@@ -276,7 +277,7 @@ export function requireWrite(req: Request, res: Response, next: NextFunction): v
  * Refuse site-scoped accounts: for features that act on the whole fleet or on
  * configuration shared by every site (P1-7).
  */
-export function fleetOnly(req: Request, res: Response, next: NextFunction): void {
+export function fleetOnly<P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction): void {
   if (isSiteScoped(req.user)) {
     res.status(403).json({ code: 'fleet_only', error: 'This is fleet-wide, so it is not available to accounts limited to particular sites.' });
     return;

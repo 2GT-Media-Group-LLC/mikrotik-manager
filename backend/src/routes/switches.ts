@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
@@ -15,7 +15,7 @@ router.use(requireAuth);
 router.use(maskSecretsForReadOnly);
 
 // GET /api/switches — all switch devices with port statistics
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const siteFilter = siteScopeDevices(activeSite(req), 'd');
   const switches = await query(`
     SELECT d.id, d.name, d.ip_address, d.model, d.device_type, d.status, d.last_seen,
@@ -38,12 +38,12 @@ router.get('/', async (req: Request, res: Response) => {
 // GET /api/switches/lldp — LLDP status per online switch in the active site.
 // Kept for API callers; the UI uses /api/network-services/lldp, which covers
 // every device type.
-router.get('/lldp', async (req: Request, res: Response) => {
+router.get('/lldp', async (req, res) => {
   res.json(await getLldpStatuses(['switch'], activeSite(req)));
 });
 
 // PUT /api/switches/lldp — enable or disable LLDP on online switches in the active site
-router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
+router.put('/lldp', requireWrite, async (req, res) => {
   const { enabled } = req.body;
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ error: '"enabled" (boolean) is required' });
@@ -54,14 +54,14 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
 // GET /api/switches/snmp — SNMP config/status for all managed switches
 // Includes offline/unknown devices so the list never disappears during a poll cycle.
 // Unreachable devices fall through to the Promise.allSettled error path and render with an error note.
-router.get('/snmp', async (req: Request, res: Response) => {
+router.get('/snmp', async (req, res) => {
   // Kept for existing API users; the page uses /api/network-services/snmp,
   // which covers every device type.
   res.json(await getSnmpStatuses(activeSite(req), ['switch']));
 });
 
 // PUT /api/switches/snmp — apply SNMP config to all online switches
-router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
+router.put('/snmp', requireWrite, async (req, res) => {
   // See services/snmpApply.ts: per-device variables, blanks left alone, and
   // only the active site's devices.
   try {

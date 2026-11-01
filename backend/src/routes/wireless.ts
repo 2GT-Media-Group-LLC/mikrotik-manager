@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request } from 'express';
 import { wirelessDeviceSql, radioDeviceSql } from '../services/mikrotik/capsman';
 import { deviceSiteAccess, deviceIdParam, deviceIdQuery, devicesDenied } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
@@ -48,7 +48,7 @@ async function getAP(id: number): Promise<DeviceRow | null> {
 // ─── Bulk SSID deployment ─────────────────────────────────────────────────────
 
 // POST /api/wireless/ssid/bulk — create the same SSID on multiple APs simultaneously
-router.post('/ssid/bulk', requireWrite, async (req: Request, res: Response) => {
+router.post('/ssid/bulk', requireWrite, async (req, res) => {
   const { apIds, ...ssidBody } = req.body as { apIds: number[] } & Record<string, unknown>;
 
   if (!Array.isArray(apIds) || apIds.length === 0) {
@@ -157,7 +157,7 @@ const REMOTE_MANAGED_RADIO = `${REMOTE_RADIO}
 // stats. has_radios marks the access points: a pure CAPsMAN controller is
 // listed too (Wireless Settings edits its CAPs' interfaces), but isn't an AP
 // and isn't counted as one (#365).
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const siteFilter = siteScopeDevices(activeSite(req), 'd');
   const aps = await query(`
     SELECT d.id, d.name, d.ip_address, d.model, d.device_type, d.status, d.last_seen,
@@ -204,7 +204,7 @@ router.get('/', async (req: Request, res: Response) => {
  * Read-only. Reads the cache rather than the devices, so the page loads instantly
  * and works while a CAP is offline — the controller still knows what it provisioned.
  */
-router.get('/capsman', async (req: Request, res: Response) => {
+router.get('/capsman', async (req, res) => {
   const siteFilter = siteScopeDevices(activeSite(req));
   const controllers = await query<{
     id: number; name: string; ip_address: string; model: string | null;
@@ -316,7 +316,7 @@ router.get('/capsman', async (req: Request, res: Response) => {
 // ─── Wireless interfaces (SSIDs) ──────────────────────────────────────────────
 
 // GET /api/wireless/:id/bridges — bridge list + current port memberships
-router.get('/:id/bridges', async (req: Request, res: Response) => {
+router.get('/:id/bridges', async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -336,7 +336,7 @@ router.get('/:id/bridges', async (req: Request, res: Response) => {
 });
 
 // GET /api/wireless/:id/interfaces — live from device
-router.get('/:id/interfaces', async (req: Request, res: Response) => {
+router.get('/:id/interfaces', async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -353,7 +353,7 @@ router.get('/:id/interfaces', async (req: Request, res: Response) => {
 });
 
 // POST /api/wireless/:id/interfaces — create new SSID/virtual AP
-router.post('/:id/interfaces', requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/interfaces', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -435,7 +435,7 @@ router.post('/:id/interfaces', requireWrite, async (req: Request, res: Response)
 });
 
 // PUT /api/wireless/:id/interfaces/:name — update SSID/radio config
-router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Response) => {
+router.put('/:id/interfaces/:name', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -496,7 +496,7 @@ router.put('/:id/interfaces/:name', requireWrite, async (req: Request, res: Resp
 });
 
 // DELETE /api/wireless/:id/interfaces/:name
-router.delete('/:id/interfaces/:name', requireWrite, async (req: Request, res: Response) => {
+router.delete('/:id/interfaces/:name', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -520,7 +520,7 @@ router.delete('/:id/interfaces/:name', requireWrite, async (req: Request, res: R
 // ─── Security Profiles ────────────────────────────────────────────────────────
 
 // GET /api/wireless/:id/security-profiles — live from device
-router.get('/:id/security-profiles', async (req: Request, res: Response) => {
+router.get('/:id/security-profiles', async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -537,7 +537,7 @@ router.get('/:id/security-profiles', async (req: Request, res: Response) => {
 });
 
 // POST /api/wireless/:id/security-profiles
-router.post('/:id/security-profiles', requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/security-profiles', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -588,7 +588,7 @@ router.post('/:id/security-profiles', requireWrite, async (req: Request, res: Re
 });
 
 // PUT /api/wireless/:id/security-profiles/:name
-router.put('/:id/security-profiles/:name', requireWrite, async (req: Request, res: Response) => {
+router.put('/:id/security-profiles/:name', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -626,7 +626,7 @@ router.put('/:id/security-profiles/:name', requireWrite, async (req: Request, re
 });
 
 // DELETE /api/wireless/:id/security-profiles/:name
-router.delete('/:id/security-profiles/:name', requireWrite, async (req: Request, res: Response) => {
+router.delete('/:id/security-profiles/:name', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -640,7 +640,7 @@ router.delete('/:id/security-profiles/:name', requireWrite, async (req: Request,
 // ─── Radio monitoring / diagnostics ──────────────────────────────────────────
 
 // GET /api/wireless/:id/radios — hardware radio capabilities (wifi package only)
-router.get('/:id/radios', async (req: Request, res: Response) => {
+router.get('/:id/radios', async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -657,7 +657,7 @@ router.get('/:id/radios', async (req: Request, res: Response) => {
 });
 
 // GET /api/wireless/:id/registration-table — connected wireless clients
-router.get('/:id/registration-table', async (req: Request, res: Response) => {
+router.get('/:id/registration-table', async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -674,7 +674,7 @@ router.get('/:id/registration-table', async (req: Request, res: Response) => {
 });
 
 // GET /api/wireless/:id/monitor/:iface — real-time radio monitor snapshot
-router.get('/:id/monitor/:iface', async (req: Request, res: Response) => {
+router.get('/:id/monitor/:iface', async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -693,7 +693,7 @@ router.get('/:id/monitor/:iface', async (req: Request, res: Response) => {
 // POST /api/wireless/:id/scan/:iface — scan for nearby APs (5 s)
 // POST, not GET: a scan takes the radio off-channel, so it must not be
 // something a crafted link or a page load can trigger (outside review U13).
-router.post('/:id/scan/:iface', requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/scan/:iface', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -742,7 +742,7 @@ function aggregateSpectralRows(
 
 // POST /api/wireless/:id/spectral-scan/:iface — run an on-demand spectral scan,
 // save the aggregated result and return it immediately.
-router.post('/:id/spectral-scan/:iface', requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/spectral-scan/:iface', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -769,7 +769,7 @@ router.post('/:id/spectral-scan/:iface', requireWrite, async (req: Request, res:
 });
 
 // GET /api/wireless/:id/spectral-history/:iface?limit=5 — return last N scans from DB
-router.get('/:id/spectral-history/:iface', async (req: Request, res: Response) => {
+router.get('/:id/spectral-history/:iface', async (req, res) => {
   const deviceId = parseInt(req.params.id);
   const iface = req.params.iface;
   const limit = Math.min(parseInt(String(req.query.limit || '5'), 10), 20);
@@ -788,7 +788,7 @@ router.get('/:id/spectral-history/:iface', async (req: Request, res: Response) =
 // ─── AP scan ──────────────────────────────────────────────────────────────────
 
 // POST /api/wireless/:id/ap-scan — scan all interfaces, combine results, save + return
-router.post('/:id/ap-scan', requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/ap-scan', requireWrite, async (req, res) => {
   const ap = await getAP(parseInt(req.params.id));
   if (!ap) return res.status(404).json({ error: 'Wireless AP not found' });
 
@@ -839,7 +839,7 @@ router.post('/:id/ap-scan', requireWrite, async (req: Request, res: Response) =>
 });
 
 // GET /api/wireless/:id/ap-scan-history?limit=5 — last N saved scans
-router.get('/:id/ap-scan-history', async (req: Request, res: Response) => {
+router.get('/:id/ap-scan-history', async (req, res) => {
   const deviceId = parseInt(req.params.id);
   const limit = Math.min(parseInt(String(req.query.limit || '5'), 10), 20);
 
@@ -876,7 +876,7 @@ function deviceScope(req: Request): number | null {
  * planning is per physical location: two APs on channel 6 in different buildings
  * are not a conflict (issue #97).
  */
-router.get('/rf/channels', async (req: Request, res: Response) => {
+router.get('/rf/channels', async (req, res) => {
   const deviceId = deviceScope(req);
   const siteFilter = siteScopeByDevice(activeSite(req), 'wi.device_id');
 
@@ -985,7 +985,7 @@ router.get('/rf/channels', async (req: Request, res: Response) => {
 
 // GET /api/wireless/rf/signals — active wireless clients' RSSI (for density view),
 // each on the AP it's associated with, CAPsMAN included (#365)
-router.get('/rf/signals', async (req: Request, res: Response) => {
+router.get('/rf/signals', async (req, res) => {
   const deviceId = deviceScope(req);
   const siteFilter = siteScopeByDevice(activeSite(req), 'c.device_id');
   const rows = await query(`
@@ -1011,7 +1011,7 @@ router.get('/rf/signals', async (req: Request, res: Response) => {
  * driver exposes. On an all-RouterOS-7 fleet that panel can never have data, so the
  * UI needs to know rather than rendering an empty box forever (issue #96).
  */
-router.get('/rf/capabilities', async (req: Request, res: Response) => {
+router.get('/rf/capabilities', async (req, res) => {
   const siteFilter = siteScopeDevices(activeSite(req));
   const rows = await query<{ wifi_package: string | null; n: string }>(`
     SELECT wifi_package, COUNT(*) AS n
@@ -1032,7 +1032,7 @@ router.get('/rf/capabilities', async (req: Request, res: Response) => {
 });
 
 // GET /api/wireless/rf/tx-quality?range=6h — latest per-radio TX retry % (from CCQ)
-router.get('/rf/tx-quality', async (req: Request, res: Response) => {
+router.get('/rf/tx-quality', async (req, res) => {
   const deviceId = deviceScope(req);
   const ranges: Record<string, string> = { '1h': '1h', '3h': '3h', '6h': '6h', '12h': '12h', '24h': '24h' };
   const fluxRange = ranges[String(req.query.range || '6h')] || '6h';
@@ -1084,7 +1084,7 @@ router.get('/rf/tx-quality', async (req: Request, res: Response) => {
 // ─── Rogue / neighbor AP detection ────────────────────────────────────────────
 
 // GET /api/wireless/rf/rogue — classify latest AP scans against our own SSIDs/BSSIDs
-router.get('/rf/rogue', async (req: Request, res: Response) => {
+router.get('/rf/rogue', async (req, res) => {
   // Our hardware is matched fleet-wide, our SSIDs per site (J7).
   const { classifyLatestScans } = await import('../services/rogueScan');
   const { rogues, neighbors, scans } = await classifyLatestScans(activeSite(req));

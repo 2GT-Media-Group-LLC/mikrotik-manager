@@ -48,7 +48,7 @@ async function refuseForeignRun(req: Request, res: Response, runId: string | num
   return true;
 }
 
-router.post('/preview', async (req: Request, res: Response) => {
+router.post('/preview', async (req, res) => {
   const { command, device_ids, wave_size } = req.body as
     { command?: string; device_ids?: number[]; wave_size?: number };
 
@@ -84,7 +84,7 @@ router.post('/preview', async (req: Request, res: Response) => {
 });
 
 // POST /api/commands/runs — create a run, optionally starting it immediately
-router.post('/runs', requireWrite, async (req: Request, res: Response) => {
+router.post('/runs', requireWrite, async (req, res) => {
   const {
     name, command, device_ids, wave_size, halt_on_failure, use_change_guard, start, acknowledge_risk,
   } = req.body as {
@@ -151,7 +151,7 @@ router.post('/runs', requireWrite, async (req: Request, res: Response) => {
 });
 
 // GET /api/commands/runs — recent runs with progress
-router.get('/runs', async (req: Request, res: Response) => {
+router.get('/runs', async (req, res) => {
   // A run is shown when it touched at least one device in the active site.
   const memberFilter = siteScopeByDevice(activeSite(req), 'crd.device_id');
   // A site-scoped account sees only runs entirely within its own sites (P1-7):
@@ -175,7 +175,7 @@ router.get('/runs', async (req: Request, res: Response) => {
 });
 
 // GET /api/commands/runs/:id — one run with per-device output
-router.get('/runs/:id', async (req: Request, res: Response) => {
+router.get('/runs/:id', async (req, res) => {
   if (await refuseForeignRun(req, res, req.params.id, 'viewer')) return;
   const run = await queryOne(`SELECT * FROM command_runs WHERE id = $1`, [req.params.id]);
   if (!run) return res.status(404).json({ error: 'Run not found' });
@@ -196,7 +196,7 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
  * audience is a spreadsheet or a ticket attachment, and output is quoted so a
  * multi-line device response survives the round trip intact.
  */
-router.get('/runs/:id/export', async (req: Request, res: Response) => {
+router.get('/runs/:id/export', async (req, res) => {
   if (await refuseForeignRun(req, res, req.params.id, 'viewer')) return;
   const run = await queryOne<{ id: number; name: string; command: string; status: string; created_at: string }>(
     `SELECT id, name, command, status, created_at FROM command_runs WHERE id = $1`, [req.params.id]
@@ -243,7 +243,7 @@ router.get('/runs/:id/export', async (req: Request, res: Response) => {
 });
 
 // POST /api/commands/runs/:id/start
-router.post('/runs/:id/start', requireWrite, async (req: Request, res: Response) => {
+router.post('/runs/:id/start', requireWrite, async (req, res) => {
   if (await refuseForeignRun(req, res, req.params.id, 'operator')) return;
   try {
     await commandRunner.start(Number(req.params.id));
@@ -254,7 +254,7 @@ router.post('/runs/:id/start', requireWrite, async (req: Request, res: Response)
 });
 
 // POST /api/commands/runs/:id/cancel — stop before the next wave
-router.post('/runs/:id/cancel', requireWrite, async (req: Request, res: Response) => {
+router.post('/runs/:id/cancel', requireWrite, async (req, res) => {
   if (await refuseForeignRun(req, res, req.params.id, 'operator')) return;
   commandRunner.cancel(Number(req.params.id));
   // Devices already running finish; cancellation prevents the next wave, which

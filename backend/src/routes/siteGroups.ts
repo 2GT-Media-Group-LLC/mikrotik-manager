@@ -44,7 +44,7 @@ async function cleanSiteIds(raw: unknown): Promise<{ ids?: number[]; error?: str
 }
 
 // GET /api/site-groups
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const own = req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null;
   const rows = await query<{ id: number; name: string; notes: string | null; site_ids: number[] | null; device_count: string; online_count: string }>(
     `SELECT g.id, g.name, g.notes,
@@ -66,7 +66,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/site-groups { name, notes?, site_ids? }
-router.post('/', requireWrite, async (req: Request, res: Response) => {
+router.post('/', requireWrite, async (req, res) => {
   if (!refuseUnlessFleet(req, res)) return;
   const { name, error } = cleanName(req.body?.name);
   if (error) { res.status(400).json({ error }); return; }
@@ -86,7 +86,7 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
 });
 
 // PUT /api/site-groups/:id { name?, notes?, site_ids? } — site_ids replaces the membership
-router.put('/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/:id', requireWrite, async (req, res) => {
   if (!refuseUnlessFleet(req, res)) return;
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: 'Invalid group id' }); return; }
@@ -119,7 +119,7 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/site-groups/:id — its sites stay, just without a group
-router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/:id', requireWrite, async (req, res) => {
   if (!refuseUnlessFleet(req, res)) return;
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id <= 0) { res.status(400).json({ error: 'Invalid group id' }); return; }

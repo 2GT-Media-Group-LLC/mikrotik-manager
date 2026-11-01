@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query, queryOne } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { presetCaller, canManagePresetSite, canSeePreset, type PresetCaller } from '../utils/presetAccess';
@@ -76,7 +76,7 @@ function toPublic(row: CredentialPresetRow, caller: PresetCaller): CredentialPre
 
 // GET /api/credential-presets — any authenticated user can list (the Add
 // Device modal needs this for its picker), but secrets are never exposed.
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const caller = presetCaller(req.user);
   const rows = await query<CredentialPresetRow>(
     `SELECT p.*, s.name AS site_name FROM credential_presets p
@@ -101,7 +101,7 @@ async function requestedSite(v: unknown): Promise<number | null | undefined | 'b
 const MANAGE_REFUSED = 'You can only manage credential presets for sites you administer.';
 
 // POST /api/credential-presets — fleet admins anywhere, site admins for their sites (#228)
-router.post('/', presetMutationLimiter, async (req: Request, res: Response) => {
+router.post('/', presetMutationLimiter, async (req, res) => {
   const caller = presetCaller(req.user);
   const {
     name,
@@ -176,7 +176,7 @@ router.post('/', presetMutationLimiter, async (req: Request, res: Response) => {
 });
 
 // PUT /api/credential-presets/:id — whoever may manage its site, and the site it moves to
-router.put('/:id', presetMutationLimiter, async (req: Request, res: Response) => {
+router.put('/:id', presetMutationLimiter, async (req, res) => {
   const caller = presetCaller(req.user);
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -274,7 +274,7 @@ router.put('/:id', presetMutationLimiter, async (req: Request, res: Response) =>
 });
 
 // DELETE /api/credential-presets/:id — whoever may manage its site
-router.delete('/:id', presetMutationLimiter, async (req: Request, res: Response) => {
+router.delete('/:id', presetMutationLimiter, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
   const caller = presetCaller(req.user);

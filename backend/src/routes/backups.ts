@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request } from 'express';
 import { decodedPath } from '../utils/requestPath';
 import { resourceSiteAccess } from '../utils/siteAccess';
 import * as fs from 'fs';
@@ -46,7 +46,7 @@ router.use(resourceSiteAccess(async (req) => {
   return null;
 }, 'Backup not found'));
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const { deviceId, type, from, to, search, limit, offset } = req.query as Record<string, string | undefined>;
 
   const filters: string[] = [];
@@ -104,7 +104,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /api/backups/types — the backup types actually present, for the filter
-router.get('/types', async (req: Request, res: Response) => {
+router.get('/types', async (req, res) => {
   const siteFilter = siteScopeByDevice(activeSite(req), 'b.device_id');
   const rows = await query<{ backup_type: string; n: string }>(
     `SELECT b.backup_type, COUNT(*)::text AS n
@@ -123,7 +123,7 @@ router.get('/types', async (req: Request, res: Response) => {
  * from one click deserves to say so, so the count of snapshots that will go with
  * them is reported here and shown in the confirmation.
  */
-router.post('/bulk-delete', requireWrite, async (req: Request, res: Response) => {
+router.post('/bulk-delete', requireWrite, async (req, res) => {
   const { ids } = req.body as { ids?: unknown };
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'ids array is required' });
@@ -154,7 +154,7 @@ router.post('/bulk-delete', requireWrite, async (req: Request, res: Response) =>
 });
 
 // GET /api/backups/bulk-delete/preview?ids=1,2,3 — what a bulk delete would remove
-router.get('/bulk-delete/preview', async (req: Request, res: Response) => {
+router.get('/bulk-delete/preview', async (req, res) => {
   const ids = String(req.query.ids || '')
     .split(',').map((v) => parseInt(v, 10)).filter(Number.isInteger);
   if (ids.length === 0) return res.json({ backups: 0, snapshots: 0, devices: [] });
@@ -183,7 +183,7 @@ router.get('/bulk-delete/preview', async (req: Request, res: Response) => {
 });
 
 // POST /api/backups
-router.post('/', requireWrite, async (req: Request, res: Response) => {
+router.post('/', requireWrite, async (req, res) => {
   const { deviceId, notes } = req.body;
   if (!deviceId) return res.status(400).json({ error: 'deviceId is required' });
 
@@ -205,7 +205,7 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
 });
 
 // GET /api/backups/:id/download
-router.get('/:id/download', async (req: Request, res: Response) => {
+router.get('/:id/download', async (req, res) => {
   const backup = await queryOne<{ file_path: string; filename: string; contains_secrets: boolean; encrypted: boolean }>(
     `SELECT file_path, filename, contains_secrets, encrypted FROM backups WHERE id = $1`,
     [req.params.id]
@@ -231,7 +231,7 @@ router.get('/:id/download', async (req: Request, res: Response) => {
 });
 
 // POST /api/backups/:id/restore
-router.post('/:id/restore', requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/restore', requireWrite, async (req, res) => {
   const backup = await queryOne(`SELECT id FROM backups WHERE id = $1`, [req.params.id]);
   if (!backup) return res.status(404).json({ error: 'Backup not found' });
 
@@ -248,7 +248,7 @@ router.post('/:id/restore', requireWrite, async (req: Request, res: Response) =>
 });
 
 // DELETE /api/backups/:id
-router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/:id', requireWrite, async (req, res) => {
   const backup = await queryOne(`SELECT id FROM backups WHERE id = $1`, [req.params.id]);
   if (!backup) return res.status(404).json({ error: 'Backup not found' });
 
@@ -322,7 +322,7 @@ interface BackupMeta {
 }
 
 // GET /api/backups/:id/content — preview in place
-router.get('/:id/content', async (req: Request, res: Response) => {
+router.get('/:id/content', async (req, res) => {
   const result = await readBackupText(req.params.id, isAdmin(req));
   if ('error' in result) return res.status(result.status).json({ error: result.error });
   const { file_path: _omit, ...meta } = result.meta;
@@ -332,7 +332,7 @@ router.get('/:id/content', async (req: Request, res: Response) => {
 // GET /api/backups/:fromId/diff/:toId — compare two backups
 // Mirrors the config-history diff contract: both texts are returned and the
 // browser renders them with the same lineDiff used for config snapshots.
-router.get('/:fromId/diff/:toId', async (req: Request, res: Response) => {
+router.get('/:fromId/diff/:toId', async (req, res) => {
   const [from, to] = await Promise.all([
     readBackupText(req.params.fromId, isAdmin(req)),
     readBackupText(req.params.toId, isAdmin(req)),

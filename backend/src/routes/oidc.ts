@@ -82,7 +82,7 @@ function safeReturnTo(value: unknown): string {
 }
 
 // ─── Public: is SSO available? (drives the login button) ────────────────────────
-router.get('/status', async (_req: Request, res: Response) => {
+router.get('/status', async (_req, res) => {
   const config = await loadOidcConfig();
   res.json({
     enabled: !!(config.enabled && config.issuer_url && config.client_id),
@@ -94,7 +94,7 @@ router.get('/status', async (_req: Request, res: Response) => {
 router.get(
   '/login',
   rateLimitRedis({ windowSec: 60, max: 20, keyPrefix: 'oidc-login', allMethods: true }),
-  async (req: Request, res: Response) => {
+  async (req, res) => {
     try {
       const config = await loadOidcConfig();
       const returnTo = safeReturnTo(req.query.returnTo);
@@ -113,7 +113,7 @@ router.get(
 router.get(
   '/callback',
   rateLimitRedis({ windowSec: 60, max: 30, keyPrefix: 'oidc-callback', allMethods: true }),
-  async (req: Request, res: Response) => {
+  async (req, res) => {
     try {
       const params = req.query as Record<string, string>;
       if (params.error) {
@@ -140,7 +140,7 @@ router.get(
 router.post(
   '/exchange',
   rateLimitRedis({ windowSec: 60, max: 30, keyPrefix: 'oidc-exchange', allMethods: true }),
-  async (req: Request, res: Response) => {
+  async (req, res) => {
     const code = typeof req.body?.code === 'string' ? req.body.code : '';
     const binding = bindingCookie(req);
     setBindingCookie(req, res, '', 0); // done with it either way
@@ -159,13 +159,13 @@ router.post(
 );
 
 // ─── Admin: read config (secret masked) ─────────────────────────────────────────
-router.get('/config', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.get('/config', requireAuth, requireAdmin, async (req, res) => {
   const config = await loadOidcConfig();
   res.json({ ...maskedConfig(config), redirect_uri: redirectUriFor(req, config) });
 });
 
 // ─── Admin: update config ───────────────────────────────────────────────────────
-router.put('/config', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.put('/config', requireAuth, requireAdmin, async (req, res) => {
   const body = req.body as Partial<OidcConfig> & { client_secret?: string };
 
   const validRole = (r: unknown): r is AppRole => APP_ROLES.includes(r as AppRole);
@@ -231,7 +231,7 @@ router.put('/config', requireAuth, requireAdmin, async (req: Request, res: Respo
 });
 
 // ─── Admin: validate discovery against the configured issuer ────────────────────
-router.post('/test', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post('/test', requireAuth, requireAdmin, async (req, res) => {
   const issuerUrl = (req.body?.issuer_url as string) || (await loadOidcConfig()).issuer_url;
   if (!issuerUrl) return res.status(400).json({ error: 'issuer_url is required' });
   try {

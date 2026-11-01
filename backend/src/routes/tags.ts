@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { decodedPath } from '../utils/requestPath';
 import { resourceSiteAccess } from '../utils/siteAccess';
 import { query } from '../config/database';
@@ -22,7 +22,7 @@ router.use(resourceSiteAccess(async (req) => {
 }, 'Device not found'));
 
 // GET /api/tags — list all tags with device count
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   // Tags are shared across the fleet, but a site-scoped account (P1-7) only
   // counts the devices it can see, not how many other sites have.
   const own = req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null;
@@ -38,7 +38,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/tags — create tag (admin only)
-router.post('/', requireAdmin, async (req: Request, res: Response) => {
+router.post('/', requireAdmin, async (req, res) => {
   const { name, color } = req.body as { name: string; color?: string };
   if (!name?.trim()) { res.status(400).json({ error: 'Tag name is required' }); return; }
   const rows = await query<{ id: number; name: string; color: string }>(
@@ -49,7 +49,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // PUT /api/tags/:id — rename or recolor (admin only)
-router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
+router.put('/:id', requireAdmin, async (req, res) => {
   const { name, color } = req.body as { name?: string; color?: string };
   const rows = await query<{ id: number; name: string; color: string }>(
     `UPDATE tags SET
@@ -63,13 +63,13 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/tags/:id (admin only)
-router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   await query(`DELETE FROM tags WHERE id = $1`, [req.params.id]);
   res.json({ ok: true });
 });
 
 // POST /api/tags/:id/devices — assign tag to devices (operator+)
-router.post('/:id/devices', requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/devices', requireWrite, async (req, res) => {
   const tagId = parseInt(req.params.id, 10);
   const { deviceIds, action } = req.body as { deviceIds: unknown; action: 'add' | 'remove' };
   const ids = Array.isArray(deviceIds) ? deviceIds.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
@@ -97,7 +97,7 @@ router.post('/:id/devices', requireWrite, async (req: Request, res: Response) =>
 });
 
 // GET /api/tags/device/:deviceId — tags for a specific device
-router.get('/device/:deviceId', async (req: Request, res: Response) => {
+router.get('/device/:deviceId', async (req, res) => {
   const tags = await query<{ id: number; name: string; color: string }>(
     `SELECT t.id, t.name, t.color FROM tags t
      JOIN device_tags dt ON dt.tag_id = t.id

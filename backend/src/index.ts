@@ -1,4 +1,3 @@
-import 'express-async-errors';
 import { clientIpBehindProxy } from './utils/clientIp';
 import express from 'express';
 import cors from 'cors';
@@ -139,6 +138,10 @@ RouterOSClient.tlsVerifier = async (host, port, fingerprint, raw) => {
 const app = express();
 // nginx sits exactly one hop in front; trust its X-Forwarded-For so req.ip is the real client IP
 app.set('trust proxy', 1);
+// Express 5 parses query strings with Node's simple parser; keep the qs
+// parser Express 4 used, so `ids[]=1&ids[]=2` (axios' array form) and nested
+// keys still arrive as arrays and objects.
+app.set('query parser', 'extended');
 const httpServer = createServer(app);
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -401,6 +404,9 @@ app.use('/api', (req, res, next) => {
 });
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+// Express 5 leaves req.body undefined when no parser ran (a POST or DELETE
+// with no body). Express 4 gave {}, and handlers destructure it.
+app.use((req, _res, next) => { if (req.body === undefined) req.body = {}; next(); });
 
 if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('combined'));

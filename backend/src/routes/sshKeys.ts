@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { query } from '../config/database';
 import { requireAuth, requireAdmin } from '../middleware/auth';
@@ -29,7 +29,7 @@ function parseIds(v: unknown): number[] | null {
 }
 
 // GET /api/ssh-keys/fleet/preview?tag_ids=1,2 — what a run would do, in the active site
-router.get('/fleet/preview', async (req: Request, res: Response) => {
+router.get('/fleet/preview', async (req, res) => {
   const tagIds = parseIds(req.query.tag_ids);
   if (!tagIds) return res.status(400).json({ error: 'tag_ids must be a list of tag ids' });
 
@@ -74,7 +74,7 @@ router.get('/fleet/preview', async (req: Request, res: Response) => {
 });
 
 // POST /api/ssh-keys/fleet/jobs { device_ids, confirm: true }
-router.post('/fleet/jobs', async (req: Request, res: Response) => {
+router.post('/fleet/jobs', async (req, res) => {
   const body = (req.body ?? {}) as { device_ids?: unknown; confirm?: unknown };
   if (body.confirm !== true) {
     return res.status(400).json({
@@ -105,14 +105,14 @@ router.post('/fleet/jobs', async (req: Request, res: Response) => {
 });
 
 // GET /api/ssh-keys/fleet/jobs/:jobId
-router.get('/fleet/jobs/:jobId', async (req: Request, res: Response) => {
+router.get('/fleet/jobs/:jobId', async (req, res) => {
   const job = await getFleetKeyJob(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found or expired' });
   return res.json({ job_id: req.params.jobId, ...job.meta, results: job.results });
 });
 
 // POST /api/ssh-keys/fleet/jobs/:jobId/cancel — stops before the next device
-router.post('/fleet/jobs/:jobId/cancel', async (req: Request, res: Response) => {
+router.post('/fleet/jobs/:jobId/cancel', async (req, res) => {
   const job = await getFleetKeyJob(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found or expired' });
   await cancelFleetKeyJob(req.params.jobId);

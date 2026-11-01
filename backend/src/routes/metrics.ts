@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { decodedPath } from '../utils/requestPath';
 import { outageLengthSeconds, outageOverlapsSql, outageSecondsInWindow, outageSecondsSql } from '../utils/outageWindow';
 import { deviceSiteAccess } from '../utils/siteAccess';
@@ -28,7 +28,7 @@ function rangeToFlux(range: string): string {
 }
 
 // GET /api/metrics/clients-over-time?range=24h
-router.get('/clients-over-time', async (req: Request, res: Response) => {
+router.get('/clients-over-time', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const queryApi = getQueryApi();
   // Per-site deduplicated series when a site is selected, fleet-wide otherwise.
@@ -133,7 +133,7 @@ router.get('/clients-over-time', async (req: Request, res: Response) => {
 });
 
 // GET /api/metrics/top-clients?limit=10&range=24h
-router.get('/top-clients', async (req: Request, res: Response) => {
+router.get('/top-clients', async (req, res) => {
   const limit = Math.min(parseInt(String(req.query.limit || '10'), 10), 50);
   const topFilter = siteScopeByDevice(activeSite(req), 'c.device_id');
 
@@ -153,7 +153,7 @@ router.get('/top-clients', async (req: Request, res: Response) => {
 });
 
 // GET /api/metrics/interface/:deviceId/:interface?range=1h
-router.get('/interface/:deviceId/:interface', async (req: Request, res: Response) => {
+router.get('/interface/:deviceId/:interface', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '1h'));
   const queryApi = getQueryApi();
   const deviceId = req.params.deviceId;
@@ -198,7 +198,7 @@ router.get('/interface/:deviceId/:interface', async (req: Request, res: Response
 });
 
 // GET /api/metrics/interface/:deviceId/:interface/packets?range=1h
-router.get('/interface/:deviceId/:interface/packets', async (req: Request, res: Response) => {
+router.get('/interface/:deviceId/:interface/packets', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '1h'));
   const queryApi = getQueryApi();
   const deviceId = req.params.deviceId;
@@ -242,7 +242,7 @@ router.get('/interface/:deviceId/:interface/packets', async (req: Request, res: 
 });
 
 // GET /api/metrics/device/:deviceId/resources?range=24h
-router.get('/device/:deviceId/resources', async (req: Request, res: Response) => {
+router.get('/device/:deviceId/resources', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const queryApi = getQueryApi();
   const deviceId = req.params.deviceId;
@@ -282,7 +282,7 @@ router.get('/device/:deviceId/resources', async (req: Request, res: Response) =>
 });
 
 // GET /api/metrics/device/:deviceId/poe - current PoE power per port + 1h time series
-router.get('/device/:deviceId/poe', async (req: Request, res: Response) => {
+router.get('/device/:deviceId/poe', async (req, res) => {
   const queryApi = getQueryApi();
   const deviceId = req.params.deviceId;
 
@@ -335,7 +335,7 @@ router.get('/device/:deviceId/poe', async (req: Request, res: Response) => {
 });
 
 // GET /api/metrics/device/:deviceId/availability?range=30d
-router.get('/device/:deviceId/availability', async (req: Request, res: Response) => {
+router.get('/device/:deviceId/availability', async (req, res) => {
   const deviceId = parseInt(req.params.deviceId, 10);
   const rangeRaw = String(req.query.range || '30d');
   const allowedRanges: Record<string, string> = {
@@ -377,7 +377,7 @@ router.get('/device/:deviceId/availability', async (req: Request, res: Response)
 });
 
 // GET /api/metrics/resources/latest - newest CPU/memory point per device (read-only, site-scoped)
-router.get('/resources/latest', async (req: Request, res: Response) => {
+router.get('/resources/latest', async (req, res) => {
   const devFilter = siteScopeDevices(activeSite(req));
   let latest;
   try {
@@ -398,7 +398,7 @@ router.get('/resources/latest', async (req: Request, res: Response) => {
 // GET /api/metrics/resources/cpu-history?range=1h — every device's CPU series
 // in one query, for the Devices list sparklines (#302). The list used to ask
 // once per device: 1,500 requests and Flux queries for a large fleet.
-router.get('/resources/cpu-history', async (req: Request, res: Response) => {
+router.get('/resources/cpu-history', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '1h'));
   const devFilter = siteScopeDevices(activeSite(req));
   const allowed = new Set((await query<{ id: number }>(`SELECT id FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`)).map((d) => String(d.id)));
@@ -426,7 +426,7 @@ router.get('/resources/cpu-history', async (req: Request, res: Response) => {
 });
 
 // GET /api/metrics/interfaces/latest - newest cumulative rx/tx byte counters per device and interface
-router.get('/interfaces/latest', async (req: Request, res: Response) => {
+router.get('/interfaces/latest', async (req, res) => {
   const devFilter = siteScopeDevices(activeSite(req));
   let latest;
   try {
@@ -450,7 +450,7 @@ router.get('/interfaces/latest', async (req: Request, res: Response) => {
 });
 
 // GET /api/metrics/summary - dashboard summary stats
-router.get('/summary', async (req: Request, res: Response) => {
+router.get('/summary', async (req, res) => {
   const siteId = activeSite(req);
   const devFilter = siteScopeDevices(siteId);
   const cliFilter = siteScopeByDevice(siteId, 'device_id');

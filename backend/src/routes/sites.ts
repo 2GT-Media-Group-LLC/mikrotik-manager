@@ -90,7 +90,7 @@ function siteAdminOrRefuse(req: Request, res: Response, siteId: number): boolean
   return ok;
 }
 
-router.get('/:id/poll-settings', async (req: Request, res: Response) => {
+router.get('/:id/poll-settings', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid site id' });
   if (req.user?.siteRoles && !req.user.siteRoles[id]) return res.status(404).json({ error: 'Site not found' });
@@ -100,7 +100,7 @@ router.get('/:id/poll-settings', async (req: Request, res: Response) => {
   return res.json({ overrides: site, effective: resolveEffective(await globalSettings(), site, null) });
 });
 
-router.put('/:id/poll-settings', requireWrite, async (req: Request, res: Response) => {
+router.put('/:id/poll-settings', requireWrite, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid site id' });
   if (!siteAdminOrRefuse(req, res, id)) return;
@@ -113,7 +113,7 @@ router.put('/:id/poll-settings', requireWrite, async (req: Request, res: Respons
   return res.json({ overrides: v.value, effective: resolveEffective(await globalSettings(), v.value, null) });
 });
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   // A site-scoped account sees only its own sites (P1-7).
   const own = req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null;
   const sites = await query<SiteRow & { device_count: string }>(
@@ -139,7 +139,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/sites — create
-router.post('/', requireWrite, async (req: Request, res: Response) => {
+router.post('/', requireWrite, async (req, res) => {
   if (!refuseUnlessFleet(req, res)) return;
   const { name, error } = normaliseName((req.body as { name?: string }).name);
   if (error) { res.status(400).json({ error }); return; }
@@ -169,7 +169,7 @@ router.post('/', requireWrite, async (req: Request, res: Response) => {
 });
 
 // PUT /api/sites/:id — rename / set address / notes
-router.put('/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/:id', requireWrite, async (req, res) => {
   if (!refuseUnlessSiteAdmin(req, res, parseInt(req.params.id, 10))) return;
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: 'Invalid site id' }); return; }
@@ -219,7 +219,7 @@ router.put('/:id', requireWrite, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/sites/:id — refused while devices remain, and never for the last site
-router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/:id', requireWrite, async (req, res) => {
   if (!refuseUnlessFleet(req, res)) return;
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: 'Invalid site id' }); return; }
@@ -273,7 +273,7 @@ router.delete('/:id', requireWrite, async (req: Request, res: Response) => {
 });
 
 // POST /api/sites/:id/devices — move devices into this site
-router.post('/:id/devices', requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/devices', requireWrite, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) { res.status(400).json({ error: 'Invalid site id' }); return; }
 

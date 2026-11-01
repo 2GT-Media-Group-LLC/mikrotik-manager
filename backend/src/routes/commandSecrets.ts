@@ -3,7 +3,7 @@
  * (typed, or generated here) and never read back: the list shows names and
  * when they changed.
  */
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { SECRET_NAME, generateSecret, listSecrets, saveSecret } from '../services/commandSecrets';
@@ -11,12 +11,12 @@ import { SECRET_NAME, generateSecret, listSecrets, saveSecret } from '../service
 const router = Router();
 router.use(requireAuth, requireAdmin);
 
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (_req, res) => {
   res.json(await listSecrets());
 });
 
 // POST { name, value } or { name, generate: true }. Replaces a value of the same name.
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req, res) => {
   const name = String(req.body?.name ?? '').trim();
   if (!SECRET_NAME.test(name)) return res.status(400).json({ error: 'A name uses letters, digits, dash and underscore, up to 64.' });
   let value: string;
@@ -33,7 +33,7 @@ router.post('/', async (req: Request, res: Response) => {
   return res.status(201).json({ ok: true, name });
 });
 
-router.delete('/:name', async (req: Request, res: Response) => {
+router.delete('/:name', async (req, res) => {
   const name = req.params.name;
   if (!SECRET_NAME.test(name)) return res.status(400).json({ error: 'Not a secret name' });
   await query(`DELETE FROM command_secrets WHERE name = $1`, [name]);

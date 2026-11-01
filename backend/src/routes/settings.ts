@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { encryptionStatus, reencryptAll } from '../services/encryptedData';
 import { encryptionKeyInfo, encryptionKeyMissing, rotateEncryptionKey, retireOldEncryptionKeys } from '../utils/secrets';
 import { endAllSessions, forgetSessionAccount } from '../utils/sessionState';
@@ -18,7 +18,7 @@ router.use(requireAuth);
 const PROTECTED_SETTING_KEYS = new Set<string>([OIDC_SETTINGS_KEY]);
 
 // GET /api/settings
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (_req, res) => {
   const settings = await query(`SELECT key, value FROM app_settings ORDER BY key`);
   const map: Record<string, unknown> = {};
   for (const s of settings as { key: string; value: unknown }[]) {
@@ -29,7 +29,7 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 // PUT /api/settings
-router.put('/', requireAdmin, async (req: Request, res: Response) => {
+router.put('/', requireAdmin, async (req, res) => {
   const updates = req.body as Record<string, unknown>;
   // Change Guard is read on every protected change; refuse values it would misread.
   if ('change_guard_mode' in updates && !['binary', 'script'].includes(String(updates['change_guard_mode']))) {
@@ -150,13 +150,13 @@ const USER_COLUMNS = `u.id, u.username, u.email, u.role, u.auth_provider, u.crea
        FROM user_group_roles ugr JOIN site_groups g ON g.id = ugr.group_id WHERE ugr.user_id = u.id),
     '[]'::json) AS group_roles`;
 
-router.get('/users', requireAdmin, async (_req: Request, res: Response) => {
+router.get('/users', requireAdmin, async (_req, res) => {
   const users = await query(`SELECT ${USER_COLUMNS} FROM users u ORDER BY u.username`);
   res.json(users);
 });
 
 // POST /api/settings/users
-router.post('/users', requireAdmin, async (req: Request, res: Response) => {
+router.post('/users', requireAdmin, async (req, res) => {
   const { username, password, role = 'viewer' } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password required' });
@@ -190,7 +190,7 @@ router.post('/users', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // PUT /api/settings/users/:id - update role and/or reset password
-router.put('/users/:id', requireAdmin, async (req: Request, res: Response) => {
+router.put('/users/:id', requireAdmin, async (req, res) => {
   const userId = parseInt(req.params.id);
   const { role, password } = req.body;
 
@@ -270,13 +270,13 @@ async function encryptionOverview() {
 }
 
 // GET /api/settings/encryption — which key protects stored credentials, and how much is under it.
-router.get('/encryption', requireAdmin, async (_req: Request, res: Response) => {
+router.get('/encryption', requireAdmin, async (_req, res) => {
   res.json(await encryptionOverview());
 });
 
 // POST /api/settings/encryption/rotate — switch to a new key, keeping the old
 // one until everything is re-encrypted under the new one.
-router.post('/encryption/rotate', requireAdmin, async (_req: Request, res: Response) => {
+router.post('/encryption/rotate', requireAdmin, async (_req, res) => {
   try {
     const before = await encryptionStatus(true);
     if (before.some((l) => l.unreadable > 0)) {
@@ -291,13 +291,13 @@ router.post('/encryption/rotate', requireAdmin, async (_req: Request, res: Respo
 });
 
 // POST /api/settings/encryption/reencrypt — move anything still under an older key forward.
-router.post('/encryption/reencrypt', requireAdmin, async (_req: Request, res: Response) => {
+router.post('/encryption/reencrypt', requireAdmin, async (_req, res) => {
   const result = await reencryptAll();
   res.json({ message: `Re-encrypted ${result.rewritten} stored value(s).`, ...result, ...(await encryptionOverview()) });
 });
 
 // POST /api/settings/encryption/retire — forget older keys once nothing needs them.
-router.post('/encryption/retire', requireAdmin, async (_req: Request, res: Response) => {
+router.post('/encryption/retire', requireAdmin, async (_req, res) => {
   const overview = await encryptionOverview();
   if (!overview.can_retire) {
     return res.status(409).json({ error: 'Older keys are still needed, or there are none to retire.' });
@@ -307,7 +307,7 @@ router.post('/encryption/retire', requireAdmin, async (_req: Request, res: Respo
 });
 
 // DELETE /api/settings/users/:id
-router.delete('/users/:id', requireAdmin, async (req: Request, res: Response) => {
+router.delete('/users/:id', requireAdmin, async (req, res) => {
   if (parseInt(req.params.id) === req.user!.userId) {
     return res.status(400).json({ error: 'Cannot delete your own account' });
   }

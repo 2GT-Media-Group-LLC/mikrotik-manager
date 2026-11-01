@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { roleAtLeast, roleOnDevice } from '../utils/siteAccess';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
@@ -23,7 +23,7 @@ router.use(requireAuth);
  * string. Splitting server-side keeps the badge list honest across the entire table
  * instead of only the page currently loaded (issue #108).
  */
-router.get('/topics', async (req: Request, res: Response) => {
+router.get('/topics', async (req, res) => {
   const siteFilter = siteScopeByNullableDevice(activeSite(req), 'device_id');
   const includeFirewall = req.query.firewall === '1';
 
@@ -94,7 +94,7 @@ function strictInteger(
 }
 
 // GET /api/events/firewall
-router.get('/firewall', async (req: Request, res: Response) => {
+router.get('/firewall', async (req, res) => {
   const deviceIdRaw = singleQueryValue(req.query.deviceId);
   const sinceRaw = singleQueryValue(req.query.since);
   const searchRaw = singleQueryValue(req.query.search);
@@ -317,7 +317,7 @@ router.get('/firewall', async (req: Request, res: Response) => {
   });
 });
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const {
     deviceId,
     severity,
@@ -433,7 +433,7 @@ router.get('/', async (req: Request, res: Response) => {
 // DELETE /api/events/firewall
 // Clear only RouterOS firewall packet logs, with the same device/site scope as
 // the generic event clear endpoint.
-router.delete('/firewall', requireWrite, async (req: Request, res: Response) => {
+router.delete('/firewall', requireWrite, async (req, res) => {
   const deviceIdRaw = singleQueryValue(req.query.deviceId);
 
   if (deviceIdRaw === null) {
@@ -485,7 +485,7 @@ router.delete('/firewall', requireWrite, async (req: Request, res: Response) => 
 });
 
 // DELETE /api/events (clear events for a device or all)
-router.delete('/', requireWrite, async (req: Request, res: Response) => {
+router.delete('/', requireWrite, async (req, res) => {
   const { deviceId } = req.query;
   if (deviceId) {
     if (!roleAtLeast(await roleOnDevice(req.user!, Number(deviceId)), 'operator')) {

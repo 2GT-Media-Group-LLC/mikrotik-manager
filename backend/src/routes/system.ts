@@ -1,6 +1,5 @@
 import { compareMtmVersions, releaseBranch } from '../utils/mtmVersion';
 import { Router } from 'express';
-import type { Request, Response } from 'express';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
@@ -52,7 +51,7 @@ function isNewer(latest: string, current: string): boolean {
  * 1.0 means the backlog grows every cycle and some devices will stop reporting
  * altogether (#114).
  */
-router.get('/poller', fleetOnly, async (_req: Request, res: Response) => {
+router.get('/poller', fleetOnly, async (_req, res) => {
   try {
     if (!pollerService) return res.status(503).json({ error: 'Poller not started' });
     const health = await pollerService.getPollerHealth();
@@ -103,7 +102,7 @@ router.get('/poller', fleetOnly, async (_req: Request, res: Response) => {
  * whatever is still due on its next tick, so the cost is at most one interval of
  * freshness.
  */
-router.post('/poller/drain', requireWrite, fleetOnly, async (_req: Request, res: Response) => {
+router.post('/poller/drain', requireWrite, fleetOnly, async (_req, res) => {
   try {
     if (!pollerService) return res.status(503).json({ error: 'Poller not started' });
     const drained = await pollerService.drainQueues();
@@ -121,7 +120,7 @@ router.post('/poller/drain', requireWrite, fleetOnly, async (_req: Request, res:
  * Served from the backend so the settings screen and the gates read one list;
  * a second copy in the frontend would be the next thing to fall out of date.
  */
-router.get('/dark-site', async (_req: Request, res: Response) => {
+router.get('/dark-site', async (_req, res) => {
   const rows = await query<{ key: string; value: unknown }>(
     `SELECT key, value FROM app_settings WHERE key = ANY($1::text[])`, [DARK_SITE_KEYS]
   ).catch(() => []);
@@ -132,7 +131,7 @@ router.get('/dark-site', async (_req: Request, res: Response) => {
   });
 });
 
-router.get('/version-check', async (_req: Request, res: Response) => {
+router.get('/version-check', async (_req, res) => {
   try {
     // Dark Site Mode. Answered without contacting GitHub, and flagged so the
     // dashboard can say "check disabled" rather than "you are up to date",

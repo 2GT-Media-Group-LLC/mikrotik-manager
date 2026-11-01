@@ -5,7 +5,7 @@
  * Fleet admins set the fleet default and group settings; a site's own admin
  * may set that site's.
  */
-import { Router, Request, Response } from 'express';
+import { Router, Request } from 'express';
 import { queryOne } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { listRomonSettings, saveRomonSetting, deleteRomonSetting } from '../services/romon';
@@ -39,7 +39,7 @@ async function exists(scope: Scope, id: number | null): Promise<boolean> {
 }
 
 // GET /api/romon/settings
-router.get('/settings', async (req: Request, res: Response) => {
+router.get('/settings', async (req, res) => {
   const rows = await listRomonSettings();
   const own = req.user?.siteRoles ? new Set(Object.keys(req.user.siteRoles).map(Number)) : null;
   // A limited account sees the fleet default and its own sites' settings.
@@ -47,7 +47,7 @@ router.get('/settings', async (req: Request, res: Response) => {
 });
 
 // PUT /api/romon/settings { scope, id?, enabled, secret? } — secret: omitted keeps it, null removes it
-router.put('/settings', async (req: Request, res: Response) => {
+router.put('/settings', async (req, res) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const target = parseTarget(body);
   if ('error' in target) return res.status(400).json({ error: target.error });
@@ -69,7 +69,7 @@ router.put('/settings', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/romon/settings { scope, id? } — the site or group falls back to the next level
-router.delete('/settings', async (req: Request, res: Response) => {
+router.delete('/settings', async (req, res) => {
   const target = parseTarget((req.body ?? {}) as Record<string, unknown>);
   if ('error' in target) return res.status(400).json({ error: target.error });
   if (!mayEdit(req, target.scope, target.id)) return res.status(403).json({ error: 'You need admin access for that setting.' });

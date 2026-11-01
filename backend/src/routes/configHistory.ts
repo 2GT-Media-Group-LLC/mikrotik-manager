@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request } from 'express';
 import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
@@ -64,7 +64,7 @@ function snapshotText(row: { config_text: string | null; config_json: Record<str
 }
 
 // GET /api/config-history/:deviceId — list snapshots (metadata only, no full payload)
-router.get('/:deviceId', async (req: Request, res: Response) => {
+router.get('/:deviceId', async (req, res) => {
   const rows = await query(
     `SELECT id, device_id, config_hash, change_summary, backup_id, collected_at,
             (backup_id IS NOT NULL) AS has_backup, COALESCE(contains_secrets, false) AS contains_secrets
@@ -77,7 +77,7 @@ router.get('/:deviceId', async (req: Request, res: Response) => {
 });
 
 // GET /api/config-history/:deviceId/:id — full config for a single snapshot
-router.get('/:deviceId/:id', async (req: Request, res: Response) => {
+router.get('/:deviceId/:id', async (req, res) => {
   const row = await queryOne<SnapshotRow>(
     `SELECT id, device_id, config_json, config_text, config_hash, change_summary, backup_id, collected_at, contains_secrets
      FROM device_configs WHERE id = $1 AND device_id = $2`,
@@ -89,7 +89,7 @@ router.get('/:deviceId/:id', async (req: Request, res: Response) => {
 });
 
 // GET /api/config-history/:deviceId/:fromId/diff/:toId — both snapshots' .rsc text
-router.get('/:deviceId/:fromId/diff/:toId', async (req: Request, res: Response) => {
+router.get('/:deviceId/:fromId/diff/:toId', async (req, res) => {
   const [from, to] = await Promise.all([
     queryOne<SnapshotRow>(
       `SELECT id, config_text, config_json, change_summary, collected_at, contains_secrets FROM device_configs WHERE id = $1 AND device_id = $2`,
@@ -110,7 +110,7 @@ router.get('/:deviceId/:fromId/diff/:toId', async (req: Request, res: Response) 
 });
 
 // POST /api/config-history/:deviceId/capture — capture a fresh snapshot on demand
-router.post('/:deviceId/capture', requireWrite, async (req: Request, res: Response) => {
+router.post('/:deviceId/capture', requireWrite, async (req, res) => {
   const device = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.deviceId]);
   if (!device) return res.status(404).json({ error: 'Device not found' });
 
@@ -146,7 +146,7 @@ router.post('/:deviceId/capture', requireWrite, async (req: Request, res: Respon
 });
 
 // POST /api/config-history/:deviceId/:id/rollback — restore the .rsc backup linked to this snapshot
-router.post('/:deviceId/:id/rollback', requireWrite, async (req: Request, res: Response) => {
+router.post('/:deviceId/:id/rollback', requireWrite, async (req, res) => {
   const snap = await queryOne<{ backup_id: number | null }>(
     `SELECT backup_id FROM device_configs WHERE id = $1 AND device_id = $2`,
     [req.params.id, req.params.deviceId]
@@ -169,7 +169,7 @@ router.post('/:deviceId/:id/rollback', requireWrite, async (req: Request, res: R
 });
 
 // DELETE /api/config-history/:deviceId/:id — delete a snapshot and its linked backup
-router.delete('/:deviceId/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/:deviceId/:id', requireWrite, async (req, res) => {
   const snap = await queryOne<{ id: number; backup_id: number | null }>(
     `SELECT id, backup_id FROM device_configs WHERE id = $1 AND device_id = $2`,
     [req.params.id, req.params.deviceId]

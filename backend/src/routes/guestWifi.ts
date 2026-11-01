@@ -51,7 +51,7 @@ async function withDevice<T>(
 // ─── Overview ────────────────────────────────────────────────────────────────
 
 // GET /api/guest-wifi/overview?deviceId=
-router.get('/overview', async (req: Request, res: Response) => {
+router.get('/overview', async (req, res) => {
   const result = await withDevice(req, res, async (c) => {
     const [servers, profiles, userProfiles, users, active, interfaces] = await Promise.all([
       c.getHotspotServers(), c.getHotspotProfiles(), c.getHotspotUserProfiles(),
@@ -73,7 +73,7 @@ router.get('/overview', async (req: Request, res: Response) => {
 // ─── Guided setup ─────────────────────────────────────────────────────────────
 
 // POST /api/guest-wifi/setup
-router.post('/setup', requireWrite, async (req: Request, res: Response) => {
+router.post('/setup', requireWrite, async (req, res) => {
   const { name, interfaceName, gatewayCidr, poolRange, dnsName, rateLimit } = req.body as Record<string, string>;
   const { ssid, vlanId, masquerade } = req.body as {
     ssid?: { ssid?: string; passphrase?: string }; vlanId?: number; masquerade?: boolean;
@@ -129,13 +129,13 @@ function generateCode(len = 8): string {
 }
 
 // GET /api/guest-wifi/users?deviceId=
-router.get('/users', async (req: Request, res: Response) => {
+router.get('/users', async (req, res) => {
   const result = await withDevice(req, res, (c) => c.getHotspotUsers());
   if (result !== undefined) res.json(result);
 });
 
 // POST /api/guest-wifi/vouchers — batch-create voucher users
-router.post('/vouchers', requireWrite, async (req: Request, res: Response) => {
+router.post('/vouchers', requireWrite, async (req, res) => {
   const { count, durationHours, dataCapMB, userProfile } = req.body as {
     count?: number; durationHours?: number; dataCapMB?: number; userProfile?: string;
   };
@@ -178,7 +178,7 @@ router.post('/vouchers', requireWrite, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/guest-wifi/users/:id?deviceId=
-router.delete('/users/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/users/:id', requireWrite, async (req, res) => {
   const result = await withDevice(req, res, async (c) => {
     await c.removeHotspotUser(req.params.id);
     return { ok: true };
@@ -189,13 +189,13 @@ router.delete('/users/:id', requireWrite, async (req: Request, res: Response) =>
 // ─── Active sessions ──────────────────────────────────────────────────────────
 
 // GET /api/guest-wifi/active?deviceId=
-router.get('/active', async (req: Request, res: Response) => {
+router.get('/active', async (req, res) => {
   const result = await withDevice(req, res, (c) => c.getHotspotActive());
   if (result !== undefined) res.json(result);
 });
 
 // DELETE /api/guest-wifi/active/:id?deviceId= — kick a guest
-router.delete('/active/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/active/:id', requireWrite, async (req, res) => {
   const result = await withDevice(req, res, async (c) => {
     await c.disconnectHotspotActive(req.params.id);
     return { ok: true };
@@ -205,12 +205,12 @@ router.delete('/active/:id', requireWrite, async (req: Request, res: Response) =
 
 // ─── Walled garden ────────────────────────────────────────────────────────────
 
-router.get('/walled-garden', async (req: Request, res: Response) => {
+router.get('/walled-garden', async (req, res) => {
   const result = await withDevice(req, res, (c) => c.getWalledGarden());
   if (result !== undefined) res.json(result);
 });
 
-router.post('/walled-garden', requireWrite, async (req: Request, res: Response) => {
+router.post('/walled-garden', requireWrite, async (req, res) => {
   const { dstHost, comment } = req.body as { dstHost?: string; comment?: string };
   if (!dstHost || !dstHost.trim()) { res.status(400).json({ error: 'dstHost is required' }); return; }
   const result = await withDevice(req, res, async (c) => {
@@ -220,7 +220,7 @@ router.post('/walled-garden', requireWrite, async (req: Request, res: Response) 
   if (result !== undefined) res.status(201).json(result);
 });
 
-router.delete('/walled-garden/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/walled-garden/:id', requireWrite, async (req, res) => {
   const result = await withDevice(req, res, async (c) => {
     await c.removeWalledGardenEntry(req.params.id);
     return { ok: true };
@@ -231,7 +231,7 @@ router.delete('/walled-garden/:id', requireWrite, async (req: Request, res: Resp
 // ─── Server enable/disable/remove ─────────────────────────────────────────────
 
 // Guarded: enabling a hotspot server changes how its interface filters traffic.
-router.put('/servers/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/servers/:id', requireWrite, async (req, res) => {
   const { disabled } = req.body as { disabled?: boolean };
   const deviceId = requestDeviceId(req);
   if (!deviceId) { res.status(400).json({ error: 'deviceId is required' }); return; }
@@ -240,7 +240,7 @@ router.put('/servers/:id', requireWrite, async (req: Request, res: Response) => 
     async (c) => { await c.setHotspotServerDisabled(req.params.id, !!disabled); return { ok: true }; });
 });
 
-router.delete('/servers/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/servers/:id', requireWrite, async (req, res) => {
   const deviceId = requestDeviceId(req);
   if (!deviceId) { res.status(400).json({ error: 'deviceId is required' }); return; }
   await withGuardedChange(deviceId, req, res, { kind: 'hotspot.server.remove', summary: 'Remove hotspot server' },

@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { roleAtLeast, roleOnDevice } from '../utils/siteAccess';
 import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
 import { activeSite, targetSite } from '../middleware/site';
@@ -27,7 +27,7 @@ export function setPollerService(p: PollerService): void {
  * has to be borrowed to reach it. Their names are resolved here so the UI can
  * offer a jump host without a second round trip.
  */
-router.get('/candidates', async (req: Request, res: Response) => {
+router.get('/candidates', async (req, res) => {
   let candidates = await service.listCandidates();
   // A site-scoped account sees only what its own devices can see (P1-7).
   if (req.user?.siteRoles) {
@@ -60,7 +60,7 @@ router.get('/candidates', async (req: Request, res: Response) => {
  * Write-scoped: this changes configuration on two devices — the one being
  * adopted, and briefly the managed neighbour used to reach it.
  */
-router.post('/adopt', requireWrite, async (req: Request, res: Response) => {
+router.post('/adopt', requireWrite, async (req, res) => {
   const { mac, jumpHostId, plan, password, username, identity, name,
           removeFactoryAddress, force } = req.body as Record<string, unknown>;
 
@@ -112,7 +112,7 @@ router.post('/adopt', requireWrite, async (req: Request, res: Response) => {
  * Exposed separately so the form can say so before anything is written, rather
  * than the operator discovering a clash only when adoption refuses.
  */
-router.post('/check-address', requireWrite, async (req: Request, res: Response) => {
+router.post('/check-address', requireWrite, async (req, res) => {
   const { address, jumpHostId } = req.body as { address?: unknown; jumpHostId?: unknown };
   if (typeof address !== 'string' || typeof jumpHostId !== 'number') {
     return res.status(400).json({ error: 'address and jumpHostId are required' });
@@ -124,7 +124,7 @@ router.post('/check-address', requireWrite, async (req: Request, res: Response) 
 });
 
 /** POST /api/adoption/cleanup — drop temporary addresses a failed run left behind. */
-router.post('/cleanup', requireWrite, fleetOnly, async (_req: Request, res: Response) => {
+router.post('/cleanup', requireWrite, fleetOnly, async (_req, res) => {
   const removed = await service.cleanupOrphans();
   res.json({ removed });
 });

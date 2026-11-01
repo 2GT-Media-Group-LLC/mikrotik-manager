@@ -20,7 +20,7 @@ import { RouterOSTrapError } from '../services/mikrotik/RouterOSClient';
 const router = Router();
 router.use(requireAuth);
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const scope = siteScopeDevices(activeSite(req));
   const servers = await query<{ id: number; name: string; ip_address: string; status: string; model: string | null }>(
     `SELECT id, name, ip_address, status, model FROM devices WHERE user_manager = TRUE ${scope ? `AND ${scope}` : ''} ORDER BY name`);
@@ -36,7 +36,7 @@ router.get('/', async (req: Request, res: Response) => {
 
 // Look again on the next slow poll: for a device where User Manager was just
 // switched on, instead of waiting for the daily check.
-router.post('/recheck', requireWrite, async (req: Request, res: Response) => {
+router.post('/recheck', requireWrite, async (req, res) => {
   const scope = siteScopeDevices(activeSite(req));
   await query(`UPDATE devices SET user_manager_checked_at = NULL ${scope ? `WHERE ${scope}` : ''}`);
   res.json({ ok: true });
@@ -48,7 +48,7 @@ async function serverDevice(req: Request, res: Response): Promise<DeviceRow | nu
   return d;
 }
 
-router.get('/:id', deviceSiteAccess(deviceIdParam), async (req: Request, res: Response) => {
+router.get('/:id', deviceSiteAccess(deviceIdParam), async (req, res) => {
   const d = await serverDevice(req, res);
   if (!d) return;
   try {
@@ -58,7 +58,7 @@ router.get('/:id', deviceSiteAccess(deviceIdParam), async (req: Request, res: Re
   }
 });
 
-router.post('/:id/sessions/:sid/remove', deviceSiteAccess(deviceIdParam), requireWrite, async (req: Request, res: Response) => {
+router.post('/:id/sessions/:sid/remove', deviceSiteAccess(deviceIdParam), requireWrite, async (req, res) => {
   const sid = String(req.params.sid);
   if (!isItemId(sid)) return res.status(400).json({ error: 'That isn’t a session id' });
   const d = await serverDevice(req, res);

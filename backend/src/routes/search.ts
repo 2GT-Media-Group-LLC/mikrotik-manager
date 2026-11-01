@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query } from '../config/database';
 import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
 import { requireAuth } from '../middleware/auth';
@@ -9,7 +9,7 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/search?q=<term>
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) {
     return res.json({ devices: [], clients: [], events: [] });

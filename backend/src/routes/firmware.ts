@@ -1,6 +1,6 @@
 import { loadBondMembers } from '../services/topology/bondMembers';
 import { decodedPath } from '../utils/requestPath';
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { resourceSiteAccess } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
 import { isUpdateChannel, UPDATE_CHANNELS } from '../utils/updateChannel';
@@ -46,7 +46,7 @@ router.use(resourceSiteAccess(async (req) => {
   return null;
 }, 'Rollout not found'));
 
-router.get('/overview', async (req: Request, res: Response) => {
+router.get('/overview', async (req, res) => {
   const siteFilter = siteScopeDevices(activeSite(req));
   const [devices, latestRollout] = await Promise.all([
     query(`SELECT id, name, device_type, status, model, ros_version, latest_ros_version,
@@ -114,7 +114,7 @@ router.get('/overview', async (req: Request, res: Response) => {
 });
 
 // POST /api/firmware/check-all — refresh update availability on all online devices
-router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
+router.post('/check-all', requireWrite, async (req, res) => {
   const siteFilter = siteScopeDevices(writableScope(req));
   const devices = await query<DeviceRow>(
     `SELECT * FROM devices WHERE status='online' AND NOT ssh_only ${siteFilter ? `AND ${siteFilter}` : ''}`
@@ -144,7 +144,7 @@ router.post('/check-all', requireWrite, async (req: Request, res: Response) => {
 });
 
 // POST /api/firmware/rollouts — create a rollout (optionally scheduled)
-router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
+router.post('/rollouts', requireWrite, async (req, res) => {
   const {
     name, halt_on_failure, pre_backup, routerboot_after, scheduled_at, scheduled_until, devices, start,
     wave_concurrency, package_source, post_template_id, kind: rawKind,
@@ -266,7 +266,7 @@ router.post('/rollouts', requireWrite, async (req: Request, res: Response) => {
  * Advisory only. It warns, it does not refuse: the operator may know the
  * topology better than the discovered links do.
  */
-router.get('/rollouts/upstream-check', async (req: Request, res: Response) => {
+router.get('/rollouts/upstream-check', async (req, res) => {
   const ids = String(req.query.ids || '')
     .split(',').map((v) => parseInt(v, 10)).filter(Number.isInteger);
   if (ids.length < 2) return res.json({ upstream: [] });
@@ -296,7 +296,7 @@ router.get('/rollouts/upstream-check', async (req: Request, res: Response) => {
 });
 
 // GET /api/firmware/rollouts — recent rollouts with progress counts
-router.get('/rollouts', async (req: Request, res: Response) => {
+router.get('/rollouts', async (req, res) => {
   // A rollout is shown when it touched at least one device in the active site.
   const memberFilter = siteScopeByDevice(activeSite(req), 'frd.device_id');
   // A site-scoped account sees only rollouts entirely within its sites (P1-7).
@@ -328,7 +328,7 @@ router.get('/rollouts', async (req: Request, res: Response) => {
 });
 
 // GET /api/firmware/rollouts/:id — full rollout detail
-router.get('/rollouts/:id', async (req: Request, res: Response) => {
+router.get('/rollouts/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const [rollout, devices] = await Promise.all([
     queryOne(`SELECT * FROM firmware_rollouts WHERE id=$1`, [id]),
@@ -342,7 +342,7 @@ router.get('/rollouts/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/firmware/rollouts/:id/start
-router.post('/rollouts/:id/start', requireWrite, async (req: Request, res: Response) => {
+router.post('/rollouts/:id/start', requireWrite, async (req, res) => {
   try {
     await firmwareOrchestrator.start(parseInt(req.params.id, 10));
     res.json({ ok: true });
@@ -367,7 +367,7 @@ const CHANGELOG_CACHE_MAX = 100;
  * channel clears the override and the devices follow the fleet setting again.
  * Takes effect at each device's next update check.
  */
-router.put('/channel', requireWrite, async (req: Request, res: Response) => {
+router.put('/channel', requireWrite, async (req, res) => {
   const { deviceIds, channel } = req.body as { deviceIds?: unknown; channel?: unknown };
   if (!Array.isArray(deviceIds) || deviceIds.length === 0 || !deviceIds.every((n) => Number.isInteger(n))) {
     return res.status(400).json({ error: 'deviceIds must be a non-empty list of device ids' });
@@ -382,7 +382,7 @@ router.put('/channel', requireWrite, async (req: Request, res: Response) => {
   return res.json({ updated: rows.length });
 });
 
-router.get('/changelog/:version', async (req: Request, res: Response) => {
+router.get('/changelog/:version', async (req, res) => {
   const version = String(req.params.version).trim();
   // RouterOS versions: 7.23.1, 7.16, 6.49.10, plus rc/beta suffixes (7.20rc3)
   if (!/^\d+\.\d+(\.\d+)?(rc\d+|beta\d+)?$/i.test(version)) {
@@ -418,7 +418,7 @@ router.get('/changelog/:version', async (req: Request, res: Response) => {
 
 // POST /api/firmware/rollouts/:id/cancel — stops before the next device (an
 // in-flight upgrade is never interrupted mid-write)
-router.post('/rollouts/:id/cancel', requireWrite, async (req: Request, res: Response) => {
+router.post('/rollouts/:id/cancel', requireWrite, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const rollout = await queryOne<{ status: string }>(`SELECT status FROM firmware_rollouts WHERE id=$1`, [id]);
   if (!rollout) return res.status(404).json({ error: 'Rollout not found' });

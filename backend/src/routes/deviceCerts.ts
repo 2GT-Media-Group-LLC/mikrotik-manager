@@ -28,7 +28,7 @@ function handle(res: Response, e: unknown): void {
 export type DeviceCertStatus = 'not_issued' | 'valid' | 'renewal_due' | 'expired' | 'renewal_failed';
 
 // GET / — the CA, its settings, and every device in view with its certificate.
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   const ca = await loadCa();
   const scope = siteScopeDevices(activeSite(req), 'd');
   const rows = await query<{
@@ -61,7 +61,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /ca { common_name, organization?, days }
-router.post('/ca', async (req: Request, res: Response) => {
+router.post('/ca', async (req, res) => {
   try {
     const b = req.body ?? {};
     await setUpCa({ commonName: String(b.common_name ?? ''), organization: b.organization ? String(b.organization) : undefined, days: Number(b.days) }, req.user?.username ?? null);
@@ -70,7 +70,7 @@ router.post('/ca', async (req: Request, res: Response) => {
 });
 
 // POST /ca/import { cert_pem, key_pem, passphrase? }
-router.post('/ca/import', async (req: Request, res: Response) => {
+router.post('/ca/import', async (req, res) => {
   try {
     const b = req.body ?? {};
     if (typeof b.cert_pem !== 'string' || typeof b.key_pem !== 'string') return fail(res, 400, 'cert_pem and key_pem are required');
@@ -80,12 +80,12 @@ router.post('/ca/import', async (req: Request, res: Response) => {
   } catch (e) { handle(res, e); }
 });
 
-router.delete('/ca', async (_req: Request, res: Response) => {
+router.delete('/ca', async (_req, res) => {
   try { await deleteCa(); res.json({ message: 'Certificate authority deleted' }); } catch (e) { handle(res, e); }
 });
 
 // GET /ca/certificate — the public CA certificate, for browsers and tools.
-router.get('/ca/certificate', async (_req: Request, res: Response) => {
+router.get('/ca/certificate', async (_req, res) => {
   const ca = await loadCa();
   if (!ca) return fail(res, 404, 'No certificate authority is set up.');
   res.setHeader('Content-Type', 'application/x-pem-file');
@@ -94,7 +94,7 @@ router.get('/ca/certificate', async (_req: Request, res: Response) => {
 });
 
 // PUT /settings { default_days?, renew_before_days?, auto_renew?, default_www? }
-router.put('/settings', async (req: Request, res: Response) => {
+router.put('/settings', async (req, res) => {
   try {
     const b = req.body ?? {};
     const num = (v: unknown) => (v === undefined ? undefined : Number(v));
@@ -111,7 +111,7 @@ async function inScope(req: Request, id: number): Promise<boolean> {
 }
 
 // POST /devices/:id/issue { days?, extra_names?, apply_www? } — also used to reissue with new settings.
-router.post('/devices/:id/issue', async (req: Request, res: Response) => {
+router.post('/devices/:id/issue', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || !(await inScope(req, id))) return fail(res, 404, 'Device not found');
   const b = req.body ?? {};
@@ -128,7 +128,7 @@ router.post('/devices/:id/issue', async (req: Request, res: Response) => {
   } catch (e) { handle(res, e); }
 });
 
-router.post('/devices/:id/renew', async (req: Request, res: Response) => {
+router.post('/devices/:id/renew', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || !(await inScope(req, id))) return fail(res, 404, 'Device not found');
   try {
@@ -138,7 +138,7 @@ router.post('/devices/:id/renew', async (req: Request, res: Response) => {
 });
 
 // DELETE /devices/:id[?forget=1]
-router.delete('/devices/:id', async (req: Request, res: Response) => {
+router.delete('/devices/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || !(await inScope(req, id))) return fail(res, 404, 'Device not found');
   try {

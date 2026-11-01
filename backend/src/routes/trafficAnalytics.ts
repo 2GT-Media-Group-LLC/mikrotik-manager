@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request } from 'express';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
@@ -61,7 +61,7 @@ function sanitizeMac(raw: string): string | null {
 }
 
 // GET /api/traffic/status — collector state for the config page
-router.get('/status', async (req: Request, res: Response) => {
+router.get('/status', async (req, res) => {
   const stats = netflowCollector.getStats();
   // The exporter list follows the site selector, like the charts (#236). A
   // site-scoped account's selection is always within its own sites (P1-7).
@@ -81,7 +81,7 @@ router.get('/status', async (req: Request, res: Response) => {
 });
 
 // GET /api/traffic/timeseries?range=24h — fleet-wide upload/download over time
-router.get('/timeseries', async (req: Request, res: Response) => {
+router.get('/timeseries', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const every = windowForRange(range);
   const queryApi = getQueryApi();
@@ -123,7 +123,7 @@ router.get('/timeseries', async (req: Request, res: Response) => {
 });
 
 // GET /api/traffic/top-clients?range=24h&limit=10 — top talkers with client names
-router.get('/top-clients', async (req: Request, res: Response) => {
+router.get('/top-clients', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const limit = Math.min(parseInt(String(req.query.limit || '10'), 10) || 10, 50);
   const queryApi = getQueryApi();
@@ -196,7 +196,7 @@ router.get('/top-clients', async (req: Request, res: Response) => {
 
 // GET /api/traffic/apps?range=24h&mac=xx:xx:.. — app-category byte totals
 // (fleet-wide, or for a single client when mac is given)
-router.get('/apps', async (req: Request, res: Response) => {
+router.get('/apps', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
   const queryApi = getQueryApi();
   const site = await siteFilter(req);
@@ -243,7 +243,7 @@ router.get('/apps', async (req: Request, res: Response) => {
 });
 
 // GET /api/traffic/client/:mac?range=24h — per-client time series + app breakdown
-router.get('/client/:mac', async (req: Request, res: Response) => {
+router.get('/client/:mac', async (req, res) => {
   const mac = sanitizeMac(req.params.mac);
   if (!mac) return res.status(400).json({ error: 'Invalid mac' });
   const range = rangeToFlux(String(req.query.range || '24h'));

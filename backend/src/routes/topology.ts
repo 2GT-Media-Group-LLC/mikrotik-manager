@@ -41,7 +41,7 @@ interface BridgeRow {
 }
 
 // GET /api/topology
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req, res) => {
   // Scope the graph to the active site. Links are filtered on their *from*
   // device: a link out of the site still shows, and resolves to an external
   // node, which is the honest picture of an uplink to somewhere else (#130).
@@ -224,7 +224,7 @@ function nodeFields(body: Record<string, unknown>): { name?: string; kind?: stri
 }
 
 // POST /api/topology/nodes — add a node the manager doesn't manage (#147)
-router.post('/nodes', requireWrite, async (req: Request, res: Response) => {
+router.post('/nodes', requireWrite, async (req, res) => {
   const target = targetSite(req);
   if (!target.ok) return res.status(target.status).json({ error: target.error });
   const f = nodeFields({ kind: 'other', ...req.body, name: req.body?.name ?? '' });
@@ -239,7 +239,7 @@ router.post('/nodes', requireWrite, async (req: Request, res: Response) => {
 });
 
 // PUT /api/topology/nodes/:id
-router.put('/nodes/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/nodes/:id', requireWrite, async (req, res) => {
   const node = await queryOne<TopoNodeRow>(`SELECT * FROM topology_nodes WHERE id = $1`, [req.params.id]);
   if (!node || !canWriteNode(req, node)) return res.status(404).json({ error: 'Node not found' });
   const f = nodeFields(req.body ?? {});
@@ -254,7 +254,7 @@ router.put('/nodes/:id', requireWrite, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/topology/nodes/:id — its links go with it
-router.delete('/nodes/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/nodes/:id', requireWrite, async (req, res) => {
   const node = await queryOne<TopoNodeRow>(`SELECT * FROM topology_nodes WHERE id = $1`, [req.params.id]);
   if (!node || !canWriteNode(req, node)) return res.status(404).json({ error: 'Node not found' });
   await query(`DELETE FROM topology_nodes WHERE id = $1`, [node.id]);
@@ -348,14 +348,14 @@ async function createHandLink(req: Request, res: Response, rawA: unknown, rawB: 
 }
 
 // POST /api/topology/hand-links { a: { kind, ref, name? }, b: { kind, ref, name? }, label? }
-router.post('/hand-links', requireWrite, async (req: Request, res: Response) => {
+router.post('/hand-links', requireWrite, async (req, res) => {
   await createHandLink(req, res, req.body?.a, req.body?.b, req.body?.label);
 });
 
 // DELETE /api/topology/hand-links/:id
 // PUT /api/topology/hand-links/:id { label?, a_port?, b_port? } — what's on
 // each end of a link drawn by hand (#260). null clears a field.
-router.put('/hand-links/:id', requireWrite, async (req: Request, res: Response) => {
+router.put('/hand-links/:id', requireWrite, async (req, res) => {
   const row = await queryOne<HandLinkRow>(`SELECT * FROM topology_hand_links WHERE id = $1`, [req.params.id]);
   if (!row || !canWriteLink(req, row)) return res.status(404).json({ error: 'Link not found' });
   const field = (k: string, max: number): string | null | undefined => {
@@ -376,7 +376,7 @@ router.put('/hand-links/:id', requireWrite, async (req: Request, res: Response) 
   return res.json(toHandLink(updated!));
 });
 
-router.delete('/hand-links/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/hand-links/:id', requireWrite, async (req, res) => {
   const row = await queryOne<HandLinkRow>(`SELECT * FROM topology_hand_links WHERE id = $1`, [req.params.id]);
   if (!row || !canWriteLink(req, row)) return res.status(404).json({ error: 'Link not found' });
   await query(`DELETE FROM topology_hand_links WHERE id = $1`, [row.id]);
@@ -384,7 +384,7 @@ router.delete('/hand-links/:id', requireWrite, async (req: Request, res: Respons
 });
 
 // POST /api/topology/discover
-router.post('/discover', requireWrite, async (req: Request, res: Response) => {
+router.post('/discover', requireWrite, async (req, res) => {
   // Only the devices in view: a site-scoped account can't trigger polls of other sites (P1-7).
   const scope = siteScopeDevices(writableScope(req));
   const devices = await query<{ id: number }>(`SELECT id FROM devices WHERE status='online' AND NOT ssh_only ${scope ? `AND ${scope}` : ''}`);
@@ -404,7 +404,7 @@ const MAX_LAYOUT_ENTRIES = 20_000;
 
 // PUT /api/topology/layout { positions?: { key: {x, y} }, anchors?: { key: {sourceHandle, targetHandle} | null } }
 // Merged into what is saved: keys not sent are left alone.
-router.put('/layout', requireWrite, async (req: Request, res: Response) => {
+router.put('/layout', requireWrite, async (req, res) => {
   const positions = (req.body?.positions ?? {}) as Record<string, { x?: unknown; y?: unknown }>;
   const anchors = (req.body?.anchors ?? {}) as Record<string, { sourceHandle?: unknown; targetHandle?: unknown } | null>;
   const colors = (req.body?.colors ?? {}) as Record<string, unknown>;
@@ -463,7 +463,7 @@ router.put('/layout', requireWrite, async (req: Request, res: Response) => {
 
 // POST /api/topology/layout/reset { keys: [...], edges: [...] } — forget the
 // arrangement of what's in view, so it is laid out automatically again.
-router.post('/layout/reset', requireWrite, async (req: Request, res: Response) => {
+router.post('/layout/reset', requireWrite, async (req, res) => {
   const keys = Array.isArray(req.body?.keys) ? (req.body.keys as unknown[]).map(String).filter((k) => LAYOUT_KEY.test(k)) : [];
   const edges = Array.isArray(req.body?.edges) ? (req.body.edges as unknown[]).map(String).filter((k) => LAYOUT_KEY.test(k)) : [];
   if (keys.length) await query(`DELETE FROM topology_positions WHERE node_key = ANY($1::text[])`, [keys.slice(0, MAX_LAYOUT_ENTRIES)]);
@@ -479,7 +479,7 @@ router.post('/layout/reset', requireWrite, async (req: Request, res: Response) =
 // discovery found really is (#260): a PC it labelled a switch, say. null
 // (or nothing set) goes back to what discovery says.
 const NEIGHBOUR_KINDS = new Set(['modem', 'cloud', 'router', 'firewall', 'switch', 'ap', 'server', 'nas', 'printer', 'camera', 'phone', 'computer', 'other']);
-router.put('/neighbours/:extId', requireWrite, async (req: Request, res: Response) => {
+router.put('/neighbours/:extId', requireWrite, async (req, res) => {
   const extId = req.params.extId;
   if (!EXTERNAL_REF.test(extId)) return res.status(400).json({ error: 'Not a neighbour id' });
   const name = req.body?.name == null || String(req.body.name).trim() === '' ? null : String(req.body.name).trim().slice(0, 255);
@@ -498,7 +498,7 @@ router.put('/neighbours/:extId', requireWrite, async (req: Request, res: Respons
 
 // POST /api/topology/hidden-links { key, label? } — hide a discovered link
 // (discussion #85). DELETE ?key= shows it again.
-router.post('/hidden-links', requireWrite, async (req: Request, res: Response) => {
+router.post('/hidden-links', requireWrite, async (req, res) => {
   const key = String(req.body?.key ?? '');
   if (!LAYOUT_KEY.test(key) || !key.startsWith('cable:')) return res.status(400).json({ error: 'key must be a discovered link id' });
   const label = req.body?.label == null ? null : String(req.body.label).slice(0, 300);
@@ -509,7 +509,7 @@ router.post('/hidden-links', requireWrite, async (req: Request, res: Response) =
   return res.json({ ok: true });
 });
 
-router.delete('/hidden-links', requireWrite, async (req: Request, res: Response) => {
+router.delete('/hidden-links', requireWrite, async (req, res) => {
   const key = String(req.query.key ?? '');
   if (!LAYOUT_KEY.test(key)) return res.status(400).json({ error: 'key must be a discovered link id' });
   await query(`DELETE FROM topology_hidden_links WHERE edge_key = $1`, [key]);
@@ -518,14 +518,14 @@ router.delete('/hidden-links', requireWrite, async (req: Request, res: Response)
 
 // POST /api/topology/manual-links { from_device_id, to_device_id, label? } — the
 // older form, for scripts: a hand-drawn link between two managed devices.
-router.post('/manual-links', requireWrite, async (req: Request, res: Response) => {
+router.post('/manual-links', requireWrite, async (req, res) => {
   const { from_device_id, to_device_id, label } = req.body as { from_device_id?: number; to_device_id?: number; label?: string };
   if (!from_device_id || !to_device_id) return res.status(400).json({ error: 'from_device_id and to_device_id are required' });
   await createHandLink(req, res, { kind: 'device', ref: from_device_id }, { kind: 'device', ref: to_device_id }, label);
 });
 
 // DELETE /api/topology/manual-links/:id — the same as DELETE /hand-links/:id
-router.delete('/manual-links/:id', requireWrite, async (req: Request, res: Response) => {
+router.delete('/manual-links/:id', requireWrite, async (req, res) => {
   const row = await queryOne<HandLinkRow>(`SELECT * FROM topology_hand_links WHERE id = $1`, [req.params.id]);
   if (!row || !canWriteLink(req, row)) return res.status(404).json({ error: 'Link not found' });
   await query(`DELETE FROM topology_hand_links WHERE id = $1`, [row.id]);

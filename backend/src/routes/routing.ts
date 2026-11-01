@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
@@ -12,7 +12,7 @@ router.use(requireAuth);
  * found (#279), across the fleet or the selected site, down ones first.
  * `?deviceId=` narrows it to one device.
  */
-router.get('/peers', async (req: Request, res: Response) => {
+router.get('/peers', async (req, res) => {
   const where: string[] = [];
   const params: unknown[] = [];
   const scope = siteScopeByDevice(activeSite(req), 'r.device_id');

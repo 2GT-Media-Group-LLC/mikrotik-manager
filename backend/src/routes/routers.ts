@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
@@ -17,12 +17,12 @@ router.use(maskSecretsForReadOnly);
 // GET /api/routers/lldp — LLDP status per online router in the active site.
 // Kept for API callers; the UI uses /api/network-services/lldp, which covers
 // every device type.
-router.get('/lldp', async (req: Request, res: Response) => {
+router.get('/lldp', async (req, res) => {
   res.json(await getLldpStatuses(['router'], activeSite(req)));
 });
 
 // PUT /api/routers/lldp — enable or disable LLDP on online routers in the active site
-router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
+router.put('/lldp', requireWrite, async (req, res) => {
   const { enabled } = req.body;
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ error: '"enabled" (boolean) is required' });
@@ -31,14 +31,14 @@ router.put('/lldp', requireWrite, async (req: Request, res: Response) => {
 });
 
 // GET /api/routers/snmp — SNMP config/status per online router
-router.get('/snmp', async (req: Request, res: Response) => {
+router.get('/snmp', async (req, res) => {
   // Kept for existing API users; the page uses /api/network-services/snmp,
   // which covers every device type.
   res.json(await getSnmpStatuses(activeSite(req), ['router']));
 });
 
 // PUT /api/routers/snmp — apply SNMP config to all online routers
-router.put('/snmp', requireWrite, async (req: Request, res: Response) => {
+router.put('/snmp', requireWrite, async (req, res) => {
   // See services/snmpApply.ts: per-device variables, blanks left alone, and
   // only the active site's devices.
   try {

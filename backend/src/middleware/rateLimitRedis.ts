@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import type { ParamsDictionary } from 'express-serve-static-core';
 import { limiterRedis } from '../config/redis';
 import { query } from '../config/database';
 
@@ -77,6 +78,12 @@ async function limited(res: Response, key: string, windowSec: number, max: numbe
 }
 
 /**
+ * Generic over the route's params, so a route behind a limiter keeps the
+ * param types Express 5 infers from its path.
+ */
+type Middleware = <P = ParamsDictionary>(req: Request<P>, res: Response, next: NextFunction) => void;
+
+/**
  * Fixed-window rate limit using Redis INCR (shared across API replicas).
  */
 export function rateLimitRedis(options: {
@@ -85,9 +92,9 @@ export function rateLimitRedis(options: {
   keyPrefix: string;
   /** When true, applies to all HTTP methods instead of only mutating ones. */
   allMethods?: boolean;
-}): (req: Request, res: Response, next: NextFunction) => void {
+}): Middleware {
   const { windowSec, max, keyPrefix, allMethods = false } = options;
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return async <P>(req: Request<P>, res: Response, next: NextFunction): Promise<void> => {
     if (!allMethods && !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
       next();
       return;
@@ -124,8 +131,8 @@ async function getLoginLimits(): Promise<{ windowSec: number; max: number }> {
  * Per-IP rate limiter for the login endpoint. Limits are read from app_settings
  * (login_rate_limit_window_sec / login_rate_limit_max) with a 60-second cache.
  */
-export function loginRateLimit(): (req: Request, res: Response, next: NextFunction) => void {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+export function loginRateLimit(): Middleware {
+  return async <P>(req: Request<P>, res: Response, next: NextFunction): Promise<void> => {
     const ip = req.ip || 'unknown';
     const key = `rl:login:ip:${ip}`;
     const { windowSec, max } = await getLoginLimits();
