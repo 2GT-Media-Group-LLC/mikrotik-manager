@@ -1,6 +1,6 @@
 import { Router, Request } from 'express';
 import { wirelessDeviceSql, radioDeviceSql } from '../services/mikrotik/capsman';
-import { deviceSiteAccess, deviceIdParam, deviceIdQuery, devicesDenied } from '../utils/siteAccess';
+import { deviceSiteAccess, deviceIdParam, deviceIdQuery, devicesDenied, strictIdList } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import { query } from '../config/database';
@@ -49,13 +49,15 @@ async function getAP(id: number): Promise<DeviceRow | null> {
 
 // POST /api/wireless/ssid/bulk — create the same SSID on multiple APs simultaneously
 router.post('/ssid/bulk', requireWrite, async (req, res) => {
-  const { apIds, ...ssidBody } = req.body as { apIds: number[] } & Record<string, unknown>;
+  const { apIds: rawApIds, ...ssidBody } = req.body as { apIds: unknown } & Record<string, unknown>;
 
-  if (!Array.isArray(apIds) || apIds.length === 0) {
-    return res.status(400).json({ error: '"apIds" must be a non-empty array' });
+  // Parsed once, and the same ids checked and used (GHSA-j9x4-qwcj-p8v8).
+  const apIds = strictIdList(rawApIds);
+  if (!apIds || apIds.length === 0) {
+    return res.status(400).json({ error: '"apIds" must be a non-empty array of device ids' });
   }
   // Every AP must be one the caller operates (P1-7).
-  if (req.user?.siteRoles && (await devicesDenied(req.user, apIds.map(Number), 'operator')).length > 0) {
+  if (req.user?.siteRoles && (await devicesDenied(req.user, apIds, 'operator')).length > 0) {
     return res.status(404).json({ error: 'Some of those access points were not found.' });
   }
   if (!ssidBody.ssid) {

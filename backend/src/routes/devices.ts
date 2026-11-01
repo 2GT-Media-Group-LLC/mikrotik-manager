@@ -4,7 +4,7 @@ import { readSshInfo, refreshOverSsh, checkApi, promoteToApi, recordApiCheck, ty
 import { describeSshFailure } from '../utils/sshOnly';
 import net from 'net';
 import { Router, Request, Response } from 'express';
-import { deviceSiteAccess, deviceIdParam, devicesDenied } from '../utils/siteAccess';
+import { deviceSiteAccess, deviceIdParam, devicesDenied, roleOnDevice, roleAtLeast, strictId } from '../utils/siteAccess';
 import { bulkUpdateCredentials } from '../services/bulkCredentials';
 import { deviceSettings } from '../services/pollSettings';
 import { validateOverrides } from '../utils/pollOverrides';
@@ -193,20 +193,38 @@ router.get('/routers/overview', async (req, res) => {
  *
  * `device_id` omitted suppresses fleet-wide; supplying one silences that device only.
  */
-router.get('/security/suppressions', async (_req, res) => {
+// A site-scoped account sees and changes only its own sites' device mutes; a
+// fleet-wide mute is for fleet accounts (GHSA-j9x4-qwcj-p8v8).
+router.get('/security/suppressions', async (req, res) => {
+  const own = req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null;
   const rows = await query(`
     SELECT s.id, s.check_id, s.device_id, s.reason, s.created_by, s.created_at,
            d.name AS device_name
     FROM security_check_suppressions s
     LEFT JOIN devices d ON d.id = s.device_id
-    ORDER BY s.check_id, d.name NULLS FIRST`);
+    ${own ? 'WHERE s.device_id IS NULL OR d.site_id = ANY($1::int[])' : ''}
+    ORDER BY s.check_id, d.name NULLS FIRST`, own ? [own] : []);
   res.json(rows);
 });
 
+/** Whether this account may mute or unmute a check on `deviceId` (null: fleet-wide). */
+async function maySuppress(req: Request, deviceId: number | null): Promise<boolean> {
+  if (!req.user?.siteRoles) return true;
+  if (deviceId === null) return false;
+  return roleAtLeast(await roleOnDevice(req.user, deviceId), 'operator');
+}
+
 router.post('/security/suppressions', requireWrite, async (req, res) => {
-  const { check_id, device_id, reason } = req.body as
-    { check_id?: string; device_id?: number | null; reason?: string };
+  const { check_id, device_id: rawDeviceId, reason } = req.body as
+    { check_id?: string; device_id?: unknown; reason?: string };
   if (!check_id) return res.status(400).json({ error: 'check_id is required' });
+  const device_id = rawDeviceId === undefined || rawDeviceId === null ? null : strictId(rawDeviceId);
+  if (rawDeviceId != null && device_id === null) return res.status(400).json({ error: 'device_id must be a device id' });
+  if (!(await maySuppress(req, device_id))) {
+    return res.status(device_id === null ? 403 : 404).json({
+      error: device_id === null ? 'Only a fleet-wide account can mute a check for every device.' : 'Device not found',
+    });
+  }
 
   const rows = await query(
     `INSERT INTO security_check_suppressions (check_id, device_id, reason, created_by)
@@ -224,6 +242,8 @@ router.post('/security/suppressions', requireWrite, async (req, res) => {
 });
 
 router.delete('/security/suppressions/:id', requireWrite, async (req, res) => {
+  const mute = await queryOne<{ device_id: number | null }>(`SELECT device_id FROM security_check_suppressions WHERE id = $1`, [req.params.id]);
+  if (mute && !(await maySuppress(req, mute.device_id))) return res.status(404).json({ error: 'Not found' });
   const gone = await query<{ device_id: number | null }>(`DELETE FROM security_check_suppressions WHERE id = $1 RETURNING device_id`, [req.params.id]);
   const deviceId = gone[0]?.device_id;
   await query(`DELETE FROM device_live_cache WHERE kind = 'posture'${deviceId ? ' AND device_id = $1' : ''}`, deviceId ? [deviceId] : []);

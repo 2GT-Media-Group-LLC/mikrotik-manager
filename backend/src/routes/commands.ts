@@ -6,7 +6,7 @@
  * able to see what will happen first.
  */
 import { Router } from 'express';
-import { devicesDenied, type Role } from '../utils/siteAccess';
+import { devicesDenied, guardIdParams, strictIdList, type Role } from '../utils/siteAccess';
 import type { Request, Response } from 'express';
 import { requireAuth, requireWrite, isSiteScoped } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
@@ -16,6 +16,8 @@ import { commandRunner } from '../services/CommandRunner';
 
 const router = Router();
 router.use(requireAuth);
+// Run ids are plain numbers, read the same way by the site check and the handler.
+guardIdParams(router, ['id'], 'Run not found');
 
 import { assessCommand } from '../utils/commandRisk';
 import { spreadsheetSafe } from '../utils/csvSafe';
@@ -31,7 +33,7 @@ import { refuseSecrets } from '../utils/secretAccess';
  * Site-scoped accounts (P1-7): every device named must be one the account can
  * act on at `min`. Answers as "not found" so other sites' ids stay hidden.
  */
-async function refuseForeignDevices(req: Request, res: Response, ids: number[], min: Role): Promise<boolean> {
+async function refuseForeignDevices(req: Request, res: Response, ids: readonly unknown[], min: Role): Promise<boolean> {
   if (!isSiteScoped(req.user)) return false;
   const denied = await devicesDenied(req.user!, ids, min);
   if (denied.length === 0) return false;
@@ -57,6 +59,8 @@ router.post('/preview', async (req, res) => {
     return res.status(400).json({ error: 'device_ids array is required' });
   }
   if (await refuseForeignDevices(req, res, device_ids, 'viewer')) return;
+  // The ids checked are the ids used (GHSA-j9x4-qwcj-p8v8).
+  if (!strictIdList(device_ids)) return res.status(400).json({ error: 'device_ids must be device ids' });
 
   const size = Math.max(1, Math.min(50, Number(wave_size) || 1));
   const devices = await query<{ id: number; name: string; ip_address: string; status: string }>(
@@ -97,6 +101,7 @@ router.post('/runs', requireWrite, async (req, res) => {
     return res.status(400).json({ error: 'device_ids array is required' });
   }
   if (await refuseForeignDevices(req, res, device_ids, 'operator')) return;
+  if (!strictIdList(device_ids)) return res.status(400).json({ error: 'device_ids must be device ids' });
   // {{secret:name}} (#259): fleet admins only, and every name must exist.
   const secretRefusal = await refuseSecrets(req, command);
   if (secretRefusal) return res.status(secretRefusal.status).json({ error: secretRefusal.error });

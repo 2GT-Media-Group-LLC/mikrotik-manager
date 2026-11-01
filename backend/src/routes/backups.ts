@@ -1,6 +1,6 @@
 import { Router, Request } from 'express';
 import { decodedPath } from '../utils/requestPath';
-import { resourceSiteAccess } from '../utils/siteAccess';
+import { resourceSiteAccess, guardIdParams } from '../utils/siteAccess';
 import * as fs from 'fs';
 import * as path from 'path';
 import { query, queryOne } from '../config/database';
@@ -21,6 +21,8 @@ const isAdmin = (req: Request) => req.user?.role === 'admin';
 
 const router = Router();
 router.use(requireAuth);
+// Ids are plain numbers, read the same way by the site check and the handler (GHSA-j9x4-qwcj-p8v8).
+guardIdParams(router, ['id', 'fromId', 'toId'], 'Backup not found');
 
 const backupService = new BackupService();
 

@@ -1,7 +1,7 @@
 import { loadBondMembers } from '../services/topology/bondMembers';
 import { decodedPath } from '../utils/requestPath';
 import { Router } from 'express';
-import { resourceSiteAccess } from '../utils/siteAccess';
+import { resourceSiteAccess, guardIdParams, strictIdList } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
 import { isUpdateChannel, UPDATE_CHANNELS } from '../utils/updateChannel';
 import { requireAuth, requireWrite } from '../middleware/auth';
@@ -18,6 +18,8 @@ import { refuseSecrets } from '../utils/secretAccess';
 
 const router = Router();
 router.use(requireAuth);
+// Ids are plain numbers, read the same way by the site check and the handler (GHSA-j9x4-qwcj-p8v8).
+guardIdParams(router, ['id'], 'Rollout not found');
 
 // GET /api/firmware/overview — fleet versions + latest rollout
 // A site-scoped account reaches only rollouts and devices in its own sites
@@ -32,16 +34,16 @@ router.use(resourceSiteAccess(async (req) => {
     return rows.map((r) => r.device_id);
   }
   if (req.method === 'POST' && path === '/rollouts') {
-    const devices = (req.body as { devices?: { device_id: number }[] })?.devices;
-    return Array.isArray(devices) ? devices.map((d) => Number(d.device_id)) : null;
+    const devices = (req.body as { devices?: { device_id: unknown }[] })?.devices;
+    return Array.isArray(devices) ? strictIdList(devices.map((d) => d?.device_id)) ?? [] : null;
   }
   if (req.method === 'PUT' && path === '/channel') {
     const ids = (req.body as { deviceIds?: unknown })?.deviceIds;
-    return Array.isArray(ids) ? ids.map(Number) : null;
+    return Array.isArray(ids) ? strictIdList(ids) ?? [] : null;
   }
   if (path === '/rollouts/upstream-check') {
-    const ids = String(req.query.ids || '').split(',').map((v) => parseInt(v, 10)).filter(Number.isInteger);
-    return ids.length ? ids : null;
+    const raw = String(req.query.ids || '');
+    return raw ? strictIdList(raw.split(',')) ?? [] : null;
   }
   return null;
 }, 'Rollout not found'));

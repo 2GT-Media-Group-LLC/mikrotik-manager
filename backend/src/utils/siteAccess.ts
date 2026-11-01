@@ -6,7 +6,7 @@
  * devices in other sites. Routes answer "not found" for a device the account
  * can't see, so it can't learn which ids exist elsewhere.
  */
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction, Router } from 'express';
 import { decodedPath } from './requestPath';
 import { query, queryOne } from '../config/database';
 import type { AuthPayload } from '../middleware/auth';
@@ -16,6 +16,63 @@ const RANK: Record<string, number> = { viewer: 0, operator: 1, admin: 2 };
 
 export function roleAtLeast(role: string | null | undefined, min: Role): boolean {
   return (RANK[role ?? ''] ?? -1) >= RANK[min];
+}
+
+/** Largest value of a Postgres integer id. */
+const MAX_ID = 2_147_483_647;
+
+/**
+ * An id as the database stores it: a positive whole number, or a string of
+ * digits only. Anything else (" 20", "+20", "0x14", "20x", 20.5, an array) is
+ * null. Postgres and parseInt would each read some of those as 20, so a site
+ * check and a handler that parse an id differently could look at different
+ * devices (GHSA-j9x4-qwcj-p8v8). Every check and handler reads ids through this.
+ */
+export function strictId(raw: unknown): number | null {
+  if (typeof raw === 'number') return Number.isSafeInteger(raw) && raw > 0 && raw <= MAX_ID ? raw : null;
+  if (typeof raw === 'string' && /^\d{1,10}$/.test(raw)) {
+    const n = Number(raw);
+    return n > 0 && n <= MAX_ID ? n : null;
+  }
+  return null;
+}
+
+/** A list of strict ids, or null if it isn't an array or any entry isn't one. */
+export function strictIdList(raw: unknown): number[] | null {
+  if (!Array.isArray(raw)) return null;
+  const ids: number[] = [];
+  for (const v of raw) {
+    const id = strictId(v);
+    if (id === null) return null;
+    ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Answer "not found" for any of the named route parameters that isn't a strict
+ * id, before a handler can read it another way (GHSA-j9x4-qwcj-p8v8).
+ */
+export function guardIdParams(router: Router, names: string[], notFound = 'Not found'): void {
+  for (const name of names) {
+    router.param(name, (_req, res, next, value) => {
+      if (strictId(String(value)) === null) { res.status(404).json({ error: notFound }); return; }
+      next();
+    });
+  }
+}
+
+/**
+ * A site-scoped account's role for this request. The first site check sets it;
+ * a later check on the same request can only lower it, never raise it, so a
+ * second id (a ?deviceId= next to a path id) can't lift the role the first one
+ * set (GHSA-j9x4-qwcj-p8v8).
+ */
+const narrowed = new WeakSet<Request>();
+function narrowRole(req: Request, role: string): void {
+  const user = req.user!;
+  if (!narrowed.has(req) || !roleAtLeast(role, user.role as Role)) user.role = role as typeof user.role;
+  narrowed.add(req);
 }
 
 /** The account's role on a device in `siteId`, or null for no access. */
@@ -37,13 +94,16 @@ export async function roleOnDevice(user: AuthPayload, deviceId: number): Promise
  * The devices in `ids` the account may not act on at `min`, including ids that
  * don't exist. Empty means all allowed.
  */
-export async function devicesDenied(user: AuthPayload, ids: number[], min: Role): Promise<number[]> {
-  const wanted = [...new Set(ids.filter((n) => Number.isSafeInteger(n) && n > 0))];
-  if (wanted.length === 0) return [];
+export async function devicesDenied(user: AuthPayload, ids: readonly unknown[], min: Role): Promise<unknown[]> {
+  // An entry that isn't a strict id is refused, not skipped: dropped, it left
+  // nothing to check while the handler still found the device (GHSA-j9x4-qwcj-p8v8).
+  const malformed = ids.filter((v) => strictId(v) === null);
+  const wanted = [...new Set(ids.map(strictId).filter((n): n is number => n !== null))];
+  if (wanted.length === 0) return malformed;
   const rows = await query<{ id: number; site_id: number | null }>(
     `SELECT id, site_id FROM devices WHERE id = ANY($1::int[])`, [wanted]);
   const siteOf = new Map(rows.map((r) => [r.id, r.site_id]));
-  return wanted.filter((id) => !siteOf.has(id) || !roleAtLeast(roleInSite(user, siteOf.get(id) ?? null), min));
+  return [...malformed, ...wanted.filter((id) => !siteOf.has(id) || !roleAtLeast(roleInSite(user, siteOf.get(id) ?? null), min))];
 }
 
 /**
@@ -62,7 +122,7 @@ export function deviceSiteAccess(getDeviceId: (req: Request) => number | null) {
     try {
       const role = await roleOnDevice(user, deviceId);
       if (!role) { res.status(404).json({ error: 'Device not found' }); return; }
-      user.role = role;
+      narrowRole(req, role);
       next();
     } catch {
       res.status(503).json({ error: 'Could not check access to the device.' });
@@ -79,15 +139,27 @@ export function deviceSiteAccess(getDeviceId: (req: Request) => number | null) {
 export function deviceIdParam(req: Request): number | null {
   const path = decodedPath(req);
   if (path === null) return NaN;
-  const m = /^\/(\d+)(?:\/|$)/.exec(path);
-  return m ? parseInt(m[1], 10) : null;
+  const first = path.split('/')[1] ?? '';
+  // A first segment that starts like a number but isn't a plain id ("+20",
+  // "0x14", "20x") is refused, not treated as a route with no device.
+  if (!/^[+-]?\d/.test(first)) return null;
+  return strictId(first) ?? NaN;
 }
 
-/** Device id from ?deviceId= or body.deviceId. */
+/**
+ * Device id from ?deviceId= or body.deviceId; null when neither is given.
+ * NaN (refused) when either isn't a strict id, or when both are given and
+ * differ, so the id checked is the one any handler reads (GHSA-j9x4-qwcj-p8v8).
+ */
 export function deviceIdQuery(req: Request): number | null {
-  const raw = req.query.deviceId ?? (req.body as { deviceId?: unknown } | undefined)?.deviceId;
-  const id = parseInt(String(raw ?? ''), 10);
-  return Number.isFinite(id) && id > 0 ? id : null;
+  const given = (v: unknown) => v !== undefined && v !== null && v !== '';
+  const q = req.query.deviceId;
+  const b = (req.body as { deviceId?: unknown } | undefined)?.deviceId;
+  const qId = given(q) ? strictId(q) : null;
+  const bId = given(b) ? strictId(b) : null;
+  if ((given(q) && qId === null) || (given(b) && bId === null)) return NaN;
+  if (qId !== null && bId !== null && qId !== bId) return NaN;
+  return qId ?? bId;
 }
 
 /**
@@ -110,7 +182,7 @@ export function resourceSiteAccess(resolve: (req: Request) => Promise<number[] |
         if (!role) { res.status(404).json({ error: notFound }); return; }
         if (lowest === null || !roleAtLeast(role, lowest as Role)) lowest = role;
       }
-      user.role = lowest!;
+      narrowRole(req, lowest!);
       next();
     } catch {
       res.status(503).json({ error: 'Could not check access.' });

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { devicesDenied } from '../utils/siteAccess';
+import { devicesDenied, strictIdList, guardIdParams } from '../utils/siteAccess';
 import { cleanOverrides, validateOverrides, resolveEffective } from '../utils/pollOverrides';
 import { globalSettings } from '../services/pollSettings';
 import { query, queryOne, transaction } from '../config/database';
@@ -9,6 +9,8 @@ import { accountsOnlyReaching } from '../utils/siteRoles';
 
 const router = Router();
 router.use(requireAuth);
+// Ids are plain numbers, read the same way by the site check and the handler (GHSA-j9x4-qwcj-p8v8).
+guardIdParams(router, ['id'], 'Site not found');
 
 const MAX_NAME = 120;
 
@@ -282,8 +284,8 @@ router.post('/:id/devices', requireWrite, async (req, res) => {
     res.status(400).json({ error: 'deviceIds array required' });
     return;
   }
-  const ids = deviceIds.map((d) => parseInt(String(d), 10)).filter(Number.isInteger);
-  if (ids.length === 0) { res.status(400).json({ error: 'deviceIds array required' }); return; }
+  const ids = strictIdList(deviceIds);
+  if (!ids || ids.length === 0) { res.status(400).json({ error: 'deviceIds must be device ids' }); return; }
 
   const site = await queryOne<{ id: number }>(`SELECT id FROM sites WHERE id = $1`, [id]);
   if (!site) { res.status(404).json({ error: 'Site not found' }); return; }

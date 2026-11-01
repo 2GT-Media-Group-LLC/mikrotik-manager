@@ -7,6 +7,7 @@
  * account limited to particular sites sees the groups its sites are in, with
  * only those sites listed.
  */
+import { guardIdParams } from '../utils/siteAccess';
 import { Router, Request, Response } from 'express';
 import { query, queryOne, transaction } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
@@ -15,6 +16,8 @@ import { accountsOnlyReaching } from '../utils/siteRoles';
 
 const router = Router();
 router.use(requireAuth);
+// Ids are plain numbers, read the same way by the site check and the handler (GHSA-j9x4-qwcj-p8v8).
+guardIdParams(router, ['id'], 'Site group not found');
 
 const MAX_NAME = 120;
 

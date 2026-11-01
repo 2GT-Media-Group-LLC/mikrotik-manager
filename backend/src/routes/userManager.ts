@@ -11,7 +11,7 @@ import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { activeSite } from '../middleware/site';
 import { siteScopeDevices } from '../utils/siteScope';
-import { deviceSiteAccess, deviceIdParam } from '../utils/siteAccess';
+import { deviceSiteAccess, deviceIdParam, guardIdParams } from '../utils/siteAccess';
 import { readUserManager, removeSession } from '../services/userManager';
 import { isItemId } from '../utils/userManager';
 import type { DeviceRow } from '../services/mikrotik/DeviceCollector';
@@ -19,6 +19,8 @@ import { RouterOSTrapError } from '../services/mikrotik/RouterOSClient';
 
 const router = Router();
 router.use(requireAuth);
+// Ids are plain numbers, read the same way by the site check and the handler (GHSA-j9x4-qwcj-p8v8).
+guardIdParams(router, ['id'], 'Device not found');
 
 router.get('/', async (req, res) => {
   const scope = siteScopeDevices(activeSite(req));
