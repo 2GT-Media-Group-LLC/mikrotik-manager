@@ -7,6 +7,7 @@ import path from 'path';
 import { Client as SSHClient, Server as SSHServer, utils as sshUtils } from 'ssh2';
 import { query, queryOne } from '../../config/database';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
+import { connectPreferringSsl, API_PORT, API_SSL_PORT } from '../mikrotik/apiConnect';
 import https from 'https';
 import {
   openForwardedChannel, sshRoute, routeOf, dropJumpHost, trustNewJumpHostKey, testJumpHost, jumpHostStatus,
@@ -114,10 +115,16 @@ interface JumpServer {
 /**
  * The jump router. `forwarding: false` is RouterOS without forwarding-enabled;
  * `forwardDelayMs` is a router slow to reach the device, `loginDelayMs` one
- * slow to accept the login.
+ * slow to accept the login. `acceptsFirst` forwards as RouterOS does: it
+ * confirms the channel before connecting onward, and closes it if that fails
+ * (OpenSSH, the default here, refuses the channel instead). `ports` sends a
+ * forward for one port to another, for the API's fixed ports.
  */
 async function startJumpServer(
-  opts: { forwarding?: boolean; hostKey?: string; forwardDelayMs?: number; loginDelayMs?: number; ignoresGlobalRequests?: boolean } = {},
+  opts: {
+    forwarding?: boolean; hostKey?: string; forwardDelayMs?: number; loginDelayMs?: number; ignoresGlobalRequests?: boolean;
+    acceptsFirst?: boolean; ports?: Record<number, number>;
+  } = {},
 ): Promise<JumpServer> {
   const s: JumpServer = { port: 0, connections: 0, logins: 0, authMethods: [], forwards: [], channelsClosed: 0, close: async () => {} };
   // Closed with the server: the manager keeps its jump connection open.
@@ -142,15 +149,16 @@ async function startJumpServer(
       client.on('tcpip', (accept, reject, info) => {
         s.forwards.push(`${info.destIP}:${info.destPort}`);
         setTimeout(() => {
-          const sock = net.connect(info.destPort, info.destIP);
+          const sock = net.connect(opts.ports?.[info.destPort] ?? info.destPort, info.destIP);
           open.add(sock);
+          const early = opts.acceptsFirst ? accept() : null;
           sock.once('connect', () => {
-            const ch = accept();
+            const ch = early ?? accept();
             sock.pipe(ch).pipe(sock);
             ch.on('error', () => sock.destroy());
             ch.on('close', () => { s.channelsClosed++; sock.destroy(); });
           });
-          sock.once('error', () => reject());
+          sock.once('error', () => (early ? early.close() : reject()));
         }, opts.forwardDelayMs ?? 0);
       });
     });
@@ -617,6 +625,73 @@ const tlsPair = makeCert();
     } finally {
       await jump.close();
       await device.close();
+    }
+  });
+});
+
+// GHSA-63v6-w7qf-349f: API-SSL is tried first and the plain API only when
+// API-SSL isn't there. Through a jump host that still holds, whichever way the
+// jump host reports a port the device doesn't answer on.
+describe('API-SSL first, then the plain API, through a jump host', () => {
+  async function deadPort(): Promise<number> {
+    const dead = net.createServer();
+    await new Promise<void>((r) => dead.listen(0, '127.0.0.1', r));
+    const port = (dead.address() as AddressInfo).port;
+    await new Promise<void>((r) => dead.close(() => r()));
+    return port;
+  }
+
+  for (const [style, acceptsFirst] of [['a RouterOS', true], ['an OpenSSH', false]] as const) {
+    it(`uses the plain API through ${style} jump host when the device has API-SSL off`, async () => {
+      const device = await startDevice();
+      const jump = await startJumpServer({ acceptsFirst, ports: { [API_SSL_PORT]: await deadPort(), [API_PORT]: device.port } });
+      try {
+        addJumpHost(acceptsFirst ? 40 : 41, jump.port);
+        const r = await connectPreferringSsl('127.0.0.1', 'admin', 'secret', { jumpHostId: acceptsFirst ? 40 : 41, sslTimeoutMs: 3_000 });
+        expect(r.port).toBe(API_PORT);
+        expect(r.sslError).toBeTruthy();
+        // One after the other, both through the jump host.
+        expect(jump.forwards).toEqual([`127.0.0.1:${API_SSL_PORT}`, `127.0.0.1:${API_PORT}`]);
+        expect(device.received()).toContain('=password=secret');
+        r.client.disconnect();
+      } finally {
+        await jump.close();
+        await device.close();
+      }
+    });
+  }
+
+  it('fails with the jump host as the reason when it is down, and contacts no device', async () => {
+    const device = await startDevice();
+    try {
+      addJumpHost(42, await deadPort(), { name: 'edge-rtr' });
+      const err = await connectPreferringSsl('127.0.0.1', 'admin', 'secret', { jumpHostId: 42 }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(JumpHostError);
+      expect((err as Error).message).toMatch(/Jump host "edge-rtr" .* is unreachable/);
+      expect(device.connections).toBe(0);
+    } finally {
+      await device.close();
+    }
+  });
+
+  (tlsPair ? it : it.skip)('uses API-SSL through the jump host when the device has it, and never opens the plain API', async () => {
+    const sslDevice = await startDevice(tlsPair!);
+    const plainDevice = await startDevice();
+    const jump = await startJumpServer({ acceptsFirst: true, ports: { [API_SSL_PORT]: sslDevice.port, [API_PORT]: plainDevice.port } });
+    const verifier = RouterOSClient.tlsVerifier;
+    RouterOSClient.tlsVerifier = async () => {};
+    try {
+      addJumpHost(43, jump.port);
+      const r = await connectPreferringSsl('127.0.0.1', 'admin', 'secret', { jumpHostId: 43 });
+      expect(r.port).toBe(API_SSL_PORT);
+      expect(jump.forwards).toEqual([`127.0.0.1:${API_SSL_PORT}`]);
+      expect(plainDevice.connections).toBe(0);
+      r.client.disconnect();
+    } finally {
+      RouterOSClient.tlsVerifier = verifier;
+      await jump.close();
+      await sslDevice.close();
+      await plainDevice.close();
     }
   });
 });

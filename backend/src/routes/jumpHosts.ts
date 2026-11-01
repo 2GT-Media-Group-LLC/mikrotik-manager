@@ -8,6 +8,7 @@ import { checkPort } from '../utils/apiTls';
 import { normalizeDeviceAddress } from '../utils/deviceAddress';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
 import { sshFingerprintDisplay } from '../services/identityPins';
+import { strictId } from '../utils/siteAccess';
 import {
   dropJumpHost, jumpHostStatus, parseHostKeyFingerprint, testJumpHost, trustNewJumpHostKey, type JumpHostRow,
 } from '../services/jumpHosts';
@@ -88,8 +89,8 @@ async function loadRow(id: number): Promise<Row | null> {
 async function requestedSite(v: unknown): Promise<number | null | undefined | 'bad'> {
   if (v === undefined) return undefined;
   if (v === null || v === '') return null;
-  const id = Number(v);
-  if (!Number.isInteger(id) || id <= 0) return 'bad';
+  const id = strictId(v);
+  if (id === null) return 'bad';
   const site = await queryOne<{ id: number }>(`SELECT id FROM sites WHERE id = $1`, [id]);
   return site ? id : 'bad';
 }
@@ -143,6 +144,7 @@ async function invalid(b: Body, caller: PresetCaller, siteId: number | null, pre
     return 'The host key fingerprint must be SHA256:… as ssh-keygen -l prints it, or 64 hex digits.';
   }
   if (presetId != null) {
+    if (strictId(presetId) === null) return 'credential_preset_id must be a credential preset id.';
     const preset = await queryOne<{ site_id: number | null; allow_operator_use: boolean }>(
       `SELECT site_id, allow_operator_use FROM credential_presets WHERE id = $1`, [presetId]);
     if (!preset) return 'That credential preset does not exist.';
@@ -205,8 +207,8 @@ router.post('/', mutationLimiter, async (req, res) => {
 /** The jump host the request names, when the caller may manage it; otherwise the response is sent. */
 async function managed(req: Request<{ id: string }>, res: Response): Promise<{ row: Row; caller: PresetCaller } | null> {
   const caller = presetCaller(req.user);
-  const id = parseInt(req.params.id, 10);
-  const row = Number.isFinite(id) ? await loadRow(id) : null;
+  const id = strictId(req.params.id);
+  const row = id !== null ? await loadRow(id) : null;
   if (!row || !visible(caller, row)) { res.status(404).json({ error: NOT_FOUND }); return null; }
   if (!canManagePresetSite(caller, row.site_id)) { res.status(403).json({ error: MANAGE_REFUSED }); return null; }
   return { row, caller };

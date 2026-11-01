@@ -5,6 +5,8 @@ jest.mock('../../config/redis', () => ({
     expire: jest.fn().mockResolvedValue(1),
     ttl: jest.fn().mockResolvedValue(60),
   },
+  // The rate limiters' connection: every request is the first in its window.
+  limiterRedis: () => ({ eval: jest.fn().mockResolvedValue([1, 60_000]) }),
 }));
 jest.mock('../../middleware/auth', () => ({
   requireAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -24,7 +26,7 @@ import express from 'express';
 import { utils as sshUtils } from 'ssh2';
 import jumpHostsRoutes from '../jumpHosts';
 import { query, queryOne } from '../../config/database';
-import { dropJumpHost } from '../../services/jumpHosts';
+import { dropJumpHost, chooseJumpHost } from '../../services/jumpHosts';
 
 const mockedQuery = jest.mocked(query);
 const mockedQueryOne = jest.mocked(queryOne);
@@ -212,5 +214,40 @@ describe('DELETE /:id', () => {
   it("is not found for an account that can't see it", async () => {
     answer([[/FROM jump_hosts j/, row({ site_id: 6 })]]);
     expect((await request(makeApp(siteAdmin)).delete('/7')).status).toBe(404);
+  });
+});
+
+// GHSA-j9x4-qwcj-p8v8: ids are digits only, as upstream reads them everywhere.
+describe('ids are read strictly', () => {
+  it('finds no jump host for a path id that only starts with digits', async () => {
+    answer([[/FROM jump_hosts j/, row()]]);
+    const app = makeApp(fleetAdmin);
+    for (const id of ['7abc', '0x7', '7.0', '-7', '1e1']) {
+      expect((await request(app).put(`/${id}`).send({ name: 'x' })).status).toBe(404);
+      expect((await request(app).delete(`/${id}`)).status).toBe(404);
+    }
+    expect(mockedQuery.mock.calls.some(([sql]) => /UPDATE jump_hosts|DELETE FROM jump_hosts/.test(String(sql)))).toBe(false);
+  });
+
+  it('refuses a site or credential preset id that is not one', async () => {
+    answer([[/FROM sites WHERE id/, { id: 5 }], [/FROM credential_presets WHERE id/, { site_id: null, allow_operator_use: true }]]);
+    const app = makeApp(fleetAdmin);
+    for (const site_id of ['5x', '0x5', true, 5.5]) {
+      const res = await request(app).post('/').send({ name: 'r', host: '10.0.0.1', username: 'u', password: 'p', site_id });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Unknown site');
+    }
+    const preset = await request(app).post('/').send({ name: 'r', host: '10.0.0.1', site_id: 5, credential_preset_id: '9abc' });
+    expect(preset.status).toBe(400);
+    expect(preset.body.error).toMatch(/credential preset id/);
+  });
+
+  it("refuses a device's jump_host_id that is not an id", async () => {
+    answer([[/FROM jump_hosts WHERE id/, { site_id: null }]]);
+    for (const v of ['7abc', '0x7', '1e0', true, 7.5]) {
+      await expect(chooseJumpHost(v, null, { siteDefault: false })).rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/must be a jump host id/) });
+    }
+    await expect(chooseJumpHost('7', null, { siteDefault: false })).resolves.toBe(7);
+    await expect(chooseJumpHost(7, null, { siteDefault: false })).resolves.toBe(7);
   });
 });

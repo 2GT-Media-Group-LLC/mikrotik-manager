@@ -64,9 +64,10 @@ an adopted device is reached the way the neighbour it was adopted through is. Th
 changes devices already in the site, so the jump router itself, and anything reachable directly,
 stays as it is.
 
-Changing a device's route counts as changing its address: a non-admin has to enter the device's
-password again, because the same address behind a different jump host can be a different
-router.
+Changing a device's route counts as changing its address, because the same address behind a
+different jump host can be a different router. So the same rule applies
+([Devices](devices.md)): anyone but a fleet admin has to enter the device's API password, and its
+saved passwords stay behind.
 
 ## When the jump host is down
 

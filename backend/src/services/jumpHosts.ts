@@ -33,6 +33,7 @@ import type { Duplex } from 'stream';
 import { Client as SSHClient, type ClientChannel } from 'ssh2';
 import { query, queryOne } from '../config/database';
 import { decrypt } from '../utils/crypto';
+import { strictId } from '../utils/siteAccess';
 import { normalizeFingerprint, sshFingerprintDisplay, sshHostKeyFingerprint } from './identityPins';
 
 export interface JumpHostRow {
@@ -92,9 +93,9 @@ export async function chooseJumpHost(value: unknown, siteId: number | null, opts
     return site?.default_jump_host_id ?? null;
   }
   if (value === null || value === '') return null;
-  const id = Number(value);
+  const id = strictId(value);
   const fail = (message: string) => Object.assign(new Error(message), { statusCode: 400 });
-  if (!Number.isInteger(id) || id < 1) throw fail('jump_host_id must be a jump host id, or null for a direct connection.');
+  if (id === null) throw fail('jump_host_id must be a jump host id, or null for a direct connection.');
   const row = await queryOne<{ site_id: number | null }>(`SELECT site_id FROM jump_hosts WHERE id = $1`, [id]);
   if (!row) throw fail(`Jump host ${id} not found.`);
   if (row.site_id != null) {
@@ -410,11 +411,17 @@ export async function openForwardedChannel(
   const { client, entry, row } = await jumpClient(jumpHostId);
   // In use from here, so the idle sweep leaves the connection alone while the channel opens.
   entry.lastUsed = Date.now();
+  // A device that doesn't take the connection fails with the code it would
+  // have directly (ECONNREFUSED, ETIMEDOUT), so callers read the two alike:
+  // API-SSL that isn't there falls back to the plain API through the jump host
+  // as it does directly (GHSA-63v6-w7qf-349f), whatever words the jump host used.
+  const deviceFailure = (message: string, code: string | undefined, cause?: Error) =>
+    Object.assign(new Error(message, cause ? { cause } : undefined), code ? { code } : {});
   return new Promise<ClientChannel>((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
       settled = true;
-      reject(new Error(`${label(row)} could not connect to ${host}:${port}: no answer within ${Math.max(1, Math.round(timeoutMs / 1000))}s`));
+      reject(deviceFailure(`${label(row)} could not connect to ${host}:${port}: no answer within ${Math.max(1, Math.round(timeoutMs / 1000))}s`, 'ETIMEDOUT'));
     }, timeoutMs);
     const failed = (err: Error & { reason?: number | string }) => {
       // RFC 4254 reason codes; the description that comes with them may be empty.
@@ -423,9 +430,12 @@ export async function openForwardedChannel(
           '/ip ssh set forwarding-enabled=local', { cause: err }));
       } else {
         // The jump host is up; what it couldn't reach is the device.
-        const detail = err.message.replace(/^\(SSH\) Channel open failure:\s*/, '').trim()
+        const said = err.message.replace(/^\(SSH\) Channel open failure:\s*/, '').trim();
+        const detail = said
           || (err.reason === OPEN_CONNECT_FAILED ? 'nothing accepted the connection' : 'the jump host could not open the connection');
-        reject(new Error(`${label(row)} could not connect to ${host}:${port}: ${detail}`, { cause: err }));
+        const code = /timed? ?out/i.test(said) ? 'ETIMEDOUT'
+          : /refused/i.test(said) || (!said && err.reason === OPEN_CONNECT_FAILED) ? 'ECONNREFUSED' : undefined;
+        reject(deviceFailure(`${label(row)} could not connect to ${host}:${port}: ${detail}`, code, err));
       }
     };
     try {
