@@ -6,7 +6,7 @@ import { escapeHtml } from '../utils/html';
 import { outageOverlapsSql, outageSecondsSql } from '../utils/outageWindow';
 import { openConfig } from '../utils/alertChannelSecrets';
 import nodemailer from 'nodemailer';
-import { smtpTransportOptions } from '../utils/smtpTransport';
+import { smtpTransportOptions, describeSmtpError } from '../utils/smtpTransport';
 import { query, queryOne } from '../config/database';
 
 interface ScheduleRow {
@@ -76,7 +76,7 @@ export class ReportService {
       to: recipients.join(', '),
       subject: `MikroTik Manager — ${schedule.frequency} network report`,
       html,
-    });
+    }).catch((e) => { throw describeSmtpError(e); });
     console.log(`[Reports] sent "${schedule.name}" to ${recipients.length} recipient(s)`);
   }
 

@@ -26,3 +26,27 @@ export function smtpTransportOptions(cfg: Record<string, unknown>): SMTPTranspor
     requireTLS: verify && !secure && !!auth,
   };
 }
+
+const CERT_CODES = new Set([
+  'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'CERT_HAS_EXPIRED', 'ERR_TLS_CERT_ALTNAME_INVALID',
+]);
+
+/**
+ * A sending error in words an admin can act on. Node's own text for an
+ * untrusted certificate suggests restarting Node with a flag, which isn't
+ * something anyone running the manager can do.
+ */
+export function describeSmtpError(err: unknown): Error {
+  const e = err as Error & { code?: string; cause?: { code?: string } };
+  const code = e?.code && CERT_CODES.has(e.code) ? e.code : e?.cause?.code;
+  if ((code && CERT_CODES.has(code)) || /self[- ]signed certificate|unable to verify|certificate has expired|altnames/i.test(e?.message ?? '')) {
+    return new Error("The mail server's certificate isn't trusted (self-signed, expired, or for another name). "
+      + "If it's your own server, untick \"Check the server's certificate\" on the email channel.");
+  }
+  if (/STARTTLS/i.test(e?.message ?? '')) {
+    return new Error("The mail server doesn't offer STARTTLS, so the login wasn't sent. Use port 465 with TLS/SSL, "
+      + "or untick \"Check the server's certificate\" on the email channel to send without encryption.");
+  }
+  return e instanceof Error ? e : new Error(String(err));
+}
