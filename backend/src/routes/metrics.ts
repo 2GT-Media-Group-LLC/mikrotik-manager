@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { decodedPath } from '../utils/requestPath';
 import { outageLengthSeconds, outageOverlapsSql, outageSecondsInWindow, outageSecondsSql } from '../utils/outageWindow';
-import { deviceSiteAccess } from '../utils/siteAccess';
+import { deviceSiteAccess, guardIdParams } from '../utils/siteAccess';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { query } from '../config/database';
 import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
@@ -13,6 +13,8 @@ import { latestResources, latestInterfaceCounters } from '../services/latestMetr
 
 const router = Router();
 router.use(requireAuth);
+// Ids are plain numbers, read the same way by the site check and the handler (GHSA-j9x4-qwcj-p8v8).
+guardIdParams(router, ['deviceId'], 'Device not found');
 // Per-device metrics: a site-scoped account only reaches its own sites' devices (P1-7).
 router.use(deviceSiteAccess((req) => {
   // Decoded, as the handler's :id is (GHSA-6xq3-q9m5-7hxp); NaN is refused.

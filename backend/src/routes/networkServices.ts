@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { deviceSiteAccess, deviceIdQuery } from '../utils/siteAccess';
+import { deviceSiteAccess, deviceIdQuery, strictId } from '../utils/siteAccess';
 import { deviceWriteLock, deviceIdFromQuery } from '../services/changeGuard/deviceLock';
 import { withGuardedChange } from '../services/changeGuard/guardedRoute';
 import type { PlannedChange } from '../services/changeGuard/analyzeChange';
@@ -60,7 +60,8 @@ async function withDevice<T>(
 }
 
 function deviceIdParam(req: Request, res: Response): number | null {
-  const id = parseInt(req.query.deviceId as string);
+  // Read as the site check reads it (GHSA-j9x4-qwcj-p8v8): "0x14" is not 20.
+  const id = strictId(req.query.deviceId);
   if (!id) { res.status(400).json({ error: 'deviceId query param is required' }); return null; }
   return id;
 }

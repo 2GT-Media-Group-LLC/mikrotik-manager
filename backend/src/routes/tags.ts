@@ -1,11 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { decodedPath } from '../utils/requestPath';
-import { resourceSiteAccess } from '../utils/siteAccess';
+import { resourceSiteAccess, guardIdParams, strictIdList } from '../utils/siteAccess';
 import { query } from '../config/database';
 import { requireAuth, requireWrite, requireAdmin } from '../middleware/auth';
 
 const router = Router();
 router.use(requireAuth);
+// Ids are plain numbers, read the same way by the site check and the handler (GHSA-j9x4-qwcj-p8v8).
+guardIdParams(router, ['id', 'deviceId'], 'Not found');
 // Tagging devices, or reading one device's tags, is limited to the account's
 // own sites for a site-scoped account (P1-7).
 router.use(resourceSiteAccess(async (req) => {
@@ -16,7 +18,7 @@ router.use(resourceSiteAccess(async (req) => {
   if (one) return [parseInt(one[1], 10)];
   if (req.method === 'POST' && /^\/\d+\/devices\/?$/.test(path)) {
     const ids = (req.body as { deviceIds?: unknown })?.deviceIds;
-    return Array.isArray(ids) ? ids.map(Number) : null;
+    return Array.isArray(ids) ? strictIdList(ids) ?? [] : null;
   }
   return null;
 }, 'Device not found'));
