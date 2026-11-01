@@ -4,9 +4,13 @@ const redisUrl = process.env.REDIS_URL || 'redis://redis:6379';
 // Optional Redis auth (outside review O3), passed outside the URL so any
 // characters work. Set REDIS_PASSWORD in .env; compose gives it to both sides.
 const auth = process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {};
+// ioredis 6 speaks RESP3 by default. Every connection here, BullMQ's included,
+// stays on RESP2, the protocol BullMQ's scripts and our pub/sub ran on under
+// ioredis 5: RESP3 changes some reply shapes and gains us nothing.
+const base = { ...auth, protocol: 2 as const };
 
 export const redis = new Redis(redisUrl, {
-  ...auth,
+  ...base,
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   lazyConnect: true,
@@ -23,7 +27,7 @@ redis.on('connect', () => {
 // Separate connection for BullMQ (requires maxRetriesPerRequest: null)
 export function createRedisConnection(): Redis {
   return new Redis(redisUrl, {
-    ...auth,
+    ...base,
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: true,
@@ -40,7 +44,7 @@ let limiterConnection: Redis | null = null;
 export function limiterRedis(): Redis {
   if (!limiterConnection) {
     limiterConnection = new Redis(redisUrl, {
-      ...auth,
+      ...base,
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
       enableReadyCheck: false,
