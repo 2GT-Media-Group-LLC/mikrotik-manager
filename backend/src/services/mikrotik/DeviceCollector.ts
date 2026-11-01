@@ -1,3 +1,4 @@
+import { compareRosVersions } from '../../utils/rosVersion';
 import type { BgpConnectionInput } from '../../utils/bgpConnection';
 import { routingPeersFrom } from '../../utils/routingPeers';
 import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
@@ -751,6 +752,12 @@ export class DeviceCollector {
       const model = rb['model'] || info['board-name'] || null;
       const serial = rb['serial-number'] || null;
       const firmware = rb['current-firmware'] || rb['factory-firmware'] || null;
+      // RouterBOOT no longer pending: the installed firmware is at least the one
+      // RouterOS offers. Cleared here on every poll, as RouterOS updates are
+      // below; only the firmware check sets it, so its alert still fires once (#372).
+      const rbCurrent = (rb['current-firmware'] || '').trim();
+      const rbUpgrade = (rb['upgrade-firmware'] || '').trim();
+      const routerbootCurrent = rbCurrent && rbUpgrade ? compareRosVersions(rbUpgrade, rbCurrent) <= 0 : false;
 
       await query(
         `UPDATE devices SET
@@ -780,6 +787,8 @@ export class DeviceCollector {
                  AND NULLIF($5,'') = latest_ros_version THEN FALSE
             ELSE firmware_update_available
           END,
+          routerboard_upgrade_available = CASE WHEN $12::boolean THEN FALSE ELSE routerboard_upgrade_available END,
+          upgrade_firmware_version = CASE WHEN $12::boolean THEN NULLIF($13, '') ELSE upgrade_firmware_version END,
           updated_at = NOW()
         WHERE id = $6`,
         // Cut to the columns (P2-20): an identity over 100 characters failed
@@ -787,7 +796,7 @@ export class DeviceCollector {
         [fit(identityName, 100), fit(model, 100), fit(serial, 50), fit(firmware, 50), fit(rosVersion, 20), this.device.id,
          fit(clock[0]?.['time-zone-name'] || null, 64), fit(clock[0]?.['gmt-offset'] || null, 16),
          fit(info['architecture-name'] || null, 32), installedPackages && installedPackages.length ? installedPackages : null,
-         fit(identity[0]?.['name'] || null, 255)]
+         fit(identity[0]?.['name'] || null, 255), routerbootCurrent, fit(rbUpgrade, 50)]
       );
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect system info:`, err);
@@ -5768,7 +5777,9 @@ export class DeviceCollector {
     const rb = (result[0] as Record<string, string>) || {};
     const currentFirmware = (rb['current-firmware'] || '').trim();
     const upgradeFirmware = (rb['upgrade-firmware'] || '').trim();
-    const upgradeAvailable = Boolean(upgradeFirmware && currentFirmware && upgradeFirmware !== currentFirmware);
+    // Newer, not just different: after a RouterOS downgrade RouterOS offers an
+    // older RouterBOOT than the one installed, which isn't an upgrade (#372).
+    const upgradeAvailable = Boolean(upgradeFirmware && currentFirmware && compareRosVersions(upgradeFirmware, currentFirmware) > 0);
     return { currentFirmware, upgradeFirmware, upgradeAvailable };
   }
 

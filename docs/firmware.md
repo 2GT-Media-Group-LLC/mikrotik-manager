@@ -67,6 +67,11 @@ scheduling and cancelling work as for any rollout; there are no post-upgrade com
 RouterBOOT ships inside the RouterOS package, so the version a device can upgrade to is the one
 that came with its RouterOS. Upgrade RouterOS first if you want a newer bootloader.
 
+A RouterBOOT upgrade counts as pending only when the version RouterOS offers is newer than the
+one installed, and the flag clears at the next poll once it's done, including when it was done
+outside the manager. Before 1.0.1 it stayed until the next firmware check, and after a RouterOS
+downgrade an older RouterBOOT was listed as an upgrade (#372).
+
 Steps 3 and 5 exist because of a specific failure. `/system/package/update/install`
 bundles download and reboot into one call whose progress cannot be observed, and a
 CCR2216 was seen to accept it, do neither, and report nothing. That surfaced as

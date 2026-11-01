@@ -172,6 +172,23 @@ describe('collectSystemInfo', () => {
     expect(params[0]).toBe('Office router');
     expect(params[10]).toBe('MikroTik');
   });
+
+  // #372: RouterBOOT stayed "pending" after it was upgraded, until the next
+  // firmware check. The poll now clears it; it never sets it.
+  it.each([
+    ['7.25', '7.25', true], ['7.25', '7.24.5', true], ['7.24.5', '7.25', false],
+  ])('RouterBOOT %s with %s offered: clears the pending flag = %s', async (current, offered, clears) => {
+    const collector = new DeviceCollector(testDevice);
+    const responses: Record<string, Record<string, string>[]> = {
+      '/system/resource/print': resourceRow, '/system/clock/print': clockRow,
+      '/system/routerboard/print': [{ model: 'RB750Gr3', 'current-firmware': current, 'upgrade-firmware': offered }],
+    };
+    (collector as unknown as { client: { execute: jest.Mock } }).client.execute = jest.fn((p: string) => Promise.resolve(responses[p] ?? []));
+    await collector.collectSystemInfo();
+    const [sql, params] = (query as jest.Mock).mock.calls[0];
+    expect(sql).toContain('routerboard_upgrade_available = CASE WHEN $12::boolean THEN FALSE');
+    expect(params[11]).toBe(clears);
+  });
 });
 
 // ── setSnmpConfig: fleet changes touch only what was chosen (P1-11, P2-13) ──
@@ -838,5 +855,24 @@ describe('a recorded wireless role isn\'t dropped on one bad read (#365)', () =>
     const c = make({ id: 105, wifi_role: 'none', wifi_role_probe: 4 }, rb5009([{ enabled: 'yes' }]));
     await c.collectWirelessInterfaces();
     expect(sql('UPDATE devices SET wifi_role')[0][1].slice(0, 3)).toEqual([105, 'controller', 'wifi']);
+  });
+});
+
+// ── RouterBOOT upgrade pending (#372) ─────────────────────────────────────────
+
+describe('checkRouterboardUpgrade', () => {
+  const withRouterboard = (current: string, upgrade: string) => {
+    const c = new DeviceCollector(testDevice);
+    (c as unknown as { client: { execute: jest.Mock } }).client.execute =
+      jest.fn(async () => [{ 'current-firmware': current, 'upgrade-firmware': upgrade }]);
+    return c;
+  };
+
+  it('is pending only when RouterOS offers a newer RouterBOOT', async () => {
+    expect((await withRouterboard('7.24.5', '7.25').checkRouterboardUpgrade()).upgradeAvailable).toBe(true);
+    expect((await withRouterboard('7.25', '7.25').checkRouterboardUpgrade()).upgradeAvailable).toBe(false);
+    // After a RouterOS downgrade the offered firmware is older: not an upgrade.
+    expect((await withRouterboard('7.25', '7.24.5').checkRouterboardUpgrade()).upgradeAvailable).toBe(false);
+    expect((await withRouterboard('7.24', '7.24.0').checkRouterboardUpgrade()).upgradeAvailable).toBe(false);
   });
 });
