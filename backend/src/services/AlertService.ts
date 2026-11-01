@@ -1,6 +1,6 @@
 import { escapeHtml } from '../utils/html';
 import nodemailer from 'nodemailer';
-import { smtpTransportOptions } from '../utils/smtpTransport';
+import { smtpTransportOptions, describeSmtpError } from '../utils/smtpTransport';
 import * as https from 'https';
 import * as http from 'http';
 import { query } from '../config/database';
@@ -280,7 +280,7 @@ export class AlertService {
   </div>
 </div>`;
 
-    await transport.sendMail({ from, to: recipients.join(', '), subject, html });
+    await transport.sendMail({ from, to: recipients.join(', '), subject, html }).catch((e) => { throw describeSmtpError(e); });
   }
 
   private async sendSlack(

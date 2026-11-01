@@ -1,4 +1,4 @@
-import { smtpTransportOptions } from '../smtpTransport';
+import { smtpTransportOptions, describeSmtpError } from '../smtpTransport';
 
 const base = { smtp_host: 'mail.example', smtp_user: 'u', smtp_pass: 'p' };
 
@@ -21,5 +21,19 @@ describe('smtpTransportOptions', () => {
     const o = smtpTransportOptions({ ...base, smtp_tls_verify: false });
     expect(o.tls).toEqual({ rejectUnauthorized: false });
     expect(o.requireTLS).toBe(false);
+  });
+});
+
+describe('describeSmtpError', () => {
+  it('explains an untrusted certificate and points at the checkbox', () => {
+    const e = Object.assign(new Error('self-signed certificate; if the root CA is installed locally, try running Node.js with --use-system-ca'),
+      { code: 'ESOCKET', cause: { code: 'DEPTH_ZERO_SELF_SIGNED_CERT' } });
+    expect(describeSmtpError(e).message).toMatch(/Check the server's certificate/);
+  });
+  it('explains a server without STARTTLS', () => {
+    expect(describeSmtpError(new Error('No STARTTLS support')).message).toMatch(/port 465/);
+  });
+  it('passes other errors through', () => {
+    expect(describeSmtpError(new Error('Invalid login: 535')).message).toBe('Invalid login: 535');
   });
 });
