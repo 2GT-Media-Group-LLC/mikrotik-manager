@@ -1,3 +1,22 @@
+# MikroTik Manager 1.1 (beta)
+
+1.1 is in beta on the `dev` branch and the `:beta` images
+([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
+
+## 1.1.0-beta.1
+
+No new features yet. This beta upgrades the major libraries underneath the app, so they get
+tested before the 1.1 features land on top of them: Express 5, BullMQ 6 and ioredis 6,
+openid-client 6 (SSO), recharts 3, zustand 5 and TypeScript 6. Pages, charts and sign-in
+should look and work as they did on 1.0. If something doesn't,
+[open an issue](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues) and say you're
+on the beta.
+
+One thing to check if you use SSO: the **Issuer URL** has to be the issuer your provider
+names in its discovery document. A trailing slash either way is fine, but an IP address or a
+different hostname for the same provider is now refused, and **Test discovery** gives the URL
+to use instead ([SSO / OIDC](sso-oidc.md)). Signing in with the local admin isn't affected.
+
 # MikroTik Manager 1.0
 
 Released on Sunday 1 November 2026, after a week of release candidates (1.0.0-rc.1 to rc.9)
