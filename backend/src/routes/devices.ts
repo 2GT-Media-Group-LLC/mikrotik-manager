@@ -725,12 +725,21 @@ router.put('/:id', requireWrite, async (req, res) => {
   // prevent. So a non-admin moving a device must supply the password; admins
   // already hold full control and may reuse the stored one.
   // Fleet admins only: this sends the saved password to the new address (P1-6, P1-7).
-  if (ipChanged && !api_password && !presetReplacesApiCreds && (req.user?.role !== 'admin' || isSiteScoped(req.user))) {
+  const restrictedMove = !!ipChanged && (req.user?.role !== 'admin' || isSiteScoped(req.user));
+  if (restrictedMove && !api_password && !presetReplacesApiCreds) {
     return res.status(400).json({
       error: "Enter the device's API password to change its address. The saved password is only sent to the address it was saved for.",
       code: 'password_required_for_address_change',
     });
   }
+
+  // Nor does any other saved password follow the device there: entering some
+  // API password used to be enough, and the saved SSH password then went to
+  // the new address, at once for an SSH-only device and at the next backup or
+  // terminal session otherwise (GHSA-63v6-w7qf-349f). After such a move the
+  // device has only the passwords given now; SSH uses the API one unless an
+  // SSH password was given too.
+  const keepSavedSshPassword = !restrictedMove;
 
   // Added over SSH only (#174): there is no API to log in to yet, so a new
   // address or SSH login is checked over SSH instead.
@@ -744,6 +753,7 @@ router.put('/:id', requireWrite, async (req, res) => {
         ssh_port,
         ssh_username: ssh_username || existing.ssh_username || existing.api_username,
         ssh_password_encrypted: ssh_password ? encrypt(ssh_password)
+          : !keepSavedSshPassword ? encrypt(api_password)
           : existing.ssh_password_encrypted || existing.api_password_encrypted,
       });
     } catch (err) {
@@ -783,12 +793,12 @@ router.put('/:id', requireWrite, async (req, res) => {
        api_username=COALESCE($5,api_username), api_password_encrypted=$6,
        ssh_port=COALESCE($7,ssh_port),
        ssh_username=CASE WHEN $13 THEN $8 ELSE COALESCE($8,ssh_username) END,
-       ssh_password_encrypted=CASE WHEN $13 THEN $9 ELSE COALESCE($9,ssh_password_encrypted) END,
+       ssh_password_encrypted=CASE WHEN $13 OR $15 THEN $9 ELSE COALESCE($9,ssh_password_encrypted) END,
        device_type=COALESCE($10,device_type), notes=COALESCE($11,notes),
        api_tls=$14,
        updated_at=NOW()
      WHERE id = $12`,
-    [name, nameLockedUpdate, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id, replaceSsh, api_tls]
+    [name, nameLockedUpdate, ip_address, api_port, api_username, encPass, ssh_port, ssh_username, encSshPass, device_type, notes, req.params.id, replaceSsh, api_tls, !keepSavedSshPassword]
   );
 
   // Unlocking asks to follow the router's identity again — resync promptly

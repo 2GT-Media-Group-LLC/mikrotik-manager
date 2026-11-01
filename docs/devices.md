@@ -27,8 +27,10 @@ address with a port sent through the API: it is used as the API port, and refuse
 different port is also given.
 
 Leave **API Port** blank and the manager tries **API-SSL (8729) first**, falling back to the
-plain API (8728) if the device doesn't offer it. Both are tried at once, so a device without
-API-SSL isn't slower to add. A port you enter, or one in the credential preset, is used as
+plain API (8728) only if API-SSL isn't available (turned off, firewalled, or without a
+certificate). If API-SSL answers but refuses the login, or presents a different certificate from
+the one pinned, the manager stops there rather than trying the plain API. Before 1.0.1 both were
+tried at once, which sent the password unencrypted even when API-SSL worked. A port you enter, or one in the credential preset, is used as
 given. The plain API sends the login unencrypted on every poll, so a device that ended up on
 8728 is listed on the [Security page](security.md#encrypted-management-api-ssl), where it
 can be switched over. Choosing 8728 for a public address still shows a warning.
@@ -214,6 +216,13 @@ Before 0.30.0 presets were fleet-wide only and lived under Settings.
 **Edit Device** offers the same presets (#259): picking one replaces the device's login, SSH login
 included, with the preset's. The manager logs in with it first, and nothing is saved if that
 fails.
+
+**Changing a device's address.** Anyone but a fleet admin has to enter the device's API password
+(or pick a preset) to move it to another address, and the saved passwords stay behind: after the
+move the device has only the passwords entered with it, and SSH uses the API password unless an
+SSH password was entered too. So moving a device can't send its saved passwords to a host
+someone else runs. A fleet admin may move a device with its saved passwords. Before 1.0.1 any API
+password was accepted and the saved SSH password went to the new address.
 
 ### Changing the login for many devices
 

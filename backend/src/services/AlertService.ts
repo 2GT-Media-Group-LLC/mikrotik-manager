@@ -1,5 +1,6 @@
 import { escapeHtml } from '../utils/html';
 import nodemailer from 'nodemailer';
+import { smtpTransportOptions } from '../utils/smtpTransport';
 import * as https from 'https';
 import * as http from 'http';
 import { query } from '../config/database';
@@ -249,10 +250,7 @@ export class AlertService {
     ctx: AlertContext
   ): Promise<void> {
     const host      = cfg.smtp_host as string;
-    const port      = (cfg.smtp_port as number) || 587;
-    const secure    = !!(cfg.smtp_secure);
     const user      = cfg.smtp_user as string | undefined;
-    const pass      = cfg.smtp_pass as string | undefined;
     const from      = (cfg.from_address as string) || user || 'alerts@mikrotik-manager';
     const recipients = (cfg.recipients as string[]) || [];
 
@@ -260,13 +258,7 @@ export class AlertService {
       throw new Error('Email channel missing smtp_host or recipients');
     }
 
-    const transport = nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: user && pass ? { user, pass } : undefined,
-      tls: { rejectUnauthorized: false },
-    });
+    const transport = nodemailer.createTransport(smtpTransportOptions(cfg));
 
     const label   = EVENT_LABELS[eventType] ?? eventType;
     const subject = `[Mikrotik Manager] ${label}`;

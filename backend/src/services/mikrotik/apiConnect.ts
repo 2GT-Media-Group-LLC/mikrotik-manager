@@ -2,10 +2,12 @@
  * Connect to a device's API, preferring API-SSL (outside review P1-4).
  *
  * The plain API (8728) sends the login in the clear on every poll. When no port
- * was chosen, API-SSL (8729) is tried first and the plain API is the fallback,
- * both at once so a device without API-SSL costs no extra wait.
+ * was chosen, API-SSL (8729) is tried first, and the plain API only if API-SSL
+ * isn't available.
  */
 import { RouterOSClient } from './RouterOSClient';
+import { IdentityMismatchError } from '../identityPins';
+import { classifyApiFailure } from '../../utils/sshOnly';
 
 export const API_PORT = 8728;
 export const API_SSL_PORT = 8729;
@@ -19,24 +21,34 @@ export interface PreferredConnection {
 
 export async function connectPreferringSsl(
   address: string, username: string, password: string,
-  opts: { sslTimeoutMs?: number; plainTimeoutMs?: number } = {},
+  opts: { sslTimeoutMs?: number; plainTimeoutMs?: number; sslOnly?: boolean } = {},
 ): Promise<PreferredConnection> {
+  // One after the other, never both at once: the plain API sends the login in
+  // the clear as soon as its socket opens, so trying it alongside API-SSL gave
+  // the password away even when API-SSL worked (GHSA-63v6-w7qf-349f).
   const ssl = new RouterOSClient(address, API_SSL_PORT, username, password, opts.sslTimeoutMs ?? 6_000);
-  const plain = new RouterOSClient(address, API_PORT, username, password, opts.plainTimeoutMs ?? 10_000);
-  const sslAttempt = ssl.connect().then(() => ssl);
-  const plainAttempt = plain.connect().then(() => plain);
-  // Whichever isn't used must not surface later as an unhandled rejection.
-  plainAttempt.catch(() => {});
-
+  let sslErr: unknown;
   try {
-    const client = await sslAttempt;
-    void plainAttempt.then((c) => c.disconnect(), () => {});
-    return { client, port: API_SSL_PORT };
-  } catch (sslErr) {
+    await ssl.connect();
+    return { client: ssl, port: API_SSL_PORT };
+  } catch (err) {
     ssl.disconnect();
-    const client = await plainAttempt; // its error is the one worth reporting
-    return { client, port: API_PORT, sslError: describeSslFailure(sslErr) };
+    sslErr = err;
   }
+  // The plain API only when API-SSL isn't there to use (off, firewalled, no
+  // certificate). A refused login or a changed certificate is the answer, and
+  // a device known to have used API-SSL is never moved back to the plain API.
+  if (opts.sslOnly || !sslUnavailable(sslErr)) throw sslErr;
+  const plain = new RouterOSClient(address, API_PORT, username, password, opts.plainTimeoutMs ?? 10_000);
+  await plain.connect();
+  return { client: plain, port: API_PORT, sslError: describeSslFailure(sslErr) };
+}
+
+/** API-SSL isn't there to use, as opposed to answering and refusing. */
+export function sslUnavailable(err: unknown): boolean {
+  if (err instanceof IdentityMismatchError) return false;
+  const kind = classifyApiFailure(err).kind;
+  return kind === 'unreachable' || kind === 'tls';
 }
 
 /** Why API-SSL didn't work, in words someone can act on. */
