@@ -130,3 +130,41 @@ describe('device-local dates for short stamps', () => {
     expect(iso(parseDeviceLogTime('20:30:00', { gmtOffset: '-04:00' }, now))).toBe('2026-10-02T00:30:00.000Z');
   });
 });
+
+// A log poll converts every line in the device's buffer. Making a new
+// Intl.DateTimeFormat for each conversion cost about a second of CPU per device
+// per poll, and stalled the backend when a site's devices read logs together.
+describe('zone formatters are reused', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const madeFor = (spy: jest.SpyInstance, zone: string) =>
+    spy.mock.calls.filter(([, opts]) => (opts as Intl.DateTimeFormatOptions | undefined)?.timeZone === zone).length;
+
+  it('makes one formatter for a zone, not one per line', () => {
+    const spy = jest.spyOn(Intl, 'DateTimeFormat');
+    // A zone no other test uses, so nothing is cached for it yet.
+    const clock = { timeZoneName: 'Pacific/Chatham' };
+    for (let i = 0; i < 200; i++) {
+      expect(parseDeviceLogTime(`2026-09-03 08:${String(i % 60).padStart(2, '0')}:00`, clock, NOW)).not.toBeNull();
+    }
+    expect(madeFor(spy, 'Pacific/Chatham')).toBe(1);
+  });
+
+  it('keeps zones apart, and daylight saving right, when they take turns', () => {
+    // Pacific/Auckland is on NZST (+12) in July and NZDT (+13) in January.
+    for (let i = 0; i < 3; i++) {
+      expect(parseDeviceLogTime('2026-07-01 12:00:00', LA, NOW)!.toISOString()).toBe('2026-07-01T19:00:00.000Z');
+      expect(parseDeviceLogTime('2026-09-03 15:00:00', JAKARTA, NOW)!.toISOString()).toBe('2026-09-03T08:00:00.000Z');
+      expect(parseDeviceLogTime('2026-01-01 12:00:00', LA, NOW)!.toISOString()).toBe('2026-01-01T20:00:00.000Z');
+      expect(parseDeviceLogTime('2026-07-01 12:00:00', { timeZoneName: 'Pacific/Auckland' }, NOW)!.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+      expect(parseDeviceLogTime('2026-01-01 12:00:00', { timeZoneName: 'Pacific/Auckland' }, NOW)!.toISOString()).toBe('2025-12-31T23:00:00.000Z');
+    }
+  });
+
+  it('still falls back to the offset for an unknown zone, every time', () => {
+    const clock = { timeZoneName: 'Nowhere/Real', gmtOffset: '-07:00' };
+    for (let i = 0; i < 3; i++) {
+      expect(parseDeviceLogTime('2026-09-03 08:37:38', clock, NOW)!.toISOString()).toBe('2026-09-03T15:37:38.000Z');
+    }
+  });
+});

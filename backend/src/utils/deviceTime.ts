@@ -23,20 +23,50 @@ const MONTHS: Record<string, number> = {
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
 };
 
-/** Offset of a zone, in milliseconds, at a given instant. */
-function offsetMsAt(utcMs: number, timeZone: string): number {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
+/**
+ * One formatter per zone, made once and reused. Making an Intl.DateTimeFormat
+ * costs far more than formatting with one, and a log poll converts every line
+ * in the device's buffer, each more than once. A new formatter per conversion
+ * came to about a second of CPU per device per log poll, which stalled the
+ * backend for seconds when a site's devices read their logs together.
+ *
+ * Only zones Intl accepts are kept (an unknown one throws, as before, and the
+ * caller falls back to the offset). The name comes from the device, so the
+ * cache is bounded: emptied when full, then rebuilt as zones come up again.
+ */
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+const MAX_ZONE_FORMATTERS = 256;
+
+function zoneFormatter(timeZone: string): Intl.DateTimeFormat {
+  let fmt = zoneFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
       timeZone, hour12: false,
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', second: '2-digit',
-    }).formatToParts(new Date(utcMs)).map((p) => [p.type, p.value])
+    });
+    if (zoneFormatters.size >= MAX_ZONE_FORMATTERS) zoneFormatters.clear();
+    zoneFormatters.set(timeZone, fmt);
+  }
+  return fmt;
+}
+
+/** Wall-clock fields of an instant in a named zone. Throws for an unknown zone. */
+function wallClockIn(instant: Date, timeZone: string): WallClock {
+  const parts = Object.fromEntries(
+    zoneFormatter(timeZone).formatToParts(instant).map((p) => [p.type, p.value])
   );
-  const asIfUtc = Date.UTC(
-    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
-    Number(parts.hour) % 24, Number(parts.minute), Number(parts.second),
-  );
-  return asIfUtc - utcMs;
+  return {
+    y: Number(parts.year), mo: Number(parts.month), d: Number(parts.day),
+    // Some environments render midnight as hour "24".
+    h: Number(parts.hour) % 24, mi: Number(parts.minute), s: Number(parts.second),
+  };
+}
+
+/** Offset of a zone, in milliseconds, at a given instant. */
+function offsetMsAt(utcMs: number, timeZone: string): number {
+  const w = wallClockIn(new Date(utcMs), timeZone);
+  return Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s) - utcMs;
 }
 
 /**
@@ -68,14 +98,7 @@ interface WallClock { y: number; mo: number; d: number; h: number; mi: number; s
 export function deviceWallClockNow(clock: DeviceClock, now = new Date()): WallClock | null {
   if (clock.timeZoneName) {
     try {
-      const parts = Object.fromEntries(
-        new Intl.DateTimeFormat('en-US', {
-          timeZone: clock.timeZoneName, hour12: false,
-          year: 'numeric', month: '2-digit', day: '2-digit',
-          hour: '2-digit', minute: '2-digit', second: '2-digit',
-        }).formatToParts(now).map((p) => [p.type, p.value])
-      );
-      return { y: +parts.year, mo: +parts.month, d: +parts.day, h: +parts.hour % 24, mi: +parts.minute, s: +parts.second };
+      return wallClockIn(now, clock.timeZoneName);
     } catch { /* unusable zone name: try the offset */ }
   }
   const offsetMs = parseGmtOffsetMs(clock.gmtOffset);
