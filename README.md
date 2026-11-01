@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0_RC_9-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/license-AGPLv3-blue" alt="License" />
   <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/built%20with-TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
@@ -17,20 +17,11 @@
   <img src=".github/images/Dashboard.png" alt="MikroTik Manager Dashboard" width="100%" />
 </p>
 
-> [!IMPORTANT]
-> **1.0 release candidate: testing until Saturday 31 October.** v1.0.0-rc.9, the latest release
-> candidate for the first stable release, is out, and the feature freeze is in effect. Stable 1.0.0 is planned
-> for **Sunday 1 November** if testing turns up nothing serious.
->
-> - **Updating:** if you update from `main` or run the `:latest` images, your normal update brings the
->   RC. Take a platform backup first (Settings → Backup &amp; Restore).
-> - **Testing:** please report anything that looks wrong as an
->   [issue](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues). The plan and the
->   discussion are in [#316](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/316).
-> - **What's in it:** [release notes](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/release-notes/).
-> - **From 1.0, two release channels:** `main` and `:latest` are the stable line (1.0.x, fixes only);
->   `dev` and `:beta` carry the next version's betas. See
->   [release channels](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/configuration/#release-channels).
+> [!NOTE]
+> **v1.0.0 is the first stable release.** `main` and the `:latest` images are the stable line
+> (1.0.x, fixes only); `dev` and `:beta` carry the betas of 1.1. See the
+> [release notes](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/release-notes/) and
+> [release channels](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/configuration/#release-channels).
 
 ---
 
