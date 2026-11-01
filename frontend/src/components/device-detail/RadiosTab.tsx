@@ -275,7 +275,7 @@ function WirelessCharts({ deviceId, ifaces }: { deviceId: number; ifaces: Wirele
               <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
               <Tooltip
                 contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
-                formatter={(v: number) => [v, 'Clients']}
+                formatter={(v) => [Number(v), 'Clients']}
               />
               <Line type="monotone" dataKey="clients" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
             </LineChart>
@@ -301,7 +301,7 @@ function WirelessCharts({ deviceId, ifaces }: { deviceId: number; ifaces: Wirele
               <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} reversed />
               <Tooltip
                 contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
-                formatter={(v: number) => [`${v} dBm`, 'Noise Floor']}
+                formatter={(v) => [`${Number(v)} dBm`, 'Noise Floor']}
               />
               <Line type="monotone" dataKey="noise_floor" stroke="#f59e0b" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
             </LineChart>
@@ -578,8 +578,8 @@ function SpectrumAnalyzer({ deviceId, ifaces }: { deviceId: number; ifaces: Wire
                 label={{ value: 'dBm', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }}
               />
               <Tooltip
-                formatter={(value: number) => [`${value + SPECTRAL_BASELINE} dBm`, 'Power']}
-                labelFormatter={(label: number) => `${label} MHz`}
+                formatter={(value) => [`${Number(value) + SPECTRAL_BASELINE} dBm`, 'Power']}
+                labelFormatter={(label) => `${label} MHz`}
                 {...chartTooltip}
               />
               <Bar dataKey="barValue" maxBarSize={8} isAnimationActive={false}>

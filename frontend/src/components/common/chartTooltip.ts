@@ -26,3 +26,15 @@ export const pieTooltip: typeof chartTooltip & { itemStyle: CSSProperties } = {
   ...chartTooltip,
   itemStyle: { color: 'var(--ink)' },
 };
+
+/**
+ * Keep a legend in the order its series are declared. Recharts 3 sorts legend
+ * items alphabetically by default, which turned "Upload, Download" into
+ * "Download, Upload". `<Legend itemSorter={inDeclaredOrder(['Upload', 'Download'])} />`
+ */
+export function inDeclaredOrder(names: string[]): (item: { value?: unknown }) => number {
+  return (item) => {
+    const i = names.indexOf(String(item.value ?? ''));
+    return i === -1 ? names.length : i;
+  };
+}

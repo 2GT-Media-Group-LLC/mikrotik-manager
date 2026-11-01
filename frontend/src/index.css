@@ -302,3 +302,9 @@
     fill-opacity: 0.92;
   }
 }
+
+/* Recharts 3 makes charts keyboard-focusable. Keep the focus ring for keyboard
+   users, but not after a mouse click, which recharts 2 never showed. */
+.recharts-surface:focus:not(:focus-visible) {
+  outline: none;
+}

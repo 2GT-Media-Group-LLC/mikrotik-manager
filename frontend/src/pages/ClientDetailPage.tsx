@@ -22,6 +22,7 @@ import clsx from 'clsx';
 import { formatRatePair } from '../utils/wifiRate';
 import ClientAddressLists from '../components/clients/ClientAddressLists';
 import { disconnectClient } from '../utils/disconnectClient';
+import { inDeclaredOrder } from '../components/common/chartTooltip';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -724,7 +725,7 @@ function TrafficCard({ mac }: { mac: string }) {
               width={60}
             />
             <Tooltip
-              formatter={(value: number) => [formatBytes(value), '']}
+              formatter={(value) => [formatBytes(Number(value)), '']}
               contentStyle={{
                 fontSize: '11px',
                 backgroundColor: 'var(--tooltip-bg, #1e293b)',
@@ -732,7 +733,7 @@ function TrafficCard({ mac }: { mac: string }) {
                 color: 'var(--tooltip-color, #e2e8f0)',
               }}
             />
-            <Legend wrapperStyle={{ fontSize: '11px' }} />
+            <Legend wrapperStyle={{ fontSize: '11px' }} itemSorter={inDeclaredOrder(['Upload', 'Download'])} />
             <Area
               type="monotone"
               dataKey="Upload"
@@ -852,7 +853,7 @@ function AppTrafficCard({ mac }: { mac: string }) {
                   width={60}
                 />
                 <Tooltip
-                  formatter={(value: number) => [formatBytes(value), '']}
+                  formatter={(value) => [formatBytes(Number(value)), '']}
                   contentStyle={{
                     fontSize: '11px',
                     backgroundColor: 'var(--tooltip-bg, #1e293b)',
@@ -982,7 +983,7 @@ function SignalCard({ mac }: { mac: string }) {
                 unit=" dBm"
               />
               <Tooltip
-                formatter={(_v: number, _n: string, props: { payload?: { signal_strength: number } }) =>
+                formatter={(_v, _n, props: { payload?: { signal_strength: number } }) =>
                   [`${props.payload?.signal_strength ?? ''} dBm`, 'Signal']
                 }
                 contentStyle={{

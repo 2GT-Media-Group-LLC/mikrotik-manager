@@ -214,6 +214,9 @@ function formatBps(val: number): string {
   return `${Math.round(val)} B/s`;
 }
 
+/** Number and unit on one line: recharts 3 sometimes wraps an axis label at its space. */
+const noWrap = (label: string) => label.replace(/ /g, '\u00a0');
+
 function PortTrafficGraph({
   deviceId, portName, range, onRangeChange,
 }: {
@@ -299,7 +302,7 @@ function PortTrafficGraph({
             <LineChart data={trafficData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" opacity={0.5} />
               <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--ink-4)' }} interval="preserveStartEnd" />
-              <YAxis tickFormatter={formatBps} tick={{ fontSize: 10, fill: 'var(--ink-4)' }} width={72} />
+              <YAxis tickFormatter={(v: number) => noWrap(formatBps(v))} tick={{ fontSize: 10, fill: 'var(--ink-4)' }} width={72} />
               <Tooltip
                 formatter={(v) => formatBps(v as number)}
                 contentStyle={{
@@ -378,7 +381,7 @@ function PortPacketGraph({
             <LineChart data={packetData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-              <YAxis tickFormatter={formatPps} tick={{ fontSize: 10 }} width={72} />
+              <YAxis tickFormatter={(v: number) => noWrap(formatPps(v))} tick={{ fontSize: 10 }} width={72} />
               <Tooltip
                 formatter={(v) => formatPps(v as number)}
                 contentStyle={{

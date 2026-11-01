@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { chartTooltip } from '../common/chartTooltip';
+import { chartTooltip, inDeclaredOrder } from '../common/chartTooltip';
 import { Signal, RadioTower, ArrowLeftRight, RotateCcw, Radio, ArrowUpFromLine, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { lteApi, type LteInterface, type LteHistoryEvent, type LteDwellTotal } from '../../services/api';
 import DataCapCard from './DataCapCard';
@@ -437,7 +437,8 @@ export default function LteTab({ deviceId }: Props) {
         ) : (
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700" />
+              {/* recharts 3 draws a grid only for an axis it names. */}
+              <CartesianGrid yAxisId="dbm" strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700" />
               <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
               {/* dBm and dB share a chart but not a scale. */}
               <YAxis yAxisId="dbm" tick={{ fontSize: 11 }} width={44}
@@ -445,7 +446,7 @@ export default function LteTab({ deviceId }: Props) {
               <YAxis yAxisId="db" orientation="right" tick={{ fontSize: 11 }} width={40}
                      label={{ value: 'dB', angle: 90, position: 'insideRight', fontSize: 11 }} />
               <Tooltip {...chartTooltip} />
-              <Legend />
+              <Legend itemSorter={inDeclaredOrder(['RSRP (dBm)', 'RSSI (dBm)', 'SINR (dB)', 'RSRQ (dB)'])} />
               <Line yAxisId="dbm" type="monotone" dataKey="rsrp" name="RSRP (dBm)"
                     stroke="#3b82f6" dot={false} strokeWidth={2} connectNulls />
               <Line yAxisId="dbm" type="monotone" dataKey="rssi" name="RSSI (dBm)"

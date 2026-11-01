@@ -394,7 +394,7 @@ function SummaryView(props: Record<string, any>) {
                 <YAxis tick={{ fontSize: 10, fill: 'var(--ink-4)' }} allowDecimals={false} />
                 <Tooltip
                   cursor={{ fill: 'var(--surface-3)', opacity: 0.4 }}
-                  formatter={(v: number) => [v, 'Clients']}
+                  formatter={(v) => [Number(v), 'Clients']}
                   labelFormatter={(t) => format(new Date(t as number), 'MMM d, HH:mm')}
                   contentStyle={{
                     background: 'var(--surface)',
