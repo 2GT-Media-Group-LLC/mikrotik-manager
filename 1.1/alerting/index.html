@@ -724,6 +724,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#email" class="md-nav__link">
+    <span class="md-ellipsis">
+      Email
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ntfy" class="md-nav__link">
     <span class="md-ellipsis">
       ntfy
@@ -1312,6 +1321,15 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#email" class="md-nav__link">
+    <span class="md-ellipsis">
+      Email
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ntfy" class="md-nav__link">
     <span class="md-ellipsis">
       ntfy
@@ -1609,6 +1627,12 @@ server log line begins <code>[Certs]</code>.</p>
 a channel without retyping them. They are stored encrypted with the same key as device
 passwords (SMTP password, bot and app tokens, Slack and Discord webhook URLs), and decrypted
 only to send. Channels saved before 0.24.50 are encrypted at the next start.</p>
+<h3 id="email">Email<a class="headerlink" href="#email" title="Permanent link">&para;</a></h3>
+<p>Email checks the mail server's certificate, and when the channel signs in on port 587 it
+requires STARTTLS, so the SMTP login is never sent unencrypted. Scheduled reports use the
+same settings. For a server you run with a self-signed certificate, untick <strong>Check the
+server's certificate</strong> on the channel; anyone between the manager and that server could then
+read the login. Before 1.0.1 alert email never checked the certificate.</p>
 <h3 id="ntfy">ntfy<a class="headerlink" href="#ntfy" title="Permanent link">&para;</a></h3>
 <p>Works with the public <code>ntfy.sh</code> or your own instance.</p>
 <table>
