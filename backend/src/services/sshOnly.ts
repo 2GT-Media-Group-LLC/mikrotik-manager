@@ -14,7 +14,7 @@ import { runSshCommand, type SshExecDevice } from './sshExec';
 import { RouterOSClient } from './mikrotik/RouterOSClient';
 import { usesApiTls } from '../utils/apiTls';
 import { connectPreferringSsl, API_PORT, API_SSL_PORT } from './mikrotik/apiConnect';
-import { pinIdentity } from './identityPins';
+import { pinIdentity, hasPin } from './identityPins';
 import {
   SSH_INFO_COMMAND, parseSshInfo, looksLikeRouterOs, classifyApiFailure,
   type SshInfo, type ApiFailureKind,
@@ -61,7 +61,11 @@ export async function checkApi(device: SshOnlyDevice): Promise<ApiCheck> {
       await client.connect();
       port = device.api_port;
     } else {
-      const chosen = await connectPreferringSsl(device.ip_address, device.api_username, password, { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000 });
+      // A device that has presented an API-SSL certificate before stays on
+      // API-SSL: blocking 8729 must not move it to the plain API (GHSA-63v6-w7qf-349f).
+      const usedSsl = await hasPin(device.id, 'api-tls');
+      const chosen = await connectPreferringSsl(device.ip_address, device.api_username, password,
+        { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000, sslOnly: usedSsl });
       client = chosen.client;
       port = chosen.port;
     }

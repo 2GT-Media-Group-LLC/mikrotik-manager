@@ -175,6 +175,14 @@ a channel without retyping them. They are stored encrypted with the same key as 
 passwords (SMTP password, bot and app tokens, Slack and Discord webhook URLs), and decrypted
 only to send. Channels saved before 0.24.50 are encrypted at the next start.
 
+### Email
+
+Email checks the mail server's certificate, and when the channel signs in on port 587 it
+requires STARTTLS, so the SMTP login is never sent unencrypted. Scheduled reports use the
+same settings. For a server you run with a self-signed certificate, untick **Check the
+server's certificate** on the channel; anyone between the manager and that server could then
+read the login. Before 1.0.1 alert email never checked the certificate.
+
 ### ntfy
 
 Works with the public `ntfy.sh` or your own instance.

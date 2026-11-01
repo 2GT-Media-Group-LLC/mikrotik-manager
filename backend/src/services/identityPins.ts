@@ -135,12 +135,17 @@ export async function verifyDeviceIdentity(
   kind: IdentityKind, host: string, port: number, presented: string,
 ): Promise<void> {
   const fp = normalizeFingerprint(presented);
-  const portColumn = kind === 'api-tls' ? 'd.api_port' : 'COALESCE(d.ssh_port, 22)';
+  // API-SSL on 8729 is checked against a device stored with the plain API's
+  // 8728 too: probing 8729 for such a device used to match no pin at all
+  // (GHSA-63v6-w7qf-349f).
+  const portMatch = kind === 'api-tls'
+    ? `(d.api_port = $3 OR ($3 = 8729 AND COALESCE(d.api_port, 8728) = 8728))`
+    : 'COALESCE(d.ssh_port, 22) = $3';
   const rows = await query<PinRow>(
     `SELECT d.id AS device_id, d.name, p.fingerprint, p.seen_fingerprint
        FROM devices d
        LEFT JOIN device_identity_pins p ON p.device_id = d.id AND p.kind = $1
-      WHERE d.ip_address = $2 AND ${portColumn} = $3`,
+      WHERE d.ip_address = $2 AND ${portMatch}`,
     [kind, host, port],
   );
   for (const row of rows) {
@@ -160,6 +165,12 @@ export async function verifyDeviceIdentity(
     await recordMismatch(row, kind, fp);
     throw new IdentityMismatchError(kind, row.name);
   }
+}
+
+/** Whether the device has an identity of this kind pinned. */
+export async function hasPin(deviceId: number, kind: IdentityKind): Promise<boolean> {
+  const rows = await query(`SELECT 1 FROM device_identity_pins WHERE device_id = $1 AND kind = $2 AND fingerprint IS NOT NULL`, [deviceId, kind]);
+  return rows.length > 0;
 }
 
 /** Pin an identity seen before the device existed in the manager (while adding it). */

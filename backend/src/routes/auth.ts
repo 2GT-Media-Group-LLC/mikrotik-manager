@@ -10,6 +10,7 @@ import { loginRateLimit, rateLimitRedis } from '../middleware/rateLimitRedis';
 import { validatePassword } from '../utils/passwordPolicy';
 import { sessionResponse } from '../utils/sessionResponse';
 import { passwordLoginEnabled } from '../utils/passwordLogin';
+import { totpLockedOut, recordTotpFailure, claimTotpStep } from '../utils/totpGuard';
 
 const router = Router();
 
@@ -118,10 +119,18 @@ router.post('/totp/verify', rateLimitRedis({ windowSec: 60, max: 5, keyPrefix: '
     return res.status(401).json({ error: 'TOTP not configured' });
   }
 
+  // Per account as well as per address, and each code once (GHSA-63v6-w7qf-349f).
+  if (await totpLockedOut(user.id)) {
+    return res.status(429).json({ error: 'Too many wrong codes. Wait 15 minutes, then sign in again.' });
+  }
   const totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(user.totp_secret), digits: 6, period: 30 });
   const delta = totp.validate({ token: code.replace(/\s/g, ''), window: 1 });
   if (delta === null) {
+    await recordTotpFailure(user.id);
     return res.status(401).json({ error: 'Invalid TOTP code' });
+  }
+  if (!(await claimTotpStep(user.id, delta))) {
+    return res.status(401).json({ error: 'That code has already been used. Wait for the next one.' });
   }
 
   return res.json(await sessionResponse(user));

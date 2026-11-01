@@ -2155,6 +2155,17 @@ export default function SettingsPage() {
                     <input type="checkbox" id="smtp_secure" checked={!!(chForm.config['smtp_secure'])} onChange={(e) => setCfg('smtp_secure', e.target.checked)} className="rounded" />
                     <label htmlFor="smtp_secure" className="text-xs text-gray-600 dark:text-slate-400">Use TLS/SSL (port 465)</label>
                   </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" id="smtp_tls_verify" checked={chForm.config['smtp_tls_verify'] !== false} onChange={(e) => setCfg('smtp_tls_verify', e.target.checked)} className="rounded" />
+                      <label htmlFor="smtp_tls_verify" className="text-xs text-gray-600 dark:text-slate-400">Check the server's certificate</label>
+                    </div>
+                    {chForm.config['smtp_tls_verify'] === false && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 ml-6">
+                        Anyone between the manager and the mail server could read the SMTP login. Only turn this off for a server you run with a self-signed certificate.
+                      </p>
+                    )}
+                  </div>
                 </>
               )}
 

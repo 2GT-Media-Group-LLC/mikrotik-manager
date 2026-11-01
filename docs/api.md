@@ -36,7 +36,9 @@ real values, because the edit forms need them.
 The UI authenticates with a JWT obtained from `/api/auth/login`, optionally followed by
 `/api/auth/totp/verify` when two-factor is enabled. Tokens are bearer credentials and are
 sent in the same `Authorization` header. The short-lived token `/login` returns while waiting
-for the two-factor code only works for `/api/auth/totp/verify`; it isn't a session.
+for the two-factor code only works for `/api/auth/totp/verify`; it isn't a session. An account
+gets 5 wrong codes per 15 minutes, from any address, and each code signs in once; before 1.0.1
+only the per-address limit applied.
 
 Setting up two-factor again (`/api/auth/totp/setup`) doesn't touch the authenticator in use:
 the new secret replaces it only when `/api/auth/totp/confirm` accepts a code from it. Before

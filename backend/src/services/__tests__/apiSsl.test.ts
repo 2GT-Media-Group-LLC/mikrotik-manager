@@ -60,6 +60,49 @@ describe('connectPreferringSsl', () => {
     });
     await expect(connectPreferringSsl('10.0.0.1', 'u', 'p')).rejects.toThrow(/invalid user name/);
   });
+
+  // GHSA-63v6-w7qf-349f: the plain login sent the password in the clear even
+  // when API-SSL worked, because both were tried at once.
+  it('does not open the plain API while API-SSL is being tried, or when it works', async () => {
+    const opened: number[] = [];
+    let sslSettled = false;
+    (MockClient as unknown as jest.Mock).mockImplementation((_host: string, port: number) => ({
+      connect: jest.fn(async () => {
+        opened.push(port);
+        if (port === 8728) expect(sslSettled).toBe(true);
+        if (port === 8729) { await new Promise((r) => setTimeout(r, 5)); sslSettled = true; }
+      }),
+      disconnect: jest.fn(),
+    }));
+    await connectPreferringSsl('10.0.0.1', 'u', 'p');
+    expect(opened).toEqual([8729]);
+  });
+
+  it('does not try the plain API when API-SSL refuses the login', async () => {
+    clients({ 8729: { connect: () => Promise.reject(new Error('invalid user name or password (6)')) } });
+    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p')).rejects.toThrow(/invalid user name/);
+    expect((MockClient as unknown as jest.Mock).mock.calls.map((c) => c[1])).toEqual([8729]);
+  });
+
+  it('does not try the plain API when the certificate has changed', async () => {
+    const { IdentityMismatchError } = jest.requireActual('../identityPins');
+    clients({ 8729: { connect: () => Promise.reject(new IdentityMismatchError('api-tls', 'R1')) } });
+    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p')).rejects.toThrow(/changed/);
+    expect((MockClient as unknown as jest.Mock).mock.calls.map((c) => c[1])).toEqual([8729]);
+  });
+
+  it('never falls back for a device that has used API-SSL', async () => {
+    clients({ 8729: { connect: () => Promise.reject(new Error('Connection timeout to 10.0.0.1:8729')) } });
+    await expect(connectPreferringSsl('10.0.0.1', 'u', 'p', { sslOnly: true })).rejects.toThrow(/timeout/);
+    expect((MockClient as unknown as jest.Mock).mock.calls.map((c) => c[1])).toEqual([8729]);
+  });
+
+  it('falls back when api-ssl has no certificate or is firewalled', async () => {
+    for (const err of [new Error('ssl/tls alert handshake failure:SSL alert number 40'), new Error('Connection timeout to 10.0.0.1:8729')]) {
+      clients({ 8729: { connect: () => Promise.reject(err) } });
+      expect((await connectPreferringSsl('10.0.0.1', 'u', 'p')).port).toBe(8728);
+    }
+  });
 });
 
 describe('enableApiSsl', () => {

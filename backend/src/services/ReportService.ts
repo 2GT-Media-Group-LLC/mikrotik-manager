@@ -6,6 +6,7 @@ import { escapeHtml } from '../utils/html';
 import { outageOverlapsSql, outageSecondsSql } from '../utils/outageWindow';
 import { openConfig } from '../utils/alertChannelSecrets';
 import nodemailer from 'nodemailer';
+import { smtpTransportOptions } from '../utils/smtpTransport';
 import { query, queryOne } from '../config/database';
 
 interface ScheduleRow {
@@ -69,10 +70,7 @@ export class ReportService {
     const recipients = schedule.recipients.split(',').map(r => r.trim()).filter(Boolean);
     if (recipients.length === 0) throw new Error('No recipients configured');
 
-    const transport = nodemailer.createTransport({
-      host: smtp.host, port: smtp.port, secure: smtp.secure,
-      auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
-    });
+    const transport = nodemailer.createTransport(smtpTransportOptions(smtp.cfg));
     await transport.sendMail({
       from: smtp.from,
       to: recipients.join(', '),
@@ -83,7 +81,7 @@ export class ReportService {
   }
 
   // SMTP settings come from the first enabled email alert channel
-  private async smtpConfig(): Promise<{ host: string; port: number; secure: boolean; user?: string; pass?: string; from: string }> {
+  private async smtpConfig(): Promise<{ cfg: Record<string, unknown>; host: string; port: number; secure: boolean; user?: string; pass?: string; from: string }> {
     const ch = await queryOne<{ config: Record<string, unknown> }>(
       `SELECT config FROM alert_channels WHERE type = 'email' AND enabled = TRUE ORDER BY id LIMIT 1`);
     // The SMTP password is stored encrypted (S7).
@@ -91,6 +89,7 @@ export class ReportService {
     const host = cfg?.smtp_host as string | undefined;
     if (!host) throw new Error('No enabled email alert channel — configure one under Settings → Alerting to send reports');
     return {
+      cfg: cfg!,
       host,
       port: (cfg?.smtp_port as number) || 587,
       secure: !!cfg?.smtp_secure,
