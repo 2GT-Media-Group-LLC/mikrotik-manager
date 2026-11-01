@@ -64,6 +64,14 @@ and report what they found.
   certificate upload checked only its first block
   ([GHSA-28hr-v457-cc6g](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-28hr-v457-cc6g)).
   Fixed in 1.0.0-rc.1.
+- **Pim ([@pimlie](https://github.com/pimlie))** found that site-limited accounts could reach
+  other sites' devices, backups and rollouts through ids written in unusual ways
+  ([GHSA-j9x4-qwcj-p8v8](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-j9x4-qwcj-p8v8)),
+  and that device passwords could be sent unencrypted when adding a device or to another
+  address when moving one, that alert email didn't check the mail server's certificate, and
+  that two-factor codes were limited per address only
+  ([GHSA-63v6-w7qf-349f](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-63v6-w7qf-349f)).
+  Fixed in 1.0.1.
 
 ## Security Considerations for Self-Hosted Deployments
 
