@@ -3,6 +3,10 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.2
+
+The security fixes of [1.0.1](#101), for the beta channel. Update as soon as you can.
+
 ## 1.1.0-beta.1
 
 No new features yet. This beta upgrades the major libraries underneath the app, so they get
@@ -25,6 +29,38 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.1
+
+Released on Sunday 1 November 2026, the same day as 1.0.0. Security fixes, reported by
+[@pimlie](https://github.com/pimlie); update as soon as you can.
+
+- **Site-scoped accounts could reach other sites' devices**
+  ([GHSA-j9x4-qwcj-p8v8](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-j9x4-qwcj-p8v8)).
+  An id written in an unusual way (`"20"` in a list, `0x14`, `+5`, `5x`) passed the site check
+  but still reached the device, backup or rollout, so an operator limited to one site could run
+  commands on any device. Ids are now read one way everywhere, a second site check can't raise
+  the role the first one set, and security-check mutes are limited to the account's sites.
+  Installs without site-scoped accounts weren't affected.
+- **Device passwords could be sent unencrypted, or to another address**
+  ([GHSA-63v6-w7qf-349f](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-63v6-w7qf-349f)).
+    - Adding a device with no port tried API-SSL and the plain API at the same time, so the
+      password crossed the network unencrypted even when API-SSL worked. The plain API is now
+      tried only when API-SSL isn't available ([Devices](devices.md#adding-devices)).
+    - Moving a device to another address sent its saved SSH password there. Now only the
+      passwords entered with the move are used ([Devices](devices.md#device-credentials)).
+    - Alert email didn't check the mail server's certificate. It does now, and requires STARTTLS
+      before sending a login; untick **Check the server's certificate** on the channel for a
+      server with a self-signed certificate ([Alerting](alerting.md#email)).
+    - Two-factor codes are limited per account as well as per address, and each code signs in
+      once.
+- **RouterBOOT upgrades stayed pending after they were done**, and after a RouterOS downgrade an
+  older RouterBOOT was offered as an upgrade
+  ([#372](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/372)).
+
+**Check after updating:** if alert email stops arriving, open the channel and use **Send test**.
+A mail server with a self-signed certificate, or one that doesn't offer STARTTLS, now needs
+**Check the server's certificate** unticked.
 
 ## What it does
 
