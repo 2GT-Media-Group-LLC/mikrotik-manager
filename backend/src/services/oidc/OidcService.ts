@@ -4,10 +4,10 @@
  * beginLogin() builds the authorize URL and stashes the per-request PKCE/nonce
  * transaction in Redis (short TTL, single-use). completeLogin() validates the
  * callback (openid-client checks the ID-token signature via JWKS plus iss/aud/
- * exp/nonce and the PKCE verifier), then resolves the identity to a local user.
+ * exp/nonce, the state and the PKCE verifier), then resolves the identity to a
+ * local user.
  */
-import { Issuer, generators } from 'openid-client';
-import type { Client, TokenSet } from 'openid-client';
+import * as oidc from 'openid-client';
 import { createHash } from 'crypto';
 import { redis } from '../../config/redis';
 import { query, queryOne } from '../../config/database';
@@ -40,31 +40,68 @@ export function bindingHash(binding: string): string {
   return createHash('sha256').update(binding).digest('hex');
 }
 
-// Cache the discovered client; rebuild when the relevant config or redirect URI changes.
-let clientCache: { key: string; client: Client } | null = null;
+const withoutTrailingSlash = (s: string): string => s.replace(/\/+$/, '');
 
-function configFingerprint(config: OidcConfig, redirectUri: string): string {
+/**
+ * The library's message, with the reason underneath it when there is one
+ * ("fetch failed" says little on its own; "connect ECONNREFUSED" says why).
+ */
+export function oidcErrorMessage(e: unknown): string {
+  const err = e as Error & { cause?: unknown; error?: unknown; error_description?: unknown };
+  const cause = err?.cause as { message?: string; code?: string } | undefined;
+  // An OAuth error from the provider ("invalid_client: Invalid client credentials").
+  const oauthError = typeof err?.error === 'string'
+    ? [err.error, err.error_description].filter((s) => typeof s === 'string' && s).join(': ')
+    : undefined;
+  const why = oauthError || (cause && typeof cause === 'object' ? (cause.code || cause.message) : undefined);
+  return why && !String(err.message).includes(String(why)) ? `${err.message} (${why})` : String(err?.message ?? e);
+}
+
+/**
+ * Fetch the provider's discovery document and build a client configuration.
+ *
+ * Kept as forgiving as openid-client 5 was, which 1.0 and earlier used:
+ * - an http:// issuer still works (version 6 refuses plain HTTP unless told);
+ * - an issuer entered without the trailing slash the provider uses, or with
+ *   one it doesn't, is accepted (version 6 compares the two exactly). Any
+ *   other difference is refused, with the issuer the provider gave;
+ * - a full `/.well-known/...` URL is used as it is, as before.
+ */
+export async function discoverProvider(
+  issuerUrl: string, clientId: string, secret?: string | null,
+): Promise<oidc.Configuration> {
+  const url = new URL(issuerUrl);
+  const auth = secret ? oidc.ClientSecretBasic(secret) : oidc.None();
+  const options = url.protocol === 'http:' ? { execute: [oidc.allowInsecureRequests] } : undefined;
+  const run = (server: URL) => oidc.discovery(server, clientId, undefined, auth, options);
+  let stated: unknown;
+  try {
+    return await run(url);
+  } catch (e) {
+    const cause = (e as { cause?: { attribute?: string; body?: { issuer?: unknown } } }).cause;
+    stated = cause?.attribute === 'issuer' ? cause.body?.issuer : undefined;
+    if (typeof stated !== 'string') throw e;
+  }
+  if (withoutTrailingSlash(stated) === withoutTrailingSlash(url.href)) return run(new URL(stated));
+  throw new Error(`The provider says its issuer is ${stated}. Use that as the Issuer URL.`);
+}
+
+// Cache the discovered configuration; rebuild when the provider or client changes.
+let clientCache: { key: string; config: oidc.Configuration } | null = null;
+
+function configFingerprint(config: OidcConfig): string {
   return createHash('sha256')
-    .update([config.issuer_url, config.client_id, config.client_secret_encrypted ?? '', redirectUri].join('|'))
+    .update([config.issuer_url, config.client_id, config.client_secret_encrypted ?? ''].join('|'))
     .digest('hex');
 }
 
-async function getClient(config: OidcConfig, redirectUri: string): Promise<Client> {
+async function getClient(config: OidcConfig): Promise<oidc.Configuration> {
   if (!config.issuer_url || !config.client_id) throw new Error('OIDC is not fully configured');
-  const key = configFingerprint(config, redirectUri);
-  if (clientCache && clientCache.key === key) return clientCache.client;
-
-  const issuer = await Issuer.discover(config.issuer_url);
-  const secret = getClientSecret(config);
-  const client = new issuer.Client({
-    client_id: config.client_id,
-    client_secret: secret ?? undefined,
-    redirect_uris: [redirectUri],
-    response_types: ['code'],
-    // Public client (no secret) must use PKCE-only token auth.
-    token_endpoint_auth_method: secret ? 'client_secret_basic' : 'none',
-  });
-  clientCache = { key, client };
+  const key = configFingerprint(config);
+  if (clientCache && clientCache.key === key) return clientCache.config;
+  // A public client (no secret) authenticates to the token endpoint by PKCE alone.
+  const client = await discoverProvider(config.issuer_url, config.client_id, getClientSecret(config));
+  clientCache = { key, config: client };
   return client;
 }
 
@@ -83,29 +120,30 @@ export function resetOidcClientCache(): void {
 export async function beginLogin(redirectUri: string, returnTo: string, binding: string): Promise<string> {
   const config = await loadOidcConfig();
   if (!config.enabled) throw new Error('OIDC login is not enabled');
-  const client = await getClient(config, redirectUri);
+  const client = await getClient(config);
 
-  const state = generators.state();
-  const nonce = generators.nonce();
-  const code_verifier = generators.codeVerifier();
-  const code_challenge = generators.codeChallenge(code_verifier);
+  const state = oidc.randomState();
+  const nonce = oidc.randomNonce();
+  const code_verifier = oidc.randomPKCECodeVerifier();
+  const code_challenge = await oidc.calculatePKCECodeChallenge(code_verifier);
 
   const tx: Transaction = { nonce, code_verifier, redirectUri, returnTo, bindHash: bindingHash(binding) };
   await redis.set(txKey(state), JSON.stringify(tx), 'EX', TX_TTL_SECONDS);
 
-  return client.authorizationUrl({
+  return oidc.buildAuthorizationUrl(client, {
+    redirect_uri: redirectUri,
     scope: config.scopes || 'openid profile email',
     state,
     nonce,
     code_challenge,
     code_challenge_method: 'S256',
-  });
+  }).href;
 }
 
 export async function completeLogin(
-  params: Record<string, string>, binding: string | null,
+  params: Record<string, unknown>, binding: string | null,
 ): Promise<{ user: ResolvedUser; returnTo: string; bindHash: string }> {
-  const state = params.state;
+  const state = typeof params.state === 'string' ? params.state : '';
   if (!state) throw new Error('Missing state');
 
   const raw = await redis.get(txKey(state));
@@ -121,19 +159,29 @@ export async function completeLogin(
   // An admin may have turned SSO off since the login began (S2).
   const config = await loadOidcConfig();
   if (!config.enabled) throw new Error('SSO sign-in has been turned off');
-  const client = await getClient(config, tx.redirectUri);
+  const client = await getClient(config);
 
-  const tokenSet: TokenSet = await client.callback(tx.redirectUri, params, {
-    code_verifier: tx.code_verifier,
-    state,
-    nonce: tx.nonce,
+  // The callback as the provider sent it: the redirect URI the login began
+  // with, plus the response parameters. The library takes the redirect URI
+  // for the token request from it. A repeated parameter is refused.
+  const callbackUrl = new URL(tx.redirectUri);
+  for (const [k, v] of Object.entries(params)) {
+    if (typeof v !== 'string') throw new Error(`Unexpected ${k} in the sign-in response`);
+    callbackUrl.searchParams.set(k, v);
+  }
+
+  const tokens = await oidc.authorizationCodeGrant(client, callbackUrl, {
+    pkceCodeVerifier: tx.code_verifier,
+    expectedState: state,
+    expectedNonce: tx.nonce,
+    idTokenExpected: true,
   });
 
-  let claims: Record<string, unknown> = { ...tokenSet.claims() };
+  let claims: Record<string, unknown> = { ...tokens.claims() };
   // Some IdPs put groups only in the userinfo response, not the ID token.
-  if (!claims[config.groups_claim] && tokenSet.access_token) {
+  if (!claims[config.groups_claim] && tokens.access_token && typeof claims.sub === 'string') {
     try {
-      const userinfo = await client.userinfo(tokenSet);
+      const userinfo = await oidc.fetchUserInfo(client, tokens.access_token, claims.sub);
       claims = { ...claims, ...userinfo };
     } catch { /* userinfo optional */ }
   }

@@ -13,16 +13,15 @@ jest.mock('../../../utils/sessionState', () => ({ endAllSessions: jest.fn() }));
 let config: Record<string, unknown>;
 jest.mock('../oidcConfig', () => ({ loadOidcConfig: async () => config, getClientSecret: () => null }));
 let claims: Record<string, unknown>;
+const mockGrant = jest.fn();
 jest.mock('openid-client', () => ({
-  generators: { state: () => 'st', nonce: () => 'n', codeVerifier: () => 'v', codeChallenge: () => 'c' },
-  Issuer: {
-    discover: async () => ({
-      Client: class {
-        authorizationUrl() { return 'https://idp/authorize'; }
-        async callback() { return { claims: () => claims }; }
-      },
-    }),
-  },
+  randomState: () => 'st', randomNonce: () => 'n', randomPKCECodeVerifier: () => 'v',
+  calculatePKCECodeChallenge: async () => 'c',
+  ClientSecretBasic: () => 'basic', None: () => 'none', allowInsecureRequests: 'insecure',
+  discovery: async () => ({}),
+  buildAuthorizationUrl: () => new URL('https://idp/authorize'),
+  authorizationCodeGrant: (...a: unknown[]) => mockGrant(...a),
+  fetchUserInfo: async () => ({}),
 }));
 
 import { beginLogin, completeLogin, resetOidcClientCache } from '../OidcService';
@@ -41,6 +40,7 @@ beforeEach(() => {
   config = { ...baseConfig };
   claims = { sub: 'u1', iss: 'https://idp', email: 'a@corp.com', email_verified: true, preferred_username: 'alice' };
   resetOidcClientCache();
+  mockGrant.mockReset().mockImplementation(async () => ({ claims: () => claims }));
 });
 
 const start = (binding = 'B') => beginLogin('https://mtm/api/auth/oidc/callback', '/dashboard', binding);
@@ -111,5 +111,24 @@ describe('accounts and roles', () => {
       /oidc_subject = \$2/.test(sql) ? { id: 5, username: 'alice', role: 'operator' } : null);
     await start('B');
     expect((await completeLogin({ state: 'st', code: 'x' }, 'B')).user.role).toBe('operator');
+  });
+});
+
+describe('the token exchange', () => {
+  it('rebuilds the callback URL and checks state, nonce and PKCE', async () => {
+    mockQueryOne.mockImplementation(async (sql: string) =>
+      /INSERT INTO users/.test(sql) ? { id: 9, username: 'alice', role: 'viewer' } : null);
+    await start('B');
+    await completeLogin({ state: 'st', code: 'abc', iss: 'https://idp' }, 'B');
+    const [, url, checks] = mockGrant.mock.calls[0] as [unknown, URL, Record<string, unknown>];
+    expect(url.origin + url.pathname).toBe('https://mtm/api/auth/oidc/callback');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ state: 'st', code: 'abc', iss: 'https://idp' });
+    expect(checks).toEqual({ pkceCodeVerifier: 'v', expectedState: 'st', expectedNonce: 'n', idTokenExpected: true });
+  });
+
+  it('refuses a repeated response parameter', async () => {
+    await start('B');
+    await expect(completeLogin({ state: 'st', code: ['a', 'b'] }, 'B')).rejects.toThrow(/Unexpected code/);
+    expect(mockGrant).not.toHaveBeenCalled();
   });
 });

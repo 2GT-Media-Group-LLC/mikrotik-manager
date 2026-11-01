@@ -35,7 +35,7 @@ As an admin, go to **Settings → SSO / OIDC**.
 
 | Field | Purpose |
 |---|---|
-| **Issuer URL** | Your provider's base URL. **Test discovery** verifies it is reachable before you save. |
+| **Issuer URL** | Your provider's base URL. **Test discovery** verifies it is reachable before you save. It has to be the issuer the provider names in its discovery document; a trailing slash either way doesn't matter, and the full `/.well-known/openid-configuration` URL works too. |
 | **Client ID / Secret** | From step 1. The secret is write-only — leave it blank to keep the existing one. |
 | **Scopes** | Default `openid profile email`. Add a groups scope if your IdP needs one to emit group membership. |
 | **Username claim** | Default `preferred_username` |
@@ -78,6 +78,10 @@ The provider's redirect brings back a one-time code, not a session; the app exch
 the session straight away and removes it from the address bar. So a sign-in link can't be
 used to log someone else in to your account, and no session token is left in browser
 history. A sign-in started before an admin turns SSO off is refused when it comes back.
+
+**When sign-in fails.** The login page shows a short reason. The backend log has the full
+one, starting `[OIDC] sign-in failed:`, including the provider's own error where it gave one
+(for example `invalid_client` for a wrong client secret).
 
 **Break-glass.** Local username and password login stays available unless you turn it off
 (below). The seeded local admin can always get in, even if the IdP is misconfigured,

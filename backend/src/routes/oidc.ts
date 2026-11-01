@@ -15,13 +15,14 @@ import { randomBytes, createHash } from 'crypto';
 import { redis } from '../config/redis';
 import { queryOne } from '../config/database';
 import { sessionResponse } from '../utils/sessionResponse';
-import { Issuer } from 'openid-client';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
 import {
   loadOidcConfig, saveOidcConfig, maskedConfig, APP_ROLES, type AppRole, type OidcConfig,
 } from '../services/oidc/oidcConfig';
-import { beginLogin, completeLogin, resetOidcClientCache, bindingHash } from '../services/oidc/OidcService';
+import {
+  beginLogin, completeLogin, resetOidcClientCache, bindingHash, discoverProvider, oidcErrorMessage,
+} from '../services/oidc/OidcService';
 import { logSafe } from '../utils/logSafe';
 
 const router = Router();
@@ -103,7 +104,7 @@ router.get(
       setBindingCookie(req, res, binding, BIND_TTL_S);
       res.redirect(url);
     } catch (e) {
-      console.warn('[OIDC] login could not start:', (e as Error).message);
+      console.warn('[OIDC] login could not start:', logSafe(oidcErrorMessage(e)));
       res.redirect(`/login?error=sso&code=${ssoErrorCode((e as Error).message)}`);
     }
   }
@@ -115,10 +116,10 @@ router.get(
   rateLimitRedis({ windowSec: 60, max: 30, keyPrefix: 'oidc-callback', allMethods: true }),
   async (req, res) => {
     try {
-      const params = req.query as Record<string, string>;
+      const params = req.query as Record<string, unknown>;
       if (params.error) {
         // Provider-supplied text, so made log-safe (CodeQL #110/#111).
-        console.warn('[OIDC] the provider returned an error:', logSafe(params.error), logSafe(params.error_description || ''));
+        console.warn('[OIDC] the provider returned an error:', logSafe(String(params.error)), logSafe(String(params.error_description ?? '')));
         res.redirect('/login?error=sso&code=provider');
         return;
       }
@@ -130,7 +131,7 @@ router.get(
       const dest = safeReturnTo(returnTo);
       res.redirect(`/auth/callback#code=${encodeURIComponent(code)}&returnTo=${encodeURIComponent(dest)}`);
     } catch (e) {
-      console.warn('[OIDC] sign-in failed:', (e as Error).message);
+      console.warn('[OIDC] sign-in failed:', logSafe(oidcErrorMessage(e)));
       res.redirect(`/login?error=sso&code=${ssoErrorCode((e as Error).message)}`);
     }
   }
@@ -235,18 +236,19 @@ router.post('/test', requireAuth, requireAdmin, async (req, res) => {
   const issuerUrl = (req.body?.issuer_url as string) || (await loadOidcConfig()).issuer_url;
   if (!issuerUrl) return res.status(400).json({ error: 'issuer_url is required' });
   try {
-    const issuer = await Issuer.discover(issuerUrl);
+    // Discovery doesn't use the client id; any placeholder will do.
+    const metadata = (await discoverProvider(issuerUrl, 'discovery-test')).serverMetadata();
     res.json({
       ok: true,
-      issuer: issuer.metadata.issuer,
-      authorization_endpoint: issuer.metadata.authorization_endpoint,
-      token_endpoint: issuer.metadata.token_endpoint,
-      userinfo_endpoint: issuer.metadata.userinfo_endpoint,
-      scopes_supported: issuer.metadata.scopes_supported,
-      claims_supported: issuer.metadata.claims_supported,
+      issuer: metadata.issuer,
+      authorization_endpoint: metadata.authorization_endpoint,
+      token_endpoint: metadata.token_endpoint,
+      userinfo_endpoint: metadata.userinfo_endpoint,
+      scopes_supported: metadata.scopes_supported,
+      claims_supported: metadata.claims_supported,
     });
   } catch (e) {
-    res.status(400).json({ ok: false, error: `Discovery failed: ${(e as Error).message}` });
+    res.status(400).json({ ok: false, error: `Discovery failed: ${oidcErrorMessage(e)}` });
   }
 });
 
