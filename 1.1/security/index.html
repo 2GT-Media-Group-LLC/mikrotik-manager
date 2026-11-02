@@ -783,6 +783,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../jump-hosts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Jump hosts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../commands/" class="md-nav__link">
         
   
@@ -1466,8 +1487,8 @@ on the device:</p>
 <li>Enables <code>www-ssl</code> with that certificate, on the port it already has (443 by default). If
    <code>www</code> only accepts certain addresses and <code>www-ssl</code> accepts any, <code>www-ssl</code> gets the same
    list.</li>
-<li>Checks from the manager that WebFig answers over HTTPS. Only then does it turn plain
-   <code>www</code> off.</li>
+<li>Checks from the manager that WebFig answers over HTTPS (through the device's
+   <a href="../jump-hosts/">jump host</a>, if it has one). Only then does it turn plain <code>www</code> off.</li>
 </ol>
 <p>If HTTPS doesn't answer, <code>www</code> is left on and the result says why. The usual cause is a
 firewall rule, or <code>www-ssl</code>'s <em>Available From</em> list, that lets port 80 in but not 443.</p>

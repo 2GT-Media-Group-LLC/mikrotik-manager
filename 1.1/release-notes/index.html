@@ -323,6 +323,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta6" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.6
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta5" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.5
@@ -726,6 +735,27 @@
   
   <span class="md-ellipsis">
     SSH keys
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jump-hosts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Jump hosts
   </span>
   
 
@@ -1204,6 +1234,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta6" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.6
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta5" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.5
@@ -1269,6 +1308,15 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta6">1.1.0-beta.6<a class="headerlink" href="#110-beta6" title="Permanent link">&para;</a></h2>
+<p><strong>Jump hosts</strong>, from <a href="https://github.com/KevinGinger">@KevinGinger</a>: reach devices the manager
+can't connect to directly through an SSH connection to a router (or any SSH server) that can.
+Add jump hosts under <strong>Credentials</strong>, then pick one per device, or as a site's default for new
+devices. Device API and SSH connections go through it, one shared connection per jump host, with
+its host key pinned. On a RouterOS jump router, allow forwarding with
+<code>/ip ssh set forwarding-enabled=local</code>. While devices use a jump host, only a fleet admin can
+change its address, port or host key (<a href="../jump-hosts/">Jump hosts</a>,
+<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/375">#375</a>).</p>
 <h2 id="110-beta5">1.1.0-beta.5<a class="headerlink" href="#110-beta5" title="Permanent link">&para;</a></h2>
 <p>The fixes of <a href="#103">1.0.3</a>, for the beta channel: the dashboard no longer warns about missing
 backups for devices whose configuration hasn't changed, and co-channel overlap is counted per

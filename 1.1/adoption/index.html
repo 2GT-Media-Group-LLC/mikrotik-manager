@@ -771,6 +771,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../jump-hosts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Jump hosts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../commands/" class="md-nav__link">
         
   
@@ -1422,10 +1443,12 @@ is left exactly as reachable as it was — still adoptable, not stranded.</p>
 <li>Checks the address you chose is free</li>
 <li>Adds the address, the default route, and the identity — adding only, never replacing</li>
 <li>Returns the neighbour to exactly how it was found</li>
-<li>Confirms the manager can now reach the device directly</li>
+<li>Confirms the manager can now reach the device: directly, or through an
+   <a href="../jump-hosts/">SSH jump host</a> when the site has a default one, or else when the borrowed
+   neighbour is reached through one</li>
 <li>Removes the factory <code>192.168.88.1</code> address, if you left that ticked</li>
 <li>Registers the device as a router, switch or access point, by what it reports, and starts
-    polling it</li>
+    polling it, reached the same way it was checked</li>
 </ol>
 <p>Every step is reported as it happens, so a failure says which one and why.</p>
 <p>Removing the factory address is recommended and on by default: two un-adopted devices both
