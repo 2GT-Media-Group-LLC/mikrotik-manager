@@ -8,7 +8,7 @@ import { safeConnectionError } from '../utils/safeClientError';
 
 const router = Router();
 
-function validDeviceId(req: Request, res: Response, next: NextFunction): void {
+function validDeviceId(req: Request<{ id: string }>, res: Response, next: NextFunction): void {
   const id = Number(req.params.id);
   if (!/^\d+$/.test(req.params.id) || !Number.isSafeInteger(id) || id <= 0 || id > 2147483647) {
     res.status(400).json({ error: 'Invalid device ID' });
