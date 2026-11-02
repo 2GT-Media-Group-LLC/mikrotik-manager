@@ -1193,6 +1193,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../antenna-aligner/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Antenna aligner
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../network-services/" class="md-nav__link">
         
   
@@ -1803,6 +1824,10 @@
 <p>The device list is the front door to everything else. This page covers getting devices in,
 what each tab of a device does, and the parts that write to hardware.</p>
 <h2 id="adding-devices">Adding devices<a class="headerlink" href="#adding-devices" title="Permanent link">&para;</a></h2>
+<p>Use <strong>Wireless Systems</strong> for outdoor PTP/PtMP bridges, antennas and CPE. It has a
+dedicated device filter and an <strong>Antenna aligner</strong> tab for watching both ends of
+a link. Existing devices can be reclassified in Edit Device. See the
+<a href="../antenna-aligner/">antenna aligner guide</a>.</p>
 <p><strong>Devices → Discover</strong> finds MikroTik hardware your managed devices can already see, over
 LLDP, CDP and MNDP. Each discovered device offers one button, <strong>Adopt Device</strong>, and the
 platform decides what that means — a factory-default unit is configured first, an already
@@ -1940,7 +1965,7 @@ closed browser tab and reports progress and failures per device.</p>
 <tr>
 <td><code>type</code></td>
 <td>Optional</td>
-<td><code>router</code>, <code>switch</code>, <code>ap</code> or <code>other</code>. Blank means router</td>
+<td><code>router</code>, <code>switch</code>, <code>ap</code>, <code>wisp</code> or <code>other</code>. Blank means router</td>
 </tr>
 <tr>
 <td><code>preset</code></td>

@@ -323,6 +323,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta4" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.4
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta3" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.3
@@ -897,6 +906,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../antenna-aligner/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Antenna aligner
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../network-services/" class="md-nav__link">
         
   
@@ -1165,6 +1195,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta4" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.4
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta3" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.3
@@ -1212,6 +1251,22 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta4">1.1.0-beta.4<a class="headerlink" href="#110-beta4" title="Permanent link">&para;</a></h2>
+<p>The first new features of 1.1, both from
+<a href="https://github.com/jenserling">@jenserling</a>:</p>
+<ul>
+<li><strong>12- or 24-hour time.</strong> Times show in 24-hour format by default. Fleet admins set the
+  default for everyone under <strong>Settings → General</strong>, and each account can choose its own
+  (<a href="../configuration/#time-display">Time display</a>,
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/343">#343</a>).</li>
+<li><strong>Wireless Systems and the antenna aligner.</strong> A new device type, shown as <strong>WS</strong>, for outdoor
+  point-to-point, point-to-multipoint and CPE radios. These devices get an <strong>Antenna aligner</strong>
+  tab with live signal from one or both ends of a link, per-chain readings, SNR, CCQ, link
+  rates, a signal history and an optional tone. It only reads from the radios and never
+  changes their settings. Existing radios keep their type until you change it in Edit Device
+  (<a href="../antenna-aligner/">Antenna aligner</a>,
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/344">#344</a>).</li>
+</ul>
 <h2 id="110-beta3">1.1.0-beta.3<a class="headerlink" href="#110-beta3" title="Permanent link">&para;</a></h2>
 <p>The fixes of <a href="#102">1.0.2</a>, for the beta channel: log collection uses much less CPU (thanks to
 <a href="https://github.com/KevinGinger">@KevinGinger</a>,
