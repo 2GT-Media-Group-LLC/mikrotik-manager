@@ -3,6 +3,17 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.6
+
+**Jump hosts**, from [@KevinGinger](https://github.com/KevinGinger): reach devices the manager
+can't connect to directly through an SSH connection to a router (or any SSH server) that can.
+Add jump hosts under **Credentials**, then pick one per device, or as a site's default for new
+devices. Device API and SSH connections go through it, one shared connection per jump host, with
+its host key pinned. On a RouterOS jump router, allow forwarding with
+`/ip ssh set forwarding-enabled=local`. While devices use a jump host, only a fleet admin can
+change its address, port or host key ([Jump hosts](jump-hosts.md),
+[#375](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/375)).
+
 ## 1.1.0-beta.5
 
 The fixes of [1.0.3](#103), for the beta channel: the dashboard no longer warns about missing
