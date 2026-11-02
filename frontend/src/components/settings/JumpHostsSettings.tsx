@@ -175,7 +175,7 @@ export default function JumpHostsSettings() {
     onMutate: (id) => setRowNote({ id, ok: true, text: 'Connecting…' }),
     onSuccess: (r, id) => {
       setRowNote(r.ok
-        ? { id, ok: true, text: `Connected.${r.fingerprint ? ` Host key ${r.fingerprint}` : ''}` }
+        ? { id, ok: true, text: `Connected.${r.forwarding ? ' Forwarding works.' : ''}${r.fingerprint ? ` Host key ${r.fingerprint}` : ''}` }
         : { id, ok: false, text: r.error });
       refresh();
     },
@@ -296,6 +296,11 @@ export default function JumpHostsSettings() {
                     {j.status === 'failing' && (
                       <span className="text-red-600 dark:text-red-400 flex items-center gap-1" title={j.status_error ?? undefined}>
                         <AlertCircle className="w-3.5 h-3.5" /> Unreachable
+                      </span>
+                    )}
+                    {j.status === 'not_forwarding' && (
+                      <span className="text-red-600 dark:text-red-400 flex items-center gap-1" title={j.status_error ?? undefined}>
+                        <AlertCircle className="w-3.5 h-3.5" /> Not forwarding
                       </span>
                     )}
                   </td>

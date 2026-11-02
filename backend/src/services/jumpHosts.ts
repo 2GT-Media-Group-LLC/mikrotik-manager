@@ -162,6 +162,10 @@ interface Live {
   /** The host key this connection was accepted with. */
   fingerprint: string | null;
   channels: number;
+  /** Channels asked for and not yet answered. */
+  opening: number;
+  /** Handed out no more (it refused to forward); closed once nothing is on it. */
+  retired: boolean;
   lastUsed: number;
 }
 
@@ -174,12 +178,29 @@ interface Failure {
 
 const live = new Map<number, Live>();
 const failures = new Map<number, Failure>();
+/** Jump hosts that refused to forward, until a forward through them works. */
+const refusals = new Map<number, JumpHostError>();
 
 /** Close a connection on purpose. */
 function closeLive(id: number, e: Live): void {
   e.closing = true;
   if (live.get(id) === e) live.delete(id);
   e.client.end();
+}
+
+/**
+ * Hand a connection out no more, so the next use opens another. It closes
+ * once nothing is opening or using a channel on it: a channel already asked
+ * for gets the jump host's own answer, not "connection closed".
+ */
+function retire(id: number, e: Live): void {
+  e.retired = true;
+  if (live.get(id) === e) live.delete(id);
+  closeIfRetired(id, e);
+}
+
+function closeIfRetired(id: number, e: Live): void {
+  if (e.retired && !e.closing && e.channels === 0 && e.opening === 0) closeLive(id, e);
 }
 
 async function loadRow(id: number): Promise<JumpHostRow> {
@@ -290,8 +311,8 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
   const client = new SSHClient();
   let hostKeyError: JumpHostError | null = null;
   const entry: Live = {
-    configKey: key, client, connected: false, closing: false, fingerprint: null, channels: 0, lastUsed: Date.now(),
-    ready: Promise.resolve(client),
+    configKey: key, client, connected: false, closing: false, fingerprint: null, channels: 0, opening: 0, retired: false,
+    lastUsed: Date.now(), ready: Promise.resolve(client),
   };
   entry.ready = new Promise<SSHClient>((resolve, reject) => {
     client.once('ready', () => { entry.connected = true; resolve(client); });
@@ -426,8 +447,18 @@ export async function openForwardedChannel(
     const failed = (err: Error & { reason?: number | string }) => {
       // RFC 4254 reason codes; the description that comes with them may be empty.
       if (err.reason === OPEN_ADMINISTRATIVELY_PROHIBITED || /prohibited/i.test(err.message)) {
-        reject(new JumpHostError(`${label(row)} refused to forward connections. Allow it on that router with: ` +
-          '/ip ssh set forwarding-enabled=local', { cause: err }));
+        const refusal = new JumpHostError(`${label(row)} refused to forward connections. Allow it on that router with: ` +
+          '/ip ssh set forwarding-enabled=local', { cause: err });
+        // With nothing else open on it, forwarding is off for the connection.
+        // OpenSSH reads that setting as a connection starts, so turning it on
+        // never reaches this one: the next use opens another. With other
+        // channels open it's only this destination (OpenSSH's PermitOpen), and
+        // the connection stays for them.
+        if (entry.channels === 0) {
+          refusals.set(jumpHostId, refusal);
+          retire(jumpHostId, entry);
+        }
+        reject(refusal);
       } else {
         // The jump host is up; what it couldn't reach is the device.
         const said = err.message.replace(/^\(SSH\) Channel open failure:\s*/, '').trim();
@@ -439,17 +470,29 @@ export async function openForwardedChannel(
       }
     };
     try {
+      entry.opening++;
       client.forwardOut('127.0.0.1', 0, host, port, (err, channel) => {
         clearTimeout(timer);
+        entry.opening--;
         if (settled) {
           channel?.destroy(); // too late: whoever asked has given up
+          closeIfRetired(jumpHostId, entry);
           return;
         }
         settled = true;
-        if (err) return failed(err);
+        if (err) {
+          failed(err);
+          closeIfRetired(jumpHostId, entry);
+          return;
+        }
         entry.channels++;
         entry.lastUsed = Date.now();
-        channel.once('close', () => { entry.channels--; entry.lastUsed = Date.now(); });
+        refusals.delete(jumpHostId);
+        channel.once('close', () => {
+          entry.channels--;
+          entry.lastUsed = Date.now();
+          closeIfRetired(jumpHostId, entry);
+        });
         // ssh2 emits 'close' only once what arrived has been read, so a channel
         // given up on unread (the device answered too late) would stay counted
         // for good: destroying one drains it.
@@ -460,6 +503,7 @@ export async function openForwardedChannel(
     } catch (err) {
       // The connection closed between being handed out and used.
       clearTimeout(timer);
+      entry.opening--;
       settled = true;
       reject(new JumpHostError(`${label(row)} closed the connection`, { cause: err }));
     }
@@ -478,24 +522,54 @@ export async function sshRoute(device: Routed & { ip_address: string }, port: nu
   return { sock: await openForwardedChannel(via, device.ip_address, port) };
 }
 
+/** How long Test waits for the jump host to answer a forward: a refusal is at once. */
+const FORWARD_CHECK_MS = 5_000;
+
 /**
  * Connect to a jump host now, without the backoff (or use its open
- * connection), and report what happened: for "Test".
+ * connection), and report what happened: for "Test". `forwarding` is true
+ * when it forwarded a connection to one of its devices, and null when no
+ * device uses it to try with.
  */
-export async function testJumpHost(id: number): Promise<{ ok: true; fingerprint: string | null } | { ok: false; error: string }> {
+export async function testJumpHost(id: number): Promise<
+  { ok: true; fingerprint: string | null; forwarding: true | null } | { ok: false; error: string }
+> {
   // A working connection is kept: the devices behind it are using it.
   failures.delete(id);
   try {
     const { entry } = await jumpClient(id);
-    return { ok: true, fingerprint: entry.fingerprint };
+    const forwarding = await checkForwarding(id);
+    if (forwarding instanceof JumpHostError) return { ok: false, error: forwarding.message };
+    return { ok: true, fingerprint: entry.fingerprint, forwarding };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * Logging in says nothing about forwarding, which RouterOS has off by
+ * default, so ask the jump host for a connection to one of its devices,
+ * closed as soon as it opens. True when it forwards (a device that didn't
+ * answer is the device's doing), the jump host's error when it doesn't,
+ * null with no device to try.
+ */
+async function checkForwarding(id: number): Promise<true | null | JumpHostError> {
+  const device = await queryOne<{ ip_address: string; api_port: number; ssh_port: number | null; ssh_only: boolean }>(
+    `SELECT ip_address, api_port, ssh_port, ssh_only FROM devices WHERE jump_host_id = $1 ORDER BY id LIMIT 1`, [id]);
+  if (!device) return null;
+  const port = device.ssh_only ? (device.ssh_port ?? 22) : device.api_port;
+  try {
+    (await openForwardedChannel(id, device.ip_address, port, FORWARD_CHECK_MS)).destroy();
+    return true;
+  } catch (err) {
+    return err instanceof JumpHostError ? err : true;
   }
 }
 
 /** Close a jump host's connection and forget its failures (it was changed or removed). */
 export function dropJumpHost(id: number): void {
   failures.delete(id);
+  refusals.delete(id);
   const e = live.get(id);
   if (e) closeLive(id, e);
 }
@@ -512,12 +586,19 @@ export async function trustNewJumpHostKey(id: number): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** The state of each jump host's shared connection, for the settings page. */
-export function jumpHostStatus(id: number): { state: 'connected' | 'idle' | 'failing'; error?: string; retryAt?: number; channels?: number } {
+/**
+ * The state of each jump host's shared connection, for the settings page:
+ * logged in, or refusing to forward through it, until a forward works.
+ */
+export function jumpHostStatus(id: number): {
+  state: 'connected' | 'idle' | 'failing' | 'not_forwarding'; error?: string; retryAt?: number; channels?: number;
+} {
+  const refused = refusals.get(id);
   const e = live.get(id);
-  if (e?.connected) return { state: 'connected', channels: e.channels };
+  if (e?.connected && !refused) return { state: 'connected', channels: e.channels };
   const f = failures.get(id);
   if (f) return { state: 'failing', error: f.error.message, retryAt: f.retryAt };
+  if (refused) return { state: 'not_forwarding', error: refused.message };
   return { state: 'idle' };
 }
 

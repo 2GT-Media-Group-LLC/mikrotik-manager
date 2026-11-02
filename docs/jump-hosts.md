@@ -20,7 +20,9 @@ Allow the SSH server to open connections onward for logged-in users:
 /ip ssh set forwarding-enabled=local
 ```
 
-Without it the router refuses, and the manager says so, with this command.
+Without it the router refuses, and the manager says so, with this command. Once it's on, the
+next poll (or **Test**) opens a new SSH connection to the router: some SSH servers, OpenSSH among
+them, only apply the setting to connections opened after it changed.
 
 The user the manager logs in as needs nothing beyond SSH access. Devices behind the router see
 connections coming from the router's own address, so their API and SSH services (and any
@@ -42,7 +44,10 @@ Passwords, keys and passphrases are encrypted with the manager's key, like devic
 are never sent back to the browser, are included in [platform backups](platform-backup.md), and
 are re-encrypted when the key is rotated or a backup is restored on another server.
 
-**Test** connects straight away and shows the host key it was given.
+**Test** connects straight away and shows the host key it was given. Once devices use the jump
+host, it also asks the router for a connection to one of them, closed as soon as it opens, to
+check that forwarding works. A device that doesn't answer doesn't fail the test; that's the
+device, not the jump host.
 
 To monitor the jump router itself, tick **Also add it as a device**. Once the jump host is saved,
 Add Device opens with its name, address, site and login filled in (a private key's username

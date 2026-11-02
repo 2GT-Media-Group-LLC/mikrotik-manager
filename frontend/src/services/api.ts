@@ -1060,8 +1060,8 @@ export interface JumpHost {
   host_key_mismatch_at: string | null;
   notes: string | null;
   device_count: number;
-  /** Its shared connection: open, not needed right now, or failing (with why). */
-  status: 'connected' | 'idle' | 'failing';
+  /** Its shared connection: open, not needed right now, failing, or refusing to forward (with why). */
+  status: 'connected' | 'idle' | 'failing' | 'not_forwarding';
   status_error: string | null;
   can_manage: boolean;
   created_at: string;
@@ -1088,7 +1088,8 @@ export const jumpHostsApi = {
   update: (id: number, data: JumpHostInput) => api.put<JumpHost>(`/jump-hosts/${id}`, data),
   delete: (id: number) => api.delete(`/jump-hosts/${id}`),
   test: (id: number) =>
-    api.post<({ ok: true; fingerprint: string | null } | { ok: false; error: string }) & { jump_host: JumpHost }>(`/jump-hosts/${id}/test`),
+    // forwarding: it forwarded to one of its devices; null with none to try.
+    api.post<({ ok: true; fingerprint: string | null; forwarding: true | null } | { ok: false; error: string }) & { jump_host: JumpHost }>(`/jump-hosts/${id}/test`),
   trustKey: (id: number) => api.post<JumpHost>(`/jump-hosts/${id}/trust-key`),
 };
 

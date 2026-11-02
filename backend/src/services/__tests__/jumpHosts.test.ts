@@ -45,6 +45,8 @@ const fingerprintOf = (privateKey: string): string => {
 
 const rows = new Map<number, JumpHostRow>();
 const presets = new Map<number, { api_username: string; api_password_encrypted: string; ssh_username: string | null; ssh_password_encrypted: string | null }>();
+/** The first device behind each jump host, for Test's forwarding check. */
+const devicesBehind = new Map<number, { ip_address: string; api_port: number; ssh_port: number | null; ssh_only: boolean }>();
 
 function addJumpHost(id: number, port: number, over: Partial<JumpHostRow> = {}): JumpHostRow {
   const row: JumpHostRow = {
@@ -66,6 +68,7 @@ beforeEach(() => {
       const p = presets.get(params[0] as number);
       return p ? { ...p } : null;
     }
+    if (/FROM devices WHERE jump_host_id = \$1/.test(sql)) return devicesBehind.get(params[0] as number) ?? null;
     return null;
   }) as never);
   mockQuery.mockImplementation((async (sql: string, params: unknown[]) => {
@@ -94,6 +97,7 @@ afterEach(() => {
   for (const id of rows.keys()) dropJumpHost(id);
   rows.clear();
   presets.clear();
+  devicesBehind.clear();
   RouterOSClient.channelOpener = null;
   RouterOSClient.tlsVerifier = null;
 });
@@ -114,16 +118,19 @@ interface JumpServer {
 
 /**
  * The jump router. `forwarding: false` is RouterOS without forwarding-enabled;
- * `forwardDelayMs` is a router slow to reach the device, `loginDelayMs` one
- * slow to accept the login. `acceptsFirst` forwards as RouterOS does: it
- * confirms the channel before connecting onward, and closes it if that fails
- * (OpenSSH, the default here, refuses the channel instead). `ports` sends a
- * forward for one port to another, for the API's fixed ports.
+ * it's read as each connection starts, as OpenSSH reads AllowTcpForwarding.
+ * `prohibits` refuses some destinations as administratively prohibited, as
+ * OpenSSH's PermitOpen does. `forwardDelayMs` is a router slow to reach the
+ * device, `loginDelayMs` one slow to accept the login. `acceptsFirst` forwards
+ * as RouterOS does: it confirms the channel before connecting onward, and
+ * closes it if that fails (OpenSSH, the default here, refuses the channel
+ * instead). `ports` sends a forward for one port to another, for the API's
+ * fixed ports.
  */
 async function startJumpServer(
   opts: {
     forwarding?: boolean; hostKey?: string; forwardDelayMs?: number; loginDelayMs?: number; ignoresGlobalRequests?: boolean;
-    acceptsFirst?: boolean; ports?: Record<number, number>;
+    acceptsFirst?: boolean; ports?: Record<number, number>; prohibits?: (port: number) => boolean;
   } = {},
 ): Promise<JumpServer> {
   const s: JumpServer = { port: 0, connections: 0, logins: 0, authMethods: [], forwards: [], channelsClosed: 0, close: async () => {} };
@@ -148,6 +155,14 @@ async function startJumpServer(
       if (opts.forwarding === false) return; // no 'tcpip' listener: "administratively prohibited"
       client.on('tcpip', (accept, reject, info) => {
         s.forwards.push(`${info.destIP}:${info.destPort}`);
+        if (opts.prohibits?.(info.destPort)) {
+          // ssh2's reject() says "connect failed"; PermitOpen says "prohibited".
+          const proto = (client as unknown as { _protocol: { channelOpenFail(to: number, reason: number, desc: string): void } })._protocol;
+          const fail = proto.channelOpenFail.bind(proto);
+          proto.channelOpenFail = (to) => { proto.channelOpenFail = fail; fail(to, 1, ''); };
+          reject();
+          return;
+        }
         setTimeout(() => {
           const sock = net.connect(opts.ports?.[info.destPort] ?? info.destPort, info.destIP);
           open.add(sock);
@@ -575,6 +590,73 @@ describe('the jump host refusing', () => {
     }
   });
 
+  it('opens a new connection once forwarding is turned on, rather than keep asking the one that refused', async () => {
+    const opts = { forwarding: false };
+    const jump = await startJumpServer(opts);
+    const device = await startDevice();
+    try {
+      addJumpHost(60, jump.port);
+      await expect(api(device.port, 60).connect()).rejects.toThrow('/ip ssh set forwarding-enabled=local');
+      expect(jumpHostStatus(60)).toMatchObject({ state: 'not_forwarding', error: expect.stringMatching(/refused to forward/) });
+
+      opts.forwarding = true;
+      const client = api(device.port, 60);
+      await client.connect();
+      expect(jump.connections).toBe(2);
+      expect(device.connections).toBe(1);
+      expect(jumpHostStatus(60)).toMatchObject({ state: 'connected', channels: 1 });
+      client.disconnect();
+    } finally {
+      await device.close();
+      await jump.close();
+    }
+  });
+
+  it('keeps the connection, and the sessions on it, when only one destination is refused', async () => {
+    const device = await startDevice();
+    const jump = await startJumpServer({ prohibits: (port) => port !== device.port });
+    try {
+      addJumpHost(61, jump.port);
+      const client = api(device.port, 61);
+      await client.connect();
+      await expect(openForwardedChannel(61, '127.0.0.1', 8728)).rejects.toThrow(/refused to forward/);
+      expect(jump.connections).toBe(1);
+      expect(jump.channelsClosed).toBe(0);
+      expect(client.isUsable()).toBe(true);
+      expect(jumpHostStatus(61).state).toBe('connected');
+      client.disconnect();
+    } finally {
+      await device.close();
+      await jump.close();
+    }
+  });
+
+  it('Test checks that it forwards, through one of its devices, and not only that it logs in', async () => {
+    const opts = { forwarding: false };
+    const jump = await startJumpServer(opts);
+    const device = await startDevice();
+    try {
+      addJumpHost(62, jump.port);
+      expect(await testJumpHost(62)).toMatchObject({ ok: true, forwarding: null }); // no device to try yet
+
+      devicesBehind.set(62, { ip_address: '127.0.0.1', api_port: device.port, ssh_port: 22, ssh_only: false });
+      expect(await testJumpHost(62)).toEqual({ ok: false, error: expect.stringMatching(/refused to forward.*forwarding-enabled=local/) });
+
+      opts.forwarding = true;
+      expect(await testJumpHost(62)).toMatchObject({ ok: true, forwarding: true });
+      expect(jump.forwards).toEqual([`127.0.0.1:${device.port}`]);
+      await until(() => jump.channelsClosed === 1);
+      expect(jump.channelsClosed).toBe(1); // the check's connection, closed at once
+
+      // A device that doesn't answer is the device's doing, not the jump host's.
+      devicesBehind.set(62, { ip_address: '127.0.0.1', api_port: 1, ssh_port: 22, ssh_only: false });
+      expect(await testJumpHost(62)).toMatchObject({ ok: true, forwarding: true });
+    } finally {
+      await device.close();
+      await jump.close();
+    }
+  });
+
   it('names the device, not the jump host, when the jump host is up but the device is not', async () => {
     const jump = await startJumpServer();
     try {
@@ -598,7 +680,7 @@ describe('the jump host refusing', () => {
 
       expect(await trustNewJumpHostKey(22)).toBe(true);
       expect(row.host_key_fingerprint).toBe(fingerprintOf(OTHER_KEY));
-      expect(await testJumpHost(22)).toEqual({ ok: true, fingerprint: fingerprintOf(OTHER_KEY) });
+      expect(await testJumpHost(22)).toEqual({ ok: true, fingerprint: fingerprintOf(OTHER_KEY), forwarding: null });
     } finally {
       await jump.close();
     }
