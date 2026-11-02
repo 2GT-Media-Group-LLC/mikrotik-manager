@@ -5214,6 +5214,40 @@ export class DeviceCollector {
     await this.client.execute('/interface/ethernet/switch/vlan/remove', { '.id': id });
   }
 
+  // ─── VLAN interfaces (#309) ──────────────────────────────────────────────
+  // Fields are already checked (utils/vlanInterfaceEdit).
+
+  async addVlanInterface(fields: Record<string, string>): Promise<void> {
+    await this.client.execute('/interface/vlan/add', fields);
+  }
+
+  async updateVlanInterface(id: string, fields: Record<string, string>): Promise<void> {
+    await this.setItem('/interface/vlan', id, fields);
+  }
+
+  /**
+   * Remove a VLAN interface and the addresses on it. RouterOS would leave
+   * them behind on a dangling interface ("*C"), marked invalid. Returns the
+   * addresses removed.
+   */
+  async removeVlanInterface(id: string): Promise<string[]> {
+    const vlan = (await this.client.execute('/interface/vlan/print')).find((v) => v['.id'] === id);
+    if (!vlan?.['name']) throw new Error('That VLAN interface is no longer on the device.');
+    const name = vlan['name'];
+    const removed: string[] = [];
+    for (const menu of ['/ip/address', '/ipv6/address']) {
+      const rows = await this.client.execute(`${menu}/print`).catch(() => [] as Record<string, string>[]);
+      for (const a of rows) {
+        // Dynamic ones (link-local, SLAAC, DHCP) go with the interface anyway.
+        if (a['interface'] !== name || a['dynamic'] === 'true' || !a['.id']) continue;
+        await this.client.execute(`${menu}/remove`, { '.id': a['.id'] });
+        removed.push(a['address'] || '');
+      }
+    }
+    await this.client.execute('/interface/vlan/remove', { '.id': id });
+    return removed.filter(Boolean);
+  }
+
   /** A switch port's vlan-mode, vlan-header and default-vlan-id, by port name. */
   async setSwitchPortVlan(name: string, fields: Record<string, string>): Promise<void> {
     const port = (await this.client.execute('/interface/ethernet/switch/port/print'))

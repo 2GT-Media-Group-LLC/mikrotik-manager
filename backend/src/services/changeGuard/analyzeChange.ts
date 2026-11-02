@@ -58,6 +58,10 @@ export type PlannedChange =
    * a warning so auto-revert is required.
    */
   | { kind: 'path-object.change'; name: string; what: string }
+  /** VLAN interfaces (#309). `fields` use RouterOS names; in set, '' clears. */
+  | { kind: 'vlan-iface.add'; name: string; vlanId: number; parent: string; disabled?: boolean }
+  | { kind: 'vlan-iface.set'; id: string; fields: Record<string, string> }
+  | { kind: 'vlan-iface.remove'; id: string }
   /** Several changes applied in order, e.g. a VLAN copy. */
   | { kind: 'batch'; changes: PlannedChange[] };
 
@@ -88,6 +92,8 @@ const csv = (v: string | undefined): string[] =>
   (v || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 const join = (list: string[]): string => [...new Set(list)].filter(Boolean).join(',');
+
+const isTrueValue = (v: string | undefined): boolean => v === 'true' || v === 'yes';
 
 const isDynamic = (row: RosRow): boolean => row['dynamic'] === 'true' || row['dynamic'] === 'yes';
 
@@ -331,6 +337,39 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
 
     case 'address-list.remove': {
       s.addressLists = (s.addressLists ?? []).filter((e) => e['.id'] !== change.entryId);
+      break;
+    }
+
+    case 'vlan-iface.add': {
+      const disabled = change.disabled ? 'true' : 'false';
+      s.vlanInterfaces.push({ name: change.name, 'vlan-id': String(change.vlanId), interface: change.parent, disabled });
+      s.interfaces.push({ name: change.name, type: 'vlan', disabled });
+      break;
+    }
+
+    // A rename isn't simulated: RouterOS carries it into everything that names
+    // the interface (addresses, bridge VLANs, firewall), so it moves nothing.
+    case 'vlan-iface.set': {
+      const row = s.vlanInterfaces.find((v) => v['.id'] === change.id);
+      if (!row) break;
+      const fields = Object.fromEntries(Object.entries(change.fields).filter(([k]) => k !== 'name'));
+      const merged = mergeFields(row, fields);
+      s.vlanInterfaces = s.vlanInterfaces.map((v) => (v === row ? merged : v));
+      if (change.fields['disabled'] !== undefined) {
+        const iface = s.interfaces.find((x) => x['name'] === row['name']);
+        if (iface) iface['disabled'] = isTrueValue(change.fields['disabled']) ? 'true' : 'false';
+      }
+      break;
+    }
+
+    // Its addresses go with it (DeviceCollector.removeVlanInterface).
+    case 'vlan-iface.remove': {
+      const row = s.vlanInterfaces.find((v) => v['.id'] === change.id);
+      if (!row) break;
+      const name = row['name'];
+      s.vlanInterfaces = s.vlanInterfaces.filter((v) => v !== row);
+      s.interfaces = s.interfaces.filter((x) => x['name'] !== name);
+      s.addresses = s.addresses.filter((a) => (a['actual-interface'] || a['interface']) !== name);
       break;
     }
 

@@ -195,6 +195,7 @@ const PREVIEWABLE: [string, RegExp][] = [
   ['PUT', /^\/api\/devices\/\d+\/bridge\/[^/]+\/vlan-filtering$/],
   ['POST|PUT', /^\/api\/devices\/\d+\/bridges(\/[^/]+)?$/],
   ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/switch-vlans(\/[^/]+)?$/],
+  ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/vlan-interfaces(\/[^/]+)?$/],
   ['PUT', /^\/api\/devices\/\d+\/switch-ports\/[^/]+\/vlan$/],
   // Network services (device in ?deviceId=)
   ['POST|PUT|DELETE', /^\/api\/network-services\/dhcp\/(server|pool|static-lease)(\/[^/]+)?$/],

@@ -898,6 +898,14 @@ export const devicesApi = {
   /** Where the device's web interface answers (#335); url null when www and www-ssl are off. */
   getWebAdmin: (id: number) => api.get<{ url: string | null; note: string | null }>(`/devices/${id}/web-admin`),
   getVlanInterfaces: (id: number) => api.get<VlanInterface[]>(`/devices/${id}/vlan-interfaces`),
+  /** VLAN interface edits (#309), predicted by Change Guard; confirm_lockout after a 409. */
+  addVlanInterface: (id: number, data: VlanInterfaceInput & { address?: string; confirm_lockout?: boolean }) =>
+    api.post<{ message: string; address_error?: boolean }>(`/devices/${id}/vlan-interfaces`, data),
+  updateVlanInterface: (id: number, entryId: string, data: Partial<VlanInterfaceInput> & { current_name?: string; confirm_lockout?: boolean }) =>
+    api.put<{ message: string }>(`/devices/${id}/vlan-interfaces/${encodeURIComponent(entryId)}`, data),
+  removeVlanInterface: (id: number, entryId: string, name: string, confirmLockout = false) =>
+    api.delete<{ message: string }>(`/devices/${id}/vlan-interfaces/${encodeURIComponent(entryId)}`,
+      { params: { name, ...(confirmLockout ? { confirm_lockout: 'true' } : {}) } }),
   getIpv6Routes: (id: number) => api.get<{ supported: boolean; disabled?: boolean; routes: Ipv6Route[] }>(`/devices/${id}/routing/ipv6`),
   /** Switch chip VLAN edits (#278); each requires Change Guard's auto-revert. */
   addSwitchVlan: (id: number, data: { switch: string; vlan_id: number; ports: string[]; disabled?: boolean }) =>
@@ -2756,6 +2764,16 @@ export const routingApi = {
 
 /** The switch chip's own VLAN table and port VLAN settings (#278). */
 /** An /interface/vlan entry (#309). */
+/** What a VLAN interface is made or edited with (#309). */
+export interface VlanInterfaceInput {
+  vlan_id: number;
+  interface: string;
+  name: string;
+  mtu?: number | '';
+  comment?: string;
+  disabled?: boolean;
+}
+
 export interface VlanInterface {
   id: string;
   name: string;

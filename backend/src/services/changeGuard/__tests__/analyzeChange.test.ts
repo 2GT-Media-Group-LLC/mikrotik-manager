@@ -736,3 +736,112 @@ describe('analyzeChange — ip.set (#285)', () => {
       .not.toContain('mgmt-ip-present');
   });
 });
+
+describe('VLAN interface edits (#309)', () => {
+  // Router on a stick: management on vlan10, tagged on ether1; vlan20 beside it.
+  const stick = (over: Partial<DeviceSnapshot> = {}) => baseSnapshot({
+    addresses: [
+      { '.id': '*1', address: '192.168.0.40/24', interface: 'vlan10', disabled: 'false' },
+      { '.id': '*2', address: '10.0.20.1/24', interface: 'vlan20', disabled: 'false' },
+    ],
+    vlanInterfaces: [
+      { '.id': '*A1', name: 'vlan10', 'vlan-id': '10', interface: 'ether1', disabled: 'false' },
+      { '.id': '*A2', name: 'vlan20', 'vlan-id': '20', interface: 'ether1', disabled: 'false' },
+    ],
+    interfaces: [
+      { name: 'bridge', type: 'bridge', disabled: 'false' },
+      { name: 'ether1', type: 'ether', disabled: 'false' },
+      { name: 'ether2', type: 'ether', disabled: 'false' },
+      { name: 'vlan10', type: 'vlan', disabled: 'false' },
+      { name: 'vlan20', type: 'vlan', disabled: 'false' },
+      { name: 'sfp28-1', type: 'ether', disabled: 'false' },
+    ],
+    bridgePorts: [{ interface: 'sfp28-1', bridge: 'bridge', pvid: '1', disabled: 'false' }],
+    arp: [], bridgeHosts: [],
+    ...over,
+  });
+  const ids = (c: PlannedChange, snap = stick()) => analyzeChange(snap, device, c).violations.map((v) => v.id);
+
+  it('records the VLAN chain management rides', () => {
+    expect(resolveManagementPath(stick(), device).vlanChain).toEqual([{ name: 'vlan10', vlanId: '10', parent: 'ether1' }]);
+  });
+
+  it('adding a VLAN interface is safe', () => {
+    expect(analyzeChange(stick(), device, { kind: 'vlan-iface.add', name: 'vlan30', vlanId: 30, parent: 'ether1' }).severity).toBe('safe');
+  });
+
+  it('a new VLAN ID or parent on the management VLAN interface is a lockout', () => {
+    const vid = analyzeChange(stick(), device, { kind: 'vlan-iface.set', id: '*A1', fields: { 'vlan-id': '11' } });
+    expect(vid.severity).toBe('critical');
+    expect(vid.violations.map((v) => v.id)).toEqual(['mgmt-vlan-unchanged']);
+    expect(vid.violations[0].detail).toContain('VLAN 11');
+    expect(ids({ kind: 'vlan-iface.set', id: '*A1', fields: { interface: 'ether2' } })).toEqual(['mgmt-vlan-unchanged']);
+  });
+
+  it('disabling or removing the management VLAN interface is a lockout', () => {
+    expect(ids({ kind: 'vlan-iface.set', id: '*A1', fields: { disabled: 'yes' } })).toContain('mgmt-iface-up');
+    const rm = ids({ kind: 'vlan-iface.remove', id: '*A1' });
+    expect(rm).toContain('mgmt-iface-up');
+    expect(rm).toContain('mgmt-ip-present');
+  });
+
+  it('renaming it, or changing its comment, moves nothing', () => {
+    expect(analyzeChange(stick(), device, { kind: 'vlan-iface.set', id: '*A1', fields: { name: 'mgmt', comment: 'x' } }).severity).toBe('safe');
+  });
+
+  it('an MTU change on it is a warning, so auto-revert is required', () => {
+    const v = analyzeChange(stick(), device, {
+      kind: 'batch',
+      changes: [
+        { kind: 'vlan-iface.set', id: '*A1', fields: { mtu: '1400' } },
+        { kind: 'path-object.change', name: 'vlan10', what: 'MTU' },
+      ],
+    });
+    expect(v.severity).toBe('warning');
+  });
+
+  it('any edit to another VLAN interface is safe', () => {
+    for (const c of [
+      { kind: 'vlan-iface.set', id: '*A2', fields: { 'vlan-id': '21', interface: 'ether2', disabled: 'yes' } },
+      { kind: 'vlan-iface.remove', id: '*A2' },
+    ] as PlannedChange[]) {
+      expect(analyzeChange(stick(), device, c).severity).toBe('safe');
+    }
+  });
+
+  it('follows Q-in-Q: the outer VLAN under the management VLAN counts too', () => {
+    const qinq = stick({
+      addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'inner', disabled: 'false' }],
+      vlanInterfaces: [
+        { '.id': '*B1', name: 'inner', 'vlan-id': '100', interface: 'outer', disabled: 'false' },
+        { '.id': '*B2', name: 'outer', 'vlan-id': '200', interface: 'svlan', disabled: 'false' },
+        { '.id': '*B3', name: 'svlan', 'vlan-id': '300', interface: 'ether1', disabled: 'false' },
+      ],
+      interfaces: [
+        { name: 'ether1', type: 'ether', disabled: 'false' },
+        { name: 'inner', type: 'vlan', disabled: 'false' },
+        { name: 'outer', type: 'vlan', disabled: 'false' },
+        { name: 'svlan', type: 'vlan', disabled: 'false' },
+      ],
+    });
+    expect(resolveManagementPath(qinq, device).vlanChain?.map((l) => l.name)).toEqual(['inner', 'outer', 'svlan']);
+    expect(ids({ kind: 'vlan-iface.set', id: '*B2', fields: { 'vlan-id': '201' } }, qinq)).toEqual(['mgmt-vlan-unchanged']);
+    // Three deep: only the new check sees the third link go.
+    expect(ids({ kind: 'vlan-iface.set', id: '*B3', fields: { disabled: 'yes' } }, qinq)).toEqual(['mgmt-vlan-unchanged']);
+    expect(ids({ kind: 'vlan-iface.remove', id: '*B3' }, qinq)).toEqual(['mgmt-vlan-unchanged']);
+  });
+
+  it('a VLAN interface on a bridge carrying management is checked the same way', () => {
+    const onBridge = baseSnapshot({
+      addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'vlan99', disabled: 'false' }],
+      vlanInterfaces: [{ '.id': '*C1', name: 'vlan99', 'vlan-id': '99', interface: 'bridge', disabled: 'false' }],
+      interfaces: [
+        { name: 'bridge', type: 'bridge', disabled: 'false' },
+        { name: 'sfp28-1', type: 'ether', disabled: 'false' },
+        { name: 'ether1', type: 'ether', disabled: 'false' },
+        { name: 'vlan99', type: 'vlan', disabled: 'false' },
+      ],
+    });
+    expect(ids({ kind: 'vlan-iface.set', id: '*C1', fields: { 'vlan-id': '98' } }, onBridge)).toContain('mgmt-vlan-unchanged');
+  });
+});

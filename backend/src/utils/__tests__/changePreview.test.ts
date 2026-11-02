@@ -100,6 +100,9 @@ describe('isPreviewableRoute', () => {
     expect(isPreviewableRoute('PUT', '/api/network-services/dns?deviceId=7')).toBe(true);
     expect(isPreviewableRoute('POST', '/api/network-services/dhcp/static-lease?deviceId=7')).toBe(true);
     expect(isPreviewableRoute('PUT', '/api/wireless/7/interfaces/wifi1')).toBe(true);
+    expect(isPreviewableRoute('POST', '/api/devices/7/vlan-interfaces')).toBe(true);
+    expect(isPreviewableRoute('PUT', '/api/devices/7/vlan-interfaces/*1A')).toBe(true);
+    expect(isPreviewableRoute('DELETE', '/api/devices/7/vlan-interfaces/*1A?name=vlan20')).toBe(true);
   });
   it('refuses actions and anything outside the list', () => {
     expect(isPreviewableRoute('POST', '/api/devices/7/reboot')).toBe(false);

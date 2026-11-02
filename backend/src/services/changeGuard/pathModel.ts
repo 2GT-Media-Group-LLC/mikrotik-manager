@@ -81,6 +81,13 @@ export interface PathHop {
   reason: string;
 }
 
+/** One VLAN interface on the management path, as it is now. */
+export interface VlanLink {
+  name: string;
+  vlanId: string;
+  parent: string;
+}
+
 export interface ManagementPath {
   mgmtIp: string;
   /** Interface that owns the management address. */
@@ -122,6 +129,13 @@ export interface ManagementPath {
   ingressTagged: boolean;
   /** Gateway the device uses to reach the manager, when the manager is off-subnet. */
   managerGateway: string | null;
+  /**
+   * The /interface/vlan entries management rides through, the management
+   * interface first, then the VLAN it is stacked on (Q-in-Q), and so on (#309).
+   * A new VLAN ID or parent on any of them moves management off the wire it
+   * arrives on, though every interface still exists and is enabled.
+   */
+  vlanChain?: VlanLink[];
   /**
    * Routing table the management session is carried in: the API service's `vrf`
    * (or, failing that, the VRF its interface sits in). `main` for a device
@@ -492,6 +506,7 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
   let mgmtVlanId: number | null = null;
   let taggedManagement = false;
   let mgmtParent: string | null = null;
+  const vlanChain: VlanLink[] = [];
 
   if (mgmtInterface) {
     const vlanIface =
@@ -501,6 +516,13 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
     if (vlanIface) {
       // Management rides a tagged VLAN sub-interface.
       taggedManagement = true;
+      // ...and, stacked (Q-in-Q), every VLAN interface under it.
+      let link = snap.vlanInterfaces.find((v) => v['name'] === mgmtInterface);
+      while (link && !vlanChain.some((l) => l.name === link?.['name'])) {
+        const parentName = link['interface'] || '';
+        vlanChain.push({ name: link['name'] || '', vlanId: link['vlan-id'] || '', parent: parentName });
+        link = snap.vlanInterfaces.find((v) => v['name'] === parentName);
+      }
       const vid = parseInt(vlanIface['vlan-id'] || '', 10);
       mgmtVlanId = isNaN(vid) ? null : vid;
       const parent = vlanIface['interface'] || null;
@@ -677,6 +699,7 @@ export function resolveManagementPath(snap: DeviceSnapshot, device: GuardDevice)
     mgmtParent,
     ingressTagged,
     managerGateway,
+    vlanChain,
     mgmtTable,
     mgmtTableCertain: tableRes.certain,
     hops,

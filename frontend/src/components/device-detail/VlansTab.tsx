@@ -521,7 +521,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
       </div>
 
       {/* /interface/vlan entries: router-on-a-stick VLANs (#309) */}
-      <VlanInterfacesCard deviceId={deviceId} />
+      <VlanInterfacesCard deviceId={deviceId} deviceName={deviceName} />
 
       {lockout && (
         <LockoutVerdictDialog

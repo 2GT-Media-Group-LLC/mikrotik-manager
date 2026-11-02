@@ -390,7 +390,7 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **Overview** | Status, uptime, model, firmware, resource graphs, location |
 | **Ports** | The switch faceplate, per-port configuration, bonds, VLAN membership |
 | **Bridges** | Every bridge, its ports, VLAN filtering and spanning tree; create, rename, edit, delete |
-| **VLANs** | The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (`/interface vlan`, read-only) with their parent and addresses |
+| **VLANs** | The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (`/interface vlan`) with their parent and addresses, which you can add, edit and remove |
 | **Radios** | Wireless interfaces, SSIDs, channels, connected clients |
 | **Firewall** | Filter, NAT and mangle rules, with reordering and counters |
 | **Routing** | IPv4 routes, IPv6 routes (read-only), OSPF, BGP, routing tables and filters |
@@ -580,8 +580,24 @@ The label next to the parent says what it is:
   tag, nothing is enforced on the bridge's ports
 - **bond**, or **Q-in-Q** for a VLAN stacked on another VLAN interface
 
-The card is read-only for now; it's read live from the device each time the tab opens and every
-minute while it's open.
+The card is read live from the device each time the tab opens and every minute while it's open.
+
+With write access you can add, edit and remove VLAN interfaces there. **Add VLAN interface**
+takes a VLAN ID, the parent it's tagged on, a name (`vlan` and the ID if left blank), an MTU, a
+comment, and optionally an IP address to put on it straight away. The pencil edits the same
+settings except the address; change addresses under **Config**, **IP Addresses**. Every change
+runs under [Change Guard](change-guard.md):
+
+- Changing the VLAN ID or the parent of the VLAN interface the manager reaches the device
+  through, or disabling or removing it, is predicted as a lockout and needs your confirmation.
+  That includes a VLAN it's stacked on (Q-in-Q).
+- Changing that interface's MTU can't be simulated, so it requires auto-revert.
+- Renaming moves nothing: RouterOS renames every reference to the interface with it.
+
+On a bridge with VLAN filtering, a new VLAN interface only gets traffic once the bridge itself
+is a tagged member of that VLAN in the bridge VLAN table; the form reminds you when the parent
+is a bridge. Removing a VLAN interface removes its addresses too; RouterOS would otherwise keep
+them on a missing interface, marked invalid.
 
 ## Bridges
 

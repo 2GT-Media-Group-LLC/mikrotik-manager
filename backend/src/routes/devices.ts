@@ -72,6 +72,7 @@ import { l3hwView } from '../utils/l3hw';
 import { switchVlanView } from '../utils/switchVlans';
 import { webAdminUrl } from '../utils/webAdminUrl';
 import { vlanInterfacesView } from '../utils/vlanInterfaces';
+import { vlanInterfaceEntry } from '../utils/vlanInterfaceEdit';
 import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit } from '../utils/ipAddressEdit';
@@ -1697,6 +1698,73 @@ router.put('/:id/switch-ports/:name/vlan', requireWrite, async (req, res) => {
   await withGuardedChange(req.params.id, req, res,
     { kind: 'switch-port.vlan', summary: `Set switch VLAN settings on ${name}`, requireProtection: true },
     async (c) => { await c.setSwitchPortVlan(name, parsed.fields); return { message: `VLAN settings on ${name} updated` }; });
+});
+
+// VLAN interface edits (#309), predicted by Change Guard: a new VLAN ID or
+// parent on the interface management rides, or removing or disabling it, is
+// a predicted lockout. An MTU change on it isn't simulated, so it requires
+// auto-revert. A rename moves nothing: RouterOS renames every reference.
+
+// POST /api/devices/:id/vlan-interfaces { vlan_id, interface, name?, mtu?, comment?, disabled?, address? }
+router.post('/:id/vlan-interfaces', requireWrite, async (req, res) => {
+  const parsed = vlanInterfaceEntry(req.body ?? {}, true);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const { fields, address } = parsed;
+  const name = fields.name;
+  await withGuardedChange(req.params.id, req, res,
+    {
+      kind: 'vlan-iface.add',
+      summary: `Add VLAN interface ${name} (VLAN ${fields['vlan-id']} on ${fields.interface})${address ? ` with ${address}` : ''}`,
+      change: { kind: 'vlan-iface.add', name, vlanId: Number(fields['vlan-id']), parent: fields.interface, disabled: fields.disabled === 'yes' },
+    },
+    async (c) => {
+      await c.addVlanInterface(fields);
+      if (!address) return { message: `VLAN interface ${name} added` };
+      try {
+        await c.addIpAddress(address, name);
+      } catch (err) {
+        return { message: `VLAN interface ${name} added, but its address wasn't: ${(err as Error).message}`, address_error: true };
+      }
+      return { message: `VLAN interface ${name} added with ${address}` };
+    },
+    async (c) => { await c.collectIpAddressesCache(); });
+});
+
+// PUT /api/devices/:id/vlan-interfaces/:entryId { vlan_id?, interface?, name?, mtu?, comment?, disabled? }
+router.put('/:id/vlan-interfaces/:entryId', requireWrite, async (req, res) => {
+  if (!ROS_ID.test(req.params.entryId)) return res.status(400).json({ error: 'Not a VLAN interface id' });
+  const parsed = vlanInterfaceEntry(req.body ?? {}, false);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const { fields } = parsed;
+  const label = typeof req.body?.current_name === 'string' && validPortName(req.body.current_name)
+    ? req.body.current_name : req.params.entryId;
+  const changes: PlannedChange[] = [{ kind: 'vlan-iface.set', id: req.params.entryId, fields }];
+  if (fields.mtu !== undefined) changes.push({ kind: 'path-object.change', name: label, what: 'MTU' });
+  await withGuardedChange(req.params.id, req, res,
+    {
+      kind: 'vlan-iface.set',
+      summary: `Edit VLAN interface ${label}`,
+      change: changes.length === 1 ? changes[0] : { kind: 'batch', changes },
+    },
+    async (c) => { await c.updateVlanInterface(req.params.entryId, fields); return { message: `VLAN interface ${fields.name ?? label} updated` }; },
+    async (c) => { await c.collectIpAddressesCache(); });
+});
+
+// DELETE /api/devices/:id/vlan-interfaces/:entryId[?name=] — with its addresses
+router.delete('/:id/vlan-interfaces/:entryId', requireWrite, async (req, res) => {
+  if (!ROS_ID.test(req.params.entryId)) return res.status(400).json({ error: 'Not a VLAN interface id' });
+  const label = typeof req.query.name === 'string' && validPortName(req.query.name) ? req.query.name : req.params.entryId;
+  await withGuardedChange(req.params.id, req, res,
+    {
+      kind: 'vlan-iface.remove',
+      summary: `Remove VLAN interface ${label}`,
+      change: { kind: 'vlan-iface.remove', id: req.params.entryId },
+    },
+    async (c) => {
+      const addresses = await c.removeVlanInterface(req.params.entryId);
+      return { message: `VLAN interface ${label} removed${addresses.length ? `, with ${addresses.join(', ')}` : ''}` };
+    },
+    async (c) => { await c.collectIpAddressesCache(); });
 });
 
 // PUT /api/devices/:id/l3hw { enabled, acknowledge_firewall? } — turn L3

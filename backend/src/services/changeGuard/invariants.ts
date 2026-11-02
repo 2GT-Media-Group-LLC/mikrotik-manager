@@ -124,6 +124,42 @@ export const INVARIANTS: Invariant[] = [
   },
 
   {
+    id: 'mgmt-vlan-unchanged',
+    title: 'The VLAN interfaces carrying management keep their VLAN ID and parent',
+    check(snap, path) {
+      // Every interface on the path can still exist and be enabled while
+      // management is gone: a new VLAN ID tags it into another VLAN, a new
+      // parent moves it to another wire (#309). The first two links are also
+      // checked for being removed or disabled by mgmt-iface-up and
+      // mgmt-parent-up; deeper Q-in-Q links only here.
+      for (const [i, link] of (path.vlanChain ?? []).entries()) {
+        const row = snap.vlanInterfaces.find((v) => v['name'] === link.name);
+        const iface = snap.interfaces.find((x) => x['name'] === link.name);
+        if (!row || !iface) {
+          if (i < 2) continue;
+          return { ok: false, detail: `${link.name}, a VLAN interface under the management VLAN interface ${path.mgmtInterface}, would no longer exist.` };
+        }
+        if ((row['vlan-id'] || '') !== link.vlanId) {
+          return {
+            ok: false,
+            detail: `${link.name} carries management on VLAN ${link.vlanId} and would move to VLAN ${row['vlan-id'] || '?'}. Management arrives tagged ${link.vlanId}, so the device would stop answering on it.`,
+          };
+        }
+        if ((row['interface'] || '') !== link.parent) {
+          return {
+            ok: false,
+            detail: `${link.name} carries management on ${link.parent} and would move to ${row['interface'] || '?'}. Management arrives on ${link.parent}, so the device would stop answering on it.`,
+          };
+        }
+        if (i >= 2 && (isTrue(row['disabled']) || isTrue(iface['disabled']))) {
+          return { ok: false, detail: `${link.name}, a VLAN interface under the management VLAN interface ${path.mgmtInterface}, would be disabled.` };
+        }
+      }
+      return ok();
+    },
+  },
+
+  {
     id: 'mgmt-not-bridge-slave',
     title: 'The port carrying management is not swallowed by a bridge',
     check(snap, path) {

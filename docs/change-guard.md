@@ -45,6 +45,7 @@ applied; the rest are protected by auto-revert alone.
 | Ports | MTU, FEC, flow control, speed, PoE | Flagged when the port carries management |
 | Bridge VLANs | add, update, delete, copy from another switch | Yes |
 | Addressing | IP address add, remove | Yes |
+| VLAN interfaces | add, edit, enable/disable, remove | Yes; an MTU change is flagged when the interface carries management |
 | Routing | static route add, remove | Yes |
 | Routing | OSPF, BGP, routing tables, route filters | No |
 | Bonding | create, edit, delete | Flagged when a member or the bond carries management |
