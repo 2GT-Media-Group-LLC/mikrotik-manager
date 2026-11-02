@@ -124,7 +124,7 @@ export function ChannelMap({ deviceId }: { deviceId?: number }) {
   const [location, setLocation] = useState<string>('all');
 
   const radios = (data?.radios ?? []).filter(
-    r => location === 'all' || (r.controller_device_id != null ? `c:${r.controller_device_id}` : 'standalone') === location
+    r => location === 'all' || r.location_key === location
   );
   const bands = (data?.bands ?? []).filter(b => b.band !== '6' || radios.some(r => r.low_mhz >= 5925));
 

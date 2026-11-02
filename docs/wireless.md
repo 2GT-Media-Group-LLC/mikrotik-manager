@@ -38,7 +38,10 @@ over that wireless link the manager may lose contact (#294). Enabling one doesn'
 
 **Wireless → Overview** aggregates the fleet:
 
-- **Channel usage** across 2.4, 5 and 6 GHz, with co-channel overlap highlighted.
+- **Channel usage** across 2.4, 5 and 6 GHz, with co-channel overlap highlighted. Overlap is
+  only counted between radios that can hear each other: each CAPsMAN controller's radios are
+  one location, and each site's standalone APs are another. The dashboard's **co-channel
+  overlap** warning uses the same analysis.
 - **AP deployment density** — client count plotted against signal, so an AP serving many
   clients at poor signal is visible as a cluster in the wrong corner.
 - **TX-retry histogram**, derived from per-client CCQ. This is only available on the legacy

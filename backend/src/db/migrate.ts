@@ -1773,6 +1773,11 @@ CREATE TABLE IF NOT EXISTS dhcp_pool_usage (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (device_id, name)
 );
+
+-- When the configuration was last read and found already backed up (#377).
+-- A snapshot is only stored when the config changes, so an unchanged device's
+-- newest backup gets old while it's still current.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS config_checked_at TIMESTAMPTZ;
 `;
 
 const DEFAULT_SETTINGS = [

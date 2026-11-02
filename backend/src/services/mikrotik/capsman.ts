@@ -533,3 +533,20 @@ export function legacyRadios(
     };
   });
 }
+
+/**
+ * SQL for NOT EXISTS, over an interface `wi` on device `d`: true when `wi` is
+ * a controller's copy of one of its CAPs' radios (or a virtual interface on
+ * one). The controller mirrors them locally, and capsman_radios lists them as
+ * not local (#196).
+ */
+export const REMOTE_RADIO = `
+  SELECT 1 FROM capsman_radios cr
+   WHERE cr.controller_device_id = d.id AND cr.local = false
+     AND (cr.interface_name = wi.name
+          OR cr.interface_name = wi.config_json->>'master-interface'
+          OR (wi.radio_mac IS NOT NULL AND cr.radio_mac = wi.radio_mac))`;
+
+/** REMOTE_RADIO, where the CAP is a managed device with rows of its own (#365). */
+export const REMOTE_MANAGED_RADIO = `${REMOTE_RADIO}
+     AND cr.matched_device_id IS NOT NULL`;
