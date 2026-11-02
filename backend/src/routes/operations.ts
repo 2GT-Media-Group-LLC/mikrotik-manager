@@ -20,6 +20,7 @@ import { BackupService, BackupDevice } from '../services/BackupService';
 import { fluxString } from '@influxdata/influxdb-client';
 import { stpDomains } from '../utils/stpUpstream';
 import { latestResources } from '../services/latestMetrics';
+import { channelUsage } from '../services/channelUsage';
 
 const router = Router();
 
@@ -143,12 +144,15 @@ router.get('/insights', async (req: Request, res: Response) => {
                firmware_update_available, latest_ros_version,
                routerboard_upgrade_available, firmware_version, upgrade_firmware_version
         FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`),
-    query<{ id: number; name: string; last_backup: string | null }>(`
-      SELECT d.id, d.name, MAX(b.created_at) AS last_backup
+    // A device whose config is unchanged since its last backup is backed up:
+    // the hourly check that found it unchanged counts as fresh (#377).
+    query<{ id: number; name: string; last_backup: string | null; config_checked_at: string | null }>(`
+      SELECT d.id, d.name, MAX(b.created_at) AS last_backup, d.config_checked_at
       FROM devices d LEFT JOIN backups b ON b.device_id = d.id
       ${devFilterD ? `WHERE ${devFilterD}` : ''}
       GROUP BY d.id
-      HAVING MAX(b.created_at) IS NULL OR MAX(b.created_at) < NOW() - INTERVAL '7 days'`),
+      HAVING MAX(b.created_at) IS NULL
+          OR GREATEST(MAX(b.created_at), d.config_checked_at) < NOW() - INTERVAL '7 days'`),
     query<{ device_id: number; name: string; outages: string }>(`
       SELECT a.device_id, d.name, COUNT(*) AS outages
       FROM device_availability a JOIN devices d ON d.id = a.device_id
@@ -162,12 +166,8 @@ router.get('/insights', async (req: Request, res: Response) => {
       WHERE active = TRUE AND client_type = 'wireless'
         AND signal_strength IS NOT NULL AND signal_strength < -75
         ${cliFilter ? `AND ${cliFilter}` : ''}`),
-    query<{ frequency: number; radios: string }>(`
-      SELECT frequency, COUNT(*) AS radios FROM wireless_interfaces
-      WHERE disabled = FALSE AND frequency IS NOT NULL AND frequency > 0
-        AND (config_json->>'master-interface') IS NULL
-        ${cliFilter ? `AND ${cliFilter}` : ''}
-      GROUP BY frequency HAVING COUNT(*) > 1`),
+    // The Channel Usage analysis: per location, each radio once (#365).
+    channelUsage(siteId),
     query<{ errors: string; warnings: string }>(`
       SELECT COUNT(*) FILTER (WHERE severity = 'error')   AS errors,
              COUNT(*) FILTER (WHERE severity = 'warning') AS warnings
@@ -263,7 +263,11 @@ router.get('/insights', async (req: Request, res: Response) => {
     attention.push({
       sev: 'warn', category: 'backups',
       title: `${b.name} has no recent backup`,
-      body: b.last_backup ? `Last backup ${timeAgo(b.last_backup)}.` : 'No backup has ever been taken.',
+      body: !b.last_backup
+        ? 'No backup has ever been taken.'
+        : b.config_checked_at && new Date(b.config_checked_at).getTime() > new Date(b.last_backup).getTime()
+          ? `Last backup ${timeAgo(b.last_backup)}; the configuration was last checked ${timeAgo(b.config_checked_at)}.`
+          : `Last backup ${timeAgo(b.last_backup)}.`,
       action: 'Back up', path: '/backups',
     });
   }
@@ -346,13 +350,20 @@ router.get('/insights', async (req: Request, res: Response) => {
     });
   }
 
-  // WiFi — co-channel overlap
-  if (coChannel.length > 0) {
-    const chans = coChannel.map(c => freqToChannel(c.frequency)).filter(Boolean);
+  // WiFi — co-channel overlap: radios on the same channel at the same location
+  // (a controller, or a site's standalone APs), as Channel Usage shows them.
+  // Counting by frequency across the fleet included a controller's copies of
+  // its CAPs' radios, and radios at different sites (#365).
+  const shared = coChannel.radios.filter((r) => r.clashes.some((c) => c.kind === 'co-channel'));
+  if (shared.length > 0) {
+    const chans = [...new Set(shared.map((r) => r.channel ?? freqToChannel(r.frequency)).filter(Boolean))];
+    const where = [...new Set(shared.map((r) => coChannel.locations.find((l) => l.key === r.location_key)?.name).filter(Boolean))];
+    const count = chans.length || shared.length;
     attention.push({
       sev: 'warn', category: 'wifi',
-      title: `Co-channel overlap on ${coChannel.length} channel${coChannel.length !== 1 ? 's' : ''}`,
-      body: `Multiple radios share channel${chans.length ? ` ${chans.join(', ')}` : ''}. Overlapping cells reduce airtime — re-plan channels.`,
+      title: `Co-channel overlap on ${count} channel${count !== 1 ? 's' : ''}`,
+      body: `Multiple radios share channel${chans.length !== 1 ? 's' : ''}${chans.length ? ` ${chans.join(', ')}` : ''}`
+        + `${where.length ? ` (${where.join(', ')})` : ''}. Overlapping cells reduce airtime — re-plan channels.`,
       action: 'Open Wireless', path: '/wireless',
     });
   }

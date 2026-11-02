@@ -571,6 +571,8 @@ export interface RfChannelRow {
   clashes: RfClash[];
   controller_device_id: number | null;
   controller_name: string | null;
+  /** The RfLocation this radio is analysed in: a controller, or a site's standalone APs. */
+  location_key: string;
 }
 
 export interface RfLocation {

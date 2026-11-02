@@ -2358,7 +2358,10 @@ export class DeviceCollector {
       // to save, it has nothing to roll back to; this export is the same
       // config, so it becomes that backup now (outside review C10).
       if (latest && latest.config_hash === hash) {
-        if (latest.backup_id) return { status: 'unchanged' };
+        if (latest.backup_id) {
+          await this.markConfigChecked();
+          return { status: 'unchanged' };
+        }
         const repaired = await backupService.createBackupFromContent(
           device, rsc, `Config snapshot (${reason})`, 'config-snapshot', rscHasSecrets
         ).catch((e: Error) => {
@@ -2367,6 +2370,7 @@ export class DeviceCollector {
         });
         if (!repaired) return { status: 'failed', reason: "the configuration hasn't changed, but its restorable backup couldn't be saved" };
         await query(`UPDATE device_configs SET backup_id = $2 WHERE id = $1 AND backup_id IS NULL`, [latest.id, repaired]);
+        await this.markConfigChecked();
         return { status: 'repaired' };
       }
 
@@ -2407,11 +2411,22 @@ export class DeviceCollector {
         }).catch(() => { /* alerting is best-effort */ });
       }
       if (backupId === null) return { status: 'failed', reason: "the snapshot was stored, but its restorable backup couldn't be saved. The next snapshot retries it" };
+      await this.markConfigChecked();
       return { status: 'created' };
     } catch (err) {
       console.error(`[${this.device.name}] Failed to save config:`, err);
       return { status: 'failed', reason: (err as Error).message };
     }
+  }
+
+  /**
+   * The running configuration was just read and has a restorable backup.
+   * The dashboard counts this as a fresh backup: an unchanged config stores no
+   * new copy, so the newest one can be weeks old and still current (#377).
+   */
+  private async markConfigChecked(): Promise<void> {
+    await query(`UPDATE devices SET config_checked_at = NOW() WHERE id = $1`, [this.device.id])
+      .catch((e: Error) => console.warn(`[${this.device.name}] couldn't record the config check: ${e.message}`));
   }
 
   /** Back-compat entry point used by the full-sync flow. */

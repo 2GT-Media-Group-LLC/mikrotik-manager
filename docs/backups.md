@@ -79,6 +79,12 @@ Types:
 | `pre-upgrade` | A firmware rollout, before it touches the device |
 | `config-snapshot` | Config History, when it captures a change |
 
+A `config-snapshot` is only stored when the configuration changes, so a device that hasn't
+changed in weeks can have an old newest backup that's still current. The dashboard's
+**no recent backup** warning knows this. A device counts as backed up while its configuration
+check (hourly by default) keeps finding it unchanged. The warning shows when a device has no
+backup at all, or when neither a backup nor a successful check happened in the last 7 days.
+
 ## Reading and comparing
 
 Click any row to read the backup in place. Select exactly two and choose **Compare**
