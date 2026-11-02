@@ -19,6 +19,7 @@ import {
   SSH_INFO_COMMAND, parseSshInfo, looksLikeRouterOs, classifyApiFailure,
   type SshInfo, type ApiFailureKind,
 } from '../utils/sshOnly';
+import { routeOf } from './jumpHosts';
 
 export interface SshOnlyDevice extends SshExecDevice {
   api_port: number;
@@ -57,7 +58,8 @@ export async function checkApi(device: SshOnlyDevice): Promise<ApiCheck> {
     let port: number;
     // A port of its own, or an explicit API-SSL choice (#257), is used as given.
     if (device.api_port && (typeof device.api_tls === 'boolean' || (device.api_port !== API_PORT && device.api_port !== API_SSL_PORT))) {
-      client = new RouterOSClient(device.ip_address, device.api_port, device.api_username, password, 6_000, 30_000, usesApiTls(device));
+      client = new RouterOSClient(device.ip_address, device.api_port, device.api_username, password, 6_000, 30_000, usesApiTls(device),
+        routeOf(device));
       await client.connect();
       port = device.api_port;
     } else {
@@ -65,7 +67,7 @@ export async function checkApi(device: SshOnlyDevice): Promise<ApiCheck> {
       // API-SSL: blocking 8729 must not move it to the plain API (GHSA-63v6-w7qf-349f).
       const usedSsl = await hasPin(device.id, 'api-tls');
       const chosen = await connectPreferringSsl(device.ip_address, device.api_username, password,
-        { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000, sslOnly: usedSsl });
+        { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000, sslOnly: usedSsl, jumpHostId: routeOf(device) });
       client = chosen.client;
       port = chosen.port;
     }

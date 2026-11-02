@@ -21,10 +21,12 @@
  * assigned on the device instead and is kept from then on.
  */
 import https from 'https';
+import tls from 'tls';
 import { queryOne } from '../config/database';
 import { DeviceCollector, type DeviceRow } from './mikrotik/DeviceCollector';
 import { ensureCertificate, certByName, usable } from './apiSsl';
 import { allowedFrom, allowedFromKey } from '../utils/ipServices';
+import { openForwardedChannel, routeOf } from './jumpHosts';
 
 export interface WwwSslResult {
   /** True once www-ssl answers and plain www is off. */
@@ -43,16 +45,34 @@ const CHECK_ATTEMPTS = 3;
 /**
  * Does the device answer HTTPS on this port? Any HTTP status counts: WebFig
  * answers / with a page or a redirect. The certificate isn't verified, since
- * it's self-signed; this only proves the service is up and reachable.
+ * it's self-signed; this only proves the service is up and reachable. Asked
+ * the way the manager reaches the device: through its jump host, if it has
+ * one, never straight at an address behind it.
  */
-export function httpsAnswers(host: string, port: number, timeoutMs = CHECK_TIMEOUT_MS): Promise<string | null> {
+export async function httpsAnswers(
+  host: string, port: number, jumpHostId: number | null, timeoutMs = CHECK_TIMEOUT_MS,
+): Promise<string | null> {
+  let channel: Awaited<ReturnType<typeof openForwardedChannel>> | null = null;
+  if (jumpHostId != null) {
+    try {
+      channel = await openForwardedChannel(jumpHostId, host, port, timeoutMs);
+    } catch (e) {
+      return (e as Error).message || 'no answer';
+    }
+  }
+  const via = channel;
   return new Promise((resolve) => {
     const req = https.request(
-      { host, port, path: '/', method: 'GET', rejectUnauthorized: false, timeout: timeoutMs },
+      {
+        host, port, path: '/', method: 'GET', rejectUnauthorized: false, timeout: timeoutMs,
+        ...(via ? { createConnection: () => tls.connect({ socket: via, rejectUnauthorized: false }) } : {}),
+      },
       (res) => { res.resume(); resolve(null); },
     );
     req.on('timeout', () => req.destroy(new Error('no answer')));
     req.on('error', (e) => resolve((e as Error).message || 'no answer'));
+    // The jump host's channel goes with the request.
+    req.on('close', () => via?.destroy());
     req.end();
   });
 }
@@ -116,7 +136,7 @@ export async function enableWwwSsl(deviceId: number): Promise<WwwSslResult> {
     let failure: string | null = 'not checked';
     for (let i = 0; i < CHECK_ATTEMPTS && failure; i++) {
       if (i > 0) await new Promise((r) => setTimeout(r, 2_000));
-      failure = await httpsAnswers(device.ip_address, port);
+      failure = await httpsAnswers(device.ip_address, port, routeOf(device));
     }
     const url = webfigUrl(device.ip_address, port);
     if (failure) {

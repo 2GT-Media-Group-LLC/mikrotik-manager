@@ -10,7 +10,7 @@ import { BackupService, isAuthRejection } from '../BackupService';
 // Discussion #85: a key backup that timed out fell back to the password, which
 // RouterOS refuses once a key is installed, hiding the real failure.
 describe('backup export key fallback', () => {
-  const device = { id: 3, name: 'rtr', ip_address: '10.0.0.3', ssh_port: 22, api_username: 'apimanager', api_password_encrypted: 'pw' };
+  const device = { id: 3, name: 'rtr', ip_address: '10.0.0.3', ssh_port: 22, api_username: 'apimanager', api_password_encrypted: 'pw', jump_host_id: null };
   const authError = Object.assign(new Error('All configured authentication methods failed'), { level: 'client-authentication' });
 
   beforeEach(() => {

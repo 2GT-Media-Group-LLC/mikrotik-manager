@@ -156,7 +156,7 @@ export class CommandRunner {
   private async runOne(run: RunRow, item: RunDeviceRow): Promise<boolean> {
     const device = await queryOne<DeviceRow>(
       `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted,
-              ssh_port, ssh_username, ssh_password_encrypted, ssh_only
+              ssh_port, ssh_username, ssh_password_encrypted, ssh_only, jump_host_id
          FROM devices WHERE id = $1`,
       [item.device_id]
     );

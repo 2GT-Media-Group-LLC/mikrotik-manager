@@ -19,7 +19,7 @@ const MockedClient = jest.mocked(RouterOSClient);
 
 const device: GuardDevice = {
   id: 1, name: 'sw1', ip_address: '10.0.0.1', api_port: 8728,
-  api_username: 'admin', api_password_encrypted: 'enc',
+  api_username: 'admin', api_password_encrypted: 'enc', jump_host_id: null,
 };
 
 /** Commands seen across every client instance, in order. */

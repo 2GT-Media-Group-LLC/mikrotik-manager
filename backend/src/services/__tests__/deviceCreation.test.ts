@@ -8,6 +8,7 @@ jest.mock('../../utils/crypto', () => ({
 import { computeNameLocked, createDeviceFromBody, loadCredentialPreset } from '../deviceCreation';
 import { query, queryOne } from '../../config/database';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
+import { JumpHostError } from '../jumpHosts';
 
 /**
  * Whether a newly-created device's name should stop following the router's
@@ -82,6 +83,7 @@ describe('createDeviceFromBody (name_locked wiring)', () => {
       '/system/routerboard/print': [{ 'serial-number': 'ABC123' }],
       '/system/identity/print': [{ name: 'MikroTik' }],
     });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null }); // the site's default route: direct
     (queryOne as jest.Mock).mockResolvedValueOnce(null); // no existing device with this serial
     (query as jest.Mock).mockResolvedValue([{ id: 42 }]);
     (queryOne as jest.Mock).mockResolvedValueOnce({ id: 42, name: 'test' }); // post-insert reload
@@ -100,6 +102,7 @@ describe('createDeviceFromBody (name_locked wiring)', () => {
       '/system/routerboard/print': [{ 'serial-number': 'ABC123' }],
       '/system/identity/print': [{ name: 'Core-Switch' }],
     });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null }); // the site's default route: direct
     (queryOne as jest.Mock).mockResolvedValueOnce(null);
     (query as jest.Mock).mockResolvedValue([{ id: 43 }]);
     (queryOne as jest.Mock).mockResolvedValueOnce({ id: 43, name: 'Core-Switch' });
@@ -120,6 +123,7 @@ describe('createDeviceFromBody (name_locked wiring)', () => {
       '/system/routerboard/print': [{ 'serial-number': 'ABC123' }],
       // no '/system/identity/print' entry -> execute() resolves [] for it
     });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null }); // the site's default route: direct
     (queryOne as jest.Mock).mockResolvedValueOnce(null);
     (query as jest.Mock).mockResolvedValue([{ id: 44 }]);
     (queryOne as jest.Mock).mockResolvedValueOnce({ id: 44, name: 'test' });
@@ -143,6 +147,7 @@ describe('createDeviceFromBody (API-SSL on any port)', () => {
       disconnect: jest.fn(),
       execute: jest.fn().mockResolvedValue([]),
     }));
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null }); // the site's default route: direct
     (queryOne as jest.Mock).mockResolvedValueOnce(null);
     (query as jest.Mock).mockResolvedValue([{ id: 50 }]);
     (queryOne as jest.Mock).mockResolvedValueOnce({ id: 50, name: 'nat' });
@@ -151,23 +156,25 @@ describe('createDeviceFromBody (API-SSL on any port)', () => {
   afterEach(() => { (queryOne as jest.Mock).mockReset(); (query as jest.Mock).mockReset(); });
 
   const base = { name: 'nat', ip_address: '203.0.113.5', api_username: 'admin', api_password: 'secret' };
-  /** RouterOSClient(host, port, user, pass, connectMs, readMs, useTls). */
+  /** RouterOSClient(host, port, user, pass, connectMs, readMs, useTls, jumpHostId). */
   const ctorArgs = () => (RouterOSClient as unknown as jest.Mock).mock.calls[0];
   const insertParams = () => (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql))![1];
+  /** The INSERT ends (..., api_tls, jump_host_id). */
+  const insertedTls = () => insertParams()[insertParams().length - 2];
 
   it('connects with TLS on a custom port when asked, and stores the choice', async () => {
     const result = await createDeviceFromBody({ ...base, api_port: '18729', api_tls: true }, null);
     expect(result.ok).toBe(true);
     expect(ctorArgs()[1]).toBe(18729);
     expect(ctorArgs()[6]).toBe(true);
-    expect(insertParams()[insertParams().length - 1]).toBe(true);
+    expect(insertedTls()).toBe(true);
     expect((result as unknown as { body: { connection: { api_ssl: boolean } } }).body.connection.api_ssl).toBe(true);
   });
 
   it('keeps the old rule without a choice: plain on a custom port, nothing stored', async () => {
     await createDeviceFromBody({ ...base, api_port: 18728 }, null);
     expect(ctorArgs()[6]).toBe(false);
-    expect(insertParams()[insertParams().length - 1]).toBeNull();
+    expect(insertedTls()).toBeNull();
   });
 
   it('refuses a port out of range before connecting', async () => {
@@ -213,5 +220,89 @@ describe('loadCredentialPreset (admin-only presets)', () => {
   it('still lets anyone use a preset open to operators', async () => {
     (queryOne as jest.Mock).mockResolvedValue({ ...restricted, allow_operator_use: true });
     await expect(loadCredentialPreset(5, {})).resolves.toMatchObject({ api_username: 'admin' });
+  });
+});
+
+/** How a new device is reached: the route is settled before anything connects. */
+describe('createDeviceFromBody (jump hosts)', () => {
+  /** jump_hosts rows by id: their site. */
+  const jumpSites: Record<number, number | null> = { 4: 5, 6: 9, 8: null };
+  let existing: { id: number; name: string; ip_address: string; serial_number: string; site_id: number | null } | null;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    existing = null;
+    (RouterOSClient as unknown as jest.Mock).mockImplementation(() => ({
+      connect: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn(),
+      execute: jest.fn((path: string) => Promise.resolve(path === '/system/routerboard/print' ? [{ 'serial-number': 'SER1' }] : [])),
+    }));
+    (queryOne as jest.Mock).mockImplementation(async (sql: string, params: unknown[]) => {
+      if (/SELECT default_jump_host_id FROM sites/.test(sql)) return { default_jump_host_id: params[0] === 5 ? 4 : null };
+      if (/SELECT site_id FROM jump_hosts WHERE id/.test(sql)) {
+        const id = params[0] as number;
+        return id in jumpSites ? { site_id: jumpSites[id] } : null;
+      }
+      if (/FROM devices\s+WHERE serial_number/.test(sql)) return existing;
+      if (/FROM devices WHERE id/.test(sql)) return { id: 70, name: 'r' };
+      return null;
+    });
+    (query as jest.Mock).mockResolvedValue([{ id: 70 }]);
+  });
+  afterEach(() => { (queryOne as jest.Mock).mockReset(); (query as jest.Mock).mockReset(); });
+
+  const base = { name: 'r', ip_address: '10.20.0.5', api_username: 'admin', api_password: 'secret', api_port: 8728 };
+  /** RouterOSClient(host, port, user, pass, connectMs, readMs, useTls, jumpHostId). */
+  const routeTested = () => (RouterOSClient as unknown as jest.Mock).mock.calls[0]?.[7];
+  const sqlRan = (re: RegExp) => (query as jest.Mock).mock.calls.find(([sql]: [string]) => re.test(sql));
+
+  it("connects through the site's default jump host when the form leaves the route out, and keeps it", async () => {
+    const result = await createDeviceFromBody(base, null, { siteId: 5 });
+    expect(result.ok).toBe(true);
+    expect(routeTested()).toBe(4);
+    const insert = sqlRan(/INSERT INTO devices/)![1] as unknown[];
+    expect(insert[insert.length - 1]).toBe(4);
+  });
+
+  it('connects directly when the form says so, whatever the site default', async () => {
+    const result = await createDeviceFromBody({ ...base, jump_host_id: null }, null, { siteId: 5 });
+    expect(result.ok).toBe(true);
+    expect(routeTested()).toBeNull();
+  });
+
+  it('says what went wrong with the jump host, not "Cannot connect to device"', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const down = new JumpHostError('Jump host "branch-gw" (203.0.113.10:22) is unreachable: it did not answer in time');
+    (RouterOSClient as unknown as jest.Mock).mockImplementation(() => ({
+      connect: jest.fn().mockRejectedValue(down), disconnect: jest.fn(), execute: jest.fn(),
+    }));
+    // A port chosen, and none (API-SSL first, then the plain API): either way.
+    for (const body of [base, { ...base, api_port: undefined }]) {
+      const result = await createDeviceFromBody(body, null, { siteId: 5 });
+      expect(result).toMatchObject({ ok: false, status: 422, body: { error: down.message } });
+    }
+    expect(sqlRan(/INSERT INTO devices/)).toBeUndefined();
+  });
+
+  it("refuses another site's jump host before connecting to anything", async () => {
+    const result = await createDeviceFromBody({ ...base, jump_host_id: 6 }, null, { siteId: 5 });
+    expect(result).toMatchObject({ ok: false, status: 400 });
+    expect(RouterOSClient).not.toHaveBeenCalled();
+  });
+
+  it("won't merge into a device of another site with this site's jump host", async () => {
+    // The same router, already managed in site 9; re-added from site 5 through site 5's jump host.
+    existing = { id: 33, name: 'core-9', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 9 };
+    const result = await createDeviceFromBody({ ...base, jump_host_id: 4, force_replace_existing_by_serial: true }, null, { siteId: 5 });
+    expect(result).toMatchObject({ ok: false, status: 409, body: { code: 'jump_host_other_site' } });
+    expect(sqlRan(/UPDATE devices SET/)).toBeUndefined();
+  });
+
+  it('merges with a fleet-wide jump host, and moves the device onto it', async () => {
+    existing = { id: 33, name: 'core-9', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 9 };
+    const result = await createDeviceFromBody({ ...base, jump_host_id: 8, force_replace_existing_by_serial: true }, null, { siteId: 5 });
+    expect(result.ok).toBe(true);
+    const update = sqlRan(/UPDATE devices SET/)![1] as unknown[];
+    expect(update[update.length - 1]).toBe(8);
   });
 });

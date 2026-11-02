@@ -14,8 +14,8 @@
  * poll never holds up a fast one. A session is only reused when:
  *   - it is still connected and its reply stream is trusted (any error, timeout
  *     or cancelled command closes it rather than hand it on);
- *   - the device's address, port, login and TLS setting are what they were when
- *     it was opened (editing a device starts a fresh session);
+ *   - the device's address, port, login, TLS setting and route (jump host) are
+ *     what they were when it was opened (editing a device starts a fresh session);
  *   - no other poll is using it right now (that poll gets its own short-lived
  *     connection, the old way, so one job's timeout can't break another's).
  * The serial number is re-checked every ten minutes on a reused session, as it
@@ -42,11 +42,14 @@ const pool = new Map<string, Pooled>();
 
 export interface SessionDevice {
   id: number; ip_address: string; api_port: number; api_username: string; api_password_encrypted: string;
+  jump_host_id: number | null;
 }
 
 /** What a session was opened for; any difference means a new one. */
 function credentialKey(d: SessionDevice, tls: boolean): string {
-  return createHash('sha256').update([d.ip_address, d.api_port, d.api_username, d.api_password_encrypted, tls ? 'tls' : 'plain'].join('|')).digest('hex');
+  return createHash('sha256').update([
+    d.ip_address, d.api_port, d.api_username, d.api_password_encrypted, tls ? 'tls' : 'plain', d.jump_host_id ?? 'direct',
+  ].join('|')).digest('hex');
 }
 
 export interface Lease {

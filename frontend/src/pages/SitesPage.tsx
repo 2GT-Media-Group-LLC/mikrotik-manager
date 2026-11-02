@@ -4,7 +4,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Building2, MapPin, Plus, Pencil, Trash2, Check, X, AlertCircle, RefreshCw } from 'lucide-react';
-import { sitesApi, settingsApi, siteGroupsApi } from '../services/api';
+import { sitesApi, settingsApi, siteGroupsApi, jumpHostsApi } from '../services/api';
 import { useSiteStore, type Site } from '../store/siteStore';
 import { useCanWrite, useIsSiteScoped } from '../hooks/useCanWrite';
 import GroupsCard from '../components/sites/GroupsCard';
@@ -78,6 +78,13 @@ export default function SitesPage() {
     queryFn: () => siteGroupsApi.list().then((r) => r.data),
   });
   const [editing, setEditing] = useState<Site | null>(null);
+  // The jump host new devices in the site are reached through; null for direct.
+  const [defaultJumpHost, setDefaultJumpHost] = useState<number | null>(null);
+  const { data: jumpHosts = [] } = useQuery({
+    queryKey: ['jump-hosts'],
+    queryFn: () => jumpHostsApi.list().then((r) => r.data),
+    staleTime: 60_000,
+  });
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
@@ -133,6 +140,7 @@ export default function SitesPage() {
         name: trimmed,
         address: addr,
         ...(!isScoped && (editing ? (editing.group_id ?? null) !== groupId : groupId != null) ? { group_id: groupId } : {}),
+        ...(editing && (editing.default_jump_host_id ?? null) !== defaultJumpHost ? { default_jump_host_id: defaultJumpHost } : {}),
         ...(addressChanged
           ? { location_lat: coords?.lat ?? null, location_lng: coords?.lng ?? null }
           : {}),
@@ -160,12 +168,16 @@ export default function SitesPage() {
   });
 
   function cancel() {
-    setEditing(null); setAdding(false); setName(''); setAddress(''); setError(''); setGroupId(null);
+    setEditing(null); setAdding(false); setName(''); setAddress(''); setError(''); setGroupId(null); setDefaultJumpHost(null);
   }
 
   function startEdit(s: Site) {
     setEditing(s); setAdding(false); setName(s.name); setAddress(s.address ?? ''); setError(''); setGroupId(s.group_id ?? null);
+    setDefaultJumpHost(s.default_jump_host_id ?? null);
   }
+
+  // A site's own jump hosts and fleet-wide ones.
+  const jumpHostChoices = editing ? jumpHosts.filter((j) => j.site_id == null || j.site_id === editing.id) : [];
 
   const q = filter.trim().toLowerCase();
   const shownSites = q ? sites.filter((s) => [s.name, s.address, s.group_name].some((v) => (v ?? '').toLowerCase().includes(q))) : sites;
@@ -236,6 +248,16 @@ export default function SitesPage() {
                   {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
                 <span className="text-xs" style={{ color: 'var(--ink-4)' }}>The customer it belongs to. New groups are made under Groups below.</span>
+              </label>
+            )}
+            {editing && (jumpHostChoices.length > 0 || defaultJumpHost != null) && (
+              <label className="flex items-center gap-2 text-sm sm:col-span-2" style={{ color: 'var(--ink-3)' }}>
+                New devices connect
+                <select className="input max-w-xs" value={defaultJumpHost ?? ''} onChange={(e) => setDefaultJumpHost(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Directly</option>
+                  {jumpHostChoices.map((j) => <option key={j.id} value={j.id}>Via {j.name} ({j.host})</option>)}
+                </select>
+                <span className="text-xs" style={{ color: 'var(--ink-4)' }}>The default when adding a device here. Devices already in the site keep their own setting.</span>
               </label>
             )}
           </div>

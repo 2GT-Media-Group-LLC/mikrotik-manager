@@ -126,4 +126,25 @@ describe('credentialPresets routes', () => {
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ id: 2, name: 'Lab', has_api_password: true });
   });
+
+  describe('DELETE /:id', () => {
+    const preset = { id: 4, name: 'branch', site_id: null, allow_operator_use: true };
+
+    it('is refused while a jump host logs in with it', async () => {
+      mockedQueryOne.mockResolvedValueOnce(preset as never);
+      mockedQuery.mockResolvedValueOnce([{ name: 'branch-gw' }] as never);
+      const res = await request(makeApp('admin')).delete('/4');
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('preset_in_use');
+      expect(res.body.error).toContain('"branch-gw"');
+      expect(mockedQuery.mock.calls.some(([sql]) => /DELETE FROM credential_presets/.test(String(sql)))).toBe(false);
+    });
+
+    it('deletes one no jump host uses', async () => {
+      mockedQueryOne.mockResolvedValueOnce(preset as never);
+      mockedQuery.mockResolvedValueOnce([] as never).mockResolvedValueOnce([{ id: 4 }] as never);
+      const res = await request(makeApp('admin')).delete('/4');
+      expect(res.status).toBe(200);
+    });
+  });
 });

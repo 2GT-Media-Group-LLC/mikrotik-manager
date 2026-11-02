@@ -3,7 +3,7 @@ import { DeviceCollector, type DeviceRow } from '../mikrotik/DeviceCollector';
 import { AntennaAlignmentService, AlignmentCapacityError } from '../AntennaAlignmentService';
 
 const device: DeviceRow = { id: 1, name: 'radio', ip_address: '192.0.2.1', api_port: 8729,
-  api_username: 'manager', api_password_encrypted: 'encrypted', device_type: 'wisp', status: 'online' };
+  api_username: 'manager', api_password_encrypted: 'encrypted', device_type: 'wisp', status: 'online', jump_host_id: null };
 const sample = { sampled_at: '2026-10-11T01:00:00Z', radios: [], warnings: [] };
 const collector = jest.mocked(DeviceCollector);
 

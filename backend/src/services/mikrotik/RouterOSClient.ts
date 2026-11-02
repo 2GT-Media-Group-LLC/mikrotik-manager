@@ -2,6 +2,7 @@ import * as net from 'net';
 import * as tls from 'tls';
 import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
+import type { Duplex } from 'stream';
 import { previewContext, type PreviewContext } from '../../utils/previewContext';
 import { isReadCommand, targetQuery, describeWrite } from '../../utils/changePreview';
 
@@ -75,7 +76,11 @@ function readKey(command: string, params: Record<string, string>, queries: strin
 }
 
 export class RouterOSClient extends EventEmitter {
-  private socket: net.Socket | null = null;
+  private socket: Duplex | null = null;
+  /** The TCP socket, on a direct connection; null through a jump host. */
+  private tcp: net.Socket | null = null;
+  /** The jump host's forwarded channel, under the socket (or TLS over it). */
+  private channel: Duplex | null = null;
   private buffer: Buffer = Buffer.alloc(0);
   private connected = false;
   private authenticated = false;
@@ -120,7 +125,9 @@ export class RouterOSClient extends EventEmitter {
     private readonly password: string,
     private readonly connectTimeoutMs: number = 15000,
     private readonly readTimeoutMs: number = 30000,
-    useTls?: boolean
+    useTls?: boolean,
+    /** The jump host this device is reached through; null for direct. */
+    private readonly jumpHostId: number | null = null,
   ) {
     super();
     // api-ssl runs on 8729 by RouterOS convention (the same heuristic the
@@ -132,7 +139,14 @@ export class RouterOSClient extends EventEmitter {
    * Checks the certificate a device presents on API-SSL, before any login is
    * sent. Registered once at startup (index.ts); throws to refuse the device.
    */
-  static tlsVerifier: ((host: string, port: number, fingerprint: string, raw: Buffer) => Promise<void>) | null = null;
+  static tlsVerifier: ((host: string, port: number, fingerprint: string, raw: Buffer, jumpHostId: number | null) => Promise<void>) | null = null;
+
+  /**
+   * Opens a TCP connection to host:port through a jump host (jumpHosts.ts).
+   * Registered once at startup (index.ts). Without it, a client for a device
+   * behind a jump host refuses to connect rather than try the address directly.
+   */
+  static channelOpener: ((jumpHostId: number, host: string, port: number) => Promise<Duplex>) | null = null;
 
   /** SHA-256 fingerprint of the certificate seen on the last TLS connect, lowercase hex. */
   tlsFingerprint: string | null = null;
@@ -140,19 +154,21 @@ export class RouterOSClient extends EventEmitter {
   /**
    * This connection's local TCP port. NAT in front of the manager usually
    * keeps it, so it identifies the manager's own session in the device's
-   * connection table (Change Guard, outside review P2-7).
+   * connection table (Change Guard, outside review P2-7). Null through a jump
+   * host: the device sees the jump host's port, which the manager can't know.
    */
   get localPort(): number | null {
-    return this.socket?.localPort ?? null;
+    return this.tcp?.localPort ?? null;
   }
 
   /**
    * The address this connection actually reached. When the device was added by
    * hostname, or as an IPv6 address written differently from how RouterOS
-   * prints it, this is the address to look for on the device (#205).
+   * prints it, this is the address to look for on the device (#205). Null
+   * through a jump host, which resolves the address itself.
    */
   get remoteAddress(): string | null {
-    return this.socket?.remoteAddress ?? null;
+    return this.tcp?.remoteAddress ?? null;
   }
 
   async connect(): Promise<void> {
@@ -161,12 +177,14 @@ export class RouterOSClient extends EventEmitter {
     // can be reconnected and used again.
     this.poisoned = false;
     this.sentenceQueue = [];
+    const deadline = Date.now() + this.connectTimeoutMs;
+    const channel = this.jumpHostId != null ? await this.openChannel(this.jumpHostId, deadline) : null;
 
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new RouterOSError(`Connection timeout to ${this.host}:${this.port}`));
-        this.socket?.destroy();
-      }, this.connectTimeoutMs);
+        this.destroySockets();
+      }, Math.max(0, deadline - Date.now()));
 
       const onReady = async () => {
         clearTimeout(timer);
@@ -176,7 +194,7 @@ export class RouterOSClient extends EventEmitter {
           this.authenticated = true;
           resolve();
         } catch (err) {
-          this.socket?.destroy();
+          this.destroySockets();
           reject(err);
         }
       };
@@ -187,7 +205,9 @@ export class RouterOSClient extends EventEmitter {
         // registered verifier compares it with the one the device presented the
         // first time, before the login is sent (outside review P1-4).
         const tlsSocket = tls.connect(
-          { host: this.host, port: this.port, rejectUnauthorized: false },
+          channel
+            ? { socket: channel, rejectUnauthorized: false }
+            : { host: this.host, port: this.port, rejectUnauthorized: false },
           () => {
             void (async () => {
               try {
@@ -196,11 +216,11 @@ export class RouterOSClient extends EventEmitter {
                 if (!fp) throw new RouterOSError('The device presented no certificate on API-SSL');
                 this.tlsFingerprint = fp.replace(/:/g, '').toLowerCase();
                 if (RouterOSClient.tlsVerifier) {
-                  await RouterOSClient.tlsVerifier(this.host, this.port, this.tlsFingerprint, cert.raw);
+                  await RouterOSClient.tlsVerifier(this.host, this.port, this.tlsFingerprint, cert.raw, this.jumpHostId);
                 }
               } catch (err) {
                 clearTimeout(timer);
-                tlsSocket.destroy();
+                this.destroySockets();
                 reject(err);
                 return;
               }
@@ -209,13 +229,20 @@ export class RouterOSClient extends EventEmitter {
           }
         );
         this.socket = tlsSocket;
+        if (!channel) this.tcp = tlsSocket;
+      } else if (channel) {
+        // The jump host has already connected it.
+        this.socket = channel;
+        void onReady();
       } else {
-        this.socket = net.createConnection({ host: this.host, port: this.port });
-        this.socket.on('connect', () => { void onReady(); });
+        this.tcp = net.createConnection({ host: this.host, port: this.port });
+        this.tcp.on('connect', () => { void onReady(); });
+        this.socket = this.tcp;
       }
       // A session kept open between polls (#301) must survive NAT and
-      // firewall idle timeouts between them.
-      this.socket.setKeepAlive(true, 30_000);
+      // firewall idle timeouts between them. Through a jump host, the jump
+      // host connection's own keepalives do this.
+      this.tcp?.setKeepAlive(true, 30_000);
 
       this.socket.on('data', (data: Buffer) => {
         // Nothing thrown here may escape: this runs from the socket's event
@@ -261,6 +288,37 @@ export class RouterOSClient extends EventEmitter {
         }
       });
     });
+  }
+
+  /**
+   * The TCP connection to the device, opened by its jump host before `deadline`.
+   * Never falls back to connecting directly: a jump host that can't be
+   * reached fails the connection with that reason.
+   */
+  private async openChannel(jumpHostId: number, deadline: number): Promise<Duplex> {
+    const opener = RouterOSClient.channelOpener;
+    if (!opener) throw new RouterOSError('This device is reached through a jump host, and jump host connections are not available here');
+    const opening = opener(jumpHostId, this.host, this.port);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        // Arriving late, it is closed rather than left open on the jump host.
+        opening.then((c) => c.destroy(), () => {});
+        reject(new RouterOSError(`Connection timeout to ${this.host}:${this.port} through its jump host`));
+      }, Math.max(0, deadline - Date.now()));
+    });
+    try {
+      this.channel = await Promise.race([opening, timeout]);
+      return this.channel;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private destroySockets(): void {
+    try { this.socket?.destroy(); } catch { /* already gone */ }
+    // TLS over a channel can leave the channel itself open.
+    try { if (this.channel && this.channel !== this.socket) this.channel.destroy(); } catch { /* already gone */ }
   }
 
   // Enqueue a command so concurrent calls don't interleave
@@ -494,8 +552,10 @@ export class RouterOSClient extends EventEmitter {
   disconnect(): void {
     this.connected = false;
     this.authenticated = false;
-    this.socket?.destroy();
+    this.destroySockets();
     this.socket = null;
+    this.tcp = null;
+    this.channel = null;
     this.buffer = Buffer.alloc(0);
     this.sentenceQueue = [];
   }
@@ -827,8 +887,10 @@ export class RouterOSClient extends EventEmitter {
     this.connected = false;
     this.sentenceQueue = [];
     this.buffer = Buffer.alloc(0);
-    try { this.socket?.destroy(); } catch { /* already gone */ }
+    this.destroySockets();
     this.socket = null;
+    this.tcp = null;
+    this.channel = null;
     this.emit('poisoned', reason);
   }
 

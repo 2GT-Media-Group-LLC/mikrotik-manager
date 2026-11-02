@@ -64,6 +64,12 @@ describe('safeConnectionError', () => {
     expect(msg).toMatch(/available from/i);
   });
 
+  it("passes a jump host's own failure through: it says what to fix there", () => {
+    const err = errWithCode('Jump host "branch-gw" (203.0.113.10:22) refused to forward connections. '
+      + 'Allow it on that router with: /ip ssh set forwarding-enabled=local', 'jump_host_unreachable');
+    expect(safeConnectionError('ctx', err)).toBe(err.message);
+  });
+
   it('falls back to the generic message for anything else', () => {
     expect(safeConnectionError('ctx', new Error('something unexpected')))
       .toMatch(/cannot connect to device/i);

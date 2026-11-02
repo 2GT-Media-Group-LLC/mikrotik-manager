@@ -9,6 +9,7 @@ const device: GuardDevice = {
   api_port: 8728,
   api_username: 'admin',
   api_password_encrypted: 'x',
+  jump_host_id: null,
 };
 
 /**

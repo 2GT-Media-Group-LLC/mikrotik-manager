@@ -26,26 +26,26 @@ beforeEach(() => jest.clearAllMocks());
 describe('verifyDeviceIdentity', () => {
   it('lets through an address the manager does not manage yet (a device being added)', async () => {
     lookupReturns([]);
-    await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A)).resolves.toBeUndefined();
+    await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A, null)).resolves.toBeUndefined();
     expect(sqlCalls()).toHaveLength(1);
   });
 
   it('pins the first identity it sees', async () => {
     lookupReturns([{ device_id: 7, name: 'sw', fingerprint: null, seen_fingerprint: null }]);
-    await verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A);
+    await verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A, null);
     expect(sqlCalls()[1]).toMatch(/^INSERT INTO device_identity_pins/);
     expect(mockQuery.mock.calls[1][1]).toEqual([7, 'api-tls', FP_A]);
   });
 
   it('accepts the pinned identity', async () => {
     lookupReturns([{ device_id: 7, name: 'sw', fingerprint: FP_A, seen_fingerprint: null }]);
-    await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A)).resolves.toBeUndefined();
+    await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A, null)).resolves.toBeUndefined();
     expect(sqlCalls()).toHaveLength(1);
   });
 
   it('refuses a different identity, records it, and alerts once', async () => {
     lookupReturns([{ device_id: 7, name: 'sw', fingerprint: FP_A, seen_fingerprint: null }]);
-    await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_B)).rejects.toBeInstanceOf(IdentityMismatchError);
+    await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_B, null)).rejects.toBeInstanceOf(IdentityMismatchError);
     expect(sqlCalls().some((q) => /SET seen_fingerprint = \$3/.test(q))).toBe(true);
     expect(sqlCalls().some((q) => /INSERT INTO events/.test(q))).toBe(true);
     expect(mockDispatch).toHaveBeenCalledWith('device_identity_changed', expect.stringMatching(/certificate has changed/), expect.anything());
@@ -53,26 +53,26 @@ describe('verifyDeviceIdentity', () => {
     // The same changed identity again: still refused, not alerted again.
     mockDispatch.mockClear();
     lookupReturns([{ device_id: 7, name: 'sw', fingerprint: FP_A, seen_fingerprint: FP_B }]);
-    await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_B)).rejects.toBeInstanceOf(IdentityMismatchError);
+    await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_B, null)).rejects.toBeInstanceOf(IdentityMismatchError);
     expect(mockDispatch).not.toHaveBeenCalled();
   });
 
   it('clears a recorded change once the pinned identity is back', async () => {
     lookupReturns([{ device_id: 7, name: 'sw', fingerprint: FP_A, seen_fingerprint: FP_B }]);
-    await verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A);
+    await verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A, null);
     expect(sqlCalls()[1]).toMatch(/SET seen_fingerprint = NULL/);
   });
 
   it('matches the SSH port for host keys', async () => {
     lookupReturns([]);
-    await verifyDeviceIdentity('ssh-host', '10.0.0.1', 2222, FP_A);
+    await verifyDeviceIdentity('ssh-host', '10.0.0.1', 2222, FP_A, null);
     expect(sqlCalls()[0]).toMatch(/COALESCE\(d\.ssh_port, 22\) = \$3/);
-    expect(mockQuery.mock.calls[0][1]).toEqual(['ssh-host', '10.0.0.1', 2222]);
+    expect(mockQuery.mock.calls[0][1]).toEqual(['ssh-host', '10.0.0.1', 2222, null]);
   });
 
   it('names the device and what to do in the refusal', async () => {
     lookupReturns([{ device_id: 7, name: 'core-sw', fingerprint: FP_A, seen_fingerprint: null }]);
-    await expect(verifyDeviceIdentity('ssh-host', '10.0.0.1', 22, FP_B)).rejects.toThrow(/core-sw.*SSH host key.*Trust new host key/s);
+    await expect(verifyDeviceIdentity('ssh-host', '10.0.0.1', 22, FP_B, null)).rejects.toThrow(/core-sw.*SSH host key.*Trust new host key/s);
   });
 });
 

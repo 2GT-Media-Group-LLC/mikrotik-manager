@@ -166,6 +166,12 @@ export async function restoreFromFile(
       return type ? `COALESCE(${qi(c)}, 'null'::${type})` : qi(c);
     }).join(', ');
 
+    if (mode === 'config') {
+      // A reference outside a key (a device's jump host) can point at a row
+      // removed below before the backup's version of the referring row goes
+      // in: those constraints are checked at the end, on the result.
+      await client.query('SET CONSTRAINTS ALL DEFERRED');
+    }
     if (mode === 'full') {
       // Foreign keys are checked by the data itself, which came from one
       // consistent snapshot; loading table by table needs them off meanwhile.

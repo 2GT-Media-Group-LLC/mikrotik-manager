@@ -141,8 +141,8 @@ on the device:
 2. Enables `www-ssl` with that certificate, on the port it already has (443 by default). If
    `www` only accepts certain addresses and `www-ssl` accepts any, `www-ssl` gets the same
    list.
-3. Checks from the manager that WebFig answers over HTTPS. Only then does it turn plain
-   `www` off.
+3. Checks from the manager that WebFig answers over HTTPS (through the device's
+   [jump host](jump-hosts.md), if it has one). Only then does it turn plain `www` off.
 
 If HTTPS doesn't answer, `www` is left on and the result says why. The usual cause is a
 firewall rule, or `www-ssl`'s *Available From* list, that lets port 80 in but not 443.

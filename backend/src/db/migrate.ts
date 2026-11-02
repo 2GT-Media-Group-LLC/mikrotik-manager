@@ -1778,6 +1778,39 @@ CREATE TABLE IF NOT EXISTS dhcp_pool_usage (
 -- A snapshot is only stored when the config changes, so an unchanged device's
 -- newest backup gets old while it's still current.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS config_checked_at TIMESTAMPTZ;
+
+-- Jump hosts: devices the manager can't reach directly, reached through an SSH
+-- connection to a router that can. Credentials are encrypted like a device's;
+-- the login comes from the row itself or from a credential preset. The host
+-- key is pinned on the row, on first connect unless entered up front. A
+-- device's route is its own jump_host_id (null = direct); a site's default
+-- only pre-fills new devices. A jump host still in use can't be deleted, so
+-- removing one never quietly turns its devices into direct connections, and
+-- neither can a preset one logs in with. These references, and a site's
+-- default (sites and jump hosts refer to each other), are checked at the end
+-- of a configuration restore (DEFERRABLE), which replaces both sides.
+CREATE TABLE IF NOT EXISTS jump_hosts (
+  id                            SERIAL PRIMARY KEY,
+  name                          VARCHAR(100) NOT NULL,
+  site_id                       INTEGER REFERENCES sites(id) ON DELETE CASCADE,
+  host                          VARCHAR(253) NOT NULL,
+  port                          INTEGER NOT NULL DEFAULT 22,
+  username                      VARCHAR(50),
+  password_encrypted            TEXT,
+  private_key_encrypted         TEXT,
+  passphrase_encrypted          TEXT,
+  credential_preset_id          INTEGER REFERENCES credential_presets(id) DEFERRABLE,
+  host_key_fingerprint          VARCHAR(128),
+  seen_host_key_fingerprint     VARCHAR(128),
+  host_key_mismatch_at          TIMESTAMPTZ,
+  notes                         TEXT,
+  created_at                    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at                    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jump_hosts_site_name ON jump_hosts (COALESCE(site_id, 0), name);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS jump_host_id INTEGER REFERENCES jump_hosts(id) DEFERRABLE;
+CREATE INDEX IF NOT EXISTS idx_devices_jump_host ON devices(jump_host_id) WHERE jump_host_id IS NOT NULL;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS default_jump_host_id INTEGER REFERENCES jump_hosts(id) ON DELETE SET NULL DEFERRABLE;
 `;
 
 const DEFAULT_SETTINGS = [

@@ -78,10 +78,12 @@ host. Adoption stops rather than handing a switch an address something else is u
 5. Checks the address you chose is free
 6. Adds the address, the default route, and the identity — adding only, never replacing
 7. Returns the neighbour to exactly how it was found
-8. Confirms the manager can now reach the device directly
+8. Confirms the manager can now reach the device: directly, or through an
+   [SSH jump host](jump-hosts.md) when the site has a default one, or else when the borrowed
+   neighbour is reached through one
 9. Removes the factory `192.168.88.1` address, if you left that ticked
 10. Registers the device as a router, switch or access point, by what it reports, and starts
-    polling it
+    polling it, reached the same way it was checked
 
 Every step is reported as it happens, so a failure says which one and why.
 

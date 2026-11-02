@@ -24,6 +24,7 @@ import { usesApiTls } from '../utils/apiTls';
 import { API_SSL_PORT } from './mikrotik/apiConnect';
 import { forgetIdentity } from './identityPins';
 import { configuredServices, allowedFrom, allowedFromKey } from '../utils/ipServices';
+import { routeOf } from './jumpHosts';
 
 export const MTM_CERT_NAME = 'mtm-api-ssl';
 
@@ -35,6 +36,8 @@ export interface ApiSslDevice {
   api_tls?: boolean | null;
   api_username: string;
   api_password_encrypted: string;
+  /** The jump host it's reached through; null for direct. */
+  jump_host_id: number | null;
 }
 
 export interface ApiSslResult {
@@ -107,7 +110,8 @@ export async function ensureCertificate(client: CommandRunner, device: { name: s
 /** Can the manager log in over API-SSL right now? Resolves with the error text if not. */
 async function tryApiSsl(device: ApiSslDevice): Promise<string | null> {
   const client = new RouterOSClient(
-    device.ip_address, API_SSL_PORT, device.api_username, decrypt(device.api_password_encrypted), 10_000);
+    device.ip_address, API_SSL_PORT, device.api_username, decrypt(device.api_password_encrypted), 10_000, 30_000, true,
+    routeOf(device));
   try {
     await client.connect();
     await client.execute('/system/identity/print');
@@ -125,7 +129,8 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
   }
   const steps: string[] = [];
   const client = new RouterOSClient(
-    device.ip_address, device.api_port, device.api_username, decrypt(device.api_password_encrypted), 15_000, 30_000, false);
+    device.ip_address, device.api_port, device.api_username, decrypt(device.api_password_encrypted), 15_000, 30_000, false,
+    routeOf(device));
   try {
     await client.connect();
     // Configured rows only: a live api-ssl session is printed as another

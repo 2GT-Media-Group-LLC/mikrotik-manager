@@ -12,6 +12,9 @@ import {
 } from '../../services/api';
 import { useAuthStore } from '../../store/authStore';
 import { parsePort } from '../../utils/parsePort';
+import { useSiteView } from '../../hooks/useSiteView';
+import { inView, newEntrySite } from '../../utils/siteView';
+import SiteViewNote from './SiteViewNote';
 
 interface FormState {
   name: string;
@@ -77,6 +80,9 @@ export default function CredentialPresetsSettings() {
     queryKey: ['credential-presets'],
     queryFn: () => credentialPresetsApi.list().then((r) => r.data),
   });
+  // The sites in the site selector, and fleet-wide presets.
+  const { view, label } = useSiteView();
+  const shown = presets.filter((p) => inView(p.site_id, view));
 
   const [modal, setModal] = useState<null | { mode: 'add' } | { mode: 'edit'; id: number }>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -86,7 +92,7 @@ export default function CredentialPresetsSettings() {
     setForm((s) => ({ ...s, [k]: v }));
 
   const openAdd = () => {
-    setForm({ ...EMPTY_FORM, site_id: fleetAdmin ? '' : String(siteChoices[0]?.id ?? '') });
+    setForm({ ...EMPTY_FORM, site_id: newEntrySite(view, siteChoices, fleetAdmin) });
     setError('');
     setModal({ mode: 'add' });
   };
@@ -170,10 +176,10 @@ export default function CredentialPresetsSettings() {
           <div className="p-6 text-sm text-gray-400 flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading presets…
           </div>
-        ) : presets.length === 0 ? (
+        ) : shown.length === 0 ? (
           <div className="p-6 text-sm text-gray-400 dark:text-slate-500 text-center">
-            No credential presets yet.
-            {isAdmin && ' Click "Add Preset" to create your first one.'}
+            {presets.length === 0 ? 'No credential presets yet.' : `No credential presets for ${label ?? 'the sites in view'}.`}
+            {isAdmin && presets.length === 0 && ' Click "Add Preset" to create your first one.'}
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -193,7 +199,7 @@ export default function CredentialPresetsSettings() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
-              {presets.map((p) => (
+              {shown.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
                   <td className="px-4 py-2.5 cell-primary">
                     {p.name}
@@ -257,6 +263,7 @@ export default function CredentialPresetsSettings() {
             </tbody>
           </table>
         )}
+        {!isLoading && <SiteViewNote label={label} hidden={presets.length - shown.length} noun="presets" />}
       </div>
 
       {modal && (

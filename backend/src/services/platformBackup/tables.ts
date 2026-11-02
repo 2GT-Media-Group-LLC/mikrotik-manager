@@ -15,6 +15,7 @@ export const CONFIG_TABLES = [
   'users',
   'tags',
   'credential_presets',
+  'jump_hosts',
   'devices',
   'device_ca',
   'managed_device_certs',

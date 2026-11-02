@@ -14,7 +14,7 @@ import { SshKeyService, type SshTarget } from '../SshKeyService';
 // Outside review P2-31: a key the manager could never take back off.
 describe('SSH key deploy guard', () => {
   const target = {
-    id: 7, name: 'sw', ip_address: '10.0.0.7', api_port: 8728, api_username: 'mtm', api_password_encrypted: 'pw',
+    id: 7, name: 'sw', ip_address: '10.0.0.7', api_port: 8728, api_username: 'mtm', api_password_encrypted: 'pw', jump_host_id: null,
     ssh_port: 22, ssh_username: null, ssh_password_encrypted: null,
   } as unknown as SshTarget;
 

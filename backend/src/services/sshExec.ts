@@ -17,6 +17,7 @@ import { decrypt } from '../utils/crypto';
 import { preferredAuth, type KeyStatus } from '../utils/sshKeys';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
 import { sshHostKeyFingerprint } from './identityPins';
+import { sshRoute } from './jumpHosts';
 
 export interface SshExecDevice {
   id: number;
@@ -27,6 +28,8 @@ export interface SshExecDevice {
   ssh_password_encrypted?: string | null;
   api_username?: string | null;
   api_password_encrypted?: string | null;
+  /** Its route: the jump host it's reached through, or null for direct. */
+  jump_host_id: number | null;
 }
 
 export interface SshExecResult {
@@ -99,6 +102,8 @@ export async function runSshCommand(
   // A preview (#255) only intercepts the RouterOS API; never run SSH under one.
   if (previewContext()) throw new Error('This change runs over SSH, so it can\'t be previewed');
   const { username, auth, kind } = await resolveAuth(device);
+  const port = device.ssh_port ?? 22;
+  const route = await sshRoute(device, port);
 
   return new Promise<SshExecResult>((resolve, reject) => {
     const conn = new SSHClient();
@@ -125,14 +130,15 @@ export async function runSshCommand(
         stream.on('close', () => finish(() => resolve({ output: output.trim(), auth: kind })));
       });
     });
-    conn.on('error', (err) => finish(() => reject(explainSshError(err, device.ip_address, device.ssh_port ?? 22))));
+    conn.on('error', (err) => finish(() => reject(explainSshError(err, device.ip_address, port, device.jump_host_id))));
 
     conn.connect({
       host: device.ip_address,
-      port: device.ssh_port ?? 22,
+      port,
       username,
       readyTimeout: Math.min(timeoutMs, 20_000),
-      ...withHostKeyHook(sshHostCheck(device.ip_address, device.ssh_port ?? 22), opts.onHostKey),
+      ...route,
+      ...withHostKeyHook(sshHostCheck(device.ip_address, port, device.jump_host_id), opts.onHostKey),
       ...auth,
     });
   });

@@ -6,6 +6,7 @@ import { query, queryOne, transaction } from '../config/database';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { groupsChanged } from '../services/siteGroups';
 import { accountsOnlyReaching } from '../utils/siteRoles';
+import { chooseJumpHost } from '../services/jumpHosts';
 
 const router = Router();
 router.use(requireAuth);
@@ -25,6 +26,8 @@ export interface SiteRow {
   created_at: string;
   /** The group (customer) it belongs to (#306). */
   group_id?: number | null;
+  /** The jump host new devices in this site are reached through, unless they say otherwise. */
+  default_jump_host_id?: number | null;
 }
 
 /**
@@ -122,7 +125,7 @@ router.get('/', async (req, res) => {
     `SELECT s.id, s.name, s.address,
             s.location_lat::float8 AS location_lat,
             s.location_lng::float8 AS location_lng,
-            s.notes, s.is_default, s.created_at, s.group_id, g.name AS group_name,
+            s.notes, s.is_default, s.created_at, s.group_id, g.name AS group_name, s.default_jump_host_id,
             COUNT(d.id)::text AS device_count,
             COUNT(d.id) FILTER (WHERE d.status = 'online')::text AS online_count
      FROM sites s
@@ -179,7 +182,19 @@ router.put('/:id', requireWrite, async (req, res) => {
   const body = req.body as {
     name?: string; address?: string; notes?: string;
     location_lat?: unknown; location_lng?: unknown;
+    default_jump_host_id?: unknown;
   };
+
+  // Pre-fills new devices only: existing devices keep their own route.
+  let defaultJumpHost: number | null | undefined;
+  if (body.default_jump_host_id !== undefined) {
+    try {
+      defaultJumpHost = await chooseJumpHost(body.default_jump_host_id, id, { siteDefault: false });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+      return;
+    }
+  }
 
   let name: string | null = null;
   if (body.name !== undefined) {
@@ -208,12 +223,13 @@ router.put('/:id', requireWrite, async (req, res) => {
        location_lng = CASE WHEN $2::boolean THEN $5 ELSE location_lng END,
        notes        = COALESCE($6, notes),
        group_id     = CASE WHEN $8::boolean THEN $9 ELSE group_id END,
+       default_jump_host_id = CASE WHEN $10::boolean THEN $11::integer ELSE default_jump_host_id END,
        updated_at   = NOW()
      WHERE id = $7
      RETURNING id, name, address, location_lat::float8 AS location_lat,
-               location_lng::float8 AS location_lng, notes, is_default, created_at, group_id`,
+               location_lng::float8 AS location_lng, notes, is_default, created_at, group_id, default_jump_host_id`,
     [name, addressGiven, body.address?.trim() || null, lat, lng, body.notes?.trim() ?? null, id,
-     group.value !== undefined, group.value ?? null]
+     group.value !== undefined, group.value ?? null, defaultJumpHost !== undefined, defaultJumpHost ?? null]
   );
   if (!rows[0]) { res.status(404).json({ error: 'Site not found' }); return; }
   if (group.value !== undefined) groupsChanged();
@@ -298,6 +314,26 @@ router.post('/:id/devices', requireWrite, async (req, res) => {
       res.status(404).json({ error: 'Some of those devices were not found.' });
       return;
     }
+  }
+
+  // A site's jump host only serves that site's devices; one moved away would
+  // go on using it from another site.
+  const viaOtherSite = await query<{ name: string; jump_host: string }>(
+    `SELECT d.name, j.name AS jump_host FROM devices d JOIN jump_hosts j ON j.id = d.jump_host_id
+      WHERE d.id = ANY($1::int[]) AND j.site_id IS NOT NULL AND j.site_id <> $2
+      ORDER BY d.name`, [ids, id]);
+  if (viaOtherSite.length > 0) {
+    const [first] = viaOtherSite;
+    const others = viaOtherSite.length - 1;
+    const who = others === 0 ? `${first.name} connects`
+      : `${first.name} and ${others} other device${others === 1 ? '' : 's'} connect`;
+    const their = others === 0 ? 'its' : 'their';
+    res.status(409).json({
+      error: `${who} through jump host "${first.jump_host}", which belongs to ${their} current site. `
+        + `Change ${their} connection first, or make the jump host fleet-wide.`,
+      code: 'jump_host_other_site',
+    });
+    return;
   }
 
   await query(`UPDATE devices SET site_id = $1 WHERE id = ANY($2::int[])`, [id, ids]);

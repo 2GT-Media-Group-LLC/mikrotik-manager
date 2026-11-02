@@ -10,7 +10,7 @@ import { loadCredentialPreset } from '../deviceCreation';
 import { bulkUpdateCredentials } from '../bulkCredentials';
 
 const device = (id: number, name: string, over: Record<string, unknown> = {}) => ({
-  id, name, ip_address: `10.0.0.${id}`, site_id: 1, api_port: 8729, api_tls: null, ssh_only: false, ssh_port: 22,
+  id, name, ip_address: `10.0.0.${id}`, site_id: 1, api_port: 8729, api_tls: null, ssh_only: false, ssh_port: 22, jump_host_id: null,
   ssh_username: 'backup', ssh_password_encrypted: 'enc(oldssh)', api_username: 'admin', api_password_encrypted: 'enc(old)', ...over,
 });
 const caller = { role: 'admin', presetCaller: { role: 'admin', siteRoles: null } as never };

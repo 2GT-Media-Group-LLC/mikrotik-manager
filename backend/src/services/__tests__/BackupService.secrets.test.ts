@@ -13,7 +13,7 @@ jest.mock('../../config/database', () => ({
 
 import { BackupService } from '../BackupService';
 
-const device = { id: 7, name: 'wAP ax', ip_address: '10.0.0.2', ssh_port: 22, api_username: 'admin', api_password_encrypted: 'x' };
+const device = { id: 7, name: 'wAP ax', ip_address: '10.0.0.2', ssh_port: 22, api_username: 'admin', api_password_encrypted: 'x', jump_host_id: null };
 const rsc = '/interface wifi security\nadd name=home passphrase="hunter2-wifi-key"\n';
 
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));

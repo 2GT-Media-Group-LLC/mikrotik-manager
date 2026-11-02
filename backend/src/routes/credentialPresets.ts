@@ -281,6 +281,15 @@ router.delete('/:id', presetMutationLimiter, async (req, res) => {
   const row = await queryOne<CredentialPresetRow>(`SELECT * FROM credential_presets WHERE id = $1`, [id]);
   if (!row || !canSeePreset(caller, row)) return res.status(404).json({ error: 'Preset not found' });
   if (!canManagePresetSite(caller, row.site_id ?? null)) return res.status(403).json({ error: MANAGE_REFUSED });
+  // A jump host logs in with it on every connection, unlike a device, which
+  // copied the login when the preset was applied.
+  const jumpHosts = await query<{ name: string }>(`SELECT name FROM jump_hosts WHERE credential_preset_id = $1 ORDER BY name`, [id]);
+  if (jumpHosts.length) {
+    return res.status(409).json({
+      error: `Jump host${jumpHosts.length === 1 ? '' : 's'} ${jumpHosts.map((j) => `"${j.name}"`).join(', ')} log${jumpHosts.length === 1 ? 's' : ''} in with this preset. Give ${jumpHosts.length === 1 ? 'it' : 'them'} another login first.`,
+      code: 'preset_in_use',
+    });
+  }
   const result = await query(
     `DELETE FROM credential_presets WHERE id = $1 RETURNING id`,
     [id]

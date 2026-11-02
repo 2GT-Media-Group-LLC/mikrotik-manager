@@ -38,17 +38,20 @@ jest.mock('../../config/redis', () => {
 });
 const sshLogins: string[] = [];
 const apiLogins: Array<{ host: string; password: string }> = [];
+const routes: Array<number | null> = [];
 jest.mock('../../services/sshOnly', () => ({
   ...jest.requireActual('../../services/sshOnly'),
-  readSshInfo: jest.fn(async (d: { ssh_password_encrypted: string | null }) => {
+  readSshInfo: jest.fn(async (d: { ssh_password_encrypted: string | null; jump_host_id: number | null }) => {
     const { decrypt } = jest.requireActual('../../utils/crypto');
     sshLogins.push(d.ssh_password_encrypted ? decrypt(d.ssh_password_encrypted) : '');
+    routes.push(d.jump_host_id);
     return { identity: 'r', version: '7.25' };
   }),
 }));
 jest.mock('../../services/mikrotik/RouterOSClient', () => ({
-  RouterOSClient: jest.fn().mockImplementation((host: string, _port: number, _user: string, password: string) => ({
-    connect: jest.fn(async () => { apiLogins.push({ host, password }); }),
+  RouterOSClient: jest.fn().mockImplementation((host: string, _port: number, _user: string, password: string,
+    _connectMs?: number, _readMs?: number, _tls?: boolean, jumpHostId: number | null = null) => ({
+    connect: jest.fn(async () => { apiLogins.push({ host, password }); routes.push(jumpHostId); }),
     disconnect: jest.fn(),
   })),
 }));
@@ -106,6 +109,7 @@ suite('moving a device keeps its saved passwords at the old address (GHSA-63v6-w
   beforeEach(async () => {
     sshLogins.length = 0;
     apiLogins.length = 0;
+    routes.length = 0;
     await db.query(`DELETE FROM devices`);
     const add = async (n: string, sshOnly: boolean) => (await db.query<{ id: number }>(
       `INSERT INTO devices (name, ip_address, api_port, api_username, api_password_encrypted, ssh_username, ssh_password_encrypted,
@@ -162,5 +166,55 @@ suite('moving a device keeps its saved passwords at the old address (GHSA-63v6-w
     currentUser = operator();
     await request(app).put(`/api/devices/${id.dev}`).send({ notes: 'hello' });
     expect(await sshPassword(id.dev)).toBe('SSH-SECRET');
+  });
+
+  // Jump hosts: the same address behind another jump host can be another
+  // router, so a new route is a move too, and the same rules apply.
+  describe('moving a device behind a jump host', () => {
+    beforeEach(async () => {
+      await db.query(`DELETE FROM jump_hosts`);
+      id.jump = (await db.query<{ id: number }>(
+        `INSERT INTO jump_hosts (name, host, port, username, password_encrypted) VALUES ('gw', '203.0.113.10', 22, 'jump', $1) RETURNING id`,
+        [crypto.encrypt('JUMP-SECRET')]))[0].id;
+    });
+    const route = async (deviceId: number) =>
+      (await db.query<{ j: number | null }>(`SELECT jump_host_id AS j FROM devices WHERE id = $1`, [deviceId]))[0].j;
+
+    it('an operator must enter a password for it', async () => {
+      currentUser = operator();
+      const res = await request(app).put(`/api/devices/${id.dev}`).send({ jump_host_id: id.jump });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('password_required_for_address_change');
+      expect(apiLogins).toEqual([]);
+      expect(await route(id.dev)).toBeNull();
+    });
+
+    it("an operator's move sends only the entered password, through the jump host, and drops the saved SSH one", async () => {
+      currentUser = operator();
+      const res = await request(app).put(`/api/devices/${id.dev}`).send({ jump_host_id: id.jump, api_password: 'typed' });
+      expect(res.status).toBe(200);
+      expect(apiLogins).toEqual([{ host: '192.0.2.1', password: 'typed' }]);
+      expect(routes).toEqual([id.jump]);
+      expect(await sshPassword(id.dev)).toBeNull();
+      expect(await route(id.dev)).toBe(id.jump);
+    });
+
+    it('an SSH-only device logs in over SSH through it with the entered password', async () => {
+      currentUser = operator();
+      const res = await request(app).put(`/api/devices/${id.sshOnly}`).send({ jump_host_id: id.jump, api_password: 'typed' });
+      expect(res.status).toBe(200);
+      expect(sshLogins).toEqual(['typed']);
+      expect(routes).toEqual([id.jump]);
+      expect(await sshPassword(id.sshOnly)).toBeNull();
+    });
+
+    it('a fleet admin may move it with its saved passwords', async () => {
+      currentUser = fleetAdmin();
+      const res = await request(app).put(`/api/devices/${id.dev}`).send({ jump_host_id: id.jump });
+      expect(res.status).toBe(200);
+      expect(apiLogins).toEqual([{ host: '192.0.2.1', password: 'API-SECRET' }]);
+      expect(await sshPassword(id.dev)).toBe('SSH-SECRET');
+      expect(await route(id.dev)).toBe(id.jump);
+    });
   });
 });

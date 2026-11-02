@@ -41,6 +41,7 @@ import { resolveAuth } from './sshExec';
 import { sshHostCheck, explainSshError } from './sshHostCheck';
 import { alertService } from './AlertService';
 import { logSafe } from '../utils/logSafe';
+import { routeOf, sshRoute } from './jumpHosts';
 
 
 export const MIN_DAYS = 1;
@@ -94,6 +95,8 @@ export interface CaDevice {
   ssh_port: number | null;
   ssh_username: string | null;
   ssh_password_encrypted: string | null;
+  /** The jump host it's reached through; null for direct. */
+  jump_host_id: number | null;
 }
 
 export interface CertResult {
@@ -180,10 +183,13 @@ async function caCertPem(): Promise<string | null> {
  * Connection check for enrolled devices, after the pin check: the certificate
  * must also be signed by the CA. Devices that aren't enrolled are unaffected.
  */
-export async function verifyManagedCertificate(host: string, port: number, raw: Buffer): Promise<void> {
+export async function verifyManagedCertificate(
+  host: string, port: number, raw: Buffer, jumpHostId: number | null,
+): Promise<void> {
   const row = await queryOne<{ device_id: number; name: string; fingerprint: string }>(
     `SELECT m.device_id, d.name, m.fingerprint FROM managed_device_certs m JOIN devices d ON d.id = m.device_id
-      WHERE d.ip_address = $1 AND d.api_port = $2 LIMIT 1`, [host, port]);
+      WHERE d.ip_address = $1 AND d.api_port = $2 AND d.jump_host_id IS NOT DISTINCT FROM $3 LIMIT 1`,
+    [host, port, jumpHostId]);
   if (!row) return;
   const pem = await caCertPem();
   if (!pem) return;
@@ -206,7 +212,9 @@ export async function verifyManagedCertificate(host: string, port: number, raw: 
  * and its names cover the device's management address; anything else is left
  * to the usual changed-identity handling.
  */
-export async function adoptCaCertificate(host: string, port: number, raw: Buffer): Promise<void> {
+export async function adoptCaCertificate(
+  host: string, port: number, raw: Buffer, jumpHostId: number | null,
+): Promise<void> {
   const row = await queryOne<{
     device_id: number; name: string; ip_address: string; managed_fp: string | null; pinned: string | null;
   }>(
@@ -214,7 +222,8 @@ export async function adoptCaCertificate(host: string, port: number, raw: Buffer
        FROM devices d
        LEFT JOIN managed_device_certs m ON m.device_id = d.id
        LEFT JOIN device_identity_pins p ON p.device_id = d.id AND p.kind = 'api-tls'
-      WHERE d.ip_address = $1 AND d.api_port = $2 LIMIT 1`, [host, port]);
+      WHERE d.ip_address = $1 AND d.api_port = $2 AND d.jump_host_id IS NOT DISTINCT FROM $3 LIMIT 1`,
+    [host, port, jumpHostId]);
   if (!row || busy.has(row.device_id)) return; // our own change in progress has its own allowance
   let leaf: X509Certificate;
   try { leaf = new X509Certificate(raw); } catch { return; }
@@ -266,7 +275,8 @@ const busy = new Set<number>();
 
 async function loadDevice(id: number): Promise<CaDevice> {
   const d = await queryOne<CaDevice>(
-    `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted, ssh_port, ssh_username, ssh_password_encrypted
+    `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted, ssh_port, ssh_username, ssh_password_encrypted,
+            jump_host_id
        FROM devices WHERE id = $1`, [id]);
   if (!d) throw new PkiError('Device not found.');
   if (!d.api_username || !d.api_password_encrypted) throw new PkiError(`${d.name} has no API login.`);
@@ -274,13 +284,14 @@ async function loadDevice(id: number): Promise<CaDevice> {
 }
 
 function apiClient(d: CaDevice, port = d.api_port, tls = usesApiTls(d)): RouterOSClient {
-  return new RouterOSClient(d.ip_address, port, d.api_username, decrypt(d.api_password_encrypted), 15_000, 60_000, tls);
+  return new RouterOSClient(d.ip_address, port, d.api_username, decrypt(d.api_password_encrypted), 15_000, 60_000, tls, routeOf(d));
 }
 
 /** Upload over SFTP: the fallback where `/file/add contents=` isn't available. */
 export async function sftpPut(d: CaDevice, name: string, contents: string): Promise<void> {
   const { username, auth } = await resolveAuth(d);
   const port = d.ssh_port || 22;
+  const route = await sshRoute(d, port);
   await new Promise<void>((resolve, reject) => {
     const conn = new SSHClient();
     let done = false;
@@ -293,8 +304,8 @@ export async function sftpPut(d: CaDevice, name: string, contents: string): Prom
       ws.on('error', (e: Error) => finish(e));
       ws.end(contents);
     }));
-    conn.on('error', (e) => finish(explainSshError(e, d.ip_address, port)));
-    conn.connect({ host: d.ip_address, port, username, ...sshHostCheck(d.ip_address, port), ...auth, readyTimeout: 15_000 });
+    conn.on('error', (e) => finish(explainSshError(e, d.ip_address, port, d.jump_host_id)));
+    conn.connect({ host: d.ip_address, port, username, ...route, ...sshHostCheck(d.ip_address, port, d.jump_host_id), ...auth, readyTimeout: 15_000 });
   });
 }
 

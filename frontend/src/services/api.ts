@@ -1037,6 +1037,62 @@ export const credentialPresetsApi = {
   delete: (id: number) => api.delete(`/credential-presets/${id}`),
 };
 
+// ─── SSH jump hosts ───────────────────────────────────────────────────────────
+
+/** A router the manager reaches other devices through. Secrets are write-only. */
+export interface JumpHost {
+  id: number;
+  name: string;
+  site_id: number | null;
+  site_name: string | null;
+  host: string;
+  port: number;
+  username: string | null;
+  auth: 'password' | 'key' | 'preset';
+  credential_preset_id: number | null;
+  credential_preset_name: string | null;
+  has_password: boolean;
+  has_private_key: boolean;
+  /** The pinned host key, as "SHA256:…"; null until the first connection. */
+  host_key_fingerprint: string | null;
+  /** A different key it presented, waiting for an admin to trust it. */
+  seen_host_key_fingerprint: string | null;
+  host_key_mismatch_at: string | null;
+  notes: string | null;
+  device_count: number;
+  /** Its shared connection: open, not needed right now, failing, or refusing to forward (with why). */
+  status: 'connected' | 'idle' | 'failing' | 'not_forwarding';
+  status_error: string | null;
+  can_manage: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JumpHostInput {
+  name?: string;
+  site_id?: number | null;
+  host?: string;
+  port?: number | null;
+  username?: string | null;
+  password?: string;
+  private_key?: string;
+  passphrase?: string;
+  credential_preset_id?: number | null;
+  host_key_fingerprint?: string;
+  notes?: string | null;
+}
+
+export const jumpHostsApi = {
+  list: () => api.get<JumpHost[]>('/jump-hosts'),
+  create: (data: JumpHostInput) => api.post<JumpHost>('/jump-hosts', data),
+  update: (id: number, data: JumpHostInput) => api.put<JumpHost>(`/jump-hosts/${id}`, data),
+  delete: (id: number) => api.delete(`/jump-hosts/${id}`),
+  test: (id: number) =>
+    // forwarding: it forwarded to one of its devices; null with none to try.
+    api.post<({ ok: true; fingerprint: string | null; forwarding: true | null } | { ok: false; error: string }) & { jump_host: JumpHost }>(`/jump-hosts/${id}/test`),
+  trustKey: (id: number) => api.post<JumpHost>(`/jump-hosts/${id}/trust-key`),
+};
+
 // ─── Clients ──────────────────────────────────────────────────────────────────
 export interface ClientDetail extends Client {
   device_type?: string;
@@ -2310,6 +2366,8 @@ export interface SitePayload {
   location_lng?: number | null;
   /** The group it belongs to; null for none (#306). */
   group_id?: number | null;
+  /** Pre-fills new devices in the site; null for direct. */
+  default_jump_host_id?: number | null;
 }
 
 /** RoMON settings: a fleet default, and per group or site (#311). Secrets are write-only. */

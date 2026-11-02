@@ -125,6 +125,7 @@ import { parseRateBps } from '../../utils/wifiRate';
 import { probeUserManager, USER_MANAGER_RECHECK_MS } from '../userManager';
 import { poolSize, usedPerPool } from '../../utils/dhcpPools';
 import { recordOptics } from '../opticLevels';
+import { routeOf } from '../jumpHosts';
 
 /** The device tables the bridge-port checks read (#258). */
 export interface BridgeState {
@@ -218,6 +219,8 @@ export interface DeviceRow {
   status: string;
   /** Added over SSH only; the API isn't enabled yet (#174). */
   ssh_only?: boolean;
+  /** The jump host it's reached through; null for direct. */
+  jump_host_id: number | null;
 }
 
 /** Physical ethernet names, which is all `monitor` will accept. */
@@ -250,6 +253,7 @@ export class DeviceCollector {
       timeouts.connectTimeoutMs ?? 15000,
       timeouts.readTimeoutMs ?? 30000,
       usesApiTls(device),
+      routeOf(device),
     );
     // Lets the poller cancel this session if its job runs out of time.
     registerPollSession(this);

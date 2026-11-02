@@ -14,6 +14,8 @@ export interface Site {
   /** The group (customer) it belongs to (#306). */
   group_id?: number | null;
   group_name?: string | null;
+  /** The jump host new devices in this site are reached through, unless they say otherwise. */
+  default_jump_host_id?: number | null;
 }
 
 /** A group of sites, one customer (#306). */

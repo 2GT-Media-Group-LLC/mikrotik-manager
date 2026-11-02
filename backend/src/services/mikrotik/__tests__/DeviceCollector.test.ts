@@ -27,6 +27,7 @@ const testDevice: DeviceRow = {
   api_port: 8728,
   api_username: 'admin',
   api_password_encrypted: 'plaintext-password',
+  jump_host_id: null,
   device_type: 'router',
   status: 'online',
 };

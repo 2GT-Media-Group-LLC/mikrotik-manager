@@ -21,12 +21,14 @@ export interface PreferredConnection {
 
 export async function connectPreferringSsl(
   address: string, username: string, password: string,
-  opts: { sslTimeoutMs?: number; plainTimeoutMs?: number; sslOnly?: boolean } = {},
+  /** jumpHostId: the device's route (null for direct). Required: a forgotten one would mean "direct". */
+  opts: { sslTimeoutMs?: number; plainTimeoutMs?: number; sslOnly?: boolean; jumpHostId: number | null },
 ): Promise<PreferredConnection> {
   // One after the other, never both at once: the plain API sends the login in
   // the clear as soon as its socket opens, so trying it alongside API-SSL gave
   // the password away even when API-SSL worked (GHSA-63v6-w7qf-349f).
-  const ssl = new RouterOSClient(address, API_SSL_PORT, username, password, opts.sslTimeoutMs ?? 6_000);
+  const via = opts.jumpHostId;
+  const ssl = new RouterOSClient(address, API_SSL_PORT, username, password, opts.sslTimeoutMs ?? 6_000, 30_000, true, via);
   let sslErr: unknown;
   try {
     await ssl.connect();
@@ -39,7 +41,7 @@ export async function connectPreferringSsl(
   // certificate). A refused login or a changed certificate is the answer, and
   // a device known to have used API-SSL is never moved back to the plain API.
   if (opts.sslOnly || !sslUnavailable(sslErr)) throw sslErr;
-  const plain = new RouterOSClient(address, API_PORT, username, password, opts.plainTimeoutMs ?? 10_000);
+  const plain = new RouterOSClient(address, API_PORT, username, password, opts.plainTimeoutMs ?? 10_000, 30_000, false, via);
   await plain.connect();
   return { client: plain, port: API_PORT, sslError: describeSslFailure(sslErr) };
 }

@@ -215,6 +215,8 @@ A preset is either **fleet-wide** or belongs to **one site**:
   presets, and that site's admins for a site's preset.
 - Names are unique within a site, so CSV import matches a preset name against that site's
   presets and the fleet-wide ones.
+- With a site or group chosen in the site selector, the list shows its presets and the
+  fleet-wide ones, and says how many it hides. A new preset starts in the chosen site.
 
 Before 0.30.0 presets were fleet-wide only and lived under Settings.
 
