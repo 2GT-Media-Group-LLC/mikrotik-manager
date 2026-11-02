@@ -3,6 +3,19 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.8
+
+**The IPv6 firewall.** The **Firewall** tab has an **IPv4** / **IPv6** switch. IPv6 has the same
+address lists, filter rules and NAT as IPv4 (IPv6 NAT needs RouterOS 7), with the same editing,
+reordering, counters and **Review changes**. Change Guard can't predict IPv6 lockouts yet, so
+IPv6 changes run with auto-revert, which is required when the manager connects to the device
+over IPv6 ([Change Guard](change-guard.md#firewall-rules),
+[#312](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/312)).
+
+Also: if Change Guard is set to script mode, an IPv6 firewall change or a VLAN interface change
+that has to be undone is now reverted on its own, without restoring a backup and rebooting the
+device.
+
 ## 1.1.0-beta.7
 
 **Add, edit and remove VLAN interfaces.** The **VLAN interfaces** card on a device's **VLANs**
