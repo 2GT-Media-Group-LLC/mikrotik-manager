@@ -323,6 +323,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta5" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.5
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta4" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.4
@@ -1195,6 +1204,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta5" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.5
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta4" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.4
@@ -1251,6 +1269,10 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta5">1.1.0-beta.5<a class="headerlink" href="#110-beta5" title="Permanent link">&para;</a></h2>
+<p>The fixes of <a href="#103">1.0.3</a>, for the beta channel: the dashboard no longer warns about missing
+backups for devices whose configuration hasn't changed, and co-channel overlap is counted per
+controller and per site. Also routine dependency updates.</p>
 <h2 id="110-beta4">1.1.0-beta.4<a class="headerlink" href="#110-beta4" title="Permanent link">&para;</a></h2>
 <p>The first new features of 1.1, both from
 <a href="https://github.com/jenserling">@jenserling</a>:</p>
@@ -1291,6 +1313,21 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="103">1.0.3<a class="headerlink" href="#103" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 2 November 2026. Two dashboard warnings that showed when nothing was wrong,
+both reported by <a href="https://github.com/azizfayziev">@azizfayziev</a>.</p>
+<ul>
+<li><strong>"No recent backup" for devices that hadn't changed.</strong> A configuration snapshot is only
+  stored when the configuration changes, so a device unchanged for a week was flagged even
+  though its newest backup was current. The hourly check that finds the configuration unchanged
+  now counts as a fresh backup (<a href="../backups/#finding-one">Backups</a>,
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/377">#377</a>).</li>
+<li><strong>"Co-channel overlap" counted radios that don't overlap.</strong> It counted a CAPsMAN controller's
+  copies of its CAPs' radios as extra radios, and compared radios across the whole fleet. It
+  now uses the Channel Usage analysis, which compares radios per controller and per site. In
+  Channel Usage, standalone APs are now grouped by site too (<a href="../wireless/#rf-health">Wireless</a>,
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/365">#365</a>).</li>
+</ul>
 <h2 id="102">1.0.2<a class="headerlink" href="#102" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 1 November 2026.</p>
 <ul>

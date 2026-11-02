@@ -1317,7 +1317,10 @@ over that wireless link the manager may lose contact (#294). Enabling one doesn'
 <h2 id="rf-health">RF Health<a class="headerlink" href="#rf-health" title="Permanent link">&para;</a></h2>
 <p><strong>Wireless → Overview</strong> aggregates the fleet:</p>
 <ul>
-<li><strong>Channel usage</strong> across 2.4, 5 and 6 GHz, with co-channel overlap highlighted.</li>
+<li><strong>Channel usage</strong> across 2.4, 5 and 6 GHz, with co-channel overlap highlighted. Overlap is
+  only counted between radios that can hear each other: each CAPsMAN controller's radios are
+  one location, and each site's standalone APs are another. The dashboard's <strong>co-channel
+  overlap</strong> warning uses the same analysis.</li>
 <li><strong>AP deployment density</strong> — client count plotted against signal, so an AP serving many
   clients at poor signal is visible as a cluster in the wrong corner.</li>
 <li><strong>TX-retry histogram</strong>, derived from per-client CCQ. This is only available on the legacy

@@ -1417,6 +1417,11 @@ covers everything that happened on the 3rd.</p>
 </tr>
 </tbody>
 </table>
+<p>A <code>config-snapshot</code> is only stored when the configuration changes, so a device that hasn't
+changed in weeks can have an old newest backup that's still current. The dashboard's
+<strong>no recent backup</strong> warning knows this. A device counts as backed up while its configuration
+check (hourly by default) keeps finding it unchanged. The warning shows when a device has no
+backup at all, or when neither a backup nor a successful check happened in the last 7 days.</p>
 <h2 id="reading-and-comparing">Reading and comparing<a class="headerlink" href="#reading-and-comparing" title="Permanent link">&para;</a></h2>
 <p>Click any row to read the backup in place. Select exactly two and choose <strong>Compare</strong>
 for a line diff — the same diff Config History uses for snapshots.</p>
