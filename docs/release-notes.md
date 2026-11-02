@@ -3,6 +3,23 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.4
+
+The first new features of 1.1, both from
+[@jenserling](https://github.com/jenserling):
+
+- **12- or 24-hour time.** Times show in 24-hour format by default. Fleet admins set the
+  default for everyone under **Settings → General**, and each account can choose its own
+  ([Time display](configuration.md#time-display),
+  [#343](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/343)).
+- **Wireless Systems and the antenna aligner.** A new device type, shown as **WS**, for outdoor
+  point-to-point, point-to-multipoint and CPE radios. These devices get an **Antenna aligner**
+  tab with live signal from one or both ends of a link, per-chain readings, SNR, CCQ, link
+  rates, a signal history and an optional tone. It only reads from the radios and never
+  changes their settings. Existing radios keep their type until you change it in Edit Device
+  ([Antenna aligner](antenna-aligner.md),
+  [#344](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/344)).
+
 ## 1.1.0-beta.3
 
 The fixes of [1.0.2](#102), for the beta channel: log collection uses much less CPU (thanks to
