@@ -323,6 +323,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta8" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.8
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta7" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.7
@@ -1243,6 +1252,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta8" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.8
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta7" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.7
@@ -1326,6 +1344,16 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta8">1.1.0-beta.8<a class="headerlink" href="#110-beta8" title="Permanent link">&para;</a></h2>
+<p><strong>The IPv6 firewall.</strong> The <strong>Firewall</strong> tab has an <strong>IPv4</strong> / <strong>IPv6</strong> switch. IPv6 has the same
+address lists, filter rules and NAT as IPv4 (IPv6 NAT needs RouterOS 7), with the same editing,
+reordering, counters and <strong>Review changes</strong>. Change Guard can't predict IPv6 lockouts yet, so
+IPv6 changes run with auto-revert, which is required when the manager connects to the device
+over IPv6 (<a href="../change-guard/#firewall-rules">Change Guard</a>,
+<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/312">#312</a>).</p>
+<p>Also: if Change Guard is set to script mode, an IPv6 firewall change or a VLAN interface change
+that has to be undone is now reverted on its own, without restoring a backup and rebooting the
+device.</p>
 <h2 id="110-beta7">1.1.0-beta.7<a class="headerlink" href="#110-beta7" title="Permanent link">&para;</a></h2>
 <p><strong>Add, edit and remove VLAN interfaces.</strong> The <strong>VLAN interfaces</strong> card on a device's <strong>VLANs</strong>
 tab used to be read-only. Now it can create a VLAN interface on a port, bond or bridge (with an

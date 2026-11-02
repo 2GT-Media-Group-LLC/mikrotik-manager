@@ -1606,6 +1606,11 @@ applied; the rest are protected by auto-revert alone.</p>
 <td>Yes</td>
 </tr>
 <tr>
+<td>IPv6 firewall</td>
+<td>filter, NAT and address lists: add, edit, enable/disable, move, delete</td>
+<td>No; auto-revert only, required when the manager connects over IPv6 (see <a href="#firewall-rules">Firewall rules</a>)</td>
+</tr>
+<tr>
 <td>Bridge</td>
 <td>VLAN filtering toggle</td>
 <td>Yes</td>
@@ -1920,7 +1925,10 @@ accepted address list is caught before it is applied. RouterOS's default configu
 understood correctly: it lets LAN traffic reach the end of the chain, so appending a
 drop-all to it is predicted as a lockout.</p>
 <p>Only the IPv4 filter table is checked. Rules in the raw table are not, and a manager
-connecting over IPv6 isn't affected by the IPv4 filter at all. If the device has
+connecting over IPv6 isn't affected by the IPv4 filter at all. IPv6 firewall changes (#312)
+aren't predicted: when the manager connects to the device by IPv4 address they can't touch its
+connection, and they run with auto-revert as usual. When it connects by IPv6 address or by
+hostname, auto-revert is required for them. If the device has
 connection tracking switched off (RouterOS turns it on only once firewall rules exist),
 the manager's address isn't known, so rules scoped to a source address count as "can't
 tell".</p>
