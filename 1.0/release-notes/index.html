@@ -323,6 +323,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#103" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.0.3
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#102" class="md-nav__link">
     <span class="md-ellipsis">
       1.0.2
@@ -1216,6 +1225,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#103" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.0.3
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#102" class="md-nav__link">
     <span class="md-ellipsis">
       1.0.2
@@ -1317,6 +1335,21 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="103">1.0.3<a class="headerlink" href="#103" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 2 November 2026. Two dashboard warnings that showed when nothing was wrong,
+both reported by <a href="https://github.com/azizfayziev">@azizfayziev</a>.</p>
+<ul>
+<li><strong>"No recent backup" for devices that hadn't changed.</strong> A configuration snapshot is only
+  stored when the configuration changes, so a device unchanged for a week was flagged even
+  though its newest backup was current. The hourly check that finds the configuration unchanged
+  now counts as a fresh backup (<a href="../backups/#finding-one">Backups</a>,
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/377">#377</a>).</li>
+<li><strong>"Co-channel overlap" counted radios that don't overlap.</strong> It counted a CAPsMAN controller's
+  copies of its CAPs' radios as extra radios, and compared radios across the whole fleet. It
+  now uses the Channel Usage analysis, which compares radios per controller and per site. In
+  Channel Usage, standalone APs are now grouped by site too (<a href="../wireless/#rf-health">Wireless</a>,
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/365">#365</a>).</li>
+</ul>
 <h2 id="102">1.0.2<a class="headerlink" href="#102" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 1 November 2026.</p>
 <ul>
