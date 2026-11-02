@@ -179,7 +179,7 @@ services:
       start_period: 20s
 
   postgres:
-    image: postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
+    image: postgres:15-alpine@sha256:54e0dd8e8cddcdbb9156c2486eed5a43eccb7214d7c6828097d41ce049fb3984
     environment:
       TZ: ${TZ:-UTC}
       POSTGRES_DB: mikrotik_manager
