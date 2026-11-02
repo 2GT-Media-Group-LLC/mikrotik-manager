@@ -127,6 +127,8 @@ export class ApiNotEnabledError extends Error {
 export function describeSshFailure(err: unknown, port: number): string {
   const msg = (err as Error)?.message ?? String(err);
   const code = (err as NodeJS.ErrnoException)?.code;
+  // The device's jump host failed, in its own words (jumpHosts.ts).
+  if (code === 'jump_host_unreachable') return msg;
   if (/all configured authentication methods failed|authentication failed/i.test(msg)) {
     return 'The SSH login was refused: the username or password is wrong, or the user has no "ssh" policy.';
   }

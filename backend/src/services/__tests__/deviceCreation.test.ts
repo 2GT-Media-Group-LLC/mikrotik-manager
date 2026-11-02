@@ -8,6 +8,7 @@ jest.mock('../../utils/crypto', () => ({
 import { computeNameLocked, createDeviceFromBody, loadCredentialPreset } from '../deviceCreation';
 import { query, queryOne } from '../../config/database';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
+import { JumpHostError } from '../jumpHosts';
 
 /**
  * Whether a newly-created device's name should stop following the router's
@@ -267,6 +268,20 @@ describe('createDeviceFromBody (jump hosts)', () => {
     const result = await createDeviceFromBody({ ...base, jump_host_id: null }, null, { siteId: 5 });
     expect(result.ok).toBe(true);
     expect(routeTested()).toBeNull();
+  });
+
+  it('says what went wrong with the jump host, not "Cannot connect to device"', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const down = new JumpHostError('Jump host "branch-gw" (203.0.113.10:22) is unreachable: it did not answer in time');
+    (RouterOSClient as unknown as jest.Mock).mockImplementation(() => ({
+      connect: jest.fn().mockRejectedValue(down), disconnect: jest.fn(), execute: jest.fn(),
+    }));
+    // A port chosen, and none (API-SSL first, then the plain API): either way.
+    for (const body of [base, { ...base, api_port: undefined }]) {
+      const result = await createDeviceFromBody(body, null, { siteId: 5 });
+      expect(result).toMatchObject({ ok: false, status: 422, body: { error: down.message } });
+    }
+    expect(sqlRan(/INSERT INTO devices/)).toBeUndefined();
   });
 
   it("refuses another site's jump host before connecting to anything", async () => {

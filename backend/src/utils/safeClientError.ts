@@ -23,6 +23,11 @@ export function safeConnectionError(context: string, err: unknown): string {
       return 'Device unreachable. Check routing and firewall rules to this address and port.';
     case 'ECONNRESET':
       return 'Connection was reset. Check the port and that api-ssl is used if required.';
+    case 'jump_host_unreachable':
+      // The device's jump host failed: down, refusing the login or forwarding,
+      // or a changed host key. jumpHosts.ts words these for people and names
+      // only the jump host, as the jump host list already shows them.
+      return raw;
     default:
       // RouterOS's own login refusal, surfaced by RouterOSClient as a message.
       if (/invalid user name or password/i.test(raw)) {

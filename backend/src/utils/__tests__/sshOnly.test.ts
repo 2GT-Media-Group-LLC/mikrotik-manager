@@ -74,4 +74,10 @@ describe('describeSshFailure', () => {
     expect(describeSshFailure(new Error('Timed out while waiting for handshake'), 22)).toMatch(/Timed out/);
     expect(describeSshFailure(new Error('some internal ssh2 detail'), 22)).toBe('Could not log in over SSH. Check the address, SSH port and login.');
   });
+
+  it("passes a jump host's own failure through", () => {
+    const down = Object.assign(new Error('Jump host "branch-gw" (203.0.113.10:22) is unreachable: it did not answer in time'),
+      { code: 'jump_host_unreachable' });
+    expect(describeSshFailure(down, 22)).toBe(down.message);
+  });
 });
