@@ -38,6 +38,7 @@ applied; the rest are protected by auto-revert alone.
 |---|---|---|
 | Firewall filter | add, edit, enable/disable, move, delete | Yes, in rule order (see [Firewall rules](#firewall-rules)) |
 | Firewall address lists | add, edit, enable/disable, remove | Yes |
+| IPv6 firewall | filter, NAT and address lists: add, edit, enable/disable, move, delete | No; auto-revert only, required when the manager connects over IPv6 (see [Firewall rules](#firewall-rules)) |
 | Bridge | VLAN filtering toggle | Yes |
 | Bridge | move ports between bridges, create a bridge with the move, delete an empty bridge | Yes |
 | Ports | PVID and tagged/untagged membership | Yes |
@@ -258,7 +259,10 @@ understood correctly: it lets LAN traffic reach the end of the chain, so appendi
 drop-all to it is predicted as a lockout.
 
 Only the IPv4 filter table is checked. Rules in the raw table are not, and a manager
-connecting over IPv6 isn't affected by the IPv4 filter at all. If the device has
+connecting over IPv6 isn't affected by the IPv4 filter at all. IPv6 firewall changes (#312)
+aren't predicted: when the manager connects to the device by IPv4 address they can't touch its
+connection, and they run with auto-revert as usual. When it connects by IPv6 address or by
+hostname, auto-revert is required for them. If the device has
 connection tracking switched off (RouterOS turns it on only once firewall rules exist),
 the manager's address isn't known, so rules scoped to a source address count as "can't
 tell".

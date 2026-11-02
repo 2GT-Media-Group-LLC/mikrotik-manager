@@ -126,6 +126,7 @@ import { probeUserManager, USER_MANAGER_RECHECK_MS } from '../userManager';
 import { poolSize, usedPerPool } from '../../utils/dhcpPools';
 import { recordOptics } from '../opticLevels';
 import { routeOf } from '../jumpHosts';
+import { firewallMenu, type FirewallFamily } from '../../utils/firewallFamily';
 
 /** The device tables the bridge-port checks read (#258). */
 export interface BridgeState {
@@ -3854,12 +3855,12 @@ export class DeviceCollector {
 
   // `stats` makes RouterOS include the per-rule bytes/packets hit counters so
   // the UI can show which rules are matching (and flag dead, zero-hit rules).
-  async getFirewallRules(): Promise<Record<string, string>[]> {
-    return this.client.execute('/ip/firewall/filter/print', { detail: '', stats: '' });
+  async getFirewallRules(family: FirewallFamily = 'ip'): Promise<Record<string, string>[]> {
+    return this.client.execute(`${firewallMenu(family, 'filter')}/print`, { detail: '', stats: '' });
   }
 
-  async addFirewallRule(params: Record<string, string>): Promise<void> {
-    await this.client.execute('/ip/firewall/filter/add', params);
+  async addFirewallRule(params: Record<string, string>, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.client.execute(`${firewallMenu(family, 'filter')}/add`, params);
   }
 
   /**
@@ -3899,65 +3900,67 @@ export class DeviceCollector {
     }
   }
 
-  async updateFirewallRule(id: string, params: Record<string, string>): Promise<void> {
-    await this.setItem('/ip/firewall/filter', id, params);
+  async updateFirewallRule(id: string, params: Record<string, string>, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.setItem(firewallMenu(family, 'filter'), id, params);
   }
 
-  async deleteFirewallRule(id: string): Promise<void> {
-    await this.client.execute('/ip/firewall/filter/remove', { '.id': id });
+  async deleteFirewallRule(id: string, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.client.execute(`${firewallMenu(family, 'filter')}/remove`, { '.id': id });
   }
 
   // Reorder: RouterOS evaluates rules top-to-bottom, so order is decisive.
   // `destination` is the .id the rule should be placed *before* (RouterOS
   // semantics), or omitted to move to the end.
-  async moveFirewallRule(id: string, destination?: string): Promise<void> {
+  async moveFirewallRule(id: string, destination?: string, family: FirewallFamily = 'ip'): Promise<void> {
     const params: Record<string, string> = { numbers: id };
     if (destination) params.destination = destination;
-    await this.client.execute('/ip/firewall/filter/move', params);
+    await this.client.execute(`${firewallMenu(family, 'filter')}/move`, params);
   }
 
-  async resetFirewallCounters(): Promise<void> {
-    await this.client.execute('/ip/firewall/filter/reset-counters-all', {});
+  async resetFirewallCounters(family: FirewallFamily = 'ip'): Promise<void> {
+    await this.client.execute(`${firewallMenu(family, 'filter')}/reset-counters-all`, {});
   }
 
-  async getNatRules(): Promise<Record<string, string>[]> {
-    return this.client.execute('/ip/firewall/nat/print', { detail: '', stats: '' });
+  async getNatRules(family: FirewallFamily = 'ip'): Promise<Record<string, string>[]> {
+    return this.client.execute(`${firewallMenu(family, 'nat')}/print`, { detail: '', stats: '' });
   }
 
-  async addNatRule(params: Record<string, string>): Promise<void> {
-    await this.client.execute('/ip/firewall/nat/add', params);
+  async addNatRule(params: Record<string, string>, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.client.execute(`${firewallMenu(family, 'nat')}/add`, params);
   }
 
-  async updateNatRule(id: string, params: Record<string, string>): Promise<void> {
-    await this.setItem('/ip/firewall/nat', id, params);
+  async updateNatRule(id: string, params: Record<string, string>, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.setItem(firewallMenu(family, 'nat'), id, params);
   }
 
-  async deleteNatRule(id: string): Promise<void> {
-    await this.client.execute('/ip/firewall/nat/remove', { '.id': id });
+  async deleteNatRule(id: string, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.client.execute(`${firewallMenu(family, 'nat')}/remove`, { '.id': id });
   }
 
-  async moveNatRule(id: string, destination?: string): Promise<void> {
+  async moveNatRule(id: string, destination?: string, family: FirewallFamily = 'ip'): Promise<void> {
     const params: Record<string, string> = { numbers: id };
     if (destination) params.destination = destination;
-    await this.client.execute('/ip/firewall/nat/move', params);
+    await this.client.execute(`${firewallMenu(family, 'nat')}/move`, params);
   }
 
   // ─── Firewall Address Lists (reusable address objects) ──────────────────────
 
-  async getAddressLists(): Promise<Record<string, string>[]> {
-    return this.client.execute('/ip/firewall/address-list/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+  /** IPv4 lists read empty on failure, as they always have; IPv6 ones throw, so "IPv6 off" can be told apart. */
+  async getAddressLists(family: FirewallFamily = 'ip'): Promise<Record<string, string>[]> {
+    const read = this.client.execute(`${firewallMenu(family, 'address-list')}/print`, { detail: '' });
+    return family === 'ip' ? read.catch(() => [] as Record<string, string>[]) : read;
   }
 
-  async addAddressListEntry(params: Record<string, string>): Promise<void> {
-    await this.client.execute('/ip/firewall/address-list/add', params);
+  async addAddressListEntry(params: Record<string, string>, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.client.execute(`${firewallMenu(family, 'address-list')}/add`, params);
   }
 
-  async updateAddressListEntry(id: string, params: Record<string, string>): Promise<void> {
-    await this.setItem('/ip/firewall/address-list', id, params);
+  async updateAddressListEntry(id: string, params: Record<string, string>, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.setItem(firewallMenu(family, 'address-list'), id, params);
   }
 
-  async removeAddressListEntry(id: string): Promise<void> {
-    await this.client.execute('/ip/firewall/address-list/remove', { '.id': id });
+  async removeAddressListEntry(id: string, family: FirewallFamily = 'ip'): Promise<void> {
+    await this.client.execute(`${firewallMenu(family, 'address-list')}/remove`, { '.id': id });
   }
 
   // ─── Connection tracking (live active connections) ──────────────────────────

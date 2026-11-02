@@ -95,6 +95,12 @@ const MENUS = {
   ethernetPoe: {
     path: '/interface/ethernet/poe', mode: 'setOnly', only: ['poe-out', 'poe-priority', 'poe-voltage'],
   },
+  // After its parents (bridges, bonds, ports), before what it can be part of
+  // (a bridge port) and what sits on it (addresses) (#309).
+  vlanInterface: {
+    path: '/interface/vlan', mode: 'keyed', addKeys: ['name', 'vlan-id', 'interface'], fallback: true,
+    only: ['name', 'vlan-id', 'interface', 'mtu', 'arp', 'use-service-tag', 'disabled', 'comment'],
+  },
   bridgePort: {
     path: '/interface/bridge/port', mode: 'keyed', hasDynamic: true,
     only: ['interface', 'bridge', 'pvid', 'frame-types', 'ingress-filtering', 'tag-stacking', 'hw', 'edge',
@@ -107,6 +113,10 @@ const MENUS = {
   ipAddress: {
     path: '/ip/address', mode: 'keyed', hasDynamic: true,
     only: ['address', 'network', 'interface', 'disabled', 'comment'],
+  },
+  ipv6Address: {
+    path: '/ipv6/address', mode: 'keyed', hasDynamic: true,
+    only: ['address', 'interface', 'advertise', 'eui-64', 'no-dad', 'disabled', 'comment'],
   },
   ipRoute: {
     path: '/ip/route', mode: 'keyed', addKeys: ['dst-address', 'gateway'], hasDynamic: true, fallback: true,
@@ -127,6 +137,17 @@ const MENUS = {
   },
   firewallNat: {
     path: '/ip/firewall/nat', mode: 'ordered', hasDynamic: true, readOnly: ['bytes', 'packets'],
+  },
+  // The IPv6 firewall (#312): the same tables under /ipv6.
+  ipv6AddressList: {
+    path: '/ipv6/firewall/address-list', mode: 'replace', hasDynamic: true,
+    only: ['list', 'address', 'timeout', 'disabled', 'comment'],
+  },
+  ipv6FirewallFilter: {
+    path: '/ipv6/firewall/filter', mode: 'ordered', hasDynamic: true, readOnly: ['bytes', 'packets'],
+  },
+  ipv6FirewallNat: {
+    path: '/ipv6/firewall/nat', mode: 'ordered', hasDynamic: true, readOnly: ['bytes', 'packets'],
   },
 } satisfies Record<string, MenuDef>;
 
@@ -169,6 +190,21 @@ const SCOPES: Record<string, MenuKey[]> = {
   'address-list.add': ['addressList'],
   'address-list.set': ['addressList'],
   'address-list.remove': ['addressList'],
+  // A removed VLAN interface takes its addresses with it.
+  'vlan-iface.add': ['vlanInterface', 'ipAddress'],
+  'vlan-iface.set': ['vlanInterface'],
+  'vlan-iface.remove': ['vlanInterface', 'ipAddress', 'ipv6Address'],
+  'ipv6-firewall.add': ['ipv6FirewallFilter'],
+  'ipv6-firewall.set': ['ipv6FirewallFilter'],
+  'ipv6-firewall.move': ['ipv6FirewallFilter'],
+  'ipv6-firewall.remove': ['ipv6FirewallFilter'],
+  'ipv6-nat.add': ['ipv6FirewallNat'],
+  'ipv6-nat.set': ['ipv6FirewallNat'],
+  'ipv6-nat.move': ['ipv6FirewallNat'],
+  'ipv6-nat.remove': ['ipv6FirewallNat'],
+  'ipv6-address-list.add': ['ipv6AddressList'],
+  'ipv6-address-list.set': ['ipv6AddressList'],
+  'ipv6-address-list.remove': ['ipv6AddressList'],
 };
 
 /** The menus to snapshot for a kind of change, parents first; null when script mode can't cover it. */

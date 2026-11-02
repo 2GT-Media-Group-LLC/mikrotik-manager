@@ -8,6 +8,13 @@ describe('restoreScopeFor', () => {
     expect(restoreScopeFor('bond.delete')).toEqual(['bonding', 'bridgePort', 'bridgeVlan', 'ipAddress']);
     expect(restoreScopeFor('bridge-port.move')).toEqual(['bridge', 'bridgePort', 'bridgeVlan', 'ipAddress']);
   });
+  it('covers VLAN interfaces with their addresses, and the IPv6 firewall (#309, #312)', () => {
+    expect(restoreScopeFor('vlan-iface.remove')).toEqual(['vlanInterface', 'ipAddress', 'ipv6Address']);
+    expect(restoreScopeFor('vlan-iface.set')).toEqual(['vlanInterface']);
+    expect(restoreScopeFor('ipv6-firewall.move')).toEqual(['ipv6FirewallFilter']);
+    expect(restoreScopeFor('ipv6-nat.add')).toEqual(['ipv6FirewallNat']);
+    expect(restoreScopeFor('ipv6-address-list.remove')).toEqual(['ipv6AddressList']);
+  });
   it('has no scope for changes it cannot restore selectively', () => {
     expect(restoreScopeFor('command.bulk')).toBeNull();
     expect(restoreScopeFor('wireguard.set')).toBeNull();
@@ -81,6 +88,23 @@ describe('buildRestorePlan', () => {
     expect(p).not.toContain('bytes=');
     expect(p).toMatch(/:global mtmrevertabco\d/);
     expect(p).toMatch(/:if \(\$mtmrevertabck\d\) do=\{ :foreach r in=\$mtmrevertabco\d do=\{ :do \{ \/ip firewall filter remove \$r \}/);
+  });
+
+  it('re-adds a removed VLAN interface before its addresses, and rebuilds the IPv6 filter in order', () => {
+    const p = all(plan([
+      { menu: 'ipAddress', rows: [{ '.id': '*3', address: '10.0.20.1/24', interface: 'vlan20', network: '10.0.20.0', dynamic: 'false' }] },
+      { menu: 'vlanInterface', rows: [{ '.id': '*C', name: 'vlan20', 'vlan-id': '20', interface: 'ether2', mtu: '1500', running: 'true' }] },
+    ]));
+    expect(p).toContain('/interface vlan add name="vlan20" vlan-id="20" interface="ether2" mtu="1500"');
+    expect(p.indexOf('/interface vlan add')).toBeLessThan(p.indexOf('/ip address add'));
+    expect(p).not.toContain('running=');
+    const f = all(plan([{ menu: 'ipv6FirewallFilter', rows: [
+      { '.id': '*1', chain: 'input', action: 'accept', 'connection-state': 'established,related', bytes: '9', packets: '1', dynamic: 'false' },
+      { '.id': '*2', chain: 'input', action: 'drop', 'in-interface-list': '!LAN', dynamic: 'false' },
+    ] }]));
+    expect(f).toContain('/ipv6 firewall filter add chain="input" action="accept" connection-state="established,related"');
+    expect(f).toContain('/ipv6 firewall filter add chain="input" action="drop" in-interface-list="!LAN"');
+    expect(f).not.toContain('bytes=');
   });
 
   it('removes and re-adds address-list entries rather than setting them back', () => {

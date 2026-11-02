@@ -707,6 +707,15 @@ export interface PollSettings {
   inherited?: Record<string, { value: number | boolean; source: 'device' | 'site' | 'global' }>;
 }
 
+/** IPv4 or IPv6 firewall (#312). */
+export type FirewallFamily = 'ipv4' | 'ipv6';
+
+/** Request params for a firewall call: ?family=ipv6 only for IPv6, so IPv4 requests are unchanged. */
+function famParams(family?: FirewallFamily, extra: Record<string, string> = {}): { params: Record<string, string> } | undefined {
+  const params = { ...(family === 'ipv6' ? { family: 'ipv6' } : {}), ...extra };
+  return Object.keys(params).length ? { params } : undefined;
+}
+
 export const devicesApi = {
   /** Settings this device overrides (#261); null in a PUT clears one. */
   getPollSettings: (id: number) => api.get<PollSettings>(`/devices/${id}/poll-settings`),
@@ -764,13 +773,15 @@ export const devicesApi = {
   getPorts: (id: number) =>
     api.get<{ ports: SwitchPort[]; vlans: Vlan[] }>(`/devices/${id}/ports`),
   getRouting: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/routing`),
-  getFirewall: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/firewall`),
-  addFirewallRule: (id: number, data: Record<string, unknown>) =>
-    api.post<Record<string, string>[]>(`/devices/${id}/firewall`, data),
-  updateFirewallRule: (id: number, ruleId: string, data: Record<string, unknown>) =>
-    api.put<Record<string, string>[]>(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`, data),
-  deleteFirewallRule: (id: number, ruleId: string, confirmLockout = false) =>
-    api.delete(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`, confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
+  // The firewall calls take an optional family: 'ipv6' works on /ipv6/firewall (#312).
+  getFirewall: (id: number, family?: FirewallFamily) =>
+    api.get<Record<string, string>[]>(`/devices/${id}/firewall`, famParams(family)),
+  addFirewallRule: (id: number, data: Record<string, unknown>, family?: FirewallFamily) =>
+    api.post<Record<string, string>[]>(`/devices/${id}/firewall`, data, famParams(family)),
+  updateFirewallRule: (id: number, ruleId: string, data: Record<string, unknown>, family?: FirewallFamily) =>
+    api.put<Record<string, string>[]>(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`, data, famParams(family)),
+  deleteFirewallRule: (id: number, ruleId: string, confirmLockout = false, family?: FirewallFamily) =>
+    api.delete(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`, famParams(family, confirmLockout ? { confirm_lockout: 'true' } : {})),
   getResources: (id: number) => api.get<Record<string, string>>(`/devices/${id}/resources`),
   configurePortVlan: (id: number, name: string, data: PortVlanConfig & { confirm_lockout?: boolean }) =>
     api.put(`/devices/${id}/ports/${encodeURIComponent(name)}/vlan`, data, GUARDED),
@@ -875,24 +886,25 @@ export const devicesApi = {
   setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`,
       { enabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
-  getNat: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/nat`),
-  addNatRule: (id: number, data: Record<string, unknown>) =>
-    api.post<Record<string, string>[]>(`/devices/${id}/nat`, data),
-  updateNatRule: (id: number, ruleId: string, data: Record<string, unknown>) =>
-    api.put<Record<string, string>[]>(`/devices/${id}/nat/${encodeURIComponent(ruleId)}`, data),
-  deleteNatRule: (id: number, ruleId: string) =>
-    api.delete(`/devices/${id}/nat/${encodeURIComponent(ruleId)}`),
+  getNat: (id: number, family?: FirewallFamily) => api.get<Record<string, string>[]>(`/devices/${id}/nat`, famParams(family)),
+  addNatRule: (id: number, data: Record<string, unknown>, family?: FirewallFamily) =>
+    api.post<Record<string, string>[]>(`/devices/${id}/nat`, data, famParams(family)),
+  updateNatRule: (id: number, ruleId: string, data: Record<string, unknown>, family?: FirewallFamily) =>
+    api.put<Record<string, string>[]>(`/devices/${id}/nat/${encodeURIComponent(ruleId)}`, data, famParams(family)),
+  deleteNatRule: (id: number, ruleId: string, family?: FirewallFamily) =>
+    api.delete(`/devices/${id}/nat/${encodeURIComponent(ruleId)}`, famParams(family)),
   // Firewall: reorder + counters (order is decisive in RouterOS)
-  moveFirewallRule: (id: number, ruleId: string, destination?: string, confirmLockout = false) =>
-    api.post(`/devices/${id}/firewall/move`, { id: ruleId, destination, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
+  moveFirewallRule: (id: number, ruleId: string, destination?: string, confirmLockout = false, family?: FirewallFamily) =>
+    api.post(`/devices/${id}/firewall/move`, { id: ruleId, destination, ...(confirmLockout ? { confirm_lockout: true } : {}) }, famParams(family)),
   /** Count "outages this week" from now on (#85); history is kept. */
   resetOutages: (id: number) => api.post<{ message: string; outages_reset_at: string }>(`/devices/${id}/outages/reset`),
-  resetFirewallCounters: (id: number) =>
-    api.post<Record<string, string>[]>(`/devices/${id}/firewall/reset-counters`),
-  moveNatRule: (id: number, ruleId: string, destination?: string) =>
-    api.post<Record<string, string>[]>(`/devices/${id}/nat/move`, { id: ruleId, destination }),
+  resetFirewallCounters: (id: number, family?: FirewallFamily) =>
+    api.post<Record<string, string>[]>(`/devices/${id}/firewall/reset-counters`, undefined, famParams(family)),
+  moveNatRule: (id: number, ruleId: string, destination?: string, family?: FirewallFamily) =>
+    api.post<Record<string, string>[]>(`/devices/${id}/nat/move`, { id: ruleId, destination }, famParams(family)),
   // Firewall address lists (reusable address objects)
-  getAddressLists: (id: number) => api.get<Record<string, string>[]>(`/devices/${id}/address-lists`),
+  getAddressLists: (id: number, family?: FirewallFamily) =>
+    api.get<Record<string, string>[]>(`/devices/${id}/address-lists`, famParams(family)),
   /** The switch chip's own VLAN table, on older chips (#278). Read-only. */
   getSwitchVlans: (id: number) => api.get<SwitchVlanView>(`/devices/${id}/switch-vlans`),
   /** Where the device's web interface answers (#335); url null when www and www-ssl are off. */
@@ -923,12 +935,12 @@ export const devicesApi = {
   /** One client's view of this router's address lists (#145). */
   clientAddressLists: (id: number, address: string) =>
     api.get<ClientAddressListView>(`/devices/${id}/address-lists/client`, { params: { address } }),
-  addAddressListEntry: (id: number, data: { list: string; address: string; comment?: string; timeout?: string; confirm_lockout?: boolean }) =>
-    api.post(`/devices/${id}/address-lists`, data),
-  updateAddressListEntry: (id: number, entryId: string, data: Record<string, unknown>) =>
-    api.put<Record<string, string>[]>(`/devices/${id}/address-lists/${encodeURIComponent(entryId)}`, data),
-  removeAddressListEntry: (id: number, entryId: string, confirmLockout = false) =>
-    api.delete(`/devices/${id}/address-lists/${encodeURIComponent(entryId)}`, confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
+  addAddressListEntry: (id: number, data: { list: string; address: string; comment?: string; timeout?: string; confirm_lockout?: boolean }, family?: FirewallFamily) =>
+    api.post(`/devices/${id}/address-lists`, data, famParams(family)),
+  updateAddressListEntry: (id: number, entryId: string, data: Record<string, unknown>, family?: FirewallFamily) =>
+    api.put<Record<string, string>[]>(`/devices/${id}/address-lists/${encodeURIComponent(entryId)}`, data, famParams(family)),
+  removeAddressListEntry: (id: number, entryId: string, confirmLockout = false, family?: FirewallFamily) =>
+    api.delete(`/devices/${id}/address-lists/${encodeURIComponent(entryId)}`, famParams(family, confirmLockout ? { confirm_lockout: 'true' } : {})),
   // Active connections (read-only)
   getConnections: (id: number, limit = 200, protocol = '') =>
     api.get<{ total: number | null; connections: Record<string, string>[]; limit: number; truncated: boolean; tracking: Record<string, string> }>(

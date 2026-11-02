@@ -392,7 +392,7 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **Bridges** | Every bridge, its ports, VLAN filtering and spanning tree; create, rename, edit, delete |
 | **VLANs** | The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (`/interface vlan`) with their parent and addresses, which you can add, edit and remove |
 | **Radios** | Wireless interfaces, SSIDs, channels, connected clients |
-| **Firewall** | Filter, NAT and mangle rules, with reordering and counters |
+| **Firewall** | Filter and NAT rules and address lists, for IPv4 and IPv6 (the **IPv4** / **IPv6** switch at the top), with reordering and counters. IPv6 NAT needs RouterOS 7 |
 | **Routing** | IPv4 routes, IPv6 routes (read-only), OSPF, BGP, routing tables and filters |
 | **Queues** | Traffic shaping |
 | **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing) |

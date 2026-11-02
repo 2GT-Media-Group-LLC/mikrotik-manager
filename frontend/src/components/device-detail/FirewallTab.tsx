@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Pencil, Power, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield,
   ArrowUp, ArrowDown, List, Activity,
 } from 'lucide-react';
-import { devicesApi } from '../../services/api';
+import { devicesApi, type FirewallFamily } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { formatBytes, formatCount, ruleSummary, natSummary } from '../../utils/firewallSummary';
 import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
@@ -16,6 +16,7 @@ type Row = Record<string, string> & { '.id': string };
 const COMMON_CHAINS = ['forward', 'input', 'output'];
 const FW_ACTIONS    = ['accept', 'drop', 'reject', 'log', 'passthrough', 'jump', 'return'];
 const PROTOCOLS     = ['tcp', 'udp', 'icmp', 'ip', 'gre', 'ospf'];
+const PROTOCOLS_V6  = ['tcp', 'udp', 'icmpv6', 'gre', 'ospf'];
 const CONN_STATES   = ['new', 'established', 'related', 'invalid'];
 const PORT_PRESETS  = [
   { label: 'HTTPS', port: '443' }, { label: 'HTTP', port: '80' }, { label: 'SSH', port: '22' },
@@ -37,6 +38,16 @@ const NAT_ACTIONS = ['masquerade', 'src-nat', 'dst-nat', 'netmap', 'redirect', '
 function errMsg(err: unknown) {
   return (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Operation failed';
 }
+
+/** The device has no such IPv6 menu (#312): the ipv6 package off, or no IPv6 NAT on RouterOS 6. */
+function ipv6Unavailable(err: unknown): string | null {
+  const d = (err as { response?: { data?: { code?: string; error?: string } } })?.response?.data;
+  return d?.code === 'ipv6_unavailable' ? (d.error || 'IPv6 isn\u2019t available on this device.') : null;
+}
+
+/** Query keys per family; IPv4 keeps the keys other screens already use. */
+const fwKey = (what: string, deviceId: number, family: FirewallFamily) =>
+  family === 'ipv6' ? [what, deviceId, 'ipv6'] : [what, deviceId];
 
 function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -125,10 +136,10 @@ function formToRuleish(f: RuleForm): Record<string, string> {
 
 // ─── Endpoint picker (Any / Address / List) ──────────────────────────────────────
 function EndpointPicker({
-  label, kind, value, onKind, onValue, lists,
+  label, kind, value, onKind, onValue, lists, v6 = false,
 }: {
   label: string; kind: Endpoint; value: string;
-  onKind: (k: Endpoint) => void; onValue: (v: string) => void; lists: string[];
+  onKind: (k: Endpoint) => void; onValue: (v: string) => void; lists: string[]; v6?: boolean;
 }) {
   return (
     <div>
@@ -144,7 +155,7 @@ function EndpointPicker({
         ))}
       </div>
       {kind === 'address' && (
-        <input className="input font-mono" value={value} onChange={e => onValue(e.target.value)} placeholder="0.0.0.0/0" />
+        <input className="input font-mono" value={value} onChange={e => onValue(e.target.value)} placeholder={v6 ? '2001:db8::/32' : '0.0.0.0/0'} />
       )}
       {kind === 'list' && (
         lists.length > 0 ? (
@@ -162,11 +173,14 @@ function EndpointPicker({
 
 // ─── Firewall Rule Modal ──────────────────────────────────────────────────────
 function RuleModal({
-  title, form, setForm, onSave, onReview, onClose, isPending, error, lists,
+  title, form, setForm, onSave, onReview, onClose, isPending, error, lists, family = 'ipv4',
 }: {
   title: string; form: RuleForm; setForm: React.Dispatch<React.SetStateAction<RuleForm>>;
   onSave: () => void; onReview?: () => Promise<unknown>; onClose: () => void; isPending: boolean; error: string; lists: string[];
+  family?: FirewallFamily;
 }) {
+  const v6 = family === 'ipv6';
+  const protocols = v6 ? PROTOCOLS_V6 : PROTOCOLS;
   const set = (k: keyof RuleForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   const toggleState = (s: string) => {
     const cur = form.connection_state ? form.connection_state.split(',').filter(Boolean) : [];
@@ -215,7 +229,8 @@ function RuleModal({
               <label className="label">Protocol</label>
               <select className="input" value={form.protocol} onChange={e => set('protocol', e.target.value)}>
                 <option value="">any</option>
-                {PROTOCOLS.map(p => <option key={p} value={p}>{p}</option>)}
+                {protocols.map(p => <option key={p} value={p}>{p}</option>)}
+                {form.protocol && !protocols.includes(form.protocol) && <option value={form.protocol}>{form.protocol}</option>}
               </select>
             </div>
           </div>
@@ -225,9 +240,9 @@ function RuleModal({
           )}
 
           <div className="grid grid-cols-2 gap-3">
-            <EndpointPicker label="Source" kind={form.src_kind} value={form.src_value}
+            <EndpointPicker label="Source" kind={form.src_kind} value={form.src_value} v6={v6}
               onKind={k => set('src_kind', k)} onValue={v => set('src_value', v)} lists={lists} />
-            <EndpointPicker label="Destination" kind={form.dst_kind} value={form.dst_value}
+            <EndpointPicker label="Destination" kind={form.dst_kind} value={form.dst_value} v6={v6}
               onKind={k => set('dst_kind', k)} onValue={v => set('dst_value', v)} lists={lists} />
           </div>
 
@@ -296,7 +311,8 @@ function RuleModal({
 }
 
 // ─── Address Lists section ───────────────────────────────────────────────────────
-function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
+function AddressListsCard({ deviceId, deviceName, family }: { deviceId: number; deviceName?: string; family: FirewallFamily }) {
+  const v6 = family === 'ipv6';
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [open, setOpen] = useState(false);
@@ -305,27 +321,28 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
   const [err, setErr] = useState('');
 
   const { data: entries = [] } = useQuery({
-    queryKey: ['address-lists', deviceId],
-    queryFn: () => devicesApi.getAddressLists(deviceId).then(r => r.data as Row[]),
+    queryKey: fwKey('address-lists', deviceId, family),
+    queryFn: () => devicesApi.getAddressLists(deviceId, family).then(r => r.data as Row[]),
+    retry: false,
   });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['address-lists', deviceId] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: fwKey('address-lists', deviceId, family) });
 
   // Guarded: the manager may be let in by one of these lists (P2-8).
   const guard = useGuardedWrite();
   const fail = (e: unknown) => setErr(errMsg(e));
   const addMut = useMutation({
-    mutationFn: (confirm: boolean) => devicesApi.addAddressListEntry(deviceId, { list, address, comment: comment || undefined, ...(confirm ? { confirm_lockout: true } : {}) }),
+    mutationFn: (confirm: boolean) => devicesApi.addAddressListEntry(deviceId, { list, address, comment: comment || undefined, ...(confirm ? { confirm_lockout: true } : {}) }, family),
     onSuccess: (res) => { invalidate(); guard.onSuccess(res); setAdding(false); setList(''); setAddress(''); setComment(''); setErr(''); },
   });
   const delMut = useMutation({
-    mutationFn: ({ id, confirm }: { id: string; confirm?: boolean }) => devicesApi.removeAddressListEntry(deviceId, id, confirm),
+    mutationFn: ({ id, confirm }: { id: string; confirm?: boolean }) => devicesApi.removeAddressListEntry(deviceId, id, confirm, family),
     onSuccess: (res) => { invalidate(); setErr(''); guard.onSuccess(res); },
   });
   // Turning an entry off without deleting it (Stanley, D85). Guarded like a
   // removal: disabling the entry that admits the manager locks it out too.
   const togMut = useMutation({
     mutationFn: ({ id, disabled, confirm }: { id: string; disabled: boolean; confirm?: boolean }) =>
-      devicesApi.updateAddressListEntry(deviceId, id, { disabled, ...(confirm ? { confirm_lockout: true } : {}) }),
+      devicesApi.updateAddressListEntry(deviceId, id, { disabled, ...(confirm ? { confirm_lockout: true } : {}) }, family),
     onSuccess: (res) => { invalidate(); setErr(''); guard.onSuccess(res); },
   });
   const add = () => addMut.mutate(false, { onError: guard.onError(() => addMut.mutate(true, { onError: fail }), fail) });
@@ -350,7 +367,7 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
           <List className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
         </div>
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex-1">
-          Address Lists <span className="text-gray-400 font-normal">({entries.length} entries, {listNames.length} lists)</span>
+          {v6 ? 'IPv6 Address Lists' : 'Address Lists'} <span className="text-gray-400 font-normal">({entries.length} entries, {listNames.length} lists)</span>
         </h3>
         <span className="text-xs text-gray-400">{open ? 'Hide' : 'Show'}</span>
       </button>
@@ -396,7 +413,7 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
               <div className="grid grid-cols-2 gap-2">
                 <input className="input" value={list} onChange={e => setList(e.target.value)} placeholder="list name (e.g. Trusted)" list="al-names" />
                 <datalist id="al-names">{listNames.map(n => <option key={n} value={n} />)}</datalist>
-                <input className="input font-mono" value={address} onChange={e => setAddress(e.target.value)} placeholder="192.168.1.0/24 or host" />
+                <input className="input font-mono" value={address} onChange={e => setAddress(e.target.value)} placeholder={v6 ? '2001:db8::/48' : '192.168.1.0/24 or host'} />
               </div>
               <input className="input" value={comment} onChange={e => setComment(e.target.value)} placeholder="comment (optional)" />
               {err && <p className="text-xs text-red-500">{err}</p>}
@@ -404,7 +421,7 @@ function AddressListsCard({ deviceId, deviceName }: { deviceId: number; deviceNa
                 <button onClick={() => { setAdding(false); setErr(''); }} className="btn-secondary text-xs py-1">Cancel</button>
                 <button onClick={add} disabled={!list || !address || addMut.isPending} className="btn-primary text-xs py-1">Add Entry</button>
                 <ReviewChangesButton className="text-xs py-1" deviceName={deviceName} applyLabel="Add Entry" onApply={add} disabled={!list || !address || addMut.isPending}
-                  request={() => devicesApi.addAddressListEntry(deviceId, { list, address, comment: comment || undefined })} />
+                  request={() => devicesApi.addAddressListEntry(deviceId, { list, address, comment: comment || undefined }, family)} />
               </div>
             </div>
           ) : (
@@ -543,9 +560,9 @@ function natPayload(f: NatForm, forEdit = false): Record<string, unknown> {
   return p;
 }
 
-function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, error }: {
+function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, error, v6 = false }: {
   title: string; form: NatForm; setForm: React.Dispatch<React.SetStateAction<NatForm>>;
-  onSave: () => void; onReview?: () => Promise<unknown>; onClose: () => void; isPending: boolean; error: string;
+  onSave: () => void; onReview?: () => Promise<unknown>; onClose: () => void; isPending: boolean; error: string; v6?: boolean;
 }) {
   const set = (k: keyof NatForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   const setPattern = (pattern: NatPattern) => setForm(f => {
@@ -588,7 +605,7 @@ function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, 
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Internal Host</label>
-                  <input className="input font-mono" value={form.to_addresses} onChange={e => set('to_addresses', e.target.value)} placeholder="192.168.1.10" /></div>
+                  <input className="input font-mono" value={form.to_addresses} onChange={e => set('to_addresses', e.target.value)} placeholder={v6 ? '2001:db8::10' : '192.168.1.10'} /></div>
                 <div><label className="label">Internal Port</label>
                   <input className="input font-mono" value={form.to_ports} onChange={e => set('to_ports', e.target.value)} placeholder="443" /></div>
               </div>
@@ -601,15 +618,15 @@ function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, 
               <div><label className="label">WAN Out-Interface</label>
                 <input className="input font-mono" value={form.out_interface} onChange={e => set('out_interface', e.target.value)} placeholder="ether1" /></div>
               <div><label className="label">Source (optional, limits which LAN is shared)</label>
-                <input className="input font-mono" value={form.src_address} onChange={e => set('src_address', e.target.value)} placeholder="192.168.1.0/24" /></div>
+                <input className="input font-mono" value={form.src_address} onChange={e => set('src_address', e.target.value)} placeholder={v6 ? 'fd00::/64' : '192.168.1.0/24'} /></div>
             </div>
           )}
           {form.pattern === 'one-to-one' && (
             <div className="space-y-3">
               <div><label className="label">Public Address</label>
-                <input className="input font-mono" value={form.dst_address} onChange={e => set('dst_address', e.target.value)} placeholder="203.0.113.10" /></div>
+                <input className="input font-mono" value={form.dst_address} onChange={e => set('dst_address', e.target.value)} placeholder={v6 ? '2001:db8::10' : '203.0.113.10'} /></div>
               <div><label className="label">Internal Address</label>
-                <input className="input font-mono" value={form.to_addresses} onChange={e => set('to_addresses', e.target.value)} placeholder="192.168.1.10" /></div>
+                <input className="input font-mono" value={form.to_addresses} onChange={e => set('to_addresses', e.target.value)} placeholder={v6 ? 'fd00::10' : '192.168.1.10'} /></div>
             </div>
           )}
           {form.pattern === 'custom' && (
@@ -664,7 +681,8 @@ function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, 
 }
 
 // ─── NAT Card ────────────────────────────────────────────────────────────────────
-function NatCard({ deviceId }: { deviceId: number }) {
+function NatCard({ deviceId, family }: { deviceId: number; family: FirewallFamily }) {
+  const v6 = family === 'ipv6';
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [editing, setEditing] = useState<Row | null>(null);
@@ -672,18 +690,20 @@ function NatCard({ deviceId }: { deviceId: number }) {
   const [form, setForm] = useState<NatForm>(EMPTY_NAT);
   const [err, setErr] = useState('');
 
-  const { data: rules = [], isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['nat', deviceId], queryFn: () => devicesApi.getNat(deviceId).then(r => r.data as Row[]),
+  const { data: rules = [], isLoading, refetch, isFetching, error: loadError } = useQuery({
+    queryKey: fwKey('nat', deviceId, family), queryFn: () => devicesApi.getNat(deviceId, family).then(r => r.data as Row[]),
+    retry: false,
   });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['nat', deviceId] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: fwKey('nat', deviceId, family) });
 
-  const addMut = useMutation({ mutationFn: (d: Record<string, unknown>) => devicesApi.addNatRule(deviceId, d),
+  const addMut = useMutation({ mutationFn: (d: Record<string, unknown>) => devicesApi.addNatRule(deviceId, d, family),
     onSuccess: () => { invalidate(); setShowAdd(false); setErr(''); }, onError: e => setErr(errMsg(e)) });
-  const updMut = useMutation({ mutationFn: ({ id, d }: { id: string; d: Record<string, unknown> }) => devicesApi.updateNatRule(deviceId, id, d),
+  const updMut = useMutation({ mutationFn: ({ id, d }: { id: string; d: Record<string, unknown> }) => devicesApi.updateNatRule(deviceId, id, d, family),
     onSuccess: () => { invalidate(); setEditing(null); setErr(''); }, onError: e => setErr(errMsg(e)) });
-  const delMut = useMutation({ mutationFn: (id: string) => devicesApi.deleteNatRule(deviceId, id), onSuccess: invalidate });
-  const toggleMut = useMutation({ mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) => devicesApi.updateNatRule(deviceId, id, { disabled: disabled ? 'yes' : 'no' }), onSuccess: invalidate });
-  const moveMut = useMutation({ mutationFn: ({ id, destination }: { id: string; destination?: string }) => devicesApi.moveNatRule(deviceId, id, destination), onSuccess: invalidate });
+  const delMut = useMutation({ mutationFn: (id: string) => devicesApi.deleteNatRule(deviceId, id, family), onSuccess: invalidate });
+  const toggleMut = useMutation({ mutationFn: ({ id, disabled }: { id: string; disabled: boolean }) => devicesApi.updateNatRule(deviceId, id, { disabled: disabled ? 'yes' : 'no' }, family), onSuccess: invalidate });
+  const moveMut = useMutation({ mutationFn: ({ id, destination }: { id: string; destination?: string }) => devicesApi.moveNatRule(deviceId, id, destination, family), onSuccess: invalidate });
+  const unavailable = ipv6Unavailable(loadError);
 
   const onMove = (r: Row, dir: 'up' | 'down') => { const d = moveDestination(rules, r, dir); if (d.ok) moveMut.mutate({ id: r['.id'], destination: d.destination }); };
 
@@ -692,32 +712,66 @@ function NatCard({ deviceId }: { deviceId: number }) {
       <div className="flex items-center justify-between gap-3 flex-wrap pt-2">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 bg-orange-50 dark:bg-orange-900/20 rounded-lg flex items-center justify-center"><ArrowRightLeft className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" /></div>
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">NAT <span className="text-gray-400 font-normal">({rules.length})</span></h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{v6 ? 'IPv6 NAT' : 'NAT'} <span className="text-gray-400 font-normal">({rules.length})</span></h3>
         </div>
-        <div className="flex items-center gap-2">
+        {!unavailable && <div className="flex items-center gap-2">
           <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh</button>
           {canWrite && <button onClick={() => { setForm(EMPTY_NAT); setErr(''); setShowAdd(true); }} className="btn-primary flex items-center gap-1.5 text-xs py-1.5"><Plus className="w-3.5 h-3.5" /> Add NAT</button>}
-        </div>
+        </div>}
       </div>
       {err && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{err}</div>}
-      {isLoading ? <div className="text-center py-6 text-gray-400"><RefreshCw className="w-4 h-4 animate-spin inline mr-2" />Loading…</div>
-        : rules.length === 0 ? <div className="card p-8 text-center text-gray-400">No NAT rules.</div>
+      {unavailable ? <div className="card p-6 text-center text-sm text-gray-400">{unavailable}</div>
+        : isLoading ? <div className="text-center py-6 text-gray-400"><RefreshCw className="w-4 h-4 animate-spin inline mr-2" />Loading…</div>
+        : rules.length === 0 ? <div className="card p-8 text-center text-gray-400">No {v6 ? 'IPv6 ' : ''}NAT rules.</div>
         : <RuleTable rows={rules} fullOrder={rules} canWrite={canWrite} canReorder summaryFn={natSummary}
             onEdit={r => { setForm(natRuleToForm(r)); setErr(''); setEditing(r); }}
             onToggle={r => toggleMut.mutate({ id: r['.id'], disabled: !(r.disabled === 'true') })}
             onDelete={r => { if (confirm('Delete this NAT rule?')) delMut.mutate(r['.id']); }} onMove={onMove} />}
-      {showAdd && <NatModal title="Add NAT Rule" form={form} setForm={setForm} isPending={addMut.isPending} error={err}
-        onClose={() => setShowAdd(false)} onSave={() => addMut.mutate(natPayload(form))} onReview={() => devicesApi.addNatRule(deviceId, natPayload(form))} />}
-      {editing && <NatModal title="Edit NAT Rule" form={form} setForm={setForm} isPending={updMut.isPending} error={err}
-        onClose={() => setEditing(null)} onSave={() => updMut.mutate({ id: editing['.id'], d: natPayload(form, true) })} onReview={() => devicesApi.updateNatRule(deviceId, editing['.id'], natPayload(form, true))} />}
+      {showAdd && <NatModal title={v6 ? 'Add IPv6 NAT Rule' : 'Add NAT Rule'} form={form} setForm={setForm} isPending={addMut.isPending} error={err} v6={v6}
+        onClose={() => setShowAdd(false)} onSave={() => addMut.mutate(natPayload(form))} onReview={() => devicesApi.addNatRule(deviceId, natPayload(form), family)} />}
+      {editing && <NatModal title={v6 ? 'Edit IPv6 NAT Rule' : 'Edit NAT Rule'} form={form} setForm={setForm} isPending={updMut.isPending} error={err} v6={v6}
+        onClose={() => setEditing(null)} onSave={() => updMut.mutate({ id: editing['.id'], d: natPayload(form, true) })} onReview={() => devicesApi.updateNatRule(deviceId, editing['.id'], natPayload(form, true), family)} />}
     </div>
   );
 }
 
 // ─── Main FirewallTab ─────────────────────────────────────────────────────────────
+/**
+ * The Firewall tab: IPv4 or IPv6 (#312), the same three sections on
+ * /ip/firewall or /ipv6/firewall. The body is keyed by family, so switching
+ * replaces it whole, with its own queries and form state.
+ */
 export default function FirewallTab({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
+  const canWrite = useCanWrite();
+  const [family, setFamily] = useState<FirewallFamily>('ipv4');
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="inline-flex bg-gray-100 dark:bg-slate-800 p-1 rounded-lg" role="tablist" aria-label="IP version">
+          {(['ipv4', 'ipv6'] as FirewallFamily[]).map(f => (
+            <button key={f} role="tab" aria-selected={family === f} onClick={() => setFamily(f)}
+              className={clsx('px-4 py-1 text-xs font-semibold rounded-md transition-colors',
+                family === f ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-slate-400')}>
+              {f === 'ipv4' ? 'IPv4' : 'IPv6'}
+            </button>
+          ))}
+        </div>
+        {family === 'ipv6' && canWrite && (
+          <p className="text-xs text-gray-500 dark:text-slate-400">
+            Changes run with Change Guard&apos;s auto-revert. Lockouts aren&apos;t predicted for IPv6 rules, since the
+            manager&apos;s own connection is checked over IPv4.
+          </p>
+        )}
+      </div>
+      <FirewallBody key={family} deviceId={deviceId} deviceName={deviceName} family={family} />
+    </div>
+  );
+}
+
+function FirewallBody({ deviceId, deviceName, family }: { deviceId: number; deviceName?: string; family: FirewallFamily }) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
+  const v6 = family === 'ipv6';
   const [chainFilter, setChainFilter] = useState('all');
   const [editing, setEditing] = useState<Row | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -729,40 +783,43 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
   // skip the check entirely.
   const guard = useGuardedWrite();
 
-  const { data: rules = [], isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['firewall', deviceId], queryFn: () => devicesApi.getFirewall(deviceId).then(r => r.data as Row[]),
+  const { data: rules = [], isLoading, refetch, isFetching, error: loadError } = useQuery({
+    queryKey: fwKey('firewall', deviceId, family), queryFn: () => devicesApi.getFirewall(deviceId, family).then(r => r.data as Row[]),
+    retry: false,
   });
   const { data: addrLists = [] } = useQuery({
-    queryKey: ['address-lists', deviceId], queryFn: () => devicesApi.getAddressLists(deviceId).then(r => r.data as Row[]),
+    queryKey: fwKey('address-lists', deviceId, family), queryFn: () => devicesApi.getAddressLists(deviceId, family).then(r => r.data as Row[]),
+    retry: false,
   });
   const listNames = Array.from(new Set(addrLists.map(e => e.list).filter(Boolean))).sort();
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['firewall', deviceId] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: fwKey('firewall', deviceId, family) });
+  const unavailable = v6 ? ipv6Unavailable(loadError) : null;
   const done = (res: unknown) => { invalidate(); setErr(''); guard.onSuccess(res); };
   const fail = (e: unknown) => setErr(errMsg(e));
 
   const addMut = useMutation({
-    mutationFn: (d: Record<string, unknown>) => devicesApi.addFirewallRule(deviceId, d),
+    mutationFn: (d: Record<string, unknown>) => devicesApi.addFirewallRule(deviceId, d, family),
     onSuccess: (res) => { done(res); setShowAdd(false); },
   });
   const updMut = useMutation({
-    mutationFn: ({ id, d }: { id: string; d: Record<string, unknown> }) => devicesApi.updateFirewallRule(deviceId, id, d),
+    mutationFn: ({ id, d }: { id: string; d: Record<string, unknown> }) => devicesApi.updateFirewallRule(deviceId, id, d, family),
     onSuccess: (res) => { done(res); setEditing(null); },
   });
   const delMut = useMutation({
-    mutationFn: ({ id, confirm }: { id: string; confirm?: boolean }) => devicesApi.deleteFirewallRule(deviceId, id, confirm),
+    mutationFn: ({ id, confirm }: { id: string; confirm?: boolean }) => devicesApi.deleteFirewallRule(deviceId, id, confirm, family),
     onSuccess: done,
   });
   const toggleMut = useMutation({
     mutationFn: ({ id, disabled, confirm }: { id: string; disabled: boolean; confirm?: boolean }) =>
-      devicesApi.updateFirewallRule(deviceId, id, { disabled: disabled ? 'yes' : 'no', ...(confirm ? { confirm_lockout: true } : {}) }),
+      devicesApi.updateFirewallRule(deviceId, id, { disabled: disabled ? 'yes' : 'no', ...(confirm ? { confirm_lockout: true } : {}) }, family),
     onSuccess: done,
   });
   const moveMut = useMutation({
     mutationFn: ({ id, destination, confirm }: { id: string; destination?: string; confirm?: boolean }) =>
-      devicesApi.moveFirewallRule(deviceId, id, destination, confirm),
+      devicesApi.moveFirewallRule(deviceId, id, destination, confirm, family),
     onSuccess: done,
   });
-  const resetMut = useMutation({ mutationFn: () => devicesApi.resetFirewallCounters(deviceId), onSuccess: invalidate });
+  const resetMut = useMutation({ mutationFn: () => devicesApi.resetFirewallCounters(deviceId, family), onSuccess: invalidate });
 
   // Each action retries itself with the lockout confirmed if the user overrides.
   const submitAdd = () => {
@@ -789,14 +846,15 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
   const filtered = chainFilter === 'all' ? rules : rules.filter(r => r.chain === chainFilter);
 
   if (isLoading) return <div className="text-center py-8 text-gray-400">Loading…</div>;
+  if (unavailable) return <div className="card p-8 text-center text-sm text-gray-500 dark:text-slate-400">{unavailable}</div>;
 
   return (
     <div className="space-y-4">
-      <AddressListsCard deviceId={deviceId} deviceName={deviceName} />
+      <AddressListsCard deviceId={deviceId} deviceName={deviceName} family={family} />
 
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center"><Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /></div>
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Firewall Filter Rules</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{v6 ? 'IPv6 Firewall Filter Rules' : 'Firewall Filter Rules'}</h3>
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -824,20 +882,20 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
       {err && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{err}</div>}
       <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={anyPending} />
 
-      {filtered.length === 0 ? <div className="card p-8 text-center text-gray-400">No firewall rules{chainFilter !== 'all' ? ` in "${chainFilter}"` : ''}.</div>
+      {filtered.length === 0 ? <div className="card p-8 text-center text-gray-400">No {v6 ? 'IPv6 ' : ''}firewall rules{chainFilter !== 'all' ? ` in "${chainFilter}"` : ''}.</div>
         : <RuleTable rows={filtered} fullOrder={rules} canWrite={canWrite} canReorder={chainFilter === 'all'} summaryFn={ruleSummary}
             onEdit={r => { setForm(ruleToForm(r)); setErr(''); setEditing(r); }}
             onToggle={r => toggle(r['.id'], !(r.disabled === 'true'))}
             onDelete={r => { if (confirm('Delete this firewall rule?')) remove(r['.id']); }} onMove={onMove} />}
 
-      {showAdd && <RuleModal title="Add Firewall Rule" form={form} setForm={setForm} isPending={addMut.isPending} error={err} lists={listNames}
-        onClose={() => setShowAdd(false)} onSave={submitAdd} onReview={() => devicesApi.addFirewallRule(deviceId, fwPayload(form))} />}
-      {editing && <RuleModal title="Edit Firewall Rule" form={form} setForm={setForm} isPending={updMut.isPending} error={err} lists={listNames}
-        onClose={() => setEditing(null)} onSave={submitEdit} onReview={() => devicesApi.updateFirewallRule(deviceId, editing['.id'], fwPayload(form, false, true))} />}
+      {showAdd && <RuleModal title={v6 ? 'Add IPv6 Firewall Rule' : 'Add Firewall Rule'} form={form} setForm={setForm} isPending={addMut.isPending} error={err} lists={listNames} family={family}
+        onClose={() => setShowAdd(false)} onSave={submitAdd} onReview={() => devicesApi.addFirewallRule(deviceId, fwPayload(form), family)} />}
+      {editing && <RuleModal title={v6 ? 'Edit IPv6 Firewall Rule' : 'Edit Firewall Rule'} form={form} setForm={setForm} isPending={updMut.isPending} error={err} lists={listNames} family={family}
+        onClose={() => setEditing(null)} onSave={submitEdit} onReview={() => devicesApi.updateFirewallRule(deviceId, editing['.id'], fwPayload(form, false, true), family)} />}
 
       {/* NAT is available on all RouterOS devices */}
       <div className="border-t border-gray-200 dark:border-slate-700 pt-2" />
-      <NatCard deviceId={deviceId} />
+      <NatCard deviceId={deviceId} family={family} />
     </div>
   );
 }

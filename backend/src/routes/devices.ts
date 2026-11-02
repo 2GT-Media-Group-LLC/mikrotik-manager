@@ -18,7 +18,7 @@ import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite, requireAdmin, requireSiteAdmin, isSiteScoped } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { encrypt, decrypt } from '../utils/crypto';
-import { RouterOSClient } from '../services/mikrotik/RouterOSClient';
+import { RouterOSClient, isNoSuchCommand } from '../services/mikrotik/RouterOSClient';
 import { usesApiTls, managementService, parseApiTls, checkPort } from '../utils/apiTls';
 import { planBridgePortMove, addressesOnPorts, bridgeDeleteRefusal } from '../utils/bridgePortMove';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
@@ -73,6 +73,7 @@ import { switchVlanView } from '../utils/switchVlans';
 import { webAdminUrl } from '../utils/webAdminUrl';
 import { vlanInterfacesView } from '../utils/vlanInterfaces';
 import { vlanInterfaceEntry } from '../utils/vlanInterfaceEdit';
+import { firewallFamily, managedOverIpv4, type FirewallFamily } from '../utils/firewallFamily';
 import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit } from '../utils/ipAddressEdit';
@@ -1201,8 +1202,42 @@ router.get('/:id/routing', async (req, res) => {
   }
 });
 
-// GET /api/devices/:id/firewall
+// ─── IPv6 firewall (#312) ─────────────────────────────────────────────────────
+// The firewall, NAT and address-list routes take ?family=ipv6 for the
+// /ipv6/firewall menus, the same tables as IPv4. Change Guard's model is IPv4
+// only: an IPv6 change can't cut a manager that connects over IPv4, so it runs
+// with the usual auto-revert and no prediction; on a device the manager
+// reaches by IPv6 address or hostname, auto-revert is required instead.
+
+/** The family a request names, or a 400 sent and null. */
+function familyOf(req: Request, res: Response): FirewallFamily | null {
+  const family = firewallFamily(req.query.family);
+  if (!family) res.status(400).json({ error: 'family must be ipv4 or ipv6' });
+  return family;
+}
+
+/** Change Guard settings for an IPv6 firewall write. */
+async function ipv6WriteMeta(id: string, kind: string, summary: string): Promise<{ kind: string; summary: string; requireProtection: boolean }> {
+  const row = await queryOne<{ ip_address: string }>(`SELECT ip_address FROM devices WHERE id = $1`, [id]);
+  return { kind: `ipv6-${kind}`, summary, requireProtection: !row || !managedOverIpv4(row.ip_address) };
+}
+
+/** An IPv6 read the device refused because the menu isn't there. */
+function ipv6Unavailable(res: Response, err: unknown, what: string): boolean {
+  if (!isNoSuchCommand(err)) return false;
+  res.status(404).json({
+    code: 'ipv6_unavailable',
+    error: what === 'nat'
+      ? "This device has no IPv6 NAT. RouterOS 7 has it; RouterOS 6 doesn't."
+      : "IPv6 isn't available on this device: on RouterOS 6, the ipv6 package is disabled.",
+  });
+  return true;
+}
+
+// GET /api/devices/:id/firewall[?family=ipv6]
 router.get('/:id/firewall', async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const deviceRow = await queryOne<any>(
     `SELECT id, ip_address, api_port, api_tls, api_username, api_password_encrypted, jump_host_id FROM devices WHERE id = $1`,
     [req.params.id]
@@ -1211,7 +1246,10 @@ router.get('/:id/firewall', async (req, res) => {
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
-    return res.json(await collector.getFirewallRules());
+    return res.json(await collector.getFirewallRules(family));
+  } catch (err) {
+    if (family === 'ipv6' && ipv6Unavailable(res, err, 'filter')) return;
+    throw err;
   } finally {
     collector.disconnect();
   }
@@ -1248,49 +1286,62 @@ function bodyToRosParams(body: Record<string, unknown>, keepEmpty = false): Reco
 // disabled=no, a move or a delete used to skip the check (outside review P2-8).
 // `force` is the older name for confirm_lockout and is still accepted.
 
-// POST /api/devices/:id/firewall
+// POST /api/devices/:id/firewall[?family=ipv6]
 router.post('/:id/firewall', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const { chain, action } = req.body;
   if (!chain || !action) return res.status(400).json({ error: 'chain and action are required' });
   const params = bodyToRosParams(req.body);
-  await withGuardedChange(req.params.id, req, res,
-    { kind: 'firewall.add', summary: `Add ${chain} ${action} firewall rule`,
-      change: { kind: 'firewall.add', fields: params } },
-    async (c) => { await c.addFirewallRule(params); return { message: 'Rule added' }; });
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'firewall.add', `Add ${chain} ${action} IPv6 firewall rule`)
+    : { kind: 'firewall.add', summary: `Add ${chain} ${action} firewall rule`, change: { kind: 'firewall.add', fields: params } as PlannedChange };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.addFirewallRule(params, family); return { message: 'Rule added' }; });
 });
 
-// PUT /api/devices/:id/firewall/:ruleId
+// PUT /api/devices/:id/firewall/:ruleId[?family=ipv6]
 router.put('/:id/firewall/:ruleId', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const params = bodyToRosParams(req.body, true);
   const ruleId = req.params.ruleId;
-  const summary = Object.keys(params).length === 1 && 'disabled' in params
+  const summary = (Object.keys(params).length === 1 && 'disabled' in params
     ? `${params.disabled === 'yes' || params.disabled === 'true' ? 'Disable' : 'Enable'} firewall rule`
-    : 'Edit firewall rule';
-  await withGuardedChange(req.params.id, req, res,
-    { kind: 'firewall.set', summary, change: { kind: 'firewall.set', ruleId, fields: params } },
-    async (c) => { await c.updateFirewallRule(ruleId, params); return { message: 'Rule updated' }; });
+    : 'Edit firewall rule').replace('firewall', family === 'ipv6' ? 'IPv6 firewall' : 'firewall');
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'firewall.set', summary)
+    : { kind: 'firewall.set', summary, change: { kind: 'firewall.set', ruleId, fields: params } as PlannedChange };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.updateFirewallRule(ruleId, params, family); return { message: 'Rule updated' }; });
 });
 
-// POST /api/devices/:id/firewall/move  { id, destination? }
+// POST /api/devices/:id/firewall/move[?family=ipv6]  { id, destination? }
 router.post('/:id/firewall/move', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const { id, destination } = req.body;
   if (!id) return res.status(400).json({ error: 'id is required' });
   const ruleId = String(id);
   const dest = destination ? String(destination) : undefined;
-  await withGuardedChange(req.params.id, req, res,
-    { kind: 'firewall.move', summary: 'Move firewall rule', change: { kind: 'firewall.move', ruleId, destination: dest } },
-    async (c) => { await c.moveFirewallRule(ruleId, dest); return { message: 'Rule moved' }; });
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'firewall.move', 'Move IPv6 firewall rule')
+    : { kind: 'firewall.move', summary: 'Move firewall rule', change: { kind: 'firewall.move', ruleId, destination: dest } as PlannedChange };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.moveFirewallRule(ruleId, dest, family); return { message: 'Rule moved' }; });
 });
 
-// POST /api/devices/:id/firewall/reset-counters
+// POST /api/devices/:id/firewall/reset-counters[?family=ipv6]
 router.post('/:id/firewall/reset-counters', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
-    await collector.resetFirewallCounters();
-    return res.json(await collector.getFirewallRules());
+    await collector.resetFirewallCounters(family);
+    return res.json(await collector.getFirewallRules(family));
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message });
   } finally {
@@ -1298,12 +1349,16 @@ router.post('/:id/firewall/reset-counters', requireWrite, async (req, res) => {
   }
 });
 
-// DELETE /api/devices/:id/firewall/:ruleId  (?confirm_lockout=true to override a warning)
+// DELETE /api/devices/:id/firewall/:ruleId[?family=ipv6]  (?confirm_lockout=true to override a warning)
 router.delete('/:id/firewall/:ruleId', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const ruleId = req.params.ruleId;
-  await withGuardedChange(req.params.id, req, res,
-    { kind: 'firewall.remove', summary: 'Delete firewall rule', change: { kind: 'firewall.remove', ruleId } },
-    async (c) => { await c.deleteFirewallRule(ruleId); return { message: 'Rule deleted' }; });
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'firewall.remove', 'Delete IPv6 firewall rule')
+    : { kind: 'firewall.remove', summary: 'Delete firewall rule', change: { kind: 'firewall.remove', ruleId } as PlannedChange };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.deleteFirewallRule(ruleId, family); return { message: 'Rule deleted' }; });
 });
 
 // ─── NAT Rules ────────────────────────────────────────────────────────────────
@@ -1327,15 +1382,18 @@ function natBodyToRosParams(body: Record<string, unknown>, keepEmpty = false): R
   return params;
 }
 
-// GET /api/devices/:id/nat
+// GET /api/devices/:id/nat[?family=ipv6]
 router.get('/:id/nat', async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
   const collector = new DeviceCollector(deviceRow);
   try {
     await collector.connect();
-    return res.json(await collector.getNatRules());
+    return res.json(await collector.getNatRules(family));
   } catch (err) {
+    if (family === 'ipv6' && ipv6Unavailable(res, err, 'nat')) return;
     return res.status(500).json({ error: (err as Error).message });
   } finally {
     collector.disconnect();
@@ -1348,32 +1406,46 @@ router.get('/:id/nat', async (req, res) => {
 
 // POST /api/devices/:id/nat
 router.post('/:id/nat', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const { chain, action } = req.body;
   if (!chain || !action) return res.status(400).json({ error: 'chain and action are required' });
   const params = natBodyToRosParams(req.body);
-  await withGuardedChange(req.params.id, req, res, { kind: 'nat.add', summary: `Add ${chain} ${action} NAT rule` },
-    async (c) => { await c.addNatRule(params); return { message: 'NAT rule added' }; });
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'nat.add', `Add ${chain} ${action} IPv6 NAT rule`)
+    : { kind: 'nat.add', summary: `Add ${chain} ${action} NAT rule` };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.addNatRule(params, family); return { message: 'NAT rule added' }; });
 });
 
-// PUT /api/devices/:id/nat/:ruleId
+// PUT /api/devices/:id/nat/:ruleId[?family=ipv6]
 router.put('/:id/nat/:ruleId', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const params = natBodyToRosParams(req.body, true);
-  await withGuardedChange(req.params.id, req, res, { kind: 'nat.set', summary: 'Edit NAT rule' },
-    async (c) => { await c.updateNatRule(req.params.ruleId, params); return { message: 'NAT rule updated' }; });
+  const meta = family === 'ipv6' ? await ipv6WriteMeta(req.params.id, 'nat.set', 'Edit IPv6 NAT rule') : { kind: 'nat.set', summary: 'Edit NAT rule' };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.updateNatRule(req.params.ruleId, params, family); return { message: 'NAT rule updated' }; });
 });
 
-// DELETE /api/devices/:id/nat/:ruleId
+// DELETE /api/devices/:id/nat/:ruleId[?family=ipv6]
 router.delete('/:id/nat/:ruleId', requireWrite, async (req, res) => {
-  await withGuardedChange(req.params.id, req, res, { kind: 'nat.remove', summary: 'Delete NAT rule' },
-    async (c) => { await c.deleteNatRule(req.params.ruleId); return { message: 'NAT rule deleted' }; });
+  const family = familyOf(req, res);
+  if (!family) return;
+  const meta = family === 'ipv6' ? await ipv6WriteMeta(req.params.id, 'nat.remove', 'Delete IPv6 NAT rule') : { kind: 'nat.remove', summary: 'Delete NAT rule' };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.deleteNatRule(req.params.ruleId, family); return { message: 'NAT rule deleted' }; });
 });
 
-// POST /api/devices/:id/nat/move  { id, destination? }
+// POST /api/devices/:id/nat/move[?family=ipv6]  { id, destination? }
 router.post('/:id/nat/move', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const { id, destination } = req.body;
   if (!id) return res.status(400).json({ error: 'id is required' });
-  await withGuardedChange(req.params.id, req, res, { kind: 'nat.move', summary: 'Move NAT rule' },
-    async (c) => { await c.moveNatRule(String(id), destination ? String(destination) : undefined); return { message: 'NAT rule moved' }; });
+  const meta = family === 'ipv6' ? await ipv6WriteMeta(req.params.id, 'nat.move', 'Move IPv6 NAT rule') : { kind: 'nat.move', summary: 'Move NAT rule' };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.moveNatRule(String(id), destination ? String(destination) : undefined, family); return { message: 'NAT rule moved' }; });
 });
 
 // ─── Firewall Address Lists ─────────────────────────────────────────────────────
@@ -1574,7 +1646,21 @@ router.post('/:id/config-health/scan', requireWrite, async (req, res) => {
 });
 
 router.get('/:id/address-lists', async (req, res) => {
-  await withCollector(req.params.id, res, (c) => c.getAddressLists());
+  const family = familyOf(req, res);
+  if (!family) return;
+  if (family === 'ip') return withCollector(req.params.id, res, (c) => c.getAddressLists());
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const collector = new DeviceCollector(deviceRow);
+  try {
+    await collector.connect();
+    return res.json(await collector.getAddressLists('ipv6'));
+  } catch (err) {
+    if (ipv6Unavailable(res, err, 'address-list')) return;
+    return res.status(500).json({ error: (err as Error).message });
+  } finally {
+    collector.disconnect();
+  }
 });
 
 // GET /api/devices/:id/l3hw — L3 hardware offloading on the switch chip
@@ -1839,32 +1925,44 @@ router.get('/:id/address-lists/client', async (req, res) => {
 // Address-list writes are guarded too: the manager may be accepted by a list,
 // and removing it from that list locks it out (P2-8).
 router.post('/:id/address-lists', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const { list, address } = req.body;
   if (!list || !address) return res.status(400).json({ error: 'list and address are required' });
   const params: Record<string, string> = { list: String(list), address: String(address) };
   if (req.body.comment) params.comment = String(req.body.comment);
   if (req.body.timeout) params.timeout = String(req.body.timeout);
-  await withGuardedChange(req.params.id, req, res,
-    { kind: 'address-list.add', summary: `Add ${params.address} to address list ${params.list}`,
-      change: { kind: 'address-list.add', fields: params } },
-    async (c) => { await c.addAddressListEntry(params); return { message: 'Entry added' }; });
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'address-list.add', `Add ${params.address} to IPv6 address list ${params.list}`)
+    : { kind: 'address-list.add', summary: `Add ${params.address} to address list ${params.list}`,
+        change: { kind: 'address-list.add', fields: params } as PlannedChange };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.addAddressListEntry(params, family); return { message: 'Entry added' }; });
 });
 
 router.put('/:id/address-lists/:entryId', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const params: Record<string, string> = {};
   for (const k of ['list', 'address', 'comment'] as const) if (req.body[k] !== undefined) params[k] = String(req.body[k]);
   if (req.body.disabled !== undefined) params.disabled = req.body.disabled ? 'yes' : 'no';
   const entryId = req.params.entryId;
-  await withGuardedChange(req.params.id, req, res,
-    { kind: 'address-list.set', summary: 'Edit address list entry', change: { kind: 'address-list.set', entryId, fields: params } },
-    async (c) => { await c.updateAddressListEntry(entryId, params); return { message: 'Entry updated' }; });
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'address-list.set', 'Edit IPv6 address list entry')
+    : { kind: 'address-list.set', summary: 'Edit address list entry', change: { kind: 'address-list.set', entryId, fields: params } as PlannedChange };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.updateAddressListEntry(entryId, params, family); return { message: 'Entry updated' }; });
 });
 
 router.delete('/:id/address-lists/:entryId', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
   const entryId = req.params.entryId;
-  await withGuardedChange(req.params.id, req, res,
-    { kind: 'address-list.remove', summary: 'Remove address list entry', change: { kind: 'address-list.remove', entryId } },
-    async (c) => { await c.removeAddressListEntry(entryId); return { message: 'Entry removed' }; });
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'address-list.remove', 'Remove IPv6 address list entry')
+    : { kind: 'address-list.remove', summary: 'Remove address list entry', change: { kind: 'address-list.remove', entryId } as PlannedChange };
+  await withGuardedChange(req.params.id, req, res, meta,
+    async (c) => { await c.removeAddressListEntry(entryId, family); return { message: 'Entry removed' }; });
 });
 
 // ─── Active Connections (read-only) ─────────────────────────────────────────────
