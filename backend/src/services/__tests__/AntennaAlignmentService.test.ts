@@ -61,6 +61,13 @@ describe('antenna alignment connection lifecycle', () => {
     expect(DeviceCollector.prototype.disconnect).toHaveBeenCalledTimes(1);
     expect(collector).toHaveBeenCalledTimes(2);
   });
+  it('reconnects when the device moves to or from a jump host', async () => {
+    await service.read(device);
+    await service.read({ ...device, jump_host_id: 4 });
+    await service.read({ ...device, jump_host_id: 5 });
+    expect(DeviceCollector.prototype.disconnect).toHaveBeenCalledTimes(2);
+    expect(collector).toHaveBeenCalledTimes(3);
+  });
   it('discards a failed connection and reconnects on the next read', async () => {
     jest.mocked(DeviceCollector.prototype.readAntennaAlignment).mockRejectedValueOnce(new Error('Connection closed'));
     await expect(service.read(device)).rejects.toThrow('Connection closed');

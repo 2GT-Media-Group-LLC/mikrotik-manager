@@ -46,8 +46,8 @@ export class AntennaAlignmentService {
   }
 
   async read(device: DeviceRow): Promise<AlignmentSnapshot> {
-    // Address, credentials or API availability changed: do not reuse the login.
-    const key = JSON.stringify([device.ip_address, device.api_port, device.api_username,
+    // Address, route, credentials or API availability changed: do not reuse the login.
+    const key = JSON.stringify([device.ip_address, device.jump_host_id, device.api_port, device.api_username,
       device.api_password_encrypted, device.ssh_only, usesApiTls(device)]);
     let session = this.sessions.get(device.id);
     if (session && session.key !== key) { this.remove(device.id); session = undefined; }
