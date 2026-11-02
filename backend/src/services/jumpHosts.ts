@@ -140,8 +140,9 @@ const CHANNEL_OPEN_TIMEOUT_MS = 20_000;
  * Not ssh2's keepalive: RouterOS never answers the keepalive@openssh.com
  * requests it sends, so ssh2 would close a working connection to a RouterOS
  * jump host every minute, taking whatever was using it along. What it asks
- * instead is to open a Unix socket channel, which RouterOS refuses at once
- * (it forwards none), as does OpenSSH for a socket that isn't there.
+ * instead is to open a Unix socket channel, which RouterOS refuses at once,
+ * forwarding on or off (it forwards none), as does OpenSSH for a socket that
+ * isn't there.
  */
 export const keepalive = { intervalMs: 15_000, misses: 3 };
 const KEEPALIVE_SOCKET = '/nonexistent/mikrotik-manager-keepalive';
@@ -161,10 +162,15 @@ interface Live {
   closing: boolean;
   /** The host key this connection was accepted with. */
   fingerprint: string | null;
+  /**
+   * The jump host is RouterOS (it says "SSH-2.0-ROSSSH"). With forwarding
+   * off, RouterOS doesn't refuse a forward; it never answers one.
+   */
+  routerOs: boolean;
   channels: number;
-  /** Channels asked for and not yet answered. */
+  /** Channels asked for that someone is still waiting on. */
   opening: number;
-  /** Handed out no more (it refused to forward); closed once nothing is on it. */
+  /** Handed out no more (it won't forward); closed once nothing is on it. */
   retired: boolean;
   lastUsed: number;
 }
@@ -178,7 +184,7 @@ interface Failure {
 
 const live = new Map<number, Live>();
 const failures = new Map<number, Failure>();
-/** Jump hosts that refused to forward, until a forward through them works. */
+/** Jump hosts that won't forward, until a forward through them works. */
 const refusals = new Map<number, JumpHostError>();
 
 /** Close a connection on purpose. */
@@ -191,7 +197,8 @@ function closeLive(id: number, e: Live): void {
 /**
  * Hand a connection out no more, so the next use opens another. It closes
  * once nothing is opening or using a channel on it: a channel already asked
- * for gets the jump host's own answer, not "connection closed".
+ * for gets the jump host's own answer (or runs out of time), not "connection
+ * closed".
  */
 function retire(id: number, e: Live): void {
   e.retired = true;
@@ -311,8 +318,8 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
   const client = new SSHClient();
   let hostKeyError: JumpHostError | null = null;
   const entry: Live = {
-    configKey: key, client, connected: false, closing: false, fingerprint: null, channels: 0, opening: 0, retired: false,
-    lastUsed: Date.now(), ready: Promise.resolve(client),
+    configKey: key, client, connected: false, closing: false, fingerprint: null, routerOs: false, channels: 0, opening: 0,
+    retired: false, lastUsed: Date.now(), ready: Promise.resolve(client),
   };
   entry.ready = new Promise<SSHClient>((resolve, reject) => {
     client.once('ready', () => { entry.connected = true; resolve(client); });
@@ -330,7 +337,15 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
     // Our own socket, so anything arriving on it shows the jump host is there.
     const sock = net.connect({ host: row.host, port: row.port });
     let heard = Date.now();
-    sock.on('data', () => { heard = Date.now(); });
+    let start = '';
+    sock.on('data', (data: Buffer) => {
+      heard = Date.now();
+      // What the server is comes first, in its identification line.
+      if (start.length < 1024) {
+        start += data.toString('latin1', 0, 1024);
+        entry.routerOs = /^SSH-[\d.]+-ROSSSH/m.test(start);
+      }
+    });
     const watch = setInterval(() => {
       const quiet = Date.now() - heard;
       if (quiet > keepalive.intervalMs * (keepalive.misses + 1)) {
@@ -439,26 +454,45 @@ export async function openForwardedChannel(
   const deviceFailure = (message: string, code: string | undefined, cause?: Error) =>
     Object.assign(new Error(message, cause ? { cause } : undefined), code ? { code } : {});
   return new Promise<ClientChannel>((resolve, reject) => {
+    entry.opening++;
     let settled = false;
-    const timer = setTimeout(() => {
+    /** True only for the first answer, the jump host's or the timer's: the one the caller gets. */
+    const settle = (): boolean => {
+      if (settled) return false;
       settled = true;
-      reject(deviceFailure(`${label(row)} could not connect to ${host}:${port}: no answer within ${Math.max(1, Math.round(timeoutMs / 1000))}s`, 'ETIMEDOUT'));
+      clearTimeout(timer);
+      entry.opening--;
+      return true;
+    };
+    // Forwarding is off. With nothing else open on the connection, the next
+    // use opens another: OpenSSH reads the setting as a connection starts, so
+    // turning it on never reaches this one, and the requests RouterOS left
+    // unanswered stay with it until it closes. With other channels open it
+    // stays for them (for OpenSSH it's then only this destination: PermitOpen).
+    const notForwarding = (refusal: JumpHostError) => {
+      if (entry.channels === 0) {
+        refusals.set(jumpHostId, refusal);
+        retire(jumpHostId, entry);
+      }
+      reject(refusal);
+    };
+    const timer = setTimeout(() => {
+      if (!settle()) return;
+      if (entry.routerOs) {
+        // RouterOS opens a channel at once when it forwards, before it tries
+        // the device, and never answers when it doesn't.
+        notForwarding(new JumpHostError(`${label(row)} did not answer a request to forward a connection, which is what ` +
+          'RouterOS does while forwarding is off. Allow it on that router with: /ip ssh set forwarding-enabled=local'));
+      } else {
+        reject(deviceFailure(`${label(row)} could not connect to ${host}:${port}: no answer within ${Math.max(1, Math.round(timeoutMs / 1000))}s`, 'ETIMEDOUT'));
+      }
+      closeIfRetired(jumpHostId, entry);
     }, timeoutMs);
     const failed = (err: Error & { reason?: number | string }) => {
       // RFC 4254 reason codes; the description that comes with them may be empty.
       if (err.reason === OPEN_ADMINISTRATIVELY_PROHIBITED || /prohibited/i.test(err.message)) {
-        const refusal = new JumpHostError(`${label(row)} refused to forward connections. Allow it on that router with: ` +
-          '/ip ssh set forwarding-enabled=local', { cause: err });
-        // With nothing else open on it, forwarding is off for the connection.
-        // OpenSSH reads that setting as a connection starts, so turning it on
-        // never reaches this one: the next use opens another. With other
-        // channels open it's only this destination (OpenSSH's PermitOpen), and
-        // the connection stays for them.
-        if (entry.channels === 0) {
-          refusals.set(jumpHostId, refusal);
-          retire(jumpHostId, entry);
-        }
-        reject(refusal);
+        notForwarding(new JumpHostError(`${label(row)} refused to forward connections. Allow it on that router with: ` +
+          '/ip ssh set forwarding-enabled=local', { cause: err }));
       } else {
         // The jump host is up; what it couldn't reach is the device.
         const said = err.message.replace(/^\(SSH\) Channel open failure:\s*/, '').trim();
@@ -470,16 +504,12 @@ export async function openForwardedChannel(
       }
     };
     try {
-      entry.opening++;
       client.forwardOut('127.0.0.1', 0, host, port, (err, channel) => {
-        clearTimeout(timer);
-        entry.opening--;
-        if (settled) {
+        if (!settle()) {
           channel?.destroy(); // too late: whoever asked has given up
           closeIfRetired(jumpHostId, entry);
           return;
         }
-        settled = true;
         if (err) {
           failed(err);
           closeIfRetired(jumpHostId, entry);
@@ -502,9 +532,7 @@ export async function openForwardedChannel(
       });
     } catch (err) {
       // The connection closed between being handed out and used.
-      clearTimeout(timer);
-      entry.opening--;
-      settled = true;
+      settle();
       reject(new JumpHostError(`${label(row)} closed the connection`, { cause: err }));
     }
   });
@@ -522,8 +550,12 @@ export async function sshRoute(device: Routed & { ip_address: string }, port: nu
   return { sock: await openForwardedChannel(via, device.ip_address, port) };
 }
 
-/** How long Test waits for the jump host to answer a forward: a refusal is at once. */
-const FORWARD_CHECK_MS = 5_000;
+/**
+ * How long Test waits for the jump host to answer a forward. A refusal is at
+ * once, and so is RouterOS opening one (it doesn't answer at all with
+ * forwarding off). Shortened by tests.
+ */
+export const forwardCheck = { timeoutMs: 5_000 };
 
 /**
  * Connect to a jump host now, without the backoff (or use its open
@@ -559,7 +591,7 @@ async function checkForwarding(id: number): Promise<true | null | JumpHostError>
   if (!device) return null;
   const port = device.ssh_only ? (device.ssh_port ?? 22) : device.api_port;
   try {
-    (await openForwardedChannel(id, device.ip_address, port, FORWARD_CHECK_MS)).destroy();
+    (await openForwardedChannel(id, device.ip_address, port, forwardCheck.timeoutMs)).destroy();
     return true;
   } catch (err) {
     return err instanceof JumpHostError ? err : true;

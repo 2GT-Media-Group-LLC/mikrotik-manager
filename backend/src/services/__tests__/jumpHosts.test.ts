@@ -11,7 +11,7 @@ import { connectPreferringSsl, API_PORT, API_SSL_PORT } from '../mikrotik/apiCon
 import https from 'https';
 import {
   openForwardedChannel, sshRoute, routeOf, dropJumpHost, trustNewJumpHostKey, testJumpHost, jumpHostStatus,
-  closeIdleJumpHosts, keepalive, parseHostKeyFingerprint, backoffMs, JumpHostError, type JumpHostRow,
+  closeIdleJumpHosts, keepalive, forwardCheck, parseHostKeyFingerprint, backoffMs, JumpHostError, type JumpHostRow,
 } from '../jumpHosts';
 import { sshHostKeyFingerprint } from '../identityPins';
 import { httpsAnswers } from '../wwwSsl';
@@ -113,12 +113,16 @@ interface JumpServer {
   forwards: string[];
   /** Forwarded channels the manager has closed. */
   channelsClosed: number;
+  /** Connections that have ended. */
+  connectionsClosed: number;
   close(): Promise<void>;
 }
 
 /**
- * The jump router. `forwarding: false` is RouterOS without forwarding-enabled;
- * it's read as each connection starts, as OpenSSH reads AllowTcpForwarding.
+ * The jump router. `forwarding: false` is OpenSSH without AllowTcpForwarding:
+ * it refuses as administratively prohibited, and reads the setting as each
+ * connection starts. `routerOs` says it's RouterOS ("SSH-2.0-ROSSSH"), which
+ * reads forwarding-enabled at each request and, with it off, never answers.
  * `prohibits` refuses some destinations as administratively prohibited, as
  * OpenSSH's PermitOpen does. `forwardDelayMs` is a router slow to reach the
  * device, `loginDelayMs` one slow to accept the login. `acceptsFirst` forwards
@@ -130,16 +134,19 @@ interface JumpServer {
 async function startJumpServer(
   opts: {
     forwarding?: boolean; hostKey?: string; forwardDelayMs?: number; loginDelayMs?: number; ignoresGlobalRequests?: boolean;
-    acceptsFirst?: boolean; ports?: Record<number, number>; prohibits?: (port: number) => boolean;
+    acceptsFirst?: boolean; ports?: Record<number, number>; prohibits?: (port: number) => boolean; routerOs?: boolean;
   } = {},
 ): Promise<JumpServer> {
-  const s: JumpServer = { port: 0, connections: 0, logins: 0, authMethods: [], forwards: [], channelsClosed: 0, close: async () => {} };
+  const s: JumpServer = {
+    port: 0, connections: 0, logins: 0, authMethods: [], forwards: [], channelsClosed: 0, connectionsClosed: 0, close: async () => {},
+  };
   // Closed with the server: the manager keeps its jump connection open.
   const open = new Set<{ end(): unknown } | net.Socket>();
-  const server = new SSHServer({ hostKeys: [opts.hostKey ?? JUMP_KEY] }, (client) => {
+  const server = new SSHServer({ hostKeys: [opts.hostKey ?? JUMP_KEY], ...(opts.routerOs ? { ident: 'ROSSSH' } : {}) }, (client) => {
     s.connections++;
     open.add(client);
     client.on('error', () => {});
+    client.on('close', () => { s.connectionsClosed++; });
     // RouterOS never answers a global request, keepalive@openssh.com included.
     if (opts.ignoresGlobalRequests) {
       (client as unknown as { _protocol: { requestFailure(): void } })._protocol.requestFailure = () => {};
@@ -152,8 +159,9 @@ async function startJumpServer(
       } else ctx.reject(['password']);
     });
     client.on('ready', () => {
-      if (opts.forwarding === false) return; // no 'tcpip' listener: "administratively prohibited"
+      if (opts.forwarding === false && !opts.routerOs) return; // no 'tcpip' listener: "administratively prohibited"
       client.on('tcpip', (accept, reject, info) => {
+        if (opts.forwarding === false) return; // RouterOS: no answer at all
         s.forwards.push(`${info.destIP}:${info.destPort}`);
         if (opts.prohibits?.(info.destPort)) {
           // ssh2's reject() says "connect failed"; PermitOpen says "prohibited".
@@ -652,6 +660,51 @@ describe('the jump host refusing', () => {
       devicesBehind.set(62, { ip_address: '127.0.0.1', api_port: 1, ssh_port: 22, ssh_only: false });
       expect(await testJumpHost(62)).toMatchObject({ ok: true, forwarding: true });
     } finally {
+      await device.close();
+      await jump.close();
+    }
+  });
+
+  it('takes no answer from RouterOS as forwarding being off, and lets go of what it left unanswered', async () => {
+    const opts = { routerOs: true, forwarding: false };
+    const jump = await startJumpServer(opts);
+    const device = await startDevice();
+    try {
+      addJumpHost(63, jump.port);
+      const err = await openForwardedChannel(63, '127.0.0.1', device.port, 150).then(() => null, (e: unknown) => e as Error);
+      expect(err).toBeInstanceOf(JumpHostError);
+      expect(err!.message).toMatch(/did not answer a request to forward a connection.*forwarding-enabled=local/);
+      expect(jumpHostStatus(63)).toEqual({ state: 'not_forwarding', error: err!.message });
+      // RouterOS never answers that request: only closing the connection lets go of it.
+      await until(() => jump.connectionsClosed === 1);
+      expect(jump.connectionsClosed).toBe(1);
+
+      opts.forwarding = true;
+      const channel = await openForwardedChannel(63, '127.0.0.1', device.port, 150);
+      expect(jump.connections).toBe(2);
+      expect(jumpHostStatus(63)).toMatchObject({ state: 'connected', channels: 1 });
+      channel.destroy();
+    } finally {
+      await device.close();
+      await jump.close();
+    }
+  });
+
+  it('Test says RouterOS is not forwarding when it does not answer, rather than blame the device', async () => {
+    const opts = { routerOs: true, forwarding: false };
+    const jump = await startJumpServer(opts);
+    const device = await startDevice();
+    const saved = forwardCheck.timeoutMs;
+    forwardCheck.timeoutMs = 150;
+    try {
+      addJumpHost(64, jump.port);
+      devicesBehind.set(64, { ip_address: '127.0.0.1', api_port: device.port, ssh_port: 22, ssh_only: false });
+      expect(await testJumpHost(64)).toEqual({ ok: false, error: expect.stringMatching(/did not answer a request to forward.*forwarding-enabled=local/) });
+
+      opts.forwarding = true;
+      expect(await testJumpHost(64)).toMatchObject({ ok: true, forwarding: true });
+    } finally {
+      forwardCheck.timeoutMs = saved;
       await device.close();
       await jump.close();
     }
