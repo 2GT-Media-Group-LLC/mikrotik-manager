@@ -1,4 +1,3 @@
-import 'express-async-errors';
 jest.mock('../../config/database', () => ({ query: jest.fn(), queryOne: jest.fn(), transaction: jest.fn() }));
 jest.mock('../../middleware/auth', () => ({
   requireAuth: (req: import('express').Request, res: import('express').Response, next: () => void) => {
@@ -64,10 +63,10 @@ describe('account and system time formats', () => {
     expect((await request(app()).put('/api/auth/time-format').set('x-test-auth', '1').send({ preference })).status).toBe(400);
     expect(queryOne).not.toHaveBeenCalled();
   });
-  it('uses browser defaults for unset or invalid historical data', async () => {
+  it('uses the 24-hour default for unset or invalid stored values', async () => {
     jest.mocked(queryOne).mockResolvedValue({ time_format: 'invalid', system_default: null } as never);
     expect((await request(app()).get('/api/auth/time-format').set('x-test-auth', '1')).body)
-      .toEqual({ preference: 'system', system_default: 'browser' });
+      .toEqual({ preference: 'system', system_default: '24h' });
   });
   it('returns 404 for an account that has been deleted', async () => {
     jest.mocked(queryOne).mockResolvedValue(null);

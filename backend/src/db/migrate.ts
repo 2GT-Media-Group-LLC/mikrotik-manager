@@ -1776,7 +1776,7 @@ CREATE TABLE IF NOT EXISTS dhcp_pool_usage (
 `;
 
 const DEFAULT_SETTINGS = [
-  { key: 'time_format_default', value: 'browser' },
+  { key: 'time_format_default', value: '24h' },
   { key: 'polling_fast_interval', value: 30 },
   { key: 'polling_slow_interval', value: 300 },
   { key: 'polling_logs_interval', value: 60 },

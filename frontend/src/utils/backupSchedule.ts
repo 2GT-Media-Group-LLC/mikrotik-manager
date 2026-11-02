@@ -62,12 +62,12 @@ export function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-export function formatTime(hour: number, minute: number, timeFormat: TimeFormat = 'browser', locales?: string | string[]): string {
+export function formatTime(hour: number, minute: number, timeFormat: TimeFormat = '24h', locales?: string | string[]): string {
   return createDateTimeFormat(timeFormat, locales).formatClockTime(hour, minute);
 }
 
 /** Human description, e.g. "Every Sunday at 3:00 AM". */
-export function describeBackupSchedule(s: BackupSchedule, timeFormat: TimeFormat = 'browser', locales?: string | string[]): string {
+export function describeBackupSchedule(s: BackupSchedule, timeFormat: TimeFormat = '24h', locales?: string | string[]): string {
   const t = formatTime(s.hour, s.minute, timeFormat, locales);
   if (s.frequency === 'weekly') return `Every ${WEEKDAY_NAMES[s.weekday]} at ${t}`;
   if (s.frequency === 'monthly') return `Monthly on the ${ordinal(s.dayOfMonth)} at ${t}`;

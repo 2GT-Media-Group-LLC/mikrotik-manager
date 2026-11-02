@@ -13,7 +13,7 @@ export function useTimeFormatPreferences() {
     staleTime: 60_000,
   });
   const preference = query.data?.preference ?? 'system';
-  const systemDefault = query.data?.system_default ?? 'browser';
+  const systemDefault = query.data?.system_default ?? '24h';
   return { ...query, userId, preference, systemDefault,
     effectiveTimeFormat: preference === 'system' ? systemDefault : preference };
 }

@@ -13,7 +13,7 @@ export function resolveTimeFormat(preference: TimeFormat, locales?: string | str
 }
 
 /** Display only. Never use these strings as API values or to construct a cron. */
-export function createDateTimeFormat(preference: TimeFormat = 'browser', locales?: string | string[]) {
+export function createDateTimeFormat(preference: TimeFormat = '24h', locales?: string | string[]) {
   const hourCycle = resolveTimeFormat(preference, locales) === '12h' ? 'h12' : 'h23';
   const cache = new Map<string, Intl.DateTimeFormat>();
 

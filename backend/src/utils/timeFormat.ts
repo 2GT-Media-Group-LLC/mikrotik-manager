@@ -12,6 +12,6 @@ export function isTimeFormatPreference(value: unknown): value is TimeFormatPrefe
 export function timeFormatPreferences(row: { time_format?: unknown; system_default?: unknown }) {
   return {
     preference: isTimeFormat(row.time_format) ? row.time_format : 'system' as TimeFormatPreference,
-    system_default: isTimeFormat(row.system_default) ? row.system_default : 'browser' as TimeFormat,
+    system_default: isTimeFormat(row.system_default) ? row.system_default : '24h' as TimeFormat,
   };
 }

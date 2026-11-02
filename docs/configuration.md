@@ -85,21 +85,21 @@ the same prompt at its next login.
 
 ## Time display
 
-Choose **Settings → General → Time format**. Fleet admins can set a system default:
-**Browser default**, **12-hour (AM/PM)** or **24-hour**. Browser default is the initial
-system setting and follows each browser's preferred hour cycle.
+Times show in 24-hour format unless you choose otherwise, in **Settings → General → Time
+format**.
 
-Every account, including site-scoped and SSO-only users, can choose **System default**
-or a personal **Browser default**, **12-hour** or **24-hour** override. Personal choices
-are stored on the account and follow it across browsers; changing the system default
-preserves those overrides. Timestamps, charts and schedule descriptions update
-immediately after a personal change. Other sessions pick up defaults on reload or
-when their cached preferences refresh. Earlier browser-local choices should be
-selected again after upgrading to account preferences.
+- **System default**, for fleet admins: **24-hour** (the default), **12-hour (AM/PM)**, or
+  **Browser default**, which follows each browser's language settings.
+- **My time format**, for every account, including site-scoped and SSO-only ones: follow the
+  system default, or pick one of the three for yourself. It's saved to your account, so it
+  follows you to other browsers, and changing the system default doesn't override it.
 
-This changes display only. Scheduled work still uses the timezone selected under
-**Settings → General**, API timestamps remain unchanged, and native date/time
-input pickers continue to follow the browser's own regional settings.
+Dates follow the browser's language too, for example `Nov 1, 14:30` in US English and
+`1. Nov., 14:30` in German.
+
+This only changes how times are shown. Schedules still run in the timezone set under
+**Settings → General**, the API's times are unchanged, and the browser's own date and time
+pickers keep their regional format.
 
 ## Sessions
 
