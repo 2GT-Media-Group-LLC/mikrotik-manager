@@ -323,6 +323,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta7" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.7
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta6" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.6
@@ -1234,6 +1243,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta7" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.1.0-beta.7
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta6" class="md-nav__link">
     <span class="md-ellipsis">
       1.1.0-beta.6
@@ -1308,6 +1326,15 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta7">1.1.0-beta.7<a class="headerlink" href="#110-beta7" title="Permanent link">&para;</a></h2>
+<p><strong>Add, edit and remove VLAN interfaces.</strong> The <strong>VLAN interfaces</strong> card on a device's <strong>VLANs</strong>
+tab used to be read-only. Now it can create a VLAN interface on a port, bond or bridge (with an
+IP address if you like), change its VLAN ID, parent, name, MTU or comment, disable it, or remove
+it along with its addresses. Every change runs under Change Guard and can be previewed with
+<strong>Review changes</strong>. Changing the VLAN ID or parent of the VLAN interface the manager reaches the
+device through is now predicted as a lockout, including a VLAN it's stacked on
+(<a href="../devices/#vlan-interfaces">VLAN interfaces</a>,
+<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/309">#309</a>).</p>
 <h2 id="110-beta6">1.1.0-beta.6<a class="headerlink" href="#110-beta6" title="Permanent link">&para;</a></h2>
 <p><strong>Jump hosts</strong>, from <a href="https://github.com/KevinGinger">@KevinGinger</a>: reach devices the manager
 can't connect to directly through an SSH connection to a router (or any SSH server) that can.

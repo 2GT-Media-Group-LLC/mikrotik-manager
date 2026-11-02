@@ -2253,7 +2253,7 @@ history, uptime figures and reports keep every outage. <strong>Snooze</strong> i
 </tr>
 <tr>
 <td><strong>VLANs</strong></td>
-<td>The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (<code>/interface vlan</code>, read-only) with their parent and addresses</td>
+<td>The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (<code>/interface vlan</code>) with their parent and addresses, which you can add, edit and remove</td>
 </tr>
 <tr>
 <td><strong>Radios</strong></td>
@@ -2443,8 +2443,23 @@ ID, name, parent, addresses (IPv4, and IPv6 other than link-local), MTU, state a
   tag, nothing is enforced on the bridge's ports</li>
 <li><strong>bond</strong>, or <strong>Q-in-Q</strong> for a VLAN stacked on another VLAN interface</li>
 </ul>
-<p>The card is read-only for now; it's read live from the device each time the tab opens and every
-minute while it's open.</p>
+<p>The card is read live from the device each time the tab opens and every minute while it's open.</p>
+<p>With write access you can add, edit and remove VLAN interfaces there. <strong>Add VLAN interface</strong>
+takes a VLAN ID, the parent it's tagged on, a name (<code>vlan</code> and the ID if left blank), an MTU, a
+comment, and optionally an IP address to put on it straight away. The pencil edits the same
+settings except the address; change addresses under <strong>Config</strong>, <strong>IP Addresses</strong>. Every change
+runs under <a href="../change-guard/">Change Guard</a>:</p>
+<ul>
+<li>Changing the VLAN ID or the parent of the VLAN interface the manager reaches the device
+  through, or disabling or removing it, is predicted as a lockout and needs your confirmation.
+  That includes a VLAN it's stacked on (Q-in-Q).</li>
+<li>Changing that interface's MTU can't be simulated, so it requires auto-revert.</li>
+<li>Renaming moves nothing: RouterOS renames every reference to the interface with it.</li>
+</ul>
+<p>On a bridge with VLAN filtering, a new VLAN interface only gets traffic once the bridge itself
+is a tagged member of that VLAN in the bridge VLAN table; the form reminds you when the parent
+is a bridge. Removing a VLAN interface removes its addresses too; RouterOS would otherwise keep
+them on a missing interface, marked invalid.</p>
 <h2 id="bridges">Bridges<a class="headerlink" href="#bridges" title="Permanent link">&para;</a></h2>
 <p>The <strong>Bridges</strong> tab lists every bridge on the device (#284): whether it's running, its spanning
 tree mode and priority, its comment, its ports, whether VLAN filtering is on and which VLANs
