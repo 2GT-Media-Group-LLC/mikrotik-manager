@@ -8,7 +8,7 @@ import type { Device } from '../types';
 const RADIO_ROLES = new Set(['standalone', 'cap', 'controller_cap']);
 
 export function hasRadios(d: Pick<Device, 'device_type'> & { wifi_role?: string | null }): boolean {
-  return d.device_type === 'wireless_ap' || RADIO_ROLES.has(d.wifi_role ?? 'none');
+  return d.device_type === 'wireless_ap' || d.device_type === 'wisp' || RADIO_ROLES.has(d.wifi_role ?? 'none');
 }
 
 /** Covered by the wireless pages: radios of its own, or a CAPsMAN controller. */

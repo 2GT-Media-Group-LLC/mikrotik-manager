@@ -1,5 +1,9 @@
 # Wireless
 
+Outdoor PTP/PtMP bridges and CPE can use the **Wireless Systems** device category.
+The [antenna aligner](antenna-aligner.md) is available only on Wireless Systems devices;
+these radios also remain visible in the shared Wireless management pages.
+
 Radios, SSIDs, RF health and guest access. Both the RouterOS 7 `wifi` package and the legacy
 `wlan` package are supported; the platform detects which a device uses.
 

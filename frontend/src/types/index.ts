@@ -53,7 +53,7 @@ export interface PortVlanConfig {
 }
 
 export type DeviceStatus = 'online' | 'offline' | 'unknown';
-export type DeviceType = 'router' | 'switch' | 'wireless_ap' | 'other';
+export type DeviceType = 'router' | 'switch' | 'wireless_ap' | 'wisp' | 'other';
 
 export interface Device {
   id: number;
@@ -502,6 +502,7 @@ export interface WirelessSecurityProfile {
 
 export interface WirelessAP {
   id: number;
+  device_type?: DeviceType;
   name: string;
   ip_address: string;
   model?: string;

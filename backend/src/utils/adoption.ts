@@ -167,7 +167,12 @@ export function jumpInterface(
 }
 
 /** The device type to register an adopted device under, from what it reports. */
-export function detectDeviceType(boardName: string | undefined, interfaces: { type?: string; name?: string }[]): 'router' | 'switch' | 'wireless_ap' {
+export function detectDeviceType(boardName: string | undefined, interfaces: { type?: string; name?: string }[]): 'router' | 'switch' | 'wireless_ap' | 'wisp' {
+  // Dedicated outdoor radio families. General-purpose hAP/cAP/wAP equipment
+  // stays an AP unless an operator explicitly chooses WISP Radio.
+  const board = (boardName ?? '').trim();
+  if (/^(?:RB)?(?:LHG|SXT|QRT|LDF|DynaDish|NetMetal|NetBox|BaseBox|mANTBox|Groove|Metal|Cube|Wireless Wire)/i.test(board)
+    || interfaces.some(i => /w60g/i.test(i.type ?? '') || /^wlan60-/i.test(i.name ?? ''))) return 'wisp';
   const wireless = interfaces.some((i) => /^(wlan|wifi)/i.test(i.type || '') || /^(wlan|wifi)\d/i.test(i.name || ''));
   if (wireless) return 'wireless_ap';
   if (/^(CRS|CSS)/i.test((boardName || '').trim())) return 'switch';

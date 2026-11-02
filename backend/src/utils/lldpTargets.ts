@@ -3,7 +3,7 @@
  * a database; see services/lldpApply.ts for why every type is allowed.
  */
 
-export const LLDP_DEVICE_TYPES = ['router', 'switch', 'wireless_ap', 'other'] as const;
+export const LLDP_DEVICE_TYPES = ['router', 'switch', 'wireless_ap', 'wisp', 'other'] as const;
 export type LldpDeviceType = (typeof LLDP_DEVICE_TYPES)[number];
 
 /** Omitted means every type. Returns null on anything unrecognised. */
