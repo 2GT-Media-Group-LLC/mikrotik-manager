@@ -323,6 +323,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#102" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.0.2
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#101" class="md-nav__link">
     <span class="md-ellipsis">
       1.0.1
@@ -1207,6 +1216,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#102" class="md-nav__link">
+    <span class="md-ellipsis">
+      1.0.2
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#101" class="md-nav__link">
     <span class="md-ellipsis">
       1.0.1
@@ -1299,6 +1317,18 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="102">1.0.2<a class="headerlink" href="#102" title="Permanent link">&para;</a></h2>
+<p>Released on Sunday 1 November 2026.</p>
+<ul>
+<li><strong>Log collection uses much less CPU.</strong> Turning device log times into real times built a new
+  time zone formatter for every line; it now reuses one per zone, which makes a large log poll
+  around 7 to 15 times cheaper. Times come out exactly as before. Thanks to
+  <a href="https://github.com/KevinGinger">@KevinGinger</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/374">#374</a>).</li>
+<li><strong>Building from a checkout no longer picks up its local packages.</strong> The backend image copied
+  the checkout's own <code>node_modules</code> into the build, so a checkout last used on another branch
+  could build a broken image. Only matters if you build the images yourself.</li>
+</ul>
 <h2 id="101">1.0.1<a class="headerlink" href="#101" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 1 November 2026, the same day as 1.0.0. Security fixes, reported by
 <a href="https://github.com/pimlie">@pimlie</a>; update as soon as you can.</p>
