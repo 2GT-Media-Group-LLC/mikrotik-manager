@@ -3,6 +3,17 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.7
+
+**Add, edit and remove VLAN interfaces.** The **VLAN interfaces** card on a device's **VLANs**
+tab used to be read-only. Now it can create a VLAN interface on a port, bond or bridge (with an
+IP address if you like), change its VLAN ID, parent, name, MTU or comment, disable it, or remove
+it along with its addresses. Every change runs under Change Guard and can be previewed with
+**Review changes**. Changing the VLAN ID or parent of the VLAN interface the manager reaches the
+device through is now predicted as a lockout, including a VLAN it's stacked on
+([VLAN interfaces](devices.md#vlan-interfaces),
+[#309](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/309)).
+
 ## 1.1.0-beta.6
 
 **Jump hosts**, from [@KevinGinger](https://github.com/KevinGinger): reach devices the manager
