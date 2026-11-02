@@ -1,0 +1,12 @@
+# The backend image is built with ./backend as its context, so the root
+# .dockerignore doesn't apply here. Without this file `COPY . .` copied the
+# checkout's own node_modules over the ones `npm ci` had just installed, and a
+# checkout left on another branch's packages built a broken image.
+node_modules
+dist
+coverage
+data
+backups
+.env
+.env.*
+npm-debug.log*
