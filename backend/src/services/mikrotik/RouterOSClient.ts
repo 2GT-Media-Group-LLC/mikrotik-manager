@@ -22,6 +22,13 @@ export const REPEATED_ATTRIBUTES_KEY = '.repeated';
 const MAX_WORD_BYTES = 8 * 1024 * 1024;
 const MAX_BUFFER_BYTES = 32 * 1024 * 1024;
 
+/**
+ * How long past its deadline a client waits for a jump host that was given
+ * until then. The jump host answers by the deadline itself, with its reason;
+ * this is only for one that doesn't.
+ */
+const JUMP_HOST_BACKSTOP_MS = 1_000;
+
 /** The device sent something the API protocol does not allow. */
 class ProtocolError extends Error {}
 
@@ -142,11 +149,12 @@ export class RouterOSClient extends EventEmitter {
   static tlsVerifier: ((host: string, port: number, fingerprint: string, raw: Buffer, jumpHostId: number | null) => Promise<void>) | null = null;
 
   /**
-   * Opens a TCP connection to host:port through a jump host (jumpHosts.ts).
-   * Registered once at startup (index.ts). Without it, a client for a device
-   * behind a jump host refuses to connect rather than try the address directly.
+   * Opens a TCP connection to host:port through a jump host (jumpHosts.ts),
+   * or fails within `timeoutMs`. Registered once at startup (index.ts).
+   * Without it, a client for a device behind a jump host refuses to connect
+   * rather than try the address directly.
    */
-  static channelOpener: ((jumpHostId: number, host: string, port: number) => Promise<Duplex>) | null = null;
+  static channelOpener: ((jumpHostId: number, host: string, port: number, timeoutMs: number) => Promise<Duplex>) | null = null;
 
   /** SHA-256 fingerprint of the certificate seen on the last TLS connect, lowercase hex. */
   tlsFingerprint: string | null = null;
@@ -298,14 +306,17 @@ export class RouterOSClient extends EventEmitter {
   private async openChannel(jumpHostId: number, deadline: number): Promise<Duplex> {
     const opener = RouterOSClient.channelOpener;
     if (!opener) throw new RouterOSError('This device is reached through a jump host, and jump host connections are not available here');
-    const opening = opener(jumpHostId, this.host, this.port);
+    // The jump host gets the time left, so that when it can't open the
+    // connection in time, its own reason (forwarding off on RouterOS, say)
+    // is what fails it, rather than this client's plain timeout.
+    const opening = opener(jumpHostId, this.host, this.port, Math.max(0, deadline - Date.now()));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         // Arriving late, it is closed rather than left open on the jump host.
         opening.then((c) => c.destroy(), () => {});
         reject(new RouterOSError(`Connection timeout to ${this.host}:${this.port} through its jump host`));
-      }, Math.max(0, deadline - Date.now()));
+      }, Math.max(0, deadline - Date.now()) + JUMP_HOST_BACKSTOP_MS);
     });
     try {
       this.channel = await Promise.race([opening, timeout]);
