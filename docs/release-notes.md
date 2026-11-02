@@ -3,6 +3,13 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.3
+
+The fixes of [1.0.2](#102), for the beta channel: log collection uses much less CPU (thanks to
+[@KevinGinger](https://github.com/KevinGinger),
+[#374](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/374)), and the backend image
+no longer copies a checkout's local packages into the build.
+
 ## 1.1.0-beta.2
 
 The security fixes of [1.0.1](#101), for the beta channel. Update as soon as you can.
@@ -29,6 +36,19 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.2
+
+Released on Sunday 1 November 2026.
+
+- **Log collection uses much less CPU.** Turning device log times into real times built a new
+  time zone formatter for every line; it now reuses one per zone, which makes a large log poll
+  around 7 to 15 times cheaper. Times come out exactly as before. Thanks to
+  [@KevinGinger](https://github.com/KevinGinger)
+  ([#374](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/374)).
+- **Building from a checkout no longer picks up its local packages.** The backend image copied
+  the checkout's own `node_modules` into the build, so a checkout last used on another branch
+  could build a broken image. Only matters if you build the images yourself.
 
 ## 1.0.1
 
