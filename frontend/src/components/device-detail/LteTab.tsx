@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useRememberedRange } from '../../hooks/useRememberedRange';
 import { useQuery } from '@tanstack/react-query';
@@ -49,13 +50,6 @@ function formatUptime(seconds: number | null): string {
   if (d > 0) return `${d}d ${h}h ${m}m`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
-}
-
-function formatTime(iso: string, compact: boolean): string {
-  const d = new Date(iso);
-  return compact
-    ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function Metric({ label, value, unit, hint }: {
@@ -173,6 +167,7 @@ const EVENT_LABEL = {
 } as const;
 
 function HistoryList({ events }: { events: LteHistoryEvent[] }) {
+  const { formatDateTime } = useDateTimeFormat();
   if (events.length === 0) {
     return (
       <p className="text-sm text-gray-500 dark:text-slate-400">
@@ -191,7 +186,7 @@ function HistoryList({ events }: { events: LteHistoryEvent[] }) {
               <span className="font-medium text-gray-900 dark:text-white">
                 {EVENT_LABEL[e.kind] ?? e.kind}
               </span>
-              <span className="text-gray-500 dark:text-slate-400"> · {formatTime(e.at, false)}</span>
+              <span className="text-gray-500 dark:text-slate-400"> · {formatDateTime(e.at, { year: undefined })}</span>
               {e.detail && (
                 <div className="text-gray-600 dark:text-slate-300 break-words">{e.detail}</div>
               )}
@@ -211,6 +206,7 @@ function HistoryList({ events }: { events: LteHistoryEvent[] }) {
 }
 
 export default function LteTab({ deviceId }: Props) {
+  const { formatDateTime, formatTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<string>('lte', '6h');
   const [dwellRange, setDwellRange] = useRememberedRange<string>('lte-dwell', '7d');
   // The raw event list is kept, but folded away: it answers a different and
@@ -266,7 +262,7 @@ export default function LteTab({ deviceId }: Props) {
 
   const compact = range === '1h' || range === '6h';
   const chartData = (metrics?.metrics ?? []).map(p => ({
-    time: formatTime(p.time, compact),
+    time: compact ? formatTime(p.time) : formatDateTime(p.time, { year: undefined }),
     rsrp: p.rsrp, sinr: p.sinr, rsrq: p.rsrq, rssi: p.rssi,
   }));
 
@@ -313,7 +309,7 @@ export default function LteTab({ deviceId }: Props) {
               </div>
               <div className="text-right text-xs text-gray-500 dark:text-slate-400">
                 <div>Session up {formatUptime(uptime)}</div>
-                <div>Updated {formatTime(iface.updated_at, true)}</div>
+                <div>Updated {formatTime(iface.updated_at)}</div>
               </div>
             </div>
 

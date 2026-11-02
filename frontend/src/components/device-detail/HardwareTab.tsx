@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useRememberedRange } from '../../hooks/useRememberedRange';
 import { useQuery } from '@tanstack/react-query';
@@ -228,6 +229,7 @@ function toDisplayTemp(celsius: number, unit: 'C' | 'F'): string {
 const RESOURCE_RANGES = ['6h', '12h', '24h', '7d'] as const;
 
 function ResourceChart({ deviceId }: { deviceId: number }) {
+  const { formatTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<string>('hardware', '24h');
 
   const { data: rawResources = [] } = useQuery({
@@ -243,7 +245,7 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
         ? Math.round(((p.memory_used || 0) / p.memory_total) * 100)
         : 0;
     return {
-      time: new Date(p.time).toLocaleTimeString([], {
+      time: formatTime(new Date(p.time), {
         hour: '2-digit', minute: '2-digit',
         ...(compact ? {} : { month: 'short', day: 'numeric' }),
       }),

@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ShieldAlert, RefreshCw, Check } from 'lucide-react';
@@ -11,6 +12,7 @@ import { useAuthStore } from '../../store/authStore';
  * for an admin, the button that accepts it.
  */
 function ChangeDetails({ pin, deviceId, deviceName }: { pin: IdentityPin; deviceId: number; deviceName: string }) {
+  const { formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
   const [confirming, setConfirming] = useState(false);
@@ -35,7 +37,7 @@ function ChangeDetails({ pin, deviceId, deviceName }: { pin: IdentityPin; device
         <div className="flex-1">
           <p className="font-semibold">
             {isSerial ? `A different device is answering at ${deviceName}'s address` : `${deviceName}'s ${pin.label} has changed`}
-            {pin.mismatch_at ? ` (seen ${new Date(pin.mismatch_at).toLocaleString()})` : ''}
+            {pin.mismatch_at ? ` (seen ${formatDateTime(new Date(pin.mismatch_at), { month: 'numeric', second: '2-digit' })})` : ''}
           </p>
           {isSerial ? (
             <p className="mt-1 text-red-800 dark:text-red-300">

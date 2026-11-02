@@ -83,6 +83,24 @@ still accept the old one. The login page shows the
 default credentials only until then. An existing install still using admin/admin gets
 the same prompt at its next login.
 
+## Time display
+
+Times show in 24-hour format unless you choose otherwise, in **Settings → General → Time
+format**.
+
+- **System default**, for fleet admins: **24-hour** (the default), **12-hour (AM/PM)**, or
+  **Browser default**, which follows each browser's language settings.
+- **My time format**, for every account, including site-scoped and SSO-only ones: follow the
+  system default, or pick one of the three for yourself. It's saved to your account, so it
+  follows you to other browsers, and changing the system default doesn't override it.
+
+Dates follow the browser's language too, for example `Nov 1, 14:30` in US English and
+`1. Nov., 14:30` in German.
+
+This only changes how times are shown. Schedules still run in the timezone set under
+**Settings → General**, the API's times are unchanged, and the browser's own date and time
+pickers keep their regional format.
+
 ## Sessions
 
 A sign-in lasts up to 24 hours, but every request checks the account as it is now, so a

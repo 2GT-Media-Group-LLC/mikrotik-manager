@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import LoadError from '../common/LoadError';
@@ -148,6 +149,7 @@ function Finding({ f, deviceId, deviceName }: { f: ConfigFinding; deviceId: numb
  * they become visible.
  */
 export default function ConfigHealthCard({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
+  const { formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [scanError, setScanError] = useState('');
@@ -230,7 +232,7 @@ export default function ConfigHealthCard({ deviceId, deviceName }: { deviceId: n
             </div>
             <div className="text-xs text-gray-400 mt-0.5">
               {data?.checked_at
-                ? `Last audited ${new Date(data.checked_at).toLocaleString()}.`
+                ? `Last audited ${formatDateTime(new Date(data.checked_at), { month: 'numeric', second: '2-digit' })}.`
                 : 'This device has not been audited yet — run one with Re-audit.'}
             </div>
           </div>
@@ -243,7 +245,7 @@ export default function ConfigHealthCard({ deviceId, deviceName }: { deviceId: n
           {data?.checked_at && (
             <div className="flex items-center gap-1.5 text-xs text-gray-400">
               <ShieldAlert className="w-3 h-3" />
-              Last audited {new Date(data.checked_at).toLocaleString()}
+              Last audited {formatDateTime(new Date(data.checked_at), { month: 'numeric', second: '2-digit' })}
             </div>
           )}
         </>

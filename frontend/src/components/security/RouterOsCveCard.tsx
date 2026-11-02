@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -32,6 +33,7 @@ function SeverityPill({ c }: { c: FleetCve }) {
 }
 
 export default function RouterOsCveCard() {
+  const { formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -185,7 +187,7 @@ export default function RouterOsCveCard() {
           <p className="px-5 py-2.5 text-[11px] text-gray-400 dark:text-slate-500">
             From NIST&apos;s National Vulnerability Database, with CISA&apos;s list of actively exploited ones and the CVEs
             MikroTik&apos;s release notes name as fixed; checked{' '}
-            {new Date(data.fetched_at).toLocaleString()}. Matched by version only: many need a particular service
+            {formatDateTime(new Date(data.fetched_at), { month: 'numeric', second: '2-digit' })}. Matched by version only: many need a particular service
             (SSH, winbox, btest) reachable, so read each one before acting.
             {data.unranged > 0 && ` ${data.unranged} CVE${data.unranged === 1 ? ' is' : 's are'} listed without a version range and can’t be matched.`}
           </p>
