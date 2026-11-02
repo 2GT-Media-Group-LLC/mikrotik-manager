@@ -301,7 +301,14 @@ describe('DELETE /:id', () => {
     const res = await request(makeApp(fleetAdmin)).delete('/7');
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('jump_host_in_use');
+    expect(res.body.error).toBe('3 devices are reached through this jump host. Move them to another route first.');
     expect(mockedQuery.mock.calls.some(([sql]) => /DELETE FROM jump_hosts/.test(String(sql)))).toBe(false);
+  });
+
+  it('says "1 device is", not "1 device(s) are"', async () => {
+    answer([[/FROM jump_hosts j/, row({ device_count: '1' })]]);
+    const res = await request(makeApp(fleetAdmin)).delete('/7');
+    expect(res.body.error).toBe('1 device is reached through this jump host. Move it to another route first.');
   });
 
   it('deletes one nothing uses, and closes its connection', async () => {

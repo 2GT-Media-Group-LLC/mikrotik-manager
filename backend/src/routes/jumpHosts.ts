@@ -346,9 +346,10 @@ router.put('/:id', mutationLimiter, async (req, res) => {
 router.delete('/:id', mutationLimiter, async (req, res) => {
   const m = await managed(req, res);
   if (!m) return;
-  if (Number(m.row.device_count ?? 0) > 0) {
+  const devices = Number(m.row.device_count ?? 0);
+  if (devices > 0) {
     return res.status(409).json({
-      error: `${m.row.device_count} device(s) are reached through this jump host. Move them to another route first.`,
+      error: `${devicesReached(devices)} through this jump host. Move ${devices === 1 ? 'it' : 'them'} to another route first.`,
       code: 'jump_host_in_use',
     });
   }

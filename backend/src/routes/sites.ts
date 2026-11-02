@@ -324,10 +324,13 @@ router.post('/:id/devices', requireWrite, async (req, res) => {
       ORDER BY d.name`, [ids, id]);
   if (viaOtherSite.length > 0) {
     const [first] = viaOtherSite;
+    const others = viaOtherSite.length - 1;
+    const who = others === 0 ? `${first.name} connects`
+      : `${first.name} and ${others} other device${others === 1 ? '' : 's'} connect`;
+    const their = others === 0 ? 'its' : 'their';
     res.status(409).json({
-      error: `${first.name}${viaOtherSite.length > 1 ? ` and ${viaOtherSite.length - 1} other device(s)` : ''} `
-        + `connect through jump host "${first.jump_host}", which belongs to their current site. `
-        + 'Change their connection first, or make the jump host fleet-wide.',
+      error: `${who} through jump host "${first.jump_host}", which belongs to ${their} current site. `
+        + `Change ${their} connection first, or make the jump host fleet-wide.`,
       code: 'jump_host_other_site',
     });
     return;
