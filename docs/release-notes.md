@@ -7,6 +7,22 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.3
+
+Released on Monday 2 November 2026. Two dashboard warnings that showed when nothing was wrong,
+both reported by [@azizfayziev](https://github.com/azizfayziev).
+
+- **"No recent backup" for devices that hadn't changed.** A configuration snapshot is only
+  stored when the configuration changes, so a device unchanged for a week was flagged even
+  though its newest backup was current. The hourly check that finds the configuration unchanged
+  now counts as a fresh backup ([Backups](backups.md#finding-one),
+  [#377](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/377)).
+- **"Co-channel overlap" counted radios that don't overlap.** It counted a CAPsMAN controller's
+  copies of its CAPs' radios as extra radios, and compared radios across the whole fleet. It
+  now uses the Channel Usage analysis, which compares radios per controller and per site. In
+  Channel Usage, standalone APs are now grouped by site too ([Wireless](wireless.md#rf-health),
+  [#365](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/365)).
+
 ## 1.0.2
 
 Released on Sunday 1 November 2026.
