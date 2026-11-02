@@ -15,6 +15,7 @@ import { parsePort } from '../../utils/parsePort';
 import { useSiteView } from '../../hooks/useSiteView';
 import { inView, newEntrySite } from '../../utils/siteView';
 import { deviceFromJumpHost } from '../../utils/jumpHostDevice';
+import { loginNeededAgain, redirectLocked } from '../../utils/jumpHostEdit';
 import AddDeviceModal, { type AddDevicePrefill } from '../devices/AddDeviceModal';
 import SiteViewNote from './SiteViewNote';
 
@@ -44,7 +45,8 @@ const EMPTY_FORM: FormState = {
 const errorText = (err: unknown, fallback: string): string =>
   (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? (err as Error)?.message ?? fallback;
 
-function toInput(f: FormState, editing: JumpHost | null): JumpHostInput {
+/** `resendLogin`: a new address needs the login again, so a kept preset is sent too. */
+function toInput(f: FormState, editing: JumpHost | null, resendLogin = false): JumpHostInput {
   const input: JumpHostInput = {
     name: f.name.trim() || undefined,
     site_id: f.site_id ? Number(f.site_id) : null,
@@ -56,7 +58,7 @@ function toInput(f: FormState, editing: JumpHost | null): JumpHostInput {
   if (f.host_key_fingerprint.trim()) input.host_key_fingerprint = f.host_key_fingerprint.trim();
   // A secret is only sent when typed: editing keeps the saved one otherwise.
   if (f.auth === 'preset') {
-    if (!editing || editing.auth !== 'preset' || Number(f.credential_preset_id) !== editing.credential_preset_id) {
+    if (!editing || resendLogin || editing.auth !== 'preset' || Number(f.credential_preset_id) !== editing.credential_preset_id) {
       input.credential_preset_id = f.credential_preset_id ? Number(f.credential_preset_id) : null;
     }
   } else if (f.auth === 'key' && f.private_key) {
@@ -132,8 +134,13 @@ export default function JumpHostsSettings() {
   };
 
   const existing = editing && editing !== 'new' ? editing : null;
+  // Devices use it: its address, port and host key are a fleet admin's to change.
+  const locked = !!existing && redirectLocked(existing, fleetAdmin);
+  // A new address or port, from anyone else: the saved login isn't sent there.
+  const loginAgain = !!existing && !locked && loginNeededAgain(existing, form, fleetAdmin);
   // A secret of the chosen kind is already saved, so the field may stay blank.
-  const secretSaved = !!existing && existing.auth === form.auth && (form.auth === 'password' ? existing.has_password : existing.has_private_key);
+  const secretSaved = !!existing && !loginAgain && existing.auth === form.auth
+    && (form.auth === 'password' ? existing.has_password : existing.has_private_key);
   // Presets this jump host may use: fleet-wide ones, or its own site's.
   const presetChoices = presets.filter((p) => p.site_id == null || String(p.site_id) === form.site_id);
 
@@ -142,9 +149,10 @@ export default function JumpHostsSettings() {
       if (!form.name.trim() || !form.host.trim()) throw new Error('Name and address are required');
       if (form.auth !== 'preset' && !form.username.trim()) throw new Error('A username is required');
       if (form.auth === 'preset' && !form.credential_preset_id) throw new Error('Choose a credential preset');
-      if (form.auth === 'password' && !form.password && !secretSaved) throw new Error('Enter the password');
-      if (form.auth === 'key' && !form.private_key && !secretSaved) throw new Error('Paste the private key');
-      const input = toInput(form, existing);
+      const again = loginAgain ? ' again to change the address or port' : '';
+      if (form.auth === 'password' && !form.password && !secretSaved) throw new Error(`Enter the password${again}`);
+      if (form.auth === 'key' && !form.private_key && !secretSaved) throw new Error(`Paste the private key${again}`);
+      const input = toInput(form, existing, loginAgain);
       if (existing) {
         await jumpHostsApi.update(existing.id, input);
         return null;
@@ -259,7 +267,11 @@ export default function JumpHostsSettings() {
                           <AlertTriangle className="w-3.5 h-3.5" /> Key changed
                         </div>
                         <div className="font-mono break-all" title="The key it presented">{j.seen_host_key_fingerprint}</div>
-                        {j.can_manage && (
+                        {j.can_manage && (redirectLocked(j, fleetAdmin) ? (
+                          <div className="text-[11px] text-gray-400 dark:text-slate-500">
+                            Devices use it, so only a fleet admin can trust the new key.
+                          </div>
+                        ) : (
                           <button
                             className="btn-secondary text-[11px] px-2 py-0.5 flex items-center gap-1"
                             onClick={() => {
@@ -270,7 +282,7 @@ export default function JumpHostsSettings() {
                           >
                             <ShieldCheck className="w-3 h-3" /> Trust new key
                           </button>
-                        )}
+                        ))}
                       </div>
                     ) : j.host_key_fingerprint ? (
                       <span className="font-mono break-all" title="Pinned host key">{j.host_key_fingerprint}</span>
@@ -360,15 +372,29 @@ export default function JumpHostsSettings() {
                 <label className="label">Name *</label>
                 <input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Branch 3 edge router" />
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="label">Address *</label>
-                  <input className="input font-mono" value={form.host} onChange={(e) => set('host', e.target.value)} placeholder="203.0.113.10 or router.example.com" />
+              <div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="label">Address *</label>
+                    <input className="input font-mono" value={form.host} onChange={(e) => set('host', e.target.value)} placeholder="203.0.113.10 or router.example.com" disabled={locked} />
+                  </div>
+                  <div>
+                    <label className="label">SSH Port</label>
+                    <input className="input" type="number" value={form.port} onChange={(e) => set('port', e.target.value)} placeholder="22" disabled={locked} />
+                  </div>
                 </div>
-                <div>
-                  <label className="label">SSH Port</label>
-                  <input className="input" type="number" value={form.port} onChange={(e) => set('port', e.target.value)} placeholder="22" />
-                </div>
+                {locked && (
+                  <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+                    Devices are reached through this jump host, so only a fleet admin can change its address, port or
+                    host key: their saved passwords would go to whatever answers there.
+                  </p>
+                )}
+                {loginAgain && form.auth !== 'preset' && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                    Enter the login again to change the address or port. The saved one is only sent to the address it
+                    was saved for.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -447,6 +473,8 @@ export default function JumpHostsSettings() {
                   onChange={(e) => set('host_key_fingerprint', e.target.value)}
                   placeholder={existing?.host_key_fingerprint ?? 'SHA256:…'}
                   spellCheck={false}
+                  // Pinning a first key is open to its admins; replacing one is trusting a new key.
+                  disabled={locked && !!existing?.host_key_fingerprint}
                 />
                 <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
                   Optional. Left blank, the key the router presents the first time is pinned, and a different one later

@@ -204,6 +204,43 @@ router.post('/', mutationLimiter, async (req, res) => {
   return res.status(201).json(toPublic((await loadRow(rows[0].id))!, caller));
 });
 
+/** "1 device is reached" / "3 devices are reached". */
+const devicesReached = (n: number): string => (n === 1 ? '1 device is reached' : `${n} devices are reached`);
+
+/**
+ * Whether the caller may point a jump host at another server: a new address
+ * or port, or a different host key trusted. Its login, and the saved API
+ * password of every device behind it, then go to whatever answers there: the
+ * reason a device's new address needs its password (GHSA-63v6-w7qf-349f), one
+ * step removed. So while devices use it only a fleet admin may, as only a
+ * fleet admin moves a device without its password. Anyone else changing the
+ * address of one no device uses gives its login with the change, so the saved
+ * one only goes where it was saved for. The refusal to send, or null.
+ */
+function redirectRefusal(
+  caller: PresetCaller, row: Row, change: { moved: boolean; rekeyed: boolean; loginGiven: boolean },
+): { status: number; error: string; code: string } | null {
+  if (caller.fleetAdmin || (!change.moved && !change.rekeyed)) return null;
+  const devices = Number(row.device_count ?? 0);
+  if (devices > 0) {
+    return {
+      status: 403,
+      error: `${devicesReached(devices)} through this jump host, so only a fleet admin can change its address, port or `
+        + 'host key. Their saved passwords would go to whatever answers there.',
+      code: 'fleet_admin_required_while_in_use',
+    };
+  }
+  if (change.moved && !change.loginGiven) {
+    return {
+      status: 400,
+      error: "Give the jump host's login again (its password, key or credential preset) to change its address or port. "
+        + 'The saved one is only sent to the address it was saved for.',
+      code: 'login_required_for_address_change',
+    };
+  }
+  return null;
+}
+
 /** The jump host the request names, when the caller may manage it; otherwise the response is sent. */
 async function managed(req: Request<{ id: string }>, res: Response): Promise<{ row: Row; caller: PresetCaller } | null> {
   const caller = presetCaller(req.user);
@@ -264,6 +301,11 @@ router.put('/:id', mutationLimiter, async (req, res) => {
   // unless one was given with the change.
   const moved = (addr.host !== undefined && addr.host !== row.host) || (addr.port !== null && addr.port !== row.port);
   const fingerprint = b.host_key_fingerprint ? parseHostKeyFingerprint(b.host_key_fingerprint) : null;
+  // A key given where none is pinned yet points it nowhere new: the first key
+  // seen would be pinned anyway. Replacing a pinned one is trusting a new key.
+  const rekeyed = fingerprint !== null && row.host_key_fingerprint !== null && fingerprint !== row.host_key_fingerprint;
+  const refused = redirectRefusal(caller, row, { moved, rekeyed, loginGiven: authChange !== null });
+  if (refused) return res.status(refused.status).json({ error: refused.error, code: refused.code });
   const sent = (v: unknown): boolean => v !== undefined;
 
   await query(
@@ -336,6 +378,10 @@ router.post('/:id/test', testLimiter, async (req, res) => {
 router.post('/:id/trust-key', mutationLimiter, async (req, res) => {
   const m = await managed(req, res);
   if (!m) return;
+  // On one no device uses, a site admin may still trust a new key with the
+  // saved login, as they may a device's new key.
+  const refused = redirectRefusal(m.caller, m.row, { moved: false, rekeyed: true, loginGiven: false });
+  if (refused) return res.status(refused.status).json({ error: refused.error, code: refused.code });
   if (!(await trustNewJumpHostKey(m.row.id))) return res.status(409).json({ error: 'There is no changed host key to trust.' });
   return res.json(toPublic((await loadRow(m.row.id))!, m.caller));
 });

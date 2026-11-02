@@ -103,6 +103,16 @@ name, site or notes leave it open.
 A jump host can move to a site only while no device in another site uses it and no other site
 has it as its default; a fleet admin can always make it fleet-wide.
 
+Pointing a jump host somewhere else sends its login, and the saved API password of every device
+behind it, to whatever answers there. It's the reason a device's new address needs its password
+([Devices](devices.md)), so jump hosts have a similar rule:
+
+- While devices use a jump host, only a fleet admin can change its address, port or host key
+  (including **Trust new key**). A site admin can still change its name, notes and login.
+- On a jump host no device uses, anyone but a fleet admin changing its address or port enters
+  its login again (its password or key; a credential preset is sent again by itself), since the
+  saved one is only sent to the address it was saved for.
+
 ## Host keys
 
 The jump host's SSH host key is pinned, like a device's. A different key stops the connection
@@ -112,7 +122,8 @@ new fingerprint. After checking it, for example with
 **Trust new key**.
 
 Changing a jump host's address pins its key afresh, unless a fingerprint is given with the
-change.
+change. While devices use it, only a fleet admin can trust a new key or replace the pinned one
+([Changing one](#changing-one)).
 
 Devices behind a jump host keep their own pins (API-SSL certificate, SSH host key, serial
 number). Pins are kept per address **and route**, so two devices with the same private address

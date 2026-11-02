@@ -26,7 +26,7 @@ import express from 'express';
 import { utils as sshUtils } from 'ssh2';
 import jumpHostsRoutes from '../jumpHosts';
 import { query, queryOne } from '../../config/database';
-import { dropJumpHost, chooseJumpHost } from '../../services/jumpHosts';
+import { dropJumpHost, chooseJumpHost, trustNewJumpHostKey } from '../../services/jumpHosts';
 
 const mockedQuery = jest.mocked(query);
 const mockedQueryOne = jest.mocked(queryOne);
@@ -192,6 +192,106 @@ describe('PUT /:id', () => {
     answer([[/FROM jump_hosts j/, row()]]);
     await request(makeApp(fleetAdmin)).put('/7').send({ password: 'new-secret' });
     expect(dropJumpHost).toHaveBeenCalledWith(7);
+  });
+});
+
+// A new address, port or host key sends the jump host's login, and the saved
+// API passwords of the devices behind it, to whatever answers there: the
+// reason a device's new address needs its password (GHSA-63v6-w7qf-349f).
+describe('pointing a jump host somewhere else', () => {
+  const NEW_HOST = '198.51.100.66';
+  const OTHER_KEY = 'cd'.repeat(32);
+  const updated = () => mockedQuery.mock.calls.some(([sql]) => /UPDATE jump_hosts/.test(String(sql)));
+  const inUse = (over: Record<string, unknown> = {}) => row({ site_id: 5, device_count: '3', ...over });
+
+  it("is refused to a site admin while devices use it, even with the jump host's login", async () => {
+    answer([[/FROM jump_hosts j/, inUse()]]);
+    const app = makeApp(siteAdmin);
+    for (const body of [
+      { host: NEW_HOST, password: 'their-own' },
+      { port: 2222, password: 'their-own' },
+      { host_key_fingerprint: OTHER_KEY },
+    ]) {
+      const res = await request(app).put('/7').send(body);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'fleet_admin_required_while_in_use', error: expect.stringMatching(/^3 devices are reached/) });
+    }
+    expect(updated()).toBe(false);
+    expect(dropJumpHost).not.toHaveBeenCalled();
+  });
+
+  it('is refused to a site admin trusting a new key while devices use it', async () => {
+    answer([[/FROM jump_hosts j/, inUse({ device_count: '1', seen_host_key_fingerprint: OTHER_KEY })]]);
+    const res = await request(makeApp(siteAdmin)).post('/7/trust-key');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/^1 device is reached through this jump host, so only a fleet admin/);
+    expect(trustNewJumpHostKey).not.toHaveBeenCalled();
+  });
+
+  it('leaves a site admin its name, notes and login while devices use it, and a first key to pin', async () => {
+    answer([[/FROM sites WHERE id/, { id: 5 }], [/FROM jump_hosts j/, inUse({ host_key_fingerprint: null })]]);
+    const app = makeApp(siteAdmin);
+    // As the form sends it: the address unchanged.
+    const res = await request(app).put('/7').send({
+      name: 'edge', notes: 'rack 4', site_id: 5, host: '203.0.113.10', port: 22, username: 'jump2', password: 'new-secret',
+    });
+    expect(res.status).toBe(200);
+    expect((await request(app).put('/7').send({ host_key_fingerprint: OTHER_KEY })).status).toBe(200);
+  });
+
+  it("makes a site admin give the login again to change the address or port of one no device uses", async () => {
+    answer([[/FROM jump_hosts j/, row({ site_id: 5 })]]);
+    const app = makeApp(siteAdmin);
+    for (const body of [{ host: NEW_HOST }, { port: 2222 }]) {
+      const res = await request(app).put('/7').send(body);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('login_required_for_address_change');
+    }
+    expect(updated()).toBe(false);
+
+    const res = await request(app).put('/7').send({ host: NEW_HOST, password: 'typed-again' });
+    expect(res.status).toBe(200);
+    const params = mockedQuery.mock.calls.find(([sql]) => /UPDATE jump_hosts SET/.test(String(sql)))![1] as unknown[];
+    expect(params[4]).toBe(NEW_HOST);
+    expect(params[9]).toBe('enc:typed-again');
+    expect(params[14]).toBe(true); // pinned afresh
+  });
+
+  it('takes a credential preset chosen again as the login, but not one only kept', async () => {
+    answer([
+      [/FROM credential_presets WHERE id/, { site_id: 5, allow_operator_use: true }],
+      [/FROM jump_hosts j/, row({ site_id: 5, credential_preset_id: 3, password_encrypted: null, username: null })],
+    ]);
+    const app = makeApp(siteAdmin);
+    expect((await request(app).put('/7').send({ host: NEW_HOST })).status).toBe(400);
+    expect((await request(app).put('/7').send({ host: NEW_HOST, credential_preset_id: 3 })).status).toBe(200);
+  });
+
+  it("refuses a preset the site admin can't use as the login", async () => {
+    answer([
+      [/FROM credential_presets WHERE id/, { site_id: null, allow_operator_use: false }],
+      [/FROM jump_hosts j/, row({ site_id: 5, credential_preset_id: 3, password_encrypted: null, username: null })],
+    ]);
+    const res = await request(makeApp(siteAdmin)).put('/7').send({ host: NEW_HOST, credential_preset_id: 3 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/restricted to administrators/);
+    expect(updated()).toBe(false);
+  });
+
+  it('lets a fleet admin move one devices use with its saved login, and trust its new key', async () => {
+    answer([[/FROM jump_hosts j/, inUse({ seen_host_key_fingerprint: OTHER_KEY })]]);
+    jest.mocked(trustNewJumpHostKey).mockResolvedValue(true);
+    const app = makeApp(fleetAdmin);
+    expect((await request(app).put('/7').send({ host: NEW_HOST })).status).toBe(200);
+    expect(dropJumpHost).toHaveBeenCalledWith(7);
+    expect((await request(app).post('/7/trust-key')).status).toBe(200);
+    expect(trustNewJumpHostKey).toHaveBeenCalledWith(7);
+  });
+
+  it('lets a site admin trust a new key on one no device uses, as on a device', async () => {
+    answer([[/FROM jump_hosts j/, row({ site_id: 5, seen_host_key_fingerprint: OTHER_KEY })]]);
+    jest.mocked(trustNewJumpHostKey).mockResolvedValue(true);
+    expect((await request(makeApp(siteAdmin)).post('/7/trust-key')).status).toBe(200);
   });
 });
 
