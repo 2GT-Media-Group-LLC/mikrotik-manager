@@ -7,6 +7,19 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.2
+
+Released on Sunday 1 November 2026.
+
+- **Log collection uses much less CPU.** Turning device log times into real times built a new
+  time zone formatter for every line; it now reuses one per zone, which makes a large log poll
+  around 7 to 15 times cheaper. Times come out exactly as before. Thanks to
+  [@KevinGinger](https://github.com/KevinGinger)
+  ([#374](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/374)).
+- **Building from a checkout no longer picks up its local packages.** The backend image copied
+  the checkout's own `node_modules` into the build, so a checkout last used on another branch
+  could build a broken image. Only matters if you build the images yourself.
+
 ## 1.0.1
 
 Released on Sunday 1 November 2026, the same day as 1.0.0. Security fixes, reported by
