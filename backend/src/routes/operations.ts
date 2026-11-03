@@ -852,6 +852,7 @@ router.post('/backup-all', requireWrite, async (req, res) => {
   res.json({
     total: devices.length,
     results: settled.map((s, i) => ({
+      id: devices[i].id,
       name: devices[i].name,
       ok: s.status === 'fulfilled',
       error: s.status === 'rejected' ? (s.reason as Error)?.message : undefined,
@@ -904,6 +905,7 @@ router.post('/sync-all', requireWrite, async (req, res) => {
   res.json({
     total: devices.length,
     results: settled.map((s, i) => ({
+      id: devices[i].id,
       name: devices[i].name,
       ok: s.status === 'fulfilled',
       error: s.status === 'rejected' ? (s.reason as Error)?.message : undefined,

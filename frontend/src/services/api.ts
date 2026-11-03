@@ -1572,7 +1572,8 @@ export interface OpsInsights {
   capacity: OpsCapacityRow[];
   activity: OpsActivityItem[];
 }
-export interface OpsActionResult { total: number; results: { name: string; ok: boolean; error?: string }[] }
+/** id from 1.0.5 on (#392), so a failed device can be linked to. */
+export interface OpsActionResult { total: number; results: { id?: number; name: string; ok: boolean; error?: string }[] }
 
 export const operationsApi = {
   /** A fleet page's Refresh: ask the online devices in view for a fresh poll. */
