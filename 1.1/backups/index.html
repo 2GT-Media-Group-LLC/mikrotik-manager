@@ -959,6 +959,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#backing-up-every-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backing up every device
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1580,6 +1591,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#backing-up-every-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backing up every device
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1695,6 +1717,12 @@ only "Backup failed".</p>
 if the device refuses the key at login. Before 0.24.50 a key backup that timed out also fell
 back to the password, which RouterOS refuses once a key is installed, so the device logged a
 "login failure" and the real reason was lost.</p>
+<h3 id="backing-up-every-device">Backing up every device<a class="headerlink" href="#backing-up-every-device" title="Permanent link">&para;</a></h3>
+<p><strong>Backup all</strong> on the dashboard backs up every online device in view, a few at a time. When
+it finishes it says how many worked, and lists each device that didn't, with the reason.
+Click a device's name to open it. Because a backup is an SSH export, the reason is usually
+the SSH login, the SSH port, or SSH being turned off on the device. Before 1.0.5 only the
+count was shown. <strong>Sync config</strong> does the same.</p>
 <h2 id="passwords-and-keys">Passwords and keys<a class="headerlink" href="#passwords-and-keys" title="Permanent link">&para;</a></h2>
 <p>By default RouterOS v7 also leaves out Wi-Fi keys, VPN and PPP secrets, WireGuard private
 keys and SNMP communities, so a restore brings back the configuration without them.</p>
