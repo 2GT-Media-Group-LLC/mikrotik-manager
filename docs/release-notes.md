@@ -7,6 +7,15 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.5
+
+Released on Tuesday 3 November 2026. A fix reported by [@ronchan44](https://github.com/ronchan44).
+
+- **Backup all didn't say which devices failed.** It showed a count, such as "Backed up 2/5
+  devices", but not which devices failed or why, though the server knew. The dashboard now
+  lists each one with its reason, and its name opens the device. Sync config does the same
+  ([Backing up every device](backups.md#backing-up-every-device)).
+
 ## 1.0.4
 
 Released on Monday 2 November 2026. A fix for switching a port from trunk to access.
