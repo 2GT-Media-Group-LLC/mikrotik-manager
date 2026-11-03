@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.10
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta9" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1561,6 +1572,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.10
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta9" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1682,6 +1704,14 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta10">1.1.0-beta.10<a class="headerlink" href="#110-beta10" title="Permanent link">&para;</a></h2>
+<p><strong>Jump hosts say why, in time</strong>, from <a href="https://github.com/KevinGinger">@KevinGinger</a>. With
+forwarding off on a RouterOS jump router, editing a device to go through it used to end in
+"Timed out connecting to the device". It now gives RouterOS's reason and the command that fixes it
+(<code>/ip ssh set forwarding-enabled=local</code>) within the same 10 seconds, and polls, <strong>Test</strong> and
+SSH commands do the same within their own time. A device added over SSH only gives the jump
+host's reason once instead of twice (<a href="../jump-hosts/">Jump hosts</a>,
+<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/391">#391</a>).</p>
 <h2 id="110-beta9">1.1.0-beta.9<a class="headerlink" href="#110-beta9" title="Permanent link">&para;</a></h2>
 <p><strong>A more readable Capacity &amp; health card</strong>, from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s
 proposal. On the dashboard's <strong>Operations</strong> tab the card now lists the busiest CPU first, and
