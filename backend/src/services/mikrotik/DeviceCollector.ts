@@ -109,7 +109,7 @@ import { alertService } from '../AlertService';
 import { readRevocation } from '../../utils/certRecord';
 import { managerAddressFromActive, stripOwnSessionNoise } from '../../utils/logNoise';
 import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
-import { planVlanWrite, frameTypesFor, planTaggedRemovals } from '../../utils/bridgeVlanPlan';
+import { planVlanWrite, frameTypesFor, planTaggedRemovals, planAccessRemovals } from '../../utils/bridgeVlanPlan';
 import { planBridgePortMove, bridgeDeleteRefusal } from '../../utils/bridgePortMove';
 import { normalizeHealth, evaluateHealth, type HealthVerdict, type HealthIssue } from '../../utils/deviceHealth';
 import { resolveChannel } from '../../utils/updateChannel';
@@ -5007,12 +5007,16 @@ export class DeviceCollector {
     for (const vlanId of untaggedVlans) await applyVlan(vlanId, 'untagged');
 
     // Removal runs after the additions, so the port is never briefly on fewer
-    // VLANs than both the old and new configuration agree on (#165).
-    if (!replaceTagged) return { notRemoved: [] };
+    // VLANs than both the old and new configuration agree on (#165). An access
+    // port leaves every VLAN but its PVID's: left tagged on them, it kept
+    // sending them out tagged and still read as a trunk.
+    if (!replaceTagged && role !== 'access') return { notRemoved: [] };
     const rows = await this.client
       .execute('/interface/bridge/vlan/print', {}, [`?bridge=${bridge}`])
       .catch(() => []);
-    const plan = planTaggedRemovals(rows as Record<string, string>[], bridge, portName, taggedVlans);
+    const plan = role === 'access'
+      ? planAccessRemovals(rows as Record<string, string>[], bridge, portName, pvid)
+      : planTaggedRemovals(rows as Record<string, string>[], bridge, portName, taggedVlans);
     for (const w of plan.writes) {
       await this.client.execute('/interface/bridge/vlan/set', {
         '.id': w.id, tagged: w.tagged, untagged: w.untagged,

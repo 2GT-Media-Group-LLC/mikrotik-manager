@@ -1,4 +1,4 @@
-import { planVlanWrite, frameTypesFor, planTaggedRemovals } from '../bridgeVlanPlan';
+import { planVlanWrite, frameTypesFor, planTaggedRemovals, planAccessRemovals } from '../bridgeVlanPlan';
 
 describe('planVlanWrite', () => {
   it('adds a static row when the existing one is dynamic — the reported failure', () => {
@@ -103,5 +103,40 @@ describe('planTaggedRemovals (#165)', () => {
     expect(p.writes.map((w) => w.id)).toEqual(['*1', '*2', '*3']);
     expect(p.writes[0].tagged).toBe('bridge,ether2');
     expect(planTaggedRemovals(rows, 'bridge', 'ether9', []).writes).toEqual([]);
+  });
+});
+
+describe('planAccessRemovals', () => {
+  // TEST's sfp-sfpplus1 after "trunk to access" left it tagged on five VLANs.
+  const rows = [
+    { '.id': '*1', bridge: 'bridge', 'vlan-ids': '1', tagged: '', untagged: 'ether1,sfp1,bridge' },
+    { '.id': '*2', bridge: 'bridge', 'vlan-ids': '10', tagged: 'sfp1,sfp2', untagged: '' },
+    { '.id': '*3', bridge: 'bridge', 'vlan-ids': '666', tagged: 'sfp1', untagged: 'sfp7' },
+    { '.id': '*4', bridge: 'bridge', 'vlan-ids': '20', tagged: '', untagged: 'sfp1' },
+    { '.id': '*5', bridge: 'bridge', 'vlan-ids': '99', tagged: 'sfp1', dynamic: 'true' },
+    { '.id': '*6', bridge: 'other', 'vlan-ids': '40', tagged: 'sfp1' },
+    { '.id': '*7', bridge: 'bridge', 'vlan-ids': '50', tagged: 'sfp2', untagged: '' },
+  ];
+
+  it('takes the port out of every static row but its PVID untagged', () => {
+    const plan = planAccessRemovals(rows, 'bridge', 'sfp1', 1);
+    expect(plan.writes).toEqual([
+      { id: '*2', tagged: 'sfp2', untagged: '', vlanIds: [10] },
+      { id: '*3', tagged: '', untagged: 'sfp7', vlanIds: [666] },
+      { id: '*4', tagged: '', untagged: '', vlanIds: [20] },
+    ]);
+    expect(plan.mixed).toEqual([]);
+  });
+
+  it('keeps it untagged on the PVID, and drops it tagged there', () => {
+    const plan = planAccessRemovals(rows, 'bridge', 'sfp1', 20);
+    expect(plan.writes.map((w) => w.id)).toEqual(['*1', '*2', '*3']);
+    expect(planAccessRemovals([{ '.id': '*9', bridge: 'bridge', 'vlan-ids': '20', tagged: 'sfp1', untagged: '' }], 'bridge', 'sfp1', 20).writes)
+      .toEqual([]);
+  });
+
+  it('reports a range row that also covers the PVID rather than splitting it', () => {
+    const plan = planAccessRemovals([{ '.id': '*8', bridge: 'bridge', 'vlan-ids': '5-7', tagged: 'sfp1', untagged: '' }], 'bridge', 'sfp1', 6);
+    expect(plan).toEqual({ writes: [], mixed: [5, 7] });
   });
 });

@@ -7,7 +7,7 @@
  * before and violated after is a predicted lockout, and the invariant explains
  * itself, so the warning names the actual mechanism instead of being generic.
  */
-import { planVlanWrite } from '../../utils/bridgeVlanPlan';
+import { planVlanWrite, planAccessRemovals } from '../../utils/bridgeVlanPlan';
 import { evaluate, INVARIANTS, type InvariantStatus } from './invariants';
 import { resolveManagementPath, expandVlanIds, type DeviceSnapshot, type ManagementPath, type RosRow } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
@@ -165,6 +165,22 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
           const vids = expandVlanIds(row['vlan-ids']);
           if (vids.some((v) => keep.has(v))) continue;
           setMembership(row, tagged.filter((p) => p !== change.port), csv(row['current-untagged'] ?? row['untagged']));
+        }
+      }
+      // An access port leaves every VLAN but its PVID's, by the writer's own
+      // planner: taking the management uplink to access drops its tagged
+      // management VLAN, and that has to be predicted.
+      if (change.mode === 'access') {
+        const rows = s.bridgeVlans
+          .map((row, i) => ({ row, i }))
+          .filter(({ row }) => row['bridge'] === bridge);
+        const plan = planAccessRemovals(rows.map(({ row, i }) => ({
+          '.id': String(i), bridge, dynamic: row['dynamic'], 'vlan-ids': row['vlan-ids'],
+          tagged: row['current-tagged'] ?? row['tagged'], untagged: row['current-untagged'] ?? row['untagged'],
+        })), bridge, change.port, change.pvid);
+        for (const w of plan.writes) {
+          const row = s.bridgeVlans[Number(w.id)];
+          if (row) setMembership(row, csv(w.tagged), csv(w.untagged));
         }
       }
       break;

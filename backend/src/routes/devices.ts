@@ -1034,7 +1034,8 @@ router.put('/:id/ports/:name/vlan', requireWrite, async (req, res) => {
   // an existing API caller expects.
   const role = mode === 'access' || mode === 'trunk' ? mode : undefined;
   // Also opt-in: the tagged list becomes the port's complete tagged set, so
-  // VLANs left out are removed. Only meaningful for a trunk (#165).
+  // VLANs left out are removed. Only meaningful for a trunk (#165). An access
+  // port always leaves every VLAN but its PVID's.
   const replaceTagged = role === 'trunk' && replace_tagged === true;
 
   await withGuardedChange(

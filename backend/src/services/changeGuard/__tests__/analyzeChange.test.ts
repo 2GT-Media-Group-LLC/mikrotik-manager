@@ -845,3 +845,38 @@ describe('VLAN interface edits (#309)', () => {
     expect(ids({ kind: 'vlan-iface.set', id: '*C1', fields: { 'vlan-id': '98' } }, onBridge)).toContain('mgmt-vlan-unchanged');
   });
 });
+
+describe('port.vlan to access leaves the other VLANs (TEST, sfp-sfpplus1)', () => {
+  it('models the port leaving its tagged VLANs', () => {
+    const change: PlannedChange = { kind: 'port.vlan', port: 'ether1', pvid: 1, tagged: [], untagged: [1], mode: 'access' };
+    const snap = baseSnapshot({
+      bridgeVlans: [
+        { bridge: 'bridge', 'vlan-ids': '1', tagged: '', untagged: 'bridge,sfp28-1,ether1', 'current-tagged': '', 'current-untagged': 'bridge,sfp28-1,ether1' },
+        { bridge: 'bridge', 'vlan-ids': '10', tagged: 'sfp28-1,ether1', untagged: '', 'current-tagged': 'sfp28-1,ether1', 'current-untagged': '' },
+      ],
+    });
+    const after = simulate(snap, change);
+    expect(after.bridgeVlans.find((r) => r['vlan-ids'] === '10')?.['tagged']).toBe('sfp28-1');
+    expect(after.bridgeVlans.find((r) => r['vlan-ids'] === '1')?.['untagged']).toBe('bridge,sfp28-1,ether1');
+  });
+
+  it('catches taking the uplink carrying tagged management to access', () => {
+    const taggedMgmt = baseSnapshot({
+      addresses: [{ '.id': '*1', address: '192.168.0.40/24', interface: 'vlan99', disabled: 'false' }],
+      interfaces: [
+        { name: 'bridge', type: 'bridge', disabled: 'false' },
+        { name: 'vlan99', type: 'vlan', disabled: 'false' },
+        { name: 'sfp28-1', type: 'ether', disabled: 'false' },
+        { name: 'ether1', type: 'ether', disabled: 'false' },
+      ],
+      vlanInterfaces: [{ name: 'vlan99', 'vlan-id': '99', interface: 'bridge', disabled: 'false' }],
+      bridgeVlans: [
+        { '.id': '*1', bridge: 'bridge', 'vlan-ids': '1', tagged: '', untagged: 'bridge,sfp28-1,ether1' },
+        { '.id': '*3', bridge: 'bridge', 'vlan-ids': '99', tagged: 'bridge,sfp28-1', untagged: '' },
+      ],
+    });
+    const change: PlannedChange = { kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [], untagged: [1], mode: 'access' };
+    expect(simulate(taggedMgmt, change).bridgeVlans.find((r) => r['vlan-ids'] === '99')?.['tagged']).toBe('bridge');
+    expect(analyzeChange(taggedMgmt, device, change).severity).toBe('critical');
+  });
+});
