@@ -3,6 +3,16 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.10
+
+**Jump hosts say why, in time**, from [@KevinGinger](https://github.com/KevinGinger). With
+forwarding off on a RouterOS jump router, editing a device to go through it used to end in
+"Timed out connecting to the device". It now gives RouterOS's reason and the command that fixes it
+(`/ip ssh set forwarding-enabled=local`) within the same 10 seconds, and polls, **Test** and
+SSH commands do the same within their own time. A device added over SSH only gives the jump
+host's reason once instead of twice ([Jump hosts](jump-hosts.md),
+[#391](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/391)).
+
 ## 1.1.0-beta.9
 
 **A more readable Capacity & health card**, from [@azizfayziev](https://github.com/azizfayziev)'s
