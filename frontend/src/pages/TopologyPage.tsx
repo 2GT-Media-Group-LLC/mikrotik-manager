@@ -28,6 +28,8 @@ import { buildTopologyGraph, endFor, type GraphEdge, type StpUpstream } from '..
 import type { BridgeInfo } from '../utils/stpRoot';
 import { spreadCurveEnds, type Rect, type Side } from '../utils/topologyGeometry';
 import { downloadTopology, exportFileName, type ExportFormat } from '../utils/topologyExport';
+import { shortPortLabel } from '../utils/portLabel';
+import { placeNew } from '../utils/topologyPlace';
 import { nodeTypes, statusColor } from '../components/topology/nodes';
 import TopoEdge, { CurveEndsContext, type TopoEdgeData } from '../components/topology/TopoEdge';
 import EdgeMenu from '../components/topology/EdgeMenu';
@@ -71,9 +73,15 @@ function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, strin
         : { stroke: '#94a3b8' };
   // A tunnel isn't a cable: dotted (#367).
   const tunnel = e.logical === 'tunnel' ? { strokeDasharray: '2,4', strokeLinecap: 'round' as const } : {};
+  // Short port names (sfp1, e17), the full ones on hover (#367).
+  const blocked = e.role === 'blocked' ? ' [blocked]' : '';
   return {
     id: e.id, source: e.source, target: e.target, type: 'topo',
-    data: { ...data, label: e.label ? `${e.label}${e.role === 'blocked' ? ' [blocked]' : ''}` : (e.role === 'blocked' ? 'blocked' : undefined) },
+    data: {
+      ...data,
+      label: e.label ? `${shortPortLabel(e.label)}${blocked}` : (blocked ? 'blocked' : undefined),
+      fullLabel: e.label ? `${e.label}${blocked}` : undefined,
+    },
     className: 'topology-edge',
     style: { strokeWidth: 2, ...look, ...tunnel, ...custom },
     animated: e.role === 'root',
@@ -237,10 +245,11 @@ export default function TopologyPage() {
     if (!view) return;
     const fresh = resetting.current;
     setNodes((prev) => {
-      const here = new Map(prev.map((n) => [n.id, n.position]));
+      const here = fresh ? new Map<string, { x: number; y: number }>() : new Map(prev.map((n) => [n.id, n.position]));
+      const position = placeNew(view.nodes, here);
       return view.nodes.map((n) => ({
         id: n.id, type: n.kind,
-        position: (!fresh && here.get(n.id)) || { x: n.x, y: n.y },
+        position: position(n.id),
         data: { ...n.data, compact, connectMode: connectMode && (n.kind === 'device' || n.kind === 'manual' || n.kind === 'external') },
       }));
     });
@@ -282,6 +291,8 @@ export default function TopologyPage() {
     const positions: Record<string, { x: number; y: number }> = {};
     for (const n of nodesRef.current) {
       if (n.type === 'client' && !movedClients.current.has(n.id)) continue;
+      // Hosts in an opened chip follow the chip (#367); their places aren't kept.
+      if ((n.data as { inChip?: boolean }).inChip) continue;
       positions[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
     }
     await topologyApi.saveLayout({ positions }).catch(() => { /* the map still works; it just isn't saved */ });

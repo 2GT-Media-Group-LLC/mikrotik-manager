@@ -1811,6 +1811,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jump_hosts_site_name ON jump_hosts (COALES
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS jump_host_id INTEGER REFERENCES jump_hosts(id) DEFERRABLE;
 CREATE INDEX IF NOT EXISTS idx_devices_jump_host ON devices(jump_host_id) WHERE jump_host_id IS NOT NULL;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS default_jump_host_id INTEGER REFERENCES jump_hosts(id) ON DELETE SET NULL DEFERRABLE;
+-- What a neighbour says it is in LLDP (#367): a Cisco AP whose platform is only
+-- "Cisco" says "Cisco AP Software, C9120AXI..." here.
+ALTER TABLE topology_links ADD COLUMN IF NOT EXISTS neighbor_description TEXT;
 `;
 
 const DEFAULT_SETTINGS = [

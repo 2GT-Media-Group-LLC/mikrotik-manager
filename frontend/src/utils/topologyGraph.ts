@@ -72,6 +72,8 @@ export interface GraphNode {
   data: Record<string, unknown>;
   /** True when its position was arranged by hand and saved. */
   pinned?: boolean;
+  /** What it hangs from in the layout, so a card shown later goes next to it where it is now. */
+  parent?: string;
 }
 
 export type GraphEdgeKind = 'discovered' | 'hand' | 'client';
@@ -187,6 +189,12 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   // keeps its card, as does one heard from several devices.
   const hostChips: GraphNode[] = [];
   const hostChipEdges: GraphEdge[] = [];
+  /**
+   * Hosts in a chip, open or not. They follow their chip: a place saved for
+   * one when it had a card of its own (before chips) would put it anywhere,
+   * one under the switch and the next across the map.
+   */
+  const chipHosts = new Set<string>();
   {
     const handEnds = new Set(handLinks.flatMap((hl) => [endId(hl.a), endId(hl.b)]));
     const isHost = new Set(externalNodes
@@ -215,6 +223,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
       hostChips.push({ id: chip, kind: 'clientGroup', x: 0, y: 0, data: { deviceId: chip, count: hosts.length, wireless: 0, expanded: open, hosts: true } });
       hostChipEdges.push({ id: `hostedge-${dev}`, kind: 'client', source: dev, target: chip, parallel: 0 });
       for (const h of hosts) {
+        chipHosts.add(h);
         if (open) rerouted.set(h, chip);
         else folded.add(h);
       }
@@ -492,7 +501,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   // place but a saved parent goes where the layout would put it relative to
   // that parent, so a new switch or an opened client list appears next to what
   // it hangs from. Anything else unsaved goes below the arranged part.
-  const saved = input.saved ?? {};
+  const saved = Object.fromEntries(Object.entries(input.saved ?? {}).filter(([id]) => !chipHosts.has(id)));
   for (const t of trees) for (const [p, kids] of t.children) for (const k of kids) parentOf.set(k, p);
   const placed = new Map<string, { x: number; y: number }>();
   const savedVals = Object.values(saved);
@@ -540,14 +549,18 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     ...externalNodes.map((e) => {
       const o = input.neighbourOverrides?.[e.id];
       return { id: e.id, kind: 'external' as const, ...pos(e.id),
-        data: { ...e, ...(o?.name ? { name: o.name, discoveredName: e.name } : {}), overrideKind: o?.kind ?? null } as Record<string, unknown> };
+        data: { ...e, ...(o?.name ? { name: o.name, discoveredName: e.name } : {}), overrideKind: o?.kind ?? null, ...(chipHosts.has(e.id) ? { inChip: true } : {}) } as Record<string, unknown> };
     }),
     ...nodes.map((n) => {
       const id = nodeId.manual(n.id);
       return { id, kind: 'manual' as const, ...pos(id), data: { ...n, orphan: loose.includes(id) } as Record<string, unknown> };
     }),
     ...clientNodes.map((c) => ({ ...c, ...pos(c.id) })),
-  ].map((n) => (saved[n.id] ? { ...n, pinned: true } : n));
+  ].map((n) => {
+    const parent = parentOf.get(n.id);
+    const withParent = parent && !parent.startsWith(VIRTUAL_TOP) ? { ...n, parent } : n;
+    return saved[n.id] ? { ...withParent, pinned: true } : withParent;
+  });
 
   // ── Edges ─────────────────────────────────────────────────────────────────
   const edges: GraphEdge[] = [];

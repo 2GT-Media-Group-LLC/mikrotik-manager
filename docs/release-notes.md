@@ -3,6 +3,19 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.15
+
+Follow-ups to the topology map from [@azizfayziev](https://github.com/azizfayziev)
+([#367](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367)):
+
+- An opened **N hosts** chip puts its hosts in a row under it. Before, a host could land far
+  across the map, wherever it had been saved when it had a card of its own.
+- Shorter port names on links: `e17` and `sfp1`, without the `bridge/` and `bridge/bonding/`
+  RouterOS puts in front in LLDP. Hover a label for the full names
+  ([How links are found](topology.md#how-links-are-found)).
+- A Cisco AP whose platform is only "Cisco" is recognised by its LLDP system description, which
+  discovery now keeps. It shows as an access point after the next slow poll.
+
 ## 1.1.0-beta.14
 
 **A more readable topology map, part three**, from

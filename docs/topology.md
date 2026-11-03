@@ -33,6 +33,11 @@ virtual MAC, matches neither.
 
 Device names wrap onto a second line rather than being cut off, and show in full on hover.
 
+Port names on links are shortened so two of them fit under a switch (#367): `ether17` is `e17`,
+`sfp-sfpplus1` is `sfp1`, and the bridge and bond RouterOS puts in front of a port in LLDP
+(`bridge/bonding/sfp-sfpplus1`) are left off. Cisco ports take Cisco's short forms
+(`GigabitEthernet1/0/17` is `Gi1/0/17`). Hover a label for the full names.
+
 CDP and MNDP are broadcasts, so a port can hear many neighbours at once: everything in the same
 broadcast domain, not only what's cabled to it. A port with a single such neighbour is drawn as
 a link. A port that hears several draws nothing, because the protocol can't say which of them
@@ -207,12 +212,16 @@ A device the manager doesn't manage, seen over LLDP, CDP or MNDP, is drawn with 
 and labelled from what it advertises: a switch, router, access point, phone or computer. A
 computer running a software bridge (Hyper-V, a Linux bridge) advertises "bridge" too; from 0.50.0
 it's labelled a computer, not a switch (#260). Some access points advertise only "bridge" as
-well; one whose platform or description names an access point (a Cisco 9120, Aironet, UniFi,
-Aruba or similar) is labelled an access point, not a switch (#367).
+well; one whose platform or LLDP system description names an access point (a Cisco 9120,
+Aironet, UniFi, Aruba or similar) is labelled an access point, not a switch (#367). A Cisco AP
+whose platform is only "Cisco" is recognised by its description, which is read from 1.1.0-beta.15;
+it shows on the next slow poll after upgrading.
 
 Computers often send LLDP from their network cards, with no system name and no capabilities.
-Two or more of those under one device become one **N hosts** chip (#367); click it to show each,
-click again to fold them back. One heard by more than one device keeps its own card. So does one
+Two or more of those under one device become one **N hosts** chip (#367); click it to show each
+in a row under the chip, click again to fold them back. Opened hosts follow their chip: move the
+chip to move them. Where they go isn't saved, and a place saved for a host before chips is
+ignored. One heard by more than one device keeps its own card. So does one
 you've named, typed or linked by hand: name a host to keep it on the map. Clients learned behind
 a grouped host hang from its switch.
 

@@ -1865,6 +1865,8 @@ export class DeviceCollector {
         const neighborPlatform = (nb['platform'] || '');
         const neighborMac = nb['mac-address'] ? String(nb['mac-address']) : null;
         const neighborCaps = (nb['system-caps-enabled'] || nb['system-caps'] || '');
+        // Descriptive only, so a long one is cut rather than the row dropped (#367).
+        const neighborDescription = String(nb['system-description'] || '').trim().slice(0, 1024) || null;
 
         if (!fromInterface) continue;
 
@@ -1893,8 +1895,8 @@ export class DeviceCollector {
         await query(
           `INSERT INTO topology_links
              (from_device_id, from_interface, to_interface, neighbor_address, neighbor_identity,
-              neighbor_platform, neighbor_mac, neighbor_caps, link_type, discovered_by, discovered_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())`,
+              neighbor_platform, neighbor_mac, neighbor_caps, link_type, discovered_by, neighbor_description, discovered_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())`,
           [
             this.device.id,
             fromInterface,
@@ -1906,6 +1908,7 @@ export class DeviceCollector {
             neighborCaps || null,
             discoveredBy,
             discoveredByStored,
+            neighborDescription,
           ]
         );
       }

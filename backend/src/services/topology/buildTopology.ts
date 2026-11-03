@@ -48,6 +48,8 @@ export interface LinkRow {
   stp_state: string | null;
   bridge_name: string | null;
   neighbor_caps: string | null;
+  /** LLDP system description, when the neighbour sent one (#367). */
+  neighbor_description?: string | null;
   link_type: string | null;
   discovered_by: string | null;
   from_device_name: string | null;
@@ -76,6 +78,8 @@ export interface ExternalNode {
   platform: string;
   mac: string;
   caps: string;
+  /** Its LLDP system description: how a Cisco AP that calls itself only "Cisco" is told from a switch (#367). */
+  description: string;
   /**
    * Sent no system name and no capabilities: a computer whose network card
    * speaks LLDP, rather than a switch or an AP (#367). The map groups these.
@@ -390,11 +394,13 @@ export function buildTopology(
         platform: link.neighbor_platform || '',
         mac: link.neighbor_mac || '',
         caps: link.neighbor_caps || '',
+        description: link.neighbor_description || '',
         host: nameless(link),
       });
-    } else if (!nameless(link)) {
+    } else {
       // Any sighting with a name or capabilities makes it more than a host.
-      seen.host = false;
+      if (!nameless(link)) seen.host = false;
+      if (!seen.description && link.neighbor_description) seen.description = link.neighbor_description;
     }
   }
 

@@ -13,6 +13,8 @@ export const CurveEndsContext = createContext<Map<string, CurveEnds> | null>(nul
 /** What a link on the map carries; see toFlowEdge in the page. */
 export interface TopoEdgeData extends Record<string, unknown> {
   label?: string;
+  /** The label in full, on hover, where the one drawn is shortened (#367). */
+  fullLabel?: string;
   /** Drawn by hand: shown with a pill and a remove button. */
   hand?: boolean;
   onDelete?: () => void;
@@ -99,7 +101,7 @@ export default function TopoEdge({ id, source, target, data, style, markerEnd }:
               </>
             ) : (
               <>
-                {d.label && <span className="text-[10px] px-1 rounded bg-slate-50/90 dark:bg-slate-800/90 text-slate-500 dark:text-slate-400 whitespace-nowrap">{d.label}</span>}
+                {d.label && <span className="text-[10px] px-1 rounded bg-slate-50/90 dark:bg-slate-800/90 text-slate-500 dark:text-slate-400 whitespace-nowrap" title={d.fullLabel && d.fullLabel !== d.label ? d.fullLabel : undefined}>{d.label}</span>}
                 {!!d.folded?.length && (
                   <span className="text-[9px] font-semibold px-1 rounded bg-slate-200/90 dark:bg-slate-700/90 text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-help"
                     title={`Also heard between these two on:\n${d.folded.join('\n')}`}>+{d.folded.length}</span>

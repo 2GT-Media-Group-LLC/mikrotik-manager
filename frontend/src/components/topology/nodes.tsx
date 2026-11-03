@@ -69,11 +69,17 @@ export function capsLabel(caps: string | undefined): string {
 const AP_WORDS = /\b(access[- ]?point|ap software|aironet)\b/i;
 const AP_MODELS = /\b(AIR-[A-Z]*AP[0-9A-Z-]*|C91[0-9]{2}AX[A-Z0-9-]*|CW91[0-9]{2}[A-Z0-9-]*|UAP(-[A-Za-z0-9]+)*|U6(-[A-Za-z0-9]+)*|U7(-[A-Za-z0-9]+)*|AP-[0-9]{3}[A-Z]*|MR[0-9]{2}[A-Z]?|EAP[0-9]{3}|cAP|wAP)\b/;
 
-/** What a neighbour is, from its LLDP capabilities and, failing a clear answer, its platform or description. */
-export function neighbourType(caps: string | undefined, platform: string | undefined): string {
+/**
+ * What a neighbour is, from its LLDP capabilities and, failing a clear answer,
+ * its platform or system description. A Cisco 9120's platform is only "Cisco";
+ * its description says "Cisco AP Software, C9120AXI..." (#367).
+ */
+export function neighbourType(caps: string | undefined, platform: string | undefined, description?: string): string {
   const byCaps = capsLabel(caps);
   if (byCaps === 'AP' || byCaps === 'Computer' || byCaps === 'Phone') return byCaps;
-  if (platform && (AP_WORDS.test(platform) || AP_MODELS.test(platform))) return 'AP';
+  for (const said of [platform, description]) {
+    if (said && (AP_WORDS.test(said) || AP_MODELS.test(said))) return 'AP';
+  }
   return byCaps;
 }
 
@@ -202,11 +208,11 @@ function DeviceNode({ data }: { data: Record<string, unknown> }) {
 function ExternalNode({ data }: { data: Record<string, unknown> }) {
   const node = data as unknown as ExternalTopologyNode & { connectMode: boolean; overrideKind?: string | null; compact?: boolean };
   // A type set by hand (#260) wins over what discovery says.
-  const cl = node.overrideKind ? kindInfo(node.overrideKind).label : neighbourType(node.caps, node.platform);
+  const cl = node.overrideKind ? kindInfo(node.overrideKind).label : neighbourType(node.caps, node.platform, node.description);
   const gone = node.caps === 'gone';
   if (node.compact) {
     const Icon = node.overrideKind ? kindInfo(node.overrideKind).Icon : NEIGHBOUR_ICONS[cl] ?? Box;
-    const title = [node.name + (cl ? ` (${cl})` : ''), node.address, node.platform,
+    const title = [node.name + (cl ? ` (${cl})` : ''), node.address, node.platform, node.description?.slice(0, 120),
       gone ? 'No longer seen by discovery' : 'Seen by discovery, not managed'].filter(Boolean).join('\n');
     return (
       <div>
@@ -223,7 +229,7 @@ function ExternalNode({ data }: { data: Record<string, unknown> }) {
         <span className="font-semibold min-w-0 leading-tight [overflow-wrap:anywhere] text-gray-600 dark:text-slate-300" title={node.name}>{node.name}{cl ? ` (${cl})` : ''}</span>
       </div>
       {node.address && <div className="font-mono text-gray-400 dark:text-slate-500">{node.address}</div>}
-      {node.platform && <div className="text-gray-400 dark:text-slate-500 truncate">{node.platform}</div>}
+      {node.platform && <div className="text-gray-400 dark:text-slate-500 truncate" title={node.description || undefined}>{node.platform}</div>}
       <div className="text-gray-400 dark:text-slate-500 mt-0.5">{gone ? 'No longer seen by discovery' : 'Seen by discovery, not managed'}</div>
     </div>
   );

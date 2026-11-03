@@ -316,6 +316,25 @@ describe('computers that speak LLDP (#367)', () => {
     for (const n of g.nodes.filter((x) => x.id.startsWith('ext-pc'))) expect(n.y).toBeGreaterThan(chip.y);
   });
 
+  it('opened, the hosts sit in a row under the chip, whatever was saved for them before chips', () => {
+    // aziz: one host landed under the switch, the other far to the right,
+    // where each had been saved when it had a card of its own.
+    const g = buildTopologyGraph(input({
+      expandedClients: new Set(['hosts-1']),
+      saved: { '1': { x: 500, y: 100 }, 'ext-pc1': { x: 520, y: 260 }, 'ext-pc2': { x: 2400, y: 90 } },
+    }));
+    const chip = g.nodes.find((n) => n.id === 'hosts-1')!;
+    const hosts = g.nodes.filter((x) => x.id.startsWith('ext-pc'));
+    expect(new Set(hosts.map((h) => h.y)).size).toBe(1);
+    expect(hosts[0].y).toBeGreaterThan(chip.y);
+    for (const h of hosts) {
+      expect(Math.abs(h.x - chip.x)).toBeLessThan(2 * 240);
+      expect(h.pinned).toBeFalsy();
+      expect(h.data.inChip).toBe(true);
+    }
+    expect(g.nodes.find((n) => n.id === 'ext-ap')!.data.inChip).toBeUndefined();
+  });
+
   it('a lone host, a named one and one linked by hand keep their cards', () => {
     const lone = buildTopologyGraph(input({ externalNodes: [pc(1), ap], links: [pcLink(1), apLink] }));
     expect(lone.nodes.some((n) => n.id === 'ext-pc1')).toBe(true);

@@ -462,6 +462,18 @@ describe('neighbours that are end hosts', () => {
     expect(g.externalNodes[0].host).toBe(false);
   });
 
+  it('carries the LLDP system description, from whichever sighting had one', () => {
+    // A Cisco 9120 whose platform is only "Cisco" (#367).
+    const devices = [dev(1, 'ASW1', '10.0.0.1'), dev(2, 'ASW2', '10.0.0.2')];
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'ether3', neighbor_mac: 'AA:00:00:00:00:91', neighbor_identity: '9120AX', neighbor_platform: 'Cisco', neighbor_caps: 'bridge', link_type: 'cdp' }),
+      link({ from_device_id: 2, from_interface: 'ether3', neighbor_mac: 'AA:00:00:00:00:91', neighbor_identity: '9120AX', neighbor_platform: 'Cisco', neighbor_caps: 'bridge', link_type: 'lldp',
+        neighbor_description: 'Cisco AP Software, C9120AXI-B Software (AP1G6A), Version 17.9.4a' }),
+    ], []);
+    expect(g.externalNodes).toHaveLength(1);
+    expect(g.externalNodes[0].description).toMatch(/^Cisco AP Software/);
+  });
+
   it('passes the reporting port\'s interface type through', () => {
     const devices = [dev(1, 'R1', '10.0.0.1'), dev(2, 'R2', '10.0.0.2')];
     const g = buildTopology(devices, [

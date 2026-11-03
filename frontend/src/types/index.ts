@@ -417,6 +417,8 @@ export interface ExternalTopologyNode {
   platform: string;
   mac: string;
   caps?: string;
+  /** Its LLDP system description, when it sent one (#367). */
+  description?: string;
   /** Sent no name and no capabilities: a computer that speaks LLDP (#367). */
   host?: boolean;
 }

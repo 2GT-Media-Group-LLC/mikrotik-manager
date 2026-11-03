@@ -23,6 +23,13 @@ describe('neighbourType (#367)', () => {
     expect(neighbourType('bridge,router', 'Aruba AP-515')).toBe('AP');
   });
 
+  it('or by its system description, when the platform is only "Cisco"', () => {
+    // aziz's 9120: platform "Cisco", the model only in the description.
+    expect(neighbourType('bridge', 'Cisco', 'Cisco AP Software, C9120AXI-B Software (AP1G6A), Version 17.9.4a')).toBe('AP');
+    expect(neighbourType('bridge', 'Cisco', 'Cisco IOS Software [Cupertino], Catalyst L3 Switch Software (CAT9K_IOSXE)')).toBe('Switch');
+    expect(neighbourType('bridge', 'Cisco', '')).toBe('Switch');
+  });
+
   it('leaves switches, and what the capabilities settle, alone', () => {
     expect(neighbourType('bridge', 'Cisco IOS Software, C9300 Software')).toBe('Switch');
     expect(neighbourType('bridge', 'MikroTik RouterOS 7.20 (CRS328-24P-4S+)')).toBe('Switch');
