@@ -3,6 +3,23 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.11
+
+**A more readable topology map, part one**, from
+[@azizfayziev](https://github.com/azizfayziev)'s proposal. Links are curved now, leaving the
+bottom of the upper card and entering the top of the lower one, so the map reads top-down.
+**Links** at the top of the page switches back to straight lines. A device heard over CDP or MNDP
+on a port where LLDP names a different neighbour is no longer drawn as cabled to that port: it's
+behind that neighbour. Those links tied routers straight to access points behind a switch
+([Topology](topology.md#arranging-the-map),
+[#367](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367)).
+
+**Export the topology map** as a PNG or SVG with **Export** on the Topology page: the whole map
+as it's shown now, not only the part on screen ([Exporting the map](topology.md#exporting-the-map)).
+
+Also the fix of [1.0.4](#104): setting a trunk port to access now takes it out of the VLANs it
+was tagged on, and the port editor shows such a port as access.
+
 ## 1.1.0-beta.10
 
 **Jump hosts say why, in time**, from [@KevinGinger](https://github.com/KevinGinger). With
@@ -116,6 +133,19 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.4
+
+Released on Monday 2 November 2026. A fix for switching a port from trunk to access.
+
+- **A port set to access stayed tagged on its old VLANs.** Saving a trunk port as access set its
+  PVID and made it admit only untagged frames, but left it a tagged member of every VLAN it had
+  carried, so the switch kept sending those VLANs out of it tagged. Opening the port again showed
+  it as a trunk, as if the change hadn't happened. An access port now leaves every VLAN but its
+  PVID's, and Change Guard predicts that, so taking the port that carries tagged management to
+  access is caught as a lockout. The port editor now shows a port in the mode its frame
+  admission says. A port left half-changed by the old save opens as access; save it again to
+  finish the change ([Changing a port's VLAN](devices.md#changing-a-ports-vlan)).
 
 ## 1.0.3
 
