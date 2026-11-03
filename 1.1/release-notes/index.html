@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.14
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta13" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1605,6 +1616,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.14
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta13" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1770,6 +1792,23 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta14">1.1.0-beta.14<a class="headerlink" href="#110-beta14" title="Permanent link">&para;</a></h2>
+<p><strong>A more readable topology map, part three</strong>, from
+<a href="https://github.com/azizfayziev">@azizfayziev</a>'s proposal
+(<a href="../topology/#layout">Topology</a>, <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367">#367</a>):</p>
+<ul>
+<li>A tiered layout. Each device hangs under its way up, the uplink the client connection path
+  already follows, so the gateway router is on top, then core, access and APs. Before, the
+  spanning-tree root was on top, often a switch above its router. Two gateway routers share the
+  top row; a WireGuard or other tunnel peer sits beside its router instead of among the switches;
+  an unmanaged switch a device goes up through is drawn between them. Arrangements saved by hand
+  are kept; <strong>Reset layout</strong> applies the new one.</li>
+<li>A <strong>Compact</strong> view (<strong>Cards</strong> at the top of the page): icons with a status dot, name and
+  address, and a chip for the role (Gateway, CAPsMAN, CAP, STP root). <strong>Detailed</strong> stays the
+  default.</li>
+<li>A neighbour that advertises only "bridge" but calls itself an access point (a Cisco 9120) is
+  shown as an access point, not a switch.</li>
+</ul>
 <h2 id="110-beta13">1.1.0-beta.13<a class="headerlink" href="#110-beta13" title="Permanent link">&para;</a></h2>
 <p>The fix of <a href="#105">1.0.5</a>, reported by <a href="https://github.com/ronchan44">@ronchan44</a>: after Backup
 all or Sync config, the dashboard lists each device that failed and why, rather than only the
