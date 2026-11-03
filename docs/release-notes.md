@@ -3,6 +3,18 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.9
+
+**A more readable Capacity & health card**, from [@azizfayziev](https://github.com/azizfayziev)'s
+proposal. On the dashboard's **Operations** tab the card now lists the busiest CPU first, and
+memory only moves a device up once it reaches 75 %. RouterOS memory use hardly changes, so it
+used to decide the order on its own. A name prefix shared by every device (`01-SITE-`) is shown
+once above the list instead of cutting off every name, and each row shows the model under the
+name. Loads under 50 % are grey, so the one device running hot stands out. A small graph shows
+each device's CPU over the last 24 hours, with a dashed line at 75 % and a dot at the day's
+peak, and a tick on the bar marks that peak too, so a spike can be told from a steady load
+([#368](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/368)).
+
 ## 1.1.0-beta.8
 
 **The IPv6 firewall.** The **Firewall** tab has an **IPv4** / **IPv6** switch. IPv6 has the same
