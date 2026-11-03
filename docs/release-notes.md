@@ -3,6 +3,12 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.13
+
+The fix of [1.0.5](#105), reported by [@ronchan44](https://github.com/ronchan44): after Backup
+all or Sync config, the dashboard lists each device that failed and why, rather than only the
+count ([Backing up every device](backups.md#backing-up-every-device)).
+
 ## 1.1.0-beta.12
 
 **Capacity & health card, after a fleet of 152 devices**, from
@@ -165,6 +171,15 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.5
+
+Released on Tuesday 3 November 2026. A fix reported by [@ronchan44](https://github.com/ronchan44).
+
+- **Backup all didn't say which devices failed.** It showed a count, such as "Backed up 2/5
+  devices", but not which devices failed or why, though the server knew. The dashboard now
+  lists each one with its reason, and its name opens the device. Sync config does the same
+  ([Backing up every device](backups.md#backing-up-every-device)).
 
 ## 1.0.4
 
