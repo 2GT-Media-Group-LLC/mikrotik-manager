@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.11
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta10" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1572,6 +1583,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.11
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta10" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1704,6 +1726,19 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta11">1.1.0-beta.11<a class="headerlink" href="#110-beta11" title="Permanent link">&para;</a></h2>
+<p><strong>A more readable topology map, part one</strong>, from
+<a href="https://github.com/azizfayziev">@azizfayziev</a>'s proposal. Links are curved now, leaving the
+bottom of the upper card and entering the top of the lower one, so the map reads top-down.
+<strong>Links</strong> at the top of the page switches back to straight lines. A device heard over CDP or MNDP
+on a port where LLDP names a different neighbour is no longer drawn as cabled to that port: it's
+behind that neighbour. Those links tied routers straight to access points behind a switch
+(<a href="../topology/#arranging-the-map">Topology</a>,
+<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367">#367</a>).</p>
+<p><strong>Export the topology map</strong> as a PNG or SVG with <strong>Export</strong> on the Topology page: the whole map
+as it's shown now, not only the part on screen (<a href="../topology/#exporting-the-map">Exporting the map</a>).</p>
+<p>Also the fix of <a href="#104">1.0.4</a>: setting a trunk port to access now takes it out of the VLANs it
+was tagged on, and the port editor shows such a port as access.</p>
 <h2 id="110-beta10">1.1.0-beta.10<a class="headerlink" href="#110-beta10" title="Permanent link">&para;</a></h2>
 <p><strong>Jump hosts say why, in time</strong>, from <a href="https://github.com/KevinGinger">@KevinGinger</a>. With
 forwarding off on a RouterOS jump router, editing a device to go through it used to end in
@@ -1794,6 +1829,18 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="104">1.0.4<a class="headerlink" href="#104" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 2 November 2026. A fix for switching a port from trunk to access.</p>
+<ul>
+<li><strong>A port set to access stayed tagged on its old VLANs.</strong> Saving a trunk port as access set its
+  PVID and made it admit only untagged frames, but left it a tagged member of every VLAN it had
+  carried, so the switch kept sending those VLANs out of it tagged. Opening the port again showed
+  it as a trunk, as if the change hadn't happened. An access port now leaves every VLAN but its
+  PVID's, and Change Guard predicts that, so taking the port that carries tagged management to
+  access is caught as a lockout. The port editor now shows a port in the mode its frame
+  admission says. A port left half-changed by the old save opens as access; save it again to
+  finish the change (<a href="../devices/#changing-a-ports-vlan">Changing a port's VLAN</a>).</li>
+</ul>
 <h2 id="103">1.0.3<a class="headerlink" href="#103" title="Permanent link">&para;</a></h2>
 <p>Released on Monday 2 November 2026. Two dashboard warnings that showed when nothing was wrong,
 both reported by <a href="https://github.com/azizfayziev">@azizfayziev</a>.</p>
