@@ -490,6 +490,11 @@ in one bridge VLAN entry (for example `vlan-ids=100-110`) and the port keeps som
 that entry is left alone and the editor tells you which VLANs are still tagged. Split the
 entry on the VLANs tab to remove them.
 
+An access port carries one VLAN, its PVID, untagged. Setting a port to access takes it out of
+every other VLAN it was in, tagged or untagged, so a former trunk stops sending its VLANs. The
+editor opens a port in the mode its frame admission says: a port that only admits untagged
+frames shows as access, one that only admits tagged frames as trunk.
+
 !!! warning "This is a guarded change"
     Moving the port that carries management traffic is the most common way to lock a MikroTik
     out of itself. Every VLAN change runs through [Change Guard](change-guard.md), which

@@ -163,3 +163,45 @@ export function planTaggedRemovals(
   plan.mixed.sort((a, b) => a - b);
   return plan;
 }
+
+/**
+ * Which rows to rewrite so an access port is a member of its PVID's VLAN
+ * only, untagged. Switching a trunk to access set the PVID and frame types
+ * but left every tagged membership in place: the port went on sending those
+ * VLANs out tagged, and the editor, reading the tagged rows, still called it
+ * a trunk. The port leaves every other static row, tagged or untagged. A row
+ * that also covers the PVID (`vlan-ids=1-20` with PVID 5) can't lose the port
+ * without splitting it, so it's left and its other VLANs reported in `mixed`.
+ */
+export function planAccessRemovals(
+  rows: BridgeVlanTableRow[],
+  bridge: string,
+  port: string,
+  pvid: number
+): TaggedRemovalPlan {
+  const plan: TaggedRemovalPlan = { writes: [], mixed: [] };
+  for (const row of rows) {
+    if (row.bridge !== undefined && row.bridge !== bridge) continue;
+    if (row.dynamic === 'true' || row.dynamic === 'yes' || !row['.id']) continue;
+    const tagged = list(row.tagged);
+    const untagged = list(row.untagged);
+    const vids = expandVlanIds(row['vlan-ids']);
+    const coversPvid = vids.includes(pvid);
+    const onlyPvid = coversPvid && vids.length === 1;
+    const leaveTagged = tagged.includes(port) && !onlyPvid;
+    const leaveUntagged = untagged.includes(port) && !coversPvid;
+    if (!leaveTagged && !leaveUntagged) continue;
+    if (coversPvid) {
+      plan.mixed.push(...vids.filter((v) => v !== pvid));
+      continue;
+    }
+    plan.writes.push({
+      id: row['.id'],
+      tagged: tagged.filter((p) => p !== port).join(','),
+      untagged: untagged.filter((p) => p !== port).join(','),
+      vlanIds: vids,
+    });
+  }
+  plan.mixed = [...new Set(plan.mixed)].sort((a, b) => a - b);
+  return plan;
+}

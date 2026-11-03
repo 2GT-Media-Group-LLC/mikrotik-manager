@@ -1,3 +1,4 @@
+import { portVlanMode } from '../../utils/portVlanMode';
 import { useState, useEffect, useRef } from 'react';
 import { useRememberedRange } from '../../hooks/useRememberedRange';
 import ReviewChangesButton from '../common/ReviewChangesButton';
@@ -1158,7 +1159,6 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
     setSaveError('');
     setSaveNotice('');
     const bridgePvid = port.bridgeInfo?.pvid ?? 1;
-    const bridgeTagged = port.bridgeInfo?.tagged ?? false;
     setEditingPort(port);
     setEditForm({
       disabled: port.disabled,
@@ -1170,7 +1170,8 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
       rx_flow_control: '',
       auto_negotiation: null,
       speed: '',
-      vlan_mode: bridgeTagged ? 'trunk' : bridgePvid > 1 ? 'access' : 'none',
+      // From frame admission first: leftover tagged rows made an access port read as a trunk.
+      vlan_mode: portVlanMode(port.bridgeInfo),
       pvid: bridgePvid,
       // Prefill from the port's actual tagged membership so opening the dialog and
       // saving does not silently strip the trunk's VLANs.
