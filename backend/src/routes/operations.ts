@@ -19,7 +19,9 @@ import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector
 import { BackupService, BackupDevice } from '../services/BackupService';
 import { fluxString } from '@influxdata/influxdb-client';
 import { stpDomains } from '../utils/stpUpstream';
-import { latestResources, cpuTrend24h } from '../services/latestMetrics';
+import { latestResources, cpuTrend24h, memoryLow7d } from '../services/latestMetrics';
+import { SwrCache } from '../utils/swrCache';
+import { phaseTimer } from '../utils/phaseTimer';
 import { trendPeak } from '../utils/cpuTrend';
 import { channelUsage } from '../services/channelUsage';
 import { routeOf } from '../services/jumpHosts';
@@ -127,6 +129,8 @@ async function latestRetries(): Promise<{ device_id: string; device_name: string
 // GET /api/operations/insights — aggregated operational intelligence (no live
 // device connections; all from Postgres + InfluxDB so it's fast).
 router.get('/insights', async (req, res) => {
+  // Where the time goes, in the browser's network panel (Server-Timing, #368).
+  const timer = phaseTimer();
   const siteId = activeSite(req);
   const devFilter  = siteScopeDevices(siteId);
   const devFilterD = siteScopeDevices(siteId, 'd');
@@ -177,7 +181,12 @@ router.get('/insights', async (req, res) => {
         ${evtFilter ? `AND ${evtFilter}` : ''}`),
   ]);
 
-  const [resources, retries, cpuTrend] = await Promise.all([latestResources(), latestRetries(), cpuTrend24h()]);
+  timer.mark('db');
+
+  const [resources, retries, cpuTrend, memLow] = await Promise.all([
+    latestResources(), latestRetries(), cpuTrend24h(), memoryLow7d(),
+  ]);
+  timer.mark('metrics');
 
   const attention: AttentionItem[] = [];
 
@@ -238,17 +247,21 @@ router.get('/insights', async (req, res) => {
   // Capacity pressure (CPU / memory)
   // Each row carries the model and the 24h CPU trend, so the card can tell a
   // spike from a steady load (#368).
+  // The 7-day memory low lets the card tell memory that grows (a leak) from
+  // memory that sits high all week, as some firmware keeps it.
   const capacity: {
     id: number; name: string; model: string | null; cpu: number; mem_pct: number;
-    cpu_peak_24h: number | null; cpu_series: (number | null)[];
+    mem_low_7d: number | null; cpu_peak_24h: number | null; cpu_series: (number | null)[];
   }[] = [];
   for (const d of devices) {
     const r = resources.get(String(d.id));
     if (!r) continue;
     const memPct = r.memTotal > 0 ? Math.round((r.memUsed / r.memTotal) * 100) : 0;
     const series = cpuTrend.get(String(d.id)) ?? [];
+    const low = memLow.get(String(d.id));
     capacity.push({
       id: d.id, name: d.name, model: d.model || null, cpu: Math.round(r.cpu), mem_pct: memPct,
+      mem_low_7d: low !== undefined && r.memTotal > 0 ? Math.min(memPct, Math.round((low / r.memTotal) * 100)) : null,
       cpu_peak_24h: trendPeak(series), cpu_series: series,
     });
     if (r.cpu >= 85) {
@@ -543,9 +556,12 @@ router.get('/insights', async (req, res) => {
     }
   } catch { /* device_bridges unavailable */ }
 
+  timer.mark('checks');
+
   // Baseline anomalies (client counts, CPU, error bursts)
   const anomalies = await detectAnomalies(siteId);
   for (const a of anomalies) attention.push(a);
+  timer.mark('anomalies');
 
   // Dismissals (#102). Expired rows are cleared on read, so a dismissal lapses
   // without needing a scheduled job, and an item still true when it lapses simply
@@ -565,7 +581,9 @@ router.get('/insights', async (req, res) => {
 
   // Activity feed — recent config changes, user actions, and notable events
   const activity = await buildActivity(siteId);
+  timer.mark('activity');
 
+  res.setHeader('Server-Timing', timer.header());
   res.json({ attention: visible, dismissedCount: attention.length - visible.length, capacity, activity });
 });
 
@@ -619,7 +637,8 @@ router.delete('/insights/dismiss/:fingerprint', requireWrite, fleetOnly, async (
 // flag deviations of ≥ 2.5 standard deviations. Conservative thresholds — an
 // insight should mean something.
 
-async function influxGroupValues(flux: string): Promise<Map<string, number>> {
+/** Values by device id. An unreadable Influx gives an empty map, or with `strict` throws. */
+async function influxGroupValues(flux: string, strict = false): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   try {
     const api = getQueryApi();
@@ -634,8 +653,31 @@ async function influxGroupValues(flux: string): Promise<Map<string, number>> {
         complete: resolve,
       });
     });
-  } catch { /* influx unavailable */ }
+  } catch (err) {
+    if (strict) throw err;
+    /* influx unavailable */
+  }
   return out;
+}
+
+type Baseline = { mean: Map<string, number>; std: Map<string, number> };
+/** Per measurement, field and hour of day; an hour's baseline is refreshed twice within it. */
+const baselineCache = new SwrCache<Baseline>({ freshMs: 30 * 60_000, staleMs: 60 * 60_000 });
+
+/**
+ * This hour's 14-day baseline. When the hour turns, the last hour's stands in
+ * while the new one loads in the background, so no request waits for it; with
+ * neither cached (just after start-up), the request waits once.
+ */
+async function baselineFor(metric: string, hour: number, load: () => Promise<Baseline>): Promise<Baseline> {
+  const empty: Baseline = { mean: new Map(), std: new Map() };
+  const previous = baselineCache.peek(`${metric}|${(hour + 23) % 24}`);
+  const key = `${metric}|${hour}`;
+  try {
+    return await (previous ? baselineCache.getOr(key, load, previous) : baselineCache.get(key, load));
+  } catch {
+    return empty;
+  }
 }
 
 async function detectAnomalies(siteId: SiteScope): Promise<AttentionItem[]> {
@@ -658,7 +700,10 @@ async function detectAnomalies(siteId: SiteScope): Promise<AttentionItem[]> {
         |> filter(fn: (r) => r["_field"] == ${fluxString(String(field))})
         |> hourSelection(start: ${hour}, stop: ${hour})
         |> group(columns: ["device_id"])`;
-    const [cur, mean, std] = await Promise.all([
+    // The baseline is 14 days of this hour, the slowest query on the
+    // dashboard by far, and it changes only when the hour does: cached per
+    // hour, shared by every site (#368). Only the last 30 minutes run live.
+    const [cur, baseline] = await Promise.all([
       influxGroupValues(`
         from(bucket: "${bucket}")
           |> range(start: -30m)
@@ -666,14 +711,24 @@ async function detectAnomalies(siteId: SiteScope): Promise<AttentionItem[]> {
           |> filter(fn: (r) => r["_field"] == ${fluxString(String(field))})
           |> group(columns: ["device_id"])
           |> mean()`),
-      influxGroupValues(`${base}\n  |> mean()`),
-      influxGroupValues(`${base}\n  |> stddev()`),
+      baselineFor(`${measurement}|${field}`, hour, async () => {
+        const [mean, std] = await Promise.all([
+          influxGroupValues(`${base}\n  |> mean()`, true),
+          influxGroupValues(`${base}\n  |> stddev()`, true),
+        ]);
+        return { mean, std };
+      }),
     ]);
-    return { cur, mean, std };
+    return { cur, mean: baseline.mean, std: baseline.std };
   };
 
+  // Both metrics at once.
+  const [cc, cpu] = await Promise.all([
+    metric('client_counts', 'total_clients'),
+    metric('device_resources', 'cpu_load'),
+  ]);
+
   // Client-count deviations (device dropped clients / unusual surge)
-  const cc = await metric('client_counts', 'total_clients');
   for (const [id, current] of cc.cur) {
     const m = cc.mean.get(id), s = cc.std.get(id);
     const dev = nameById.get(id);
@@ -690,7 +745,6 @@ async function detectAnomalies(siteId: SiteScope): Promise<AttentionItem[]> {
   }
 
   // Sustained CPU deviations (only flag high — idle is not a problem)
-  const cpu = await metric('device_resources', 'cpu_load');
   for (const [id, current] of cpu.cur) {
     const m = cpu.mean.get(id), s = cpu.std.get(id);
     const dev = nameById.get(id);

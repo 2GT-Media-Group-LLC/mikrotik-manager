@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTopologyGraph, mergeCables, endFor, endId, type GraphInput } from './topologyGraph';
+import { buildTopologyGraph, mergeCables, foldLogical, endFor, endId, type GraphInput, type GraphEdge } from './topologyGraph';
 import type { TopologyLink, TopologyDevice } from '../types';
 
 const dev = (id: number, name = `d${id}`): TopologyDevice => ({ id, name, ip_address: `10.0.0.${id}`, device_type: 'switch', status: 'online' });
@@ -214,5 +214,126 @@ describe('hand edits on the map', () => {
     }));
     const n = g.nodes.find((x) => x.id === 'ext-aa')!;
     expect(n.data).toMatchObject({ name: 'Rich PC', discoveredName: 'DESKTOP-1234', overrideKind: 'computer' });
+  });
+});
+
+// #367: logical sightings beside a cable, and computers that speak LLDP.
+const sighting = (id: number, from: number, to: number, fromIf: string, type: string | null, link_type = 'cdp', toIf?: string): TopologyLink =>
+  ({ id, from_device_id: from, to_device_id: to, from_interface: fromIf, to_interface: toIf, from_interface_type: type, link_type, discovered_at: '' });
+
+describe('logical links fold into the cable (#367)', () => {
+  it('two routers: one cable and 15 VLAN/VRRP sightings draw one line with a count', () => {
+    const vlans = [10, 20, 30, 40, 50, 60, 70, 98];
+    const links: TopologyLink[] = [
+      link(1, 1, 2, 'sfp28-2', 'sfp28-2'),
+      ...vlans.map((v, i) => sighting(100 + i, 1, 2, `vlan${v}`, 'vlan')),
+      ...vlans.slice(0, 7).map((v, i) => sighting(200 + i, 1, 2, `vrrp${v}`, 'vrrp')),
+    ];
+    const g = buildTopologyGraph(base({ devices: [dev(1), dev(2)], links }));
+    const between = g.edges.filter((e) => e.kind === 'discovered');
+    expect(between).toHaveLength(1);
+    expect(between[0].label).toBe('sfp28-2 ↔ sfp28-2');
+    expect(between[0].logical).toBeUndefined();
+    expect(between[0].folded).toHaveLength(15);
+    expect(between[0].folded).toContain('vlan10');
+    expect(between[0].parallel).toBe(0);
+  });
+
+  it('home: the vlan300 sightings over MNDP and CDP fold into the LLDP cable', () => {
+    const links: TopologyLink[] = [
+      link(1, 1, 2, 'sfp-sfpplus1', 'sfp-sfpplus1'),
+      sighting(2, 1, 2, 'vlan300', 'vlan', 'mndp'),
+      sighting(3, 2, 1, 'vlan300', 'vlan', 'cdp'),
+    ];
+    const g = buildTopologyGraph(base({ devices: [dev(1), dev(2)], links }));
+    const between = g.edges.filter((e) => e.kind === 'discovered');
+    expect(between).toHaveLength(1);
+    expect(between[0].folded).toEqual(['vlan300 ↔ vlan300']);
+  });
+
+  it('keeps every cable, and folds a far end named Vlan10 even without a type', () => {
+    const links: TopologyLink[] = [
+      link(1, 1, 2, 'sfp1', 'Te1/0/1'),
+      link(2, 1, 2, 'sfp2', 'Te1/0/2'),
+      sighting(3, 1, 2, 'ether9', null, 'cdp', 'Vlan10'),
+    ];
+    const g = buildTopologyGraph(base({ devices: [dev(1), dev(2)], links }));
+    const between = g.edges.filter((e) => e.kind === 'discovered');
+    expect(between.map((e) => e.label)).toEqual(['sfp1 ↔ Te1/0/1', 'sfp2 ↔ Te1/0/2']);
+    expect(between[0].folded).toEqual(['ether9 ↔ Vlan10']);
+    expect(between.map((e) => e.parallel)).toEqual([0, 1]);
+  });
+
+  it('with no cable, keeps the first logical one and folds the rest into it', () => {
+    const c = foldLogical<Omit<GraphEdge, 'parallel'>>([
+      { id: 'a', kind: 'discovered', source: '1', target: '2', label: 'vlan10', logical: 'logical' },
+      { id: 'b', kind: 'discovered', source: '2', target: '1', label: 'vlan20', logical: 'logical' },
+      { id: 'c', kind: 'discovered', source: '1', target: '3', label: 'ether1' },
+    ]);
+    expect(c.map((x) => x.id)).toEqual(['a', 'c']);
+    expect(c[0].folded).toEqual(['vlan20']);
+  });
+
+  it('a WireGuard neighbour is a tunnel, drawn on its own', () => {
+    const g = buildTopologyGraph(base({
+      devices: [dev(1)],
+      externalNodes: [{ id: 'ext-af', name: '254_AF', address: '', platform: '', mac: 'AF' }],
+      links: [{ id: 1, from_device_id: 1, from_interface: 'WG1', from_interface_type: 'wg', neighbor_mac: 'AF', link_type: 'mndp', discovered_at: '' }],
+    }));
+    expect(g.edges.find((e) => e.kind === 'discovered')).toMatchObject({ target: 'ext-af', logical: 'tunnel' });
+  });
+});
+
+describe('computers that speak LLDP (#367)', () => {
+  const pc = (n: number, extra: Record<string, unknown> = {}) =>
+    ({ id: `ext-pc${n}`, name: 'Unknown', address: '', platform: '', mac: `00:E0:4C:00:00:0${n}`, caps: '', host: true, ...extra });
+  const pcLink = (n: number, from = 1): TopologyLink =>
+    ({ id: 50 + n, from_device_id: from, from_interface: `ether${n}`, neighbor_mac: `00:E0:4C:00:00:0${n}`, link_type: 'lldp', discovered_at: '' });
+  const ap = { id: 'ext-ap', name: 'AP-2F', address: '', platform: '', mac: 'AP', caps: 'bridge,wlan-ap' };
+  const apLink: TopologyLink = { id: 90, from_device_id: 1, from_interface: 'ether24', neighbor_mac: 'AP', link_type: 'lldp', discovered_at: '' };
+  const input = (over: Partial<GraphInput> = {}) => base({
+    devices: [dev(1, 'ASW')],
+    externalNodes: [pc(1), pc(2), pc(3), ap],
+    links: [pcLink(1), pcLink(2), pcLink(3), apLink],
+    ...over,
+  });
+
+  it('groups them into one chip under the switch, and leaves the AP alone', () => {
+    const g = buildTopologyGraph(input());
+    expect(g.nodes.filter((n) => n.kind === 'external').map((n) => n.id)).toEqual(['ext-ap']);
+    const chip = g.nodes.find((n) => n.id === 'hosts-1')!;
+    expect(chip).toMatchObject({ kind: 'clientGroup', data: { count: 3, hosts: true, expanded: false } });
+    expect(chip.y).toBeGreaterThan(g.nodes.find((n) => n.id === '1')!.y);
+    expect(g.edges.filter((e) => e.target.startsWith('ext-pc'))).toHaveLength(0);
+    expect(g.edges.find((e) => e.target === 'hosts-1')).toMatchObject({ source: '1', kind: 'client' });
+  });
+
+  it('opened, the hosts hang from the chip with their ports', () => {
+    const g = buildTopologyGraph(input({ expandedClients: new Set(['hosts-1']) }));
+    const hosts = g.edges.filter((e) => e.target.startsWith('ext-pc'));
+    expect(hosts.map((e) => [e.source, e.label])).toEqual([['hosts-1', 'ether1'], ['hosts-1', 'ether2'], ['hosts-1', 'ether3']]);
+    const chip = g.nodes.find((n) => n.id === 'hosts-1')!;
+    for (const n of g.nodes.filter((x) => x.id.startsWith('ext-pc'))) expect(n.y).toBeGreaterThan(chip.y);
+  });
+
+  it('a lone host, a named one and one linked by hand keep their cards', () => {
+    const lone = buildTopologyGraph(input({ externalNodes: [pc(1), ap], links: [pcLink(1), apLink] }));
+    expect(lone.nodes.some((n) => n.id === 'ext-pc1')).toBe(true);
+    expect(lone.nodes.some((n) => n.id === 'hosts-1')).toBe(false);
+
+    const named = buildTopologyGraph(input({ neighbourOverrides: { 'ext-pc3': { name: 'reception', kind: 'computer' } } }));
+    expect(named.nodes.find((n) => n.id === 'hosts-1')?.data.count).toBe(2);
+    expect(named.nodes.some((n) => n.id === 'ext-pc3')).toBe(true);
+
+    const hand = buildTopologyGraph(input({ handLinks: [{ id: 4, label: null, a: { kind: 'external', ref: 'ext-pc2', name: 'Unknown' }, b: { kind: 'device', ref: 1 } }] }));
+    expect(hand.nodes.find((n) => n.id === 'hosts-1')?.data.count).toBe(2);
+    expect(hand.nodes.some((n) => n.id === 'ext-pc2')).toBe(true);
+  });
+
+  it('clients learned behind a grouped host stay on the switch', () => {
+    const g = buildTopologyGraph(input({
+      clients: [{ mac: 'C', name: 'vm', ip: null, deviceId: 1, interface: 'ether1', wireless: false, portKnown: true, behindNeighbour: true }],
+    }));
+    expect(g.edges.find((e) => e.id === 'cgedge-1')).toMatchObject({ source: '1' });
   });
 });

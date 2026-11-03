@@ -145,7 +145,20 @@ function ManualNode({ data }: { data: Record<string, unknown> }) {
 
 /** "12 clients" under a switch or AP; click to show them one by one. */
 function ClientGroupNode({ data }: { data: Record<string, unknown> }) {
-  const g = data as { count: number; wireless: number; expanded?: boolean; label?: string };
+  const g = data as { count: number; wireless: number; expanded?: boolean; label?: string; hosts?: boolean };
+  // Computers whose network cards send LLDP, grouped under their switch (#367).
+  if (g.hosts) {
+    return (
+      <div className="px-2.5 py-1.5 text-xs rounded-full bg-gray-100 dark:bg-slate-700/60 text-gray-600 dark:text-slate-300 shadow-sm select-none cursor-pointer flex items-center gap-1.5"
+        style={{ border: '1.5px dashed #94a3b8' }}
+        title={`${g.count} computers that send LLDP without a name or capabilities. ${g.expanded ? 'Click to fold them back into a count' : 'Click to show each'}. Name one to keep it on the map as its own card.`}>
+        <Handles connectable={false} />
+        <Monitor className="w-3.5 h-3.5 flex-shrink-0" />
+        <span className="font-medium whitespace-nowrap">{g.count} hosts</span>
+        {g.expanded ? <ChevronUp className="w-3 h-3 opacity-60" /> : <ChevronDown className="w-3 h-3 opacity-60" />}
+      </div>
+    );
+  }
   return (
     <div className="px-2.5 py-1.5 text-xs rounded-full bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 shadow-sm select-none cursor-pointer flex items-center gap-1.5 max-w-[225px]"
       style={{ border: '1px solid #7dd3fc' }}

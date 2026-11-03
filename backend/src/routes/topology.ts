@@ -58,10 +58,13 @@ router.get('/', async (req, res) => {
     query<LinkRow>(
       `SELECT tl.*,
               fd.name AS from_device_name,
-              td.name AS to_device_name
+              td.name AS to_device_name,
+              fi.type AS from_interface_type
        FROM topology_links tl
        LEFT JOIN devices fd ON fd.id = tl.from_device_id
        LEFT JOIN devices td ON td.id = tl.to_device_id
+       -- What kind of port reported it: a VLAN or a tunnel isn't a cable (#367).
+       LEFT JOIN interfaces fi ON fi.device_id = tl.from_device_id AND fi.name = tl.from_interface
        ${fromFilter ? `WHERE ${fromFilter}` : ''}
        ORDER BY tl.discovered_at DESC`
     ),

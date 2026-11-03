@@ -40,6 +40,15 @@ is actually plugged in. Link those by hand if you want them on the map. LLDP nei
 too: on a port where LLDP names a switch, a device heard there over CDP or MNDP is behind that
 switch, so it isn't drawn as a cable to the port.
 
+Two devices heard again over VLAN, VRRP, bridge or bond interfaces, or over a tunnel, aren't
+joined by another cable. Those sightings fold into the cable between the two, which shows a small
+**+N**; hover it for the list (#367). Two routers heard over CDP on twenty VLAN and VRRP
+interfaces beside their one cable draw one line with **+20**. Two devices with no cable between
+them, only logical sightings, get one line for all of them. A link heard over a tunnel
+(WireGuard, EoIP, GRE, L2TP and the like) is drawn dotted. The kind of port comes from the
+device's interface list, and for the far end, or another vendor, from its name (`Vlan10`,
+`Po15`, `Tunnel0`). Every cable is still drawn: two cables between two switches are two lines.
+
 LLDP isn't always point to point either: RouterOS bridges forward it, so a device can hear an
 unmanaged switch through the rest of the network as if it were cabled to it. A switch says which
 of its own ports each announcement left from. When two managed devices report the *same* port of
@@ -131,6 +140,10 @@ to choose where each end attaches: **Top**, **Bottom**, **Left**, **Right** or *
 pinned end leaves its side at a right angle and the link routes around, as in a wiring diagram.
 A second cable between the same two cards is drawn alongside the first.
 
+Curved links leaving the same side of a card each get their own point along it, in the order of
+where they go (#367), so a switch with ten links underneath has ten separate lines and labels,
+not one bundle from the middle of its bottom edge. The points move as the cards do.
+
 ### Exporting the map
 
 **Export** saves the whole map as an image, not only the part on screen, as it's shown now: the
@@ -173,6 +186,12 @@ A device the manager doesn't manage, seen over LLDP, CDP or MNDP, is drawn with 
 and labelled from what it advertises: a switch, router, access point, phone or computer. A
 computer running a software bridge (Hyper-V, a Linux bridge) advertises "bridge" too; from 0.50.0
 it's labelled a computer, not a switch (#260).
+
+Computers often send LLDP from their network cards, with no system name and no capabilities.
+Two or more of those under one device become one **N hosts** chip (#367); click it to show each,
+click again to fold them back. One heard by more than one device keeps its own card. So does one
+you've named, typed or linked by hand: name a host to keep it on the map. Clients learned behind
+a grouped host hang from its switch.
 
 Click a neighbour to give it a better name or set its type by hand; **Back to what discovery
 says** undoes that. Discovery keeps finding it as before; only how it's shown changes.

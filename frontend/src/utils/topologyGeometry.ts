@@ -75,7 +75,17 @@ export function parallelOffset(parallel: number): number {
  * runs from one's facing side to the other's. Parallel cables fan out along
  * the side, kept on the card.
  */
-export function curveEnds(src: Rect, dst: Rect, parallel = 0): { s: Pt; t: Pt; sSide: Side; tSide: Side } {
+export interface CurveEnds { s: Pt; t: Pt; sSide: Side; tSide: Side }
+
+/** Which sides a curved link leaves and enters by: bottom to top across rows, facing sides within one. */
+export function curveSides(src: Rect, dst: Rect): { sSide: Side; tSide: Side } {
+  const srcAbove = src.y + src.h + CURVE_GAP <= dst.y;
+  const dstAbove = dst.y + dst.h + CURVE_GAP <= src.y;
+  if (srcAbove || dstAbove) return srcAbove ? { sSide: 'b', tSide: 't' } : { sSide: 't', tSide: 'b' };
+  return center(src).x <= center(dst).x ? { sSide: 'r', tSide: 'l' } : { sSide: 'l', tSide: 'r' };
+}
+
+export function curveEnds(src: Rect, dst: Rect, parallel = 0): CurveEnds {
   const srcAbove = src.y + src.h + CURVE_GAP <= dst.y;
   const dstAbove = dst.y + dst.h + CURVE_GAP <= src.y;
   const off = parallelOffset(parallel);
@@ -96,4 +106,55 @@ export function curveEnds(src: Rect, dst: Rect, parallel = 0): { s: Pt; t: Pt; s
   const sSide: Side = srcLeft ? 'r' : 'l';
   const tSide: Side = srcLeft ? 'l' : 'r';
   return { s: along(sidePoint(src, sSide), src, false), t: along(sidePoint(dst, tSide), dst, false), sSide, tSide };
+}
+
+/** Space between two links leaving the same side, and kept clear at its corners. */
+const SLOT_GAP = 26;
+const SLOT_MARGIN = 10;
+
+/**
+ * Where every curved link meets its cards, worked out for the whole map at
+ * once (#367). Links leaving the same side of a card each get their own
+ * point along it, in the order of where they're going (left to right under a
+ * card, top to bottom beside one), so the lines don't cross on the way out
+ * and their labels don't pile up at the middle of the side. Cables between the
+ * same two cards keep the same order at both ends. Edges whose cards haven't
+ * been measured are left out; the edge works its ends out alone.
+ */
+export function spreadCurveEnds(rects: Map<string, Rect>, edges: { id: string; source: string; target: string }[]): Map<string, CurveEnds> {
+  interface End { edge: string; which: 's' | 't'; node: string; side: Side; toward: Pt }
+  const ends: End[] = [];
+  const sides = new Map<string, { sSide: Side; tSide: Side }>();
+  for (const e of edges) {
+    const rs = rects.get(e.source);
+    const rt = rects.get(e.target);
+    if (!rs || !rt || e.source === e.target) continue;
+    const sd = curveSides(rs, rt);
+    sides.set(e.id, sd);
+    ends.push({ edge: e.id, which: 's', node: e.source, side: sd.sSide, toward: center(rt) });
+    ends.push({ edge: e.id, which: 't', node: e.target, side: sd.tSide, toward: center(rs) });
+  }
+  const groups = new Map<string, End[]>();
+  for (const end of ends) {
+    const k = `${end.node}|${end.side}`;
+    groups.set(k, [...(groups.get(k) ?? []), end]);
+  }
+  const at = new Map<string, Pt>();
+  for (const group of groups.values()) {
+    const { node, side } = group[0];
+    const r = rects.get(node)!;
+    const vertical = side === 't' || side === 'b';
+    group.sort((a, b) => (vertical ? a.toward.x - b.toward.x : a.toward.y - b.toward.y) || (a.edge < b.edge ? -1 : a.edge > b.edge ? 1 : 0));
+    const n = group.length;
+    const room = Math.max(0, (vertical ? r.w : r.h) - 2 * SLOT_MARGIN);
+    const step = n > 1 ? Math.min(SLOT_GAP, room / (n - 1)) : 0;
+    const mid = sidePoint(r, side);
+    group.forEach((end, i) => {
+      const off = (i - (n - 1) / 2) * step;
+      at.set(`${end.edge}|${end.which}`, vertical ? { x: mid.x + off, y: mid.y } : { x: mid.x, y: mid.y + off });
+    });
+  }
+  const out = new Map<string, CurveEnds>();
+  for (const [id, sd] of sides) out.set(id, { s: at.get(`${id}|s`)!, t: at.get(`${id}|t`)!, ...sd });
+  return out;
 }

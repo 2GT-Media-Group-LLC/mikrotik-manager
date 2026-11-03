@@ -1,6 +1,14 @@
+import { createContext, useContext } from 'react';
 import { BaseEdge, EdgeLabelRenderer, useInternalNode, getSmoothStepPath, getBezierPath, Position, type EdgeProps, type InternalNode } from '@xyflow/react';
 import { X } from 'lucide-react';
-import { linkEnds, curveEnds, sideOf, type Rect, type Side } from '../../utils/topologyGeometry';
+import { linkEnds, curveEnds, sideOf, type CurveEnds, type Rect, type Side } from '../../utils/topologyGeometry';
+
+/**
+ * Where each curved link meets its cards, worked out by the page for the whole
+ * map so links leaving one side are spread along it (#367). An edge not in it
+ * works its ends out alone.
+ */
+export const CurveEndsContext = createContext<Map<string, CurveEnds> | null>(null);
 
 /** What a link on the map carries; see toFlowEdge in the page. */
 export interface TopoEdgeData extends Record<string, unknown> {
@@ -15,6 +23,8 @@ export interface TopoEdgeData extends Record<string, unknown> {
   parallel?: number;
   /** Draw it as a curve rather than a straight line (#367). */
   curved?: boolean;
+  /** Sightings of the same pair on VLANs, VRRP or tunnels folded into this line (#367). */
+  folded?: string[];
 }
 
 const POSITION: Record<Side, Position> = { t: Position.Top, b: Position.Bottom, l: Position.Left, r: Position.Right };
@@ -35,6 +45,7 @@ const rectOf = (n: InternalNode): Rect => ({
 export default function TopoEdge({ id, source, target, data, style, markerEnd }: EdgeProps) {
   const s = useInternalNode(source);
   const t = useInternalNode(target);
+  const spread = useContext(CurveEndsContext)?.get(id);
   if (!s || !t) return null;
   const d = (data ?? {}) as TopoEdgeData;
   const rs = rectOf(s);
@@ -42,7 +53,7 @@ export default function TopoEdge({ id, source, target, data, style, markerEnd }:
   let path: string;
   let mid: { x: number; y: number };
   if (d.curved && !d.sourceSide && !d.targetSide) {
-    const c = curveEnds(rs, rt, d.parallel ?? 0);
+    const c = spread ?? curveEnds(rs, rt, d.parallel ?? 0);
     const [p, lx, ly] = getBezierPath({
       sourceX: c.s.x, sourceY: c.s.y, sourcePosition: POSITION[c.sSide],
       targetX: c.t.x, targetY: c.t.y, targetPosition: POSITION[c.tSide],
@@ -70,7 +81,7 @@ export default function TopoEdge({ id, source, target, data, style, markerEnd }:
   return (
     <>
       <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={18} />
-      {(d.label || d.hand) && (
+      {(d.label || d.hand || !!d.folded?.length) && (
         <EdgeLabelRenderer>
           {/* Labels ignore the pointer unless told otherwise; nodrag/nopan stop a
               click on the button panning the map. */}
@@ -87,7 +98,13 @@ export default function TopoEdge({ id, source, target, data, style, markerEnd }:
                 )}
               </>
             ) : (
-              <span className="text-[10px] px-1 rounded bg-slate-50/90 dark:bg-slate-800/90 text-slate-500 dark:text-slate-400 whitespace-nowrap">{d.label}</span>
+              <>
+                {d.label && <span className="text-[10px] px-1 rounded bg-slate-50/90 dark:bg-slate-800/90 text-slate-500 dark:text-slate-400 whitespace-nowrap">{d.label}</span>}
+                {!!d.folded?.length && (
+                  <span className="text-[9px] font-semibold px-1 rounded bg-slate-200/90 dark:bg-slate-700/90 text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-help"
+                    title={`Also heard between these two on:\n${d.folded.join('\n')}`}>+{d.folded.length}</span>
+                )}
+              </>
             )}
           </div>
         </EdgeLabelRenderer>

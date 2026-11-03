@@ -17,7 +17,7 @@ import {
   ConnectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw, Crosshair, Building2, Download } from 'lucide-react';
+import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw, Crosshair, Building2, Download, Monitor } from 'lucide-react';
 import { topologyApi, sitesApi, devicesApi } from '../services/api';
 import { useSiteStore } from '../store/siteStore';
 import { nodesWithinHops } from '../utils/topologyFocus';
@@ -26,10 +26,10 @@ import clsx from 'clsx';
 import { useThemeStore } from '../store/themeStore';
 import { buildTopologyGraph, endFor, type GraphEdge, type StpUpstream } from '../utils/topologyGraph';
 import type { BridgeInfo } from '../utils/stpRoot';
-import type { Side } from '../utils/topologyGeometry';
+import { spreadCurveEnds, type Rect, type Side } from '../utils/topologyGeometry';
 import { downloadTopology, exportFileName, type ExportFormat } from '../utils/topologyExport';
 import { nodeTypes, statusColor } from '../components/topology/nodes';
-import TopoEdge, { type TopoEdgeData } from '../components/topology/TopoEdge';
+import TopoEdge, { CurveEndsContext, type TopoEdgeData } from '../components/topology/TopoEdge';
 import EdgeMenu from '../components/topology/EdgeMenu';
 import NodeEditor from '../components/topology/NodeEditor';
 import HandLinksTable from '../components/topology/HandLinksTable';
@@ -53,7 +53,7 @@ function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, strin
   const sides = anchors[e.id];
   // A colour chosen for this link (#260) wins over the one its kind gives it.
   const custom = colors[e.id] ? { stroke: colors[e.id] } : {};
-  const data: TopoEdgeData = { label: e.label, parallel: e.parallel, sourceSide: sides?.sourceHandle ?? null, targetSide: sides?.targetHandle ?? null, curved };
+  const data: TopoEdgeData = { label: e.label, parallel: e.parallel, sourceSide: sides?.sourceHandle ?? null, targetSide: sides?.targetHandle ?? null, curved, folded: e.folded };
   if (e.kind === 'hand') {
     return {
       id: e.id, source: e.source, target: e.target, type: 'topo',
@@ -68,11 +68,13 @@ function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, strin
     : e.role === 'designated' ? { stroke: '#22c55e' }
       : e.role === 'blocked' ? { stroke: '#ef4444', strokeDasharray: '6,3' }
         : { stroke: '#94a3b8' };
+  // A tunnel isn't a cable: dotted (#367).
+  const tunnel = e.logical === 'tunnel' ? { strokeDasharray: '2,4', strokeLinecap: 'round' as const } : {};
   return {
     id: e.id, source: e.source, target: e.target, type: 'topo',
     data: { ...data, label: e.label ? `${e.label}${e.role === 'blocked' ? ' [blocked]' : ''}` : (e.role === 'blocked' ? 'blocked' : undefined) },
     className: 'topology-edge',
-    style: { strokeWidth: 2, ...look, ...custom },
+    style: { strokeWidth: 2, ...look, ...tunnel, ...custom },
     animated: e.role === 'root',
   };
 }
@@ -244,6 +246,23 @@ export default function TopologyPage() {
     if (!view) return;
     setEdges(view.edges.map((e) => toFlowEdge(e, anchors, colors, onDeleteEdge, canWrite, curved)));
   }, [view, anchors, colors, onDeleteEdge, canWrite, curved, setEdges]);
+
+  // Curved links leaving one side of a card are spread along it, in the order
+  // of where they go, so their lines and labels separate (#367). Worked out
+  // for the whole map, again as cards move. Sides chosen by hand keep theirs.
+  const curveSlots = useMemo(() => {
+    if (!curved) return null;
+    const rects = new Map<string, Rect>();
+    for (const n of nodes) {
+      if (!n.measured?.width || !n.measured?.height) continue;
+      rects.set(n.id, { x: n.position.x, y: n.position.y, w: n.measured.width, h: n.measured.height });
+    }
+    const free = edges.filter((e) => {
+      const d = e.data as TopoEdgeData | undefined;
+      return !d?.sourceSide && !d?.targetSide;
+    });
+    return spreadCurveEnds(rects, free);
+  }, [curved, nodes, edges]);
 
   /**
    * Save where every card is, so the arrangement holds for everyone and after a
@@ -561,48 +580,50 @@ export default function TopologyPage() {
             <div className="text-sm text-red-600 dark:text-red-400 flex items-center gap-2"><AlertCircle className="w-4 h-4" />{exportError}</div>
           )}
           <div ref={mapRef} className="card overflow-hidden" style={{ height: 'max(520px, calc(100vh - 260px))' }}>
-            <ReactFlow
-              nodes={shownNodes}
-              edges={shownEdges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={connectMode && canWrite ? onConnect : undefined}
-              connectionMode={ConnectionMode.Loose}
-              onEdgeClick={onEdgeClick}
-              onNodeDragStop={onNodeDragStop}
-              onPaneClick={() => setMenu(null)}
-              onNodeClick={onNodeClick}
-              onNodeDoubleClick={onNodeDoubleClick}
-              onNodeMouseEnter={(_, n) => setHover(n.id)}
-              onNodeMouseLeave={() => setHover(null)}
-              onInit={(i) => { rf.current = i; }}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              fitView
-              fitViewOptions={{ padding: 0.12, includeHiddenNodes: false }}
-              minZoom={0.08}
-              maxZoom={2.5}
-              deleteKeyCode={null}
-              className={clsx(
-                'topology-reactflow h-full min-h-[400px] bg-slate-50 dark:bg-slate-800',
-                theme === 'dark' && 'dark',
-                connectMode && 'cursor-crosshair'
-              )}
-            >
-              <Controls className="topology-controls !shadow-md" />
-              <MiniMap
-                className="!shadow-md"
-                pannable
-                zoomable
-                nodeColor={(n) => {
-                  if (n.type === 'device') return statusColor[(n.data as unknown as TopologyDevice).status] || '#94a3b8';
-                  if (n.type === 'manual') return '#8b5cf6';
-                  if (n.type === 'client' || n.type === 'clientGroup') return '#7dd3fc';
-                  return '#94a3b8';
-                }}
-              />
-              <Background variant={BackgroundVariant.Dots} color="#94a3b8" gap={20} />
-            </ReactFlow>
+            <CurveEndsContext.Provider value={curveSlots}>
+              <ReactFlow
+                nodes={shownNodes}
+                edges={shownEdges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={connectMode && canWrite ? onConnect : undefined}
+                connectionMode={ConnectionMode.Loose}
+                onEdgeClick={onEdgeClick}
+                onNodeDragStop={onNodeDragStop}
+                onPaneClick={() => setMenu(null)}
+                onNodeClick={onNodeClick}
+                onNodeDoubleClick={onNodeDoubleClick}
+                onNodeMouseEnter={(_, n) => setHover(n.id)}
+                onNodeMouseLeave={() => setHover(null)}
+                onInit={(i) => { rf.current = i; }}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                fitView
+                fitViewOptions={{ padding: 0.12, includeHiddenNodes: false }}
+                minZoom={0.08}
+                maxZoom={2.5}
+                deleteKeyCode={null}
+                className={clsx(
+                  'topology-reactflow h-full min-h-[400px] bg-slate-50 dark:bg-slate-800',
+                  theme === 'dark' && 'dark',
+                  connectMode && 'cursor-crosshair'
+                )}
+              >
+                <Controls className="topology-controls !shadow-md" />
+                <MiniMap
+                  className="!shadow-md"
+                  pannable
+                  zoomable
+                  nodeColor={(n) => {
+                    if (n.type === 'device') return statusColor[(n.data as unknown as TopologyDevice).status] || '#94a3b8';
+                    if (n.type === 'manual') return '#8b5cf6';
+                    if (n.type === 'client' || n.type === 'clientGroup') return '#7dd3fc';
+                    return '#94a3b8';
+                  }}
+                />
+                <Background variant={BackgroundVariant.Dots} color="#94a3b8" gap={20} />
+              </ReactFlow>
+            </CurveEndsContext.Provider>
           </div>
 
           {/* Legend */}
@@ -619,6 +640,15 @@ export default function TopologyPage() {
             )}
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded border-dashed border border-gray-400" /><span>Seen by discovery, not managed</span></div>
             <div className="flex items-center gap-1.5"><div className="w-4 h-4 rounded border-dashed border border-violet-500" /><span>Your own node</span></div>
+            {graph?.edges.some((e) => e.logical === 'tunnel') && (
+              <div className="flex items-center gap-1.5"><div style={{ width: 16, borderTop: '2px dotted #94a3b8' }} /><span>Tunnel (WireGuard, EoIP, GRE...)</span></div>
+            )}
+            {graph?.edges.some((e) => e.folded?.length) && (
+              <div className="flex items-center gap-1.5"><span className="text-[9px] font-semibold px-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">+3</span><span>Also heard on VLANs or VRRP (hover for the list)</span></div>
+            )}
+            {graph?.nodes.some((n) => n.data.hosts) && (
+              <div className="flex items-center gap-1.5"><Monitor className="w-3.5 h-3.5 text-slate-500" /><span>Computers that send LLDP (click to show each)</span></div>
+            )}
             {showClients && <div className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-sky-500" /><span>Clients (click to show each)</span></div>}
             <span className="ml-auto text-gray-400">Drag cards to arrange the map (saved for everyone) · click a link to choose where it attaches · hover a device to light up its links</span>
           </div>

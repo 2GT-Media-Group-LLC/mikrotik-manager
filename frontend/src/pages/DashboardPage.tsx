@@ -25,7 +25,8 @@ import { escapeHtml } from '../utils/escapeHtml';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import { byAttention, CARD_ROWS } from '../utils/deviceCards';
 import { filterDevices } from '../utils/devicePicker';
-import { commonPrefix, shortName, sortCapacity, loadColor, loadText, memText, MEM_HIGH } from '../utils/capacityCard';
+import { commonPrefix, shortName, sortCapacity, loadColor, loadText, memText, memHint, capacityGrid, CAPACITY_NARROW_PX } from '../utils/capacityCard';
+import { useElementWidth } from '../hooks/useElementWidth';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -764,6 +765,9 @@ function OperationsView({
   // Capacity lists the busiest devices first and stops at CAPACITY_ROWS, which
   // silently hid the rest: nine devices showed eight rows, reported as a bug.
   const [showAllCapacity, setShowAllCapacity] = useState(false);
+  // The card lays out by its own width: in a narrow window the graphs go, not the names (#368).
+  const [capacityRef, capacityWidth] = useElementWidth<HTMLDivElement>();
+  const capacityNarrow = capacityWidth > 0 && capacityWidth < CAPACITY_NARROW_PX;
   const [terminalDevice, setTerminalDevice] = useState<{ id: number; name: string } | null>(null);
 
   async function runAction(key: string, fn: () => Promise<string>) {
@@ -813,12 +817,10 @@ function OperationsView({
   const worstDevices = [...scored].sort((a, b) => (a.score ?? 0) - (b.score ?? 0)).slice(0, 3);
   const scoreColor = (s: number | null) => s == null ? 'var(--ink-3)' : s >= 85 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : 'var(--bad)';
 
-  // Busiest CPU first; memory counts only once it's high (#368).
+  // Busiest CPU first; memory counts only once it's high and growing (#368).
   const sortedCapacity = sortCapacity(capacity);
-  // A prefix every device shares (01-NIKITINA-) is shown once, not on each row.
-  const capacityPrefix = commonPrefix(sortedCapacity.map((c) => c.name));
   const CAPACITY_ROWS = 8;
-  const CAPACITY_GRID = 'minmax(0,1fr) 96px 92px 38px';
+  const CAPACITY_GRID = capacityGrid(capacityNarrow);
   // Fleet strip: two rows of tiles at most, the last one linking to the rest (#303).
   const FLEET_TILES = 10;
   const fleetList = devices as Device[];
@@ -826,6 +828,10 @@ function OperationsView({
   const fleetHidden = fleetList.length - fleetTiles.length;
   const fleetOffline = fleetList.filter((d) => d.status === 'offline').length;
   const shownCapacity = showAllCapacity ? sortedCapacity : sortedCapacity.slice(0, CAPACITY_ROWS);
+  // A prefix the rows on show share (01-SITE-ASW) is shown once, not on each
+  // row. Taken from those rows, so an out-of-band 99-SITE-MGMT further down
+  // the list doesn't cancel it (#368).
+  const capacityPrefix = commonPrefix(shownCapacity.map((c) => c.name));
 
   const sevColor = (s: string) => s === 'error' ? 'var(--bad)' : s === 'warn' ? 'var(--warn)' : 'var(--info)';
   const activityIcon = (kind: string) => kind === 'config' ? FileText : kind === 'alert' ? Bell : Activity;
@@ -1027,9 +1033,11 @@ function OperationsView({
       </div>
 
       {/* Capacity + Security rollup */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1.3fr 1fr' }}>
+      {/* Side by side from 1024 px; stacked below, where side by side left the
+          capacity card too narrow for its names (#368). */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1.3fr_1fr]">
         {/* Capacity / health */}
-        <div className="card" style={{ overflow: 'hidden' }}>
+        <div className="card" style={{ overflow: 'hidden' }} ref={capacityRef}>
           <div className="flex items-center gap-2 px-5 py-[14px]" style={{ borderBottom: '1px solid var(--line)' }}>
             <Cpu className="w-4 h-4" style={{ color: 'var(--accent)' }} />
             <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Capacity &amp; health</span>
@@ -1048,7 +1056,7 @@ function OperationsView({
               )}
               <div className="grid items-center gap-x-3 pb-1 mono text-[9px] uppercase tracking-wide"
                 style={{ gridTemplateColumns: CAPACITY_GRID, color: 'var(--ink-4)' }}>
-                <span>Device</span><span>CPU 24h</span><span>CPU now</span><span className="text-right">Mem</span>
+                <span>Device</span>{!capacityNarrow && <span>CPU 24h</span>}<span>CPU now</span><span className="text-right">Mem</span>
               </div>
               {shownCapacity.map((c) => (
                 <button key={c.id} onClick={() => navigate(`/devices/${c.id}`)}
@@ -1059,7 +1067,7 @@ function OperationsView({
                     <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--ink)' }}>{shortName(c.name, capacityPrefix)}</div>
                     {c.model && <div className="text-[10.5px] truncate" style={{ color: 'var(--ink-4)' }}>{c.model}</div>}
                   </div>
-                  <CpuTrend points={c.cpu_series} />
+                  {!capacityNarrow && <CpuTrend points={c.cpu_series} />}
                   <div className="flex items-center gap-1.5">
                     <div className="relative flex-1 h-1.5 rounded-full" style={{ background: 'var(--surface-3)' }}>
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, c.cpu)}%`, background: loadColor(c.cpu) }} />
@@ -1071,7 +1079,7 @@ function OperationsView({
                     <span className="mono text-[11px] font-semibold num-tab text-right" style={{ color: loadText(c.cpu), width: 30 }}>{c.cpu}%</span>
                   </div>
                   <span className="mono text-[11px] num-tab text-right" style={{ color: memText(c.mem_pct) }}
-                    title={c.mem_pct >= MEM_HIGH ? 'Memory is high, so it counts toward the order' : undefined}>{c.mem_pct}%</span>
+                    title={memHint(c)}>{c.mem_pct}%</span>
                 </button>
               ))}
               {sortedCapacity.length > CAPACITY_ROWS && (

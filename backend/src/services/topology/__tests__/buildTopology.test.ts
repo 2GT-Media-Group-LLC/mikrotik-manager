@@ -433,3 +433,40 @@ describe('a device heard through the neighbour LLDP names on that port', () => {
     expect(pairs(g)).toEqual(['1-2']);
   });
 });
+
+// #367: a computer whose network card sends LLDP has no system name and no
+// capabilities; the map groups those under their switch.
+describe('neighbours that are end hosts', () => {
+  it('marks a neighbour with no name and no capabilities as a host', () => {
+    const devices = [dev(1, 'ASW', '10.0.0.1')];
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'ether3', neighbor_mac: '00:E0:4C:00:00:01', link_type: 'lldp' }),
+      link({ from_device_id: 1, from_interface: 'ether4', neighbor_mac: '00:E0:4C:00:00:02', neighbor_address: '10.0.0.50', link_type: 'lldp' }),
+      link({ from_device_id: 1, from_interface: 'ether5', neighbor_mac: 'AA:00:00:00:00:03', neighbor_identity: 'AP-2F', neighbor_caps: 'bridge,wlan-ap', link_type: 'lldp' }),
+      link({ from_device_id: 1, from_interface: 'ether6', neighbor_mac: 'AA:00:00:00:00:04', neighbor_caps: 'bridge', link_type: 'lldp' }),
+    ], []);
+    const byMac = Object.fromEntries(g.externalNodes.map((n) => [n.mac, n.host]));
+    expect(byMac).toEqual({
+      '00:E0:4C:00:00:01': true, '00:E0:4C:00:00:02': true,
+      'AA:00:00:00:00:03': false, 'AA:00:00:00:00:04': false,
+    });
+  });
+
+  it('is not a host if any sighting gave a name', () => {
+    const devices = [dev(1, 'ASW1', '10.0.0.1'), dev(2, 'ASW2', '10.0.0.2')];
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'ether3', neighbor_mac: 'AA:00:00:00:00:09', link_type: 'lldp' }),
+      link({ from_device_id: 2, from_interface: 'ether7', neighbor_mac: 'AA:00:00:00:00:09', neighbor_identity: 'printer-3f', link_type: 'mndp' }),
+    ], []);
+    expect(g.externalNodes).toHaveLength(1);
+    expect(g.externalNodes[0].host).toBe(false);
+  });
+
+  it('passes the reporting port\'s interface type through', () => {
+    const devices = [dev(1, 'R1', '10.0.0.1'), dev(2, 'R2', '10.0.0.2')];
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'vlan10', to_device_id: 2, link_type: 'cdp', from_interface_type: 'vlan' }),
+    ], []);
+    expect(g.links[0].from_interface_type).toBe('vlan');
+  });
+});

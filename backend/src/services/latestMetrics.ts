@@ -1,6 +1,7 @@
 import { fluxString } from '@influxdata/influxdb-client';
 import { getQueryApi, bucket } from '../config/influxdb';
 import { trendStart, trendSlots, type TrendPoint } from '../utils/cpuTrend';
+import { SwrCache } from '../utils/swrCache';
 
 export interface LatestResources {
   cpu: number;
@@ -107,35 +108,62 @@ export async function latestInterfaceCounters(): Promise<Map<string, Map<string,
   return out;
 }
 
-const trendCache: { at: number; data: Map<string, (number | null)[]> } = { at: 0, data: new Map() };
-/** The 24h trend changes slowly; the dashboard asks every minute. */
-const TREND_CACHE_MS = 2 * 60_000;
+/**
+ * The 24h trend changes slowly and the dashboard asks every minute. Overlapping
+ * requests share one query, and an expired trend is served while it refreshes
+ * in the background, so no dashboard load waits for it (#368).
+ */
+const trendCache = new SwrCache<Map<string, (number | null)[]>>({ freshMs: 2 * 60_000, staleMs: 30 * 60_000 });
 
 /**
  * Every device's CPU over the last 24 hours as 48 half-hour maxima (#368), in
  * one query for the whole fleet. Grouped by device id only, so a device renamed
  * during the day stays one line. An unreadable Influx gives an empty map.
  */
-export async function cpuTrend24h(now = Date.now()): Promise<Map<string, (number | null)[]>> {
-  if (now - trendCache.at < TREND_CACHE_MS) return trendCache.data;
-  const points: TrendPoint[] = [];
-  const flux = `
-    from(bucket: ${fluxString(bucket)})
-      |> range(start: time(v: ${fluxString(new Date(trendStart(now)).toISOString())}))
-      |> filter(fn: (r) => r["_measurement"] == "device_resources" and r["_field"] == "cpu_load")
-      |> group(columns: ["device_id"])
-      |> aggregateWindow(every: 30m, fn: max, createEmpty: false, timeSrc: "_start")
-  `;
-  try {
+export async function cpuTrend24h(): Promise<Map<string, (number | null)[]>> {
+  return trendCache.get('cpu', async () => {
+    const now = Date.now();
+    const points: TrendPoint[] = [];
+    const flux = `
+      from(bucket: ${fluxString(bucket)})
+        |> range(start: time(v: ${fluxString(new Date(trendStart(now)).toISOString())}))
+        |> filter(fn: (r) => r["_measurement"] == "device_resources" and r["_field"] == "cpu_load")
+        |> group(columns: ["device_id"])
+        |> aggregateWindow(every: 30m, fn: max, createEmpty: false, timeSrc: "_start")
+    `;
     await run(flux, (o) => {
       const t = o['_time'];
       const start = t instanceof Date ? t.getTime() : Date.parse(String(t));
       points.push({ id: String(o['device_id'] || ''), start, value: Number(o['_value']) });
     });
-  } catch {
-    return new Map();
-  }
-  trendCache.at = now;
-  trendCache.data = trendSlots(points, now);
-  return trendCache.data;
+    return trendSlots(points, now);
+  }).catch(() => new Map());
+}
+
+/** The 7-day low moves slower still. */
+const memLowCache = new SwrCache<Map<string, number>>({ freshMs: 15 * 60_000, staleMs: 6 * 60 * 60_000 });
+
+/**
+ * The least memory each device used in the last 7 days, in bytes (#368). A
+ * device whose memory sits high all week is where its firmware keeps it; one
+ * well above its own low is growing. One query for the fleet; an unreadable
+ * Influx gives an empty map.
+ */
+export async function memoryLow7d(): Promise<Map<string, number>> {
+  return memLowCache.get('mem', async () => {
+    const out = new Map<string, number>();
+    const flux = `
+      from(bucket: ${fluxString(bucket)})
+        |> range(start: -7d)
+        |> filter(fn: (r) => r["_measurement"] == "device_resources" and r["_field"] == "memory_used")
+        |> group(columns: ["device_id"])
+        |> min()
+    `;
+    await run(flux, (o) => {
+      const id = String(o['device_id'] || '');
+      const v = Number(o['_value']);
+      if (id && Number.isFinite(v)) out.set(id, v);
+    });
+    return out;
+  }).catch(() => new Map());
 }

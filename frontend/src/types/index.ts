@@ -355,6 +355,8 @@ export interface TopologyLink {
   discovered_by?: string;
   from_device_name?: string;
   to_device_name?: string;
+  /** RouterOS type of the reporting port (ether, vlan, wg...), when known (#367). */
+  from_interface_type?: string | null;
   discovered_at: string;
 }
 
@@ -413,6 +415,8 @@ export interface ExternalTopologyNode {
   platform: string;
   mac: string;
   caps?: string;
+  /** Sent no name and no capabilities: a computer that speaks LLDP (#367). */
+  host?: boolean;
 }
 
 export interface MetricsSummary {

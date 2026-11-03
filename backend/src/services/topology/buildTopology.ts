@@ -52,6 +52,12 @@ export interface LinkRow {
   discovered_by: string | null;
   from_device_name: string | null;
   to_device_name: string | null;
+  /**
+   * The RouterOS type of the reporting port (ether, vlan, bond, wg...), when
+   * the port is in the device's interface list. Lets the map tell a cable
+   * from a VLAN or a tunnel (#367).
+   */
+  from_interface_type?: string | null;
 }
 
 export interface ManualLinkRow {
@@ -70,6 +76,11 @@ export interface ExternalNode {
   platform: string;
   mac: string;
   caps: string;
+  /**
+   * Sent no system name and no capabilities: a computer whose network card
+   * speaks LLDP, rather than a switch or an AP (#367). The map groups these.
+   */
+  host: boolean;
 }
 
 export interface SegConn { src: string; dst: string; port: string; }
@@ -365,11 +376,13 @@ export function buildTopology(
   // Keyed by the same neighbour key used everywhere else, so two unmanaged devices
   // that merely share an address in disconnected segments stay two nodes.
   const externalMap = new Map<string, ExternalNode>();
+  const nameless = (l: LinkRow) => !l.neighbor_identity?.trim() && !l.neighbor_caps?.trim();
   for (const link of links) {
     if (link.to_device_id) continue;
     const key = neighborKey(link);
     if (!key) continue;
-    if (!externalMap.has(key)) {
+    const seen = externalMap.get(key);
+    if (!seen) {
       externalMap.set(key, {
         id: `ext-${key.replace(/[^a-z0-9]/gi, '')}`,
         name: link.neighbor_identity || link.neighbor_address || 'Unknown',
@@ -377,7 +390,11 @@ export function buildTopology(
         platform: link.neighbor_platform || '',
         mac: link.neighbor_mac || '',
         caps: link.neighbor_caps || '',
+        host: nameless(link),
       });
+    } else if (!nameless(link)) {
+      // Any sighting with a name or capabilities makes it more than a host.
+      seen.host = false;
     }
   }
 

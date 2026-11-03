@@ -9,6 +9,7 @@ import type {
 } from '../types';
 import { resolveStpRoot, type BridgeInfo, type RootVerdict } from './stpRoot';
 import { layoutForest } from './topologyLayout';
+import { portKind, linkKind, type PortKind } from './topologyPorts';
 
 /** Upstream verdict as returned by /api/topology; resolved server-side. */
 export interface StpUpstream {
@@ -84,6 +85,10 @@ export interface GraphEdge {
   role?: 'root' | 'designated' | 'blocked';
   /** For deleting: the hand-drawn link's id. */
   deleteId?: number;
+  /** Not a cable: heard on a VLAN, VRRP, bridge or bond interface, or over a tunnel (#367). */
+  logical?: 'logical' | 'tunnel';
+  /** Sightings of the same pair on logical ports, folded into this line (#367): their labels. */
+  folded?: string[];
 }
 
 export interface GraphOutput {
@@ -166,7 +171,60 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   // are dropped before layout, so they don't pull a card towards where
   // discovery wrongly put it, and a neighbour only they reached goes too.
   const hidden = input.hidden ?? new Set<string>();
-  const cables = mergeCables(discovered, farEnd).filter((c) => !hidden.has(c.id));
+  // The same pair heard again over VLANs or VRRP is one line with a count (#367).
+  let cables: Omit<GraphEdge, 'parallel'>[] = foldLogical(mergeCables(discovered, farEnd).filter((c) => !hidden.has(c.id)));
+
+  // ── Computers that speak LLDP, grouped under their switch (#367) ─────────
+  // A neighbour with no name and no capabilities is an end host. Two or more
+  // under one device become one "N hosts" chip, opened by a click. One that
+  // was named or typed by hand, or linked by hand, is someone's interest and
+  // keeps its card, as does one heard from several devices.
+  const hostChips: GraphNode[] = [];
+  const hostChipEdges: GraphEdge[] = [];
+  {
+    const handEnds = new Set(handLinks.flatMap((hl) => [endId(hl.a), endId(hl.b)]));
+    const isHost = new Set(externalNodes
+      .filter((e) => e.host && !input.neighbourOverrides?.[e.id] && !handEnds.has(e.id))
+      .map((e) => e.id));
+    const devicesOf = new Map<string, Set<string>>();
+    for (const c of cables) {
+      for (const [host, other] of [[c.target, c.source], [c.source, c.target]]) {
+        if (!isHost.has(host)) continue;
+        devicesOf.set(host, (devicesOf.get(host) ?? new Set<string>()).add(other));
+      }
+    }
+    const under = new Map<string, string[]>();
+    for (const [host, others] of devicesOf) {
+      const [only] = [...others];
+      if (others.size !== 1 || !deviceIds.has(only)) continue;
+      under.set(only, [...(under.get(only) ?? []), host]);
+    }
+    const folded = new Set<string>();
+    const rerouted = new Map<string, string>();
+    for (const [dev, hosts] of under) {
+      if (hosts.length < 2) continue;
+      const chip = `hosts-${dev}`;
+      const open = input.expandedClients.has(chip);
+      ensure(chip); connect(dev, chip);
+      hostChips.push({ id: chip, kind: 'clientGroup', x: 0, y: 0, data: { deviceId: chip, count: hosts.length, wireless: 0, expanded: open, hosts: true } });
+      hostChipEdges.push({ id: `hostedge-${dev}`, kind: 'client', source: dev, target: chip, parallel: 0 });
+      for (const h of hosts) {
+        if (open) rerouted.set(h, chip);
+        else folded.add(h);
+      }
+    }
+    if (folded.size || rerouted.size) {
+      cables = cables
+        .filter((c) => !folded.has(c.source) && !folded.has(c.target))
+        .map((c) => {
+          // An opened chip's hosts hang from the chip, keeping their port labels.
+          const host = rerouted.has(c.target) ? c.target : rerouted.has(c.source) ? c.source : null;
+          return host ? { ...c, source: rerouted.get(host)!, target: host } : c;
+        });
+      for (const h of folded) adj.delete(h);
+      externalNodes = externalNodes.filter((e) => !folded.has(e.id));
+    }
+  }
   for (const c of cables) connect(c.source, c.target);
   for (const hl of handLinks) connect(endId(hl.a), endId(hl.b));
   if (hidden.size) {
@@ -184,7 +242,8 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     const neighbourOnPort = new Map<string, string>();
     for (const l of discovered) {
       const far = farEnd.get(l.id);
-      if (l.from_device_id && l.from_interface && far && !deviceIds.has(far)) {
+      // Not one folded into a hosts chip (#367): its clients stay on the switch.
+      if (l.from_device_id && l.from_interface && far && !deviceIds.has(far) && adj.has(far)) {
         neighbourOnPort.set(`${l.from_device_id}:${l.from_interface.toLowerCase()}`, far);
       }
     }
@@ -334,6 +393,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   // Clients and their count chips are smaller cards than devices. A chip
   // naming its VLAN ("VLAN 300 · guests · 14 clients") needs a full slot, or
   // neighbouring chips overlap (#296).
+  clientNodes.push(...hostChips);
   const clientIds = new Set(clientNodes.map((c) => c.id));
   const labelledChips = new Set(clientNodes.filter((c) => c.kind === 'clientGroup' && c.data.label).map((c) => c.id));
   const laid = layoutForest(trees, loose, undefined, undefined,
@@ -429,6 +489,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     edges.push({ id: `hand-${hl.id}`, kind: 'hand', source: src, target: dst, label, deleteId: hl.id, parallel: nextParallel(src, dst) });
   }
   for (const e of clientEdges) edges.push(e);
+  for (const e of hostChipEdges) edges.push(e);
 
   const orphanCount = devices.filter((d) => !hasEdge.has(nodeId.device(d.id)) && loose.includes(nodeId.device(d.id))).length;
   return { nodes: outNodes, edges, orphanCount };
@@ -444,7 +505,7 @@ export function mergeCables(
   discovered: TopologyLink[],
   farEnd: Map<number, string>,
 ): Omit<GraphEdge, 'parallel'>[] {
-  interface Cable { a: string; b: string; aPort?: string; bPort?: string; roles: string[]; ids: number[] }
+  interface Cable { a: string; b: string; aPort?: string; bPort?: string; aType?: string; bType?: string; roles: string[]; ids: number[] }
   const cables: Cable[] = [];
   for (const l of discovered) {
     const dst = farEnd.get(l.id);
@@ -452,6 +513,7 @@ export function mergeCables(
     const src = String(l.from_device_id);
     const fromPort = l.from_interface || undefined;
     const toPort = l.to_interface || undefined;
+    const fromType = l.from_interface_type || undefined;
     const same = cables.find((c) => {
       if (c.a === src && c.b === dst) {
         // The same end reported twice (LLDP and MNDP on one port).
@@ -465,11 +527,11 @@ export function mergeCables(
       return false;
     });
     if (same) {
-      if (same.a === src) { same.aPort ??= fromPort; same.bPort ??= toPort; } else { same.bPort ??= fromPort; same.aPort ??= toPort; }
+      if (same.a === src) { same.aPort ??= fromPort; same.bPort ??= toPort; same.aType ??= fromType; } else { same.bPort ??= fromPort; same.aPort ??= toPort; same.bType ??= fromType; }
       if (l.stp_role) same.roles.push(l.stp_role);
       same.ids.push(l.id);
     } else {
-      cables.push({ a: src, b: dst, aPort: fromPort, bPort: toPort, roles: l.stp_role ? [l.stp_role] : [], ids: [l.id] });
+      cables.push({ a: src, b: dst, aPort: fromPort, bPort: toPort, aType: fromType, roles: l.stp_role ? [l.stp_role] : [], ids: [l.id] });
     }
   }
   const used = new Map<string, number>();
@@ -486,6 +548,40 @@ export function mergeCables(
     used.set(base, n + 1);
     // Two cables between the same switches with ports unknown would share an id.
     const id = n ? `${base}.${n}` : base;
-    return { id, kind: 'discovered' as const, source: c.a, target: c.b, label: ports || undefined, role };
+    const kind: PortKind = linkKind(portKind(c.aPort, c.aType), portKind(c.bPort, c.bType));
+    return {
+      id, kind: 'discovered' as const, source: c.a, target: c.b, label: ports || undefined, role,
+      ...(kind !== 'physical' ? { logical: kind } : {}),
+    };
   });
+}
+
+/**
+ * One line per pair of cards for what isn't a cable (#367). Two routers heard
+ * over CDP on vlan10...vlan98 and vrrp10...vrrp98 beside the cable between
+ * them drew 16 lines. Sightings on logical ports and tunnels fold into the
+ * pair's first cable, which lists them; with no cable, into the first of
+ * them. Every cable stays: two cables between two switches are two lines.
+ */
+export function foldLogical<E extends Omit<GraphEdge, 'parallel'>>(cables: E[]): E[] {
+  const pairOf = (c: E) => [c.source, c.target].sort().join('|');
+  const keeper = new Map<string, E>();
+  for (const c of cables) {
+    const k = pairOf(c);
+    const cur = keeper.get(k);
+    if (!cur || (cur.logical && !c.logical)) keeper.set(k, c);
+  }
+  const out: E[] = [];
+  const into = new Map<E, E>();
+  for (const c of cables) {
+    const keep = keeper.get(pairOf(c))!;
+    if (c === keep || !c.logical) { const copy = { ...c }; into.set(c, copy); out.push(copy); }
+  }
+  for (const c of cables) {
+    const keep = keeper.get(pairOf(c))!;
+    if (c === keep || !c.logical) continue;
+    const target = into.get(keep)!;
+    target.folded = [...(target.folded ?? []), c.label ?? 'port not known'];
+  }
+  return out;
 }

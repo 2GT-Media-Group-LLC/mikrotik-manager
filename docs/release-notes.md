@@ -3,6 +3,38 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.12
+
+**Capacity & health card, after a fleet of 152 devices**, from
+[@azizfayziev](https://github.com/azizfayziev)'s testing of beta.9
+([#368](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/368)):
+
+- Memory moves a device up only when it's 75 % or more **and** at least 10 points above that
+  device's own lowest in the last 7 days. Access points such as the wAP ax sit near 90 % all
+  week; they no longer fill the card and push the busy routers off it, and memory that climbs
+  (a leak) still comes first. High memory is still coloured, and its hover says which it is.
+- The shared name prefix is worked out from the rows on show, so one differently named device
+  further down the list (an out-of-band `99-SITE-MGMT`) no longer stops `01-SITE-` being hidden.
+- Faster. The 14-day baselines behind the "unusual for this hour" insights were read again on
+  every dashboard refresh, and were most of its time; they're now kept for the hour. The 24h
+  CPU graphs and the 7-day memory low are refreshed in the background, and dashboards loading at
+  the same time share one query. The response's `Server-Timing` header shows where the time went.
+- In a narrow window the Capacity and Security posture cards stack instead of squeezing the
+  device names to nothing, and on a phone the card drops its 24h graphs.
+
+**A more readable topology map, part two**, from aziz's testing of part one
+([Topology](topology.md#how-links-are-found),
+[#367](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367)):
+
+- Two devices heard again over VLAN, VRRP, bridge or bond interfaces draw one line, the cable,
+  with a **+N** that lists the rest on hover. Two routers with one cable and fifteen CDP
+  sightings on `vlan10`...`vrrp98` drew sixteen lines.
+- Computers that send LLDP with no name or capabilities become one **N hosts** chip per switch,
+  opened with a click, instead of a row of "Unknown" cards.
+- Links leaving the same side of a card are spread along it in the order of where they go, so
+  their lines and labels no longer pile up at the middle.
+- A link heard over a tunnel (WireGuard, EoIP, GRE...) is drawn dotted.
+
 ## 1.1.0-beta.11
 
 **A more readable topology map, part one**, from

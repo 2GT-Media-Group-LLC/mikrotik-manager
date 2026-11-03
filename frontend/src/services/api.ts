@@ -1553,6 +1553,8 @@ export interface OpsAttentionItem {
 export interface OpsCapacityRow {
   id: number; name: string; model?: string | null;
   cpu: number; mem_pct: number;
+  /** The least memory used in the last 7 days, in % (#368). */
+  mem_low_7d?: number | null;
   /** Highest CPU in the last 24 hours, and 48 half-hour peaks (null = no polls then) (#368). */
   cpu_peak_24h?: number | null; cpu_series?: (number | null)[];
 }
