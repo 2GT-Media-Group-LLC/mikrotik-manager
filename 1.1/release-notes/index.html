@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.15
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta14" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1616,6 +1627,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.15
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta14" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1792,6 +1814,18 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta15">1.1.0-beta.15<a class="headerlink" href="#110-beta15" title="Permanent link">&para;</a></h2>
+<p>Follow-ups to the topology map from <a href="https://github.com/azizfayziev">@azizfayziev</a>
+(<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367">#367</a>):</p>
+<ul>
+<li>An opened <strong>N hosts</strong> chip puts its hosts in a row under it. Before, a host could land far
+  across the map, wherever it had been saved when it had a card of its own.</li>
+<li>Shorter port names on links: <code>e17</code> and <code>sfp1</code>, without the <code>bridge/</code> and <code>bridge/bonding/</code>
+  RouterOS puts in front in LLDP. Hover a label for the full names
+  (<a href="../topology/#how-links-are-found">How links are found</a>).</li>
+<li>A Cisco AP whose platform is only "Cisco" is recognised by its LLDP system description, which
+  discovery now keeps. It shows as an access point after the next slow poll.</li>
+</ul>
 <h2 id="110-beta14">1.1.0-beta.14<a class="headerlink" href="#110-beta14" title="Permanent link">&para;</a></h2>
 <p><strong>A more readable topology map, part three</strong>, from
 <a href="https://github.com/azizfayziev">@azizfayziev</a>'s proposal
