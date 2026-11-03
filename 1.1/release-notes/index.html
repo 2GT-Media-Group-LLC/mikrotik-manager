@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.9
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta8" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1550,6 +1561,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.9
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta8" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1660,6 +1682,16 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta9">1.1.0-beta.9<a class="headerlink" href="#110-beta9" title="Permanent link">&para;</a></h2>
+<p><strong>A more readable Capacity &amp; health card</strong>, from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s
+proposal. On the dashboard's <strong>Operations</strong> tab the card now lists the busiest CPU first, and
+memory only moves a device up once it reaches 75 %. RouterOS memory use hardly changes, so it
+used to decide the order on its own. A name prefix shared by every device (<code>01-SITE-</code>) is shown
+once above the list instead of cutting off every name, and each row shows the model under the
+name. Loads under 50 % are grey, so the one device running hot stands out. A small graph shows
+each device's CPU over the last 24 hours, with a dashed line at 75 % and a dot at the day's
+peak, and a tick on the bar marks that peak too, so a spike can be told from a steady load
+(<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/368">#368</a>).</p>
 <h2 id="110-beta8">1.1.0-beta.8<a class="headerlink" href="#110-beta8" title="Permanent link">&para;</a></h2>
 <p><strong>The IPv6 firewall.</strong> The <strong>Firewall</strong> tab has an <strong>IPv4</strong> / <strong>IPv6</strong> switch. IPv6 has the same
 address lists, filter rules and NAT as IPv4 (IPv6 NAT needs RouterOS 7), with the same editing,
