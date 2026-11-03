@@ -125,11 +125,18 @@ const BACKOFF_MAX_MS = 5 * 60_000;
 const IDLE_MS = 15 * 60_000;
 const READY_TIMEOUT_MS = 15_000;
 /**
- * How long the jump host may take to open a connection onward. A router gives
- * up on a device that doesn't answer only after its own TCP timeout, which
- * can be minutes.
+ * How long the jump host may take to open a connection onward, unless whoever
+ * asks has less time. A router gives up on a device that doesn't answer only
+ * after its own TCP timeout, which can be minutes.
  */
 const CHANNEL_OPEN_TIMEOUT_MS = 20_000;
+/**
+ * RouterOS opens a forwarded channel at once when it forwards, before it
+ * tries the device, and never answers when it doesn't. A request left this
+ * long unanswered means forwarding is off; one given less time (the rest went
+ * on connecting to the jump host) says nothing.
+ */
+const ROUTEROS_OPENS_WITHIN_MS = 1_000;
 
 /**
  * Noticing a jump host that disappears without closing (a dropped link), so
@@ -391,8 +398,10 @@ function connectJumpHost(row: JumpHostRow, auth: JumpAuth, key: string): Live {
  * awaited comes before the check for an open connection, and the check and
  * opening one happen together, so devices polled all at once (at startup)
  * share the first connection, or its failure, rather than each opening one.
+ * A caller that can't wait past `until` stops waiting for the connection
+ * then, which carries on for the next use.
  */
-async function jumpClient(id: number): Promise<{ client: SSHClient; entry: Live; row: JumpHostRow }> {
+async function jumpClient(id: number, until = Infinity): Promise<{ client: SSHClient; entry: Live; row: JumpHostRow }> {
   const row = await loadRow(id);
   const auth = await resolveAuth(row).catch((err: unknown) => {
     throw err instanceof JumpHostError ? err : new JumpHostError(`${label(row)}: ${(err as Error).message}`, { cause: err });
@@ -406,7 +415,7 @@ async function jumpClient(id: number): Promise<{ client: SSHClient; entry: Live;
     const pinMoved = existing.fingerprint !== null && row.host_key_fingerprint !== null
       && existing.fingerprint !== row.host_key_fingerprint;
     if (existing.configKey === key && !pinMoved) {
-      return { client: await existing.ready, entry: existing, row };
+      return { client: await inTime(existing.ready, row, until), entry: existing, row };
     }
     closeLive(id, existing);
   }
@@ -419,32 +428,54 @@ async function jumpClient(id: number): Promise<{ client: SSHClient; entry: Live;
 
   const entry = connectJumpHost(row, auth, key);
   live.set(id, entry);
-  try {
-    const client = await entry.ready;
-    failures.delete(id);
-    return { client, entry, row };
-  } catch (err) {
-    if (live.get(id) === entry) live.delete(id);
-    entry.client.end();
-    const error = err instanceof JumpHostError ? err : new JumpHostError(`${label(row)}: ${(err as Error).message}`, { cause: err });
-    if (!entry.closing) {
-      const attempts = failed && failed.configKey === key ? failed.attempts + 1 : 1;
-      failures.set(id, { configKey: key, error, attempts, retryAt: Date.now() + backoffMs(attempts) });
-    }
-    throw error;
-  }
+  // Settled here whether or not anyone is still waiting, so a failure is
+  // counted towards the backoff even when every caller gave up first.
+  const ready = entry.ready.then(
+    (client) => {
+      failures.delete(id);
+      return client;
+    },
+    (err: unknown) => {
+      if (live.get(id) === entry) live.delete(id);
+      entry.client.end();
+      const error = err instanceof JumpHostError ? err : new JumpHostError(`${label(row)}: ${(err as Error).message}`, { cause: err });
+      if (!entry.closing) {
+        const attempts = failed && failed.configKey === key ? failed.attempts + 1 : 1;
+        failures.set(id, { configKey: key, error, attempts, retryAt: Date.now() + backoffMs(attempts) });
+      }
+      throw error;
+    },
+  );
+  return { client: await inTime(ready, row, until), entry, row };
+}
+
+/** `ready`, unless `until` comes first: the jump host didn't answer in time for this caller. */
+function inTime<T>(ready: Promise<T>, row: JumpHostRow, until: number): Promise<T> {
+  if (until === Infinity) return ready;
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new JumpHostError(`${label(row)} is unreachable: it did not answer in time`)),
+      Math.max(0, until - Date.now()),
+    );
+    ready.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err: unknown) => { clearTimeout(timer); reject(err); },
+    );
+  });
 }
 
 /**
  * A new TCP connection to host:port, opened by the jump host. Each call is a
  * channel of its own, so a check that needs a fresh connection to the device
- * (Change Guard) gets one. Fails after `timeoutMs` without one; a channel
- * that opens after that is closed straight away.
+ * (Change Guard) gets one. Fails `timeoutMs` after the call without one,
+ * connecting to the jump host first included, with the jump host's reason
+ * where it has one; a channel that opens after that is closed straight away.
  */
 export async function openForwardedChannel(
   jumpHostId: number, host: string, port: number, timeoutMs = CHANNEL_OPEN_TIMEOUT_MS,
 ): Promise<ClientChannel> {
-  const { client, entry, row } = await jumpClient(jumpHostId);
+  const until = Date.now() + timeoutMs;
+  const { client, entry, row } = await jumpClient(jumpHostId, until);
   // In use from here, so the idle sweep leaves the connection alone while the channel opens.
   entry.lastUsed = Date.now();
   // A device that doesn't take the connection fails with the code it would
@@ -476,18 +507,17 @@ export async function openForwardedChannel(
       }
       reject(refusal);
     };
+    const asked = Date.now();
     const timer = setTimeout(() => {
       if (!settle()) return;
-      if (entry.routerOs) {
-        // RouterOS opens a channel at once when it forwards, before it tries
-        // the device, and never answers when it doesn't.
+      if (entry.routerOs && Date.now() - asked >= ROUTEROS_OPENS_WITHIN_MS) {
         notForwarding(new JumpHostError(`${label(row)} did not answer a request to forward a connection, which is what ` +
           'RouterOS does while forwarding is off. Allow it on that router with: /ip ssh set forwarding-enabled=local'));
       } else {
         reject(deviceFailure(`${label(row)} could not connect to ${host}:${port}: no answer within ${Math.max(1, Math.round(timeoutMs / 1000))}s`, 'ETIMEDOUT'));
       }
       closeIfRetired(jumpHostId, entry);
-    }, timeoutMs);
+    }, Math.max(0, until - Date.now()));
     const failed = (err: Error & { reason?: number | string }) => {
       // RFC 4254 reason codes; the description that comes with them may be empty.
       if (err.reason === OPEN_ADMINISTRATIVELY_PROHIBITED || /prohibited/i.test(err.message)) {
@@ -540,14 +570,17 @@ export async function openForwardedChannel(
 
 /**
  * Spread into ssh2's connect options for a device: nothing for a direct
- * device, or the forwarded channel to its SSH port as `sock`.
+ * device, or the forwarded channel to its SSH port as `sock`. A caller with
+ * less time than a channel may take passes what it has.
  *
  *   conn.connect({ host, port, ...await sshRoute(device, port), ...sshHostCheck(...), ...auth });
  */
-export async function sshRoute(device: Routed & { ip_address: string }, port: number): Promise<{ sock?: Duplex }> {
+export async function sshRoute(
+  device: Routed & { ip_address: string }, port: number, timeoutMs = CHANNEL_OPEN_TIMEOUT_MS,
+): Promise<{ sock?: Duplex }> {
   const via = routeOf(device);
   if (via == null) return {};
-  return { sock: await openForwardedChannel(via, device.ip_address, port) };
+  return { sock: await openForwardedChannel(via, device.ip_address, port, Math.min(timeoutMs, CHANNEL_OPEN_TIMEOUT_MS)) };
 }
 
 /**

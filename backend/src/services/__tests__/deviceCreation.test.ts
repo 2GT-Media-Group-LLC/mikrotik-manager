@@ -9,6 +9,7 @@ import { computeNameLocked, createDeviceFromBody, loadCredentialPreset } from '.
 import { query, queryOne } from '../../config/database';
 import { RouterOSClient } from '../mikrotik/RouterOSClient';
 import { JumpHostError } from '../jumpHosts';
+import * as sshOnly from '../sshOnly';
 
 /**
  * Whether a newly-created device's name should stop following the router's
@@ -282,6 +283,30 @@ describe('createDeviceFromBody (jump hosts)', () => {
       expect(result).toMatchObject({ ok: false, status: 422, body: { error: down.message } });
     }
     expect(sqlRan(/INSERT INTO devices/)).toBeUndefined();
+  });
+
+  it("gives the jump host's reason once when it fails both the API and SSH of a device added over SSH only", async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const notForwarding = new JumpHostError('Jump host "branch-gw" (203.0.113.10:22) did not answer a request to forward a connection, ' +
+      'which is what RouterOS does while forwarding is off. Allow it on that router with: /ip ssh set forwarding-enabled=local');
+    (RouterOSClient as unknown as jest.Mock).mockImplementation(() => ({
+      connect: jest.fn().mockRejectedValue(notForwarding), disconnect: jest.fn(), execute: jest.fn(),
+    }));
+    const ssh = jest.spyOn(sshOnly, 'readSshInfo').mockRejectedValue(notForwarding);
+    try {
+      const result = await createDeviceFromBody({ ...base, ssh_only: true }, null, { siteId: 5 });
+      expect(ssh).toHaveBeenCalledWith(expect.objectContaining({ jump_host_id: 4 }), expect.anything());
+      expect(result).toEqual({ ok: false, status: 422, body: { error: notForwarding.message } });
+
+      // SSH failing for a reason of its own still gives both.
+      ssh.mockRejectedValue(new Error('All configured authentication methods failed'));
+      expect(await createDeviceFromBody({ ...base, ssh_only: true }, null, { siteId: 5 })).toMatchObject({
+        ok: false, status: 422, body: { error: expect.stringMatching(/^The API didn't answer \(.+\), and SSH failed too: The SSH login was refused/) },
+      });
+      expect(sqlRan(/INSERT INTO devices/)).toBeUndefined();
+    } finally {
+      ssh.mockRestore();
+    }
   });
 
   it("refuses another site's jump host before connecting to anything", async () => {

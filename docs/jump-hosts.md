@@ -20,11 +20,12 @@ Allow the SSH server to open connections onward for logged-in users:
 /ip ssh set forwarding-enabled=local
 ```
 
-Without it, RouterOS doesn't answer the manager's requests to forward at all. The manager waits
-20 seconds for a device (5 for **Test**), then shows the jump host as not forwarding, with this
-command. (Other SSH servers, such as OpenSSH, refuse at once.) Once it's on, the next poll (or
-**Test**) opens a new SSH connection to the router: some SSH servers, OpenSSH among them, only
-apply the setting to connections opened after it changed.
+Without it, RouterOS doesn't answer the manager's requests to forward at all. Once a request has
+gone unanswered for as long as the manager would wait for the device (5 to 20 seconds, depending
+on what it's doing), the manager shows the jump host as not forwarding, with this command, and
+gives that as the device's error too. (Other SSH servers, such as OpenSSH, refuse at once.) Once
+it's on, the next poll (or **Test**) opens a new SSH connection to the router: some SSH servers,
+OpenSSH among them, only apply the setting to connections opened after it changed.
 
 The user the manager logs in as needs nothing beyond SSH access. Devices behind the router see
 connections coming from the router's own address, so their API and SSH services (and any

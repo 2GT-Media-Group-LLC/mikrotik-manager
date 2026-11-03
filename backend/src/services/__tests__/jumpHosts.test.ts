@@ -15,6 +15,7 @@ import {
 } from '../jumpHosts';
 import { sshHostKeyFingerprint } from '../identityPins';
 import { httpsAnswers } from '../wwwSsl';
+import { runSshCommand } from '../sshExec';
 
 jest.mock('../../config/database', () => ({ query: jest.fn(), queryOne: jest.fn() }));
 jest.mock('../../utils/crypto', () => ({ decrypt: (s: string) => s, encrypt: (s: string) => s }));
@@ -446,6 +447,8 @@ describe('a jump host slow to reach the device', () => {
     const device = await startDevice();
     try {
       addJumpHost(15, jump.port);
+      // Connected first: the time counts from the call, connecting included.
+      expect(await testJumpHost(15)).toMatchObject({ ok: true });
       await expect(openForwardedChannel(15, '127.0.0.1', device.port, 150))
         .rejects.toThrow(/could not connect to 127\.0\.0\.1:\d+: no answer within 1s/);
       // Opened late on the router: closed by the manager, not left holding a connection to the device.
@@ -467,8 +470,11 @@ async function until(done: () => boolean, ms = 2_000): Promise<void> {
 
 describe('counting channels', () => {
   it('stops counting one a client gave up on, though it opened later and nothing read it', async () => {
-    const jump = await startJumpServer({ forwardDelayMs: 400 });
+    const jump = await startJumpServer({ forwardDelayMs: 1_300 });
     const device = await startDevice();
+    // A jump host that takes no notice of the time it's given, so the
+    // client's own timer gives up, a second after its deadline.
+    RouterOSClient.channelOpener = (id, host, port) => openForwardedChannel(id, host, port);
     try {
       addJumpHost(21, jump.port);
       const c = new RouterOSClient('127.0.0.1', device.port, 'admin', 'secret', 150, 2_000, false, 21);
@@ -671,7 +677,8 @@ describe('the jump host refusing', () => {
     const device = await startDevice();
     try {
       addJumpHost(63, jump.port);
-      const err = await openForwardedChannel(63, '127.0.0.1', device.port, 150).then(() => null, (e: unknown) => e as Error);
+      expect(await testJumpHost(63)).toMatchObject({ ok: true });
+      const err = await openForwardedChannel(63, '127.0.0.1', device.port, 1_200).then(() => null, (e: unknown) => e as Error);
       expect(err).toBeInstanceOf(JumpHostError);
       expect(err!.message).toMatch(/did not answer a request to forward a connection.*forwarding-enabled=local/);
       expect(jumpHostStatus(63)).toEqual({ state: 'not_forwarding', error: err!.message });
@@ -680,7 +687,7 @@ describe('the jump host refusing', () => {
       expect(jump.connectionsClosed).toBe(1);
 
       opts.forwarding = true;
-      const channel = await openForwardedChannel(63, '127.0.0.1', device.port, 150);
+      const channel = await openForwardedChannel(63, '127.0.0.1', device.port);
       expect(jump.connections).toBe(2);
       expect(jumpHostStatus(63)).toMatchObject({ state: 'connected', channels: 1 });
       channel.destroy();
@@ -695,7 +702,7 @@ describe('the jump host refusing', () => {
     const jump = await startJumpServer(opts);
     const device = await startDevice();
     const saved = forwardCheck.timeoutMs;
-    forwardCheck.timeoutMs = 150;
+    forwardCheck.timeoutMs = 1_200;
     try {
       addJumpHost(64, jump.port);
       devicesBehind.set(64, { ip_address: '127.0.0.1', api_port: device.port, ssh_port: 22, ssh_only: false });
@@ -767,6 +774,138 @@ const tlsPair = makeCert();
 // GHSA-63v6-w7qf-349f: API-SSL is tried first and the plain API only when
 // API-SSL isn't there. Through a jump host that still holds, whichever way the
 // jump host reports a port the device doesn't answer on.
+describe('a connection with less time than the jump host would take', () => {
+  it("fails with RouterOS's reason, within its own time, when RouterOS does not forward", async () => {
+    const jump = await startJumpServer({ routerOs: true, forwarding: false });
+    const device = await startDevice();
+    try {
+      addJumpHost(65, jump.port);
+      expect(await testJumpHost(65)).toMatchObject({ ok: true });
+      // As editing a device does: 10 seconds there, less than a channel's 20.
+      const started = Date.now();
+      const err = await new RouterOSClient('127.0.0.1', device.port, 'admin', 'secret', 1_200, 2_000, false, 65).connect()
+        .then(() => null, (e: unknown) => e as Error);
+      expect(err).toBeInstanceOf(JumpHostError);
+      expect(err!.message).toMatch(/did not answer a request to forward a connection.*forwarding-enabled=local/);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(jumpHostStatus(65)).toEqual({ state: 'not_forwarding', error: err!.message });
+      expect(device.connections).toBe(0);
+    } finally {
+      await device.close();
+      await jump.close();
+    }
+  });
+
+  it('does not take RouterOS for not forwarding from a request it had under a second to answer', async () => {
+    const jump = await startJumpServer({ routerOs: true, forwarding: false });
+    try {
+      addJumpHost(66, jump.port);
+      expect(await testJumpHost(66)).toMatchObject({ ok: true });
+      const err = await openForwardedChannel(66, '127.0.0.1', 8728, 300).then(() => null, (e: unknown) => e as Error);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(JumpHostError);
+      expect(err!.message).toMatch(/could not connect to 127\.0\.0\.1:8728: no answer within 1s/);
+      expect(jumpHostStatus(66)).toMatchObject({ state: 'connected' });
+    } finally {
+      await jump.close();
+    }
+  });
+
+  it('stops waiting for a jump host that has not answered in time, and still counts it failing later', async () => {
+    // Takes the connection and says nothing, as over a link that has gone quiet.
+    const held = new Set<net.Socket>();
+    const silent = net.createServer((sock) => {
+      held.add(sock);
+      sock.on('error', () => {});
+      sock.resume(); // reads what it's sent, so it sees the manager hang up
+      sock.on('close', () => held.delete(sock));
+    });
+    await new Promise<void>((r) => silent.listen(0, '127.0.0.1', r));
+    const device = await startDevice();
+    try {
+      addJumpHost(67, (silent.address() as AddressInfo).port, { name: 'quiet-gw' });
+      const started = Date.now();
+      // Two devices at once: the second waits on the connection the first opened.
+      const errs = await Promise.all([1, 2].map(() =>
+        new RouterOSClient('127.0.0.1', device.port, 'admin', 'secret', 300, 2_000, false, 67).connect()
+          .then(() => null, (e: unknown) => e as Error)));
+      for (const err of errs) {
+        expect(err).toBeInstanceOf(JumpHostError);
+        expect(err!.message).toMatch(/Jump host "quiet-gw" \(127\.0\.0\.1:\d+\) is unreachable: it did not answer in time/);
+      }
+      expect(Date.now() - started).toBeLessThan(1_000);
+      expect(device.connections).toBe(0);
+      // Not given up on: one connection, still trying, for the next device, and not counted as failing.
+      await new Promise((r) => setTimeout(r, 100));
+      expect(held.size).toBe(1);
+      expect(jumpHostStatus(67).state).not.toBe('failing');
+      // Its failure is counted when it comes, though no one waits for it any more.
+      for (const sock of held) sock.destroy();
+      await until(() => jumpHostStatus(67).state === 'failing');
+      expect(jumpHostStatus(67)).toMatchObject({ state: 'failing', error: expect.stringMatching(/quiet-gw/) });
+    } finally {
+      await new Promise<void>((r) => silent.close(() => r()));
+      await device.close();
+    }
+  });
+
+  it('counts its time from the call, connecting to the jump host included', async () => {
+    const jump = await startJumpServer({ loginDelayMs: 600, forwardDelayMs: 600 });
+    try {
+      addJumpHost(69, jump.port);
+      const started = Date.now();
+      await expect(openForwardedChannel(69, '127.0.0.1', 1, 900))
+        .rejects.toThrow(/could not connect to 127\.0\.0\.1:1: no answer within 1s/);
+      expect(Date.now() - started).toBeLessThan(1_300);
+    } finally {
+      await jump.close();
+    }
+  });
+
+  it("counts an SSH command's time from the call, the jump host's part included", async () => {
+    const jump = await startJumpServer({ forwardDelayMs: 500 });
+    // Logs anyone in, and runs a command that never finishes.
+    const deviceSsh = new SSHServer({ hostKeys: [OTHER_KEY] }, (client) => {
+      client.on('error', () => {});
+      client.on('authentication', (ctx) => ctx.accept());
+      client.on('session', (accept) => { accept().on('exec', (accept) => { accept(); }); });
+    });
+    await new Promise<void>((r) => deviceSsh.listen(0, '127.0.0.1', r));
+    const devPort = (deviceSsh.address() as AddressInfo).port;
+    try {
+      addJumpHost(70, jump.port);
+      const started = Date.now();
+      await expect(runSshCommand(
+        { id: 1, name: 'ap-1', ip_address: '127.0.0.1', ssh_port: devPort, ssh_username: 'admin', ssh_password_encrypted: 'dev-pass', jump_host_id: 70 },
+        '/tool sniffer quick', 1_000,
+      )).rejects.toThrow('Command timed out after 1000ms');
+      expect(Date.now() - started).toBeLessThan(1_300);
+      expect(jump.forwards).toEqual([`127.0.0.1:${devPort}`]);
+    } finally {
+      await jump.close();
+      await new Promise<void>((r) => deviceSsh.close(() => r()));
+    }
+  });
+
+  it("gives an SSH command's time to the jump host too, and fails it with RouterOS's reason", async () => {
+    const jump = await startJumpServer({ routerOs: true, forwarding: false });
+    try {
+      addJumpHost(68, jump.port);
+      expect(await testJumpHost(68)).toMatchObject({ ok: true });
+      const started = Date.now();
+      const err = await runSshCommand(
+        { id: 1, name: 'ap-1', ip_address: '127.0.0.1', ssh_port: 22, ssh_username: 'admin', ssh_password_encrypted: 'dev-pass', jump_host_id: 68 },
+        '/system identity print', 1_200,
+      ).then(() => null, (e: unknown) => e as Error);
+      expect(err).toBeInstanceOf(JumpHostError);
+      expect(err!.message).toMatch(/did not answer a request to forward a connection.*forwarding-enabled=local/);
+      expect(Date.now() - started).toBeLessThan(2_000);
+    } finally {
+      await jump.close();
+    }
+  });
+});
+
 describe('API-SSL first, then the plain API, through a jump host', () => {
   async function deadPort(): Promise<number> {
     const dead = net.createServer();

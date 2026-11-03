@@ -15,7 +15,7 @@ import { presetUseRefusal, type PresetCaller } from '../utils/presetAccess';
 import { fit } from '../utils/fit';
 import { parseSshOnlyFlag, classifyApiFailure, describeSshFailure, type SshInfo } from '../utils/sshOnly';
 import { readSshInfo } from './sshOnly';
-import { chooseJumpHost } from './jumpHosts';
+import { chooseJumpHost, JumpHostError } from './jumpHosts';
 
 export type CreateDeviceContext = {
   /** JWT role of the caller ('admin' | 'operator' | 'viewer'). Preset use may be restricted for operators. */
@@ -309,11 +309,11 @@ async function createDevice(
       }, { onHostKey: (fp) => { sshHostKey = fp; } });
     } catch (sshErr) {
       console.warn(`[deviceCreation] SSH-only add of ${logSafe(address)} failed: ${logSafe((sshErr as Error).message)}`);
-      return {
-        ok: false,
-        status: 422,
-        body: { error: `The API didn't answer (${apiUnavailable.replace(/\.$/, '')}), and SSH failed too: ${describeSshFailure(sshErr, ssh_port)}` },
-      };
+      // The jump host failing both is one reason, given once in its own words.
+      const error = err instanceof JumpHostError && sshErr instanceof JumpHostError
+        ? sshErr.message
+        : `The API didn't answer (${apiUnavailable.replace(/\.$/, '')}), and SSH failed too: ${describeSshFailure(sshErr, ssh_port)}`;
+      return { ok: false, status: 422, body: { error } };
     }
     detectedSerial = sshInfo.serial;
     deviceIdentity = sshInfo.identity?.trim() || null;

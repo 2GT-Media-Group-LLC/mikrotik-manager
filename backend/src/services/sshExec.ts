@@ -103,7 +103,10 @@ export async function runSshCommand(
   if (previewContext()) throw new Error('This change runs over SSH, so it can\'t be previewed');
   const { username, auth, kind } = await resolveAuth(device);
   const port = device.ssh_port ?? 22;
-  const route = await sshRoute(device, port);
+  // The time covers a jump host opening the connection too, so that its
+  // reason when it can't (forwarding off on RouterOS, say) comes within it.
+  const until = Date.now() + timeoutMs;
+  const route = await sshRoute(device, port, timeoutMs);
 
   return new Promise<SshExecResult>((resolve, reject) => {
     const conn = new SSHClient();
@@ -118,7 +121,7 @@ export async function runSshCommand(
 
     const timer = setTimeout(
       () => finish(() => reject(new Error(`Command timed out after ${timeoutMs}ms`))),
-      timeoutMs,
+      Math.max(0, until - Date.now()),
     );
 
     conn.on('ready', () => {
