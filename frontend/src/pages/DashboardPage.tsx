@@ -25,6 +25,7 @@ import { escapeHtml } from '../utils/escapeHtml';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import { byAttention, CARD_ROWS } from '../utils/deviceCards';
 import { filterDevices } from '../utils/devicePicker';
+import { commonPrefix, shortName, sortCapacity, loadColor, loadText, memText, MEM_HIGH } from '../utils/capacityCard';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -64,6 +65,40 @@ function Sparkline({ data, w = 120, h = 24, color = 'var(--accent)', area = true
   );
 }
 
+/**
+ * A device's CPU over 24 hours, 48 half-hour peaks on a fixed 0–100 scale (#368).
+ * Gaps in polling break the line. The dashed line is the 75 % warning level,
+ * the dot the day's peak.
+ */
+function CpuTrend({ points = [], w = 96, h = 22 }: { points?: (number | null)[]; w?: number; h?: number }) {
+  const known = points.filter((v): v is number => v !== null);
+  if (points.length < 2 || known.length < 2) return <span style={{ display: 'block', width: w, height: h }} />;
+  const x = (i: number) => 1 + (i * (w - 2)) / (points.length - 1);
+  const y = (v: number) => h - 2 - (Math.min(100, v) / 100) * (h - 4);
+  let line = '';
+  let area = '';
+  let run: [number, number][] = [];
+  const close = () => {
+    if (run.length > 1) area += `M${x(run[0][0]).toFixed(1)},${h} ${run.map(([i, v]) => `L${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')} L${x(run[run.length - 1][0]).toFixed(1)},${h}Z `;
+    run = [];
+  };
+  points.forEach((v, i) => {
+    if (v === null) { close(); return; }
+    line += `${run.length ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)} `;
+    run.push([i, v]);
+  });
+  close();
+  const peak = Math.max(...known);
+  const pk = points.indexOf(peak);
+  return (
+    <svg width={w} height={h} aria-hidden style={{ display: 'block' }}>
+      <line x1={0} x2={w} y1={y(75)} y2={y(75)} stroke="var(--warn)" strokeOpacity={0.35} strokeDasharray="2 2" />
+      <path d={area} fill="var(--accent)" fillOpacity={0.08} />
+      <path d={line} fill="none" stroke="var(--accent)" strokeOpacity={0.7} strokeWidth={1.3} />
+      <circle cx={x(pk)} cy={y(peak)} r={2} fill="var(--ink-3)" />
+    </svg>
+  );
+}
 
 // ─── Device Locations Map ─────────────────────────────────────────────────────
 
@@ -778,8 +813,12 @@ function OperationsView({
   const worstDevices = [...scored].sort((a, b) => (a.score ?? 0) - (b.score ?? 0)).slice(0, 3);
   const scoreColor = (s: number | null) => s == null ? 'var(--ink-3)' : s >= 85 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : 'var(--bad)';
 
-  const sortedCapacity = [...capacity].sort((a, b) => Math.max(b.cpu, b.mem_pct) - Math.max(a.cpu, a.mem_pct));
+  // Busiest CPU first; memory counts only once it's high (#368).
+  const sortedCapacity = sortCapacity(capacity);
+  // A prefix every device shares (01-NIKITINA-) is shown once, not on each row.
+  const capacityPrefix = commonPrefix(sortedCapacity.map((c) => c.name));
   const CAPACITY_ROWS = 8;
+  const CAPACITY_GRID = 'minmax(0,1fr) 96px 92px 38px';
   // Fleet strip: two rows of tiles at most, the last one linking to the rest (#303).
   const FLEET_TILES = 10;
   const fleetList = devices as Device[];
@@ -787,7 +826,6 @@ function OperationsView({
   const fleetHidden = fleetList.length - fleetTiles.length;
   const fleetOffline = fleetList.filter((d) => d.status === 'offline').length;
   const shownCapacity = showAllCapacity ? sortedCapacity : sortedCapacity.slice(0, CAPACITY_ROWS);
-  const meterColor = (v: number) => v >= 90 ? 'var(--bad)' : v >= 75 ? 'var(--warn)' : 'var(--accent)';
 
   const sevColor = (s: string) => s === 'error' ? 'var(--bad)' : s === 'warn' ? 'var(--warn)' : 'var(--info)';
   const activityIcon = (kind: string) => kind === 'config' ? FileText : kind === 'alert' ? Bell : Activity;
@@ -995,31 +1033,49 @@ function OperationsView({
           <div className="flex items-center gap-2 px-5 py-[14px]" style={{ borderBottom: '1px solid var(--line)' }}>
             <Cpu className="w-4 h-4" style={{ color: 'var(--accent)' }} />
             <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Capacity &amp; health</span>
-            <span className="mono text-[11px] ml-auto" style={{ color: 'var(--ink-3)' }}>busiest first · CPU · MEM</span>
+            <span className="mono text-[11px] ml-auto" style={{ color: 'var(--ink-3)' }}>busiest CPU first</span>
           </div>
           {sortedCapacity.length === 0 ? (
             <div className="py-8 text-center text-[13px]" style={{ color: 'var(--ink-3)' }}>No resource data yet.</div>
           ) : (
-            <div className="px-5 py-3 space-y-3" style={showAllCapacity ? { maxHeight: 'min(52vh, 460px)', overflowY: 'auto' } : undefined}>
+            <div className="px-5 py-3" style={showAllCapacity ? { maxHeight: 'min(52vh, 460px)', overflowY: 'auto' } : undefined}>
+              {capacityPrefix && (
+                <div className="pb-2 text-[11px]" style={{ color: 'var(--ink-4)' }}>
+                  Common prefix{' '}
+                  <span className="mono px-1 rounded" style={{ background: 'var(--surface-3)', color: 'var(--ink-3)' }}>{capacityPrefix}</span>
+                  {' '}hidden
+                </div>
+              )}
+              <div className="grid items-center gap-x-3 pb-1 mono text-[9px] uppercase tracking-wide"
+                style={{ gridTemplateColumns: CAPACITY_GRID, color: 'var(--ink-4)' }}>
+                <span>Device</span><span>CPU 24h</span><span>CPU now</span><span className="text-right">Mem</span>
+              </div>
               {shownCapacity.map((c) => (
-                <button key={c.id} onClick={() => navigate(`/devices/${c.id}`)} title={c.name}
-                  className="w-full text-left flex items-center gap-3 group">
-                  <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--ink)', width: 130 }}>{c.name}</div>
-                  <div className="flex-1 flex items-center gap-3">
-                    {([['CPU', c.cpu], ['MEM', c.mem_pct]] as const).map(([lbl, v]) => (
-                      <div key={lbl} className="flex-1 flex items-center gap-1.5">
-                        <span className="mono text-[9px]" style={{ color: 'var(--ink-4)', width: 22 }}>{lbl}</span>
-                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
-                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, v)}%`, background: meterColor(v) }} />
-                        </div>
-                        <span className="mono text-[10px] num-tab" style={{ color: 'var(--ink-3)', width: 30, textAlign: 'right' }}>{v}%</span>
-                      </div>
-                    ))}
+                <button key={c.id} onClick={() => navigate(`/devices/${c.id}`)}
+                  title={`${c.name}${c.cpu_peak_24h != null ? ` · 24h CPU peak ${c.cpu_peak_24h}%` : ''}`}
+                  className="w-full text-left grid items-center gap-x-3 py-[5px] group"
+                  style={{ gridTemplateColumns: CAPACITY_GRID }}>
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--ink)' }}>{shortName(c.name, capacityPrefix)}</div>
+                    {c.model && <div className="text-[10.5px] truncate" style={{ color: 'var(--ink-4)' }}>{c.model}</div>}
                   </div>
+                  <CpuTrend points={c.cpu_series} />
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative flex-1 h-1.5 rounded-full" style={{ background: 'var(--surface-3)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, c.cpu)}%`, background: loadColor(c.cpu) }} />
+                      {c.cpu_peak_24h != null && c.cpu_peak_24h > c.cpu && (
+                        <div className="absolute -top-0.5 w-[1.5px] h-2.5 rounded"
+                          style={{ left: `min(${Math.min(100, c.cpu_peak_24h)}%, 100% - 1.5px)`, background: 'var(--ink-4)' }} />
+                      )}
+                    </div>
+                    <span className="mono text-[11px] font-semibold num-tab text-right" style={{ color: loadText(c.cpu), width: 30 }}>{c.cpu}%</span>
+                  </div>
+                  <span className="mono text-[11px] num-tab text-right" style={{ color: memText(c.mem_pct) }}
+                    title={c.mem_pct >= MEM_HIGH ? 'Memory is high, so it counts toward the order' : undefined}>{c.mem_pct}%</span>
                 </button>
               ))}
               {sortedCapacity.length > CAPACITY_ROWS && (
-                <div className="pt-1 text-[11.5px] flex items-center gap-2" style={{ color: 'var(--ink-3)' }}>
+                <div className="pt-2 text-[11.5px] flex items-center gap-2" style={{ color: 'var(--ink-3)' }}>
                   {showAllCapacity
                     ? `All ${sortedCapacity.length} devices`
                     : `${CAPACITY_ROWS} busiest of ${sortedCapacity.length} shown`}
@@ -1039,7 +1095,9 @@ function OperationsView({
         {/* Security posture rollup */}
         <button
           onClick={() => navigate('/security')}
-          className="card text-left transition-colors"
+          // A button centres its content; stretched to the Capacity card's
+          // height, the posture would float mid-card (#368).
+          className="card text-left transition-colors flex flex-col justify-start"
           style={{ overflow: 'hidden', padding: 0 }}
           onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--line-strong, var(--line))')}
           onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}

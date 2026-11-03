@@ -1,5 +1,6 @@
 import { fluxString } from '@influxdata/influxdb-client';
 import { getQueryApi, bucket } from '../config/influxdb';
+import { trendStart, trendSlots, type TrendPoint } from '../utils/cpuTrend';
 
 export interface LatestResources {
   cpu: number;
@@ -104,4 +105,37 @@ export async function latestInterfaceCounters(): Promise<Map<string, Map<string,
     out.set(id, byIface);
   });
   return out;
+}
+
+const trendCache: { at: number; data: Map<string, (number | null)[]> } = { at: 0, data: new Map() };
+/** The 24h trend changes slowly; the dashboard asks every minute. */
+const TREND_CACHE_MS = 2 * 60_000;
+
+/**
+ * Every device's CPU over the last 24 hours as 48 half-hour maxima (#368), in
+ * one query for the whole fleet. Grouped by device id only, so a device renamed
+ * during the day stays one line. An unreadable Influx gives an empty map.
+ */
+export async function cpuTrend24h(now = Date.now()): Promise<Map<string, (number | null)[]>> {
+  if (now - trendCache.at < TREND_CACHE_MS) return trendCache.data;
+  const points: TrendPoint[] = [];
+  const flux = `
+    from(bucket: ${fluxString(bucket)})
+      |> range(start: time(v: ${fluxString(new Date(trendStart(now)).toISOString())}))
+      |> filter(fn: (r) => r["_measurement"] == "device_resources" and r["_field"] == "cpu_load")
+      |> group(columns: ["device_id"])
+      |> aggregateWindow(every: 30m, fn: max, createEmpty: false, timeSrc: "_start")
+  `;
+  try {
+    await run(flux, (o) => {
+      const t = o['_time'];
+      const start = t instanceof Date ? t.getTime() : Date.parse(String(t));
+      points.push({ id: String(o['device_id'] || ''), start, value: Number(o['_value']) });
+    });
+  } catch {
+    return new Map();
+  }
+  trendCache.at = now;
+  trendCache.data = trendSlots(points, now);
+  return trendCache.data;
 }

@@ -19,7 +19,8 @@ import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector
 import { BackupService, BackupDevice } from '../services/BackupService';
 import { fluxString } from '@influxdata/influxdb-client';
 import { stpDomains } from '../utils/stpUpstream';
-import { latestResources } from '../services/latestMetrics';
+import { latestResources, cpuTrend24h } from '../services/latestMetrics';
+import { trendPeak } from '../utils/cpuTrend';
 import { channelUsage } from '../services/channelUsage';
 import { routeOf } from '../services/jumpHosts';
 
@@ -140,8 +141,8 @@ router.get('/insights', async (req, res) => {
       device_type: string; ros_version: string | null;
       firmware_update_available: boolean; latest_ros_version: string | null;
       routerboard_upgrade_available: boolean; firmware_version: string | null;
-      upgrade_firmware_version: string | null;
-    }>(`SELECT id, name, status, last_seen, device_type, ros_version,
+      upgrade_firmware_version: string | null; model: string | null;
+    }>(`SELECT id, name, status, last_seen, device_type, ros_version, model,
                firmware_update_available, latest_ros_version,
                routerboard_upgrade_available, firmware_version, upgrade_firmware_version
         FROM devices ${devFilter ? `WHERE ${devFilter}` : ''}`),
@@ -176,7 +177,7 @@ router.get('/insights', async (req, res) => {
         ${evtFilter ? `AND ${evtFilter}` : ''}`),
   ]);
 
-  const [resources, retries] = await Promise.all([latestResources(), latestRetries()]);
+  const [resources, retries, cpuTrend] = await Promise.all([latestResources(), latestRetries(), cpuTrend24h()]);
 
   const attention: AttentionItem[] = [];
 
@@ -235,12 +236,21 @@ router.get('/insights', async (req, res) => {
   }
 
   // Capacity pressure (CPU / memory)
-  const capacity: { id: number; name: string; cpu: number; mem_pct: number }[] = [];
+  // Each row carries the model and the 24h CPU trend, so the card can tell a
+  // spike from a steady load (#368).
+  const capacity: {
+    id: number; name: string; model: string | null; cpu: number; mem_pct: number;
+    cpu_peak_24h: number | null; cpu_series: (number | null)[];
+  }[] = [];
   for (const d of devices) {
     const r = resources.get(String(d.id));
     if (!r) continue;
     const memPct = r.memTotal > 0 ? Math.round((r.memUsed / r.memTotal) * 100) : 0;
-    capacity.push({ id: d.id, name: d.name, cpu: Math.round(r.cpu), mem_pct: memPct });
+    const series = cpuTrend.get(String(d.id)) ?? [];
+    capacity.push({
+      id: d.id, name: d.name, model: d.model || null, cpu: Math.round(r.cpu), mem_pct: memPct,
+      cpu_peak_24h: trendPeak(series), cpu_series: series,
+    });
     if (r.cpu >= 85) {
       attention.push({
         sev: 'warn', category: 'capacity',
