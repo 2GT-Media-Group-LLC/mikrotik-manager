@@ -7,6 +7,19 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.4
+
+Released on Monday 2 November 2026. A fix for switching a port from trunk to access.
+
+- **A port set to access stayed tagged on its old VLANs.** Saving a trunk port as access set its
+  PVID and made it admit only untagged frames, but left it a tagged member of every VLAN it had
+  carried, so the switch kept sending those VLANs out of it tagged. Opening the port again showed
+  it as a trunk, as if the change hadn't happened. An access port now leaves every VLAN but its
+  PVID's, and Change Guard predicts that, so taking the port that carries tagged management to
+  access is caught as a lockout. The port editor now shows a port in the mode its frame
+  admission says. A port left half-changed by the old save opens as access; save it again to
+  finish the change ([Changing a port's VLAN](devices.md#changing-a-ports-vlan)).
+
 ## 1.0.3
 
 Released on Monday 2 November 2026. Two dashboard warnings that showed when nothing was wrong,
