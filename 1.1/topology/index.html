@@ -1812,6 +1812,14 @@ a link. A port that hears several draws nothing, because the protocol can't say 
 is actually plugged in. Link those by hand if you want them on the map. LLDP neighbours count
 too: on a port where LLDP names a switch, a device heard there over CDP or MNDP is behind that
 switch, so it isn't drawn as a cable to the port.</p>
+<p>Two devices heard again over VLAN, VRRP, bridge or bond interfaces, or over a tunnel, aren't
+joined by another cable. Those sightings fold into the cable between the two, which shows a small
+<strong>+N</strong>; hover it for the list (#367). Two routers heard over CDP on twenty VLAN and VRRP
+interfaces beside their one cable draw one line with <strong>+20</strong>. Two devices with no cable between
+them, only logical sightings, get one line for all of them. A link heard over a tunnel
+(WireGuard, EoIP, GRE, L2TP and the like) is drawn dotted. The kind of port comes from the
+device's interface list, and for the far end, or another vendor, from its name (<code>Vlan10</code>,
+<code>Po15</code>, <code>Tunnel0</code>). Every cable is still drawn: two cables between two switches are two lines.</p>
 <p>LLDP isn't always point to point either: RouterOS bridges forward it, so a device can hear an
 unmanaged switch through the rest of the network as if it were cabled to it. A switch says which
 of its own ports each announcement left from. When two managed devices report the <em>same</em> port of
@@ -1889,6 +1897,9 @@ the top of the page switches to straight lines; the choice is remembered in your
 to choose where each end attaches: <strong>Top</strong>, <strong>Bottom</strong>, <strong>Left</strong>, <strong>Right</strong> or <strong>Automatic</strong>. A
 pinned end leaves its side at a right angle and the link routes around, as in a wiring diagram.
 A second cable between the same two cards is drawn alongside the first.</p>
+<p>Curved links leaving the same side of a card each get their own point along it, in the order of
+where they go (#367), so a switch with ten links underneath has ten separate lines and labels,
+not one bundle from the middle of its bottom edge. The points move as the cards do.</p>
 <h3 id="exporting-the-map">Exporting the map<a class="headerlink" href="#exporting-the-map" title="Permanent link">&para;</a></h3>
 <p><strong>Export</strong> saves the whole map as an image, not only the part on screen, as it's shown now: the
 site or device you're viewing, clients if they're shown, curved or straight links, and the light
@@ -1925,6 +1936,11 @@ to it, and the access point it's associated with. It is drawn where it actually 
 and labelled from what it advertises: a switch, router, access point, phone or computer. A
 computer running a software bridge (Hyper-V, a Linux bridge) advertises "bridge" too; from 0.50.0
 it's labelled a computer, not a switch (#260).</p>
+<p>Computers often send LLDP from their network cards, with no system name and no capabilities.
+Two or more of those under one device become one <strong>N hosts</strong> chip (#367); click it to show each,
+click again to fold them back. One heard by more than one device keeps its own card. So does one
+you've named, typed or linked by hand: name a host to keep it on the map. Clients learned behind
+a grouped host hang from its switch.</p>
 <p>Click a neighbour to give it a better name or set its type by hand; <strong>Back to what discovery
 says</strong> undoes that. Discovery keeps finding it as before; only how it's shown changes.</p>
 <h2 id="your-own-nodes">Your own nodes<a class="headerlink" href="#your-own-nodes" title="Permanent link">&para;</a></h2>

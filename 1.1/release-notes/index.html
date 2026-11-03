@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.12
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta11" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1583,6 +1594,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.12
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta11" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1726,6 +1748,37 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta12">1.1.0-beta.12<a class="headerlink" href="#110-beta12" title="Permanent link">&para;</a></h2>
+<p><strong>Capacity &amp; health card, after a fleet of 152 devices</strong>, from
+<a href="https://github.com/azizfayziev">@azizfayziev</a>'s testing of beta.9
+(<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/368">#368</a>):</p>
+<ul>
+<li>Memory moves a device up only when it's 75 % or more <strong>and</strong> at least 10 points above that
+  device's own lowest in the last 7 days. Access points such as the wAP ax sit near 90 % all
+  week; they no longer fill the card and push the busy routers off it, and memory that climbs
+  (a leak) still comes first. High memory is still coloured, and its hover says which it is.</li>
+<li>The shared name prefix is worked out from the rows on show, so one differently named device
+  further down the list (an out-of-band <code>99-SITE-MGMT</code>) no longer stops <code>01-SITE-</code> being hidden.</li>
+<li>Faster. The 14-day baselines behind the "unusual for this hour" insights were read again on
+  every dashboard refresh, and were most of its time; they're now kept for the hour. The 24h
+  CPU graphs and the 7-day memory low are refreshed in the background, and dashboards loading at
+  the same time share one query. The response's <code>Server-Timing</code> header shows where the time went.</li>
+<li>In a narrow window the Capacity and Security posture cards stack instead of squeezing the
+  device names to nothing, and on a phone the card drops its 24h graphs.</li>
+</ul>
+<p><strong>A more readable topology map, part two</strong>, from aziz's testing of part one
+(<a href="../topology/#how-links-are-found">Topology</a>,
+<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367">#367</a>):</p>
+<ul>
+<li>Two devices heard again over VLAN, VRRP, bridge or bond interfaces draw one line, the cable,
+  with a <strong>+N</strong> that lists the rest on hover. Two routers with one cable and fifteen CDP
+  sightings on <code>vlan10</code>...<code>vrrp98</code> drew sixteen lines.</li>
+<li>Computers that send LLDP with no name or capabilities become one <strong>N hosts</strong> chip per switch,
+  opened with a click, instead of a row of "Unknown" cards.</li>
+<li>Links leaving the same side of a card are spread along it in the order of where they go, so
+  their lines and labels no longer pile up at the middle.</li>
+<li>A link heard over a tunnel (WireGuard, EoIP, GRE...) is drawn dotted.</li>
+</ul>
 <h2 id="110-beta11">1.1.0-beta.11<a class="headerlink" href="#110-beta11" title="Permanent link">&para;</a></h2>
 <p><strong>A more readable topology map, part one</strong>, from
 <a href="https://github.com/azizfayziev">@azizfayziev</a>'s proposal. Links are curved now, leaving the
