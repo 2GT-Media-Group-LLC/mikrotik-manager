@@ -20,6 +20,7 @@ import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
 import { fleetStatus } from '../utils/fleetStatus';
+import { fleetActionSummary, type FleetActionSummary } from '../utils/fleetAction';
 import { escapeHtml } from '../utils/escapeHtml';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import { byAttention, CARD_ROWS } from '../utils/deviceCards';
@@ -720,7 +721,7 @@ function OperationsView({
 
   // Action state
   const [busy, setBusy] = useState<string | null>(null);
-  const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [actionMsg, setActionMsg] = useState<FleetActionSummary | null>(null);
   const [pickTerminal, setPickTerminal] = useState(false);
   const [terminalSearch, setTerminalSearch] = useState('');
   // Capacity lists the busiest devices first and stops at CAPACITY_ROWS, which
@@ -728,12 +729,14 @@ function OperationsView({
   const [showAllCapacity, setShowAllCapacity] = useState(false);
   const [terminalDevice, setTerminalDevice] = useState<{ id: number; name: string } | null>(null);
 
-  async function runAction(key: string, fn: () => Promise<string>) {
+  async function runAction(key: string, fn: () => Promise<string | FleetActionSummary>) {
     setBusy(key); setActionMsg(null);
-    try { setActionMsg({ text: await fn(), ok: true }); }
-    catch (e) {
+    try {
+      const r = await fn();
+      setActionMsg(typeof r === 'string' ? { text: r, tone: 'good', failures: [] } : r);
+    } catch (e) {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error || (e as Error).message || 'Action failed';
-      setActionMsg({ text: msg, ok: false });
+      setActionMsg({ text: msg, tone: 'bad', failures: [] });
     } finally { setBusy(null); }
   }
 
@@ -750,17 +753,15 @@ function OperationsView({
     { key: 'backup', label: 'Backup all', sub: `${onlineDevices.length} online`, icon: HardDrive, color: 'var(--info)',
       run: () => fleetConfirm('Back up') && runAction('backup', async () => {
         const r = await operationsApi.backupAll();
-        const ok = r.data.results.filter(x => x.ok).length;
-        return `Backed up ${ok}/${r.data.total} device${r.data.total !== 1 ? 's' : ''}`;
+        return fleetActionSummary('Backed up', r.data);
       }) },
     { key: 'terminal', label: 'Open terminal', sub: 'Pick a device', icon: Terminal, color: 'var(--violet)',
       run: () => { setActionMsg(null); setTerminalSearch(''); setPickTerminal(true); } },
     { key: 'sync', label: 'Sync config', sub: 'Pull latest /export', icon: RefreshCw, color: 'var(--ink-2)',
       run: () => fleetConfirm('Pull the configuration') && runAction('sync', async () => {
         const r = await operationsApi.syncAll();
-        const ok = r.data.results.filter(x => x.ok).length;
         qc.invalidateQueries({ queryKey: ['ops-insights'] });
-        return `Synced ${ok}/${r.data.total} device${r.data.total !== 1 ? 's' : ''}`;
+        return fleetActionSummary('Synced', r.data);
       }) },
     { key: 'events', label: 'Tail events', sub: 'Live syslog stream', icon: Activity, color: 'var(--ink-2)',
       run: () => navigate('/events') },
@@ -854,11 +855,37 @@ function OperationsView({
         })}
         {actionMsg && (
           <span className="text-[11.5px] ml-1"
-                style={{ color: actionMsg.ok ? 'var(--good)' : 'var(--bad)' }}>
+                style={{ color: `var(--${actionMsg.tone})` }}>
             {actionMsg.text}
           </span>
         )}
       </div>
+
+      {/* The devices a fleet action didn't reach, and why (#392). */}
+      {actionMsg && actionMsg.failures.length > 0 && (
+        <div className="card px-4 py-3 text-[12px]" style={{ borderLeft: `3px solid var(--${actionMsg.tone})` }}>
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <span className="font-semibold" style={{ color: 'var(--ink)' }}>
+              {actionMsg.failures.length} device{actionMsg.failures.length !== 1 ? 's' : ''} failed
+            </span>
+            <button onClick={() => setActionMsg(null)} className="text-[11px] opacity-70 hover:opacity-100"
+                    style={{ color: 'var(--ink-3)' }}>
+              Dismiss
+            </button>
+          </div>
+          <ul className="max-h-48 overflow-y-auto space-y-1">
+            {actionMsg.failures.map((f) => (
+              <li key={f.id ?? f.name} className="flex gap-2 min-w-0">
+                {f.id
+                  ? <button onClick={() => navigate(`/devices/${f.id}`)} className="font-medium flex-shrink-0 hover:underline"
+                            style={{ color: 'var(--ink)' }}>{f.name}</button>
+                  : <span className="font-medium flex-shrink-0" style={{ color: 'var(--ink)' }}>{f.name}</span>}
+                <span className="break-words min-w-0" style={{ color: 'var(--ink-2)' }}>{f.error}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Platform update available */}
       {versionInfo?.update_available && versionInfo.latest && (

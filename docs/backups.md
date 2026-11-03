@@ -32,6 +32,14 @@ if the device refuses the key at login. Before 0.24.50 a key backup that timed o
 back to the password, which RouterOS refuses once a key is installed, so the device logged a
 "login failure" and the real reason was lost.
 
+### Backing up every device
+
+**Backup all** on the dashboard backs up every online device in view, a few at a time. When
+it finishes it says how many worked, and lists each device that didn't, with the reason.
+Click a device's name to open it. Because a backup is an SSH export, the reason is usually
+the SSH login, the SSH port, or SSH being turned off on the device. Before 1.0.5 only the
+count was shown. **Sync config** does the same.
+
 ## Passwords and keys
 
 By default RouterOS v7 also leaves out Wi-Fi keys, VPN and PPP secrets, WireGuard private
