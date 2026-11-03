@@ -184,6 +184,25 @@ suite('client port and upstream choice against Postgres (#363)', () => {
     await db.query(`UPDATE topology_links SET stp_role = NULL WHERE from_device_id = $1`, [id.asw]);
   });
 
+  it("gives the map each device's way up, and none for the gateway (#367)", async () => {
+    const { deviceWaysUp } = require('../../services/topology/wayUp') as typeof import('../../services/topology/wayUp');
+    const types = await db.query<{ id: number; device_type: string }>(`SELECT id, device_type FROM devices`);
+    await db.query(`UPDATE devices SET device_type = CASE WHEN id = ANY($1) THEN 'router' ELSE 'switch' END`, [[id.rtr, id.mgmt]]);
+    try {
+      const up = new Map((await deviceWaysUp(null)).map((w) => [w.deviceId, w]));
+      expect(up.get(id.asw)).toMatchObject({ upstreamDeviceId: id.csw });
+      expect(up.get(id.inband)).toMatchObject({ upstreamDeviceId: id.csw });
+      expect(up.get(id.csw)).toMatchObject({ upstreamDeviceId: id.rtr });
+      // The router's links lead down into its own LAN: it's the top.
+      expect(up.has(id.rtr)).toBe(false);
+      // Scoped like the map: a condition on the device.
+      const one = await deviceWaysUp(`d.id = ${id.asw}`);
+      expect(one.map((w) => w.deviceId)).toEqual([id.asw]);
+    } finally {
+      for (const t of types) await db.query(`UPDATE devices SET device_type = $2 WHERE id = $1`, [t.id, t.device_type]);
+    }
+  });
+
   // ── rc.4 follow-up from the reporter's site ─────────────────────────────────
 
   async function upstreamOf(deviceId: number) {

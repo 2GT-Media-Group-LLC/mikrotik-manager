@@ -335,6 +335,8 @@ export interface TopologyDevice {
   ros_version?: string;
   /** Cached /ip/address rows from the device (set by backend sync). */
   ip_addresses_jsonb?: { address: string; interface?: string; dynamic?: boolean }[];
+  /** CAPsMAN: 'controller', 'cap', 'controller_cap', 'standalone' or 'none' (#367 role chip). */
+  wifi_role?: string | null;
 }
 
 export interface TopologyLink {

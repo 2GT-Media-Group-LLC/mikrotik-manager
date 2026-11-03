@@ -2,6 +2,7 @@ import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { Handle, Position } from '@xyflow/react';
 import {
   Users, Wifi, Cable, Globe, Router, Shield, Network, Server, HardDrive, Printer, Camera, Phone, Monitor, Cloud, Box, ChevronDown, ChevronUp,
+  RadioTower,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { TopologyDevice, ExternalTopologyNode, TopologyNode, TopologyClient } from '../../types';
@@ -60,6 +61,81 @@ export function capsLabel(caps: string | undefined): string {
   return '';
 }
 
+/**
+ * Access points that advertise only "bridge" in LLDP, told apart by what they
+ * call themselves: a Cisco 9120 was labelled a switch (#367). Model codes are
+ * matched as written; the words in any case.
+ */
+const AP_WORDS = /\b(access[- ]?point|ap software|aironet)\b/i;
+const AP_MODELS = /\b(AIR-[A-Z]*AP[0-9A-Z-]*|C91[0-9]{2}AX[A-Z0-9-]*|CW91[0-9]{2}[A-Z0-9-]*|UAP(-[A-Za-z0-9]+)*|U6(-[A-Za-z0-9]+)*|U7(-[A-Za-z0-9]+)*|AP-[0-9]{3}[A-Z]*|MR[0-9]{2}[A-Z]?|EAP[0-9]{3}|cAP|wAP)\b/;
+
+/** What a neighbour is, from its LLDP capabilities and, failing a clear answer, its platform or description. */
+export function neighbourType(caps: string | undefined, platform: string | undefined): string {
+  const byCaps = capsLabel(caps);
+  if (byCaps === 'AP' || byCaps === 'Computer' || byCaps === 'Phone') return byCaps;
+  if (platform && (AP_WORDS.test(platform) || AP_MODELS.test(platform))) return 'AP';
+  return byCaps;
+}
+
+/** Icons for the compact view (#367): by device type, and for a neighbour by what it is. */
+const DEVICE_ICONS: Record<string, typeof Globe> = { router: Router, switch: Network, wireless_ap: Wifi, wisp: RadioTower, other: Box };
+const NEIGHBOUR_ICONS: Record<string, typeof Globe> = { AP: Wifi, Switch: Network, Router: Router, Computer: Monitor, Phone: Phone };
+
+/**
+ * The compact view's tile (#367): an icon with a status dot, a role chip
+ * above, the name and address below. The rest is in the hover.
+ */
+function Tile({ Icon, badge, dot, chip, name, sub, title, look, ring }: {
+  Icon: typeof Globe;
+  /** A small second icon on the tile: Wi-Fi on a CAPsMAN controller. */
+  badge?: typeof Globe;
+  dot?: string;
+  chip?: string | null;
+  name: string;
+  sub?: string | null;
+  title: string;
+  look: 'device' | 'neighbour' | 'manual';
+  /** Border colour of a device tile: amber for the spanning-tree root. */
+  ring?: string;
+}) {
+  const Badge = badge;
+  const tile = look === 'device'
+    ? (ring ? { border: `2px solid ${ring}` } : undefined)
+    : { border: `1.5px dashed ${look === 'manual' ? '#8b5cf6' : '#94a3b8'}` };
+  return (
+    <div className="w-[136px] flex flex-col items-center text-center select-none" title={title}>
+      {chip && (
+        <span className={clsx('mb-1 px-1.5 py-px rounded-full text-[10px] font-medium leading-tight whitespace-nowrap max-w-full truncate border',
+          look === 'device' ? 'border-teal-300 text-teal-700 bg-teal-50 dark:border-teal-700 dark:text-teal-300 dark:bg-teal-900/30'
+            : 'border-gray-300 text-gray-500 bg-gray-50 dark:border-slate-600 dark:text-slate-400 dark:bg-slate-800')}>
+          {chip}
+        </span>
+      )}
+      <div className={clsx('relative w-11 h-11 rounded-xl flex items-center justify-center shadow-sm',
+        look === 'device' ? clsx('bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-100', !ring && 'border border-gray-300 dark:border-slate-500')
+          : look === 'manual' ? 'bg-white dark:bg-slate-800 text-violet-500' : 'bg-gray-100 dark:bg-slate-700/60 text-gray-400 dark:text-slate-400')}
+        style={tile}>
+        <Icon className="w-5 h-5" />
+        {Badge && <Badge className="absolute -bottom-1 -right-1 w-3.5 h-3.5 p-px rounded-full bg-white dark:bg-slate-800 text-sky-500" />}
+        {dot && <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900" style={{ background: dot }} />}
+      </div>
+      <div className={clsx('mt-1 text-[11px] font-semibold leading-tight [overflow-wrap:anywhere]',
+        look === 'neighbour' ? 'text-gray-500 dark:text-slate-400' : 'text-gray-900 dark:text-white')}>{name}</div>
+      {sub && <div className="text-[10px] font-mono text-gray-400 dark:text-slate-500 truncate max-w-full">{sub}</div>}
+    </div>
+  );
+}
+
+/** The role chip above a device's tile: what it does in the network. */
+export function deviceRole(d: { gateway?: boolean; isRootBridge?: boolean; wifi_role?: string | null }): string | null {
+  const parts: string[] = [];
+  if (d.gateway) parts.push('Gateway');
+  if (d.wifi_role === 'controller' || d.wifi_role === 'controller_cap') parts.push('CAPsMAN');
+  else if (d.wifi_role === 'cap') parts.push('CAP');
+  if (d.isRootBridge) parts.push('STP root');
+  return parts.length ? parts.join(' · ') : null;
+}
+
 const handleStyle = { opacity: 0, width: 10, height: 10, zIndex: 50 };
 const handleStyleVisible = { width: 12, height: 12, background: '#3b82f6', border: '2px solid #fff', zIndex: 50, cursor: 'crosshair' };
 
@@ -79,7 +155,25 @@ function Handles({ connectable }: { connectable: boolean }) {
 // ─── Node components ──────────────────────────────────────────────────────────
 
 function DeviceNode({ data }: { data: Record<string, unknown> }) {
-  const device = data as unknown as TopologyDevice & { isRootBridge: boolean; connectMode: boolean; orphan: boolean; stpNote: string | null };
+  const device = data as unknown as TopologyDevice & {
+    isRootBridge: boolean; connectMode: boolean; orphan: boolean; stpNote: string | null; gateway?: boolean; compact?: boolean;
+  };
+  if (device.compact) {
+    const controller = device.wifi_role === 'controller' || device.wifi_role === 'controller_cap';
+    const title = [
+      device.name, device.ip_address, device.model, device.ros_version ? `RouterOS ${device.ros_version}` : null,
+      device.isRootBridge ? 'Spanning-tree root bridge' : null, device.stpNote,
+      device.orphan ? 'No known connections' : null, 'Double-click to open',
+    ].filter(Boolean).join('\n');
+    return (
+      <div className={clsx(device.orphan && 'opacity-60')}>
+        <Handles connectable={!!device.connectMode} />
+        <Tile Icon={DEVICE_ICONS[device.device_type] ?? Box} badge={controller && device.device_type !== 'wireless_ap' ? Wifi : undefined}
+          dot={statusColor[device.status] ?? '#94a3b8'} chip={deviceRole(device)} name={device.name} sub={device.ip_address}
+          title={title} look="device" ring={device.isRootBridge ? '#f59e0b' : undefined} />
+      </div>
+    );
+  }
   return (
     <div
       className={clsx('card px-3 py-2 min-w-[148px] max-w-[200px] text-xs shadow-md select-none', device.orphan && 'opacity-60')}
@@ -106,10 +200,21 @@ function DeviceNode({ data }: { data: Record<string, unknown> }) {
 }
 
 function ExternalNode({ data }: { data: Record<string, unknown> }) {
-  const node = data as unknown as ExternalTopologyNode & { connectMode: boolean; overrideKind?: string | null };
+  const node = data as unknown as ExternalTopologyNode & { connectMode: boolean; overrideKind?: string | null; compact?: boolean };
   // A type set by hand (#260) wins over what discovery says.
-  const cl = node.overrideKind ? kindInfo(node.overrideKind).label : capsLabel(node.caps);
+  const cl = node.overrideKind ? kindInfo(node.overrideKind).label : neighbourType(node.caps, node.platform);
   const gone = node.caps === 'gone';
+  if (node.compact) {
+    const Icon = node.overrideKind ? kindInfo(node.overrideKind).Icon : NEIGHBOUR_ICONS[cl] ?? Box;
+    const title = [node.name + (cl ? ` (${cl})` : ''), node.address, node.platform,
+      gone ? 'No longer seen by discovery' : 'Seen by discovery, not managed'].filter(Boolean).join('\n');
+    return (
+      <div>
+        <Handles connectable={!!node.connectMode} />
+        <Tile Icon={Icon} chip={gone ? 'no longer seen' : 'not managed'} name={node.name} sub={node.address || null} title={title} look="neighbour" />
+      </div>
+    );
+  }
   return (
     <div className="px-3 py-2 min-w-[130px] max-w-[200px] text-xs rounded-lg bg-gray-100 dark:bg-slate-700/60 shadow-sm select-none" style={{ border: '1.5px dashed #94a3b8' }}>
       <Handles connectable={!!node.connectMode} />
@@ -126,8 +231,17 @@ function ExternalNode({ data }: { data: Record<string, unknown> }) {
 
 /** A node added by hand (#147). */
 function ManualNode({ data }: { data: Record<string, unknown> }) {
-  const node = data as unknown as TopologyNode & { connectMode: boolean; orphan: boolean };
+  const node = data as unknown as TopologyNode & { connectMode: boolean; orphan: boolean; compact?: boolean };
   const { Icon, label } = kindInfo(node.kind);
+  if (node.compact) {
+    const title = [node.name, node.address, label, 'Added by hand. Click to edit', node.orphan ? 'Not connected yet' : null].filter(Boolean).join('\n');
+    return (
+      <div className={clsx('cursor-pointer', node.orphan && 'opacity-70')}>
+        <Handles connectable={!!node.connectMode} />
+        <Tile Icon={Icon} name={node.name} sub={node.address || null} title={title} look="manual" />
+      </div>
+    );
+  }
   return (
     <div className={clsx('px-3 py-2 min-w-[140px] max-w-[200px] text-xs rounded-lg bg-white dark:bg-slate-800 shadow-sm select-none cursor-pointer', node.orphan && 'opacity-70')}
       style={{ border: '1.5px dashed #8b5cf6' }} title="Added by hand. Click to edit">

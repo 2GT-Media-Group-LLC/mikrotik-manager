@@ -5,6 +5,7 @@ import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { stpDomains, resolveStpUpstreams } from '../utils/stpUpstream';
+import { deviceWaysUp } from '../services/topology/wayUp';
 import { activeSite, writableScope, targetSite } from '../middleware/site';
 import { roleInSite, roleAtLeast, roleOnDevice } from '../utils/siteAccess';
 import { clientAttachments, vlanLabel, type ClientSighting } from '../utils/topologyClients';
@@ -52,7 +53,7 @@ router.get('/', async (req, res) => {
   const brFilter = siteScopeByDevice(siteId, 'device_id');
   const [devices, allLinks, deviceMacs, bridges] = await Promise.all([
     query<TopoDevice>(
-      `SELECT id, name, ip_address, model, device_type, status, ros_version, ip_addresses_jsonb
+      `SELECT id, name, ip_address, model, device_type, status, ros_version, ip_addresses_jsonb, wifi_role
        FROM devices ${devFilter ? `WHERE ${devFilter}` : ''} ORDER BY name ASC`
     ),
     query<LinkRow>(
@@ -151,10 +152,18 @@ router.get('/', async (req, res) => {
     });
   }
 
+  // Each device's way up, for the tiered layout (#367): the gateway on top.
+  // Best-effort; without it the map falls back to the spanning-tree tree.
+  const waysUp = await deviceWaysUp(siteScopeDevices(siteId, 'd')).catch((e) => {
+    console.warn(`[Topology] way up: ${(e as Error).message}`);
+    return [];
+  });
+
   res.json({
     devices,
     bridges,
     upstreams,
+    waysUp,
     stpDomains: stpDomains(bridges, allLinks),
     links: [...graph.links, ...stpLinks],
     externalNodes: graph.externalNodes,

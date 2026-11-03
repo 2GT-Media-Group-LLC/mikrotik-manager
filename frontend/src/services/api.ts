@@ -1715,6 +1715,8 @@ export const topologyApi = {
       bridges: import('../utils/stpRoot').BridgeInfo[];
       /** Each device's upstream as resolved from spanning tree, server-side. */
       upstreams: import('../utils/topologyGraph').StpUpstream[];
+      /** Each device's way up, for the tiered layout (#367). From 1.1.0-beta.14. */
+      waysUp?: import('../utils/topologyTiers').WayUp[];
       /** Every spanning-tree root, named when it's unmanaged and discovery saw it (#260). */
       stpDomains?: import('../utils/topologyGraph').StpDomainInfo[];
       /** Nodes added by hand, and links drawn by hand (#147). */

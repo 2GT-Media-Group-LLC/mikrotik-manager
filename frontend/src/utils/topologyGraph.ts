@@ -10,6 +10,7 @@ import type {
 import { resolveStpRoot, type BridgeInfo, type RootVerdict } from './stpRoot';
 import { layoutForest } from './topologyLayout';
 import { portKind, linkKind, type PortKind } from './topologyPorts';
+import { wayUpParents, pickTops, deviceTier, type WayUp } from './topologyTiers';
 
 /** Upstream verdict as returned by /api/topology; resolved server-side. */
 export interface StpUpstream {
@@ -41,6 +42,8 @@ export interface GraphInput {
   bridges: BridgeInfo[];
   upstreams: StpUpstream[];
   stpDomains?: StpDomainInfo[];
+  /** Each device's way up (#367): the tiered layout hangs devices under it. Without it, the spanning-tree root is on top. */
+  waysUp?: WayUp[];
   nodes: TopologyNode[];
   /** Links drawn by hand, between any two things on the map. */
   handLinks: HandLink[];
@@ -126,6 +129,9 @@ export function endFor(id: string, name?: string): HandLinkEnd | null {
 
 /** Node kinds that sit above the network rather than in it. */
 const UPSTREAM_KINDS = new Set(['modem', 'cloud']);
+
+/** The undrawn root over two or more devices that share the top row. */
+const VIRTUAL_TOP = '__top-';
 
 export function buildTopologyGraph(input: GraphInput): GraphOutput {
   const { devices, links, bridges, upstreams, nodes, handLinks, clients } = input;
@@ -358,34 +364,80 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   }
   components.sort((a, b) => b.length - a.length);
   const loose = components.filter((c) => c.length === 1).map((c) => c[0]);
-  const trees = components.filter((c) => c.length > 1).map((comp) => {
+
+  // ── Tiers: each device under its way up (#367) ───────────────────────────
+  const deviceById = new Map(devices.map((d) => [nodeId.device(d.id), d]));
+  const tierOf = (id: string) => deviceTier(deviceById.get(id)?.device_type);
+  const degree = (id: string) => adj.get(id)?.size ?? 0;
+  // Which of two goes on top: a router before a switch; then the spanning-tree
+  // root; then the one with more links; then by name, so it's always the same.
+  const rootBridges = new Set<string>();
+  if (bridges.length) {
+    for (const comp of components) {
+      const v = resolveStpRoot(comp.filter((id) => deviceIds.has(id)), bridges);
+      if (v.deviceId) rootBridges.add(v.deviceId);
+    }
+  }
+  const before = (a: string, b: string) =>
+    tierOf(a) - tierOf(b)
+    || Number(rootBridges.has(b)) - Number(rootBridges.has(a))
+    || degree(b) - degree(a)
+    || String(deviceById.get(a)?.name ?? a).localeCompare(String(deviceById.get(b)?.name ?? b));
+  const upParent = input.waysUp?.length
+    ? wayUpParents(input.waysUp, farEnd, (id) => adj.has(id), before)
+    : null;
+  const parentOfNode = (id: string) => upParent?.get(id) ?? stpParent.get(id);
+  const externalIds = new Set(externalNodes.map((e) => e.id));
+  const isExternal = (id: string) => externalIds.has(id);
+
+  /** Routers on top of their part of the map, for the "Gateway" chip. */
+  const gateways = new Set<string>();
+  const trees = components.filter((c) => c.length > 1).map((comp, ci) => {
     const inComp = new Set(comp);
-    const root = pickRoot(comp);
-    const children = new Map<string, string[]>([[root, []]]);
-    const placed = new Set([root]);
-    const queue = [root];
-    // Where spanning tree names a node's upstream, that is its parent; the rest
-    // attach to whichever neighbour reaches them first.
+    // pickRoot also marks the spanning-tree root and its note, so it runs either way.
+    const stpTop = pickRoot(comp);
+    const compParent = new Map([...(upParent ?? [])].filter(([k, v]) => inComp.has(k) && inComp.has(v)));
+    const deviceTops = upParent ? pickTops(comp.filter((id) => deviceIds.has(id)), compParent, tierOf, before) : [];
+    for (const t of deviceTops) if (tierOf(t) === 0) gateways.add(t);
+    // A modem or "the internet" drawn by hand goes above the device it feeds.
+    const tops = deviceTops.map((t) => [...(adj.get(t) || [])].find((n) => UPSTREAM_KINDS.has(manualById.get(n)?.kind ?? '')) ?? t);
+    // Two or more tops (a pair of gateway routers) share the top row, under a
+    // root that isn't drawn.
+    const root = tops.length > 1 ? `${VIRTUAL_TOP}${ci}` : tops[0] ?? stpTop;
+    const children = new Map<string, string[]>([[root, tops.length > 1 ? [...tops] : []]]);
+    const placed = new Set([root, ...(tops.length > 1 ? tops : [])]);
+    const queue = tops.length > 1 ? [...tops] : [root];
+    for (const t of tops.length > 1 ? tops : []) children.set(t, []);
+    // A device goes under its way up (or failing that, its spanning-tree
+    // parent) once that is placed; the rest attach to whichever neighbour
+    // reaches them first.
     while (queue.length) {
       const cur = queue.shift()!;
       for (const n of adj.get(cur) || []) {
         if (!inComp.has(n) || placed.has(n)) continue;
-        const real = stpParent.get(n);
-        if (real && real !== cur && inComp.has(real) && !placed.has(real)) continue;
+        const real = parentOfNode(n);
+        if (real && real !== cur && inComp.has(real) && !placed.has(real)) {
+          // An unmanaged switch a device goes up through, that only the device
+          // below it hears: drawn between the two, not hanging under the device.
+          if (!isExternal(real)) continue;
+          placed.add(real); children.set(real, []); children.get(cur)!.push(real); queue.push(real);
+          placed.add(n); children.set(n, []); children.get(real)!.push(n); queue.push(n);
+          continue;
+        }
         placed.add(n); children.set(n, []); children.get(cur)!.push(n); queue.push(n);
       }
     }
-    // Anything left (its STP parent was never reached) attaches to any placed neighbour.
+    // Anything left (its way up was never reached) attaches to any placed neighbour.
     let left = comp.filter((id) => !placed.has(id));
     while (left.length) {
-      const before = left.length;
+      const count = left.length;
       for (const id of [...left]) {
         const at = [...(adj.get(id) || [])].find((n) => placed.has(n));
         if (!at) continue;
         placed.add(id); children.set(id, []); children.get(at)!.push(id);
         left = left.filter((x) => x !== id);
       }
-      if (left.length === before) break;
+      if (left.length === count) break;
     }
     return { rootId: root, children };
   });
@@ -396,8 +448,41 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   clientNodes.push(...hostChips);
   const clientIds = new Set(clientNodes.map((c) => c.id));
   const labelledChips = new Set(clientNodes.filter((c) => c.kind === 'clientGroup' && c.data.label).map((c) => c.id));
+  // A neighbour reached only over tunnels (a WireGuard peer at another site)
+  // isn't below its router in any sense: it's drawn beside it, on its row, and
+  // takes no room in the tree, where it sat between the switches (#367).
+  const tunnelPeers = new Map<string, string>();
+  const parentOf = new Map<string, string>();
+  if (upParent) {
+    const handEnds = new Set(handLinks.flatMap((hl) => [endId(hl.a), endId(hl.b)]));
+    for (const t of trees) {
+      for (const [p, kids] of t.children) {
+        for (const k of [...kids]) {
+          if (!externalIds.has(k) || handEnds.has(k) || (t.children.get(k)?.length ?? 0) > 0) continue;
+          const own = cables.filter((c) => c.source === k || c.target === k);
+          if (!own.length || !own.every((c) => c.logical === 'tunnel')) continue;
+          tunnelPeers.set(k, p);
+          kids.splice(kids.indexOf(k), 1);
+          t.children.delete(k);
+        }
+      }
+    }
+  }
   const laid = layoutForest(trees, loose, undefined, undefined,
-    (id) => (labelledChips.has(id) ? { w: 1, h: 0.5 } : clientIds.has(id) ? { w: 0.75, h: 0.6 } : { w: 1, h: 1 }));
+    (id) => (id.startsWith(VIRTUAL_TOP) ? { w: 0, h: 0 } : labelledChips.has(id) ? { w: 1, h: 0.5 } : clientIds.has(id) ? { w: 0.75, h: 0.6 } : { w: 1, h: 1 }));
+  for (const [peer, beside] of tunnelPeers) {
+    const at = laid.positions.get(beside);
+    if (!at) continue;
+    const free = (x: number) => ![...laid.positions.values()].some((q) => Math.abs(q.y - at.y) < 0.5 && Math.abs(q.x - x) < 0.95);
+    // Outside first, so the tunnel doesn't cross the row: left of a router on the left.
+    const sides = at.x <= laid.widthSlots / 2 ? [-1, 1] : [1, -1];
+    let placedAt: { x: number; y: number } | null = null;
+    for (let step = 1; step <= 4 && !placedAt; step++) {
+      for (const dir of sides) { if (free(at.x + dir * step * 1.1)) { placedAt = { x: at.x + dir * step * 1.1, y: at.y }; break; } }
+    }
+    laid.positions.set(peer, placedAt ?? { x: at.x + 1.1, y: at.y + 1 });
+    parentOf.set(peer, beside);
+  }
   // Automatic positions, in pixels.
   const auto = (id: string) => {
     const p = laid.positions.get(id) ?? { x: 0, y: 0 };
@@ -408,7 +493,6 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   // that parent, so a new switch or an opened client list appears next to what
   // it hangs from. Anything else unsaved goes below the arranged part.
   const saved = input.saved ?? {};
-  const parentOf = new Map<string, string>();
   for (const t of trees) for (const [p, kids] of t.children) for (const k of kids) parentOf.set(k, p);
   const placed = new Map<string, { x: number; y: number }>();
   const savedVals = Object.values(saved);
@@ -450,7 +534,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
       const id = nodeId.device(d.id);
       return {
         id, kind: 'device' as const, ...pos(id),
-        data: { ...d, isRootBridge: stpRoots.has(id), stpNote: notes.get(id) ?? null, orphan: loose.includes(id) } as Record<string, unknown>,
+        data: { ...d, isRootBridge: stpRoots.has(id), stpNote: notes.get(id) ?? null, orphan: loose.includes(id), gateway: gateways.has(id) } as Record<string, unknown>,
       };
     }),
     ...externalNodes.map((e) => {

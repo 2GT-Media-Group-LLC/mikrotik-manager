@@ -3,6 +3,24 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.14
+
+**A more readable topology map, part three**, from
+[@azizfayziev](https://github.com/azizfayziev)'s proposal
+([Topology](topology.md#layout), [#367](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367)):
+
+- A tiered layout. Each device hangs under its way up, the uplink the client connection path
+  already follows, so the gateway router is on top, then core, access and APs. Before, the
+  spanning-tree root was on top, often a switch above its router. Two gateway routers share the
+  top row; a WireGuard or other tunnel peer sits beside its router instead of among the switches;
+  an unmanaged switch a device goes up through is drawn between them. Arrangements saved by hand
+  are kept; **Reset layout** applies the new one.
+- A **Compact** view (**Cards** at the top of the page): icons with a status dot, name and
+  address, and a chip for the role (Gateway, CAPsMAN, CAP, STP root). **Detailed** stays the
+  default.
+- A neighbour that advertises only "bridge" but calls itself an access point (a Cisco 9120) is
+  shown as an access point, not a switch.
+
 ## 1.1.0-beta.13
 
 The fix of [1.0.5](#105), reported by [@ronchan44](https://github.com/ronchan44): after Backup

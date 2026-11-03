@@ -108,7 +108,19 @@ is exactly what you want to know about before unplugging something.
 
 ## Layout
 
-The map is drawn as a tree from the root down. Siblings stay in one row as long as they fit
+The map is drawn in tiers, from the gateway down (#367). Each device hangs under its **way up**,
+the same uplink a client's connection path follows (see [Clients](clients.md#where-the-data-comes-from)): the gateway
+router on top, then the core switches, access switches and access points. Two gateway routers
+(a VRRP pair) share the top row, side by side, so the cable between them is clear. Where two
+switches each name the other as their way up (neither has a spanning-tree root port), the
+spanning-tree root goes above, failing that the one with more links. An unmanaged switch that a
+device goes up through, which only that device hears, is drawn between it and the device above.
+A neighbour reached only over a tunnel, such as a WireGuard peer at another site, sits beside
+its router rather than under it. Links hidden or drawn by hand count as you left them: a device
+whose way up was hidden goes under the link you can see. Before 1.1 the spanning-tree root was
+on top, which often put a switch above the router.
+
+Siblings stay in one row as long as they fit
 within a sensible width. A wider family wraps onto a few **even rows**, like text, rather than
 running thousands of pixels across, and each switch keeps its own devices under it. A group of
 end devices with nothing below them (access points, clients) is packed into a compact grid.
@@ -116,6 +128,15 @@ Separate parts of the network and unconnected devices are packed the same way, s
 stays roughly the shape of the window (#115, #147).
 
 **Hover** a device to light up its links and fade the rest; double-click it to open its page.
+
+### Compact view
+
+**Cards** at the top of the page switches between **Detailed** cards (name, address and model)
+and **Compact** icons: a router, switch or access point icon with a status dot, the name and
+address under it, and the rest when you hover. A chip above says what the device does:
+**Gateway**, **CAPsMAN** or **CAP**, **STP root**; a neighbour discovery found says **not
+managed**, and its icon follows what it is. The choice is remembered in your browser and applies
+to exports too.
 
 ### Arranging the map
 
@@ -185,7 +206,9 @@ Only active clients are shown. The setting is remembered in your browser.
 A device the manager doesn't manage, seen over LLDP, CDP or MNDP, is drawn with a dashed border
 and labelled from what it advertises: a switch, router, access point, phone or computer. A
 computer running a software bridge (Hyper-V, a Linux bridge) advertises "bridge" too; from 0.50.0
-it's labelled a computer, not a switch (#260).
+it's labelled a computer, not a switch (#260). Some access points advertise only "bridge" as
+well; one whose platform or description names an access point (a Cisco 9120, Aironet, UniFi,
+Aruba or similar) is labelled an access point, not a switch (#367).
 
 Computers often send LLDP from their network cards, with no system name and no capabilities.
 Two or more of those under one device become one **N hosts** chip (#367); click it to show each,

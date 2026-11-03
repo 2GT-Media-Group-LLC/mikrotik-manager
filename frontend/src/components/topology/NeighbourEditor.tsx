@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { topologyApi } from '../../services/api';
-import { NODE_KINDS, capsLabel } from './nodes';
+import { NODE_KINDS, neighbourType } from './nodes';
 
 /**
  * Say what a neighbour discovery found really is (#260): a computer it took
@@ -10,7 +10,7 @@ import { NODE_KINDS, capsLabel } from './nodes';
  * keeps finding it; this only changes how it's shown.
  */
 export default function NeighbourEditor({ neighbour, onClose, onSaved }: {
-  neighbour: { id: string; name: string; discoveredName?: string; caps?: string; overrideKind?: string | null };
+  neighbour: { id: string; name: string; discoveredName?: string; caps?: string; platform?: string; overrideKind?: string | null };
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -23,7 +23,7 @@ export default function NeighbourEditor({ neighbour, onClose, onSaved }: {
     onSuccess: () => { onSaved(); onClose(); },
     onError: (e: unknown) => setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Couldn’t save'),
   });
-  const auto = capsLabel(neighbour.caps);
+  const auto = neighbourType(neighbour.caps, neighbour.platform);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="card w-full max-w-md mx-4 p-5 space-y-3">

@@ -40,6 +40,7 @@ const edgeTypes = { topo: TopoEdge };
 const SHOW_CLIENTS_KEY = 'topology.showClients';
 const BY_VLAN_KEY = 'topology.clientsByVlan';
 const LINKS_KEY = 'topology.links';
+const CARDS_KEY = 'topology.cards';
 /**
  * Past this many devices across several sites, the all-sites view asks for a
  * site first rather than draw everything at once (#305).
@@ -102,6 +103,12 @@ export default function TopologyPage() {
   const chooseLinks = (value: string) => {
     setCurved(value === 'curved');
     try { localStorage.setItem(LINKS_KEY, value); } catch { /* private mode */ }
+  };
+  // Detailed cards, or compact icon tiles (#367), remembered in this browser.
+  const [compact, setCompact] = useState(() => { try { return localStorage.getItem(CARDS_KEY) === 'compact'; } catch { return false; } });
+  const chooseCards = (value: string) => {
+    setCompact(value === 'compact');
+    try { localStorage.setItem(CARDS_KEY, value); } catch { /* private mode */ }
   };
   const [hover, setHover] = useState<string | null>(null);
   const [editing, setEditing] = useState<TopologyNode | 'new' | null>(null);
@@ -190,6 +197,7 @@ export default function TopologyPage() {
       bridges: (data.bridges as BridgeInfo[]) || [],
       upstreams: (data.upstreams as StpUpstream[]) || [],
       stpDomains: data.stpDomains ?? [],
+      waysUp: data.waysUp ?? [],
       nodes: data.nodes || [],
       handLinks: data.handLinks || [],
       clients: showClients ? data.clients ?? [] : null,
@@ -233,14 +241,14 @@ export default function TopologyPage() {
       return view.nodes.map((n) => ({
         id: n.id, type: n.kind,
         position: (!fresh && here.get(n.id)) || { x: n.x, y: n.y },
-        data: { ...n.data, connectMode: connectMode && (n.kind === 'device' || n.kind === 'manual' || n.kind === 'external') },
+        data: { ...n.data, compact, connectMode: connectMode && (n.kind === 'device' || n.kind === 'manual' || n.kind === 'external') },
       }));
     });
     if (fresh) {
       resetting.current = false;
       setTimeout(() => rf.current?.fitView({ padding: 0.12, duration: 300 }), 80);
     }
-  }, [view, connectMode, setNodes]);
+  }, [view, connectMode, compact, setNodes]);
 
   useEffect(() => {
     if (!view) return;
@@ -457,6 +465,13 @@ export default function TopologyPage() {
               <ChevronUp className="w-3.5 h-3.5" />Collapse clients
             </button>
           )}
+          <label className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300" title="Detailed cards, or compact icons with the name and address under them. The rest shows when you hover.">
+            Cards
+            <select className="input py-1 text-sm w-auto" value={compact ? 'compact' : 'detailed'} onChange={(e) => chooseCards(e.target.value)}>
+              <option value="detailed">Detailed</option>
+              <option value="compact">Compact</option>
+            </select>
+          </label>
           <label className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300" title="How links are drawn. A link with a side chosen by hand keeps its right angles.">
             Links
             <select className="input py-1 text-sm w-auto" value={curved ? 'curved' : 'straight'} onChange={(e) => chooseLinks(e.target.value)}>
