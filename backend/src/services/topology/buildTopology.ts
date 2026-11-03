@@ -292,15 +292,24 @@ export function buildTopology(
   // where CDP and MNDP flooded across bridges are the likely source. A port
   // that sees exactly one neighbour is a cable, and dropping it because some
   // other device has LLDP to that neighbour hid real links (J6).
-  const neighboursOnPort = new Map<string, number>();
+  //
+  // Every neighbour counts, LLDP ones too, and the count is taken here, before
+  // anything is dropped (#367). A port where LLDP names a switch is cabled to
+  // that switch, and a device heard there over CDP or MNDP is behind it. Counted
+  // after the covered sightings went, the last of those looked like the port's
+  // only neighbour, and was drawn as a cable to a device it isn't cabled to.
+  const neighboursOnPort = new Map<string, Set<string>>();
   for (const l of links) {
-    if (l.link_type === 'lldp' || !l.from_device_id) continue;
+    if (!l.from_device_id) continue;
+    const who = l.to_device_id ? `dev:${l.to_device_id}` : neighborKey(l);
+    if (!who) continue;
     const pk = `${l.from_device_id}::${l.from_interface ?? ''}`;
-    neighboursOnPort.set(pk, (neighboursOnPort.get(pk) ?? 0) + 1);
+    neighboursOnPort.set(pk, (neighboursOnPort.get(pk) ?? new Set<string>()).add(who));
   }
+  const portNeighbourCount = (l: LinkRow) => neighboursOnPort.get(`${l.from_device_id}::${l.from_interface ?? ''}`)?.size ?? 0;
 
   const isLldpCovered = (link: LinkRow): boolean => {
-    if ((neighboursOnPort.get(`${link.from_device_id}::${link.from_interface ?? ''}`) ?? 0) < 2) return false;
+    if (portNeighbourCount(link) < 2) return false;
     if (link.to_device_id && lldpCoveredDeviceIds.has(link.to_device_id)) return true;
     if (link.neighbor_mac && lldpCoveredMacs.has(link.neighbor_mac.toLowerCase())) return true;
     if (link.neighbor_address && lldpCoveredAddresses.has(normIp(link.neighbor_address))) return true;
@@ -378,15 +387,10 @@ export function buildTopology(
   // LAN one port sees half the network: the node described the broadcast
   // domain, not cabling, and tied the map in knots (#147). Only a port with a
   // single such neighbour is drawn as a link; anything else can be linked by hand.
+  // "Single" is counted over every neighbour the port saw (#367): one that is
+  // left alone only because the others were dropped as covered isn't a cable.
   const lldpLinks = links.filter((l) => l.link_type === 'lldp');
-  const nonLldpLinks = links.filter((l) => l.link_type !== 'lldp' && !!l.from_device_id);
-  const portGroupMap = new Map<string, LinkRow[]>();
-  for (const link of nonLldpLinks) {
-    const pk = `${link.from_device_id}::${link.from_interface ?? ''}`;
-    if (!portGroupMap.has(pk)) portGroupMap.set(pk, []);
-    portGroupMap.get(pk)!.push(link);
-  }
-  const soloNonLldp = [...portGroupMap.values()].filter((g) => g.length < 2).flat();
+  const soloNonLldp = links.filter((l) => l.link_type !== 'lldp' && !!l.from_device_id && portNeighbourCount(l) < 2);
   const segConns: SegConn[] = [];
 
   // ── Step 6b: One cable per port of an unmanaged neighbour ──────────────────

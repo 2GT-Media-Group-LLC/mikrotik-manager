@@ -36,7 +36,9 @@ Device names wrap onto a second line rather than being cut off, and show in full
 CDP and MNDP are broadcasts, so a port can hear many neighbours at once: everything in the same
 broadcast domain, not only what's cabled to it. A port with a single such neighbour is drawn as
 a link. A port that hears several draws nothing, because the protocol can't say which of them
-is actually plugged in. Link those by hand if you want them on the map.
+is actually plugged in. Link those by hand if you want them on the map. LLDP neighbours count
+too: on a port where LLDP names a switch, a device heard there over CDP or MNDP is behind that
+switch, so it isn't drawn as a cable to the port.
 
 LLDP isn't always point to point either: RouterOS bridges forward it, so a device can hear an
 unmanaged switch through the rest of the network as if it were cabled to it. A switch says which
@@ -122,10 +124,24 @@ Any link, discovered or drawn, can be given a colour from its menu, to pick out 
 (#260); **Default** goes back to the colour its kind gives it. Colours are kept when the layout
 is reset.
 
-Links run straight between the edges of the two cards and follow them as they move. Click a link
+Links are curved: they leave the bottom of the upper card and enter the top of the lower one, or
+run side to side between cards on the same row, and follow the cards as they move. **Links** at
+the top of the page switches to straight lines; the choice is remembered in your browser. Click a link
 to choose where each end attaches: **Top**, **Bottom**, **Left**, **Right** or **Automatic**. A
 pinned end leaves its side at a right angle and the link routes around, as in a wiring diagram.
 A second cable between the same two cards is drawn alongside the first.
+
+### Exporting the map
+
+**Export** saves the whole map as an image, not only the part on screen, as it's shown now: the
+site or device you're viewing, clients if they're shown, curved or straight links, and the light
+or dark theme. It's named after what it shows and the day, for example
+`topology-HQ-2026-11-03.png`.
+
+- **PNG image**: for documents, tickets and chat. Drawn at twice the size for sharp text (a very
+  large map at less, to stay within what browsers can draw).
+- **SVG**: scales to any size in a web browser. It holds the map as a web page inside the SVG, so
+  drawing tools such as Visio, Inkscape or Illustrator can't open it for editing.
 
 ## Client devices
 

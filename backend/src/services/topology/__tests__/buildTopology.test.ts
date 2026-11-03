@@ -390,3 +390,46 @@ describe('an unmanaged neighbour heard through the network', () => {
     expect(drawnTo(g)).toEqual(['1:ether5']);
   });
 });
+
+// #367: a device heard over MNDP or CDP on a port where LLDP names another
+// neighbour is behind that neighbour, not cabled to the port.
+describe('a device heard through the neighbour LLDP names on that port', () => {
+  const pairs = (g: ReturnType<typeof buildTopology>) =>
+    g.links.map((l) => [l.from_device_id, l.to_device_id ?? l.neighbor_identity].join('-')).sort();
+
+  it('draws router-switch-AP, not router-AP (RB5009 → CRS328 → wAP)', () => {
+    const devices = [dev(1, 'R1', '10.0.0.1'), dev(2, 'SW', '10.0.0.2'), dev(3, 'WAP', '10.0.0.3')];
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'ether2', to_device_id: 2, to_interface: 'ether24', link_type: 'lldp' }),
+      link({ from_device_id: 1, from_interface: 'ether2', to_device_id: 3, to_interface: 'bridge/ether1', link_type: 'mndp' }),
+      link({ from_device_id: 2, from_interface: 'ether5', to_device_id: 3, to_interface: 'ether1', link_type: 'lldp' }),
+    ], []);
+    expect(pairs(g)).toEqual(['1-2', '2-3']);
+  });
+
+  it('draws no cable between two devices that hear each other through unmanaged switches', () => {
+    // The lab: AP4 is on TOR, TEST on STUDIO; both also hear the core switches over CDP.
+    const devices = [dev(1, 'core', '10.0.0.1'), dev(2, 'big', '10.0.0.2'), dev(3, 'ap4', '10.0.0.3'), dev(4, 'test', '10.0.0.4')];
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'sfp2', to_device_id: 2, to_interface: 'sfp2', link_type: 'lldp' }),
+      link({ from_device_id: 2, from_interface: 'sfp2', to_device_id: 1, to_interface: 'sfp2', link_type: 'lldp' }),
+      link({ from_device_id: 3, from_interface: 'ether2', neighbor_mac: 'AA:00:00:00:00:13', neighbor_identity: 'TOR', to_interface: 'Port 13', link_type: 'lldp' }),
+      link({ from_device_id: 3, from_interface: 'ether2', to_device_id: 1, link_type: 'cdp' }),
+      link({ from_device_id: 3, from_interface: 'ether2', to_device_id: 2, link_type: 'cdp' }),
+      link({ from_device_id: 3, from_interface: 'ether2', to_device_id: 4, link_type: 'cdp' }),
+      link({ from_device_id: 4, from_interface: 'ether1', neighbor_mac: 'AA:00:00:00:00:05', neighbor_identity: 'STUDIO', to_interface: 'Port 5', link_type: 'lldp' }),
+      link({ from_device_id: 4, from_interface: 'ether1', to_device_id: 1, link_type: 'cdp' }),
+      link({ from_device_id: 4, from_interface: 'ether1', to_device_id: 2, link_type: 'cdp' }),
+      link({ from_device_id: 4, from_interface: 'ether1', to_device_id: 3, link_type: 'cdp' }),
+    ], []);
+    expect(pairs(g)).toEqual(['1-2', '3-TOR', '4-STUDIO']);
+  });
+
+  it('still draws a port whose only neighbour was heard over MNDP', () => {
+    const devices = [dev(1, 'R1', '10.0.0.1'), dev(2, 'WAP', '10.0.0.2')];
+    const g = buildTopology(devices, [
+      link({ from_device_id: 1, from_interface: 'ether3', to_device_id: 2, link_type: 'mndp' }),
+    ], []);
+    expect(pairs(g)).toEqual(['1-2']);
+  });
+});

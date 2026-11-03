@@ -1,6 +1,6 @@
-import { BaseEdge, EdgeLabelRenderer, useInternalNode, getSmoothStepPath, Position, type EdgeProps, type InternalNode } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, useInternalNode, getSmoothStepPath, getBezierPath, Position, type EdgeProps, type InternalNode } from '@xyflow/react';
 import { X } from 'lucide-react';
-import { linkEnds, sideOf, type Rect, type Side } from '../../utils/topologyGeometry';
+import { linkEnds, curveEnds, sideOf, type Rect, type Side } from '../../utils/topologyGeometry';
 
 /** What a link on the map carries; see toFlowEdge in the page. */
 export interface TopoEdgeData extends Record<string, unknown> {
@@ -13,6 +13,8 @@ export interface TopoEdgeData extends Record<string, unknown> {
   targetSide?: Side | null;
   /** Second and later cables between the same two cards are shifted aside. */
   parallel?: number;
+  /** Draw it as a curve rather than a straight line (#367). */
+  curved?: boolean;
 }
 
 const POSITION: Record<Side, Position> = { t: Position.Top, b: Position.Bottom, l: Position.Left, r: Position.Right };
@@ -25,8 +27,10 @@ const rectOf = (n: InternalNode): Rect => ({
 });
 
 /**
- * Every link on the topology map (#147): a straight line from card edge to
- * card edge that follows the cards as they move, or from a side chosen by hand.
+ * Every link on the topology map (#147): a curve from the bottom of the upper
+ * card to the top of the lower one (#367), or a straight line from card edge
+ * to card edge, that follows the cards as they move; or from a side chosen by
+ * hand.
  */
 export default function TopoEdge({ id, source, target, data, style, markerEnd }: EdgeProps) {
   const s = useInternalNode(source);
@@ -35,10 +39,19 @@ export default function TopoEdge({ id, source, target, data, style, markerEnd }:
   const d = (data ?? {}) as TopoEdgeData;
   const rs = rectOf(s);
   const rt = rectOf(t);
-  const ends = linkEnds(rs, rt, d.sourceSide, d.targetSide, d.parallel ?? 0);
   let path: string;
   let mid: { x: number; y: number };
-  if (d.sourceSide || d.targetSide) {
+  if (d.curved && !d.sourceSide && !d.targetSide) {
+    const c = curveEnds(rs, rt, d.parallel ?? 0);
+    const [p, lx, ly] = getBezierPath({
+      sourceX: c.s.x, sourceY: c.s.y, sourcePosition: POSITION[c.sSide],
+      targetX: c.t.x, targetY: c.t.y, targetPosition: POSITION[c.tSide],
+      curvature: 0.35,
+    });
+    path = p;
+    mid = { x: lx, y: ly };
+  } else if (d.sourceSide || d.targetSide) {
+    const ends = linkEnds(rs, rt, d.sourceSide, d.targetSide, d.parallel ?? 0);
     // A side chosen by hand: leave and enter it at a right angle and route
     // around, as a wiring diagram does. A straight line from a side would just
     // run back across the card.
@@ -50,6 +63,7 @@ export default function TopoEdge({ id, source, target, data, style, markerEnd }:
     path = p;
     mid = { x: lx, y: ly };
   } else {
+    const ends = linkEnds(rs, rt, null, null, d.parallel ?? 0);
     path = `M ${ends.s.x},${ends.s.y} L ${ends.t.x},${ends.t.y}`;
     mid = { x: (ends.s.x + ends.t.x) / 2, y: (ends.s.y + ends.t.y) / 2 };
   }
@@ -66,7 +80,7 @@ export default function TopoEdge({ id, source, target, data, style, markerEnd }:
               <>
                 <span className="text-[9px] bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-1 rounded">{d.label || 'drawn by hand'}</span>
                 {d.onDelete && (
-                  <button className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600"
+                  <button data-export="skip" className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600"
                     onClick={(ev) => { ev.stopPropagation(); d.onDelete?.(); }} title="Remove this hand-drawn link">
                     <X className="w-2.5 h-2.5" />
                   </button>

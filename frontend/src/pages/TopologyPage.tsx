@@ -17,7 +17,7 @@ import {
   ConnectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw, Crosshair, Building2 } from 'lucide-react';
+import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw, Crosshair, Building2, Download } from 'lucide-react';
 import { topologyApi, sitesApi, devicesApi } from '../services/api';
 import { useSiteStore } from '../store/siteStore';
 import { nodesWithinHops } from '../utils/topologyFocus';
@@ -27,6 +27,7 @@ import { useThemeStore } from '../store/themeStore';
 import { buildTopologyGraph, endFor, type GraphEdge, type StpUpstream } from '../utils/topologyGraph';
 import type { BridgeInfo } from '../utils/stpRoot';
 import type { Side } from '../utils/topologyGeometry';
+import { downloadTopology, exportFileName, type ExportFormat } from '../utils/topologyExport';
 import { nodeTypes, statusColor } from '../components/topology/nodes';
 import TopoEdge, { type TopoEdgeData } from '../components/topology/TopoEdge';
 import EdgeMenu from '../components/topology/EdgeMenu';
@@ -38,6 +39,7 @@ import NeighbourEditor from '../components/topology/NeighbourEditor';
 const edgeTypes = { topo: TopoEdge };
 const SHOW_CLIENTS_KEY = 'topology.showClients';
 const BY_VLAN_KEY = 'topology.clientsByVlan';
+const LINKS_KEY = 'topology.links';
 /**
  * Past this many devices across several sites, the all-sites view asks for a
  * site first rather than draw everything at once (#305).
@@ -47,11 +49,11 @@ const LARGE_MAP = 40;
 type Anchors = Record<string, { sourceHandle: Side | null; targetHandle: Side | null }>;
 
 /** React Flow edge for a graph edge: the colour says what kind of link it is. */
-function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, string>, onDelete: (e: GraphEdge) => void, canWrite: boolean): Edge {
+function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, string>, onDelete: (e: GraphEdge) => void, canWrite: boolean, curved: boolean): Edge {
   const sides = anchors[e.id];
   // A colour chosen for this link (#260) wins over the one its kind gives it.
   const custom = colors[e.id] ? { stroke: colors[e.id] } : {};
-  const data: TopoEdgeData = { label: e.label, parallel: e.parallel, sourceSide: sides?.sourceHandle ?? null, targetSide: sides?.targetHandle ?? null };
+  const data: TopoEdgeData = { label: e.label, parallel: e.parallel, sourceSide: sides?.sourceHandle ?? null, targetSide: sides?.targetHandle ?? null, curved };
   if (e.kind === 'hand') {
     return {
       id: e.id, source: e.source, target: e.target, type: 'topo',
@@ -93,12 +95,23 @@ export default function TopologyPage() {
     setByVlan(next);
     try { localStorage.setItem(BY_VLAN_KEY, next ? '1' : '0'); } catch { /* private mode */ }
   };
+  // Curved links by default, straight if preferred (#367), remembered in this browser.
+  const [curved, setCurved] = useState(() => { try { return localStorage.getItem(LINKS_KEY) !== 'straight'; } catch { return true; } });
+  const chooseLinks = (value: string) => {
+    setCurved(value === 'curved');
+    try { localStorage.setItem(LINKS_KEY, value); } catch { /* private mode */ }
+  };
   const [hover, setHover] = useState<string | null>(null);
   const [editing, setEditing] = useState<TopologyNode | 'new' | null>(null);
   const [linkError, setLinkError] = useState('');
   const [menu, setMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
   const [anchorEdits, setAnchorEdits] = useState<Anchors>({});
   const rf = useRef<ReactFlowInstance | null>(null);
+  // Export the map as an image (#367).
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   /** Set by Reset layout: the next placement uses the automatic positions, then refits. */
   const resetting = useRef(false);
   /** Client cards moved by hand; others follow their chip and aren't saved. */
@@ -229,8 +242,8 @@ export default function TopologyPage() {
 
   useEffect(() => {
     if (!view) return;
-    setEdges(view.edges.map((e) => toFlowEdge(e, anchors, colors, onDeleteEdge, canWrite)));
-  }, [view, anchors, colors, onDeleteEdge, canWrite, setEdges]);
+    setEdges(view.edges.map((e) => toFlowEdge(e, anchors, colors, onDeleteEdge, canWrite, curved)));
+  }, [view, anchors, colors, onDeleteEdge, canWrite, curved, setEdges]);
 
   /**
    * Save where every card is, so the arrangement holds for everyone and after a
@@ -330,6 +343,27 @@ export default function TopologyPage() {
     if (n.type === 'device') navigate(`/devices/${n.id}`);
   }, [navigate]);
 
+  const exportMap = async (format: ExportFormat) => {
+    setExportOpen(false);
+    setExportError('');
+    const viewport = mapRef.current?.querySelector<HTMLElement>('.react-flow__viewport');
+    const flow = rf.current;
+    if (!viewport || !flow) return;
+    const shown = flow.getNodes().filter((n) => !n.hidden);
+    if (!shown.length) return;
+    const scope = focusDevice?.name
+      ?? (currentSiteId != null ? sites?.find((s) => s.id === currentSiteId)?.name : undefined)
+      ?? 'all-sites';
+    setExporting(true);
+    try {
+      await downloadTopology(viewport, flow.getNodesBounds(shown), format, exportFileName(scope, new Date(), format));
+    } catch (e) {
+      setExportError(`The map couldn't be exported: ${(e as Error).message || 'unknown error'}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const toggleClients = () => {
     const next = !showClients;
     setShowClients(next);
@@ -404,6 +438,32 @@ export default function TopologyPage() {
               <ChevronUp className="w-3.5 h-3.5" />Collapse clients
             </button>
           )}
+          <label className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300" title="How links are drawn. A link with a side chosen by hand keeps its right angles.">
+            Links
+            <select className="input py-1 text-sm w-auto" value={curved ? 'curved' : 'straight'} onChange={(e) => chooseLinks(e.target.value)}>
+              <option value="curved">Curved</option>
+              <option value="straight">Straight</option>
+            </select>
+          </label>
+          <div className="relative">
+            <button className="btn-secondary flex items-center gap-2" onClick={() => setExportOpen((v) => !v)} disabled={exporting || !hasData}
+              title="Save the whole map, as it's shown now, as an image">
+              <Download className="w-4 h-4" />{exporting ? 'Exporting…' : 'Export'}
+            </button>
+            {exportOpen && (
+              <div className="absolute right-0 mt-1 z-20 w-60 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-1 text-sm"
+                onMouseLeave={() => setExportOpen(false)}>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700" onClick={() => void exportMap('png')}>
+                  <div className="text-gray-800 dark:text-slate-100">PNG image</div>
+                  <div className="text-xs text-gray-500 dark:text-slate-400">For documents, tickets and chat</div>
+                </button>
+                <button className="w-full text-left px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700" onClick={() => void exportMap('svg')}>
+                  <div className="text-gray-800 dark:text-slate-100">SVG</div>
+                  <div className="text-xs text-gray-500 dark:text-slate-400">Scales in a browser; drawing tools such as Visio can&apos;t edit it</div>
+                </button>
+              </div>
+            )}
+          </div>
           {canWrite && <>
             <button onClick={() => { void saveArrangement(); setEditing('new'); }} className="btn-secondary flex items-center gap-2" title="Add something the manager doesn't manage: ISP modem, server, unmanaged switch">
               <Plus className="w-4 h-4" />Add node
@@ -497,7 +557,10 @@ export default function TopologyPage() {
         </div>
       ) : (
         <>
-          <div className="card overflow-hidden" style={{ height: 'max(520px, calc(100vh - 260px))' }}>
+          {exportError && (
+            <div className="text-sm text-red-600 dark:text-red-400 flex items-center gap-2"><AlertCircle className="w-4 h-4" />{exportError}</div>
+          )}
+          <div ref={mapRef} className="card overflow-hidden" style={{ height: 'max(520px, calc(100vh - 260px))' }}>
             <ReactFlow
               nodes={shownNodes}
               edges={shownEdges}

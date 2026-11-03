@@ -19,6 +19,7 @@
     "axios": "^1.21.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.2.0",
+    "html-to-image": "^1.11.13",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.65.0",
     "react": "^19.3.0",
