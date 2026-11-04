@@ -34,9 +34,22 @@ virtual MAC, matches neither.
 Device names wrap onto a second line rather than being cut off, and show in full on hover.
 
 Port names on links are shortened so two of them fit under a switch (#367): `ether17` is `e17`,
-`sfp-sfpplus1` is `sfp1`, and the bridge and bond RouterOS puts in front of a port in LLDP
-(`bridge/bonding/sfp-sfpplus1`) are left off. Cisco ports take Cisco's short forms
-(`GigabitEthernet1/0/17` is `Gi1/0/17`). Hover a label for the full names.
+`sfp-sfpplus1` is `sfp1`, and the bridge RouterOS puts in front of a port in LLDP is left off.
+A port in a bond keeps the bond, so a LAG still reads as one: `bridge/Po1/sfp-sfpplus1` is
+`Po1·sfp1`. Cisco ports take Cisco's short forms (`GigabitEthernet1/0/17` is `Gi1/0/17`).
+Hover a label, or the link, for the full names.
+
+**Display → Port labels** chooses how much to show, remembered in this browser:
+
+| Choice | `bridge/Po1/sfp-sfpplus1` | `bridge/ether17` |
+|---|---|---|
+| **Short + bond** (default) | `Po1·sfp1` | `e17` |
+| **Short** | `sfp1` | `e17` |
+| **Full**, as RouterOS reports it | `bridge/Po1/sfp-sfpplus1` | `bridge/ether17` |
+| **Off**, on hover only | | |
+
+The bond is the middle part of `bridge/<bond>/<port>`. In a two-part name it counts only when
+it plainly is one (`bond1/ether2`, `Po3/…`, `lag…`), since `bridge/ether17` is a bridge.
 
 CDP and MNDP are broadcasts, so a port can hear many neighbours at once: everything in the same
 broadcast domain, not only what's cabled to it. A port with a single such neighbour is drawn as

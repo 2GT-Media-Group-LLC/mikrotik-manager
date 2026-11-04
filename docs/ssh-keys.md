@@ -83,7 +83,7 @@ Whichever login is used, the key is bound to that user, and that user loses pass
 ## Fleet-wide deployment
 
 **Settings → SSH Keys** (admins only) installs keys across the site you're viewing,
-optionally limited to tags. It shows a preview first:
+optionally limited to tags. The SSH key card on a device's page links to it. It shows a preview first:
 
 - how many devices will get a key, how many already have one, and which are skipped and why
 - the accounts that will lose password SSH, and on how many devices each

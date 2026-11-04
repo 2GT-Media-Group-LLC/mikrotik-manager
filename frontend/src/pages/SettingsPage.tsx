@@ -1,6 +1,7 @@
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import NumberSetting from '../components/settings/NumberSetting';
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
@@ -57,6 +58,10 @@ interface EditUserState {
   confirmPassword: string;
 }
 
+const SETTINGS_TABS = ['general', 'users', 'sso', 'ai', 'security', 'certificate', 'alerting', 'audit', 'tags',
+  'maintenance', 'automation', 'poller', 'darksite', 'sshkeys', 'platformbackup'] as const;
+type SettingsTab = typeof SETTINGS_TABS[number];
+
 export default function SettingsPage() {
   const { formatDateTime, formatTime, timeFormat } = useDateTimeFormat();
   const queryClient = useQueryClient();
@@ -86,7 +91,15 @@ export default function SettingsPage() {
   }, []);
 
   const siteScoped = useIsSiteScoped();
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'ai' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys' | 'platformbackup'>('general');
+  // The tab is in the address (?tab=sshkeys), so other pages can link to one
+  // and a reload stays where it was.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const askedTab = searchParams.get('tab') as SettingsTab | null;
+  const [activeTab, setActiveTabState] = useState<SettingsTab>(askedTab && SETTINGS_TABS.includes(askedTab) ? askedTab : 'general');
+  const setActiveTab = (tab: SettingsTab) => {
+    setActiveTabState(tab);
+    setSearchParams(tab === 'general' ? {} : { tab }, { replace: true });
+  };
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -486,6 +499,8 @@ export default function SettingsPage() {
         ...(passwordLogin ? [{ key: 'security' as const, label: 'My Password', icon: Key }] : []),
       ] }]
     : visibleGroups;
+  const tabShown = tabGroups.some((g) => g.tabs.some((t) => t.key === activeTab));
+  useEffect(() => { if (!tabShown) setActiveTabState('general'); }, [tabShown]);
 
   return (
     <div className="space-y-4">

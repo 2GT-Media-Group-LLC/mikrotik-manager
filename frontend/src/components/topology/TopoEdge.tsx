@@ -83,6 +83,13 @@ export default function TopoEdge({ id, source, target, data, style, markerEnd }:
   return (
     <>
       <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={18} />
+      {/* Port names on hover over the line itself, so they can be read with
+          Port labels off, or when the drawn one is shortened (#367). */}
+      {d.fullLabel && (
+        <path d={path} fill="none" stroke="transparent" strokeWidth={18} data-export="skip">
+          <title>{d.fullLabel}</title>
+        </path>
+      )}
       {(d.label || d.hand || !!d.folded?.length) && (
         <EdgeLabelRenderer>
           {/* Labels ignore the pointer unless told otherwise; nodrag/nopan stop a

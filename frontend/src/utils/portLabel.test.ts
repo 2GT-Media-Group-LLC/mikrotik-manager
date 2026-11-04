@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shortPort, shortPortLabel } from './portLabel';
+import { shortPort, shortPortLabel, bondOf, portLabel } from './portLabel';
 
 describe('shortPort (#367)', () => {
   it('drops the bridge and bond a RouterOS port is in', () => {
@@ -36,5 +36,32 @@ describe('shortPort (#367)', () => {
     expect(shortPortLabel('sfp-sfpplus1 ↔ bridge/bonding/sfp-sfpplus1')).toBe('sfp1 ↔ sfp1');
     expect(shortPortLabel('ether1 ↔ bridge/ether17')).toBe('e1 ↔ e17');
     expect(shortPortLabel('ether3')).toBe('e3');
+  });
+});
+
+describe('Port labels: keeping the bond (#367)', () => {
+  it('finds the bond in a RouterOS path', () => {
+    expect(bondOf('bridge/Po1/sfp-sfpplus1')).toBe('Po1');
+    expect(bondOf('bridge/bonding/sfp-sfpplus1')).toBe('bonding');
+    expect(bondOf('bond1/ether2')).toBe('bond1');
+    // A bridge, not a bond, and paths that are slot numbers.
+    expect(bondOf('bridge/ether17')).toBeNull();
+    expect(bondOf('br-lan/ether17')).toBeNull();
+    expect(bondOf('GigabitEthernet1/0/17')).toBeNull();
+    expect(bondOf('ether1')).toBeNull();
+  });
+
+  it('shows aziz\'s LACP uplinks as LAGs again', () => {
+    expect(shortPortLabel('sfp-sfpplus4 ↔ bridge/Po1/sfp-sfpplus1', true)).toBe('sfp4 ↔ Po1·sfp1');
+    expect(shortPortLabel('ether21 ↔ bridge/Po21/ether21', true)).toBe('e21 ↔ Po21·e21');
+    expect(shortPortLabel('ether1 ↔ bridge/ether17', true)).toBe('e1 ↔ e17');
+  });
+
+  it('labels a link as chosen', () => {
+    const label = 'sfp-sfpplus4 ↔ bridge/Po1/sfp-sfpplus1';
+    expect(portLabel(label, 'bond')).toBe('sfp4 ↔ Po1·sfp1');
+    expect(portLabel(label, 'short')).toBe('sfp4 ↔ sfp1');
+    expect(portLabel(label, 'full')).toBe(label);
+    expect(portLabel(label, 'off')).toBeUndefined();
   });
 });

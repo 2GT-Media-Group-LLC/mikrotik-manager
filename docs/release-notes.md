@@ -3,6 +3,21 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.18
+
+- **Port labels** on the topology map, a new choice under **Display**, from
+  [@azizfayziev](https://github.com/azizfayziev)
+  ([#367](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367)). Short labels in
+  beta.15 dropped the bond a port is in, so a LAG looked like a plain cable. The new default,
+  **Short + bond**, keeps it (`Po1·sfp1`). **Short**, **Full** (as RouterOS reports it) and
+  **Off** are the others, and hovering a link shows its full port names
+  ([How links are found](topology.md#how-links-are-found)).
+- A device's **SSH key** card links to **Settings → SSH Keys**, which installs keys on every
+  device in a site at once
+  ([#393](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/393),
+  [SSH keys](ssh-keys.md#fleet-wide-deployment)). Settings tabs can now be linked to and stay
+  put on reload.
+
 ## 1.1.0-beta.17
 
 **AI connections**, built on [@Bigben83](https://github.com/Bigben83)'s read-only MCP connector

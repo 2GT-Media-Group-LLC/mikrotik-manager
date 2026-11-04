@@ -2,7 +2,9 @@ import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, ShieldCheck, AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { sshKeyApi } from '../../services/api';
+import { useIsFleetAdmin } from '../../hooks/useCanWrite';
 
 /**
  * Per-device SSH key management.
@@ -17,6 +19,7 @@ export default function SshKeyCard(
 ) {
   const { formatDateTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
+  const fleetAdmin = useIsFleetAdmin();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   // Installing a key changes how this device can be reached, and cannot be
@@ -73,6 +76,13 @@ export default function SshKeyCard(
             A unique keypair for this device, used for backups and config export instead of a
             stored password. The private half never leaves the server and is never shown.
           </p>
+          {/* #393: installing one device at a time when a site-wide run exists. */}
+          {fleetAdmin && (
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+              To install keys on every device in a site,{' '}
+              <Link to="/settings?tab=sshkeys" className="text-blue-600 dark:text-blue-400 hover:underline">use Settings → SSH Keys</Link>.
+            </p>
+          )}
         </div>
       </div>
 

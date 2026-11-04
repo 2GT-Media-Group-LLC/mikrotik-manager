@@ -108,7 +108,7 @@ export default function FleetSshKeysCard() {
         <div>
           Once a key is installed, RouterOS turns off <strong>password SSH for that user</strong> on
           the device. The API and WinBox keep working. To get password SSH back on a device, revoke
-          its key on the device&apos;s System tab.
+          its key on the device&apos;s Config tab.
         </div>
       </div>
 

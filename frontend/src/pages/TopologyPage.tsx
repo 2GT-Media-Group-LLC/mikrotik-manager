@@ -28,7 +28,7 @@ import { buildTopologyGraph, endFor, type GraphEdge, type StpUpstream } from '..
 import type { BridgeInfo } from '../utils/stpRoot';
 import { spreadCurveEnds, type Rect, type Side } from '../utils/topologyGeometry';
 import { downloadTopology, exportFileName, type ExportFormat } from '../utils/topologyExport';
-import { shortPortLabel } from '../utils/portLabel';
+import { portLabel, PORT_LABELS, type PortLabels } from '../utils/portLabel';
 import { placeNew } from '../utils/topologyPlace';
 import { nodeTypes, statusColor } from '../components/topology/nodes';
 import TopoEdge, { CurveEndsContext, type TopoEdgeData } from '../components/topology/TopoEdge';
@@ -44,6 +44,7 @@ const SHOW_CLIENTS_KEY = 'topology.showClients';
 const BY_VLAN_KEY = 'topology.clientsByVlan';
 const LINKS_KEY = 'topology.links';
 const CARDS_KEY = 'topology.cards';
+const PORTS_KEY = 'topology.ports';
 /**
  * Past this many devices across several sites, the all-sites view asks for a
  * site first rather than draw everything at once (#305).
@@ -53,7 +54,7 @@ const LARGE_MAP = 40;
 type Anchors = Record<string, { sourceHandle: Side | null; targetHandle: Side | null }>;
 
 /** React Flow edge for a graph edge: the colour says what kind of link it is. */
-function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, string>, onDelete: (e: GraphEdge) => void, canWrite: boolean, curved: boolean): Edge {
+function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, string>, onDelete: (e: GraphEdge) => void, canWrite: boolean, curved: boolean, ports: PortLabels): Edge {
   const sides = anchors[e.id];
   // A colour chosen for this link (#260) wins over the one its kind gives it.
   const custom = colors[e.id] ? { stroke: colors[e.id] } : {};
@@ -74,13 +75,14 @@ function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, strin
         : { stroke: '#94a3b8' };
   // A tunnel isn't a cable: dotted (#367).
   const tunnel = e.logical === 'tunnel' ? { strokeDasharray: '2,4', strokeLinecap: 'round' as const } : {};
-  // Short port names (sfp1, e17), the full ones on hover (#367).
+  // Port names as chosen under Display (#367), the full ones on hover.
   const blocked = e.role === 'blocked' ? ' [blocked]' : '';
+  const shown = e.label ? portLabel(e.label, ports) : undefined;
   return {
     id: e.id, source: e.source, target: e.target, type: 'topo',
     data: {
       ...data,
-      label: e.label ? `${shortPortLabel(e.label)}${blocked}` : (blocked ? 'blocked' : undefined),
+      label: shown ? `${shown}${blocked}` : (blocked ? 'blocked' : undefined),
       fullLabel: e.label ? `${e.label}${blocked}` : undefined,
     },
     className: 'topology-edge',
@@ -118,6 +120,15 @@ export default function TopologyPage() {
   const chooseCards = (value: string) => {
     setCompact(value === 'compact');
     try { localStorage.setItem(CARDS_KEY, value); } catch { /* private mode */ }
+  };
+  // Port labels on links (#367): short with the bond by default, remembered in this browser.
+  const [ports, setPorts] = useState<PortLabels>(() => {
+    try { const v = localStorage.getItem(PORTS_KEY) as PortLabels | null; return v && PORT_LABELS.includes(v) ? v : 'bond'; } catch { return 'bond'; }
+  });
+  const choosePorts = (value: string) => {
+    if (!PORT_LABELS.includes(value as PortLabels)) return;
+    setPorts(value as PortLabels);
+    try { localStorage.setItem(PORTS_KEY, value); } catch { /* private mode */ }
   };
   const [hover, setHover] = useState<string | null>(null);
   const [editing, setEditing] = useState<TopologyNode | 'new' | null>(null);
@@ -262,8 +273,8 @@ export default function TopologyPage() {
 
   useEffect(() => {
     if (!view) return;
-    setEdges(view.edges.map((e) => toFlowEdge(e, anchors, colors, onDeleteEdge, canWrite, curved)));
-  }, [view, anchors, colors, onDeleteEdge, canWrite, curved, setEdges]);
+    setEdges(view.edges.map((e) => toFlowEdge(e, anchors, colors, onDeleteEdge, canWrite, curved, ports)));
+  }, [view, anchors, colors, onDeleteEdge, canWrite, curved, ports, setEdges]);
 
   // Curved links leaving one side of a card are spread along it, in the order
   // of where they go, so their lines and labels separate (#367). Worked out
@@ -477,7 +488,7 @@ export default function TopologyPage() {
               <ChevronUp className="w-3.5 h-3.5" />Collapse clients
             </button>
           )}
-          <DisplaySettings compact={compact} curved={curved} onCards={chooseCards} onLinks={chooseLinks} />
+          <DisplaySettings compact={compact} curved={curved} ports={ports} onCards={chooseCards} onLinks={chooseLinks} onPorts={choosePorts} />
           <div className="relative">
             <button className="btn-secondary flex items-center gap-2" onClick={() => setExportOpen((v) => !v)} disabled={exporting || !hasData}
               title="Save the whole map, as it's shown now, as an image">

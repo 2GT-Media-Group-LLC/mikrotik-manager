@@ -30,8 +30,9 @@ function Segmented({ label, help, value, choices, onChange }: {
  * How the map is drawn, in one popup rather than a row of selects in the
  * header. Kept in this browser only.
  */
-export default function DisplaySettings({ compact, curved, onCards, onLinks }: {
-  compact: boolean; curved: boolean; onCards: (v: string) => void; onLinks: (v: string) => void;
+export default function DisplaySettings({ compact, curved, ports, onCards, onLinks, onPorts }: {
+  compact: boolean; curved: boolean; ports: string;
+  onCards: (v: string) => void; onLinks: (v: string) => void; onPorts: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -49,11 +50,11 @@ export default function DisplaySettings({ compact, curved, onCards, onLinks }: {
   return (
     <div className="relative" ref={ref}>
       <button className="btn-secondary flex items-center gap-2" onClick={() => setOpen((v) => !v)} aria-expanded={open}
-        title="How cards and links are drawn">
+        title="How cards, links and port labels are drawn">
         <SlidersHorizontal className="w-4 h-4" />Display
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 z-20 w-72 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg p-4 space-y-4"
+        <div className="absolute right-0 mt-1 z-20 w-80 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg p-4 space-y-4"
           role="dialog" aria-label="Display settings">
           <Segmented label="Cards" value={compact ? 'compact' : 'detailed'} onChange={onCards}
             choices={[{ value: 'detailed', label: 'Detailed' }, { value: 'compact', label: 'Compact' }]}
@@ -61,6 +62,9 @@ export default function DisplaySettings({ compact, curved, onCards, onLinks }: {
           <Segmented label="Links" value={curved ? 'curved' : 'straight'} onChange={onLinks}
             choices={[{ value: 'curved', label: 'Curved' }, { value: 'straight', label: 'Straight' }]}
             help="A link with a side chosen by hand keeps its right angles." />
+          <Segmented label="Port labels" value={ports} onChange={onPorts}
+            choices={[{ value: 'bond', label: 'Short + bond' }, { value: 'short', label: 'Short' }, { value: 'full', label: 'Full' }, { value: 'off', label: 'Off' }]}
+            help="Short + bond keeps the LAG a port is in (Po1·sfp1). Full is the name RouterOS reports. Off draws none; hover a link to see it." />
           <p className="text-[11px] text-gray-400 dark:text-slate-500 border-t border-gray-100 dark:border-slate-700 pt-2">Saved in this browser only.</p>
         </div>
       )}

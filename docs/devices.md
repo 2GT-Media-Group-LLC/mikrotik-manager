@@ -299,7 +299,7 @@ defaults. The choice is remembered in your browser.
 ### Device names
 
 A device's name follows its RouterOS identity (`/system identity`): rename a router on the
-device, or from its System tab here, and the new name shows up at the next poll.
+device, or from its Config tab here, and the new name shows up at the next poll.
 
 A name you choose yourself is kept instead. That happens when you type a name in **Add
 Device** that differs from the router's identity, or rename a device in **Edit Device**. The

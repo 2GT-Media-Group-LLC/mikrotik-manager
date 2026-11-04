@@ -4,10 +4,18 @@
  * and two of those under one switch ran into each other. The full name is on
  * hover.
  *
- *   bridge/bonding/sfp-sfpplus1 → sfp1
+ *   bridge/bonding/sfp-sfpplus1 → sfp1          (or bonding·sfp1, keeping the bond)
  *   bridge/ether17              → e17
  *   GigabitEthernet1/0/17       → Gi1/0/17
+ *
+ * How much to show is a choice in the map's Display popup: the bond a port is
+ * in was lost with the bridge in beta.15, and a LAG then looked like a plain
+ * cable (#367).
  */
+
+/** Port labels on the map: short with the bond, short, as reported, or none. */
+export type PortLabels = 'bond' | 'short' | 'full' | 'off';
+export const PORT_LABELS: PortLabels[] = ['bond', 'short', 'full', 'off'];
 
 /** Cisco's own short forms, longest names first. */
 const CISCO: [RegExp, string][] = [
@@ -20,14 +28,12 @@ const CISCO: [RegExp, string][] = [
   [/^Port-channel(?=\d)/i, 'Po'],
 ];
 
-export function shortPort(name: string): string {
-  let n = name.trim();
-  // A path whose last part is a name (bridge/ether17) is the port and what
-  // it's in. One whose last part is a number (Gi1/0/17, ge-0/0/1) is a slot
-  // and port number, and keeps every part.
-  const parts = n.split('/');
-  const last = parts[parts.length - 1];
-  if (parts.length > 1 && /^[a-z]/i.test(last)) n = last;
+/** A first part that is a bond rather than a bridge, when a path has only two. */
+const BOND_LIKE = /^(bond|lag|lacp|po\d|port-channel|ae\d)/i;
+
+const isPath = (parts: string[]) => parts.length > 1 && /^[a-z]/i.test(parts[parts.length - 1]);
+
+function shorten(n: string): string {
   for (const [long, short] of CISCO) {
     if (long.test(n)) return n.replace(long, short);
   }
@@ -36,7 +42,37 @@ export function shortPort(name: string): string {
     .replace(/^sfp-sfpplus(\d+)$/, 'sfp$1');
 }
 
+/**
+ * The bond a RouterOS port is in, from its LLDP path: bridge/<bond>/<port>,
+ * or <bond>/<port> when the first part is plainly a bond. Null otherwise.
+ */
+export function bondOf(name: string): string | null {
+  const parts = name.trim().split('/');
+  if (!isPath(parts)) return null;
+  if (parts.length >= 3) return parts[parts.length - 2] || null;
+  return BOND_LIKE.test(parts[0]) ? parts[0] : null;
+}
+
+export function shortPort(name: string, keepBond = false): string {
+  let n = name.trim();
+  // A path whose last part is a name (bridge/ether17) is the port and what
+  // it's in. One whose last part is a number (Gi1/0/17, ge-0/0/1) is a slot
+  // and port number, and keeps every part.
+  const parts = n.split('/');
+  if (isPath(parts)) n = parts[parts.length - 1];
+  const port = shorten(n);
+  const bond = keepBond ? bondOf(name) : null;
+  return bond ? `${shorten(bond)}·${port}` : port;
+}
+
 /** A discovered link's label, "a ↔ b", with each end shortened. */
-export function shortPortLabel(label: string): string {
-  return label.split(' ↔ ').map(shortPort).join(' ↔ ');
+export function shortPortLabel(label: string, keepBond = false): string {
+  return label.split(' ↔ ').map((p) => shortPort(p, keepBond)).join(' ↔ ');
+}
+
+/** The label drawn on a link for a Port labels choice; undefined draws none. */
+export function portLabel(label: string, mode: PortLabels): string | undefined {
+  if (mode === 'off') return undefined;
+  if (mode === 'full') return label;
+  return shortPortLabel(label, mode === 'bond');
 }
