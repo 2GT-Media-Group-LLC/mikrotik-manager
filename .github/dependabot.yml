@@ -11,6 +11,11 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7 (the native compiler) until ts-jest and typescript-eslint
+      # support it: both still require TypeScript below 7, so the install fails (#379).
+      - dependency-name: "typescript"
+        versions: [">=7"]
 
   # Backend npm dependencies
   - package-ecosystem: "npm"
@@ -20,6 +25,16 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7 (the native compiler) until ts-jest and typescript-eslint
+      # support it: both still require TypeScript below 7, so the install fails (#379).
+      - dependency-name: "typescript"
+        versions: [">=7"]
+      # @peculiar/x509 3 is ESM-only: it needs the backend compiled as "module":
+      # "node20" and Jest set up for ES modules, and parses DER more strictly. Its
+      # API is unchanged and it fixes nothing we need, so held at 2.x (#387).
+      - dependency-name: "@peculiar/x509"
+        versions: [">=3"]
 
   # Docker dependencies (docker-compose.yml base images)
   - package-ecosystem: "docker"
