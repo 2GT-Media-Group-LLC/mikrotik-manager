@@ -960,6 +960,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#devices-with-ssh-off" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Devices with SSH off
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#backing-up-every-device" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1620,6 +1631,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#devices-with-ssh-off" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Devices with SSH off
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#backing-up-every-device" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1726,7 +1748,7 @@
 <p>Configuration backups for every device, on demand or on a schedule, with the tools to
 find, read and compare them.</p>
 <h2 id="what-a-backup-actually-is">What a backup actually is<a class="headerlink" href="#what-a-backup-actually-is" title="Permanent link">&para;</a></h2>
-<p><code>/export compact</code> run over SSH, stored as a <code>.rsc</code> file — <strong>plain RouterOS script, not
+<p><code>/export compact</code> run over SSH (or <a href="#devices-with-ssh-off">over the API</a> when SSH is off), stored as a <code>.rsc</code> file — <strong>plain RouterOS script, not
 the binary <code>.backup</code> blob</strong>.</p>
 <p>That distinction shapes everything else on this page. A <code>.rsc</code> can be read, diffed,
 edited and applied selectively; a <code>.backup</code> can only be restored wholesale onto the
@@ -1745,11 +1767,27 @@ only "Backup failed".</p>
 if the device refuses the key at login. Before 0.24.50 a key backup that timed out also fell
 back to the password, which RouterOS refuses once a key is installed, so the device logged a
 "login failure" and the real reason was lost.</p>
+<h3 id="devices-with-ssh-off">Devices with SSH off<a class="headerlink" href="#devices-with-ssh-off" title="Permanent link">&para;</a></h3>
+<p>A device with SSH turned off, or refusing the login, is backed up over the API instead, on
+RouterOS 7.13 or later (#392). The manager runs the same export to a file on the device,
+reads the file back over the API and deletes it, so the backup is the same script, byte for
+byte, as one taken over SSH. <strong>Sync config</strong> and Config History snapshots work the same way.
+After that has worked, the device tries the API first for six
+hours, so one whose SSH is filtered doesn't wait out an SSH timeout each time.</p>
+<p>The file sits on the device's own storage for about a second, so the export only runs when
+there's room to spare: twice the size of the device's last backup (512 KiB if it has none),
+plus 1 MiB or 5 % of the disk, whichever is more, left free. Otherwise the backup fails and
+says how much is free. A file a failed run left behind (<code>mtm-backup-&lt;12 hex digits&gt;.rsc</code>) is
+deleted at the next backup; no other file is touched. The API user needs the read, write and
+ftp policies, and sensitive too for <a href="#passwords-and-keys">passwords and keys</a>.</p>
+<p>A host key that doesn't match the one on record is never worked around this way: that backup
+fails and says so. Before 7.13 RouterOS can't read files over the API, so those devices still
+need SSH.</p>
 <h3 id="backing-up-every-device">Backing up every device<a class="headerlink" href="#backing-up-every-device" title="Permanent link">&para;</a></h3>
 <p><strong>Backup all</strong> on the dashboard backs up every online device in view, a few at a time. When
 it finishes it says how many worked, and lists each device that didn't, with the reason.
 Click a device's name to open it. Because a backup is an SSH export, the reason is usually
-the SSH login, the SSH port, or SSH being turned off on the device. Before 1.0.5 only the
+the SSH login, the SSH port, or SSH being turned off on a device before RouterOS 7.13. Before 1.0.5 only the
 count was shown. <strong>Sync config</strong> does the same.</p>
 <h2 id="passwords-and-keys">Passwords and keys<a class="headerlink" href="#passwords-and-keys" title="Permanent link">&para;</a></h2>
 <p>By default RouterOS v7 also leaves out Wi-Fi keys, VPN and PPP secrets, WireGuard private
