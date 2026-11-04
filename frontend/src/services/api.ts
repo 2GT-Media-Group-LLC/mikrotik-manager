@@ -228,6 +228,35 @@ export const oidcApi = {
     ),
 };
 
+// ─── AI connections (Settings → AI Connections) ─────────────────────────────
+export type McpAuth = 'oauth' | 'token';
+export interface AiSettingsView {
+  enabled: boolean;
+  mcp_enabled: boolean;
+  mcp_auth: McpAuth;
+  openapi_enabled: boolean;
+  public_url: string;
+  oauth_issuer: string;
+  oauth_client_id: string;
+  has_oauth_secret: boolean;
+}
+export interface AiToken {
+  id: number; name: string; prefix: string; created_by: string | null;
+  last_used_at: string | null; expires_at: string | null; created_at: string;
+  site_ids: number[] | null; site_names: string[];
+}
+export const aiConnectionsApi = {
+  getConfig: () => api.get<AiSettingsView>('/ai-connections/config'),
+  updateConfig: (data: Partial<Omit<AiSettingsView, 'has_oauth_secret'>> & { oauth_client_secret?: string }) =>
+    api.put<AiSettingsView>('/ai-connections/config', data),
+  test: (data: { issuer: string; client_id: string; client_secret?: string }) =>
+    api.post<{ ok: boolean; error?: string }>('/ai-connections/test', data),
+  listTokens: () => api.get<AiToken[]>('/ai-connections/tokens'),
+  createToken: (data: { name: string; expires_days?: number; site_ids: number[] | null }) =>
+    api.post<{ id: number; token: string }>('/ai-connections/tokens', data),
+  deleteToken: (id: number) => api.delete(`/ai-connections/tokens/${id}`),
+};
+
 // ─── Devices ──────────────────────────────────────────────────────────────────
 export interface DiscoveredDevice {
   identity: string;

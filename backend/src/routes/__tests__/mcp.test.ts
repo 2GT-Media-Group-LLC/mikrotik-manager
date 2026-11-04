@@ -5,6 +5,11 @@ jest.mock('../../middleware/rateLimitRedis', () => ({
   rateLimitRedis: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 jest.mock('openid-client', () => ({ discovery: jest.fn(), tokenIntrospection: jest.fn(), ClientSecretBasic: jest.fn() }));
+jest.mock('../../services/mcp/settings', () => ({
+  ...jest.requireActual('../../services/mcp/settings'),
+  loadAiSettings: jest.fn(),
+  oauthSecret: (s: { oauth_client_secret_encrypted: string | null }) => s.oauth_client_secret_encrypted ? 'not-a-real-secret' : null,
+}));
 
 import express from 'express';
 import request from 'supertest';
@@ -14,11 +19,12 @@ import { loadSiteRoles } from '../../utils/siteRoles';
 import { fleetCveReport } from '../../services/cveFeed';
 import routes, { mcpMetadataRoutes } from '../mcp';
 import { safeText, observation } from '../../services/mcp/output';
+import { loadAiSettings, DEFAULT_AI_SETTINGS, type AiSettings } from '../../services/mcp/settings';
 
 const introspect = jest.fn();
 const resource = 'https://manager.example/api/mcp';
 const issuer = 'https://id.example';
-const env = { ...process.env };
+let settings: AiSettings;
 const db = jest.mocked(query);
 const dbOne = jest.mocked(queryOne);
 const roles = jest.mocked(loadSiteRoles);
@@ -42,11 +48,9 @@ function call(name: string, args: Record<string, unknown> = {}) { return rpc('to
 function data(response: request.Response) { return response.body.result.structuredContent; }
 
 beforeEach(() => {
-  process.env.MCP_ENABLED = 'true';
-  process.env.MCP_RESOURCE_URL = resource;
-  process.env.MCP_OAUTH_ISSUER = issuer;
-  process.env.MCP_INTROSPECTION_CLIENT_ID = 'resource';
-  process.env.MCP_INTROSPECTION_CLIENT_SECRET = 'not-a-real-secret';
+  settings = { ...DEFAULT_AI_SETTINGS, enabled: true, mcp_enabled: true, mcp_auth: 'oauth', public_url: 'https://manager.example',
+    oauth_issuer: issuer, oauth_client_id: 'resource', oauth_client_secret_encrypted: 'sealed' };
+  jest.mocked(loadAiSettings).mockImplementation(async () => settings);
   introspect.mockReset().mockResolvedValue({ active: true, sub: 'user-subject', iss: issuer, aud: resource, exp: Math.floor(Date.now() / 1000) + 3600, scope: 'mcp:read' });
   jest.mocked(discovery).mockResolvedValue({ serverMetadata: () => ({ issuer, introspection_endpoint: `${issuer}/introspect` }) } as never);
   jest.mocked(tokenIntrospection).mockImplementation((_client, token) => introspect(token));
@@ -60,14 +64,18 @@ beforeEach(() => {
   db.mockReset().mockResolvedValue([]);
   roles.mockReset().mockResolvedValue({ 3: 'viewer' });
 });
-afterAll(() => { process.env = env; });
 
 describe('MCP protocol and authorisation', () => {
   it('is disabled by default and publishes protected-resource discovery only when configured', async () => {
-    process.env.MCP_ENABLED = 'false';
+    settings.enabled = false;
     expect((await rpc('tools/list')).status).toBe(404);
     expect((await request(app()).get('/.well-known/oauth-protected-resource/api/mcp')).status).toBe(404);
-    process.env.MCP_ENABLED = 'true';
+    // MCP itself off, or on with tokens: no OAuth discovery either.
+    settings = { ...settings, enabled: true, mcp_enabled: false };
+    expect((await rpc('tools/list')).status).toBe(404);
+    settings = { ...settings, mcp_enabled: true, mcp_auth: 'token' };
+    expect((await request(app()).get('/.well-known/oauth-protected-resource/api/mcp')).status).toBe(404);
+    settings.mcp_auth = 'oauth';
     const res = await request(app()).get('/.well-known/oauth-protected-resource/api/mcp');
     expect(res.body).toMatchObject({ resource, authorization_servers: [issuer], scopes_supported: ['mcp:read'] });
     expect(res.text).not.toContain('not-a-real-secret');
@@ -121,7 +129,7 @@ describe('MCP protocol and authorisation', () => {
     expect((await rpc('tools/list').set('Host', 'attacker.example')).status).toBe(403);
   });
   it('does not accept an insecure resource configuration', async () => {
-    process.env.MCP_RESOURCE_URL = 'http://manager.example/api/mcp';
+    settings.public_url = 'http://manager.example';
     expect((await rpc('tools/list')).status).toBe(503);
   });
   it('refuses SSE sessions and batch requests', async () => {
@@ -231,7 +239,7 @@ describe('review evidence and isolation', () => {
     expect(res.text).not.toContain('edge');
     expect(res.text).not.toContain('HIDDEN');
     expect(db).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO audit_log'),
-      [7, 'reviewer', 12, 'get_device_overview site=permitted outcome=success', expect.any(String), 200]);
+      [7, 'reviewer', '/api/mcp', 'mcp', 12, 'get_device_overview site=permitted outcome=success', expect.any(String), 200]);
   });
   it('refuses oversized responses and records the failed outcome', async () => {
     const oversized = { ...device, name: 'n'.repeat(2000), model: 'm'.repeat(2000), ip_address: 'i'.repeat(2000), firmware_version: 'f'.repeat(2000) };
@@ -240,7 +248,7 @@ describe('review evidence and isolation', () => {
     expect(res.body.result.isError).toBe(true);
     expect(res.body.result.content[0].text).toContain('smaller page');
     expect(db).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO audit_log'),
-      [7, 'reviewer', null, 'list_devices site=permitted outcome=failed', expect.any(String), 400]);
+      [7, 'reviewer', '/api/mcp', 'mcp', null, 'list_devices site=permitted outcome=failed', expect.any(String), 400]);
   });
 });
 

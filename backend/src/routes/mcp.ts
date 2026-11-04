@@ -1,14 +1,16 @@
 import { Router } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { mcpAuth, mcpConfig, MCP_SCOPE } from '../services/mcp/auth';
+import { mcpAuth, oauthConfig, MCP_SCOPE } from '../services/mcp/auth';
 import { createReviewServer } from '../services/mcp/server';
+import { loadAiSettings } from '../services/mcp/settings';
 import { rateLimitRedis } from '../middleware/rateLimitRedis';
 
 export const mcpMetadataRoutes = Router();
-// RFC 9728 path-specific metadata for the /api/mcp resource.
-mcpMetadataRoutes.get('/.well-known/oauth-protected-resource/api/mcp', (_req, res) => {
+// RFC 9728 path-specific metadata for the /api/mcp resource, published only
+// while MCP is on with OAuth sign-in.
+mcpMetadataRoutes.get('/.well-known/oauth-protected-resource/api/mcp', async (_req, res) => {
   try {
-    const config = mcpConfig();
+    const config = oauthConfig(await loadAiSettings());
     if (!config) return res.sendStatus(404);
     res.setHeader('Cache-Control', 'no-store');
     return res.json({ resource: config.resource, authorization_servers: [config.issuer],
@@ -27,7 +29,7 @@ router.post('/', async (req, res) => {
     res.sendStatus(413); return;
   }
   active++;
-  const server = createReviewServer(req.user!, (req.ip ?? '').replace(/^::ffff:/, ''));
+  const server = createReviewServer(req.user!, (req.ip ?? '').replace(/^::ffff:/, ''), res.locals.mcpAuth);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   try {
     await server.connect(transport);

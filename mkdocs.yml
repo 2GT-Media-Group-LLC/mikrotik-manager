@@ -87,7 +87,7 @@ nav:
       - CAPsMAN: capsman.md
   - Integration:
       - API and automation: api.md
-      - MCP review connector: mcp.md
+      - AI connections (MCP, OpenAPI): ai-connections.md
       - Single sign-on (OIDC): sso-oidc.md
   - Contributing:
       - Architecture: architecture.md

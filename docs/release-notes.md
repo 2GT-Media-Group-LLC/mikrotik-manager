@@ -3,6 +3,21 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.17
+
+**AI connections**, built on [@Bigben83](https://github.com/Bigben83)'s read-only MCP connector
+([#340](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/340),
+[AI connections](ai-connections.md)):
+
+- AI tools can review what the manager has stored: sites, devices, security findings, config
+  health, CVE matches, interfaces and event metadata. They can't change anything or connect to
+  devices, passwords and keys are never included, and each call is in the audit log.
+- Set up under **Settings → AI Connections**: switch on **MCP** (Claude, ChatGPT, LM Studio,
+  Open WebUI), **OpenAPI** (Open WebUI tool servers) or both. Each lists its addresses once on.
+- MCP signs in with an **AI connection token** or with **OAuth** through your identity
+  provider. OpenAPI uses a token. Tokens are made on the same page, can be limited to some
+  sites, and work nowhere else in the API.
+
 ## 1.1.0-beta.16
 
 Less clutter:

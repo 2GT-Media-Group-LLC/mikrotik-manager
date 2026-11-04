@@ -31,7 +31,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Backups](backups.md) | Finding, reading, comparing and deleting configuration backups |
 | [Polling and scaling](scaling.md) | Poller health, headroom, tuning, and clearing a backlog |
 | [API and automation](api.md) | Scoped tokens, authentication, and driving the platform from scripts |
-| [MCP review connector](mcp.md) | Read-only access for ChatGPT and other MCP clients, through your identity provider |
+| [AI connections](ai-connections.md) | Read-only fleet review for AI tools, over MCP or OpenAPI, with a token or your identity provider |
 | [Architecture](architecture.md) | How the system is put together, for contributors |
 
 ## Conventions used here

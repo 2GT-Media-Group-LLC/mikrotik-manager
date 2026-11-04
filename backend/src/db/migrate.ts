@@ -1814,6 +1814,9 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS default_jump_host_id INTEGER REFERENC
 -- What a neighbour says it is in LLDP (#367): a Cisco AP whose platform is only
 -- "Cisco" says "Cisco AP Software, C9120AXI..." here.
 ALTER TABLE topology_links ADD COLUMN IF NOT EXISTS neighbor_description TEXT;
+-- AI connection tokens (scope 'review') can be limited to some sites; NULL is
+-- the whole fleet. Other API tokens leave it NULL.
+ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS site_ids INTEGER[];
 `;
 
 const DEFAULT_SETTINGS = [

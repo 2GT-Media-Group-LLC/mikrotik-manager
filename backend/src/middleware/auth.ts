@@ -123,6 +123,8 @@ async function authenticateApiToken(token: string): Promise<AuthPayload | null> 
   ).catch(() => []);
   const t = rows[0];
   if (!t) return null;
+  // AI connection tokens ('review') reach only the review tools (services/mcp).
+  if (t.scope !== 'read' && t.scope !== 'write') return null;
   if (t.expires_at && new Date(t.expires_at).getTime() < Date.now()) return null;
   // Fire-and-forget usage tracking
   void query(`UPDATE api_tokens SET last_used_at = NOW() WHERE id = $1`, [t.id]).catch(() => {});

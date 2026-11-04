@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, ClipboardList, Zap, LogIn,
-  Activity, Moon, Globe, HardDrive } from 'lucide-react';
+  Activity, Moon, Globe, HardDrive, Bot } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
 import { docsUrl } from '../version';
 import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
@@ -28,6 +28,7 @@ import FleetSshKeysCard from '../components/settings/FleetSshKeysCard';
 import AutomationSettings from '../components/settings/AutomationSettings';
 import EncryptionKeyCard from '../components/settings/EncryptionKeyCard';
 import OidcSettings from '../components/settings/OidcSettings';
+import AiConnectionsSettings from '../components/settings/AiConnectionsSettings';
 import PlatformBackupSettings from '../components/settings/PlatformBackupSettings';
 import { useIsSiteScoped } from '../hooks/useCanWrite';
 import SiteAccessDialog, { type UserSiteRole, type UserGroupRole } from '../components/settings/SiteAccessDialog';
@@ -85,7 +86,7 @@ export default function SettingsPage() {
   }, []);
 
   const siteScoped = useIsSiteScoped();
-  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys' | 'platformbackup'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'users' | 'sso' | 'ai' | 'security' | 'certificate' | 'alerting' | 'audit' | 'tags' | 'maintenance' | 'automation' | 'poller' | 'darksite' | 'sshkeys' | 'platformbackup'>('general');
   const [auditSearch, setAuditSearch] = useState('');
   const [auditPage, setAuditPage] = useState(1);
   const [newTagName, setNewTagName] = useState('');
@@ -441,6 +442,7 @@ export default function SettingsPage() {
         { key: 'general' as const, label: 'General', icon: Settings },
         { key: 'users' as const, label: 'Users & Roles', icon: Users },
         ...(isAdmin ? [{ key: 'sso' as const, label: 'SSO / OIDC', icon: LogIn }] : []),
+        ...(isAdmin ? [{ key: 'ai' as const, label: 'AI Connections', icon: Bot }] : []),
         { key: 'certificate' as const, label: 'Certificate', icon: Lock },
         ...(isAdmin ? [{ key: 'audit' as const, label: 'Audit Log', icon: ClipboardList }] : []),
         ...(isAdmin ? [{ key: 'poller' as const, label: 'Polling', icon: Activity }] : []),
@@ -2240,6 +2242,7 @@ export default function SettingsPage() {
       {activeTab === 'sso' && (
         <OidcSettings isAdmin={isAdmin} />
       )}
+      {activeTab === 'ai' && <AiConnectionsSettings isAdmin={isAdmin} />}
       {/* ── Tags ── */}
       {activeTab === 'tags' && (
         <div className="space-y-4">

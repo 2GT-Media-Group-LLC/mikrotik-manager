@@ -28,7 +28,7 @@ function isValidEmail(addr: string): boolean {
 router.get('/tokens', requireAdmin, async (_req, res) => {
   const rows = await query(
     `SELECT id, name, prefix, scope, created_by, last_used_at, expires_at, created_at
-     FROM api_tokens ORDER BY created_at DESC`);
+     FROM api_tokens WHERE scope IN ('read', 'write') ORDER BY created_at DESC`);
   res.json(rows);
 });
 
@@ -53,7 +53,7 @@ router.post('/tokens', requireAdmin, async (req, res) => {
 });
 
 router.delete('/tokens/:id', requireAdmin, async (req, res) => {
-  await query(`DELETE FROM api_tokens WHERE id = $1`, [parseInt(req.params.id, 10)]);
+  await query(`DELETE FROM api_tokens WHERE id = $1 AND scope IN ('read', 'write')`, [parseInt(req.params.id, 10)]);
   res.json({ ok: true });
 });
 
