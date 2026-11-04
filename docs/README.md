@@ -31,11 +31,10 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Backups](backups.md) | Finding, reading, comparing and deleting configuration backups |
 | [Polling and scaling](scaling.md) | Poller health, headroom, tuning, and clearing a backlog |
 | [API and automation](api.md) | Scoped tokens, authentication, and driving the platform from scripts |
+| [MCP review connector](mcp.md) | Read-only access for ChatGPT and other MCP clients, through your identity provider |
 | [Architecture](architecture.md) | How the system is put together, for contributors |
 
 ## Conventions used here
-
-For ChatGPT and other MCP clients, see the [read-only MCP review connector](mcp.md).
 
 - **Settings in the UI** are stored in the database and apply without a restart.
 - **Environment variables** live in `.env` and require a container restart to change.

@@ -26,4 +26,18 @@ describe('auditMiddleware', () => {
     expect(entityId).toBe(8);
     expect(summary).toBe('POST /api/devices/8/sync');
   });
+
+  it('leaves MCP requests to the connector, but records refused ones', async () => {
+    inserted.length = 0;
+    const app = express();
+    app.use(auditMiddleware);
+    app.post('/api/mcp', (req, res) => { res.sendStatus(req.get('authorization') ? 200 : 401); });
+
+    await request(app).post('/api/mcp').set('Authorization', 'Bearer x');
+    await request(app).post('/api/mcp');
+    await new Promise((r) => setImmediate(r));
+
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0][8]).toBe(401);
+  });
 });

@@ -53,6 +53,10 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
   const fullPath = (req.originalUrl || req.url).split('?')[0];
 
   res.on('finish', () => {
+    // The MCP connector records each tool it runs itself (services/mcp/server.ts);
+    // its protocol requests (initialize, tools/list) change nothing. A refused
+    // one (401, 403, 429, 503) is still recorded here.
+    if (fullPath === '/api/mcp' && res.statusCode < 400) return;
     const { entityType, entityId } = extractEntity(fullPath);
     const { userId, username } = extractUser(req);
     // A "Review changes" preview (#255) applied nothing; say so in the log.

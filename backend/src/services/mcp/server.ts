@@ -4,6 +4,7 @@ import { query, queryOne } from '../../config/database';
 import type { AuthPayload } from '../../middleware/auth';
 import { siteScopeDevices, type SiteScope } from '../../utils/siteScope';
 import { fleetCveReport } from '../cveFeed';
+import { withCurrentUpdates, type MarkedCheck, type Suppression, type UpdateColumns } from '../../utils/postureScore';
 import { observation, safeText, selectFields } from './output';
 
 const id = z.number().int().positive().max(2147483647);
@@ -81,23 +82,26 @@ export function createReviewServer(user: AuthPayload, ip: string): McpServer {
   });
   register('get_security_findings', 'Read cached security posture with current suppressions. Missing data is unavailable, never a clean scan.', { ...device, ...page }, async (args) => {
     await getDevice(args);
-    const cache = await queryOne<{ data: { checks?: Row[] } | null; fetched_at: string | null; error: string | null }>(
+    const cache = await queryOne<{ data: { checks?: MarkedCheck[] } | null; fetched_at: string | null; error: string | null }>(
       `SELECT data, fetched_at, error FROM device_live_cache WHERE device_id = $1 AND kind = 'posture'`, [args.device_id]);
-    const suppressions = await query<{ check_id: string; device_id: number | null; reason: string | null }>(
-      `SELECT check_id, device_id, reason FROM security_check_suppressions WHERE device_id IS NULL OR device_id = $1 ORDER BY device_id NULLS FIRST`, [args.device_id]);
-    const muted = new Map(suppressions.map((r) => [r.check_id, r]));
-    const checks = Array.isArray(cache?.data?.checks) ? cache.data.checks : [];
-    const rows: Row[] = checks.map((check) => {
-      const suppression = muted.get(String(check.id));
-      return { ...selectFields(check, ['id', 'severity', 'title', 'detail']), suppressed: !!suppression,
-        suppressed_scope: suppression ? suppression.device_id === null ? 'fleet' : 'device' : null,
-        suppressed_reason: safeText(suppression?.reason) };
-    });
-    const weights: Record<string, number> = { high: 15, medium: 7, low: 3 };
-    const active = rows.filter((r) => !r.suppressed);
-    const penalty = active.reduce((n, r) => n + (weights[String(r.severity)] ?? 0), 0);
+    const suppressions = await query<Suppression>(
+      `SELECT check_id, device_id, reason FROM security_check_suppressions WHERE device_id IS NULL OR device_id = $1`, [args.device_id]);
+    // Scored as the Security page scores it, with the update findings rebuilt
+    // from the device row: the cached copy can be from before an upgrade (#371).
+    const updates = await queryOne<UpdateColumns>(
+      `SELECT ros_version, firmware_update_available, latest_ros_version, routerboard_upgrade_available, firmware_version, upgrade_firmware_version
+         FROM devices WHERE id = $1`, [args.device_id]);
+    const current = Array.isArray(cache?.data?.checks)
+      ? withCurrentUpdates(cache.data.checks, { ...(updates ?? {}), id: args.device_id! }, suppressions)
+      : null;
+    const rows: Row[] = (current?.checks ?? []).map((check) => ({
+      ...selectFields(check as unknown as Row, ['id', 'severity', 'title', 'detail']),
+      suppressed: !!check.suppressed,
+      suppressed_scope: check.suppressed_scope ?? null,
+      suppressed_reason: safeText(check.suppressed_reason),
+    }));
     return { device_id: args.device_id, ...paged(rows.slice(args.offset), args),
-      score: cache?.data && Array.isArray(cache.data.checks) ? active.length ? Math.max(5, 100 - penalty) : 100 : null,
+      score: current ? current.score : null,
       observation: observation(cache?.data ? cache.fetched_at : null, !!cache?.error),
       collection_failed: !!cache?.error };
   });

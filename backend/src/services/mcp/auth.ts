@@ -1,4 +1,4 @@
-import { Issuer, type Client } from 'openid-client';
+import * as oidc from 'openid-client';
 import type { RequestHandler } from 'express';
 import { queryOne } from '../../config/database';
 import { loadSiteRoles } from '../../utils/siteRoles';
@@ -30,21 +30,17 @@ export function mcpConfig(): McpConfig | null {
   return { resource, issuer, clientId, clientSecret };
 }
 
-let cached: { key: string; until: number; client: Client } | undefined;
-async function introspectionClient(config: McpConfig): Promise<Client> {
+let cached: { key: string; until: number; client: oidc.Configuration } | undefined;
+/** The provider, discovered once every five minutes; HTTPS only (openid-client refuses plain HTTP). */
+async function introspectionClient(config: McpConfig): Promise<oidc.Configuration> {
   const key = JSON.stringify(config);
   if (cached?.key === key && cached.until > Date.now()) return cached.client;
-  const issuer = await Issuer.discover(config.issuer);
-  if (issuer.issuer !== config.issuer || typeof issuer.metadata.introspection_endpoint !== 'string'
-      || new URL(issuer.metadata.introspection_endpoint).protocol !== 'https:') {
+  const client = await oidc.discovery(new URL(config.issuer), config.clientId, undefined, oidc.ClientSecretBasic(config.clientSecret));
+  const meta = client.serverMetadata();
+  if (meta.issuer !== config.issuer || typeof meta.introspection_endpoint !== 'string'
+      || new URL(meta.introspection_endpoint).protocol !== 'https:') {
     throw new Error('Invalid MCP OAuth issuer');
   }
-  const client = new issuer.Client({
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    token_endpoint_auth_method: 'client_secret_basic',
-    introspection_endpoint_auth_method: 'client_secret_basic',
-  });
   cached = { key, until: Date.now() + 300_000, client };
   return client;
 }
@@ -70,7 +66,7 @@ export const mcpAuth: RequestHandler = async (req, res, next) => {
   }
   try {
     const client = await introspectionClient(config);
-    const token = await client.introspect(header.slice(7), 'access_token');
+    const token = await oidc.tokenIntrospection(client, header.slice(7), { token_type_hint: 'access_token' });
     const audience = Array.isArray(token.aud) ? token.aud : [token.aud];
     const now = Math.floor(Date.now() / 1000);
     if (token.active !== true || !audience.includes(config.resource)

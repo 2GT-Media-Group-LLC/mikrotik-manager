@@ -4,11 +4,11 @@ jest.mock('../../services/cveFeed', () => ({ fleetCveReport: jest.fn() }));
 jest.mock('../../middleware/rateLimitRedis', () => ({
   rateLimitRedis: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
-jest.mock('openid-client', () => ({ Issuer: { discover: jest.fn() } }));
+jest.mock('openid-client', () => ({ discovery: jest.fn(), tokenIntrospection: jest.fn(), ClientSecretBasic: jest.fn() }));
 
 import express from 'express';
 import request from 'supertest';
-import { Issuer } from 'openid-client';
+import { discovery, tokenIntrospection } from 'openid-client';
 import { query, queryOne } from '../../config/database';
 import { loadSiteRoles } from '../../utils/siteRoles';
 import { fleetCveReport } from '../../services/cveFeed';
@@ -48,8 +48,8 @@ beforeEach(() => {
   process.env.MCP_INTROSPECTION_CLIENT_ID = 'resource';
   process.env.MCP_INTROSPECTION_CLIENT_SECRET = 'not-a-real-secret';
   introspect.mockReset().mockResolvedValue({ active: true, sub: 'user-subject', iss: issuer, aud: resource, exp: Math.floor(Date.now() / 1000) + 3600, scope: 'mcp:read' });
-  jest.mocked(Issuer.discover).mockResolvedValue({ issuer, metadata: { introspection_endpoint: `${issuer}/introspect` },
-    Client: class { introspect = introspect; } } as never);
+  jest.mocked(discovery).mockResolvedValue({ serverMetadata: () => ({ issuer, introspection_endpoint: `${issuer}/introspect` }) } as never);
+  jest.mocked(tokenIntrospection).mockImplementation((_client, token) => introspect(token));
   account = { id: 7, username: 'reviewer', role: 'admin', must_change_password: false };
   visibleDevice = device;
   dbOne.mockReset().mockImplementation(async (sql) => {
@@ -180,6 +180,22 @@ describe('review evidence and isolation', () => {
     expect(data(res)).toMatchObject({ score: 100, observation: { status: 'partial' }, items: [{ suppressed: true, suppressed_reason: 'Approved exception' }] });
     expect(res.text).not.toMatch(/NEVER_RETURN|HIDDEN|execute something/);
   });
+  it('rebuilds update findings from the device row, as the Security page does (#371)', async () => {
+    dbOne.mockImplementation(async (sql) => {
+      if (sql.includes('FROM users')) return account as never;
+      // Cached before the upgrade: it still says an update is waiting.
+      if (sql.includes('device_live_cache')) return { data: { checks: [
+        { id: 'firmware-outdated', severity: 'medium', title: 'RouterOS update available', detail: 'old' },
+        { id: 'romon', severity: 'low', title: 'RoMON enabled', detail: 'x' },
+      ] }, fetched_at: new Date().toISOString(), error: null } as never;
+      if (sql.includes('firmware_update_available')) return { ros_version: '7.21', firmware_update_available: false, routerboard_upgrade_available: true, firmware_version: '7.20' } as never;
+      return device as never;
+    });
+    const res = await call('get_security_findings', { device_id: 12 });
+    expect(data(res).items.map((i: { id: string }) => i.id).sort()).toEqual(['romon', 'routerboot-outdated']);
+    expect(data(res).score).toBe(100 - 3 - 3);
+  });
+
   it('bounds event windows and omits raw messages even if the DB returns extras', async () => {
     expect((await call('list_events', { device_id: 12, hours: 169 })).body.result.isError).toBe(true);
     db.mockImplementation(async (sql) => sql.includes('FROM events')
