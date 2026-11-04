@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.17
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta16" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1496,6 +1507,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../ai-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI connections (MCP, OpenAPI)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../sso-oidc/" class="md-nav__link">
         
   
@@ -1636,6 +1675,17 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#110-beta17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.17
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#110-beta16" class="md-nav__link">
@@ -1836,6 +1886,20 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta17">1.1.0-beta.17<a class="headerlink" href="#110-beta17" title="Permanent link">&para;</a></h2>
+<p><strong>AI connections</strong>, built on <a href="https://github.com/Bigben83">@Bigben83</a>'s read-only MCP connector
+(<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/340">#340</a>,
+<a href="../ai-connections/">AI connections</a>):</p>
+<ul>
+<li>AI tools can review what the manager has stored: sites, devices, security findings, config
+  health, CVE matches, interfaces and event metadata. They can't change anything or connect to
+  devices, passwords and keys are never included, and each call is in the audit log.</li>
+<li>Set up under <strong>Settings → AI Connections</strong>: switch on <strong>MCP</strong> (Claude, ChatGPT, LM Studio,
+  Open WebUI), <strong>OpenAPI</strong> (Open WebUI tool servers) or both. Each lists its addresses once on.</li>
+<li>MCP signs in with an <strong>AI connection token</strong> or with <strong>OAuth</strong> through your identity
+  provider. OpenAPI uses a token. Tokens are made on the same page, can be limited to some
+  sites, and work nowhere else in the API.</li>
+</ul>
 <h2 id="110-beta16">1.1.0-beta.16<a class="headerlink" href="#110-beta16" title="Permanent link">&para;</a></h2>
 <p>Less clutter:</p>
 <ul>
