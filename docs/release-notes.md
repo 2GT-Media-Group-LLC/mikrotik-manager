@@ -3,6 +3,22 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.19
+
+- **Config Health finds access ports left in other VLANs.** Before 1.0.4, setting a trunk to
+  access in the port editor left it tagged in the VLANs it had carried, so the switch kept
+  sending them out of it. The check names the port and the VLANs, and **Fix it** saves it as
+  access again, under Change Guard
+  ([Config Health](change-guard.md#what-it-checks)).
+- **Backups without SSH**, for [@ronchan44](https://github.com/ronchan44)
+  ([#392](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/392)). A device with
+  SSH off or refusing is backed up over the API instead, on RouterOS 7.13 or later: the same
+  export, written to a file on the device, read back and deleted. It only runs with plenty of
+  storage free, and the result is byte for byte what SSH gives
+  ([Devices with SSH off](backups.md#devices-with-ssh-off)).
+- Dependency updates: React 19.3.1, TanStack Query 5.106, date-fns 4, lucide-react 1.68,
+  eslint-plugin-security 4.2.1 and @types/node 26.6.6.
+
 ## 1.1.0-beta.18
 
 - **Port labels** on the topology map, a new choice under **Display**, from

@@ -241,6 +241,45 @@ describe('auditConfig', () => {
     });
   });
 
+  describe('access-port-in-other-vlans', () => {
+    const accessPort = { interface: 'ether1', bridge: 'bridge', pvid: '20', disabled: 'false',
+      'frame-types': 'admit-only-untagged-and-priority-tagged' };
+    const ports = [{ interface: 'sfp28-1', bridge: 'bridge', pvid: '1', disabled: 'false', hw: 'true' }, accessPort];
+    const vlans = (ether1TaggedIn10: boolean, ether1UntaggedIn1 = false) => [
+      { bridge: 'bridge', 'vlan-ids': '1', tagged: '', untagged: `bridge,sfp28-1${ether1UntaggedIn1 ? ',ether1' : ''}`, dynamic: 'false' },
+      { bridge: 'bridge', 'vlan-ids': '10', tagged: `sfp28-1,bridge${ether1TaggedIn10 ? ',ether1' : ''}`, untagged: '', dynamic: 'false' },
+      { bridge: 'bridge', 'vlan-ids': '20', tagged: 'sfp28-1', untagged: 'ether1', dynamic: 'false' },
+    ];
+
+    it('flags a trunk set to access that is still tagged in its old VLANs (pre-1.0.4)', () => {
+      const found = auditConfig(healthy({ bridgePorts: ports, bridgeVlans: vlans(true) }), device)
+        .find((f) => f.rule === 'access-port-in-other-vlans');
+      expect(found?.severity).toBe('warning');
+      expect(found?.title).toBe('Access port ether1 is still in other VLANs');
+      expect(found?.detail).toContain('tagged in VLAN 10');
+      expect(found?.objects).toEqual(['ether1', 'bridge', '20', '10']);
+    });
+
+    it('flags one left untagged in another VLAN too, and lists ranges in full', () => {
+      const bridgeVlans = [...vlans(false, true),
+        { bridge: 'bridge', 'vlan-ids': '100-102', tagged: 'sfp28-1,ether1', untagged: '', dynamic: 'false' }];
+      const found = auditConfig(healthy({ bridgePorts: ports, bridgeVlans }), device)
+        .find((f) => f.rule === 'access-port-in-other-vlans');
+      expect(found?.detail).toContain('tagged in VLANs 100, 101, 102 and untagged in VLAN 1');
+    });
+
+    it('leaves a clean access port, a trunk, dynamic entries and unfiltered bridges alone', () => {
+      expect(rules(healthy({ bridgePorts: ports, bridgeVlans: vlans(false) }))).not.toContain('access-port-in-other-vlans');
+      // The same tagging on a port that admits everything is a hybrid trunk, not this.
+      const hybrid = [ports[0], { ...accessPort, 'frame-types': 'admit-all' }];
+      expect(rules(healthy({ bridgePorts: hybrid, bridgeVlans: vlans(true) }))).not.toContain('access-port-in-other-vlans');
+      const dynamic = vlans(false).concat({ bridge: 'bridge', 'vlan-ids': '30', tagged: 'ether1', untagged: '', dynamic: 'true' });
+      expect(rules(healthy({ bridgePorts: ports, bridgeVlans: dynamic }))).not.toContain('access-port-in-other-vlans');
+      const unfiltered = healthy({ bridges: [{ name: 'bridge', 'vlan-filtering': 'false', pvid: '1' }], bridgePorts: ports, bridgeVlans: vlans(true) });
+      expect(rules(unfiltered)).not.toContain('access-port-in-other-vlans');
+    });
+  });
+
   describe('multiple-hw-bridges', () => {
     it('flags two bridges both requesting hardware offload', () => {
       const snap = healthy({

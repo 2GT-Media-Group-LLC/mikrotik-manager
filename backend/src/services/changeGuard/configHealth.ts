@@ -332,6 +332,58 @@ function rulePvidWithTaggedOnlyFrameType(snap: DeviceSnapshot): ConfigFinding[] 
 }
 
 /**
+ * A half-converted access port: it admits only untagged frames, so it is an
+ * access port, but bridge VLAN entries still list it in other VLANs. Before
+ * 1.0.4, setting a trunk to access in the port editor left it like this (and
+ * so can a hand edit). The switch keeps sending those VLANs out of it, tagged
+ * (or untagged, mixed in with its own VLAN), and drops whatever comes back
+ * tagged: half a trunk, which the device at the far end can't use properly.
+ */
+function ruleAccessPortInOtherVlans(snap: DeviceSnapshot): ConfigFinding[] {
+  const filtering = new Set(snap.bridges.filter((b) => isTrue(b['vlan-filtering'])).map((b) => b['name']));
+  const out: ConfigFinding[] = [];
+  for (const p of snap.bridgePorts) {
+    const port = p['interface'];
+    if (!port || isTrue(p['disabled']) || !filtering.has(p['bridge'])) continue;
+    const frames = p['frame-types'] ?? p['frame-type'];
+    if (frames !== 'admit-only-untagged-and-priority-tagged') continue;
+    const pvid = parseInt(p['pvid'] || '1', 10);
+    const tagged = new Set<number>();
+    const untagged = new Set<number>();
+    for (const row of snap.bridgeVlans) {
+      // Static entries only: what someone configured, and what a re-save fixes.
+      if (row['bridge'] !== p['bridge'] || isTrue(row['dynamic'])) continue;
+      const vids = expandVlanIds(row['vlan-ids']);
+      if (rosList(row['tagged']).includes(port)) vids.forEach((v) => tagged.add(v));
+      if (rosList(row['untagged']).includes(port)) vids.filter((v) => v !== pvid).forEach((v) => untagged.add(v));
+    }
+    if (tagged.size === 0 && untagged.size === 0) continue;
+    const list = (ids: Set<number>) => [...ids].sort((a, b) => a - b).join(', ');
+    const parts = [
+      ...(tagged.size ? [`tagged in VLAN${tagged.size > 1 ? 's' : ''} ${list(tagged)}`] : []),
+      ...(untagged.size ? [`untagged in VLAN${untagged.size > 1 ? 's' : ''} ${list(untagged)}`] : []),
+    ];
+    out.push({
+      rule: 'access-port-in-other-vlans',
+      fingerprint: `access-port-in-other-vlans:${p['bridge']}:${port}`,
+      severity: 'warning',
+      title: `Access port ${port} is still in other VLANs`,
+      detail:
+        `${port} admits only untagged frames, so it is an access port for VLAN ${pvid}, but the `
+        + `bridge VLAN table still has it ${parts.join(' and ')}. The switch keeps sending that `
+        + `traffic out of ${port} and drops tagged frames coming back, so those VLANs are half `
+        + `connected. A trunk set to access before 1.0.4 was left like this.`,
+      remediation:
+        `Press Fix it, or open ${port} in the port editor and save it as access again: either takes `
+        + `it out of every VLAN but ${pvid}. If it should carry those VLANs, make it a trunk instead.`,
+      docUrl: VLAN_TABLE_DOC,
+      objects: [port, p['bridge'], String(pvid), ...[...new Set([...tagged, ...untagged])].sort((a, b) => a - b).map(String)],
+    });
+  }
+  return out;
+}
+
+/**
  * Hardware offload can only be applied to one bridge per switch chip. When a second
  * bridge also has hw ports, one of them silently falls back to CPU forwarding and
  * throughput collapses under load without any error.
@@ -820,6 +872,7 @@ export function auditConfig(snap: DeviceSnapshot, device: GuardDevice): ConfigFi
     ...rulePortInNoVlan(snap),
     ...ruleMultiVidUntagged(snap),
     ...rulePvidWithTaggedOnlyFrameType(snap),
+    ...ruleAccessPortInOtherVlans(snap),
     ...ruleMultipleHwBridges(snap),
     ...ruleMtuExceedsL2Mtu(snap),
     ...ruleDuplicateAddress(snap),

@@ -1623,6 +1623,26 @@ router.post('/:id/config-health/fix', requireWrite, async (req, res) => {
       async (c) => { await c.collectVlans().catch(() => {}); await rescan(); });
   }
 
+  if (rule === 'access-port-in-other-vlans') {
+    // Exactly what saving the port as access in the port editor does since
+    // 1.0.4, guarded the same way: the port might be the management uplink.
+    const [port, , pvidRaw] = objects as string[];
+    const pvid = Number(pvidRaw);
+    return withGuardedChange(req.params.id, req, res,
+      { kind: 'config-health.fix', summary: plan.summary,
+        change: { kind: 'port.vlan', port, pvid, tagged: [], untagged: [pvid], mode: 'access', replaceTagged: false } },
+      async (c) => {
+        const { notRemoved } = await c.setPortVlanConfig(port, pvid, [], [pvid], 'access', false);
+        return {
+          message: notRemoved.length
+            ? `${plan.summary}: done, except VLAN${notRemoved.length > 1 ? 's' : ''} ${notRemoved.join(', ')}, which share a bridge VLAN row (a range) with VLAN ${pvid}. Split that row under VLANs to remove them.`
+            : `${plan.summary}: done`,
+          not_removed: notRemoved,
+        };
+      },
+      async (c) => { await c.collectVlans().catch(() => {}); await rescan(); });
+  }
+
   return res.status(400).json({ error: noFixReason(rule) });
 });
 

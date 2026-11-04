@@ -79,6 +79,7 @@ import {
 import { bytesSince, periodKey, shouldSend } from '../../utils/dataCap';
 import { parseDeviceLogTime } from '../../utils/deviceTime';
 import { BackupService } from '../BackupService';
+import { apiExport } from '../apiExport';
 import { storeProxyConnections } from '../ProxyLogService';
 
 /** RouterOS update commands reach out to MikroTik's servers and are slow by nature. */
@@ -2346,7 +2347,8 @@ export class DeviceCollector {
       const backupService = new BackupService();
       const device = this.device as unknown as import('../BackupService').BackupDevice;
 
-      // The export requires SSH; without it there's no restorable snapshot to take.
+      // The export runs over SSH, or over the API when SSH is off (#392, 7.13+);
+      // without either there's no restorable snapshot to take.
       // Never with secrets: the snapshot text is stored in the database and
       // shown in Config History diffs (#172). v6 uses hide-sensitive for this.
       let rsc: string;
@@ -4404,6 +4406,11 @@ export class DeviceCollector {
   /** Several reads in one round trip, for targeted queries (#313). */
   batchReader(): Pick<RouterOSClient, 'executeMany'> {
     return this.client;
+  }
+
+  /** The configuration exported over the API, for a device whose SSH is off (#392). */
+  async exportOverApi(opts: { showSensitive: boolean; estimateBytes?: number }): Promise<string> {
+    return apiExport(this.client, opts);
   }
 
   /** The local TCP port of this collector's own API connection. */

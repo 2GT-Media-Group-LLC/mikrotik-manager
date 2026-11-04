@@ -470,3 +470,18 @@ describe('executeMany and prefetch', () => {
     await expect(client.execute('/interface/wifi/print')).rejects.toThrow('no such command');
   });
 });
+
+describe('file chunks, byte for byte (#392)', () => {
+  it('keeps the bytes of a character split across two chunks while reading a file', () => {
+    // "é" is c3 a9; a chunk can end after c3. UTF-8 decoding turns that into U+FFFD.
+    const raw = Buffer.concat([Buffer.from('!re', 'utf8'), Buffer.from('=data=ab'), Buffer.from([0xc3])]);
+    const bytes = Buffer.concat([word('!re'), Buffer.from([raw.length - 3]), raw.subarray(3), Buffer.from([0x00])]);
+    const client = new RouterOSClient('127.0.0.1', 8728, 'x', 'x');
+    const internals = client as unknown as { buffer: Buffer; wordEncoding: BufferEncoding; tryParseSentence(): RouterOSSentence | null };
+    internals.buffer = bytes;
+    expect(internals.tryParseSentence()!.words['data']).toBe('ab�');
+    internals.buffer = bytes;
+    internals.wordEncoding = 'latin1';
+    expect(Buffer.from(internals.tryParseSentence()!.words['data'], 'latin1')).toEqual(Buffer.from([0x61, 0x62, 0xc3]));
+  });
+});

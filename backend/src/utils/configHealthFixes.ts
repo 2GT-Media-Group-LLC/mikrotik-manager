@@ -2,8 +2,9 @@
  * One-click fixes for Config Health findings (#239).
  *
  * Only findings with one clearly right fix get a button: turning spanning tree
- * on, moving classic STP to RSTP, and tagging the bridge in the VLAN its VLAN
- * interface needs. The rest are judgment calls (which of two changes did you
+ * on, moving classic STP to RSTP, tagging the bridge in the VLAN its VLAN
+ * interface needs, and taking an access port out of the VLANs it was left in
+ * (the same as saving it as access again in the port editor). The rest are judgment calls (which of two changes did you
  * mean?) or can't be changed remotely at all, so they keep their advice and
  * say why there's no button. Pure, so the decision can be tested without a
  * device.
@@ -39,6 +40,19 @@ export function fixFor(rule: string, objects: string[]): FixPlan | null {
       return {
         summary: `Tag bridge ${bridge} in VLAN ${vid}, so ${vlanIface} receives its traffic`,
         command: `/interface/bridge/vlan: add ${bridge} to the tagged ports of VLAN ${vid} on ${bridge} (creating the entry if there is none)`,
+      };
+    }
+    case 'access-port-in-other-vlans': {
+      const [port, bridge, pvidRaw, ...rest] = objects;
+      const pvid = Number(pvidRaw);
+      const vids = rest.map(Number);
+      if (!port || !SAFE_NAME.test(port) || !bridge || !SAFE_NAME.test(bridge)
+          || !Number.isInteger(pvid) || pvid < 1 || pvid > 4094
+          || !vids.length || !vids.every((v) => Number.isInteger(v) && v >= 1 && v <= 4094)) return null;
+      return {
+        summary: `Make ${port} an access port on VLAN ${pvid} only, taking it out of VLAN${vids.length > 1 ? 's' : ''} ${vids.join(', ')}`,
+        command: `/interface/bridge/vlan: remove ${port} from VLAN${vids.length > 1 ? 's' : ''} ${vids.join(', ')} on ${bridge}, keep it untagged in VLAN ${pvid}; `
+          + `/interface/bridge/port: ${port} pvid=${pvid} frame-types=admit-only-untagged-and-priority-tagged`,
       };
     }
     default:

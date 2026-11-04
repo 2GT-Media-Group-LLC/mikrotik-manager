@@ -382,6 +382,36 @@ export class RouterOSClient extends EventEmitter {
     return result;
   }
 
+  /** How reply words are decoded: UTF-8, except while readFileChunk runs. */
+  private wordEncoding: BufferEncoding = 'utf8';
+
+  /**
+   * One chunk of a file on the device, byte for byte (RouterOS 7.13+). Words
+   * are normally decoded as UTF-8, which would mangle a character split
+   * across two chunks; this one reply is decoded as latin1, which keeps every
+   * byte. Commands run one at a time, so no other reply is decoded this way.
+   */
+  async readFileChunk(file: string, offset: number, chunkSize: number): Promise<Buffer> {
+    let data = '';
+    let error!: Error;
+    await new Promise<void>((resolve) => {
+      this.operationChain = this.operationChain.then(async () => {
+        this.wordEncoding = 'latin1';
+        try {
+          const rows = await this._executeRaw('/file/read', { file, offset: String(offset), 'chunk-size': String(chunkSize) }, []);
+          data = rows[0]?.['data'] ?? '';
+        } catch (err) {
+          error = err as Error;
+        } finally {
+          this.wordEncoding = 'utf8';
+        }
+        resolve();
+      });
+    });
+    if (error) throw error;
+    return Buffer.from(data, 'latin1');
+  }
+
   /**
    * Run a RouterOS script and return what it printed (#295). `/execute` with
    * `as-string` waits for the script and returns its output on !done as
@@ -809,7 +839,7 @@ export class RouterOSClient extends EventEmitter {
       words.push(
         this.buffer
           .slice(offset + bytesConsumed, offset + bytesConsumed + length)
-          .toString('utf8')
+          .toString(this.wordEncoding)
       );
       offset += bytesConsumed + length;
     }

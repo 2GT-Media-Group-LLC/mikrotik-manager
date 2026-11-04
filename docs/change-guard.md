@@ -397,6 +397,7 @@ finding clears:
 | Spanning tree off on a bridge | `/interface/bridge set <bridge> protocol-mode=rstp` |
 | Bridge running classic STP | `/interface/bridge set <bridge> protocol-mode=rstp` |
 | VLAN interface whose VLAN the bridge is not tagged in | Adds the bridge to that VLAN's tagged ports, creating the entry if there is none. A VLAN that's part of a multi-VLAN entry is left for you to change on the device |
+| Access port still in other VLANs | Saves the port as access again, as the port editor does: it stays untagged in its PVID's VLAN and leaves every other one. A VLAN in a range row that also covers the PVID is left, and the result says which |
 
 The others have no button, and say why: most have more than one reasonable fix (move the
 address or take the port out of the bridge? lower the MTU or raise the L2 MTU?), and
@@ -415,6 +416,7 @@ device-mode can only be changed at the device. Their advice is unchanged.
 | Port in no VLAN on a filtering bridge | Links up, then every frame is dropped |
 | Multi-VLAN bridge entry with untagged ports | Ambiguous; RouterOS warns and applies it anyway |
 | PVID next to `frame-type=admit-only-vlan-tagged` | The PVID is stored but never applied |
+| Access port (admits only untagged frames) still listed in other VLANs | The switch keeps sending those VLANs out of it and drops what comes back tagged. A trunk set to access before 1.0.4 was left like this |
 | Several bridges competing for hardware offload | One silently falls back to CPU forwarding |
 | Routing between VLANs on the CPU of a switch chip that can do it in hardware | Inter-VLAN traffic runs at a fraction of the ports' speed; see [Routing between VLANs in hardware](devices.md#routing-between-vlans-in-hardware) |
 | MTU above L2MTU | Large frames dropped without error |

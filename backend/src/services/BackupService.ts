@@ -3,7 +3,9 @@ import * as path from 'path';
 import { Client as SSHClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
 import { encrypt, decrypt } from '../utils/crypto';
-import { exportPlan } from '../utils/backupExport';
+import { exportPlan, type ExportPlan } from '../utils/backupExport';
+import { apiExportSupported, DEFAULT_ESTIMATE } from './apiExport';
+import type { DeviceRow } from './mikrotik/DeviceCollector';
 import { randomBytes } from 'crypto';
 import { PartialApplyRevertError } from './changeGuard/partialApply';
 import { withSafeApply, type GuardDevice, type GuardOutcome } from './changeGuard/ChangeGuard';
@@ -32,6 +34,20 @@ export interface BackupDevice {
 const EXPORT_IDLE_MS = 60_000;
 /** An export still running after this long fails anyway. */
 const EXPORT_MAX_MS = 10 * 60_000;
+
+/** Devices whose last API export (#392) worked, and until when to try it first. */
+const apiFirstUntil = new Map<number, number>();
+const API_FIRST_MS = 6 * 3_600_000;
+
+/** True when SSH was refused because the device's host key isn't the one on record. */
+export function isHostKeyRefusal(err: unknown): boolean {
+  let e: unknown = err;
+  for (let i = 0; i < 3 && e; i++) {
+    if (/host denied|host key/i.test((e as Error).message ?? '')) return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
 
 /** True when the device refused the credentials at login (not a timeout or a later failure). */
 export function isAuthRejection(err: unknown): boolean {
@@ -65,12 +81,66 @@ export class BackupService {
     device: BackupDevice,
     opts: { includeSecrets?: boolean } = {}
   ): Promise<{ text: string; containsSecrets: boolean }> {
-    const sshUser = device.ssh_username || device.api_username;
-    const port = device.ssh_port || 22;
     const [ver] = await query<{ ros_version: string | null }>(
       `SELECT ros_version FROM devices WHERE id = $1`, [device.id]
     ).catch(() => []);
     const plan = exportPlan(ver?.ros_version, !!opts.includeSecrets);
+
+    // SSH off or refusing (#392): the same export over the API, on RouterOS
+    // 7.13+. A device where that worked tries the API first for a while, so
+    // one whose SSH is filtered doesn't wait out an SSH timeout every time.
+    let apiError: Error | undefined;
+    if ((apiFirstUntil.get(device.id) ?? 0) > Date.now()) {
+      try { return await this.apiExportFor(device, plan); } catch (e) {
+        apiFirstUntil.delete(device.id);
+        apiError = e as Error;
+      }
+    }
+    try {
+      return await this.sshExportConfig(device, plan);
+    } catch (sshErr) {
+      // A host key that doesn't match is a warning, not "SSH is off": never go round it.
+      if (isHostKeyRefusal(sshErr)) throw sshErr;
+      const sshMsg = (sshErr as Error).message;
+      if (!apiExportSupported(ver?.ros_version)) {
+        throw new Error(`${sshMsg} (backing up without SSH needs RouterOS 7.13 or later)`, { cause: sshErr });
+      }
+      if (!apiError) {
+        try {
+          const out = await this.apiExportFor(device, plan);
+          apiFirstUntil.set(device.id, Date.now() + API_FIRST_MS);
+          console.info(`[Backup] ${device.name}: SSH failed (${sshMsg}); exported over the API instead`);
+          return out;
+        } catch (e) { apiError = e as Error; }
+      }
+      throw new Error(`over SSH: ${sshMsg}; over the API: ${apiError.message}`, { cause: sshErr });
+    }
+  }
+
+  /** The export over the API (#392), with the last backup's size as the estimate for the space check. */
+  private async apiExportFor(device: BackupDevice, plan: ExportPlan): Promise<{ text: string; containsSecrets: boolean }> {
+    // Loaded here: DeviceCollector imports this module.
+    const { DeviceCollector } = await import('./mikrotik/DeviceCollector');
+    const row = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [device.id]);
+    if (!row) throw new Error('Device not found');
+    const last = await queryOne<{ size_bytes: number | string | null }>(
+      `SELECT size_bytes FROM backups WHERE device_id = $1 ORDER BY created_at DESC LIMIT 1`, [device.id]
+    ).catch(() => null);
+    const estimateBytes = Number(last?.size_bytes) > 0 ? Number(last?.size_bytes) : DEFAULT_ESTIMATE;
+    const collector = new DeviceCollector(row);
+    try {
+      await collector.connect();
+      const text = await collector.exportOverApi({ showSensitive: /show-sensitive/.test(plan.command), estimateBytes });
+      return { text, containsSecrets: plan.containsSecrets };
+    } finally {
+      collector.disconnect();
+    }
+  }
+
+  /** `/export` over SSH: the verified key first, then the password (#110). */
+  private async sshExportConfig(device: BackupDevice, plan: ExportPlan): Promise<{ text: string; containsSecrets: boolean }> {
+    const sshUser = device.ssh_username || device.api_username;
+    const port = device.ssh_port || 22;
     const run = async (user: string, auth: { password: string } | { privateKey: string }) =>
       ({ text: await this.sshExport(device, port, user, auth, plan.command), containsSecrets: plan.containsSecrets });
 

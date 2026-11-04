@@ -7,7 +7,7 @@ find, read and compare them.
 
 ## What a backup actually is
 
-`/export compact` run over SSH, stored as a `.rsc` file — **plain RouterOS script, not
+`/export compact` run over SSH (or [over the API](#devices-with-ssh-off) when SSH is off), stored as a `.rsc` file — **plain RouterOS script, not
 the binary `.backup` blob**.
 
 That distinction shapes everything else on this page. A `.rsc` can be read, diffed,
@@ -32,12 +32,32 @@ if the device refuses the key at login. Before 0.24.50 a key backup that timed o
 back to the password, which RouterOS refuses once a key is installed, so the device logged a
 "login failure" and the real reason was lost.
 
+### Devices with SSH off
+
+A device with SSH turned off, or refusing the login, is backed up over the API instead, on
+RouterOS 7.13 or later (#392). The manager runs the same export to a file on the device,
+reads the file back over the API and deletes it, so the backup is the same script, byte for
+byte, as one taken over SSH. **Sync config** and Config History snapshots work the same way.
+After that has worked, the device tries the API first for six
+hours, so one whose SSH is filtered doesn't wait out an SSH timeout each time.
+
+The file sits on the device's own storage for about a second, so the export only runs when
+there's room to spare: twice the size of the device's last backup (512 KiB if it has none),
+plus 1 MiB or 5 % of the disk, whichever is more, left free. Otherwise the backup fails and
+says how much is free. A file a failed run left behind (`mtm-backup-<12 hex digits>.rsc`) is
+deleted at the next backup; no other file is touched. The API user needs the read, write and
+ftp policies, and sensitive too for [passwords and keys](#passwords-and-keys).
+
+A host key that doesn't match the one on record is never worked around this way: that backup
+fails and says so. Before 7.13 RouterOS can't read files over the API, so those devices still
+need SSH.
+
 ### Backing up every device
 
 **Backup all** on the dashboard backs up every online device in view, a few at a time. When
 it finishes it says how many worked, and lists each device that didn't, with the reason.
 Click a device's name to open it. Because a backup is an SSH export, the reason is usually
-the SSH login, the SSH port, or SSH being turned off on the device. Before 1.0.5 only the
+the SSH login, the SSH port, or SSH being turned off on a device before RouterOS 7.13. Before 1.0.5 only the
 count was shown. **Sync config** does the same.
 
 ## Passwords and keys

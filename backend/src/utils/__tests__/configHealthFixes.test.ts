@@ -11,6 +11,14 @@ describe('Config Health fixes (#239)', () => {
     const plan = fixFor('vlan-iface-not-tagged-on-bridge', ['vlan99', 'bridge1', '99']);
     expect(plan?.summary).toBe('Tag bridge bridge1 in VLAN 99, so vlan99 receives its traffic');
   });
+  it('takes a half-converted access port out of the VLANs it was left in', () => {
+    const plan = fixFor('access-port-in-other-vlans', ['ether1', 'bridge', '20', '10', '30']);
+    expect(plan?.summary).toBe('Make ether1 an access port on VLAN 20 only, taking it out of VLANs 10, 30');
+    expect(plan?.command).toContain('frame-types=admit-only-untagged-and-priority-tagged');
+    expect(fixFor('access-port-in-other-vlans', ['ether1;x', 'bridge', '20', '10'])).toBeNull();
+    expect(fixFor('access-port-in-other-vlans', ['ether1', 'bridge', '20'])).toBeNull();
+    expect(fixFor('access-port-in-other-vlans', ['ether1', 'bridge', '20', '9999'])).toBeNull();
+  });
   it('refuses odd names and VLAN ids', () => {
     expect(fixFor('stp-disabled', ['bridge1; /system reboot'])).toBeNull();
     expect(fixFor('stp-disabled', [])).toBeNull();
