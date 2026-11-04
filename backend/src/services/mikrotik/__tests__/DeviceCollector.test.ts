@@ -877,3 +877,31 @@ describe('checkRouterboardUpgrade', () => {
     expect((await withRouterboard('7.24', '7.24.0').checkRouterboardUpgrade()).upgradeAvailable).toBe(false);
   });
 });
+
+// ── User Manager checked on Sync ─────────────────────────────────────────────
+
+describe('checking for User Manager', () => {
+  const run = async (now: boolean, checkedAt: Date | null) => {
+    const c = new DeviceCollector({ ...testDevice, id: 9301, user_manager_checked_at: checkedAt } as DeviceRow);
+    const execute = jest.fn(async (cmd: string) => (cmd === '/user-manager/print' ? [{ enabled: 'yes' }] : []));
+    (c as unknown as { client: { execute: typeof execute } }).client = { execute };
+    const q = query as jest.Mock;
+    q.mockReset();
+    q.mockResolvedValue([]);
+    await (c as unknown as { checkUserManager: (now?: boolean) => Promise<void> }).checkUserManager(now);
+    const update = q.mock.calls.find(([sql]) => /SET user_manager = \$2/.test(sql));
+    q.mockReset();
+    return { asked: execute.mock.calls.length > 0, update };
+  };
+
+  it('a Sync asks even when it was checked an hour ago', async () => {
+    const { asked, update } = await run(true, new Date(Date.now() - 3_600_000));
+    expect(asked).toBe(true);
+    expect(update![1]).toEqual([9301, true]);
+  });
+
+  it('the slow poll waits a day between checks', async () => {
+    expect((await run(false, new Date(Date.now() - 3_600_000))).asked).toBe(false);
+    expect((await run(false, new Date(Date.now() - 2 * 86_400_000))).asked).toBe(true);
+  });
+});

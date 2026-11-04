@@ -5,15 +5,15 @@
 User Manager is RouterOS's RADIUS server. Many networks run it on a CHR or router so
 that switches, firewalls and access points (MikroTik or not) authenticate logins against
 one place. The **User Manager** page, under Services, shows it for the whole network
-(#251).
+(#251). It's in the sidebar only once a device in the selected site is found running it.
 
 ## Which devices are shown
 
 Every device is checked once a day for User Manager: the `user-manager` package
 installed and switched on. Devices without it cost one call a day. A device found running
 it gets a **User Manager** badge on its page, linking here. If you've just switched it on,
-**Look again now** (shown while no device runs it) checks every device on the next poll,
-within five minutes.
+press **Sync** on that device's page: Sync always checks, and the badge and the sidebar
+link appear when it's done.
 
 With more than one server (two for redundancy, or one per site), a picker at the top
 switches between them. The list follows the site selected at the top of the sidebar.

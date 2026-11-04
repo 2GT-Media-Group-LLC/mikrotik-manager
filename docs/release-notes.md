@@ -3,6 +3,16 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.16
+
+Less clutter:
+
+- The topology page's **Cards** and **Links** settings are in one **Display** popup at the top
+  of the page ([Topology](topology.md#compact-view)). What you'd chosen is kept.
+- **User Manager** is in the sidebar only once a device in the selected site is found running
+  it. **Sync** on a device now always checks for it, so after switching it on, Sync that device
+  and the page appears ([User Manager](user-manager.md#which-devices-are-shown)).
+
 ## 1.1.0-beta.15
 
 Follow-ups to the topology map from [@azizfayziev](https://github.com/azizfayziev)

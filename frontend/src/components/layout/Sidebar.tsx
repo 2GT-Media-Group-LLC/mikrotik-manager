@@ -196,6 +196,8 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const hasRouters   = devices.some(d => d.device_type === 'router');
   // Radios of their own count too: an all-in-one router added as a router is an AP as well.
   const hasWireless  = devices.some(isWirelessDevice);
+  // User Manager (#251) only once the daily check has found it on a device here.
+  const hasUserManager = devices.some(d => d.user_manager === true);
 
   const onlineCount = devices.filter(d => d.status === 'online').length;
 
@@ -420,8 +422,10 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             )}
           </>
         )}
-        {/* RADIUS logins across the network (#251). */}
-        <NavItem to="/user-manager" icon={UserCheck} label="User Manager" isCollapsed={isCollapsed} onClick={handleNavClick} />
+        {/* RADIUS logins across the network (#251), where a device runs it. */}
+        {(hasUserManager || location.pathname.startsWith('/user-manager')) && (
+          <NavItem to="/user-manager" icon={UserCheck} label="User Manager" isCollapsed={isCollapsed} onClick={handleNavClick} />
+        )}
 
         {/* ── Operations ── */}
         <SectionLabel label="Operations" isCollapsed={isCollapsed} />

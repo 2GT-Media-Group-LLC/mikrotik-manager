@@ -533,12 +533,12 @@ export class DeviceCollector {
   /**
    * Does this device run User Manager (#251)? Asked once a day, so a device
    * that starts running it shows up on the Services page within a day, and
-   * the rest of the fleet pays one call a day.
+   * the rest of the fleet pays one call a day. A Sync asks every time (`now`).
    */
-  private async checkUserManager(): Promise<void> {
+  private async checkUserManager(now = false): Promise<void> {
     const d = this.device as unknown as { user_manager_checked_at?: string | Date | null };
     const last = d.user_manager_checked_at ? new Date(d.user_manager_checked_at).getTime() : 0;
-    if (Date.now() - last < USER_MANAGER_RECHECK_MS) return;
+    if (!now && Date.now() - last < USER_MANAGER_RECHECK_MS) return;
     const running = await probeUserManager((cmd) => this.client.execute(cmd));
     if (running === null) return;
     await query(`UPDATE devices SET user_manager = $2, user_manager_checked_at = NOW() WHERE id = $1`, [this.device.id, running])
@@ -725,6 +725,9 @@ export class DeviceCollector {
       await this.collectSecurityProfiles();
       await this.collectCapsman();
     }
+    // User Manager too, whenever it was last checked: Sync is how someone who
+    // just switched it on gets it found, and its page into the sidebar.
+    await this.checkUserManager(true);
     await this.saveFullConfig();
     this.assertStillConnected();
     await this.updateDeviceStatus('online');

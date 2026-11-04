@@ -37,6 +37,7 @@ import NodeEditor from '../components/topology/NodeEditor';
 import HandLinksTable from '../components/topology/HandLinksTable';
 import HiddenLinksTable from '../components/topology/HiddenLinksTable';
 import NeighbourEditor from '../components/topology/NeighbourEditor';
+import DisplaySettings from '../components/topology/DisplaySettings';
 
 const edgeTypes = { topo: TopoEdge };
 const SHOW_CLIENTS_KEY = 'topology.showClients';
@@ -476,20 +477,7 @@ export default function TopologyPage() {
               <ChevronUp className="w-3.5 h-3.5" />Collapse clients
             </button>
           )}
-          <label className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300" title="Detailed cards, or compact icons with the name and address under them. The rest shows when you hover.">
-            Cards
-            <select className="input py-1 text-sm w-auto" value={compact ? 'compact' : 'detailed'} onChange={(e) => chooseCards(e.target.value)}>
-              <option value="detailed">Detailed</option>
-              <option value="compact">Compact</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-slate-300" title="How links are drawn. A link with a side chosen by hand keeps its right angles.">
-            Links
-            <select className="input py-1 text-sm w-auto" value={curved ? 'curved' : 'straight'} onChange={(e) => chooseLinks(e.target.value)}>
-              <option value="curved">Curved</option>
-              <option value="straight">Straight</option>
-            </select>
-          </label>
+          <DisplaySettings compact={compact} curved={curved} onCards={chooseCards} onLinks={chooseLinks} />
           <div className="relative">
             <button className="btn-secondary flex items-center gap-2" onClick={() => setExportOpen((v) => !v)} disabled={exporting || !hasData}
               title="Save the whole map, as it's shown now, as an image">

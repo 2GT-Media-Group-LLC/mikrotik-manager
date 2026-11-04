@@ -117,6 +117,8 @@ export default function DeviceDetailPage() {
       setSyncNote({ ok: true, text: 'Synced' });
       window.setTimeout(() => setSyncNote((n) => (n?.ok ? null : n)), 5_000);
       void invalidateDevice(queryClient, deviceId);
+      // The device list too: the sidebar shows User Manager once Sync finds it.
+      void queryClient.invalidateQueries({ queryKey: ['devices'], exact: true });
     },
     onError: (e: unknown) => setSyncNote({ ok: false, text: (e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Sync failed' }),
   });

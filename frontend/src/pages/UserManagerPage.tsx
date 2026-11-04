@@ -130,7 +130,7 @@ export default function UserManagerPage() {
         <div className="card p-6 text-sm text-gray-600 dark:text-slate-300 space-y-2">
           <p className="font-semibold text-gray-900 dark:text-white">No device runs User Manager</p>
           <p>
-            Each device is checked once a day for User Manager (the <span className="font-mono">user-manager</span> package, enabled).
+            Each device is checked once a day for User Manager (the <span className="font-mono">user-manager</span> package, enabled), and whenever it&apos;s synced.
             {list && list.unchecked > 0 && ` ${list.unchecked} haven't been checked yet.`}
           </p>
           {canWrite && (

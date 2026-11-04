@@ -136,7 +136,7 @@ stays roughly the shape of the window (#115, #147).
 
 ### Compact view
 
-**Cards** at the top of the page switches between **Detailed** cards (name, address and model)
+**Display → Cards** at the top of the page switches between **Detailed** cards (name, address and model)
 and **Compact** icons: a router, switch or access point icon with a status dot, the name and
 address under it, and the rest when you hover. A chip above says what the device does:
 **Gateway**, **CAPsMAN** or **CAP**, **STP root**; a neighbour discovery found says **not
@@ -160,8 +160,8 @@ Any link, discovered or drawn, can be given a colour from its menu, to pick out 
 is reset.
 
 Links are curved: they leave the bottom of the upper card and enter the top of the lower one, or
-run side to side between cards on the same row, and follow the cards as they move. **Links** at
-the top of the page switches to straight lines; the choice is remembered in your browser. Click a link
+run side to side between cards on the same row, and follow the cards as they move. **Display →
+Links** at the top of the page switches to straight lines; the choice is remembered in your browser. Click a link
 to choose where each end attaches: **Top**, **Bottom**, **Left**, **Right** or **Automatic**. A
 pinned end leaves its side at a right angle and the link routes around, as in a wiring diagram.
 A second cable between the same two cards is drawn alongside the first.

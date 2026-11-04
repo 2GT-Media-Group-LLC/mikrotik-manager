@@ -131,7 +131,8 @@ router.get('/', async (req, res) => {
             latest_ros_version, firmware_update_available,
             routerboard_upgrade_available, upgrade_firmware_version,
             location_address, location_lat::float8 AS location_lat, location_lng::float8 AS location_lng,
-            rack_name, rack_slot, wifi_role, created_at
+            -- The sidebar shows User Manager only where a device runs it.
+            rack_name, rack_slot, wifi_role, user_manager, created_at
      FROM devices ${where} ORDER BY name ASC`
   );
 
