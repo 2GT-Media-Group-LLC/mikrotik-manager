@@ -1857,9 +1857,44 @@ ports, so its links are matched by MAC or name (#363). A MAC two devices share, 
 virtual MAC, matches neither.</p>
 <p>Device names wrap onto a second line rather than being cut off, and show in full on hover.</p>
 <p>Port names on links are shortened so two of them fit under a switch (#367): <code>ether17</code> is <code>e17</code>,
-<code>sfp-sfpplus1</code> is <code>sfp1</code>, and the bridge and bond RouterOS puts in front of a port in LLDP
-(<code>bridge/bonding/sfp-sfpplus1</code>) are left off. Cisco ports take Cisco's short forms
-(<code>GigabitEthernet1/0/17</code> is <code>Gi1/0/17</code>). Hover a label for the full names.</p>
+<code>sfp-sfpplus1</code> is <code>sfp1</code>, and the bridge RouterOS puts in front of a port in LLDP is left off.
+A port in a bond keeps the bond, so a LAG still reads as one: <code>bridge/Po1/sfp-sfpplus1</code> is
+<code>Po1·sfp1</code>. Cisco ports take Cisco's short forms (<code>GigabitEthernet1/0/17</code> is <code>Gi1/0/17</code>).
+Hover a label, or the link, for the full names.</p>
+<p><strong>Display → Port labels</strong> chooses how much to show, remembered in this browser:</p>
+<table>
+<thead>
+<tr>
+<th>Choice</th>
+<th><code>bridge/Po1/sfp-sfpplus1</code></th>
+<th><code>bridge/ether17</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Short + bond</strong> (default)</td>
+<td><code>Po1·sfp1</code></td>
+<td><code>e17</code></td>
+</tr>
+<tr>
+<td><strong>Short</strong></td>
+<td><code>sfp1</code></td>
+<td><code>e17</code></td>
+</tr>
+<tr>
+<td><strong>Full</strong>, as RouterOS reports it</td>
+<td><code>bridge/Po1/sfp-sfpplus1</code></td>
+<td><code>bridge/ether17</code></td>
+</tr>
+<tr>
+<td><strong>Off</strong>, on hover only</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>The bond is the middle part of <code>bridge/&lt;bond&gt;/&lt;port&gt;</code>. In a two-part name it counts only when
+it plainly is one (<code>bond1/ether2</code>, <code>Po3/…</code>, <code>lag…</code>), since <code>bridge/ether17</code> is a bridge.</p>
 <p>CDP and MNDP are broadcasts, so a port can hear many neighbours at once: everything in the same
 broadcast domain, not only what's cabled to it. A port with a single such neighbour is drawn as
 a link. A port that hears several draws nothing, because the protocol can't say which of them

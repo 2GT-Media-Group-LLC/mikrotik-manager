@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.18
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta17" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1677,6 +1688,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.18
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta17" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1886,6 +1908,21 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta18">1.1.0-beta.18<a class="headerlink" href="#110-beta18" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Port labels</strong> on the topology map, a new choice under <strong>Display</strong>, from
+  <a href="https://github.com/azizfayziev">@azizfayziev</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367">#367</a>). Short labels in
+  beta.15 dropped the bond a port is in, so a LAG looked like a plain cable. The new default,
+  <strong>Short + bond</strong>, keeps it (<code>Po1·sfp1</code>). <strong>Short</strong>, <strong>Full</strong> (as RouterOS reports it) and
+  <strong>Off</strong> are the others, and hovering a link shows its full port names
+  (<a href="../topology/#how-links-are-found">How links are found</a>).</li>
+<li>A device's <strong>SSH key</strong> card links to <strong>Settings → SSH Keys</strong>, which installs keys on every
+  device in a site at once
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/393">#393</a>,
+  <a href="../ssh-keys/#fleet-wide-deployment">SSH keys</a>). Settings tabs can now be linked to and stay
+  put on reload.</li>
+</ul>
 <h2 id="110-beta17">1.1.0-beta.17<a class="headerlink" href="#110-beta17" title="Permanent link">&para;</a></h2>
 <p><strong>AI connections</strong>, built on <a href="https://github.com/Bigben83">@Bigben83</a>'s read-only MCP connector
 (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/340">#340</a>,
