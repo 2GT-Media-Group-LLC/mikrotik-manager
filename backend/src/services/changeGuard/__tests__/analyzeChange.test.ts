@@ -880,3 +880,53 @@ describe('port.vlan to access leaves the other VLANs (TEST, sfp-sfpplus1)', () =
     expect(analyzeChange(taggedMgmt, device, change).severity).toBe('critical');
   });
 });
+
+describe('VLAN rows that name an interface list', () => {
+  // 2GT-NW-100G: VLAN 1 is tagged=all, untagged=bridge; RouterOS expands "all"
+  // into current-tagged. Re-tagging VLAN 1 on another port rewrites the row.
+  const snap = () => baseSnapshot({
+    interfaces: [
+      { name: 'bridge', type: 'bridge', disabled: 'false' },
+      { name: 'sfp28-1', type: 'ether', disabled: 'false' },
+      { name: 'sfp28-3', type: 'ether', disabled: 'false' },
+    ],
+    bridgePorts: [
+      { interface: 'sfp28-1', bridge: 'bridge', pvid: '1', disabled: 'false' },
+      { interface: 'sfp28-3', bridge: 'bridge', pvid: '1', disabled: 'false' },
+    ],
+    bridgeVlans: [
+      { '.id': '*24', bridge: 'bridge', 'vlan-ids': '1', tagged: 'all', untagged: 'bridge', dynamic: 'false',
+        'current-tagged': 'sfp28-1', 'current-untagged': 'bridge' },
+      { '.id': '*2', bridge: 'bridge', 'vlan-ids': '10', tagged: 'sfp28-1', untagged: '', dynamic: 'false',
+        'current-tagged': 'sfp28-1', 'current-untagged': '' },
+    ],
+  });
+
+  it('native VLAN 10 and tagged VLAN 1 on sfp28-3 leaves sfp28-1 in VLAN 1', () => {
+    const v = analyzeChange(snap(), device, {
+      kind: 'port.vlan', port: 'sfp28-3', pvid: 10, tagged: [1], untagged: [10], mode: 'trunk',
+    });
+    expect(v.violations.map((x) => `${x.id}: ${x.detail}`)).toEqual([]);
+  });
+
+  it('still catches the bridge leaving VLAN 1 on such a row', () => {
+    const v = analyzeChange(snap(), device, { kind: 'vlan.update', bridge: 'bridge', vlanId: 1, tagged: ['all'], untagged: [] });
+    expect(v.severity).toBe('critical');
+    expect(v.violations.map((x) => x.id)).toContain('bridge-untagged-member');
+  });
+
+  it('expands a named list, and keeps what a list it can\'t expand covered', () => {
+    const named = snap();
+    named.interfaceLists = [{ name: 'uplinks' }];
+    named.interfaceListMembers = [{ list: 'uplinks', interface: 'sfp28-1' }];
+    named.bridgeVlans[0] = { ...named.bridgeVlans[0], tagged: 'uplinks' };
+    const change: PlannedChange = { kind: 'port.vlan', port: 'sfp28-3', pvid: 10, tagged: [1], untagged: [10], mode: 'trunk' };
+    expect(analyzeChange(named, device, change).violations).toEqual([]);
+    const dyn = snap();
+    dyn.bridgeVlans[0] = { ...dyn.bridgeVlans[0], tagged: 'dynamic' };
+    expect(analyzeChange(dyn, device, change).violations).toEqual([]);
+    // A named list without sfp28-1 doesn't put it there.
+    named.interfaceListMembers = [{ list: 'uplinks', interface: 'sfp28-3' }];
+    expect(analyzeChange(named, device, change).violations.map((x) => x.id)).toContain('bridge-untagged-member');
+  });
+});
