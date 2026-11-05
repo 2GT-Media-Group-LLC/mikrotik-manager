@@ -1499,6 +1499,9 @@ export default function DashboardPage() {
           <ArrowUpCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--warn)' }} />
           <div className="flex-1 text-[13px] space-y-1" style={{ color: 'var(--ink-2)' }}>
             <span className="font-semibold" style={{ color: 'var(--warn)' }}>Updates available</span>
+            <button onClick={() => navigate('/firmware')} className="ml-3 underline underline-offset-2" style={{ color: 'var(--ink-3)' }}>
+              Upgrade several devices
+            </button>
             {devicesWithRosUpdates.length > 0 && (
               <div className="flex items-baseline gap-1.5 flex-wrap">
                 <span className="font-medium flex items-center gap-1">
@@ -1509,7 +1512,7 @@ export default function DashboardPage() {
                   <span key={d.id}>
                     {i > 0 && <span style={{ color: 'var(--ink-3)' }}> · </span>}
                     <button
-                      onClick={() => navigate(`/devices/${d.id}?tab=config`)}
+                      onClick={() => navigate(`/devices/${d.id}?tab=firmware`)}
                       className="underline underline-offset-2"
                     >
                       {d.name}
@@ -1534,7 +1537,7 @@ export default function DashboardPage() {
                   <span key={d.id}>
                     {i > 0 && <span style={{ color: 'var(--ink-3)' }}> · </span>}
                     <button
-                      onClick={() => navigate(`/devices/${d.id}?tab=config`)}
+                      onClick={() => navigate(`/devices/${d.id}?tab=firmware`)}
                       className="underline underline-offset-2"
                     >
                       {d.name}

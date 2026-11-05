@@ -16,6 +16,7 @@ import DeviceLocationSection from '../components/device-detail/DeviceLocationSec
 import VlansTab from '../components/device-detail/VlansTab';
 import RoutingTab from '../components/device-detail/RoutingTab';
 import FirewallTab from '../components/device-detail/FirewallTab';
+import FirmwareTab from '../components/device-detail/FirmwareTab';
 import SystemConfigTab from '../components/device-detail/SystemConfigTab';
 import ConfigHistoryTab from '../components/device-detail/ConfigHistoryTab';
 import HardwareTab from '../components/device-detail/HardwareTab';
@@ -36,7 +37,7 @@ import { DeviceIdentityBanner } from '../components/security/IdentityChange';
 import { isWirelessDevice } from '../utils/wireless';
 import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
 
-type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'alignment' | 'lte';
+type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'firmware' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'alignment' | 'lte';
 
 function formatUptime(raw: string): string {
   if (!raw) return '—';
@@ -65,7 +66,7 @@ export default function DeviceDetailPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [searchParams] = useSearchParams();
-  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'config-history', 'hardware', 'tools', 'radios', 'alignment', 'lte'];
+  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'firmware', 'config-history', 'hardware', 'tools', 'radios', 'alignment', 'lte'];
   const requestedTab = searchParams.get('tab') as TabKey | null;
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
@@ -186,6 +187,7 @@ export default function DeviceDetailPage() {
     { key: 'queues', label: 'Bandwidth' },
     { key: 'connections', label: 'Connections' },
     { key: 'config', label: 'Config' },
+    { key: 'firmware', label: 'Firmware' },
     { key: 'config-history', label: 'Config History' },
     { key: 'hardware', label: 'Hardware' },
     ...(isWirelessAP ? [{ key: 'radios' as TabKey, label: 'Radios' }] : []),
@@ -551,6 +553,7 @@ export default function DeviceDetailPage() {
       {shownTab === 'queues' && <QueuesTab deviceId={deviceId} />}
       {shownTab === 'connections' && <ConnectionsTab deviceId={deviceId} />}
       {shownTab === 'config' && <SystemConfigTab deviceId={deviceId} device={device} />}
+      {shownTab === 'firmware' && <FirmwareTab deviceId={deviceId} device={device} />}
       {shownTab === 'config-history' && <ConfigHistoryTab deviceId={deviceId} />}
       {shownTab === 'hardware' && <HardwareTab deviceId={deviceId} />}
       {shownTab === 'radios' && <RadiosTab deviceId={deviceId} deviceStatus={device.status} />}

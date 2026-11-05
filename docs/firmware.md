@@ -14,6 +14,9 @@ back, and the choice is remembered.
 The page shows the running or latest rollout and the five before it. **All upgrade history**
 opens every rollout, newest first, 25 to a page; click one to see its devices and steps.
 
+A single device's RouterOS and RouterBOOT check and install are on that device's **Firmware** tab, which
+links to this page for upgrading several devices at once. The dashboard's "Updates available" banner opens this page.
+
 ## Timeouts
 
 Two settings, both in minutes, changed without a restart:
