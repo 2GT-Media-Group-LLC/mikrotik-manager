@@ -60,6 +60,12 @@ export interface LinkRow {
    * from a VLAN or a tunnel (#367).
    */
   from_interface_type?: string | null;
+  /** The bond the reporting port is a member of on its own device (#367). */
+  from_interface_bond?: string | null;
+  /** The unmanaged node at the far end, when the link names it (OSPF, #373). */
+  external_id?: string | null;
+  /** OSPF adjacency state (#373): a lost one stays on the map, marked down. */
+  link_state?: 'up' | 'down' | null;
 }
 
 export interface ManualLinkRow {

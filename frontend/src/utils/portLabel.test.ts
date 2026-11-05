@@ -65,3 +65,16 @@ describe('Port labels: keeping the bond (#367)', () => {
     expect(portLabel(label, 'off')).toBeUndefined();
   });
 });
+
+describe('Port labels: the near end\'s own bond (#367)', () => {
+  it('adds the bond the device\'s own bond list puts a port in', () => {
+    // aziz: the core's sfp-sfpplus9 is in Po9; LLDP only names the far end's Po1.
+    expect(shortPortLabel('sfp-sfpplus9 ↔ bridge/Po1/sfp-sfpplus2', true, ['Po9', undefined])).toBe('Po9·sfp9 ↔ Po1·sfp2');
+    expect(portLabel('sfp-sfpplus9 ↔ bridge/Po1/sfp-sfpplus2', 'bond', ['Po9', undefined])).toBe('Po9·sfp9 ↔ Po1·sfp2');
+  });
+  it('prefers the name\'s own bond, and leaves Short and Full as they were', () => {
+    expect(shortPort('bridge/Po1/sfp-sfpplus2', true, 'Po7')).toBe('Po1·sfp2');
+    expect(portLabel('sfp-sfpplus9 ↔ ether1', 'short', ['Po9', undefined])).toBe('sfp9 ↔ e1');
+    expect(portLabel('sfp-sfpplus9 ↔ ether1', 'full', ['Po9', undefined])).toBe('sfp-sfpplus9 ↔ ether1');
+  });
+});

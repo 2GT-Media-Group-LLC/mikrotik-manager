@@ -356,3 +356,30 @@ describe('computers that speak LLDP (#367)', () => {
     expect(g.edges.find((e) => e.id === 'cgedge-1')).toMatchObject({ source: '1' });
   });
 });
+
+describe('mergeCables: the near end\'s bond (#367)', () => {
+  it('carries each end\'s own bond in label order', () => {
+    const far = new Map([[1, '2'], [2, '1']]);
+    const edges = mergeCables([
+      { id: 1, from_device_id: 1, from_interface: 'sfp-sfpplus9', to_interface: 'bridge/Po1/sfp-sfpplus2', from_interface_bond: 'Po9', discovered_at: '' },
+    ] as never, far);
+    expect(edges[0].label).toBe('sfp-sfpplus9 ↔ bridge/Po1/sfp-sfpplus2');
+    expect(edges[0].bonds).toEqual(['Po9', undefined]);
+    // Without bonds, nothing extra on the edge.
+    expect(mergeCables([{ id: 2, from_device_id: 1, from_interface: 'ether1', to_interface: 'ether2', discovered_at: '' }] as never, far)[0].bonds).toBeUndefined();
+  });
+});
+
+describe('OSPF links (#373)', () => {
+  it('reaches an unmanaged OSPF router by its node id, and keeps the down state', () => {
+    const g = buildTopologyGraph(base({
+      devices: [dev(1)],
+      externalNodes: [{ id: 'ext-ospf10999', name: '10.9.9.9', address: '172.16.5.2', platform: 'OSPF router', mac: '' }],
+      links: [{ id: -2000000, from_device_id: 1, from_interface: 'gre-y', neighbor_address: '172.16.6.2',
+        neighbor_identity: '10.9.9.9', link_type: 'ospf', external_id: 'ext-ospf10999', link_state: 'down', discovered_at: '' }],
+    }));
+    const edge = g.edges.find((e) => e.kind === 'discovered')!;
+    expect([edge.source, edge.target].sort()).toEqual(['1', 'ext-ospf10999'].sort());
+    expect(edge).toMatchObject({ ospf: true, down: true });
+  });
+});

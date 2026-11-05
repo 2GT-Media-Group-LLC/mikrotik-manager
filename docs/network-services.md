@@ -1,6 +1,6 @@
 # Network services
 
-DHCP, DNS, NTP, WireGuard, logging, NetFlow and discovery, viewed across the fleet rather than
+DHCP, DNS, NTP, WireGuard, routing, tunnels and PPP, MLAG, logging, NetFlow and discovery, viewed across the fleet rather than
 one device at a time. **Network Services → Overview** is a table of which devices run what:
 search it, sort by any service, and click a row to open the device.
 
@@ -9,7 +9,7 @@ refreshing anything older than ten minutes in the background; **Refresh** reads 
 again. On a large fleet the page fills in over a few seconds rather than contacting every device
 at once (see [Scaling](scaling.md#pages-that-show-something-from-every-device)).
 
-Everything here writes to the device. Changes go through [Change Guard](change-guard.md) where
+Most of it writes to the device (Routing, Tunnels & PPP and MLAG only read). Changes go through [Change Guard](change-guard.md) where
 they could affect reachability.
 
 ## DHCP
@@ -99,6 +99,55 @@ connection failed on 7.20 and later with *missing =instance=*.
   manager keeps the last row and marks it *down*. A neighbour gone for a week is dropped from the
   list. *2-Way* counts as up: on a LAN, two routers that are neither DR nor BDR stop there by
   design.
+
+## Tunnels and PPP
+
+**Network Services → Tunnels & PPP** lists, across the fleet or the selected site (#310), every
+IPsec peer, PPPoE server, PPPoE client, active PPP session, and EoIP, GRE and IPIP tunnel. It
+shows each one's local and remote address, its state, how long it's been up and when it last
+changed. Problems are listed first. It's read-only: set these up on the device. Everything is
+read with each device's slow poll, in one batched request, so a change shows within that
+interval; **Refresh** asks for a fresh poll.
+
+| Type | One row per | Up when |
+|---|---|---|
+| IPsec | configured peer, including the dynamic ones an EoIP or GRE tunnel with an IPsec secret creates | a peer that matches it is *established*. A passive peer with nobody connected is *waiting*, not down |
+| PPPoE server | server (service name on an interface) | it has sessions; with none it's *waiting* |
+| PPP session | active session in `/ppp active` (PPPoE, L2TP, SSTP, OpenVPN...) | always: an ended session is removed |
+| PPPoE client | client interface | it's connected |
+| EoIP, GRE, IPIP | tunnel interface | it's running |
+
+An active IPsec peer is matched to the configured peer whose address is the most specific match,
+as RouterOS does; a peer that takes many clients (`0.0.0.0/0`) shows how many are connected.
+RouterOS doesn't say which PPPoE server a session is on, so with more than one server the count
+covers all of them. Secrets (the IPsec secret on an EoIP or GRE tunnel) are never stored or
+shown, and PPP passwords aren't read at all. Up to 5,000 sessions are kept per device, and the page shows the first 500
+that match the filters.
+
+## MLAG
+
+**Network Services → MLAG** shows each MLAG pair (#376), and is in the sidebar only once a device
+in view has a bridge with an MLAG peer port. For each pair: both peers' state, role, priority and
+settings, the peer link and how many of its members are up, and the MLAG bonds side by side by
+`mlag-id`, with the downstream device each one's LACP partner is. The two peers are found from
+neighbour discovery on the peer link. It's read with the slow poll, and only on devices with MLAG.
+
+It checks, worst first:
+
+| Check | Severity |
+|---|---|
+| A peer isn't *connected* | critical |
+| Both peers primary (split brain), or both secondary | critical |
+| The peer link is down / some of its members aren't active | critical / warning |
+| One `mlag-id` with different LACP partners on the two peers (cabled to two devices) | critical |
+| An `mlag-id` up on one peer only (single-homed) | warning |
+| A VLAN on an MLAG bond that isn't tagged on the peer link, VLAN 1 included. Hosts in it can't sync between the peers: the "peer failed to sync" storm | warning |
+| `mlag-heartbeat`, `mlag-init-delay`, `mlag-lacp-fallback` or the RouterOS version differ | warning |
+| State or role changed in the last 24 hours | warning |
+| Heartbeat timeouts in the last hour (critical over 30), host sync failures in the last hour, peer link down in the last 24 hours, from the devices' logs | warning |
+
+The **MLAG degraded** alert ([Alerting](alerting.md)) reports critical findings. It's on by
+default, and does nothing on a fleet without MLAG.
 
 ## Logging (syslog)
 

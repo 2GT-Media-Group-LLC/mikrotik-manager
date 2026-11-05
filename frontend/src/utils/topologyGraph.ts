@@ -94,6 +94,15 @@ export interface GraphEdge {
   logical?: 'logical' | 'tunnel';
   /** Sightings of the same pair on logical ports, folded into this line (#367): their labels. */
   folded?: string[];
+  /**
+   * The bond each end of the label is in, by its own device's bond list, in
+   * label order. LLDP names the far end's bond; this gives the near end's (#367).
+   */
+  bonds?: [string | undefined, string | undefined];
+  /** From OSPF (#373), and the adjacency is down. */
+  down?: boolean;
+  /** Found by OSPF rather than neighbour discovery (#373). */
+  ospf?: boolean;
 }
 
 export interface GraphOutput {
@@ -166,6 +175,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     if (!link.from_device_id) continue;
     let dst: string | null = null;
     if (link.to_device_id) dst = nodeId.device(link.to_device_id);
+    else if (link.external_id && externalNodes.some((e) => e.id === link.external_id)) dst = link.external_id;
     else {
       const ext = externalNodes.find((e) =>
         (link.neighbor_address && e.address === link.neighbor_address)
@@ -602,7 +612,7 @@ export function mergeCables(
   discovered: TopologyLink[],
   farEnd: Map<number, string>,
 ): Omit<GraphEdge, 'parallel'>[] {
-  interface Cable { a: string; b: string; aPort?: string; bPort?: string; aType?: string; bType?: string; roles: string[]; ids: number[] }
+  interface Cable { a: string; b: string; aPort?: string; bPort?: string; aType?: string; bType?: string; aBond?: string; bBond?: string; roles: string[]; ids: number[]; ospf?: boolean; down?: boolean }
   const cables: Cable[] = [];
   for (const l of discovered) {
     const dst = farEnd.get(l.id);
@@ -611,6 +621,7 @@ export function mergeCables(
     const fromPort = l.from_interface || undefined;
     const toPort = l.to_interface || undefined;
     const fromType = l.from_interface_type || undefined;
+    const fromBond = l.from_interface_bond || undefined;
     const same = cables.find((c) => {
       if (c.a === src && c.b === dst) {
         // The same end reported twice (LLDP and MNDP on one port).
@@ -624,11 +635,13 @@ export function mergeCables(
       return false;
     });
     if (same) {
-      if (same.a === src) { same.aPort ??= fromPort; same.bPort ??= toPort; same.aType ??= fromType; } else { same.bPort ??= fromPort; same.aPort ??= toPort; same.bType ??= fromType; }
+      if (same.a === src) { same.aPort ??= fromPort; same.bPort ??= toPort; same.aType ??= fromType; same.aBond ??= fromBond; } else { same.bPort ??= fromPort; same.aPort ??= toPort; same.bType ??= fromType; same.bBond ??= fromBond; }
       if (l.stp_role) same.roles.push(l.stp_role);
       same.ids.push(l.id);
+      if (l.link_type === 'ospf' && l.link_state === 'down') same.down = true;
     } else {
-      cables.push({ a: src, b: dst, aPort: fromPort, bPort: toPort, aType: fromType, roles: l.stp_role ? [l.stp_role] : [], ids: [l.id] });
+      cables.push({ a: src, b: dst, aPort: fromPort, bPort: toPort, aType: fromType, aBond: fromBond, roles: l.stp_role ? [l.stp_role] : [], ids: [l.id],
+        ...(l.link_type === 'ospf' ? { ospf: true, down: l.link_state === 'down' } : {}) });
     }
   }
   const used = new Map<string, number>();
@@ -649,6 +662,8 @@ export function mergeCables(
     return {
       id, kind: 'discovered' as const, source: c.a, target: c.b, label: ports || undefined, role,
       ...(kind !== 'physical' ? { logical: kind } : {}),
+      ...(c.ospf ? { ospf: true, ...(c.down ? { down: true } : {}) } : {}),
+      ...(c.aBond || c.bBond ? { bonds: (c.aPort && c.bPort ? [c.aBond, c.bBond] : [c.aPort ? c.aBond : c.bBond, undefined]) as [string | undefined, string | undefined] } : {}),
     };
   });
 }

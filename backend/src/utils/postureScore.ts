@@ -9,6 +9,8 @@
  * nine of them had been upgraded, while the Firmware page said one.
  */
 
+import { compareRosVersions } from './rosVersion';
+
 export type PostureSev = 'high' | 'medium' | 'low';
 export type PostureCheck = {
   id: string; severity: PostureSev; title: string; detail: string;
@@ -26,8 +28,61 @@ export interface UpdateColumns {
   upgrade_firmware_version?: string | null;
 }
 
-/** Check ids built from the device row, not read from the device. */
-export const UPDATE_CHECK_IDS = new Set(['firmware-outdated', 'routerboot-outdated']);
+/** Check ids built from our own records (the device row, the CVE list), not read from the device. */
+export const UPDATE_CHECK_IDS = new Set(['firmware-outdated', 'routerboot-outdated', 'routeros-cve']);
+
+/** A stored CVE match for a device's RouterOS version, as fleetCveReport gives it. */
+export interface CveMatch {
+  id: string;
+  severity: string | null;
+  known_exploited: boolean;
+  fixed_in: string | null;
+  hardware_specific: boolean;
+  /** Why the match may not apply; null when it's listed for this release line. */
+  uncertain: string | null;
+}
+
+const SEV_ORDER: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+
+/**
+ * Known RouterOS vulnerabilities for the device's version. One check, at the
+ * worst confirmed CVE's severity: critical or high, or any CISA lists as
+ * exploited, is high; medium is medium; the rest low. Matches the CVE list
+ * marks as uncertain don't count. Nor do hardware-specific ones, unless they're
+ * known to be exploited: they may not apply to this model. The title stays
+ * version-free so the Security page groups devices on different versions.
+ */
+/** Which release fixes them: the newest listed fix clears every CVE that has one. */
+function fixNote(sure: CveMatch[], fixes: string[]): string {
+  if (!fixes.length) return ' No fixed release is listed yet; see the CVE details.';
+  const newest = [...fixes].sort(compareRosVersions).slice(-1)[0];
+  const listed = sure.filter((c) => c.fixed_in).length;
+  if (sure.length === 1) return ` Fixed in ${newest}; upgrade from the Firmware section.`;
+  return listed === sure.length
+    ? ` All are fixed by ${newest}; upgrade from the Firmware section.`
+    : ` ${listed} of them are fixed by ${newest}; the rest have no fixed release listed yet.`;
+}
+
+export function cveChecks(version: string | null | undefined, cves: CveMatch[]): PostureCheck[] {
+  const sure = cves.filter((c) => !c.uncertain && (c.known_exploited || !c.hardware_specific));
+  if (!sure.length) return [];
+  const rank = (c: CveMatch) => (c.known_exploited ? 5 : SEV_ORDER[(c.severity ?? '').toUpperCase()] ?? 0);
+  sure.sort((a, b) => rank(b) - rank(a) || a.id.localeCompare(b.id));
+  const worst = rank(sure[0]);
+  const severity: PostureSev = worst >= 3 ? 'high' : worst === 2 ? 'medium' : 'low';
+  const named = sure.slice(0, 5).map((c) => `${c.id} (${[(c.severity ?? 'unrated').toLowerCase(), c.known_exploited ? 'known exploited' : null].filter(Boolean).join(', ')})`);
+  const more = sure.length > 5 ? ` and ${sure.length - 5} more` : '';
+  const fixes = [...new Set(sure.map((c) => c.fixed_in).filter((v): v is string => !!v))];
+  const exploited = sure.filter((c) => c.known_exploited).length;
+  return [{
+    id: 'routeros-cve', severity,
+    title: 'Known RouterOS vulnerabilities',
+    detail: `RouterOS ${version || '(unknown)'} is affected by ${sure.length} known vulnerabilit${sure.length === 1 ? 'y' : 'ies'}: ${named.join(', ')}${more}.`
+      + (exploited ? ` ${exploited === 1 ? 'One is' : `${exploited} are`} being exploited, according to CISA.` : '')
+      + fixNote(sure, fixes)
+      + ' Details under Security → RouterOS vulnerabilities.',
+  }];
+}
 
 /**
  * Pending RouterOS and RouterBOOT updates. Outdated firmware is a security
@@ -77,10 +132,13 @@ export function markAndScore(checks: PostureCheck[], deviceId: number, supp: Sup
   return { score: counted.length === 0 ? 100 : Math.max(5, 100 - penalty), checks: marked };
 }
 
-/** A cached checklist with its update findings rebuilt from the current device row. */
-export function withCurrentUpdates(cached: MarkedCheck[], device: UpdateColumns & { id: number }, supp: Suppression[]) {
+/**
+ * A cached checklist with its update and CVE findings rebuilt from the current
+ * device row and CVE list, so neither waits for the cache to expire.
+ */
+export function withCurrentUpdates(cached: MarkedCheck[], device: UpdateColumns & { id: number }, supp: Suppression[], cves: CveMatch[] = []) {
   const fromDevice = cached
     .filter((c) => !UPDATE_CHECK_IDS.has(c.id))
     .map(({ suppressed: _s, suppressed_scope: _sc, suppressed_reason: _r, ...c }) => c);
-  return markAndScore([...fromDevice, ...updateChecks(device)], device.id, supp);
+  return markAndScore([...fromDevice, ...updateChecks(device), ...cveChecks(device.ros_version, cves)], device.id, supp);
 }

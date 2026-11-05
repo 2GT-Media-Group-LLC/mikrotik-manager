@@ -1817,6 +1817,53 @@ ALTER TABLE topology_links ADD COLUMN IF NOT EXISTS neighbor_description TEXT;
 -- AI connection tokens (scope 'review') can be limited to some sites; NULL is
 -- the whole fleet. Other API tokens leave it NULL.
 ALTER TABLE api_tokens ADD COLUMN IF NOT EXISTS site_ids INTEGER[];
+-- Tunnels and PPP across the fleet (#310), from the slow poll: IPsec peers,
+-- PPPoE servers and clients, active PPP sessions, EoIP, GRE and IPIP.
+CREATE TABLE IF NOT EXISTS device_tunnels (
+  device_id      INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  kind           VARCHAR(16) NOT NULL,
+  tunnel_key     VARCHAR(200) NOT NULL,
+  name           VARCHAR(128) NOT NULL,
+  local_address  VARCHAR(128),
+  remote_address VARCHAR(128),
+  detail         VARCHAR(200),
+  status         VARCHAR(12) NOT NULL,
+  state          VARCHAR(32) NOT NULL,
+  uptime         VARCHAR(32),
+  last_up_at     TIMESTAMPTZ,
+  last_change_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (device_id, kind, tunnel_key)
+);
+CREATE INDEX IF NOT EXISTS idx_device_tunnels_status ON device_tunnels(status, kind);
+-- The interface an OSPF neighbour is on, so the map can draw it as a link (#373).
+ALTER TABLE routing_peers ADD COLUMN IF NOT EXISTS local_interface VARCHAR(64);
+-- MLAG (#376): each bridge's MLAG settings and live state, from the slow poll.
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_peer_port VARCHAR(64);
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_priority INTEGER;
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_heartbeat VARCHAR(16);
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_init_delay VARCHAR(16);
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_lacp_fallback BOOLEAN;
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_state VARCHAR(32);
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_role VARCHAR(16);
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_state_changed_at TIMESTAMPTZ;
+-- VLANs on an MLAG bond the peer link doesn't carry: the host-sync storm (#376).
+ALTER TABLE device_bridges ADD COLUMN IF NOT EXISTS mlag_missing_vlans INTEGER[];
+-- MLAG bonds and the peer-link bond, with their LACP state (#376).
+CREATE TABLE IF NOT EXISTS mlag_bonds (
+  device_id      INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  bond           VARCHAR(64) NOT NULL,
+  bridge         VARCHAR(64),
+  mlag_id        INTEGER,
+  is_peer_link   BOOLEAN NOT NULL DEFAULT FALSE,
+  slaves         TEXT,
+  running        BOOLEAN,
+  active_ports   TEXT,
+  inactive_ports TEXT,
+  partner_sys_id VARCHAR(17),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (device_id, bond)
+);
 `;
 
 const DEFAULT_SETTINGS = [

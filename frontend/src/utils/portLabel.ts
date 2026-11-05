@@ -53,7 +53,7 @@ export function bondOf(name: string): string | null {
   return BOND_LIKE.test(parts[0]) ? parts[0] : null;
 }
 
-export function shortPort(name: string, keepBond = false): string {
+export function shortPort(name: string, keepBond = false, knownBond?: string): string {
   let n = name.trim();
   // A path whose last part is a name (bridge/ether17) is the port and what
   // it's in. One whose last part is a number (Gi1/0/17, ge-0/0/1) is a slot
@@ -61,18 +61,20 @@ export function shortPort(name: string, keepBond = false): string {
   const parts = n.split('/');
   if (isPath(parts)) n = parts[parts.length - 1];
   const port = shorten(n);
-  const bond = keepBond ? bondOf(name) : null;
+  // The bond in the name (LLDP's view of the far end), or the one the
+  // device's own bond list puts this port in (the near end).
+  const bond = keepBond ? (bondOf(name) ?? knownBond ?? null) : null;
   return bond ? `${shorten(bond)}·${port}` : port;
 }
 
-/** A discovered link's label, "a ↔ b", with each end shortened. */
-export function shortPortLabel(label: string, keepBond = false): string {
-  return label.split(' ↔ ').map((p) => shortPort(p, keepBond)).join(' ↔ ');
+/** A discovered link's label, "a ↔ b", with each end shortened; `bonds` in label order. */
+export function shortPortLabel(label: string, keepBond = false, bonds?: (string | undefined)[]): string {
+  return label.split(' ↔ ').map((p, i) => shortPort(p, keepBond, bonds?.[i])).join(' ↔ ');
 }
 
 /** The label drawn on a link for a Port labels choice; undefined draws none. */
-export function portLabel(label: string, mode: PortLabels): string | undefined {
+export function portLabel(label: string, mode: PortLabels, bonds?: (string | undefined)[]): string | undefined {
   if (mode === 'off') return undefined;
   if (mode === 'full') return label;
-  return shortPortLabel(label, mode === 'bond');
+  return shortPortLabel(label, mode === 'bond', bonds);
 }

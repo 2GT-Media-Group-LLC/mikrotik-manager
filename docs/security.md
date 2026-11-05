@@ -10,7 +10,8 @@ Each device's checks are read in the background, a few devices at a time, and ke
 **Re-scan fleet** reads every device again. A change made to a device drops its cached reading,
 so a fixed finding clears straight away. **RouterOS update available** and **RouterBOOT upgrade
 pending** come from the manager's own record rather than the cached reading, so they always match
-the Firmware page, including straight after an upgrade (#371). The **IPv6 input firewall** check flags a device that has
+the Firmware page, including straight after an upgrade (#371). So does **Known RouterOS
+vulnerabilities** ([below](#routeros-vulnerabilities)). The **IPv6 input firewall** check flags a device that has
 a routable IPv6 address but no drop or reject rule on the IPv6 input chain, as the IPv4 check does
 for IPv4 (#312).
 
@@ -204,6 +205,16 @@ release, with MikroTik's line quoted.
   looks it up in NVD by id, a few a day. If NVD has no entry yet, the CVE shows as *unrated*.
 - **Alerts:** the [CVE alert](alerting.md) fires for these too, once they're rated critical or
   high.
+
+**In the hardening score.** A device whose version has known CVEs gets a **Known RouterOS
+vulnerabilities** finding in its checklist, and it counts against the score like any other.
+Its severity is that of the worst CVE: critical or high (or any CISA lists as exploited) is
+high, medium is medium, the rest low. One finding covers all the device's CVEs, naming them and
+the release that fixes them. Matches that *may not apply*, and hardware-specific ones that
+aren't known to be exploited, don't count. The finding comes from the manager's own CVE list,
+not the cached reading, so it follows an upgrade or a new CVE straight away. Mute it like any
+finding, on a device or fleet-wide, if you've judged the CVEs don't apply. Before 1.1.0-beta.20
+CVEs were listed here but didn't affect the score.
 
 **What a match means.** A match says the version is *listed* as affected. It doesn't say the
 device can be attacked: many CVEs need a particular service (SSH, winbox, btest, the web

@@ -21,6 +21,16 @@ Neighbours are read on the slow poll from LLDP, CDP and MNDP. LLDP is treated as
 where two protocols report the same neighbour, the lower-priority one is suppressed so a single
 link does not appear twice.
 
+**OSPF.** Neighbour discovery doesn't cross a WireGuard, GRE or IPsec tunnel, but OSPF does, so
+each OSPF adjacency the slow poll reads (the same ones as **Network Services → Routing**) is a link
+too (#373). Two managed routers are joined by one link showing both interfaces, unless the map
+already joins them. A router the manager doesn't manage becomes a node named by its router ID,
+so one router reached over several tunnels is one node. A lost adjacency stays on the map,
+drawn red and dashed and labelled *down*; hover a link for "(OSPF)". An interface with more than
+one OSPF neighbour is a shared segment rather than a link and is left out, as is a neighbour
+discovery already draws on the same port. The neighbour's router ID or address has to be one of
+a managed device's addresses for the two to be matched.
+
 Neighbours are matched to managed devices **by MAC before IP**, because a MAC is unique across
 the fleet and an address is not. Bidirectional pairs — where each device reports the other —
 are merged into one edge showing both port names.
@@ -36,7 +46,8 @@ Device names wrap onto a second line rather than being cut off, and show in full
 Port names on links are shortened so two of them fit under a switch (#367): `ether17` is `e17`,
 `sfp-sfpplus1` is `sfp1`, and the bridge RouterOS puts in front of a port in LLDP is left off.
 A port in a bond keeps the bond, so a LAG still reads as one: `bridge/Po1/sfp-sfpplus1` is
-`Po1·sfp1`. Cisco ports take Cisco's short forms (`GigabitEthernet1/0/17` is `Gi1/0/17`).
+`Po1·sfp1`. LLDP names only the far end's bond; the near end's comes from the device's own
+bonds, so an uplink between two bonds reads `Po9·sfp9 ↔ Po1·sfp2`. Cisco ports take Cisco's short forms (`GigabitEthernet1/0/17` is `Gi1/0/17`).
 Hover a label, or the link, for the full names.
 
 **Display → Port labels** chooses how much to show, remembered in this browser:

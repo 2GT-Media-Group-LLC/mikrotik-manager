@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Columns3 } from 'lucide-react';
-import { DEVICE_COLUMNS, type ColumnPrefs, type DeviceColumnId } from '../../utils/deviceColumns';
+import { DEVICE_COLUMNS } from '../../utils/deviceColumns';
+import type { ColumnDef, ColumnPrefs } from '../../utils/columnPrefs';
 
 /**
- * Show or hide the Devices list's columns, and put them back (#283). Widths
- * are changed by dragging a header's right edge; "Reset columns" clears those
- * too.
+ * Show or hide a table's columns, and put them back: the Devices list (#283)
+ * and the Clients list (#336). Widths are changed by dragging a header's right
+ * edge; "Reset columns" clears those too.
  */
-export default function ColumnPicker({ prefs, onChange }: { prefs: ColumnPrefs; onChange: (p: ColumnPrefs) => void }) {
+export default function ColumnPicker<Id extends string>({ prefs, onChange, columns = DEVICE_COLUMNS as unknown as ColumnDef<Id>[] }: {
+  prefs: ColumnPrefs<Id>; onChange: (p: ColumnPrefs<Id>) => void; columns?: ColumnDef<Id>[];
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -19,7 +22,7 @@ export default function ColumnPicker({ prefs, onChange }: { prefs: ColumnPrefs; 
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
   }, [open]);
 
-  const toggle = (id: DeviceColumnId) => {
+  const toggle = (id: Id) => {
     const hidden = prefs.hidden.includes(id) ? prefs.hidden.filter((h) => h !== id) : [...prefs.hidden, id];
     onChange({ ...prefs, hidden });
   };
@@ -41,7 +44,7 @@ export default function ColumnPicker({ prefs, onChange }: { prefs: ColumnPrefs; 
           className="absolute right-0 z-30 mt-1 w-52 rounded-lg p-2 shadow-lg"
           style={{ background: 'var(--surface)', border: '1px solid var(--line)' }}
         >
-          {DEVICE_COLUMNS.filter((c) => !c.fixed).map((c) => (
+          {columns.filter((c) => !c.fixed).map((c) => (
             <label key={c.id} className="flex items-center gap-2 px-2 py-1 rounded text-[12px] cursor-pointer"
               style={{ color: 'var(--ink-2)' }}>
               <input type="checkbox" checked={!prefs.hidden.includes(c.id)} onChange={() => toggle(c.id)} />

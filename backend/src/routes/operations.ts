@@ -2,6 +2,7 @@ import { mapWithConcurrency, settleWithConcurrency, FLEET_ACTION_CONCURRENCY } f
 import { liveForDevices } from '../services/liveCache';
 import { securityPosture, type PostureDevice } from './devices';
 import { withCurrentUpdates, type Suppression } from '../utils/postureScore';
+import { cveMatchesByDevice } from '../services/cveFeed';
 import { Router } from 'express';
 import { query } from '../config/database';
 import { getQueryApi } from '../config/influxdb';
@@ -872,12 +873,14 @@ router.get('/security-posture', async (req, res) => {
   // The update findings come from the device row, not the device, so they are
   // rebuilt from it here: the cached copy can be from before an upgrade (#371).
   const supp = await query<Suppression>(`SELECT check_id, device_id, reason FROM security_check_suppressions`).catch(() => []);
+  // So do the CVE findings, from the stored vulnerability list.
+  const cves = await cveMatchesByDevice(devices.map((d) => d.id));
   res.json({
     // Every device in view: one not read yet, or that couldn't be, comes with
     // no score and its error, so the Security page can say which (#302).
     devices: devices.map((d) => {
       const e = live.get(d.id)!;
-      const current = e.data ? withCurrentUpdates(e.data.checks, d, supp) : null;
+      const current = e.data ? withCurrentUpdates(e.data.checks, d, supp, cves.get(d.id) ?? []) : null;
       return current
         ? { id: d.id, name: d.name, ip_address: d.ip_address, device_type: d.device_type, score: current.score, checks: current.checks, fetched_at: e.fetchedAt, error: null }
         : { id: d.id, name: d.name, ip_address: d.ip_address, device_type: d.device_type, score: null, checks: [], fetched_at: null, error: e.error ?? (e.refreshing ? 'Reading now' : null) };

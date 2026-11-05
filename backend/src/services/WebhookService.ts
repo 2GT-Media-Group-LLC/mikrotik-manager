@@ -51,6 +51,8 @@ export const WEBHOOK_EVENTS = [
   'wireguard_stale',
   'interface_errors', 'interface_flapping', 'optic_degraded',
   'routing_peer_down',
+  'tunnel_down',
+  'mlag_degraded',
   'platform_backup_failed',
   'device_cert_renewal_failed',
 ] as const;

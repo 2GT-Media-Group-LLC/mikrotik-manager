@@ -13,7 +13,7 @@ describe('routingPeersFrom', () => {
         instance: 'mtm-lab', detail: 'ibgp', state: 'established', up: true, disabled: false, uptime: '52s290ms', prefixCount: 0 },
       { protocol: 'ospf', key: 'mtm-lab|192.168.0.39', name: '192.168.0.39', remoteAddress: '192.168.0.39', remoteAs: null,
         remoteId: '192.168.0.39', instance: 'mtm-lab', detail: 'mtm-lab-bb · bridge', state: 'Full', up: true, disabled: false,
-        uptime: '23s', prefixCount: null },
+        uptime: '23s', prefixCount: null, localInterface: 'bridge' },
     ]);
   });
 

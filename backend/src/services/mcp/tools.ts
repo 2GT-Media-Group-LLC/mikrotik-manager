@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { query, queryOne } from '../../config/database';
 import type { AuthPayload } from '../../middleware/auth';
 import { siteScopeDevices, type SiteScope } from '../../utils/siteScope';
-import { fleetCveReport } from '../cveFeed';
+import { fleetCveReport, cveMatchesByDevice } from '../cveFeed';
 import { withCurrentUpdates, type MarkedCheck, type Suppression, type UpdateColumns } from '../../utils/postureScore';
 import { observation, safeText, selectFields } from './output';
 
@@ -95,7 +95,8 @@ export const REVIEW_TOOLS: ReviewTool[] = [
         `SELECT ros_version, firmware_update_available, latest_ros_version, routerboard_upgrade_available, firmware_version, upgrade_firmware_version
            FROM devices WHERE id = $1`, [args.device_id]);
       const current = Array.isArray(cache?.data?.checks)
-        ? withCurrentUpdates(cache.data.checks, { ...(updates ?? {}), id: args.device_id! }, suppressions)
+        ? withCurrentUpdates(cache.data.checks, { ...(updates ?? {}), id: args.device_id! }, suppressions,
+          (await cveMatchesByDevice([args.device_id!])).get(args.device_id!) ?? [])
         : null;
       const rows: Row[] = (current?.checks ?? []).map((check) => ({
         ...selectFields(check as unknown as Row, ['id', 'severity', 'title', 'detail']),

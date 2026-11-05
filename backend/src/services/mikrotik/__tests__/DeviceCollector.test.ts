@@ -905,3 +905,94 @@ describe('checking for User Manager', () => {
     expect((await run(false, new Date(Date.now() - 2 * 86_400_000))).asked).toBe(true);
   });
 });
+
+// ── Tunnels and PPP (#310) ────────────────────────────────────────────────────
+
+describe('collecting tunnels', () => {
+  const run = async (replies: Array<{ rows?: Record<string, string>[]; error?: Error }>) => {
+    const c = new DeviceCollector({ ...testDevice, id: 9310 } as DeviceRow);
+    const executeMany = jest.fn(async () => replies);
+    (c as unknown as { client: { executeMany: typeof executeMany } }).client = { executeMany };
+    const q = query as jest.Mock;
+    q.mockReset();
+    q.mockResolvedValue([]);
+    await c.collectTunnels();
+    const calls = q.mock.calls.map(([sql, params]) => ({ sql: String(sql), params }));
+    q.mockReset();
+    return { calls, reads: (executeMany.mock.calls[0] as unknown[] | undefined)?.[0] as { command: string }[] | undefined };
+  };
+  const empty = (): Array<{ rows?: Record<string, string>[]; error?: Error }> => Array.from({ length: 8 }, () => ({ rows: [] }));
+
+  it('reads all eight menus in one round trip and stores the rows in one statement', async () => {
+    const replies = empty();
+    replies[5] = { rows: [{ name: 'eoip-hq', 'remote-address': '192.0.2.2', running: 'true', 'ipsec-secret': 'SUPERSECRET' }] };
+    replies[3] = { rows: [{ '.id': '*1', name: 'cust1', service: 'pppoe', address: '100.64.0.10' }] };
+    const { calls, reads } = await run(replies);
+    expect(reads?.map((r) => r.command)).toContain('/interface/eoip/print');
+    const insert = calls.find((c) => c.sql.includes('INSERT INTO device_tunnels'))!;
+    expect(insert.params[0]).toBe(9310);
+    expect(JSON.parse(insert.params[1] as string).map((r: { kind: string }) => r.kind).sort()).toEqual(['eoip', 'ppp-session']);
+    expect(insert.params[1]).not.toContain('SUPERSECRET');
+    expect(calls.some((c) => c.sql.includes('DELETE FROM device_tunnels t'))).toBe(true);
+  });
+
+  it('counts a missing menu as empty, and clears a device with nothing', async () => {
+    const replies = empty();
+    replies[0] = { error: new RouterOSTrapError('no such command or directory (ipsec)', '0') };
+    const { calls } = await run(replies);
+    expect(calls.map((c) => c.sql.trim())).toEqual(['DELETE FROM device_tunnels WHERE device_id = $1']);
+  });
+
+  it('keeps what was stored when a read fails for another reason', async () => {
+    const replies = empty();
+    replies[3] = { error: new RouterOSTrapError('interrupted', '2') };
+    expect((await run(replies)).calls).toEqual([]);
+  });
+});
+
+// ── MLAG (#376) ──────────────────────────────────────────────────────────────
+
+describe('collecting MLAG', () => {
+  const run = async (bridges: Record<string, string>[]) => {
+    const c = new DeviceCollector({ ...testDevice, id: 9376 } as DeviceRow);
+    const execute = jest.fn(async (cmd: string, params?: Record<string, string>) => {
+      if (cmd === '/interface/bonding/print') return [
+        { name: 'Po15', slaves: 'sfp-sfpplus15,sfp-sfpplus16', running: 'true' },
+        { name: 'Po10', slaves: 'sfp-sfpplus10', 'mlag-id': '10', running: 'true' },
+        { name: 'bond-x', slaves: 'ether1', running: 'true' },
+      ];
+      if (cmd === '/interface/bonding/monitor') return params?.numbers === 'Po10'
+        ? [{ 'active-ports': 'sfp-sfpplus10', 'lacp-partner-system-id': 'd0:ea:11:ef:6c:02' }]
+        : [{ 'active-ports': 'sfp-sfpplus15', 'inactive-ports': 'sfp-sfpplus16' }];
+      if (cmd === '/interface/bridge/vlan/print') return [
+        { bridge: 'bridge', 'vlan-ids': '1', 'current-tagged': '', 'current-untagged': 'Po10' },
+        { bridge: 'bridge', 'vlan-ids': '20,30', 'current-tagged': 'Po10,Po15' },
+      ];
+      return [];
+    });
+    (c as unknown as { client: { execute: typeof execute } }).client = { execute };
+    const q = query as jest.Mock;
+    q.mockReset();
+    q.mockResolvedValue([]);
+    await (c as unknown as { collectMlag: (b: Record<string, string>[]) => Promise<void> }).collectMlag(bridges);
+    const calls = q.mock.calls.map(([sql, params]) => ({ sql: String(sql), params: params as unknown[] }));
+    q.mockReset();
+    return { calls, asked: execute.mock.calls.map(([cmd]) => cmd) };
+  };
+
+  it('reads nothing on a device without MLAG, and clears what it had', async () => {
+    const { calls, asked } = await run([{ name: 'bridge' }]);
+    expect(asked).toEqual([]);
+    expect(calls.map((c) => c.sql)).toEqual(['DELETE FROM mlag_bonds WHERE device_id = $1']);
+  });
+
+  it('stores the MLAG bonds and the peer link, and the VLANs the peer link is missing', async () => {
+    const { calls } = await run([{ name: 'bridge', 'mlag-peer-port': 'Po15' }]);
+    const inserts = calls.filter((c) => c.sql.includes('INSERT INTO mlag_bonds'));
+    expect(inserts.map((c) => [c.params[1], c.params[3], c.params[4]])).toEqual([['Po15', null, true], ['Po10', 10, false]]);
+    expect(inserts[1].params[9]).toBe('D0:EA:11:EF:6C:02');
+    expect(inserts[0].params[8]).toBe('sfp-sfpplus16');
+    // VLAN 1 is on Po10 but not tagged on Po15: the host-sync storm.
+    expect(calls.find((c) => c.sql.includes('mlag_missing_vlans'))!.params[2]).toEqual([1]);
+  });
+});

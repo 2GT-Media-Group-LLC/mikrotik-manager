@@ -2813,6 +2813,54 @@ export const routingApi = {
   peers: (deviceId?: number) => api.get<RoutingPeerRow[]>('/routing/peers', { params: deviceId ? { deviceId } : undefined }),
 };
 
+/** Tunnels and PPP across the fleet (#310), from the slow polls. */
+export type TunnelKind = 'ipsec' | 'pppoe-server' | 'ppp-session' | 'pppoe-client' | 'eoip' | 'gre' | 'ipip';
+export interface TunnelRowView {
+  device_id: number;
+  device_name: string;
+  device_status: string;
+  kind: TunnelKind;
+  tunnel_key: string;
+  name: string;
+  local_address: string | null;
+  remote_address: string | null;
+  detail: string | null;
+  status: 'up' | 'down' | 'idle' | 'disabled';
+  state: string;
+  uptime: string | null;
+  last_up_at: string | null;
+  last_change_at: string;
+  updated_at: string;
+}
+export const tunnelsApi = {
+  list: () => api.get<TunnelRowView[]>('/tunnels'),
+};
+
+/** MLAG pairs (#376), from the slow polls. */
+export interface MlagBridgeView {
+  device_id: number; device_name: string; ros_version: string | null; bridge_name: string; mlag_peer_port: string;
+  mlag_priority: number | null; mlag_heartbeat: string | null; mlag_init_delay: string | null; mlag_lacp_fallback: boolean | null;
+  mlag_state: string | null; mlag_role: string | null; mlag_state_changed_at: string | null; mlag_missing_vlans: number[] | null;
+}
+export interface MlagBondView {
+  device_id: number; bond: string; is_peer_link: boolean; slaves: string | null; running: boolean | null;
+  active_ports: string | null; inactive_ports: string | null; partner_sys_id: string | null;
+}
+export interface MlagBondSide { bond: string; running: boolean; active: string[]; inactive: string[]; partner: string | null; partnerName: string | null }
+export interface MlagPairView {
+  a: MlagBridgeView;
+  b: MlagBridgeView | null;
+  peerLinkA: MlagBondView | null;
+  peerLinkB: MlagBondView | null;
+  bonds: { mlagId: number; a: MlagBondSide | null; b: MlagBondSide | null; status: 'dual-homed' | 'single-homed' | 'mismatch' | 'down' }[];
+  findings: { severity: 'critical' | 'warning'; code: string; text: string }[];
+  status: 'healthy' | 'degraded' | 'critical';
+}
+export const mlagApi = {
+  pairs: () => api.get<MlagPairView[]>('/mlag'),
+  present: () => api.get<{ present: boolean }>('/mlag/present'),
+};
+
 /** The switch chip's own VLAN table and port VLAN settings (#278). */
 /** An /interface/vlan entry (#309). */
 /** What a VLAN interface is made or edited with (#309). */

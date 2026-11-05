@@ -6,6 +6,7 @@ import { requireAuth, requireWrite } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { stpDomains, resolveStpUpstreams } from '../utils/stpUpstream';
 import { deviceWaysUp } from '../services/topology/wayUp';
+import { ospfTopologyLinks, type OspfPeerRow } from '../services/topology/ospfLinks';
 import { activeSite, writableScope, targetSite } from '../middleware/site';
 import { roleInSite, roleAtLeast, roleOnDevice } from '../utils/siteAccess';
 import { clientAttachments, vlanLabel, type ClientSighting } from '../utils/topologyClients';
@@ -60,7 +61,13 @@ router.get('/', async (req, res) => {
       `SELECT tl.*,
               fd.name AS from_device_name,
               td.name AS to_device_name,
-              fi.type AS from_interface_type
+              fi.type AS from_interface_type,
+              -- The bond the reporting port is in, from the device's own bonds:
+              -- LLDP names the far end's bond, never this one's (#367).
+              (SELECT b.name FROM interfaces b
+                WHERE b.device_id = tl.from_device_id AND b.type = 'bond'
+                  AND tl.from_interface = ANY(string_to_array(replace(COALESCE(b.config_json->>'slaves', ''), ' ', ''), ','))
+                LIMIT 1) AS from_interface_bond
        FROM topology_links tl
        LEFT JOIN devices fd ON fd.id = tl.from_device_id
        LEFT JOIN devices td ON td.id = tl.to_device_id
@@ -152,6 +159,15 @@ router.get('/', async (req, res) => {
     });
   }
 
+  // Links from OSPF adjacencies, which cross tunnels discovery can't (#373).
+  const ospfPeers = await query<OspfPeerRow>(
+    `SELECT r.device_id, r.remote_id, r.remote_address, r.local_interface, i.type AS local_interface_type, r.state, r.up
+       FROM routing_peers r
+       LEFT JOIN interfaces i ON i.device_id = r.device_id AND i.name = r.local_interface
+      WHERE r.protocol = 'ospf' ${fromFilter ? `AND ${siteScopeByDevice(siteId, 'r.device_id')}` : ''}`
+  ).catch(() => [] as OspfPeerRow[]);
+  const ospf = ospfTopologyLinks(ospfPeers, devices, [...graph.links, ...stpLinks], graph.externalNodes);
+
   // Each device's way up, for the tiered layout (#367): the gateway on top.
   // Best-effort; without it the map falls back to the spanning-tree tree.
   const waysUp = await deviceWaysUp(siteScopeDevices(siteId, 'd')).catch((e) => {
@@ -165,8 +181,8 @@ router.get('/', async (req, res) => {
     upstreams,
     waysUp,
     stpDomains: stpDomains(bridges, allLinks),
-    links: [...graph.links, ...stpLinks],
-    externalNodes: graph.externalNodes,
+    links: [...graph.links, ...stpLinks, ...ospf.links],
+    externalNodes: [...graph.externalNodes, ...ospf.externalNodes],
     segConns: graph.segConns,
     ambiguous: graph.ambiguous,
     nodes,

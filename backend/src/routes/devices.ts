@@ -51,7 +51,8 @@ import { siteScopeDevices, andSite } from '../utils/siteScope';
 import { activeSite, targetSite } from '../middleware/site';
 import { resolveSiteChoice } from '../services/deviceSite';
 import { romonSettingFor, romonChecks, romonSetParams } from '../services/romon';
-import { updateChecks, markAndScore, type PostureCheck } from '../utils/postureScore';
+import { updateChecks, cveChecks, markAndScore, type PostureCheck } from '../utils/postureScore';
+import { cveMatchesByDevice } from '../services/cveFeed';
 import { missingIpv6InputFirewall } from '../utils/ipv6InputFirewall';
 
 /** Postgres interval text to milliseconds, for the few windows we offer. */
@@ -2406,6 +2407,8 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
 
     // Pending RouterOS / RouterBOOT updates, from the device row (#371).
     checks.push(...updateChecks(device));
+    // Known CVEs for its RouterOS version, from the stored vulnerability list.
+    checks.push(...cveChecks(device.ros_version, (await cveMatchesByDevice([device.id])).get(device.id) ?? []));
 
     checks.push(...romonChecks(romonRow, romonSetting));
 

@@ -29,6 +29,8 @@ export type AlertEventType =
   | 'interface_flapping'
   | 'optic_degraded'
   | 'routing_peer_down'
+  | 'tunnel_down'
+  | 'mlag_degraded'
   | 'platform_backup_failed'
   | 'device_cert_renewal_failed';
 
@@ -78,6 +80,8 @@ const EVENT_LABELS: Record<string, string> = {
   interface_flapping:       'Interface Flapping',
   optic_degraded:           'Optic Light Level',
   routing_peer_down:        'Routing Peer Down (BGP/OSPF)',
+  tunnel_down:              'Tunnel Down (IPsec/EoIP/GRE/IPIP/PPPoE)',
+  mlag_degraded:            'MLAG Degraded',
   platform_backup_failed:   'Platform Backup Failed',
   device_cert_renewal_failed: 'Device Certificate Renewal Failed',
 };
@@ -101,6 +105,8 @@ const EVENT_EMOJI: Record<string, string> = {
   interface_flapping:       '🔁',
   optic_degraded:           '🔦',
   routing_peer_down:        '🛣️',
+  tunnel_down:              '🚇',
+  mlag_degraded:            '🔗',
   platform_backup_failed:   '💾',
   device_cert_renewal_failed: '🔐',
 };

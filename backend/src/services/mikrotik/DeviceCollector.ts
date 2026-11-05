@@ -1,6 +1,7 @@
 import { compareRosVersions } from '../../utils/rosVersion';
 import type { BgpConnectionInput } from '../../utils/bgpConnection';
 import { routingPeersFrom } from '../../utils/routingPeers';
+import { tunnelsFrom } from '../../utils/tunnels';
 import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
@@ -488,6 +489,7 @@ export class DeviceCollector {
     if (this.modules.certificates) await this.collectCertificates();
     await this.collectWireGuardPeers();
     await this.collectRoutingPeers();
+    await this.collectTunnels();
     if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
@@ -629,19 +631,19 @@ export class DeviceCollector {
       for (const p of peers) {
         await query(
           `INSERT INTO routing_peers (device_id, protocol, peer_key, name, remote_address, remote_as, remote_id, instance,
-                                      detail, state, up, disabled, uptime, prefix_count, last_up_at, last_change_at, last_seen_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, CASE WHEN $11 THEN NOW() END, NOW(), NOW(), NOW())
+                                      detail, state, up, disabled, uptime, prefix_count, local_interface, last_up_at, last_change_at, last_seen_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, CASE WHEN $11 THEN NOW() END, NOW(), NOW(), NOW())
            ON CONFLICT (device_id, protocol, peer_key) DO UPDATE SET
              name = EXCLUDED.name, remote_address = EXCLUDED.remote_address, remote_as = EXCLUDED.remote_as,
              remote_id = EXCLUDED.remote_id, instance = EXCLUDED.instance, detail = EXCLUDED.detail,
              state = EXCLUDED.state, disabled = EXCLUDED.disabled, uptime = EXCLUDED.uptime,
-             prefix_count = EXCLUDED.prefix_count,
+             prefix_count = EXCLUDED.prefix_count, local_interface = EXCLUDED.local_interface,
              last_change_at = CASE WHEN routing_peers.up <> EXCLUDED.up THEN NOW() ELSE routing_peers.last_change_at END,
              last_up_at = CASE WHEN EXCLUDED.up THEN NOW() ELSE routing_peers.last_up_at END,
              up = EXCLUDED.up, last_seen_at = NOW(), updated_at = NOW()`,
           [this.device.id, p.protocol, fit(p.key, 160), fit(p.name, 128), fit(p.remoteAddress, 64), fit(p.remoteAs, 16),
            fit(p.remoteId, 64), fit(p.instance, 64), fit(p.detail, 160), fit(p.state, 32), p.up, p.disabled,
-           fit(p.uptime, 32), p.prefixCount]
+           fit(p.uptime, 32), p.prefixCount, fit(p.localInterface ?? null, 64)]
         );
       }
       const bgpKeys = peers.filter((p) => p.protocol === 'bgp').map((p) => fit(p.key, 160));
@@ -664,6 +666,58 @@ export class DeviceCollector {
       }
     } catch (err) {
       console.error(`[${this.device.name}] Failed to store routing peers:`, (err as Error).message);
+    }
+  }
+
+  /**
+   * Tunnels and PPP (#310): IPsec peers and their live state, PPPoE servers and
+   * clients, active PPP sessions, EoIP, GRE and IPIP. Eight reads in one round
+   * trip. A menu the device doesn't have counts as empty; any other failure
+   * keeps what was stored, as for routing peers.
+   */
+  async collectTunnels(): Promise<void> {
+    const menus = ['/ip/ipsec/peer/print', '/ip/ipsec/active-peers/print', '/interface/pppoe-server/server/print',
+      '/ppp/active/print', '/interface/pppoe-client/print', '/interface/eoip/print', '/interface/gre/print', '/interface/ipip/print'];
+    let lists: Record<string, string>[][];
+    try {
+      const replies = await this.client.executeMany(menus.map((command) => ({ command })));
+      if (replies.some((r) => r.error && !isNoSuchCommand(r.error))) return;
+      lists = replies.map((r) => r.rows ?? []);
+    } catch {
+      return;
+    }
+    const [ipsecPeers, ipsecActive, pppoeServers, pppActive, pppoeClients, eoip, gre, ipip] = lists;
+    const rows = tunnelsFrom({ ipsecPeers, ipsecActive, pppoeServers, pppActive, pppoeClients, eoip, gre, ipip });
+    try {
+      if (rows.length === 0) {
+        await query(`DELETE FROM device_tunnels WHERE device_id = $1`, [this.device.id]);
+        return;
+      }
+      const payload = JSON.stringify(rows.map((r) => ({
+        kind: r.kind, key: fit(r.key, 200), name: fit(r.name, 128), local: fit(r.local, 128), remote: fit(r.remote, 128),
+        detail: fit(r.detail, 200), status: r.status, state: fit(r.state, 32), uptime: fit(r.uptime, 32),
+      })));
+      // One statement however many sessions an access concentrator has.
+      await query(
+        `INSERT INTO device_tunnels (device_id, kind, tunnel_key, name, local_address, remote_address, detail, status, state, uptime,
+                                     last_up_at, last_change_at, updated_at)
+         SELECT $1, x.kind, x.key, x.name, x.local, x.remote, x.detail, x.status, x.state, x.uptime,
+                CASE WHEN x.status = 'up' THEN NOW() END, NOW(), NOW()
+           FROM jsonb_to_recordset($2::jsonb) AS x(kind text, key text, name text, local text, remote text, detail text, status text, state text, uptime text)
+         ON CONFLICT (device_id, kind, tunnel_key) DO UPDATE SET
+           name = EXCLUDED.name, local_address = EXCLUDED.local_address, remote_address = EXCLUDED.remote_address,
+           detail = EXCLUDED.detail, state = EXCLUDED.state, uptime = EXCLUDED.uptime,
+           last_change_at = CASE WHEN device_tunnels.status <> EXCLUDED.status THEN NOW() ELSE device_tunnels.last_change_at END,
+           last_up_at = CASE WHEN EXCLUDED.status = 'up' THEN NOW() ELSE device_tunnels.last_up_at END,
+           status = EXCLUDED.status, updated_at = NOW()`,
+        [this.device.id, payload]);
+      // Gone from the device: removed, or a session that ended.
+      await query(
+        `DELETE FROM device_tunnels t WHERE t.device_id = $1
+           AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS x(kind text, key text) WHERE x.kind = t.kind AND x.key = t.tunnel_key)`,
+        [this.device.id, payload]);
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to store tunnels:`, (err as Error).message);
     }
   }
 
@@ -717,6 +771,7 @@ export class DeviceCollector {
     // that just came up or dropped (#279) rather than waiting for the slow poll.
     await this.collectWireGuardPeers();
     await this.collectRoutingPeers();
+    await this.collectTunnels();
     // Wireless data belongs in a full resync too — without this, a manual sync
     // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
     // the UI could only catch up on the 5-minute slow poll. A device without a
@@ -1923,6 +1978,81 @@ export class DeviceCollector {
     }
   }
 
+  /**
+   * MLAG bonds and the peer link (#376), on a device whose bridge has a peer
+   * port: each bond's LACP state and partner, and the VLANs on MLAG bonds that
+   * the peer link doesn't carry. Nothing is read on a device without MLAG.
+   */
+  private async collectMlag(bridges: Record<string, string>[]): Promise<void> {
+    const mlag = bridges.filter((b) => b['mlag-peer-port'] && b['mlag-peer-port'] !== 'none');
+    if (mlag.length === 0) {
+      await query(`DELETE FROM mlag_bonds WHERE device_id = $1`, [this.device.id]).catch(() => {});
+      return;
+    }
+    const [bonds, vlans, ifaces] = await Promise.all([
+      this.client.execute('/interface/bonding/print', { detail: '' }).catch(() => null),
+      this.client.execute('/interface/bridge/vlan/print').catch(() => null),
+      this.client.execute('/interface/print').catch(() => [] as Record<string, string>[]),
+    ]);
+    if (bonds === null) return;
+    const list = (v: string | undefined) => (v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+    const seen: string[] = [];
+    try {
+      for (const br of mlag) {
+        const peerPort = br['mlag-peer-port'];
+        const mine = bonds.filter((b) => b['name'] === peerPort || (b['mlag-id'] && b['mlag-id'] !== 'none'));
+        for (const b of mine) {
+          const mon = (await this.client.execute('/interface/bonding/monitor', { numbers: b['name'], once: '' })
+            .catch(() => [] as Record<string, string>[]))[0] ?? {};
+          const mlagId = Number(b['mlag-id']);
+          seen.push(b['name']);
+          await query(
+            `INSERT INTO mlag_bonds (device_id, bond, bridge, mlag_id, is_peer_link, slaves, running, active_ports, inactive_ports, partner_sys_id, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+             ON CONFLICT (device_id, bond) DO UPDATE SET bridge = EXCLUDED.bridge, mlag_id = EXCLUDED.mlag_id,
+               is_peer_link = EXCLUDED.is_peer_link, slaves = EXCLUDED.slaves, running = EXCLUDED.running,
+               active_ports = EXCLUDED.active_ports, inactive_ports = EXCLUDED.inactive_ports,
+               partner_sys_id = EXCLUDED.partner_sys_id, updated_at = NOW()`,
+            [this.device.id, b['name'], br['name'], Number.isInteger(mlagId) ? mlagId : null, b['name'] === peerPort,
+             b['slaves'] || null, b['running'] === 'true',
+             mon['active-ports'] || null, mon['inactive-ports'] || null,
+             (mon['lacp-partner-system-id'] || '').toUpperCase() || null]);
+        }
+        // A peer port that is a plain port, not a bond: one member, up or not.
+        if (!mine.some((b) => b['name'] === peerPort)) {
+          const iface = ifaces.find((i) => i['name'] === peerPort);
+          const running = iface?.['running'] === 'true';
+          seen.push(peerPort);
+          await query(
+            `INSERT INTO mlag_bonds (device_id, bond, bridge, mlag_id, is_peer_link, slaves, running, active_ports, inactive_ports, partner_sys_id, updated_at)
+             VALUES ($1,$2,$3,NULL,TRUE,$2,$4,$5,$6,NULL,NOW())
+             ON CONFLICT (device_id, bond) DO UPDATE SET bridge = EXCLUDED.bridge, is_peer_link = TRUE, slaves = EXCLUDED.slaves,
+               running = EXCLUDED.running, active_ports = EXCLUDED.active_ports, inactive_ports = EXCLUDED.inactive_ports, updated_at = NOW()`,
+            [this.device.id, peerPort, br['name'], running, running ? peerPort : null, running ? null : peerPort]);
+        }
+        if (vlans !== null) {
+          const mlagBonds = new Set(mine.filter((b) => b['name'] !== peerPort).map((b) => b['name']));
+          const onBonds = new Set<number>();
+          const onPeer = new Set<number>();
+          for (const row of vlans) {
+            if (row['bridge'] !== br['name']) continue;
+            const ids = expandVlanIds(row['vlan-ids']);
+            const tagged = list(row['current-tagged'] ?? row['tagged']);
+            const members = [...tagged, ...list(row['current-untagged'] ?? row['untagged'])];
+            if (members.some((p) => mlagBonds.has(p))) ids.forEach((v) => onBonds.add(v));
+            if (tagged.includes(peerPort)) ids.forEach((v) => onPeer.add(v));
+          }
+          const missing = [...onBonds].filter((v) => !onPeer.has(v)).sort((a, b) => a - b);
+          await query(`UPDATE device_bridges SET mlag_missing_vlans = $3 WHERE device_id = $1 AND bridge_name = $2`,
+            [this.device.id, br['name'], missing]);
+        }
+      }
+      await query(`DELETE FROM mlag_bonds WHERE device_id = $1 AND NOT (bond = ANY($2::text[]))`, [this.device.id, seen]);
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to store MLAG state:`, (err as Error).message);
+    }
+  }
+
   async collectStp(): Promise<void> {
     try {
       // Ask each bridge what it thinks the spanning tree looks like.
@@ -1993,7 +2123,24 @@ export class DeviceCollector {
             Number.isFinite(dCost) ? dCost : null,
           ]
         );
+        // MLAG settings and live state (#376); cleared on a bridge without it.
+        const peerPort = bridge['mlag-peer-port'] && bridge['mlag-peer-port'] !== 'none' ? bridge['mlag-peer-port'] : null;
+        const yesNo = (v: string | undefined) => (v === undefined ? null : v === 'true' || v === 'yes');
+        await query(
+          `UPDATE device_bridges SET
+             mlag_peer_port = $3, mlag_priority = $4, mlag_heartbeat = $5, mlag_init_delay = $6, mlag_lacp_fallback = $7,
+             mlag_state_changed_at = CASE WHEN mlag_state IS DISTINCT FROM $8 OR mlag_role IS DISTINCT FROM $9
+                                          THEN NOW() ELSE mlag_state_changed_at END,
+             mlag_state = $8, mlag_role = $9
+           WHERE device_id = $1 AND bridge_name = $2`,
+          [this.device.id, name, peerPort,
+           peerPort && Number.isFinite(Number(bridge['mlag-priority'])) ? Number(bridge['mlag-priority']) : null,
+           peerPort ? bridge['mlag-heartbeat'] || null : null, peerPort ? bridge['mlag-init-delay'] || null : null,
+           peerPort ? yesNo(bridge['mlag-lacp-fallback']) : null,
+           peerPort ? m['mlag-state'] || null : null, peerPort ? m['mlag-active-role'] || null : null]
+        ).catch(() => {});
       }
+      await this.collectMlag(bridges);
 
       // A bridge that has been deleted should stop being reported as root.
       if (seen.length > 0) {

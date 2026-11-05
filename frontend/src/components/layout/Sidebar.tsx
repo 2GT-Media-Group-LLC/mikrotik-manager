@@ -8,12 +8,12 @@ import {
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
   Server, Globe, Clock, Shield, FileText, Activity, BarChart3, Ticket, ArrowUpCircle, Radio,
   LayoutGrid, TerminalSquare, KeyRound, UserCheck,
-  Route,
+  Route, Cable, Link2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import SiteSelector from './SiteSelector';
 import { APP_VERSION } from '../../version';
-import { devicesApi } from '../../services/api';
+import { devicesApi, mlagApi } from '../../services/api';
 
 const monitorItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -49,6 +49,8 @@ const networkServicesSubItems = [
   { to: '/network-services/ntp',        icon: Clock,     label: 'NTP' },
   { to: '/network-services/wireguard',  icon: Shield,    label: 'WireGuard' },
   { to: '/network-services/routing',    icon: Route,     label: 'Routing' },
+  { to: '/network-services/tunnels',    icon: Cable,     label: 'Tunnels & PPP' },
+  { to: '/network-services/mlag',       icon: Link2,     label: 'MLAG' },
   { to: '/network-services/syslog',     icon: FileText,  label: 'Logging' },
   { to: '/network-services/netflow',    icon: BarChart3, label: 'NetFlow' },
   { to: '/network-services/discovery',  icon: Radio,     label: 'Discovery & SNMP' },
@@ -198,6 +200,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const hasWireless  = devices.some(isWirelessDevice);
   // User Manager (#251) only once the daily check has found it on a device here.
   const hasUserManager = devices.some(d => d.user_manager === true);
+  // MLAG (#376) only where a bridge has an MLAG peer port.
+  const { data: mlag } = useQuery({
+    queryKey: ['mlag-present'],
+    queryFn: () => mlagApi.present().then((r) => r.data.present),
+    staleTime: 300_000,
+  });
 
   const onlineCount = devices.filter(d => d.status === 'online').length;
 
@@ -415,7 +423,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             />
             {networkServicesOpen && (
               <div className="ml-4 pl-3 space-y-[1px]" style={{ borderLeft: '1px solid var(--line)' }}>
-                {networkServicesSubItems.map(({ to, icon, label }) => (
+                {networkServicesSubItems.filter((i) => i.to !== '/network-services/mlag' || mlag || location.pathname.startsWith('/network-services/mlag')).map(({ to, icon, label }) => (
                   <NavItem key={to} to={to} end icon={icon} label={label} isCollapsed={false} onClick={handleNavClick} />
                 ))}
               </div>

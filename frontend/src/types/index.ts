@@ -359,6 +359,12 @@ export interface TopologyLink {
   to_device_name?: string;
   /** RouterOS type of the reporting port (ether, vlan, wg...), when known (#367). */
   from_interface_type?: string | null;
+  /** The bond the reporting port is in, from the device's own bonds (#367). */
+  from_interface_bond?: string | null;
+  /** The unmanaged node at the far end, when the link names it (OSPF, #373). */
+  external_id?: string | null;
+  /** OSPF adjacency state (#373). */
+  link_state?: 'up' | 'down' | null;
   discovered_at: string;
 }
 

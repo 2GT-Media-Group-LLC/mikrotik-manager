@@ -20,6 +20,10 @@ import { FilterBar, FilterSearch, FilterSelect, FilterSegment, FilterDivider } f
 import { formatRate, formatRatePair } from '../utils/wifiRate';
 import ClientAddressLists from '../components/clients/ClientAddressLists';
 import DevicePicker from '../components/common/DevicePicker';
+import ColumnPicker from '../components/devices/ColumnPicker';
+import { CLIENT_COLUMNS, clientColumnsFor, loadClientColumnPrefs, saveClientColumnPrefs, type ClientColumnId } from '../utils/clientColumns';
+import type { ColumnPrefs } from '../utils/columnPrefs';
+import { useColumnResize } from '../hooks/useColumnResize';
 
 
 const REFRESH_OPTIONS = [
@@ -191,6 +195,22 @@ function ClientModal({
   );
 }
 
+/** Each Clients column's cell style, as it was before columns could be hidden (#336). */
+const CELL_CLASS: Record<ClientColumnId, string> = {
+  host: 'px-4 py-2.5',
+  ip: 'px-4 py-2.5 font-mono text-gray-600 dark:text-slate-400 truncate',
+  ssid: 'px-4 py-2.5 text-xs text-gray-600 dark:text-slate-400 truncate',
+  signal: 'px-4 py-2.5 text-xs whitespace-nowrap',
+  rate: 'px-4 py-2.5 text-xs whitespace-nowrap text-gray-600 dark:text-slate-400',
+  type: 'px-4 py-2.5',
+  port: 'px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400 truncate',
+  vlan: 'px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400',
+  device: 'px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 truncate',
+  data: 'px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap',
+  seen: 'px-4 py-2.5 text-xs text-gray-400 dark:text-slate-500',
+  active: 'px-4 py-2.5 text-center',
+};
+
 export default function ClientsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -214,6 +234,11 @@ export default function ClientsPage() {
   const isWireless = typeFilter === 'wireless';
   // Filtered to wired, every row is wired: no Type column (#222).
   const isWired = typeFilter === 'wired';
+  // Hidden and resized columns, remembered in this browser (#336).
+  const [colPrefs, setColPrefs] = useState<ColumnPrefs<ClientColumnId>>(loadClientColumnPrefs);
+  useEffect(() => { saveClientColumnPrefs(colPrefs); }, [colPrefs]);
+  const { startResize, resetWidth } = useColumnResize(setColPrefs);
+  const shownCols = clientColumnsFor(colPrefs, isWireless ? 'wireless' : isWired ? 'wired' : 'all', showAll);
 
   // VLAN and signal-range filters live in the URL alongside type, so the AP
   // Deployment Density chart can hand off the band the user clicked (#99) and any
@@ -473,6 +498,7 @@ export default function ClientsPage() {
             clear {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}
           </button>
         )}
+        <div className="ml-auto"><ColumnPicker prefs={colPrefs} onChange={setColPrefs} columns={CLIENT_COLUMNS} /></div>
       </FilterBar>
 
       {isLoading ? (
@@ -502,43 +528,22 @@ export default function ClientsPage() {
                 cutting addresses off; the IP column is sized for a full IPv4 address (#336). */}
             <table className="w-full min-w-[1100px] text-sm table-fixed">
               <colgroup>
-                {(isWireless
-                  ? ['18%', '10.5rem', '10%', '10%', '12%', '8%', '5%', '10%', '8%', '9%']
-                  : isWired
-                    ? ['26%', '10.5rem', '13%', '8%', '15%', '11%', '13%']
-                    : ['22%', '10.5rem', '13%', '11%', '7%', '13%', '10%', '12%']
-                ).map((w, i) => <col key={i} style={{ width: w }} />)}
-                {showAll && <col style={{ width: '6%' }} />}
+                {shownCols.map((c) => {
+                  const w = colPrefs.widths[c.id] ?? c.width;
+                  return <col key={c.id} style={w ? { width: `${w}px` } : undefined} />;
+                })}
               </colgroup>
               <thead>
                 <tr className="border-b border-gray-200 dark:border-slate-700">
-                  {([
-                    { col: 'hostname',       label: 'Host / Vendor / MAC', align: 'left'  },
-                    { col: 'ip_address',     label: 'IP Address',          align: 'left'  },
-                    // When filtered to wireless, the Type column is redundant —
-                    // show SSID + signal quality instead.
-                    ...(isWireless
-                      ? [
-                          { col: 'ssid',            label: 'SSID',   align: 'left' as const },
-                          { col: 'signal_strength', label: 'Signal', align: 'left' as const },
-                          // #252: link rates, from the access point's side (TX = to the client).
-                          { col: 'tx_rate_bps',     label: 'Rate',   align: 'left' as const },
-                        ]
-                      : isWired ? [] : [{ col: 'client_type', label: 'Type', align: 'left' as const }]),
-                    { col: 'interface_name', label: 'Port',                align: 'left'  },
-                    { col: 'vlan_id',        label: 'VLAN',                align: 'left'  },
-                    { col: 'device_name',    label: 'Device',              align: 'left'  },
-                    { col: 'traffic_today_bytes', label: 'Data (today)',   align: 'left'  },
-                    { col: 'last_seen',      label: 'Last Seen',           align: 'left'  },
-                  ] as { col: string; label: string; align: 'left' | 'right'; noSort?: boolean }[]).map(({ col, label, align, noSort }) => (
+                  {shownCols.map((c) => (
                     <th
-                      key={col}
-                      className={clsx('table-header px-4 py-2.5 select-none whitespace-nowrap', !noSort && 'cursor-pointer', `text-${align}`)}
-                      onClick={noSort ? undefined : () => toggleSort(col)}
+                      key={c.id}
+                      className={clsx('table-header px-4 py-2.5 select-none whitespace-nowrap relative', c.sortCol && 'cursor-pointer', c.id === 'active' ? 'text-center' : 'text-left')}
+                      onClick={c.sortCol ? () => toggleSort(c.sortCol!) : undefined}
                     >
                       <span className="inline-flex items-center gap-1">
-                        {label}
-                        {!noSort && (sortCol === col ? (
+                        {c.label}
+                        {c.sortCol && (sortCol === c.sortCol ? (
                           sortDir === 'asc'
                             ? <ChevronUp className="w-3 h-3 text-blue-500" />
                             : <ChevronDown className="w-3 h-3 text-blue-500" />
@@ -546,20 +551,26 @@ export default function ClientsPage() {
                           <ChevronsUpDown className="w-3 h-3 text-gray-300 dark:text-slate-600" />
                         ))}
                       </span>
+                      {/* Drag to resize, double-click to reset this column (#336). */}
+                      <span
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={`Resize ${c.label} column`}
+                        title="Drag to resize; double-click to reset"
+                        onMouseDown={(e) => startResize(e, c.id)}
+                        onDoubleClick={() => resetWidth(c.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize"
+                        style={{ borderRight: colPrefs.widths[c.id] ? '2px solid var(--line)' : undefined }}
+                      />
                     </th>
                   ))}
-                  {showAll && (
-                    <th className="table-header px-4 py-2.5 text-center">Active</th>
-                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
-                {clients.map((client) => (
-                  <tr
-                    key={client.id}
-                    className="hover:bg-gray-50 dark:hover:bg-slate-700/30"
-                  >
-                    <td className="px-4 py-2.5">
+                {clients.map((client) => {
+                  const cell: Record<ClientColumnId, React.ReactNode> = {
+                    host: (<>
                       <div className="flex items-center gap-1.5 min-w-0">
                         <CategoryIcon category={client.device_category} />
                         <button
@@ -609,88 +620,77 @@ export default function ClientsPage() {
                       <div className="text-xs font-mono text-gray-400 dark:text-slate-500 truncate">
                         {client.mac_address}
                       </div>
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-gray-600 dark:text-slate-400 truncate" title={client.ip_address || undefined}>
-                      {client.ip_address || '—'}
-                    </td>
-                    {isWireless ? (
+                    </>),
+                    ip: client.ip_address || '—',
+                    ssid: (client as Client & { ssid?: string }).ssid || '—',
+                    signal: client.signal_strength != null ? (
+                      <span className={clsx('font-medium', signalColor(client.signal_strength))}>
+                        {client.signal_strength} dBm
+                        <span className="ml-1 font-normal opacity-75">({signalLabel(client.signal_strength)})</span>
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 dark:text-slate-500">—</span>
+                    ),
+                    rate: formatRatePair(client.tx_rate_bps, client.rx_rate_bps) ? (
                       <>
-                        <td className="px-4 py-2.5 text-xs text-gray-600 dark:text-slate-400 truncate" title={(client as Client & { ssid?: string }).ssid || undefined}>
-                          {(client as Client & { ssid?: string }).ssid || '—'}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs whitespace-nowrap">
-                          {client.signal_strength != null ? (
-                            <span className={clsx('font-medium', signalColor(client.signal_strength))}>
-                              {client.signal_strength} dBm
-                              <span className="ml-1 font-normal opacity-75">({signalLabel(client.signal_strength)})</span>
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 dark:text-slate-500">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs whitespace-nowrap text-gray-600 dark:text-slate-400"
-                          title="Link rate from the access point's side: TX is towards the client, RX from it">
-                          {formatRatePair(client.tx_rate_bps, client.rx_rate_bps) ? (
-                            <>
-                              <div>TX {formatRate(client.tx_rate_bps) ?? '—'}</div>
-                              <div>RX {formatRate(client.rx_rate_bps) ?? '—'}</div>
-                            </>
-                          ) : <span className="text-gray-400 dark:text-slate-500">—</span>}
-                        </td>
+                        <div>TX {formatRate(client.tx_rate_bps) ?? '—'}</div>
+                        <div>RX {formatRate(client.rx_rate_bps) ?? '—'}</div>
                       </>
-                    ) : isWired ? null : (
-                      <td className="px-4 py-2.5">
-                        <span
-                          className={clsx(
-                            'inline-flex items-center gap-1 text-xs font-medium',
-                            client.client_type === 'wireless'
-                              ? 'text-purple-600 dark:text-purple-400'
-                              : 'text-blue-600 dark:text-blue-400'
-                          )}
-                        >
-                          {client.client_type === 'wireless' ? (
-                            <Wifi className="w-3 h-3" />
-                          ) : (
-                            <Network className="w-3 h-3" />
-                          )}
-                          {client.client_type}
-                          {client.signal_strength != null && (
-                            <span className="text-gray-400 ml-1">({client.signal_strength} dBm)</span>
-                          )}
-                        </span>
-                      </td>
-                    )}
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500 dark:text-slate-400 truncate" title={client.interface_name || undefined}>
-                      {client.interface_name || '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400">
-                      {client.vlan_id != null
-                        ? <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded font-mono">{client.vlan_id}</span>
-                        : '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 truncate" title={client.device_name || undefined}>
-                      {client.device_name || '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                      {client.traffic_today_bytes ? formatDataBytes(client.traffic_today_bytes) : '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400 dark:text-slate-500">
-                      {client.last_seen
-                        ? formatDistanceToNow(new Date(client.last_seen), { addSuffix: true })
-                        : '—'}
-                    </td>
-                    {showAll && (
-                      <td className="px-4 py-2.5 text-center">
-                        <span
-                          className={clsx(
-                            'w-2 h-2 rounded-full inline-block',
-                            client.active ? 'bg-green-500' : 'bg-gray-300 dark:bg-slate-600'
-                          )}
-                        />
-                      </td>
-                    )}
-                  </tr>
-                ))}
+                    ) : <span className="text-gray-400 dark:text-slate-500">—</span>,
+                    type: (
+                      <span
+                        className={clsx(
+                          'inline-flex items-center gap-1 text-xs font-medium',
+                          client.client_type === 'wireless'
+                            ? 'text-purple-600 dark:text-purple-400'
+                            : 'text-blue-600 dark:text-blue-400'
+                        )}
+                      >
+                        {client.client_type === 'wireless' ? (
+                          <Wifi className="w-3 h-3" />
+                        ) : (
+                          <Network className="w-3 h-3" />
+                        )}
+                        {client.client_type}
+                        {client.signal_strength != null && (
+                          <span className="text-gray-400 ml-1">({client.signal_strength} dBm)</span>
+                        )}
+                      </span>
+                    ),
+                    port: client.interface_name || '—',
+                    vlan: client.vlan_id != null
+                      ? <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded font-mono">{client.vlan_id}</span>
+                      : '—',
+                    device: client.device_name || '—',
+                    data: client.traffic_today_bytes ? formatDataBytes(client.traffic_today_bytes) : '—',
+                    seen: client.last_seen
+                      ? formatDistanceToNow(new Date(client.last_seen), { addSuffix: true })
+                      : '—',
+                    active: (
+                      <span
+                        className={clsx(
+                          'w-2 h-2 rounded-full inline-block',
+                          client.active ? 'bg-green-500' : 'bg-gray-300 dark:bg-slate-600'
+                        )}
+                      />
+                    ),
+                  };
+                  // Hover shows the whole of a cell a narrow column cuts off.
+                  const title: Partial<Record<ClientColumnId, string | undefined>> = {
+                    ip: client.ip_address || undefined,
+                    ssid: (client as Client & { ssid?: string }).ssid || undefined,
+                    port: client.interface_name || undefined,
+                    device: client.device_name || undefined,
+                    rate: 'Link rate from the access point\'s side: TX is towards the client, RX from it',
+                  };
+                  return (
+                    <tr key={client.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/30">
+                      {shownCols.map((c) => (
+                        <td key={c.id} className={CELL_CLASS[c.id]} title={title[c.id]}>{cell[c.id]}</td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             </div>

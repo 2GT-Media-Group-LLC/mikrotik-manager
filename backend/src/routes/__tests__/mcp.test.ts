@@ -1,6 +1,6 @@
 jest.mock('../../config/database');
 jest.mock('../../utils/siteRoles', () => ({ loadSiteRoles: jest.fn() }));
-jest.mock('../../services/cveFeed', () => ({ fleetCveReport: jest.fn() }));
+jest.mock('../../services/cveFeed', () => ({ fleetCveReport: jest.fn(), cveMatchesByDevice: jest.fn(async () => new Map()) }));
 jest.mock('../../middleware/rateLimitRedis', () => ({
   rateLimitRedis: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
@@ -16,7 +16,7 @@ import request from 'supertest';
 import { discovery, tokenIntrospection } from 'openid-client';
 import { query, queryOne } from '../../config/database';
 import { loadSiteRoles } from '../../utils/siteRoles';
-import { fleetCveReport } from '../../services/cveFeed';
+import { fleetCveReport, cveMatchesByDevice } from '../../services/cveFeed';
 import routes, { mcpMetadataRoutes } from '../mcp';
 import { safeText, observation } from '../../services/mcp/output';
 import { loadAiSettings, DEFAULT_AI_SETTINGS, type AiSettings } from '../../services/mcp/settings';
@@ -202,6 +202,21 @@ describe('review evidence and isolation', () => {
     const res = await call('get_security_findings', { device_id: 12 });
     expect(data(res).items.map((i: { id: string }) => i.id).sort()).toEqual(['romon', 'routerboot-outdated']);
     expect(data(res).score).toBe(100 - 3 - 3);
+  });
+
+  it('counts known CVEs for the device\'s version in the score', async () => {
+    jest.mocked(cveMatchesByDevice).mockResolvedValueOnce(new Map([[12, [
+      { id: 'CVE-2026-0001', severity: 'HIGH', known_exploited: false, fixed_in: '7.25.1', hardware_specific: false, uncertain: null },
+    ]]]) as never);
+    dbOne.mockImplementation(async (sql) => {
+      if (sql.includes('FROM users')) return account as never;
+      if (sql.includes('device_live_cache')) return { data: { checks: [] }, fetched_at: new Date().toISOString(), error: null } as never;
+      if (sql.includes('firmware_update_available')) return { ros_version: '7.25' } as never;
+      return device as never;
+    });
+    const res = await call('get_security_findings', { device_id: 12 });
+    expect(data(res).items.map((i: { id: string }) => i.id)).toEqual(['routeros-cve']);
+    expect(data(res).score).toBe(85);
   });
 
   it('bounds event windows and omits raw messages even if the DB returns extras', async () => {

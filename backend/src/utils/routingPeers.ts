@@ -22,6 +22,8 @@ export interface RoutingPeer {
   instance: string | null;
   /** OSPF area and interface; for BGP, the local role (ibgp, ebgp…). */
   detail: string | null;
+  /** OSPF: the device's own interface the neighbour is on, for topology links (#373). */
+  localInterface?: string | null;
   state: string;
   up: boolean;
   disabled: boolean;
@@ -85,6 +87,7 @@ export function routingPeersFrom(input: {
       protocol: 'ospf', key: `${instance ?? ''}|${id}`, name: id, remoteAddress: n['address'] || null, remoteAs: null,
       remoteId: n['router-id'] || null, instance,
       detail: [n['area'], n['interface']].filter(Boolean).join(' · ') || null,
+      localInterface: n['interface'] || null,
       // Full is a complete adjacency; 2-Way is normal between two non-DR routers on a LAN.
       state, up: /^full$/i.test(state) || /^2-?way$/i.test(state), disabled: false,
       uptime: n['adjacency'] || null, prefixCount: null,

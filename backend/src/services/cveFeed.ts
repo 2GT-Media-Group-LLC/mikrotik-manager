@@ -228,3 +228,19 @@ export async function fleetCveReport(siteId: SiteScope | undefined, deviceIds?: 
     versions,
   };
 }
+
+/**
+ * Each device's stored CVE matches, for the security posture score: devices
+ * on the same version share one list. Empty for a device with no known
+ * version. Never throws: a score without CVEs beats no score.
+ */
+export async function cveMatchesByDevice(deviceIds?: number[]): Promise<Map<number, FleetCveReport['versions'][number]['cves']>> {
+  const out = new Map<number, FleetCveReport['versions'][number]['cves']>();
+  try {
+    const report = await fleetCveReport(null, deviceIds);
+    for (const v of report.versions) for (const d of v.devices) out.set(d.id, v.cves);
+  } catch (e) {
+    console.warn(`[cveFeed] CVE matches for the posture score: ${(e as Error).message}`);
+  }
+  return out;
+}

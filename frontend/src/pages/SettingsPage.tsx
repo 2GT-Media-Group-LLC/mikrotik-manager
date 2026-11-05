@@ -436,6 +436,8 @@ export default function SettingsPage() {
     interface_flapping: 'Interface flapping: a port went down this many times in an hour (threshold)',
     optic_degraded: "Optic light level: this many dB away from the port's usual level either way, past a receive limit below, or the module at 70 °C (threshold, dB)",
     routing_peer_down: 'Routing peer down: a BGP session or OSPF neighbour that was up has been down this long (threshold, minutes)',
+    tunnel_down: 'Tunnel down: an IPsec peer, EoIP, GRE or IPIP tunnel, or PPPoE client that was up has been down this long (threshold, minutes)',
+    mlag_degraded: 'MLAG degraded: a critical MLAG problem — not connected, both peers primary, peer link down, a bond cabled to two devices, or a heartbeat storm',
     platform_backup_failed: 'Platform backup failed: a backup of MikroTik Manager itself failed or didn’t reach a destination',
     device_cert_renewal_failed: 'Device certificate renewal failed: the manager couldn’t renew a certificate its CA issued to a device',
   };
@@ -1856,7 +1858,7 @@ export default function SettingsPage() {
                         </button>
                       </td>
                       <td className="py-2.5 pr-4 text-center">
-                        {['high_cpu', 'high_memory', 'cert_expiry', 'wireguard_stale', 'interface_errors', 'interface_flapping', 'optic_degraded', 'routing_peer_down'].includes(rule.event_type) ? (
+                        {['high_cpu', 'high_memory', 'cert_expiry', 'wireguard_stale', 'interface_errors', 'interface_flapping', 'optic_degraded', 'routing_peer_down', 'tunnel_down'].includes(rule.event_type) ? (
                           <NumberSetting
                             className="input w-20 text-center py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                             value={rule.threshold ?? ''}

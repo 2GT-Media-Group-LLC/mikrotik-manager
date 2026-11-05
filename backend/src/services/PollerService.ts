@@ -22,6 +22,8 @@ import { checkInterfaceErrors, purgeInterfaceErrorEvents } from './interfaceErro
 import { checkOptics, purgeOpticReadings } from './opticLevels';
 import { checkWireGuardStale } from './wireguardStale';
 import { checkRoutingPeers } from './routingPeerAlerts';
+import { checkTunnels } from './tunnelAlerts';
+import { checkMlag } from './mlag';
 import { isRestoring, scheduleTick as platformBackupTick } from './platformBackup/service';
 import { renewalTick as deviceCertRenewalTick } from './deviceCa';
 import { resolveModules, describeDisabled } from '../utils/pollModules';
@@ -601,6 +603,24 @@ export class PollerService {
       if (now - lastRp > 60_000) {
         await this.setTimestamp(rpKey, now, 60_000);
         checkRoutingPeers().catch((e) => console.error('[Poller] Routing peer check failed:', e));
+      }
+
+      // IPsec peers, EoIP/GRE/IPIP tunnels and PPPoE clients down (#310) —
+      // every minute, from what the slow polls stored. Nothing while the rule is off.
+      const tnKey = 'task:tunnel_down';
+      const lastTn = await this.getTimestamp(tnKey);
+      if (now - lastTn > 60_000) {
+        await this.setTimestamp(tnKey, now, 60_000);
+        checkTunnels().catch((e) => console.error('[Poller] Tunnel check failed:', e));
+      }
+
+      // MLAG degraded (#376) — every minute, from what the slow polls stored
+      // and the MLAG log events. Nothing while the rule is off or without MLAG.
+      const mlKey = 'task:mlag_degraded';
+      const lastMl = await this.getTimestamp(mlKey);
+      if (now - lastMl > 60_000) {
+        await this.setTimestamp(mlKey, now, 60_000);
+        checkMlag().catch((e) => console.error('[Poller] MLAG check failed:', e));
       }
 
       // Interface errors and flapping (#249) — every minute, from what the

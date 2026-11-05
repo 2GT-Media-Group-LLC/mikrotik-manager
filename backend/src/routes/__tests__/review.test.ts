@@ -1,6 +1,6 @@
 jest.mock('../../config/database');
 jest.mock('../../utils/siteRoles', () => ({ loadSiteRoles: jest.fn() }));
-jest.mock('../../services/cveFeed', () => ({ fleetCveReport: jest.fn() }));
+jest.mock('../../services/cveFeed', () => ({ fleetCveReport: jest.fn(), cveMatchesByDevice: jest.fn(async () => new Map()) }));
 jest.mock('../../middleware/rateLimitRedis', () => ({
   rateLimitRedis: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));

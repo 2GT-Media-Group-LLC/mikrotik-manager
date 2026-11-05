@@ -58,6 +58,12 @@ page, and comes from the newer Wi-Fi package, the legacy wireless driver and leg
 The list has a minimum width, so in a narrow window it scrolls sideways rather than cutting off
 IP addresses (#336). Hover a shortened name, vendor, SSID, interface or device to see all of it.
 
+**Columns** at the end of the filter bar shows or hides columns, apart from the host (#336). Drag
+a column header's right edge to make it wider or narrower, and double-click that edge to put it
+back. **Reset columns** restores the defaults. The choice is remembered in your browser and
+applies in every view: a hidden column stays hidden whether you're looking at wired, wireless or
+all clients.
+
 **Active** means the client was present at the most recent poll of the device it is attached
 to. Clients that disappear are kept and marked inactive rather than deleted, so history
 survives a laptop closing its lid; `retention_clients_days` (default 7) decides how long an

@@ -3,6 +3,42 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.20
+
+- **Tunnels & PPP**, a new page under Network Services, for
+  [@ronchan44](https://github.com/ronchan44)
+  ([#310](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/310)): every IPsec peer,
+  PPPoE server and client, active PPP session, and EoIP, GRE and IPIP tunnel across the fleet,
+  with its state, how long it's been up and when it changed. Problems are listed first.
+  Read-only, from the slow poll ([Tunnels and PPP](network-services.md#tunnels-and-ppp)).
+- **Known CVEs count in the hardening score.** A device whose RouterOS version has known
+  vulnerabilities gets a **Known RouterOS vulnerabilities** finding, at the severity of the worst
+  one, which counts against its score and the fleet's like any other finding and can be muted.
+  Before, CVEs were listed on the Security page but didn't affect the score
+  ([RouterOS vulnerabilities](security.md#routeros-vulnerabilities)).
+- **MLAG**, a new page under Network Services, from
+  [@azizfayziev](https://github.com/azizfayziev)'s proposal
+  ([#376](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376)): each MLAG pair's
+  state and roles, the peer link, the MLAG bonds side by side, and checks for what goes wrong:
+  split brain, a peer link down, single-homed and miswired bonds, VLANs missing from the peer
+  link, settings that differ, and heartbeat and host-sync storms from the logs. An **MLAG
+  degraded** alert reports the critical ones ([MLAG](network-services.md#mlag)).
+- **Topology links from OSPF**, from [@pimlie](https://github.com/pimlie)
+  ([#373](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/373)): routers that only
+  see each other across a tunnel are joined on the map by their OSPF adjacency, an unmanaged one
+  is a node named by router ID, and a lost adjacency shows as down
+  ([How links are found](topology.md#how-links-are-found)).
+- **Tunnel down** alert: an IPsec peer, EoIP, GRE or IPIP tunnel, or PPPoE client that was up has
+  been down for the threshold ([Alerting](alerting.md)).
+- **Clients** columns can be hidden and resized, as on Devices, from
+  [@cybr4nx](https://github.com/cybr4nx)
+  ([#336](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/336),
+  [Clients](clients.md#the-list)).
+- Topology port labels show the near end's bond too, from the device's own bonds, so an uplink
+  between two LAGs reads `Po9·sfp9 ↔ Po1·sfp2`, from
+  [@azizfayziev](https://github.com/azizfayziev)
+  ([#367](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367)).
+
 ## 1.1.0-beta.19
 
 - **Config Health finds access ports left in other VLANs.** Before 1.0.4, setting a trunk to

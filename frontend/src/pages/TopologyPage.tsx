@@ -69,21 +69,23 @@ function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, strin
   if (e.kind === 'client') {
     return { id: e.id, source: e.source, target: e.target, type: 'topo', data: { ...data, label: undefined }, style: { stroke: '#7dd3fc', strokeWidth: 1 } };
   }
-  const look = e.role === 'root' ? { stroke: '#3b82f6' }
+  // A lost OSPF adjacency (#373) is drawn like a blocked cable.
+  const look = e.down ? { stroke: '#ef4444', strokeDasharray: '6,3' }
+    : e.role === 'root' ? { stroke: '#3b82f6' }
     : e.role === 'designated' ? { stroke: '#22c55e' }
       : e.role === 'blocked' ? { stroke: '#ef4444', strokeDasharray: '6,3' }
         : { stroke: '#94a3b8' };
   // A tunnel isn't a cable: dotted (#367).
   const tunnel = e.logical === 'tunnel' ? { strokeDasharray: '2,4', strokeLinecap: 'round' as const } : {};
   // Port names as chosen under Display (#367), the full ones on hover.
-  const blocked = e.role === 'blocked' ? ' [blocked]' : '';
-  const shown = e.label ? portLabel(e.label, ports) : undefined;
+  const blocked = e.role === 'blocked' ? ' [blocked]' : e.down ? ' [down]' : '';
+  const shown = e.label ? portLabel(e.label, ports, e.bonds) : undefined;
   return {
     id: e.id, source: e.source, target: e.target, type: 'topo',
     data: {
       ...data,
-      label: shown ? `${shown}${blocked}` : (blocked ? 'blocked' : undefined),
-      fullLabel: e.label ? `${e.label}${blocked}` : undefined,
+      label: shown ? `${shown}${blocked}` : (blocked ? blocked.trim().slice(1, -1) : undefined),
+      fullLabel: e.label ? `${e.label}${blocked}${e.ospf ? ' (OSPF)' : ''}` : undefined,
     },
     className: 'topology-edge',
     style: { strokeWidth: 2, ...look, ...tunnel, ...custom },
