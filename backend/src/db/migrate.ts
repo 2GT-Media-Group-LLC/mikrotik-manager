@@ -1870,6 +1870,9 @@ CREATE TABLE IF NOT EXISTS mlag_bonds (
 -- says which ones aren't running.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS disabled_packages TEXT[];
 
+-- MLAG (#376): when a bond was last up, so one never cabled reads "unused".
+ALTER TABLE mlag_bonds ADD COLUMN IF NOT EXISTS last_running_at TIMESTAMPTZ;
+
 -- Reverse proxy (#358): each device's /ip/reverse-proxy rules and the two
 -- services that share port 443, from the slow poll.
 CREATE TABLE IF NOT EXISTS reverse_proxy_rules (

@@ -994,6 +994,8 @@ describe('collecting MLAG', () => {
     expect(inserts[0].params[8]).toBe('sfp-sfpplus16');
     // VLAN 1 is on Po10 but not tagged on Po15: the host-sync storm.
     expect(calls.find((c) => c.sql.includes('mlag_missing_vlans'))!.params[2]).toEqual([1]);
+    // When a bond was last up, so a never-cabled one reads "unused" (#376).
+    expect(inserts.every((c) => c.sql.includes('last_running_at = CASE WHEN EXCLUDED.running THEN NOW()'))).toBe(true);
   });
 });
 

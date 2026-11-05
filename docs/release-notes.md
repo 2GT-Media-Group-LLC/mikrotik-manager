@@ -3,6 +3,26 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.24
+
+- **Firmware tab** on the device page, from [@davidcoulson](https://github.com/davidcoulson)
+  ([#400](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/400),
+  [#401](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/401)): the RouterOS and
+  RouterBOOT check and install moved off the Config tab into a tab of their own, between Config and
+  Config History, with a link to the fleet Firmware page. The dashboard's "Updates available"
+  banner opens each device's Firmware tab, and has its own link to upgrade several devices
+  ([Firmware](firmware.md)).
+- **MLAG** fixes from [@azizfayziev](https://github.com/azizfayziev)'s testing
+  ([#376](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376)):
+  - The first poll after an upgrade no longer counts as a state or role change, which had turned
+    every pair amber for a day.
+  - A pair with only warnings is labelled **warning**, not **degraded**.
+  - A bond set up for a switch that isn't cabled yet shows as grey **unused** rather than red.
+    One that was up and went down on both peers stays red, with a warning.
+  - The primary is on the left in every pair.
+
+  ([MLAG](network-services.md#mlag))
+
 ## 1.1.0-beta.23
 
 - **Reverse proxy**, a new tab on **Operations → Certificates** (now **PKI** and **Reverse proxy**),

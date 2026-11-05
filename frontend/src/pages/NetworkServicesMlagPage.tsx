@@ -44,14 +44,17 @@ function Side({ s }: { s: MlagBondSide | null }) {
   if (!s) return <span className="text-gray-400">not set up</span>;
   return (
     <span className="font-mono text-xs">
-      {s.bond} <span className={s.running ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>{s.running ? 'up' : 'down'}</span>
+      {s.bond} <span className={s.running ? 'text-green-600 dark:text-green-400' : s.everUp ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}>
+        {s.running ? 'up' : s.everUp ? 'down' : 'not cabled'}
+      </span>
       {s.active.length > 0 && <span className="text-gray-400"> · {s.active.join(', ')}</span>}
       {s.inactive.length > 0 && <span className="text-amber-600 dark:text-amber-400"> · {s.inactive.join(', ')} inactive</span>}
     </span>
   );
 }
 
-const BOND_TONE = { 'dual-homed': 'good', 'single-homed': 'warn', mismatch: 'bad', down: 'bad' } as const;
+// unused: set up for a switch not cabled yet, never seen up (#376).
+const BOND_TONE = { 'dual-homed': 'good', 'single-homed': 'warn', mismatch: 'bad', down: 'bad', unused: 'muted' } as const;
 
 function PairCard({ pair }: { pair: MlagPairView }) {
   const { a, b } = pair;
@@ -60,7 +63,7 @@ function PairCard({ pair }: { pair: MlagPairView }) {
       <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
         <Link2 className="w-4 h-4 text-blue-500" />
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{b ? `${a.device_name} + ${b.device_name}` : a.device_name}</h3>
-        <span className="ml-auto"><Pill tone={pair.status === 'healthy' ? 'good' : pair.status === 'degraded' ? 'warn' : 'bad'}>{pair.status}</Pill></span>
+        <span className="ml-auto"><Pill tone={pair.status === 'healthy' ? 'good' : pair.status === 'warning' ? 'warn' : 'bad'}>{pair.status}</Pill></span>
       </div>
       <div className="p-5 space-y-4">
         <div className="flex flex-col md:flex-row gap-3">

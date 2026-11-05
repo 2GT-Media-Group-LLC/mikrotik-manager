@@ -65,7 +65,36 @@ describe('MLAG (#376)', () => {
   });
 
   it('lines the bonds up by mlag-id', () => {
-    const rows = bondRows(bridge(1), bridge(2), [mbond(1, 1), mbond(2, 1), mbond(1, 2), mbond(2, 5, { running: false })]);
+    const rows = bondRows(bridge(1), bridge(2), [mbond(1, 1), mbond(2, 1), mbond(1, 2), mbond(2, 5, { running: false, last_running_at: '2026-11-01T00:00:00Z' })]);
     expect(rows.map((r) => [r.mlagId, r.status])).toEqual([[1, 'dual-homed'], [2, 'single-homed'], [5, 'down']]);
+  });
+
+  it('a bond down on both peers that was never up is unused, not down', () => {
+    const spare = { running: false, active_ports: null, inactive_ports: 'sfp-sfpplus11', partner_sys_id: null };
+    const bonds = [peerLink(1), peerLink(2), mbond(1, 11, spare), mbond(2, 11, spare)];
+    const [pair] = buildPairs([bridge(1), bridge(2)], bonds, links, none, NOW);
+    expect(pair.bonds[0].status).toBe('unused');
+    expect(pair.findings).toEqual([]);
+    expect(pair.status).toBe('healthy');
+    // One that was up and went down stays down, and says so.
+    const was = [peerLink(1), peerLink(2), mbond(1, 11, { ...spare, last_running_at: '2026-11-04T00:00:00Z' }), mbond(2, 11, spare)];
+    const [p2] = buildPairs([bridge(1), bridge(2)], was, links, none, NOW);
+    expect(p2.bonds[0].status).toBe('down');
+    expect(p2.findings).toEqual([expect.objectContaining({ code: 'bond-down', severity: 'warning', text: 'mlag-id 11 is down on both peers.' })]);
+    expect(p2.status).toBe('warning');
+  });
+
+  it('puts the primary on the left whichever was added first, else orders by name', () => {
+    const wsw = (id: number, name: string, role: string) => bridge(id, { device_name: name, mlag_role: role });
+    const l = [{ from_device_id: 3, from_interface: 'sfp-sfpplus15', to_device_id: 4 }];
+    const pairs = pairMlag([wsw(3, 'WSW02', 'secondary'), wsw(4, 'WSW01', 'primary')], [peerLink(3), peerLink(4)], l);
+    expect(pairs.map(([a, b]) => [a.device_name, b?.device_name])).toEqual([['WSW01', 'WSW02']]);
+    const unknown = pairMlag([wsw(3, 'WSW02', ''), wsw(4, 'WSW01', '')], [peerLink(3), peerLink(4)], l);
+    expect(unknown.map(([a, b]) => [a.device_name, b?.device_name])).toEqual([['WSW01', 'WSW02']]);
+  });
+
+  it('a pair with only warnings is a warning, not degraded', () => {
+    const [pair] = buildPairs([bridge(1, { mlag_heartbeat: '2s' }), bridge(2)], [peerLink(1), peerLink(2)], links, none, NOW);
+    expect(pair.status).toBe('warning');
   });
 });

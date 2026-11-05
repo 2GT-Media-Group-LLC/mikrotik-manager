@@ -2894,15 +2894,15 @@ export interface MlagBondView {
   device_id: number; bond: string; is_peer_link: boolean; slaves: string | null; running: boolean | null;
   active_ports: string | null; inactive_ports: string | null; partner_sys_id: string | null;
 }
-export interface MlagBondSide { bond: string; running: boolean; active: string[]; inactive: string[]; partner: string | null; partnerName: string | null }
+export interface MlagBondSide { bond: string; running: boolean; active: string[]; inactive: string[]; partner: string | null; partnerName: string | null; everUp: boolean }
 export interface MlagPairView {
   a: MlagBridgeView;
   b: MlagBridgeView | null;
   peerLinkA: MlagBondView | null;
   peerLinkB: MlagBondView | null;
-  bonds: { mlagId: number; a: MlagBondSide | null; b: MlagBondSide | null; status: 'dual-homed' | 'single-homed' | 'mismatch' | 'down' }[];
+  bonds: { mlagId: number; a: MlagBondSide | null; b: MlagBondSide | null; status: 'dual-homed' | 'single-homed' | 'mismatch' | 'down' | 'unused' }[];
   findings: { severity: 'critical' | 'warning'; code: string; text: string }[];
-  status: 'healthy' | 'degraded' | 'critical';
+  status: 'healthy' | 'warning' | 'critical';
 }
 export const mlagApi = {
   pairs: () => api.get<MlagPairView[]>('/mlag'),

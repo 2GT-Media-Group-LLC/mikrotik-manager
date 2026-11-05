@@ -34,6 +34,8 @@ export interface MlagBond {
   partner_sys_id: string | null;
   /** The managed device the LACP partner is, when it's one. */
   partner_device_name?: string | null;
+  /** When the bond was last seen running; null if never, since the manager started recording it. */
+  last_running_at?: string | Date | null;
 }
 
 export interface PeerLink { from_device_id: number; from_interface: string | null; to_device_id: number | null }
@@ -43,12 +45,13 @@ export interface MlagEvents { heartbeatHour: number; fdbFailHour: number; peerLi
 export type MlagSeverity = 'critical' | 'warning';
 export interface MlagFinding { severity: MlagSeverity; code: string; text: string }
 
-export interface BondSide { bond: string; running: boolean; active: string[]; inactive: string[]; partner: string | null; partnerName: string | null }
+export interface BondSide { bond: string; running: boolean; active: string[]; inactive: string[]; partner: string | null; partnerName: string | null; everUp: boolean }
 export interface MlagBondRow {
   mlagId: number;
   a: BondSide | null;
   b: BondSide | null;
-  status: 'dual-homed' | 'single-homed' | 'mismatch' | 'down';
+  /** unused: down on both peers and never seen up (set up for a switch not cabled yet). */
+  status: 'dual-homed' | 'single-homed' | 'mismatch' | 'down' | 'unused';
 }
 
 export interface MlagPair {
@@ -59,7 +62,8 @@ export interface MlagPair {
   peerLinkB: MlagBond | null;
   bonds: MlagBondRow[];
   findings: MlagFinding[];
-  status: 'healthy' | 'degraded' | 'critical';
+  /** critical: a critical finding; warning: only warnings (#376). */
+  status: 'healthy' | 'warning' | 'critical';
 }
 
 const list = (v: string | null | undefined) => (v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
@@ -90,7 +94,11 @@ export function pairMlag(bridges: MlagBridge[], bonds: MlagBond[], links: PeerLi
     if (peer && done.has(peer.device_id)) peer = null;
     done.add(br.device_id);
     if (peer) done.add(peer.device_id);
-    out.push([br, peer]);
+    // Every pair reads the same way round: the primary on the left, else by name.
+    const swap = !!peer && (
+      (peer.mlag_role === 'primary' && br.mlag_role !== 'primary')
+      || ((peer.mlag_role === 'primary') === (br.mlag_role === 'primary') && peer.device_name.localeCompare(br.device_name) < 0));
+    out.push(swap ? [peer!, br] : [br, peer]);
   }
   return out;
 }
@@ -98,6 +106,7 @@ export function pairMlag(bridges: MlagBridge[], bonds: MlagBond[], links: PeerLi
 const side = (b: MlagBond | undefined): BondSide | null => b ? {
   bond: b.bond, running: !!b.running, active: list(b.active_ports), inactive: list(b.inactive_ports),
   partner: b.partner_sys_id, partnerName: b.partner_device_name ?? null,
+  everUp: !!b.running || !!b.last_running_at,
 } : null;
 
 /** The MLAG bonds of a pair, side by side by mlag-id. */
@@ -111,7 +120,7 @@ export function bondRows(a: MlagBridge, b: MlagBridge | null, bonds: MlagBond[])
     const upB = !!sb?.running;
     const status: MlagBondRow['status'] = upA && upB
       ? (sa!.partner && sb!.partner && sa!.partner !== sb!.partner ? 'mismatch' : 'dual-homed')
-      : upA || upB ? 'single-homed' : 'down';
+      : upA || upB ? 'single-homed' : sa?.everUp || sb?.everUp ? 'down' : 'unused';
     return { mlagId: id, a: sa, b: sb, status };
   });
 }
@@ -161,6 +170,9 @@ export function mlagFindings(a: MlagBridge, b: MlagBridge | null, bonds: MlagBon
       const downSide = row.a?.running ? row.b : row.a;
       f.push({ severity: 'warning', code: 'single-homed', text: `mlag-id ${row.mlagId}${name(row.a ?? row.b)} is up on ${up.device_name} only${downSide ? ` (${downSide.bond} is down on the other)` : ', and isn’t set up on the other'}.` });
     }
+    if (row.status === 'down') {
+      f.push({ severity: 'warning', code: 'bond-down', text: `mlag-id ${row.mlagId}${name(row.a ?? row.b)} is down on ${b ? 'both peers' : a.device_name}.` });
+    }
     if (row.status === 'mismatch') {
       f.push({ severity: 'critical', code: 'partner', text: `mlag-id ${row.mlagId}: the two peers see different LACP partners (${row.a!.partner} and ${row.b!.partner}), so it's cabled to two devices.` });
     }
@@ -206,7 +218,7 @@ export function buildPairs(bridges: MlagBridge[], bonds: MlagBond[], links: Peer
       peerLinkB: b ? bonds.find((x) => x.device_id === b.device_id && x.is_peer_link) ?? null : null,
       bonds: bondRows(a, b, bonds),
       findings,
-      status: findings.some((x) => x.severity === 'critical') ? 'critical' : findings.length ? 'degraded' : 'healthy',
+      status: findings.some((x) => x.severity === 'critical') ? 'critical' : findings.length ? 'warning' : 'healthy',
     };
   });
 }

@@ -130,7 +130,13 @@ that match the filters.
 in view has a bridge with an MLAG peer port. For each pair: both peers' state, role, priority and
 settings, the peer link and how many of its members are up, and the MLAG bonds side by side by
 `mlag-id`, with the downstream device each one's LACP partner is. The two peers are found from
-neighbour discovery on the peer link. It's read with the slow poll, and only on devices with MLAG.
+neighbour discovery on the peer link, and the primary is shown on the left. It's read with the slow
+poll, and only on devices with MLAG.
+
+A pair is **critical** when it has a critical finding, **warning** when it has only warnings, and
+**healthy** otherwise. A bond down on both peers that has never been seen up, for example one set up
+for a switch that isn't cabled yet, shows as grey **unused** and isn't a problem. A bond that has
+been up and is now down on both peers stays red, with a warning.
 
 It checks, worst first:
 
@@ -141,9 +147,10 @@ It checks, worst first:
 | The peer link is down / some of its members aren't active | critical / warning |
 | One `mlag-id` with different LACP partners on the two peers (cabled to two devices) | critical |
 | An `mlag-id` up on one peer only (single-homed) | warning |
+| An `mlag-id` that was up, now down on both peers | warning |
 | A VLAN on an MLAG bond that isn't tagged on the peer link, VLAN 1 included. Hosts in it can't sync between the peers: the "peer failed to sync" storm | warning |
 | `mlag-heartbeat`, `mlag-init-delay`, `mlag-lacp-fallback` or the RouterOS version differ | warning |
-| State or role changed in the last 24 hours | warning |
+| State or role changed in the last 24 hours (the first value the manager reads doesn't count) | warning |
 | Heartbeat timeouts in the last hour (critical over 30), host sync failures in the last hour, peer link down in the last 24 hours, from the devices' logs | warning |
 
 The **MLAG degraded** alert ([Alerting](alerting.md)) reports critical findings. It's on by

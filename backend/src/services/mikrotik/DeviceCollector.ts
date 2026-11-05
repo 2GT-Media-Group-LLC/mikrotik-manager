@@ -2100,12 +2100,14 @@ export class DeviceCollector {
           const mlagId = Number(b['mlag-id']);
           seen.push(b['name']);
           await query(
-            `INSERT INTO mlag_bonds (device_id, bond, bridge, mlag_id, is_peer_link, slaves, running, active_ports, inactive_ports, partner_sys_id, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+            `INSERT INTO mlag_bonds (device_id, bond, bridge, mlag_id, is_peer_link, slaves, running, active_ports, inactive_ports, partner_sys_id,
+                                     last_running_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $7::boolean THEN NOW() END,NOW())
              ON CONFLICT (device_id, bond) DO UPDATE SET bridge = EXCLUDED.bridge, mlag_id = EXCLUDED.mlag_id,
                is_peer_link = EXCLUDED.is_peer_link, slaves = EXCLUDED.slaves, running = EXCLUDED.running,
                active_ports = EXCLUDED.active_ports, inactive_ports = EXCLUDED.inactive_ports,
-               partner_sys_id = EXCLUDED.partner_sys_id, updated_at = NOW()`,
+               partner_sys_id = EXCLUDED.partner_sys_id,
+               last_running_at = CASE WHEN EXCLUDED.running THEN NOW() ELSE mlag_bonds.last_running_at END, updated_at = NOW()`,
             [this.device.id, b['name'], br['name'], Number.isInteger(mlagId) ? mlagId : null, b['name'] === peerPort,
              b['slaves'] || null, b['running'] === 'true',
              mon['active-ports'] || null, mon['inactive-ports'] || null,
@@ -2117,10 +2119,12 @@ export class DeviceCollector {
           const running = iface?.['running'] === 'true';
           seen.push(peerPort);
           await query(
-            `INSERT INTO mlag_bonds (device_id, bond, bridge, mlag_id, is_peer_link, slaves, running, active_ports, inactive_ports, partner_sys_id, updated_at)
-             VALUES ($1,$2,$3,NULL,TRUE,$2,$4,$5,$6,NULL,NOW())
+            `INSERT INTO mlag_bonds (device_id, bond, bridge, mlag_id, is_peer_link, slaves, running, active_ports, inactive_ports, partner_sys_id,
+                                     last_running_at, updated_at)
+             VALUES ($1,$2,$3,NULL,TRUE,$2,$4,$5,$6,NULL,CASE WHEN $4::boolean THEN NOW() END,NOW())
              ON CONFLICT (device_id, bond) DO UPDATE SET bridge = EXCLUDED.bridge, is_peer_link = TRUE, slaves = EXCLUDED.slaves,
-               running = EXCLUDED.running, active_ports = EXCLUDED.active_ports, inactive_ports = EXCLUDED.inactive_ports, updated_at = NOW()`,
+               running = EXCLUDED.running, active_ports = EXCLUDED.active_ports, inactive_ports = EXCLUDED.inactive_ports,
+               last_running_at = CASE WHEN EXCLUDED.running THEN NOW() ELSE mlag_bonds.last_running_at END, updated_at = NOW()`,
             [this.device.id, peerPort, br['name'], running, running ? peerPort : null, running ? null : peerPort]);
         }
         if (vlans !== null) {
@@ -2222,8 +2226,11 @@ export class DeviceCollector {
         await query(
           `UPDATE device_bridges SET
              mlag_peer_port = $3, mlag_priority = $4, mlag_heartbeat = $5, mlag_init_delay = $6, mlag_lacp_fallback = $7,
-             mlag_state_changed_at = CASE WHEN mlag_state IS DISTINCT FROM $8 OR mlag_role IS DISTINCT FROM $9
-                                          THEN NOW() ELSE mlag_state_changed_at END,
+             -- The first value read isn't a change (aziz, #376: every switch "changed" on its first poll).
+             mlag_state_changed_at = CASE
+               WHEN mlag_state IS NULL AND mlag_role IS NULL THEN mlag_state_changed_at
+               WHEN mlag_state IS DISTINCT FROM $8 OR mlag_role IS DISTINCT FROM $9 THEN NOW()
+               ELSE mlag_state_changed_at END,
              mlag_state = $8, mlag_role = $9
            WHERE device_id = $1 AND bridge_name = $2`,
           [this.device.id, name, peerPort,
