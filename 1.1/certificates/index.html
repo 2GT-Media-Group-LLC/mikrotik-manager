@@ -1080,6 +1080,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#reverse-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reverse proxy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reverse proxy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#port-443-and-webfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Port 443 and WebFig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#certificates-for-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Certificates for rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1667,6 +1717,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#reverse-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reverse proxy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reverse proxy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#port-443-and-webfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Port 443 and WebFig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#certificates-for-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Certificates for rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1688,7 +1788,9 @@
 
 
 <h1 id="device-certificates">Device certificates<a class="headerlink" href="#device-certificates" title="Permanent link">&para;</a></h1>
-<p><strong>Operations → Certificates</strong> (fleet admins only) gives devices certificates from a
+<p><strong>Operations → Certificates</strong> (fleet admins only) has two tabs: <strong>PKI</strong>, described first, and
+<a href="#reverse-proxy"><strong>Reverse proxy</strong></a>.</p>
+<p>The <strong>PKI</strong> tab gives devices certificates from a
 certificate authority (CA) of your own, instead of the self-signed certificates RouterOS and
 the manager make. Then the manager, your browser, scripts and other tools can all check a
 device's certificate properly (#200).</p>
@@ -1823,6 +1925,75 @@ certificate on the device.</p>
 <li><strong>Scripts:</strong> point the client at the file, for example <code>curl --cacert mikrotik-manager-ca.crt</code>,
   or <code>ssl_context.load_verify_locations('mikrotik-manager-ca.crt')</code> in Python.</li>
 </ul>
+<h2 id="reverse-proxy">Reverse proxy<a class="headerlink" href="#reverse-proxy" title="Permanent link">&para;</a></h2>
+<p>The <strong>Reverse proxy</strong> tab manages RouterOS's reverse proxy (#358). A router answers HTTPS for a host
+name, such as <code>nas.example.com</code>, and passes the request to a web server behind it over plain HTTP.
+Several servers can then share the router's address on port 443 without a NAT rule each. It needs
+RouterOS 7.22 or later, and isn't available on SMIPS devices (hAP lite, hAP mini). Point each host
+name's DNS at the router.</p>
+<p>The tab lists every device in view that has rules, read with the slow poll. For each rule it shows
+the web server, the certificate it serves and when that expires. A certificate the manager's CA
+issued is marked <strong>CA, renews</strong>. Below come the devices that can use the reverse proxy, with
+<strong>Add rule</strong>, and those that can't, and why.</p>
+<h3 id="rules">Rules<a class="headerlink" href="#rules" title="Permanent link">&para;</a></h3>
+<p>A rule has:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Host name</td>
+<td>The name browsers ask for, matched exactly: RouterOS doesn't match wildcards, so add a rule per name. One enabled rule per name</td>
+</tr>
+<tr>
+<td>Web server address and port</td>
+<td>Where requests go. The router connects over plain HTTP, even to port 443</td>
+</tr>
+<tr>
+<td>Certificate</td>
+<td>What the router presents for the name. The form lists the device's certificates that name it first</td>
+</tr>
+<tr>
+<td>VRF</td>
+<td>Shown when the device has more than one</td>
+</tr>
+</tbody>
+</table>
+<p>Rules are written under <a href="../change-guard/">Change Guard</a>, and <strong>Review changes</strong> shows the commands
+first. Rules RouterOS makes for container apps are shown but not edited: change those in the app.</p>
+<h3 id="port-443-and-webfig">Port 443 and WebFig<a class="headerlink" href="#port-443-and-webfig" title="Permanent link">&para;</a></h3>
+<p>WebFig over HTTPS (<code>www-ssl</code>) also uses port 443 by default. The reverse proxy only listens once it
+has an enabled rule, but then one of the two can't. When a rule would cause that, the form asks
+which to move and to which port:</p>
+<ul>
+<li><strong>Move WebFig HTTPS</strong>, to 8443 for example. Proxied addresses stay plain <code>https://name/</code>, and the
+  manager's <strong>Open</strong> button follows WebFig to its new port.</li>
+<li><strong>Move the reverse proxy.</strong> WebFig keeps 443, and proxied addresses need the port
+  (<code>https://name:8443/</code>).</li>
+</ul>
+<p><strong>Ports</strong> on a device's card moves either one at any time, for example WebFig back to 443 after the
+last rule is gone. A port another enabled service uses is refused.</p>
+<h3 id="certificates-for-rules">Certificates for rules<a class="headerlink" href="#certificates-for-rules" title="Permanent link">&para;</a></h3>
+<p>Each rule's certificate is one of:</p>
+<ul>
+<li><strong>A certificate already on the device</strong>, with its private key. It must name the host, directly or
+  with a wildcard such as <code>*.example.com</code>, or browsers refuse it, so the form won't save one that
+  doesn't.</li>
+<li><strong>One issued by the manager's CA</strong> (fleet admins, once the CA is set up on the PKI tab). The
+  manager issues a certificate for the host name and installs it with the CA certificate. Every
+  rule for that name then serves it. It's renewed on the CA's settings (<strong>Renew this many days before expiry</strong> and
+  <strong>Renew automatically</strong>), like device certificates, and a failed renewal raises the same alert.
+  <strong>Renew now</strong> and <strong>Remove</strong> are on the device's card. Remove refuses while a rule still uses
+  the certificate. Browsers trust it once the CA certificate is installed on them
+  (<a href="#trusting-the-ca">Trusting the CA</a>).</li>
+<li><strong>The reverse-proxy service's certificate</strong>, set under IP Services. With none there either,
+  HTTPS for the name fails, and the tab says so.</li>
+</ul>
+<p>Let's Encrypt (ACME) isn't offered yet.</p>
 
 
 

@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.23
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta22" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1732,6 +1743,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.23
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta22" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1996,6 +2018,16 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta23">1.1.0-beta.23<a class="headerlink" href="#110-beta23" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Reverse proxy</strong>, a new tab on <strong>Operations → Certificates</strong> (now <strong>PKI</strong> and <strong>Reverse proxy</strong>),
+  for <a href="https://github.com/ronchan44">@ronchan44</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/358">#358</a>): RouterOS's reverse
+  proxy (7.22 and later) across the fleet. Add, edit and remove host-name rules that pass HTTPS to
+  web servers behind a router, with a certificate from the device or one the manager's CA issues
+  and renews. When WebFig's HTTPS would clash with the proxy on port 443, you choose which moves
+  (<a href="../certificates/#reverse-proxy">Reverse proxy</a>).</li>
+</ul>
 <h2 id="110-beta22">1.1.0-beta.22<a class="headerlink" href="#110-beta22" title="Permanent link">&para;</a></h2>
 <p>The fix of <a href="#106">1.0.6</a>: Change Guard expands interface lists such as <code>tagged=all</code> in a bridge's
 VLAN table, so editing one port's VLANs no longer warns that a different port, the one management
