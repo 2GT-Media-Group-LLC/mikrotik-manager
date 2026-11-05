@@ -149,6 +149,71 @@ It checks, worst first:
 The **MLAG degraded** alert ([Alerting](alerting.md)) reports critical findings. It's on by
 default, and does nothing on a fleet without MLAG.
 
+## Netinstall
+
+**Network Services → Netinstall** reinstalls RouterOS on a device from a router running
+MikroTik's netinstall package (#310), instead of from a PC with the Netinstall tool. The package
+needs RouterOS 7.24 or later, and isn't made for SMIPS devices. The device being installed must be
+on the same layer 2 segment as that router, and etherboot to it. **An install reformats that
+device**: what's kept depends on the entry (below).
+
+The page lists the devices in view in three groups:
+
+- **Netinstall servers**: devices with the package installed. Each one is read live: its entries,
+  the devices that have etherbooted to it, and its cache.
+- **Can run Netinstall**: **Install package** installs it. The device reboots to do it, and
+  shows as a server once it's back and polled. Installing the package changes nothing else:
+  the device doesn't answer etherboot until an entry is added. **Remove package** on a server
+  takes it off again, also with a reboot. Either is refused while another package change is
+  waiting on the device, or when its flash is too full. When the device's last update check
+  found a newer RouterOS, RouterOS may install that too while it applies the change (a test
+  switch went from 7.25 to 7.25.1 this way), so the manager asks first. Tick **Also upgrade
+  RouterOS** to go ahead, or upgrade it from [Firmware](firmware.md) first.
+- **Can't run Netinstall**: older than 7.24, SMIPS, or not polled yet.
+
+### Entries
+
+An entry makes the server answer etherboot on one interface. **Every entry has to name the MAC
+address of the device it installs, or have Wait on**, so each install is started from this page.
+Without either, any device on that segment that etherboots would be reformatted, so the manager
+refuses to save or enable one, and flags one made outside it in red. A new entry has Wait on and
+FlashFig off.
+
+| Setting | What it does |
+|---|---|
+| MAC address | Install only this device. RouterOS can't clear it later: delete the entry and add a new one |
+| Address range | The addresses handed out while installing, at most 256 |
+| RouterOS version | Empty installs the latest in the server's update channel |
+| Extra packages | Installed with RouterOS, which is always installed |
+| After installing | Reboot, shut down, or do nothing |
+| Keep the old configuration | Puts the device's configuration and users back after the install (files and containers aren't kept). Off with **Apply the default configuration** for a clean device |
+| Install each device only once | Ignore a device again after it's been installed, until the server restarts |
+| Wait | Hold each device that etherboots until its install is started here |
+| Answer etherboot / FlashFig | What the entry responds to |
+
+Entries are written under [Change Guard](change-guard.md), and **Review changes** shows the
+commands first. Script and mode files aren't offered yet.
+
+### Installing a device
+
+A device that etherboots to a server is listed under **Devices seen**, with its model,
+architecture and progress. The list refreshes every five seconds while it has devices in it.
+When the MAC address is one a managed device has, the device is named.
+**Reinstall…** starts the install. You can choose a version and packages, and it asks you to
+type the device's MAC address back first.
+
+### Cache
+
+Install files download from MikroTik when an install needs them. **Download files** fetches them
+first, so installs don't wait and work without internet access. The header shows where the
+cache is. On a device with a `flash` folder (a CRS309, say) the root folder is RAM, so files there
+use RAM and are gone after a reboot. On other devices they use flash. **Cache folder** points
+it at a disk instead, a USB drive or a RAM disk (`/disk add type=tmpfs`).
+
+Flash and RAM are never filled. Before an entry is enabled, files are downloaded or an install is
+started, the manager estimates the download (about 20 MB for RouterOS, plus the extra
+packages) and refuses when it wouldn't fit. It keeps 5% of flash free, and at least 32 MB of RAM.
+
 ## Logging (syslog)
 
 Where each device sends its logs — remote actions and the rules that select which topics go to

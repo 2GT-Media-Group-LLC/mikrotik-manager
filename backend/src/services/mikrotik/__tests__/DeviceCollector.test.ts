@@ -996,3 +996,26 @@ describe('collecting MLAG', () => {
     expect(calls.find((c) => c.sql.includes('mlag_missing_vlans'))!.params[2]).toEqual([1]);
   });
 });
+
+describe('changing a package (#310)', () => {
+  const run = (applyError?: Error) => {
+    const c = new DeviceCollector({ ...testDevice, id: 9311 } as DeviceRow);
+    const execute = jest.fn(async (cmd: string) => {
+      if (cmd === '/system/package/apply-changes' && applyError) throw applyError;
+      return [];
+    });
+    (c as unknown as { client: { execute: typeof execute } }).client = { execute };
+    return { c, execute };
+  };
+
+  it('counts the session ending as the reboot it is', async () => {
+    const { c, execute } = run(new Error('session terminated'));
+    await expect(c.changePackage('*7', true)).resolves.toBeUndefined();
+    expect(execute.mock.calls.map((x) => x[0])).toEqual(['/system/package/enable', '/system/package/apply-changes']);
+  });
+
+  it('reports a refusal', async () => {
+    const { c } = run(new RouterOSTrapError('failure: nothing to apply', '0'));
+    await expect(c.changePackage('*7', false)).rejects.toThrow('nothing to apply');
+  });
+});

@@ -8,7 +8,7 @@ import {
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
   Server, Globe, Clock, Shield, FileText, Activity, BarChart3, Ticket, ArrowUpCircle, Radio,
   LayoutGrid, TerminalSquare, KeyRound, UserCheck,
-  Route, Cable, Link2,
+  Route, Cable, Link2, HardDriveDownload,
 } from 'lucide-react';
 import clsx from 'clsx';
 import SiteSelector from './SiteSelector';
@@ -51,6 +51,7 @@ const networkServicesSubItems = [
   { to: '/network-services/routing',    icon: Route,     label: 'Routing' },
   { to: '/network-services/tunnels',    icon: Cable,     label: 'Tunnels & PPP' },
   { to: '/network-services/mlag',       icon: Link2,     label: 'MLAG' },
+  { to: '/network-services/netinstall', icon: HardDriveDownload, label: 'Netinstall' },
   { to: '/network-services/syslog',     icon: FileText,  label: 'Logging' },
   { to: '/network-services/netflow',    icon: BarChart3, label: 'NetFlow' },
   { to: '/network-services/discovery',  icon: Radio,     label: 'Discovery & SNMP' },

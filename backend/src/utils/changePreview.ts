@@ -203,6 +203,10 @@ const PREVIEWABLE: [string, RegExp][] = [
   ['POST|PUT|DELETE', /^\/api\/network-services\/dns\/static(\/[^/]+)?$/],
   ['POST|PUT|DELETE', /^\/api\/network-services\/wireguard(\/peer)?(\/[^/]+)?$/],
   ['POST|PUT|DELETE', /^\/api\/network-services\/syslog\/(action|rule)(\/[^/]+)?$/],
+  ['POST|PUT|DELETE', /^\/api\/network-services\/netinstall\/entry(\/[^/]+)?$/],
+  ['POST|DELETE', /^\/api\/network-services\/netinstall\/cache$/],
+  ['PUT', /^\/api\/network-services\/netinstall\/settings$/],
+  ['POST', /^\/api\/network-services\/netinstall\/(package|devices\/install|devices\/clear)$/],
   // Wireless
   ['POST|PUT|DELETE', /^\/api\/wireless\/\d+\/(interfaces|security-profiles)(\/[^/]+)?$/],
 ];

@@ -35,6 +35,7 @@ import NetworkServicesWireGuardPage from './pages/NetworkServicesWireGuardPage';
 import NetworkServicesRoutingPage from './pages/NetworkServicesRoutingPage';
 import NetworkServicesTunnelsPage from './pages/NetworkServicesTunnelsPage';
 import NetworkServicesMlagPage from './pages/NetworkServicesMlagPage';
+import NetworkServicesNetinstallPage from './pages/NetworkServicesNetinstallPage';
 import NetworkServicesSyslogPage from './pages/NetworkServicesSyslogPage';
 import NetworkServicesNetflowPage from './pages/NetworkServicesNetflowPage';
 import NetworkServicesDiscoveryPage from './pages/NetworkServicesDiscoveryPage';
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="network-services/routing" element={<NetworkServicesRoutingPage />} />
           <Route path="network-services/tunnels" element={<NetworkServicesTunnelsPage />} />
           <Route path="network-services/mlag" element={<NetworkServicesMlagPage />} />
+          <Route path="network-services/netinstall" element={<NetworkServicesNetinstallPage />} />
           <Route path="network-services/syslog" element={<NetworkServicesSyslogPage />} />
           <Route path="network-services/netflow" element={<NetworkServicesNetflowPage />} />
           <Route path="network-services/discovery" element={<NetworkServicesDiscoveryPage />} />

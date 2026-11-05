@@ -806,6 +806,10 @@ export class DeviceCollector {
       const installedPackages = packages
         ? [...new Set(packages.filter((p) => p['available'] !== 'true' && p['name']).map((p) => p['name'].slice(0, 40)))].sort()
         : null;
+      // Of those, the ones switched off: still on flash, not running (#310).
+      const disabledPackages = packages
+        ? [...new Set(packages.filter((p) => p['available'] !== 'true' && p['disabled'] === 'true' && p['name']).map((p) => p['name'].slice(0, 40)))].sort()
+        : null;
 
       const info = resource[0] || {};
       const rb = routerboard[0] || {};
@@ -845,6 +849,7 @@ export class DeviceCollector {
           gmt_offset = COALESCE($8, gmt_offset),
           architecture = COALESCE($9, architecture),
           installed_packages = COALESCE($10::text[], installed_packages),
+          disabled_packages = CASE WHEN $10::text[] IS NULL THEN disabled_packages ELSE $14::text[] END,
           -- The router's own name, kept even while the manager's name is
           -- locked, so the two can be compared (#253).
           ros_identity = COALESCE($11, ros_identity),
@@ -867,7 +872,7 @@ export class DeviceCollector {
         [fit(identityName, 100), fit(model, 100), fit(serial, 50), fit(firmware, 50), fit(rosVersion, 20), this.device.id,
          fit(clock[0]?.['time-zone-name'] || null, 64), fit(clock[0]?.['gmt-offset'] || null, 16),
          fit(info['architecture-name'] || null, 32), installedPackages && installedPackages.length ? installedPackages : null,
-         fit(identity[0]?.['name'] || null, 255), routerbootCurrent, fit(rbUpgrade, 50)]
+         fit(identity[0]?.['name'] || null, 255), routerbootCurrent, fit(rbUpgrade, 50), disabledPackages ?? []]
       );
     } catch (err) {
       console.error(`[${this.device.name}] Failed to collect system info:`, err);
@@ -5927,6 +5932,105 @@ export class DeviceCollector {
   /** Starts in the background; the caller checks the file actually lands. */
   async downloadLocalUpdate(id: string): Promise<void> {
     await this.client.execute('/system/package/local-update/download', { numbers: id }, [], { timeoutMs: 120_000 });
+  }
+
+  // ─── Netinstall (#310) ───────────────────────────────────────────────────────
+
+  /**
+   * Everything the Netinstall page shows for one device, read in one batch:
+   * the package, server entries, cache, devices it sees, settings, and what
+   * says where the cache is stored. Menus are empty, not errors, without the package.
+   */
+  async getNetinstall(): Promise<{
+    packages: Record<string, string>[]; entries: Record<string, string>[]; cache: Record<string, string>[];
+    devices: Record<string, string>[]; settings: Record<string, string>; files: Record<string, string>[];
+    disks: Record<string, string>[]; resource: Record<string, string>; interfaces: Record<string, string>[];
+  }> {
+    const res = await this.client.executeMany([
+      { command: '/system/package/print' },
+      { command: '/tool/netinstall/print', params: { detail: '' } },
+      { command: '/tool/netinstall/cache/print', params: { detail: '' } },
+      { command: '/tool/netinstall/devices/print', params: { detail: '' } },
+      { command: '/tool/netinstall/settings/print' },
+      // Only top-level names: whether a flash folder exists.
+      { command: '/file/print', params: { '.proplist': 'name,type' } },
+      { command: '/disk/print', params: { detail: '' } },
+      { command: '/system/resource/print' },
+      { command: '/interface/print', params: { '.proplist': 'name,type,disabled' } },
+    ]);
+    const rows = (i: number) => res[i]?.rows ?? [];
+    // Without the package list there's nothing to show; the netinstall menus are missing without the package.
+    if (res[0]?.error) throw res[0].error;
+    const packages = rows(0);
+    return {
+      packages,
+      entries: rows(1), cache: rows(2), devices: rows(3), settings: rows(4)[0] ?? {},
+      files: rows(5).filter((f) => !String(f.name ?? '').includes('/')),
+      disks: rows(6), resource: rows(7)[0] ?? {}, interfaces: rows(8),
+    };
+  }
+
+  async addNetinstallEntry(params: Record<string, string>): Promise<void> {
+    await this.client.execute('/tool/netinstall/add', params);
+  }
+
+  async setNetinstallEntry(id: string, params: Record<string, string>): Promise<void> {
+    await this.client.execute('/tool/netinstall/set', { numbers: id, ...params });
+  }
+
+  async removeNetinstallEntry(id: string): Promise<void> {
+    await this.client.execute('/tool/netinstall/remove', { numbers: id });
+  }
+
+  async addNetinstallCache(params: Record<string, string>): Promise<void> {
+    await this.client.execute('/tool/netinstall/cache/add', params);
+  }
+
+  async removeNetinstallCache(id: string): Promise<void> {
+    await this.client.execute('/tool/netinstall/cache/remove', { numbers: id });
+  }
+
+  async setNetinstallCacheDirectory(dir: string): Promise<void> {
+    await this.client.execute('/tool/netinstall/settings/set', { 'cache-directory': dir });
+  }
+
+  /** Reinstall a device that's waiting. Reformats it. */
+  async startNetinstall(params: Record<string, string>): Promise<void> {
+    await this.client.execute('/tool/netinstall/devices/install', params);
+  }
+
+  async clearNetinstallDevices(): Promise<void> {
+    await this.client.execute('/tool/netinstall/devices/clear');
+  }
+
+  /**
+   * Install or remove one extra package. RouterOS 7 marks the change and
+   * `apply-changes` makes it, rebooting the device, so the session ends:
+   * RouterOS sends !fatal or just closes it, whatever the wording. Only a
+   * refusal (a !trap) means it didn't happen.
+   */
+  async changePackage(id: string, enable: boolean): Promise<void> {
+    await this.client.execute(enable ? '/system/package/enable' : '/system/package/disable', { numbers: id });
+    try {
+      await this.client.execute('/system/package/apply-changes', {}, [], { timeoutMs: 30_000 });
+    } catch (err) {
+      if (err instanceof RouterOSTrapError) throw err;
+    }
+  }
+
+  /** What the last update check found (installed and latest version), without checking again. */
+  async getUpdateVersions(): Promise<Record<string, string>> {
+    return (await this.client.execute('/system/package/update/print'))[0] ?? {};
+  }
+
+  /** Installed packages and which of them are disabled, read live. */
+  async getPackageState(): Promise<{ installed: string[]; disabled: string[] }> {
+    const rows = await this.client.execute('/system/package/print');
+    const on = rows.filter((p) => p['available'] !== 'true' && p['name']);
+    return {
+      installed: [...new Set(on.map((p) => p['name']))].sort(),
+      disabled: [...new Set(on.filter((p) => p['disabled'] === 'true').map((p) => p['name']))].sort(),
+    };
   }
 
   /** Installed packages, read live (RouterOS 7 marks the rest available=true). */

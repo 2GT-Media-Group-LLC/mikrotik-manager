@@ -2836,6 +2836,54 @@ export const tunnelsApi = {
   list: () => api.get<TunnelRowView[]>('/tunnels'),
 };
 
+/** Netinstall from RouterOS devices (#310). */
+export type NetinstallSupport = 'installed' | 'available' | 'too-old' | 'unsupported' | 'unknown';
+export interface NetinstallFleetDevice {
+  id: number; name: string; status: string; device_type: string; model: string | null;
+  ros_version: string | null; architecture: string | null; support: NetinstallSupport;
+  /** A package install or removal sent from the page, until the device shows it. */
+  package_change: 'install' | 'remove' | null;
+}
+export type RosRow = Record<string, string>;
+export interface NetinstallManaged { id: number; name: string }
+export interface NetinstallDeviceView {
+  device: { id: number; name: string; status: string; ros_version: string | null };
+  support: NetinstallSupport;
+  package: { version: string | null; size: number; installed: boolean; scheduled: string | null } | null;
+  pending: string[];
+  entries: (RosRow & { open: boolean; managed: NetinstallManaged | null })[];
+  cache: RosRow[];
+  devices: (RosRow & { managed: NetinstallManaged | null })[];
+  cache_directory: string;
+  storage: { kind: 'ram' | 'flash' | 'disk'; disk: string | null; free: number | null; total: number | null };
+  install_estimate: number;
+  space_problem: string | null;
+  server_arch: string | null;
+  interfaces: string[];
+  packages: string[];
+  disks: { name: string; type: string | null; free: number | null; size: number | null }[];
+}
+type NetinstallBody = Record<string, string | boolean>;
+const ni = (deviceId: number) => ({ params: { deviceId } });
+export const netinstallApi = {
+  fleet: () => api.get<{ min_version: string; devices: NetinstallFleetDevice[] }>('/network-services/netinstall'),
+  device: (deviceId: number) => api.get<NetinstallDeviceView>('/network-services/netinstall/device', { ...ni(deviceId), timeout: 30_000 }),
+  changePackage: (deviceId: number, action: 'install' | 'remove', allowUpgrade = false) =>
+    api.post<{ started: boolean; message: string }>('/network-services/netinstall/package',
+      { action, confirm: true, ...(allowUpgrade ? { allow_upgrade: true } : {}) }, ni(deviceId)),
+  addEntry: (deviceId: number, body: NetinstallBody) => api.post('/network-services/netinstall/entry', body, ni(deviceId)),
+  updateEntry: (deviceId: number, id: string, body: NetinstallBody) =>
+    api.put(`/network-services/netinstall/entry/${encodeURIComponent(id)}`, body, ni(deviceId)),
+  removeEntry: (deviceId: number, id: string) => api.delete(`/network-services/netinstall/entry/${encodeURIComponent(id)}`, ni(deviceId)),
+  addCache: (deviceId: number, body: NetinstallBody) => api.post('/network-services/netinstall/cache', body, ni(deviceId)),
+  // By path: cache rows are numbered by position, so an id can name another file.
+  removeCache: (deviceId: number, path: string) => api.delete('/network-services/netinstall/cache', { params: { deviceId, path } }),
+  setCacheDirectory: (deviceId: number, cache_directory: string) =>
+    api.put('/network-services/netinstall/settings', { cache_directory }, ni(deviceId)),
+  install: (deviceId: number, body: NetinstallBody) => api.post('/network-services/netinstall/devices/install', body, ni(deviceId)),
+  clearDevices: (deviceId: number) => api.post('/network-services/netinstall/devices/clear', {}, ni(deviceId)),
+};
+
 /** MLAG pairs (#376), from the slow polls. */
 export interface MlagBridgeView {
   device_id: number; device_name: string; ros_version: string | null; bridge_name: string; mlag_peer_port: string;

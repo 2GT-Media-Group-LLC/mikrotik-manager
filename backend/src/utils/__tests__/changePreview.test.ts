@@ -103,6 +103,14 @@ describe('isPreviewableRoute', () => {
     expect(isPreviewableRoute('POST', '/api/devices/7/vlan-interfaces')).toBe(true);
     expect(isPreviewableRoute('PUT', '/api/devices/7/vlan-interfaces/*1A')).toBe(true);
     expect(isPreviewableRoute('DELETE', '/api/devices/7/vlan-interfaces/*1A?name=vlan20')).toBe(true);
+    // Netinstall (#310)
+    expect(isPreviewableRoute('POST', '/api/network-services/netinstall/entry?deviceId=7')).toBe(true);
+    expect(isPreviewableRoute('PUT', '/api/network-services/netinstall/entry/*1?deviceId=7')).toBe(true);
+    expect(isPreviewableRoute('DELETE', '/api/network-services/netinstall/cache?deviceId=7&path=NetinstallCache/linux.arm')).toBe(true);
+    expect(isPreviewableRoute('PUT', '/api/network-services/netinstall/settings?deviceId=7')).toBe(true);
+    expect(isPreviewableRoute('POST', '/api/network-services/netinstall/package?deviceId=7')).toBe(true);
+    expect(isPreviewableRoute('POST', '/api/network-services/netinstall/devices/install?deviceId=7')).toBe(true);
+    expect(isPreviewableRoute('GET', '/api/network-services/netinstall/device?deviceId=7')).toBe(false);
   });
   it('refuses actions and anything outside the list', () => {
     expect(isPreviewableRoute('POST', '/api/devices/7/reboot')).toBe(false);

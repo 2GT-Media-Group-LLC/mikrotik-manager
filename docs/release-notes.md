@@ -3,6 +3,17 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.21
+
+- **Netinstall**, a new page under Network Services, for
+  [@ronchan44](https://github.com/ronchan44)
+  ([#310](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/310)): reinstall RouterOS
+  on a device from a router running the netinstall package (RouterOS 7.24 or later). Install or
+  remove the package, add server entries, watch devices etherboot and start their installs, and
+  download install files ahead of time. An entry always names the device it installs, or waits
+  for each install to be started, and the manager won't let an install's downloads fill flash or
+  RAM ([Netinstall](network-services.md#netinstall)).
+
 ## 1.1.0-beta.20
 
 - **Tunnels & PPP**, a new page under Network Services, for

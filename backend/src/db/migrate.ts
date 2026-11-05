@@ -1864,6 +1864,11 @@ CREATE TABLE IF NOT EXISTS mlag_bonds (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (device_id, bond)
 );
+
+-- Netinstall (#310): packages still on a device but disabled. installed_packages
+-- keeps listing them (the firmware mirror still needs their files), so this
+-- says which ones aren't running.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS disabled_packages TEXT[];
 `;
 
 const DEFAULT_SETTINGS = [

@@ -14,6 +14,7 @@ import { liveForDevices } from '../services/liveCache';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { getLldpStatuses, setLldpForTypes, parseDeviceTypes, LLDP_DEVICE_TYPES } from '../services/lldpApply';
+import netinstallRoutes from './netinstall';
 import { applySnmpConfig, getSnmpStatuses, getSnmpTemplates, SnmpInputError, type SnmpConfigInput, type SnmpTarget } from '../services/snmpApply';
 
 const router = Router();
@@ -36,6 +37,9 @@ router.use((req, res, next) => {
   });
   next();
 });
+
+// Netinstall (#310): its own file, behind the checks above.
+router.use('/netinstall', netinstallRoutes);
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
