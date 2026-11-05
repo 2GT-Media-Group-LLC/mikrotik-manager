@@ -3025,3 +3025,51 @@ export const deviceCertsApi = {
   remove: (id: number, forget = false) =>
     api.delete<DeviceCertResult>(`/device-certs/devices/${id}`, { params: forget ? { forget: '1' } : undefined, timeout: 180_000 }),
 };
+
+/** Reverse proxy (#358), on the Certificates page. */
+export interface ProxyRuleRow {
+  device_id: number; rule_id: string; sni: string; ip_address: string | null; port: number | null; certificate: string | null;
+  vrf: string | null; comment: string | null; disabled: boolean; dynamic: boolean;
+  effective_certificate: string | null; certificate_expires: string | null; managed: boolean;
+}
+export interface ProxyManagedCert { sni: string; cert_name: string; not_after: string; last_error: string | null }
+export interface ProxyFleetDevice {
+  id: number; name: string; status: string; device_type: string; model: string | null; ros_version: string | null; architecture: string | null;
+  support: 'supported' | 'too-old' | 'unsupported' | 'unknown';
+  service: { port: number | null; certificate: string | null; disabled: boolean; invalid: boolean; www_ssl_port: number | null; www_ssl_disabled: boolean } | null;
+  clash: boolean;
+  rules: ProxyRuleRow[];
+  managed_certs: ProxyManagedCert[];
+}
+export interface ProxyRule {
+  id: string; sni: string; ipAddress: string | null; port: number | null; certificate: string | null; vrf: string | null;
+  comment: string | null; disabled: boolean; dynamic: boolean;
+}
+export interface ProxyCertInfo { name: string; commonName?: string; subjectAltName?: string; privateKey: boolean; expired: boolean; invalidAfter?: string }
+export interface ProxyDeviceView {
+  device: { id: number; name: string; status: string };
+  rules: ProxyRule[];
+  service: { port: number | null; certificate: string | null; disabled: boolean; invalid: boolean; wwwSslPort: number | null; wwwSslDisabled: boolean };
+  clash: boolean;
+  services: { id: string; name: string; port: number | null; disabled: boolean }[];
+  certificates: ProxyCertInfo[];
+  vrfs: string[];
+  managed_certs: ProxyManagedCert[];
+  ca_ready: boolean;
+}
+export type ProxyFix = { service: 'www-ssl' | 'reverse-proxy'; port: number };
+type ProxyRuleBody = Record<string, unknown> & { fix?: ProxyFix };
+const rp = (deviceId: number, extra: Record<string, string> = {}) => ({ params: { deviceId, ...extra } });
+export const reverseProxyApi = {
+  fleet: () => api.get<{ min_version: string; devices: ProxyFleetDevice[] }>('/reverse-proxy'),
+  device: (deviceId: number) => api.get<ProxyDeviceView>('/reverse-proxy/device', { ...rp(deviceId), timeout: 30_000 }),
+  addRule: (deviceId: number, body: ProxyRuleBody) => api.post('/reverse-proxy/rule', body, rp(deviceId)),
+  updateRule: (deviceId: number, id: string, sni: string, body: ProxyRuleBody) =>
+    api.put(`/reverse-proxy/rule/${encodeURIComponent(id)}`, body, rp(deviceId, { sni })),
+  removeRule: (deviceId: number, id: string, sni: string) => api.delete(`/reverse-proxy/rule/${encodeURIComponent(id)}`, rp(deviceId, { sni })),
+  movePort: (deviceId: number, fix: ProxyFix) => api.put('/reverse-proxy/service', fix, rp(deviceId)),
+  issueCert: (deviceId: number, sni: string, days?: number) =>
+    api.post<{ ok: boolean; steps: string[]; message: string; cert_name?: string }>('/reverse-proxy/cert', { sni, ...(days ? { days } : {}) }, { ...rp(deviceId), timeout: 120_000 }),
+  removeCert: (deviceId: number, sni: string, forget = false) =>
+    api.delete<{ ok: boolean; message: string }>('/reverse-proxy/cert', rp(deviceId, { sni, ...(forget ? { forget: '1' } : {}) })),
+};

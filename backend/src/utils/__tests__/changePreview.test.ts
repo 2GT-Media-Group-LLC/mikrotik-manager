@@ -111,6 +111,12 @@ describe('isPreviewableRoute', () => {
     expect(isPreviewableRoute('POST', '/api/network-services/netinstall/package?deviceId=7')).toBe(true);
     expect(isPreviewableRoute('POST', '/api/network-services/netinstall/devices/install?deviceId=7')).toBe(true);
     expect(isPreviewableRoute('GET', '/api/network-services/netinstall/device?deviceId=7')).toBe(false);
+    // Reverse proxy (#358); certificates from the CA are a multi-step job, not previewable.
+    expect(isPreviewableRoute('POST', '/api/reverse-proxy/rule?deviceId=7')).toBe(true);
+    expect(isPreviewableRoute('PUT', '/api/reverse-proxy/rule/*1?deviceId=7&sni=nas.example.com')).toBe(true);
+    expect(isPreviewableRoute('DELETE', '/api/reverse-proxy/rule/*1?deviceId=7')).toBe(true);
+    expect(isPreviewableRoute('PUT', '/api/reverse-proxy/service?deviceId=7')).toBe(true);
+    expect(isPreviewableRoute('POST', '/api/reverse-proxy/cert?deviceId=7')).toBe(false);
   });
   it('refuses actions and anything outside the list', () => {
     expect(isPreviewableRoute('POST', '/api/devices/7/reboot')).toBe(false);

@@ -3,6 +3,16 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.23
+
+- **Reverse proxy**, a new tab on **Operations → Certificates** (now **PKI** and **Reverse proxy**),
+  for [@ronchan44](https://github.com/ronchan44)
+  ([#358](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/358)): RouterOS's reverse
+  proxy (7.22 and later) across the fleet. Add, edit and remove host-name rules that pass HTTPS to
+  web servers behind a router, with a certificate from the device or one the manager's CA issues
+  and renews. When WebFig's HTTPS would clash with the proxy on port 443, you choose which moves
+  ([Reverse proxy](certificates.md#reverse-proxy)).
+
 ## 1.1.0-beta.22
 
 The fix of [1.0.6](#106): Change Guard expands interface lists such as `tagged=all` in a bridge's

@@ -1019,3 +1019,36 @@ describe('changing a package (#310)', () => {
     await expect(c.changePackage('*7', false)).rejects.toThrow('nothing to apply');
   });
 });
+
+describe('collecting the reverse proxy (#358)', () => {
+  const run = async (replies: Array<{ rows?: Record<string, string>[]; error?: Error }>) => {
+    const c = new DeviceCollector({ ...testDevice, id: 9358 } as DeviceRow);
+    const executeMany = jest.fn(async () => replies);
+    (c as unknown as { client: { executeMany: typeof executeMany } }).client = { executeMany };
+    const q = query as jest.Mock;
+    q.mockReset();
+    q.mockResolvedValue([]);
+    await c.collectReverseProxy();
+    const calls = q.mock.calls.map(([sql, params]) => ({ sql: String(sql), params }));
+    q.mockReset();
+    return calls;
+  };
+
+  it('stores the rules and the two services sharing 443', async () => {
+    const calls = await run([
+      { rows: [{ '.id': '*1', sni: 'nas.example.com', 'ip-address': '192.168.88.10', port: '8080', certificate: 'nas', disabled: 'false' }] },
+      { rows: [{ name: 'www-ssl', port: '443', disabled: 'false' }, { name: 'reverse-proxy', port: '443', certificate: 'none', disabled: 'false' }] },
+    ]);
+    const svc = calls.find((x) => x.sql.includes('INSERT INTO reverse_proxy_service'))!;
+    expect(svc.params).toEqual([9358, 443, null, false, false, 443, false]);
+    const ins = calls.find((x) => x.sql.includes('INSERT INTO reverse_proxy_rules'))!;
+    expect(JSON.parse(ins.params[1] as string)).toEqual([{ id: '*1', sni: 'nas.example.com', ip: '192.168.88.10', port: 8080, cert: 'nas', vrf: null, comment: null, disabled: false, dynamic: false }]);
+    expect(calls.some((x) => x.sql.includes('DELETE FROM reverse_proxy_rules t'))).toBe(true);
+  });
+
+  it('clears a device without the menu', async () => {
+    const calls = await run([{ error: new RouterOSTrapError('no such command or directory (reverse-proxy)', '0') }, { rows: [] }]);
+    expect(calls.map((x) => x.sql.trim().split('\n')[0])).toEqual([
+      'DELETE FROM reverse_proxy_rules WHERE device_id = $1', 'DELETE FROM reverse_proxy_service WHERE device_id = $1']);
+  });
+});

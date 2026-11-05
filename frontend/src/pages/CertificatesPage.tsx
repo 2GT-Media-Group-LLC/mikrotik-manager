@@ -8,6 +8,8 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { deviceCertsApi, type DeviceCertRow, type DeviceCertStatus, type DeviceCertsOverview, type DeviceCertResult } from '../services/api';
 import { useIsFleetAdmin } from '../hooks/useCanWrite';
 import { docsUrl } from '../version';
+import { useSearchParams } from 'react-router-dom';
+import ReverseProxyTab from '../components/certificates/ReverseProxyTab';
 
 const errText = (e: unknown) => (e as { response?: { data?: { error?: string; message?: string } } })?.response?.data?.error
   || (e as { response?: { data?: { message?: string } } })?.response?.data?.message || (e as Error)?.message || 'That didn’t work';
@@ -389,11 +391,19 @@ function DevicesCard({ data, onChange }: { data: DeviceCertsOverview; onChange: 
 
 // ─── The page ──────────────────────────────────────────────────────────────
 
+const TABS = [
+  { key: 'pki', label: 'PKI' },
+  { key: 'reverse-proxy', label: 'Reverse proxy' },
+] as const;
+type Tab = typeof TABS[number]['key'];
+
 export default function CertificatesPage() {
   const isFleetAdmin = useIsFleetAdmin();
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = params.get('tab') === 'reverse-proxy' ? 'reverse-proxy' : 'pki';
   const { data, isLoading, error } = useQuery({
-    queryKey: ['device-certs'], queryFn: () => deviceCertsApi.overview().then((r) => r.data), enabled: isFleetAdmin,
+    queryKey: ['device-certs'], queryFn: () => deviceCertsApi.overview().then((r) => r.data), enabled: isFleetAdmin && tab === 'pki',
   });
   const refresh = () => qc.invalidateQueries({ queryKey: ['device-certs'] });
   const enrolled = data?.devices.filter((d) => d.cert_status !== 'not_issued').length ?? 0;
@@ -403,18 +413,37 @@ export default function CertificatesPage() {
       <div>
         <h1 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><ShieldCheck className="w-5 h-5" /> Certificates</h1>
         <p className="text-sm text-gray-500 dark:text-slate-400">
-          Give devices certificates from your own CA, so the manager, browsers and tools can check them properly instead of trusting
-          a self-signed certificate. Optional, device by device. <a className="text-blue-500 hover:underline" href={docsUrl('certificates/')} target="_blank" rel="noreferrer">How it works</a>
+          Your own CA for device certificates, and reverse proxy rules with their certificates.{' '}
+          <a className="text-blue-500 hover:underline" href={docsUrl(tab === 'pki' ? 'certificates/' : 'certificates/#reverse-proxy')} target="_blank" rel="noreferrer">How it works</a>
         </p>
       </div>
+      {isFleetAdmin && (
+        <div className="flex gap-1 border-b border-gray-200 dark:border-slate-700">
+          {TABS.map((t) => (
+            <button key={t.key} type="button" onClick={() => setParams(t.key === 'pki' ? {} : { tab: t.key }, { replace: true })}
+              className={clsx('px-4 py-2 text-sm font-medium border-b-2 -mb-px',
+                tab === t.key ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-slate-400')}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
       {!isFleetAdmin ? (
         <div className="card p-5 text-sm text-gray-500">Certificates are managed by fleet admins.</div>
+      ) : tab === 'reverse-proxy' ? (
+        <ReverseProxyTab />
       ) : isLoading ? (
         <div className="text-center py-8 text-gray-400">Loading…</div>
       ) : error || !data ? (
         <div className="card p-5 text-sm text-red-500">{errText(error)}</div>
       ) : !data.ca ? (
-        <SetUpCa choices={data.limits.ca_day_choices} onDone={refresh} />
+        <>
+          <p className="text-sm text-gray-500 dark:text-slate-400">
+            Give devices certificates from your own CA, so the manager, browsers and tools can check them properly instead of trusting
+            a self-signed certificate. Optional, device by device.
+          </p>
+          <SetUpCa choices={data.limits.ca_day_choices} onDone={refresh} />
+        </>
       ) : (
         <>
           <CaCard data={data} enrolled={enrolled} onChange={refresh} />

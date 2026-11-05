@@ -207,6 +207,9 @@ const PREVIEWABLE: [string, RegExp][] = [
   ['POST|DELETE', /^\/api\/network-services\/netinstall\/cache$/],
   ['PUT', /^\/api\/network-services\/netinstall\/settings$/],
   ['POST', /^\/api\/network-services\/netinstall\/(package|devices\/install|devices\/clear)$/],
+  // Reverse proxy (#358)
+  ['POST|PUT|DELETE', /^\/api\/reverse-proxy\/rule(\/[^/]+)?$/],
+  ['PUT', /^\/api\/reverse-proxy\/service$/],
   // Wireless
   ['POST|PUT|DELETE', /^\/api\/wireless\/\d+\/(interfaces|security-profiles)(\/[^/]+)?$/],
 ];

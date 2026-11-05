@@ -2,6 +2,7 @@ import { compareRosVersions } from '../../utils/rosVersion';
 import type { BgpConnectionInput } from '../../utils/bgpConnection';
 import { routingPeersFrom } from '../../utils/routingPeers';
 import { tunnelsFrom } from '../../utils/tunnels';
+import { rulesFrom, serviceFrom } from '../../utils/reverseProxy';
 import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
@@ -490,6 +491,7 @@ export class DeviceCollector {
     await this.collectWireGuardPeers();
     await this.collectRoutingPeers();
     await this.collectTunnels();
+    await this.collectReverseProxy();
     if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
@@ -721,6 +723,91 @@ export class DeviceCollector {
     }
   }
 
+  /**
+   * Reverse proxy rules and the two services on port 443 (#358), in one round
+   * trip. A device without the menu (older than 7.22, SMIPS) has nothing stored.
+   */
+  async collectReverseProxy(): Promise<void> {
+    let rules: Record<string, string>[];
+    let services: Record<string, string>[];
+    try {
+      const [r, s] = await this.client.executeMany([
+        { command: '/ip/reverse-proxy/print', params: { detail: '' } },
+        { command: '/ip/service/print', params: { detail: '' } },
+      ]);
+      if (r.error && isNoSuchCommand(r.error)) {
+        await query(`DELETE FROM reverse_proxy_rules WHERE device_id = $1`, [this.device.id]);
+        await query(`DELETE FROM reverse_proxy_service WHERE device_id = $1`, [this.device.id]);
+        return;
+      }
+      if (r.error || s.error) return;
+      rules = r.rows ?? [];
+      services = s.rows ?? [];
+    } catch {
+      return;
+    }
+    const svc = serviceFrom(services);
+    const parsed = rulesFrom(rules);
+    try {
+      await query(
+        `INSERT INTO reverse_proxy_service (device_id, port, certificate, disabled, invalid, www_ssl_port, www_ssl_disabled, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+         ON CONFLICT (device_id) DO UPDATE SET port = EXCLUDED.port, certificate = EXCLUDED.certificate, disabled = EXCLUDED.disabled,
+           invalid = EXCLUDED.invalid, www_ssl_port = EXCLUDED.www_ssl_port, www_ssl_disabled = EXCLUDED.www_ssl_disabled, updated_at = NOW()`,
+        [this.device.id, svc.port, fit(svc.certificate, 128), svc.disabled, svc.invalid, svc.wwwSslPort, svc.wwwSslDisabled]);
+      const payload = JSON.stringify(parsed.map((x) => ({
+        id: fit(x.id, 16), sni: fit(x.sni, 255), ip: fit(x.ipAddress, 64), port: x.port, cert: fit(x.certificate, 128),
+        vrf: fit(x.vrf, 64), comment: x.comment, disabled: x.disabled, dynamic: x.dynamic,
+      })));
+      await query(
+        `INSERT INTO reverse_proxy_rules (device_id, rule_id, sni, ip_address, port, certificate, vrf, comment, disabled, dynamic, updated_at)
+         SELECT $1, x.id, x.sni, x.ip, x.port, x.cert, x.vrf, x.comment, x.disabled, x.dynamic, NOW()
+           FROM jsonb_to_recordset($2::jsonb) AS x(id text, sni text, ip text, port int, cert text, vrf text, comment text, disabled boolean, dynamic boolean)
+         ON CONFLICT (device_id, rule_id) DO UPDATE SET sni = EXCLUDED.sni, ip_address = EXCLUDED.ip_address, port = EXCLUDED.port,
+           certificate = EXCLUDED.certificate, vrf = EXCLUDED.vrf, comment = EXCLUDED.comment, disabled = EXCLUDED.disabled,
+           dynamic = EXCLUDED.dynamic, updated_at = NOW()`,
+        [this.device.id, payload]);
+      await query(
+        `DELETE FROM reverse_proxy_rules t WHERE t.device_id = $1
+           AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS x(id text) WHERE x.id = t.rule_id)`,
+        [this.device.id, payload]);
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to store reverse proxy rules:`, (err as Error).message);
+    }
+  }
+
+  /** The reverse-proxy page's live read: rules, services, certificates and VRFs. */
+  async getReverseProxy(): Promise<{ rules: Record<string, string>[]; services: Record<string, string>[]; certs: Record<string, string>[]; vrfs: string[] }> {
+    const [r, s, c, v] = await this.client.executeMany([
+      { command: '/ip/reverse-proxy/print', params: { detail: '' } },
+      { command: '/ip/service/print', params: { detail: '' } },
+      { command: '/certificate/print', params: { '.proplist': '.id,name,common-name,subject-alt-name,issuer,invalid-after,private-key,expired,trusted,ca,fingerprint' } },
+      { command: '/ip/vrf/print', params: { '.proplist': 'name' } },
+    ]);
+    if (r.error) throw r.error;
+    if (s.error) throw s.error;
+    return {
+      rules: r.rows ?? [], services: s.rows ?? [], certs: c.rows ?? [],
+      vrfs: (v.rows ?? []).map((x) => x.name).filter(Boolean),
+    };
+  }
+
+  async addReverseProxyRule(params: Record<string, string>): Promise<void> {
+    await this.client.execute('/ip/reverse-proxy/add', params);
+  }
+
+  async setReverseProxyRule(id: string, params: Record<string, string>): Promise<void> {
+    await this.client.execute('/ip/reverse-proxy/set', { numbers: id, ...params });
+  }
+
+  async removeReverseProxyRule(id: string): Promise<void> {
+    await this.client.execute('/ip/reverse-proxy/remove', { numbers: id });
+  }
+
+  async setServicePort(id: string, port: number): Promise<void> {
+    await this.client.execute('/ip/service/set', { numbers: id, port: String(port) });
+  }
+
   // ─── Log poll (every 60s) ─────────────────────────────────────────────────
 
   /** Collect new log lines; returns the ones actually stored, for log alerts. */
@@ -772,6 +859,7 @@ export class DeviceCollector {
     await this.collectWireGuardPeers();
     await this.collectRoutingPeers();
     await this.collectTunnels();
+    await this.collectReverseProxy();
     // Wireless data belongs in a full resync too — without this, a manual sync
     // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
     // the UI could only catch up on the 5-minute slow poll. A device without a

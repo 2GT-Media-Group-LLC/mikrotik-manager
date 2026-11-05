@@ -1869,6 +1869,52 @@ CREATE TABLE IF NOT EXISTS mlag_bonds (
 -- keeps listing them (the firmware mirror still needs their files), so this
 -- says which ones aren't running.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS disabled_packages TEXT[];
+
+-- Reverse proxy (#358): each device's /ip/reverse-proxy rules and the two
+-- services that share port 443, from the slow poll.
+CREATE TABLE IF NOT EXISTS reverse_proxy_rules (
+  device_id   INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  rule_id     VARCHAR(16) NOT NULL,
+  sni         VARCHAR(255) NOT NULL,
+  ip_address  VARCHAR(64),
+  port        INTEGER,
+  certificate VARCHAR(128),
+  vrf         VARCHAR(64),
+  comment     TEXT,
+  disabled    BOOLEAN NOT NULL DEFAULT FALSE,
+  dynamic     BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (device_id, rule_id)
+);
+CREATE TABLE IF NOT EXISTS reverse_proxy_service (
+  device_id        INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  port             INTEGER,
+  certificate      VARCHAR(128),
+  disabled         BOOLEAN NOT NULL DEFAULT TRUE,
+  invalid          BOOLEAN NOT NULL DEFAULT FALSE,
+  www_ssl_port     INTEGER,
+  www_ssl_disabled BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- Certificates the manager's CA issued for reverse-proxy host names, renewed
+-- like device certificates.
+CREATE TABLE IF NOT EXISTS proxy_certs (
+  device_id       INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  sni             VARCHAR(255) NOT NULL,
+  cert_name       VARCHAR(128) NOT NULL,
+  ca_cert_name    VARCHAR(128),
+  serial          VARCHAR(64),
+  fingerprint     VARCHAR(160),
+  ca_fingerprint  VARCHAR(160),
+  days            INTEGER NOT NULL,
+  not_before      TIMESTAMPTZ,
+  not_after       TIMESTAMPTZ,
+  last_error      TEXT,
+  last_attempt_at TIMESTAMPTZ,
+  issued_at       TIMESTAMPTZ,
+  renewed_at      TIMESTAMPTZ,
+  PRIMARY KEY (device_id, sni)
+);
 `;
 
 const DEFAULT_SETTINGS = [

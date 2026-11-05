@@ -1,6 +1,9 @@
 # Device certificates
 
-**Operations → Certificates** (fleet admins only) gives devices certificates from a
+**Operations → Certificates** (fleet admins only) has two tabs: **PKI**, described first, and
+[**Reverse proxy**](#reverse-proxy).
+
+The **PKI** tab gives devices certificates from a
 certificate authority (CA) of your own, instead of the self-signed certificates RouterOS and
 the manager make. Then the manager, your browser, scripts and other tools can all check a
 device's certificate properly (#200).
@@ -132,3 +135,63 @@ Install `mikrotik-manager-ca.crt` as a trusted root:
 - **Firefox** keeps its own store: Settings → Privacy & Security → Certificates → Import.
 - **Scripts:** point the client at the file, for example `curl --cacert mikrotik-manager-ca.crt`,
   or `ssl_context.load_verify_locations('mikrotik-manager-ca.crt')` in Python.
+
+## Reverse proxy
+
+The **Reverse proxy** tab manages RouterOS's reverse proxy (#358). A router answers HTTPS for a host
+name, such as `nas.example.com`, and passes the request to a web server behind it over plain HTTP.
+Several servers can then share the router's address on port 443 without a NAT rule each. It needs
+RouterOS 7.22 or later, and isn't available on SMIPS devices (hAP lite, hAP mini). Point each host
+name's DNS at the router.
+
+The tab lists every device in view that has rules, read with the slow poll. For each rule it shows
+the web server, the certificate it serves and when that expires. A certificate the manager's CA
+issued is marked **CA, renews**. Below come the devices that can use the reverse proxy, with
+**Add rule**, and those that can't, and why.
+
+### Rules
+
+A rule has:
+
+| Setting | |
+|---|---|
+| Host name | The name browsers ask for, matched exactly: RouterOS doesn't match wildcards, so add a rule per name. One enabled rule per name |
+| Web server address and port | Where requests go. The router connects over plain HTTP, even to port 443 |
+| Certificate | What the router presents for the name. The form lists the device's certificates that name it first |
+| VRF | Shown when the device has more than one |
+
+Rules are written under [Change Guard](change-guard.md), and **Review changes** shows the commands
+first. Rules RouterOS makes for container apps are shown but not edited: change those in the app.
+
+### Port 443 and WebFig
+
+WebFig over HTTPS (`www-ssl`) also uses port 443 by default. The reverse proxy only listens once it
+has an enabled rule, but then one of the two can't. When a rule would cause that, the form asks
+which to move and to which port:
+
+- **Move WebFig HTTPS**, to 8443 for example. Proxied addresses stay plain `https://name/`, and the
+  manager's **Open** button follows WebFig to its new port.
+- **Move the reverse proxy.** WebFig keeps 443, and proxied addresses need the port
+  (`https://name:8443/`).
+
+**Ports** on a device's card moves either one at any time, for example WebFig back to 443 after the
+last rule is gone. A port another enabled service uses is refused.
+
+### Certificates for rules
+
+Each rule's certificate is one of:
+
+- **A certificate already on the device**, with its private key. It must name the host, directly or
+  with a wildcard such as `*.example.com`, or browsers refuse it, so the form won't save one that
+  doesn't.
+- **One issued by the manager's CA** (fleet admins, once the CA is set up on the PKI tab). The
+  manager issues a certificate for the host name and installs it with the CA certificate. Every
+  rule for that name then serves it. It's renewed on the CA's settings (**Renew this many days before expiry** and
+  **Renew automatically**), like device certificates, and a failed renewal raises the same alert.
+  **Renew now** and **Remove** are on the device's card. Remove refuses while a rule still uses
+  the certificate. Browsers trust it once the CA certificate is installed on them
+  ([Trusting the CA](#trusting-the-ca)).
+- **The reverse-proxy service's certificate**, set under IP Services. With none there either,
+  HTTPS for the name fails, and the tab says so.
+
+Let's Encrypt (ACME) isn't offered yet.

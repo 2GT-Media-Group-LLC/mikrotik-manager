@@ -49,7 +49,7 @@ export const MAX_DEVICE_DAYS = 3650;
 export const CA_DAY_CHOICES = [1825, 3650, 7300] as const;
 
 const isTrue = (v: string | undefined) => v === 'true' || v === 'yes';
-const normFp = (v: string | undefined) => (v ?? '').replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+export const normFp = (v: string | undefined) => (v ?? '').replace(/[^0-9a-fA-F]/g, '').toLowerCase();
 
 export interface CaRow {
   cert_pem: string;
@@ -117,7 +117,7 @@ export async function loadCa(): Promise<CaRow | null> {
   return queryOne<CaRow>(`SELECT * FROM device_ca WHERE id = 1`);
 }
 
-async function caMaterial(): Promise<{ row: CaRow; material: CaMaterial; info: CaInfo }> {
+export async function caMaterial(): Promise<{ row: CaRow; material: CaMaterial; info: CaInfo }> {
   const row = await loadCa();
   if (!row) throw new PkiError('Set up a certificate authority first (Operations → Certificates).');
   return { row, material: { certPem: row.cert_pem, keyPem: decrypt(row.key_encrypted) }, info: caInfo(row.cert_pem) };
@@ -273,7 +273,7 @@ export async function adoptCaCertificate(
 
 const busy = new Set<number>();
 
-async function loadDevice(id: number): Promise<CaDevice> {
+export async function loadDevice(id: number): Promise<CaDevice> {
   const d = await queryOne<CaDevice>(
     `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted, ssh_port, ssh_username, ssh_password_encrypted,
             jump_host_id
@@ -283,7 +283,7 @@ async function loadDevice(id: number): Promise<CaDevice> {
   return d;
 }
 
-function apiClient(d: CaDevice, port = d.api_port, tls = usesApiTls(d)): RouterOSClient {
+export function apiClient(d: CaDevice, port = d.api_port, tls = usesApiTls(d)): RouterOSClient {
   return new RouterOSClient(d.ip_address, port, d.api_username, decrypt(d.api_password_encrypted), 15_000, 60_000, tls, routeOf(d));
 }
 
@@ -328,16 +328,16 @@ export async function putFile(c: RouterOSClient, d: CaDevice, name: string, cont
   }
 }
 
-async function certs(c: RouterOSClient): Promise<Record<string, string>[]> {
+export async function certs(c: RouterOSClient): Promise<Record<string, string>[]> {
   return c.execute('/certificate/print', { detail: '' });
 }
 
-async function removeCert(c: RouterOSClient, name: string): Promise<void> {
+export async function removeCert(c: RouterOSClient, name: string): Promise<void> {
   const row = (await certs(c)).find((r) => r['name'] === name);
   if (row?.['.id']) await c.execute('/certificate/remove', { '.id': row['.id'] });
 }
 
-async function removeUploads(c: RouterOSClient, prefix: string): Promise<void> {
+export async function removeUploads(c: RouterOSClient, prefix: string): Promise<void> {
   const files = await c.execute('/file/print', {}).catch(() => [] as Record<string, string>[]);
   for (const f of files) if (String(f['name'] ?? '').replace(/^.*\//, '').startsWith(prefix)) await c.execute('/file/remove', { '.id': f['.id'] }).catch(() => {});
 }
@@ -356,7 +356,7 @@ async function proveLogin(d: CaDevice, port: number): Promise<{ fingerprint: str
   }
 }
 
-async function deviceEvent(deviceId: number, severity: 'info' | 'warning', message: string): Promise<void> {
+export async function deviceEvent(deviceId: number, severity: 'info' | 'warning', message: string): Promise<void> {
   await query(`INSERT INTO events (device_id, event_time, severity, topic, message) VALUES ($1, NOW(), $2, 'manager,certificate', $3)`,
     [deviceId, severity, message]).catch(() => {});
 }
