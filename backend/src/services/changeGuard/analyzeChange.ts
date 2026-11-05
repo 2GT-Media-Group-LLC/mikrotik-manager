@@ -91,12 +91,65 @@ const join = (list: string[]): string => [...new Set(list)].filter(Boolean).join
 
 const isDynamic = (row: RosRow): boolean => row['dynamic'] === 'true' || row['dynamic'] === 'yes';
 
-/** Rewrite one VLAN row's membership, preserving the effective (`current-*`) view. */
-function setMembership(row: RosRow, tagged: string[], untagged: string[]): void {
+const BUILTIN_LISTS = new Set(['all', 'none', 'dynamic', 'static']);
+const rowDisabled = (r: RosRow): boolean => r['disabled'] === 'true' || r['disabled'] === 'yes';
+
+/**
+ * The bridge ports an entry of a VLAN row's tagged/untagged list stands for.
+ * A row can name an interface list (`tagged=all` is common), which RouterOS
+ * expands into `current-*`. Undefined: a plain interface. Null: a list this
+ * model can't expand (dynamic, static, or one built from other lists).
+ */
+function listPorts(snap: DeviceSnapshot, bridge: string, name: string): string[] | null | undefined {
+  const isList = BUILTIN_LISTS.has(name) || (snap.interfaceLists ?? []).some((l) => l['name'] === name);
+  if (!isList) return undefined;
+  const ports = snap.bridgePorts.filter((p) => p['bridge'] === bridge && !rowDisabled(p)).map((p) => p['interface']);
+  if (name === 'all') return ports;
+  if (name === 'none') return [];
+  if (name === 'dynamic' || name === 'static') return null;
+  const def = (snap.interfaceLists ?? []).find((l) => l['name'] === name);
+  if (!def || (def['include'] || '').trim() || (def['exclude'] || '').trim()) return null;
+  const members = new Set((snap.interfaceListMembers ?? [])
+    .filter((m) => m['list'] === name && !rowDisabled(m)).map((m) => m['interface']));
+  return ports.filter((p) => members.has(p));
+}
+
+/** A configured list as RouterOS would show it in current-*, interface lists expanded. */
+function effectiveMembers(snap: DeviceSnapshot, bridge: string, configured: string[], previous: string[], changed: string[]): string[] {
+  const out = new Set<string>();
+  let unknown = false;
+  for (const name of configured) {
+    const ports = listPorts(snap, bridge, name);
+    if (ports === undefined) out.add(name);
+    else if (ports === null) unknown = true;
+    else for (const p of ports) out.add(p);
+  }
+  // A list we can't expand keeps the members it had, bar the port being changed.
+  if (unknown) for (const p of previous) if (!changed.includes(p)) out.add(p);
+  return [...out];
+}
+
+/**
+ * Rewrite one VLAN row's membership. The effective (`current-*`) view is the
+ * configured lists with any interface list expanded, as RouterOS does, so a
+ * row like `tagged=all` keeps every port it covered (2GT-NW-100G, where
+ * re-tagging VLAN 1 on sfp28-3 was predicted to drop sfp28-1 from it).
+ */
+function setMembership(row: RosRow, tagged: string[], untagged: string[], ctx?: { snap: DeviceSnapshot; changed: string[] }): void {
+  const prevTagged = csv(row['current-tagged'] ?? row['tagged']);
+  const prevUntagged = csv(row['current-untagged'] ?? row['untagged']);
   row['tagged'] = join(tagged);
   row['untagged'] = join(untagged);
-  row['current-tagged'] = row['tagged'];
-  row['current-untagged'] = row['untagged'];
+  if (!ctx || !row['bridge']) {
+    row['current-tagged'] = row['tagged'];
+    row['current-untagged'] = row['untagged'];
+    return;
+  }
+  const u = effectiveMembers(ctx.snap, row['bridge'], untagged, prevUntagged, ctx.changed);
+  // A port listed untagged isn't tagged too, even when a list on the tagged side covers it.
+  const t = effectiveMembers(ctx.snap, row['bridge'], tagged, prevTagged, ctx.changed).filter((p) => !u.includes(p));
+  row['current-tagged'] = join(t);
+  row['current-untagged'] = join(u);
 }
 
 /**
@@ -139,9 +192,10 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
         const row = s.bridgeVlans.find((r) => r['bridge'] === bridge && (r['vlan-ids'] || '').trim() === String(vid));
         const plan = planVlanWrite(row ? { ...row, '.id': row['.id'] || 'sim' } : undefined, change.port, role);
         if (plan.action === 'noop') return;
-        if (plan.action === 'set' && row) { setMembership(row, csv(plan.tagged), csv(plan.untagged)); return; }
+        const ctx = { snap: s, changed: [change.port] };
+        if (plan.action === 'set' && row) { setMembership(row, csv(plan.tagged), csv(plan.untagged), ctx); return; }
         const added: RosRow = { bridge, 'vlan-ids': String(vid), dynamic: 'false' };
-        setMembership(added, csv(plan.tagged), csv(plan.untagged));
+        setMembership(added, csv(plan.tagged), csv(plan.untagged), ctx);
         s.bridgeVlans.push(added);
       };
       for (const vid of change.tagged) applyVlan(vid, 'tagged');
@@ -174,7 +228,7 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
         })), bridge, change.port, change.pvid);
         for (const w of plan.writes) {
           const row = s.bridgeVlans[Number(w.id)];
-          if (row) setMembership(row, csv(w.tagged), csv(w.untagged));
+          if (row) setMembership(row, csv(w.tagged), csv(w.untagged), { snap: s, changed: [change.port] });
         }
       }
       break;
@@ -191,7 +245,7 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
           && !isDynamic(r))
       );
       const row: RosRow = { bridge: change.bridge, 'vlan-ids': String(change.vlanId), dynamic: 'false' };
-      setMembership(row, change.tagged, change.untagged);
+      setMembership(row, change.tagged, change.untagged, { snap: s, changed: [] });
       s.bridgeVlans.push(row);
       break;
     }

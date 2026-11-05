@@ -7,6 +7,18 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.6
+
+Released on Thursday 5 November 2026. A fix for Change Guard on bridges whose VLAN table names
+an interface list.
+
+- **Change Guard warned about the wrong port.** On a bridge where a VLAN's row tags an interface
+  list, such as `tagged=all`, editing one port's VLANs could be blocked with a warning that a
+  different port, the one management arrives on, "would not be a member of VLAN 1 at all". The
+  change didn't touch that port. Change Guard's prediction didn't expand the list into the ports
+  it covers, so it lost track of them. It now expands `all`, `none` and named lists as RouterOS
+  does ([Change Guard](change-guard.md)).
+
 ## 1.0.5
 
 Released on Tuesday 3 November 2026. A fix reported by [@ronchan44](https://github.com/ronchan44).
