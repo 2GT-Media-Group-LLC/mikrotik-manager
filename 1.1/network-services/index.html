@@ -1191,6 +1191,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tunnels-and-ppp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnels and PPP
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mlag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MLAG
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#logging-syslog" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1663,6 +1685,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tunnels-and-ppp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tunnels and PPP
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mlag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MLAG
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#logging-syslog" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1744,14 +1788,14 @@
 
 
 <h1 id="network-services">Network services<a class="headerlink" href="#network-services" title="Permanent link">&para;</a></h1>
-<p>DHCP, DNS, NTP, WireGuard, logging, NetFlow and discovery, viewed across the fleet rather than
+<p>DHCP, DNS, NTP, WireGuard, routing, tunnels and PPP, MLAG, logging, NetFlow and discovery, viewed across the fleet rather than
 one device at a time. <strong>Network Services → Overview</strong> is a table of which devices run what:
 search it, sort by any service, and click a row to open the device.</p>
 <p>The Overview and the NetFlow fleet view show what was last read from each device and when,
 refreshing anything older than ten minutes in the background; <strong>Refresh</strong> reads every device
 again. On a large fleet the page fills in over a few seconds rather than contacting every device
 at once (see <a href="../scaling/#pages-that-show-something-from-every-device">Scaling</a>).</p>
-<p>Everything here writes to the device. Changes go through <a href="../change-guard/">Change Guard</a> where
+<p>Most of it writes to the device (Routing, Tunnels &amp; PPP and MLAG only read). Changes go through <a href="../change-guard/">Change Guard</a> where
 they could affect reachability.</p>
 <h2 id="dhcp">DHCP<a class="headerlink" href="#dhcp" title="Permanent link">&para;</a></h2>
 <p>Servers, address pools and leases, per device. A lease list shows the first 100; <strong>Show all</strong>
@@ -1830,6 +1874,110 @@ connection failed on 7.20 and later with <em>missing =instance=</em>.</p>
   design.</p>
 </li>
 </ul>
+<h2 id="tunnels-and-ppp">Tunnels and PPP<a class="headerlink" href="#tunnels-and-ppp" title="Permanent link">&para;</a></h2>
+<p><strong>Network Services → Tunnels &amp; PPP</strong> lists, across the fleet or the selected site (#310), every
+IPsec peer, PPPoE server, PPPoE client, active PPP session, and EoIP, GRE and IPIP tunnel. It
+shows each one's local and remote address, its state, how long it's been up and when it last
+changed. Problems are listed first. It's read-only: set these up on the device. Everything is
+read with each device's slow poll, in one batched request, so a change shows within that
+interval; <strong>Refresh</strong> asks for a fresh poll.</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>One row per</th>
+<th>Up when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IPsec</td>
+<td>configured peer, including the dynamic ones an EoIP or GRE tunnel with an IPsec secret creates</td>
+<td>a peer that matches it is <em>established</em>. A passive peer with nobody connected is <em>waiting</em>, not down</td>
+</tr>
+<tr>
+<td>PPPoE server</td>
+<td>server (service name on an interface)</td>
+<td>it has sessions; with none it's <em>waiting</em></td>
+</tr>
+<tr>
+<td>PPP session</td>
+<td>active session in <code>/ppp active</code> (PPPoE, L2TP, SSTP, OpenVPN...)</td>
+<td>always: an ended session is removed</td>
+</tr>
+<tr>
+<td>PPPoE client</td>
+<td>client interface</td>
+<td>it's connected</td>
+</tr>
+<tr>
+<td>EoIP, GRE, IPIP</td>
+<td>tunnel interface</td>
+<td>it's running</td>
+</tr>
+</tbody>
+</table>
+<p>An active IPsec peer is matched to the configured peer whose address is the most specific match,
+as RouterOS does; a peer that takes many clients (<code>0.0.0.0/0</code>) shows how many are connected.
+RouterOS doesn't say which PPPoE server a session is on, so with more than one server the count
+covers all of them. Secrets (the IPsec secret on an EoIP or GRE tunnel) are never stored or
+shown, and PPP passwords aren't read at all. Up to 5,000 sessions are kept per device, and the page shows the first 500
+that match the filters.</p>
+<h2 id="mlag">MLAG<a class="headerlink" href="#mlag" title="Permanent link">&para;</a></h2>
+<p><strong>Network Services → MLAG</strong> shows each MLAG pair (#376), and is in the sidebar only once a device
+in view has a bridge with an MLAG peer port. For each pair: both peers' state, role, priority and
+settings, the peer link and how many of its members are up, and the MLAG bonds side by side by
+<code>mlag-id</code>, with the downstream device each one's LACP partner is. The two peers are found from
+neighbour discovery on the peer link. It's read with the slow poll, and only on devices with MLAG.</p>
+<p>It checks, worst first:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Severity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A peer isn't <em>connected</em></td>
+<td>critical</td>
+</tr>
+<tr>
+<td>Both peers primary (split brain), or both secondary</td>
+<td>critical</td>
+</tr>
+<tr>
+<td>The peer link is down / some of its members aren't active</td>
+<td>critical / warning</td>
+</tr>
+<tr>
+<td>One <code>mlag-id</code> with different LACP partners on the two peers (cabled to two devices)</td>
+<td>critical</td>
+</tr>
+<tr>
+<td>An <code>mlag-id</code> up on one peer only (single-homed)</td>
+<td>warning</td>
+</tr>
+<tr>
+<td>A VLAN on an MLAG bond that isn't tagged on the peer link, VLAN 1 included. Hosts in it can't sync between the peers: the "peer failed to sync" storm</td>
+<td>warning</td>
+</tr>
+<tr>
+<td><code>mlag-heartbeat</code>, <code>mlag-init-delay</code>, <code>mlag-lacp-fallback</code> or the RouterOS version differ</td>
+<td>warning</td>
+</tr>
+<tr>
+<td>State or role changed in the last 24 hours</td>
+<td>warning</td>
+</tr>
+<tr>
+<td>Heartbeat timeouts in the last hour (critical over 30), host sync failures in the last hour, peer link down in the last 24 hours, from the devices' logs</td>
+<td>warning</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>MLAG degraded</strong> alert (<a href="../alerting/">Alerting</a>) reports critical findings. It's on by
+default, and does nothing on a fleet without MLAG.</p>
 <h2 id="logging-syslog">Logging (syslog)<a class="headerlink" href="#logging-syslog" title="Permanent link">&para;</a></h2>
 <p>Where each device sends its logs — remote actions and the rules that select which topics go to
 them. Rules can be toggled without deleting them.</p>

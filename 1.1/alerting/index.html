@@ -1861,6 +1861,14 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 <td>A BGP session or OSPF neighbour that has been up is down for longer than the threshold, in minutes (default 2; off by default) (#279). BGP connections that are disabled, and peers that have never come up, are left out. Peers are read with the slow poll and checked every minute; the cooldown applies to each peer separately</td>
 </tr>
 <tr>
+<td><code>tunnel_down</code></td>
+<td>An IPsec peer, EoIP, GRE or IPIP tunnel, or PPPoE client that has been up is down for longer than the threshold, in minutes (default 5; off by default) (#310). Ones that have never come up, disabled ones, passive IPsec peers and PPPoE servers waiting for someone, and PPP sessions (which end rather than go down) are left out. Tunnels are read with the slow poll and checked every minute; the cooldown applies to each tunnel separately. See <a href="../network-services/#tunnels-and-ppp">Tunnels and PPP</a></td>
+</tr>
+<tr>
+<td><code>mlag_degraded</code></td>
+<td>A critical MLAG problem (#376): a peer not connected, both peers primary, the peer link down, an <code>mlag-id</code> cabled to two devices, or more than 30 heartbeat timeouts in an hour (on by default; nothing happens without MLAG). Checked every minute; the cooldown applies to each pair and problem separately. See <a href="../network-services/#mlag">MLAG</a></td>
+</tr>
+<tr>
 <td><code>interface_errors</code></td>
 <td>Bad frames on a port: FCS, alignment, overflow and other receive errors, per minute, averaged over 5 minutes (default 10; off by default). Usually a failing optic or cable while the link stays up. See <a href="#interface-errors-and-flapping">Interface errors and flapping</a>; the cooldown applies to each port separately</td>
 </tr>

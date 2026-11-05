@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta20" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.20
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta19" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1699,6 +1710,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta20" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.20
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta19" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1930,6 +1952,42 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta20">1.1.0-beta.20<a class="headerlink" href="#110-beta20" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Tunnels &amp; PPP</strong>, a new page under Network Services, for
+  <a href="https://github.com/ronchan44">@ronchan44</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/310">#310</a>): every IPsec peer,
+  PPPoE server and client, active PPP session, and EoIP, GRE and IPIP tunnel across the fleet,
+  with its state, how long it's been up and when it changed. Problems are listed first.
+  Read-only, from the slow poll (<a href="../network-services/#tunnels-and-ppp">Tunnels and PPP</a>).</li>
+<li><strong>Known CVEs count in the hardening score.</strong> A device whose RouterOS version has known
+  vulnerabilities gets a <strong>Known RouterOS vulnerabilities</strong> finding, at the severity of the worst
+  one, which counts against its score and the fleet's like any other finding and can be muted.
+  Before, CVEs were listed on the Security page but didn't affect the score
+  (<a href="../security/#routeros-vulnerabilities">RouterOS vulnerabilities</a>).</li>
+<li><strong>MLAG</strong>, a new page under Network Services, from
+  <a href="https://github.com/azizfayziev">@azizfayziev</a>'s proposal
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376">#376</a>): each MLAG pair's
+  state and roles, the peer link, the MLAG bonds side by side, and checks for what goes wrong:
+  split brain, a peer link down, single-homed and miswired bonds, VLANs missing from the peer
+  link, settings that differ, and heartbeat and host-sync storms from the logs. An <strong>MLAG
+  degraded</strong> alert reports the critical ones (<a href="../network-services/#mlag">MLAG</a>).</li>
+<li><strong>Topology links from OSPF</strong>, from <a href="https://github.com/pimlie">@pimlie</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/373">#373</a>): routers that only
+  see each other across a tunnel are joined on the map by their OSPF adjacency, an unmanaged one
+  is a node named by router ID, and a lost adjacency shows as down
+  (<a href="../topology/#how-links-are-found">How links are found</a>).</li>
+<li><strong>Tunnel down</strong> alert: an IPsec peer, EoIP, GRE or IPIP tunnel, or PPPoE client that was up has
+  been down for the threshold (<a href="../alerting/">Alerting</a>).</li>
+<li><strong>Clients</strong> columns can be hidden and resized, as on Devices, from
+  <a href="https://github.com/cybr4nx">@cybr4nx</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/336">#336</a>,
+  <a href="../clients/#the-list">Clients</a>).</li>
+<li>Topology port labels show the near end's bond too, from the device's own bonds, so an uplink
+  between two LAGs reads <code>Po9·sfp9 ↔ Po1·sfp2</code>, from
+  <a href="https://github.com/azizfayziev">@azizfayziev</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/367">#367</a>).</li>
+</ul>
 <h2 id="110-beta19">1.1.0-beta.19<a class="headerlink" href="#110-beta19" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Config Health finds access ports left in other VLANs.</strong> Before 1.0.4, setting a trunk to

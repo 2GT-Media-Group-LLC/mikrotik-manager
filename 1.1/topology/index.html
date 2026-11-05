@@ -1847,6 +1847,15 @@ same map's, so a card moved here stays moved there.</p>
 <p>Neighbours are read on the slow poll from LLDP, CDP and MNDP. LLDP is treated as ground truth;
 where two protocols report the same neighbour, the lower-priority one is suppressed so a single
 link does not appear twice.</p>
+<p><strong>OSPF.</strong> Neighbour discovery doesn't cross a WireGuard, GRE or IPsec tunnel, but OSPF does, so
+each OSPF adjacency the slow poll reads (the same ones as <strong>Network Services → Routing</strong>) is a link
+too (#373). Two managed routers are joined by one link showing both interfaces, unless the map
+already joins them. A router the manager doesn't manage becomes a node named by its router ID,
+so one router reached over several tunnels is one node. A lost adjacency stays on the map,
+drawn red and dashed and labelled <em>down</em>; hover a link for "(OSPF)". An interface with more than
+one OSPF neighbour is a shared segment rather than a link and is left out, as is a neighbour
+discovery already draws on the same port. The neighbour's router ID or address has to be one of
+a managed device's addresses for the two to be matched.</p>
 <p>Neighbours are matched to managed devices <strong>by MAC before IP</strong>, because a MAC is unique across
 the fleet and an address is not. Bidirectional pairs — where each device reports the other —
 are merged into one edge showing both port names.</p>
@@ -1859,7 +1868,8 @@ virtual MAC, matches neither.</p>
 <p>Port names on links are shortened so two of them fit under a switch (#367): <code>ether17</code> is <code>e17</code>,
 <code>sfp-sfpplus1</code> is <code>sfp1</code>, and the bridge RouterOS puts in front of a port in LLDP is left off.
 A port in a bond keeps the bond, so a LAG still reads as one: <code>bridge/Po1/sfp-sfpplus1</code> is
-<code>Po1·sfp1</code>. Cisco ports take Cisco's short forms (<code>GigabitEthernet1/0/17</code> is <code>Gi1/0/17</code>).
+<code>Po1·sfp1</code>. LLDP names only the far end's bond; the near end's comes from the device's own
+bonds, so an uplink between two bonds reads <code>Po9·sfp9 ↔ Po1·sfp2</code>. Cisco ports take Cisco's short forms (<code>GigabitEthernet1/0/17</code> is <code>Gi1/0/17</code>).
 Hover a label, or the link, for the full names.</p>
 <p><strong>Display → Port labels</strong> chooses how much to show, remembered in this browser:</p>
 <table>
