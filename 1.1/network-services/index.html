@@ -1213,6 +1213,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#netinstall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Netinstall
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Netinstall">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#entries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Entries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#installing-a-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installing a device
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#logging-syslog" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1707,6 +1757,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#netinstall" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Netinstall
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Netinstall">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#entries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Entries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#installing-a-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installing a device
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#logging-syslog" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1978,6 +2078,95 @@ neighbour discovery on the peer link. It's read with the slow poll, and only on 
 </table>
 <p>The <strong>MLAG degraded</strong> alert (<a href="../alerting/">Alerting</a>) reports critical findings. It's on by
 default, and does nothing on a fleet without MLAG.</p>
+<h2 id="netinstall">Netinstall<a class="headerlink" href="#netinstall" title="Permanent link">&para;</a></h2>
+<p><strong>Network Services → Netinstall</strong> reinstalls RouterOS on a device from a router running
+MikroTik's netinstall package (#310), instead of from a PC with the Netinstall tool. The package
+needs RouterOS 7.24 or later, and isn't made for SMIPS devices. The device being installed must be
+on the same layer 2 segment as that router, and etherboot to it. <strong>An install reformats that
+device</strong>: what's kept depends on the entry (below).</p>
+<p>The page lists the devices in view in three groups:</p>
+<ul>
+<li><strong>Netinstall servers</strong>: devices with the package installed. Each one is read live: its entries,
+  the devices that have etherbooted to it, and its cache.</li>
+<li><strong>Can run Netinstall</strong>: <strong>Install package</strong> installs it. The device reboots to do it, and
+  shows as a server once it's back and polled. Installing the package changes nothing else:
+  the device doesn't answer etherboot until an entry is added. <strong>Remove package</strong> on a server
+  takes it off again, also with a reboot. Either is refused while another package change is
+  waiting on the device, or when its flash is too full. When the device's last update check
+  found a newer RouterOS, RouterOS may install that too while it applies the change (a test
+  switch went from 7.25 to 7.25.1 this way), so the manager asks first. Tick <strong>Also upgrade
+  RouterOS</strong> to go ahead, or upgrade it from <a href="../firmware/">Firmware</a> first.</li>
+<li><strong>Can't run Netinstall</strong>: older than 7.24, SMIPS, or not polled yet.</li>
+</ul>
+<h3 id="entries">Entries<a class="headerlink" href="#entries" title="Permanent link">&para;</a></h3>
+<p>An entry makes the server answer etherboot on one interface. <strong>Every entry has to name the MAC
+address of the device it installs, or have Wait on</strong>, so each install is started from this page.
+Without either, any device on that segment that etherboots would be reformatted, so the manager
+refuses to save or enable one, and flags one made outside it in red. A new entry has Wait on and
+FlashFig off.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MAC address</td>
+<td>Install only this device. RouterOS can't clear it later: delete the entry and add a new one</td>
+</tr>
+<tr>
+<td>Address range</td>
+<td>The addresses handed out while installing, at most 256</td>
+</tr>
+<tr>
+<td>RouterOS version</td>
+<td>Empty installs the latest in the server's update channel</td>
+</tr>
+<tr>
+<td>Extra packages</td>
+<td>Installed with RouterOS, which is always installed</td>
+</tr>
+<tr>
+<td>After installing</td>
+<td>Reboot, shut down, or do nothing</td>
+</tr>
+<tr>
+<td>Keep the old configuration</td>
+<td>Puts the device's configuration and users back after the install (files and containers aren't kept). Off with <strong>Apply the default configuration</strong> for a clean device</td>
+</tr>
+<tr>
+<td>Install each device only once</td>
+<td>Ignore a device again after it's been installed, until the server restarts</td>
+</tr>
+<tr>
+<td>Wait</td>
+<td>Hold each device that etherboots until its install is started here</td>
+</tr>
+<tr>
+<td>Answer etherboot / FlashFig</td>
+<td>What the entry responds to</td>
+</tr>
+</tbody>
+</table>
+<p>Entries are written under <a href="../change-guard/">Change Guard</a>, and <strong>Review changes</strong> shows the
+commands first. Script and mode files aren't offered yet.</p>
+<h3 id="installing-a-device">Installing a device<a class="headerlink" href="#installing-a-device" title="Permanent link">&para;</a></h3>
+<p>A device that etherboots to a server is listed under <strong>Devices seen</strong>, with its model,
+architecture and progress. The list refreshes every five seconds while it has devices in it.
+When the MAC address is one a managed device has, the device is named.
+<strong>Reinstall…</strong> starts the install. You can choose a version and packages, and it asks you to
+type the device's MAC address back first.</p>
+<h3 id="cache">Cache<a class="headerlink" href="#cache" title="Permanent link">&para;</a></h3>
+<p>Install files download from MikroTik when an install needs them. <strong>Download files</strong> fetches them
+first, so installs don't wait and work without internet access. The header shows where the
+cache is. On a device with a <code>flash</code> folder (a CRS309, say) the root folder is RAM, so files there
+use RAM and are gone after a reboot. On other devices they use flash. <strong>Cache folder</strong> points
+it at a disk instead, a USB drive or a RAM disk (<code>/disk add type=tmpfs</code>).</p>
+<p>Flash and RAM are never filled. Before an entry is enabled, files are downloaded or an install is
+started, the manager estimates the download (about 20 MB for RouterOS, plus the extra
+packages) and refuses when it wouldn't fit. It keeps 5% of flash free, and at least 32 MB of RAM.</p>
 <h2 id="logging-syslog">Logging (syslog)<a class="headerlink" href="#logging-syslog" title="Permanent link">&para;</a></h2>
 <p>Where each device sends its logs — remote actions and the rules that select which topics go to
 them. Rules can be toggled without deleting them.</p>
