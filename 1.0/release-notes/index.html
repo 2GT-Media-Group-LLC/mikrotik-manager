@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#106" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.6
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#105" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1533,6 +1544,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#106" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.6
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#105" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1685,6 +1707,17 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="106">1.0.6<a class="headerlink" href="#106" title="Permanent link">&para;</a></h2>
+<p>Released on Thursday 5 November 2026. A fix for Change Guard on bridges whose VLAN table names
+an interface list.</p>
+<ul>
+<li><strong>Change Guard warned about the wrong port.</strong> On a bridge where a VLAN's row tags an interface
+  list, such as <code>tagged=all</code>, editing one port's VLANs could be blocked with a warning that a
+  different port, the one management arrives on, "would not be a member of VLAN 1 at all". The
+  change didn't touch that port. Change Guard's prediction didn't expand the list into the ports
+  it covers, so it lost track of them. It now expands <code>all</code>, <code>none</code> and named lists as RouterOS
+  does (<a href="../change-guard/">Change Guard</a>).</li>
+</ul>
 <h2 id="105">1.0.5<a class="headerlink" href="#105" title="Permanent link">&para;</a></h2>
 <p>Released on Tuesday 3 November 2026. A fix reported by <a href="https://github.com/ronchan44">@ronchan44</a>.</p>
 <ul>
