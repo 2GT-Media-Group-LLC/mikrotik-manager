@@ -2028,7 +2028,12 @@ that match the filters.</p>
 in view has a bridge with an MLAG peer port. For each pair: both peers' state, role, priority and
 settings, the peer link and how many of its members are up, and the MLAG bonds side by side by
 <code>mlag-id</code>, with the downstream device each one's LACP partner is. The two peers are found from
-neighbour discovery on the peer link. It's read with the slow poll, and only on devices with MLAG.</p>
+neighbour discovery on the peer link, and the primary is shown on the left. It's read with the slow
+poll, and only on devices with MLAG.</p>
+<p>A pair is <strong>critical</strong> when it has a critical finding, <strong>warning</strong> when it has only warnings, and
+<strong>healthy</strong> otherwise. A bond down on both peers that has never been seen up, for example one set up
+for a switch that isn't cabled yet, shows as grey <strong>unused</strong> and isn't a problem. A bond that has
+been up and is now down on both peers stays red, with a warning.</p>
 <p>It checks, worst first:</p>
 <table>
 <thead>
@@ -2059,6 +2064,10 @@ neighbour discovery on the peer link. It's read with the slow poll, and only on 
 <td>warning</td>
 </tr>
 <tr>
+<td>An <code>mlag-id</code> that was up, now down on both peers</td>
+<td>warning</td>
+</tr>
+<tr>
 <td>A VLAN on an MLAG bond that isn't tagged on the peer link, VLAN 1 included. Hosts in it can't sync between the peers: the "peer failed to sync" storm</td>
 <td>warning</td>
 </tr>
@@ -2067,7 +2076,7 @@ neighbour discovery on the peer link. It's read with the slow poll, and only on 
 <td>warning</td>
 </tr>
 <tr>
-<td>State or role changed in the last 24 hours</td>
+<td>State or role changed in the last 24 hours (the first value the manager reads doesn't count)</td>
 <td>warning</td>
 </tr>
 <tr>

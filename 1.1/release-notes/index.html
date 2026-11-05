@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.24
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta23" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1743,6 +1754,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.24
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta23" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2018,6 +2040,25 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta24">1.1.0-beta.24<a class="headerlink" href="#110-beta24" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Firmware tab</strong> on the device page, from <a href="https://github.com/davidcoulson">@davidcoulson</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/400">#400</a>,
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/401">#401</a>): the RouterOS and
+  RouterBOOT check and install moved off the Config tab into a tab of their own, between Config and
+  Config History, with a link to the fleet Firmware page. The dashboard's "Updates available"
+  banner opens each device's Firmware tab, and has its own link to upgrade several devices
+  (<a href="../firmware/">Firmware</a>).</li>
+<li><strong>MLAG</strong> fixes from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s testing
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376">#376</a>):</li>
+<li>The first poll after an upgrade no longer counts as a state or role change, which had turned
+    every pair amber for a day.</li>
+<li>A pair with only warnings is labelled <strong>warning</strong>, not <strong>degraded</strong>.</li>
+<li>A bond set up for a switch that isn't cabled yet shows as grey <strong>unused</strong> rather than red.
+    One that was up and went down on both peers stays red, with a warning.</li>
+<li>The primary is on the left in every pair.</li>
+</ul>
+<p>(<a href="../network-services/#mlag">MLAG</a>)</p>
 <h2 id="110-beta23">1.1.0-beta.23<a class="headerlink" href="#110-beta23" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Reverse proxy</strong>, a new tab on <strong>Operations → Certificates</strong> (now <strong>PKI</strong> and <strong>Reverse proxy</strong>),
