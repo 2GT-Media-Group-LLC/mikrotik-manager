@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.26
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta24" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1754,6 +1765,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.26
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta24" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2040,6 +2062,31 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta26">1.1.0-beta.26<a class="headerlink" href="#110-beta26" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>MLAG peer link</strong>, from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s proposal
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376">#376</a>): a block of its own
+  between the two peers, with each member side by side (state, speed, link-downs, errors in the
+  last 24 hours), the VLANs it carries with VLAN 1 called out, a check that each side's LACP partner
+  is the other peer, and the last flap. A peer link cabled to another device is a critical finding.
+  Peers are also paired when neighbour discovery only reports the link from one end
+  (<a href="../network-services/#mlag">MLAG</a>).</li>
+<li><strong>Peaks and drops</strong>, from <a href="https://github.com/azizfayziev">@azizfayziev</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/402">#402</a>, the first step):
+  CPU and memory history on the <strong>Hardware</strong> tab shows the highest reading in each 5 minutes as a
+  dashed line over the average, and a port's traffic panel shows its <strong>Errors &amp; drops</strong> on their
+  own scale. Drop counters are recorded from this release.</li>
+<li><strong>Let's Encrypt for reverse proxy rules</strong>, for <a href="https://github.com/ronchan44">@ronchan44</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/358">#358</a>): for a public host
+  name, choose <strong>Let's Encrypt</strong> as the rule's certificate. The router requests it (RouterOS 7.22 and
+  later) and renews it itself; the rule shows its progress, Let's Encrypt's reason if it fails, and
+  <strong>Try again</strong>, <strong>Get the real certificate</strong> (after testing on the staging server) and <strong>Renew now</strong>
+  (<a href="../certificates/#lets-encrypt">Let's Encrypt</a>).</li>
+<li><strong>Change Guard leaves no restore points behind.</strong> Each protected change saves a restore point
+  on the device and removes it afterwards, but one could be left on its flash when a revert fired,
+  the manager restarted mid-change, or the device couldn't be reached to clean up. Every protected
+  change now also removes older restore points whose revert is no longer armed.</li>
+</ul>
 <h2 id="110-beta24">1.1.0-beta.24<a class="headerlink" href="#110-beta24" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Firmware tab</strong> on the device page, from <a href="https://github.com/davidcoulson">@davidcoulson</a>

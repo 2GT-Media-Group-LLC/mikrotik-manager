@@ -1125,6 +1125,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#lets-encrypt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let's Encrypt
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1762,6 +1773,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#lets-encrypt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let's Encrypt
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1990,10 +2012,41 @@ last rule is gone. A port another enabled service uses is refused.</p>
   <strong>Renew now</strong> and <strong>Remove</strong> are on the device's card. Remove refuses while a rule still uses
   the certificate. Browsers trust it once the CA certificate is installed on them
   (<a href="#trusting-the-ca">Trusting the CA</a>).</li>
+<li><strong>Let's Encrypt</strong>, for a public name (<a href="#lets-encrypt">below</a>).</li>
 <li><strong>The reverse-proxy service's certificate</strong>, set under IP Services. With none there either,
   HTTPS for the name fails, and the tab says so.</li>
 </ul>
-<p>Let's Encrypt (ACME) isn't offered yet.</p>
+<h3 id="lets-encrypt">Let's Encrypt<a class="headerlink" href="#lets-encrypt" title="Permanent link">&para;</a></h3>
+<p>For a host name that's public (reachable from the internet), browsers need a certificate from a
+public authority, so the manager's CA won't do. Choose <strong>Let's Encrypt</strong> as the rule's certificate:
+the router requests the certificate from Let's Encrypt itself (RouterOS 7.22 and later), and renews
+it when 80% of its lifetime has passed.</p>
+<p>For that to work:</p>
+<ul>
+<li>the name must point at the router's public address in <strong>public DNS</strong>. The form shows what the
+  name resolves to from the manager, as a hint;</li>
+<li><strong>TCP port 80 must reach the router from the internet</strong>, at least while the certificate is issued
+  and renewed. Let's Encrypt checks it there (the HTTP-01 challenge);</li>
+<li>the name must be public: Let's Encrypt doesn't issue for names like <code>nas.lan</code> or <code>nas.local</code>, and
+  the form refuses them. Use the manager's CA for those.</li>
+</ul>
+<p><strong>Test with the staging server first</strong> is ticked by default. Let's Encrypt's staging server has no
+rate limits, so mistakes cost nothing, but browsers don't trust what it issues. The rule is saved and
+the request made in one go; the rule's row shows the progress (<em>generating private key</em>,
+<em>requesting validation</em>) and, if it fails, Let's Encrypt's reason, for example that the name has no
+DNS record or that port 80 couldn't be reached. Fix that and press <strong>Try again</strong>. Once staging
+succeeds, <strong>Get the real certificate</strong> requests one from the production server and moves the rule
+to it; the staging certificate is then removed.</p>
+<p><strong>Renew now</strong> asks RouterOS to renew straight away. The manager doesn't keep a copy of these
+certificates: they live on the router, and are listed with the device's other certificates (the
+<strong>Certificates</strong> list on the Security page, and the device's Config tab). Until one is issued it's left
+out of expiry alerts.</p>
+<p>Two RouterOS behaviours to know about: a certificate whose request is still running can't be
+removed until the request ends (or the router restarts), and on some RouterOS versions a service
+kept serving the old certificate after a renewal until the router restarted.</p>
+<p>The manager can't test this end to end on its own test devices, since none is reachable from the
+internet; if something doesn't behave as described, please say so on
+<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/358">#358</a>.</p>
 
 
 
