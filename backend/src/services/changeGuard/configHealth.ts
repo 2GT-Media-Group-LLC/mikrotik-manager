@@ -184,18 +184,20 @@ function ruleBridgedVlanInterface(snap: DeviceSnapshot): ConfigFinding[] {
     const name = p['interface'];
     if (!name || !vlanNames.has(name)) continue;
     if (isTrue(p['disabled'])) continue;
+    if (isTrue(p['edge'])) continue;
     out.push({
       rule: 'bridged-vlan-interface',
       fingerprint: `bridged-vlan-interface:${p['bridge']}:${name}`,
       severity: 'critical',
       title: `VLAN interface ${name} is a port of bridge ${p['bridge']}`,
       detail:
-        `Adding a VLAN interface as a bridge port feeds tagged traffic back into the same `
-        + `broadcast domain it came from. This creates a forwarding loop, and where STP is `
-        + `running it shows up as ports flapping between forwarding and blocking.`,
+        `Adding a VLAN interface as a bridge port causes outgoing BPDUs to be tagged `
+        + `which violates the IEEE 802.1W standard.`
       remediation:
-        `Remove ${name} from bridge ${p['bridge']} and use the bridge VLAN table to carry the `
-        + `VLAN on the physical ports instead.`,
+        `Either Remove ${name} from bridge ${p['bridge']} and use the bridge VLAN table to carry `
+        + `the VLAN on the physical ports, or set edge=yes on ${name} to prevent BPDUs from being `
+        + `send out the VLAN sub-interface if you have other non-bridged VLAN sub-interfaces on `
+        + `the physical interface.`,
       docUrl: L2_DOC,
       objects: [name, p['bridge']],
     });
