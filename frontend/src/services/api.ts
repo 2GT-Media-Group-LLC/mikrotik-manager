@@ -367,7 +367,7 @@ export interface SecurityCheck {
   detail: string;
   serviceId?: string;
   /** A one-click fix the manager can apply (outside review P1-4; www-ssl #234). */
-  fix?: 'api-ssl' | 'www-ssl' | 'api-off' | 'romon';
+  fix?: 'api-ssl' | 'www-ssl' | 'api-off' | 'romon' | 'firewall-quick';
   /** Operator judged this inapplicable — still shown, but excluded from the score. */
   suppressed?: boolean;
   suppressed_scope?: 'device' | 'fleet';
@@ -745,6 +745,25 @@ function famParams(family?: FirewallFamily, extra: Record<string, string> = {}):
   return Object.keys(params).length ? { params } : undefined;
 }
 
+/** Quick firewall rules (#330). */
+export type QuickPreset = 'input-basics' | 'management-access' | 'forward-basics' | 'masquerade';
+export interface QuickFirewallStep {
+  table: 'filter' | 'nat' | 'address-list';
+  params: Record<string, string>;
+  placement: 'top' | 'bottom' | null;
+  description: string;
+  skip: string | null;
+}
+export interface QuickFirewallPlan {
+  steps: QuickFirewallStep[];
+  errors: Record<string, string>;
+  notes: string[];
+  interface_lists: string[];
+  interfaces: string[];
+  services: { name: string; port: string; disabled: boolean }[];
+  manager_ip: string | null;
+}
+
 export const devicesApi = {
   /** Settings this device overrides (#261); null in a PUT clears one. */
   getPollSettings: (id: number) => api.get<PollSettings>(`/devices/${id}/poll-settings`),
@@ -807,6 +826,11 @@ export const devicesApi = {
     api.get<Record<string, string>[]>(`/devices/${id}/firewall`, famParams(family)),
   addFirewallRule: (id: number, data: Record<string, unknown>, family?: FirewallFamily) =>
     api.post<Record<string, string>[]>(`/devices/${id}/firewall`, data, famParams(family)),
+  // Quick rules (#330): the plan for a preset (changes nothing), and applying it.
+  quickFirewallPlan: (id: number, params: Record<string, string>, family?: FirewallFamily) =>
+    api.get<QuickFirewallPlan>(`/devices/${id}/firewall/quick`, { params: { ...params, ...(famParams(family)?.params ?? {}) } }),
+  quickFirewallApply: (id: number, body: Record<string, unknown>, family?: FirewallFamily) =>
+    api.post<{ message: string; added: number }>(`/devices/${id}/firewall/quick`, body, famParams(family)),
   updateFirewallRule: (id: number, ruleId: string, data: Record<string, unknown>, family?: FirewallFamily) =>
     api.put<Record<string, string>[]>(`/devices/${id}/firewall/${encodeURIComponent(ruleId)}`, data, famParams(family)),
   deleteFirewallRule: (id: number, ruleId: string, confirmLockout = false, family?: FirewallFamily) =>
@@ -2914,7 +2938,7 @@ export interface MlagPeerLinkView {
   a: MlagPeerLinkSide | null;
   b: MlagPeerLinkSide | null;
   members: { a: MlagPeerMember | null; b: MlagPeerMember | null }[];
-  lastFlap: { device: string; member: string; at: string } | null;
+  lastFlap: { device: string; member: string; at: string; reboot: boolean } | null;
 }
 export const mlagApi = {
   pairs: () => api.get<MlagPairView[]>('/mlag'),

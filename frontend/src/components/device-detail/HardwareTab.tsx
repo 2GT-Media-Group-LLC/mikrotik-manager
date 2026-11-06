@@ -6,8 +6,7 @@ import { Thermometer, Zap, Wind, Power, Activity, HelpCircle, RefreshCw, HardDri
 import { devicesApi, metricsApi } from '../../services/api';
 import type { ResourcePoint } from '../../types';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart, Area,
 } from 'recharts';
 import clsx from 'clsx';
 
@@ -251,13 +250,26 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
       }),
       cpu: Math.round(p.cpu_load || 0),
       mem: memPct,
-      // The highest reading in each 5-minute window (#402).
-      cpuPeak: p.cpu_load_peak !== undefined ? Math.round(p.cpu_load_peak) : undefined,
-      memPeak: p.memory_total && p.memory_total > 0 && p.memory_used_peak !== undefined
-        ? Math.round((p.memory_used_peak / p.memory_total) * 100) : undefined,
     };
   });
-  const hasPeaks = resourceData.some((p) => p.cpuPeak !== undefined);
+  // The highest reading in each 5-minute window (#402), drawn as a light band
+  // from the average up to it. Memory's only where it differs by more than two
+  // points: it usually sits on the average and would only add clutter.
+  const cpuPeaks = rawResources.map((p) => (p.cpu_load_peak !== undefined ? Math.round(p.cpu_load_peak) : undefined));
+  const memPeaks = rawResources.map((p, i) => {
+    if (!p.memory_total || p.memory_used_peak === undefined) return undefined;
+    const peak = Math.round((p.memory_used_peak / p.memory_total) * 100);
+    return peak - resourceData[i].mem > 2 ? peak : undefined;
+  });
+  const chartData = resourceData.map((p, i) => ({
+    ...p,
+    cpuPeak: cpuPeaks[i],
+    cpuBand: cpuPeaks[i] !== undefined ? [p.cpu, Math.max(p.cpu, cpuPeaks[i]!)] : undefined,
+    memPeak: memPeaks[i],
+    memBand: memPeaks[i] !== undefined ? [p.mem, memPeaks[i]] : undefined,
+  }));
+  const hasPeaks = cpuPeaks.some((v) => v !== undefined);
+  const hasMemPeaks = memPeaks.some((v) => v !== undefined);
 
   return (
     <div className="card p-5">
@@ -268,7 +280,7 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">CPU & Memory Usage</h3>
           </div>
           {hasPeaks && (
-            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">5-minute averages; the dashed lines are the highest reading in each 5 minutes.</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Lines are 5-minute averages; the shaded band reaches the highest reading in each 5 minutes.</p>
           )}
         </div>
         <div className="flex gap-1">
@@ -294,13 +306,14 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
           No resource history available yet — data accumulates over time
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={resourceData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height={hasPeaks ? 260 : 200}>
+          <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
             <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
             <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10 }} />
             <Tooltip
-              formatter={(v) => `${v}%`}
+              // The band carries [average, peak]; the tooltip shows the peak.
+              formatter={(v) => `${Array.isArray(v) ? v[1] : v}%`}
               contentStyle={{
                 background: 'var(--color-surface)',
                 border: '1px solid var(--color-border)',
@@ -311,9 +324,9 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="cpu" stroke="#f59e0b" name="CPU Load" dot={false} strokeWidth={2} />
             <Line type="monotone" dataKey="mem" stroke="#8b5cf6" name="Memory Used" dot={false} strokeWidth={2} />
-            {hasPeaks && <Line type="monotone" dataKey="cpuPeak" stroke="#f59e0b" name="CPU peak" dot={false} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.8} />}
-            {hasPeaks && <Line type="monotone" dataKey="memPeak" stroke="#8b5cf6" name="Memory peak" dot={false} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.8} />}
-          </LineChart>
+            {hasPeaks && <Area type="monotone" dataKey="cpuBand" stroke="none" fill="#f59e0b" fillOpacity={0.2} name="CPU peak" isAnimationActive={false} />}
+            {hasMemPeaks && <Area type="monotone" dataKey="memBand" stroke="none" fill="#8b5cf6" fillOpacity={0.2} name="Memory peak" isAnimationActive={false} />}
+          </ComposedChart>
         </ResponsiveContainer>
       )}
     </div>

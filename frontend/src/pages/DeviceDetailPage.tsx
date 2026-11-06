@@ -65,7 +65,7 @@ export default function DeviceDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'firmware', 'config-history', 'hardware', 'tools', 'radios', 'alignment', 'lte'];
   const requestedTab = searchParams.get('tab') as TabKey | null;
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
@@ -549,7 +549,13 @@ export default function DeviceDetailPage() {
       )}
       {shownTab === 'routing' && <RoutingTab deviceId={deviceId} deviceName={device.name} />}
       {shownTab === 'firewall' && <FirewallTab deviceId={deviceId} deviceName={device.name} />}
-      {shownTab === 'security' && <SecurityTab deviceId={deviceId} deviceName={device.name} />}
+      {shownTab === 'security' && <SecurityTab deviceId={deviceId} deviceName={device.name} onQuickRules={(family) => {
+        const p = new URLSearchParams(searchParams);
+        p.set('quick', 'input-basics');
+        if (family === 'ipv6') p.set('family', 'ipv6'); else p.delete('family');
+        setSearchParams(p, { replace: true });
+        setActiveTab('firewall');
+      }} />}
       {shownTab === 'queues' && <QueuesTab deviceId={deviceId} />}
       {shownTab === 'connections' && <ConnectionsTab deviceId={deviceId} />}
       {shownTab === 'config' && <SystemConfigTab deviceId={deviceId} device={device} />}

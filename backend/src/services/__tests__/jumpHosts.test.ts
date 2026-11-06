@@ -33,8 +33,20 @@ jest.mock('../apiSsl', () => ({ ensureCertificate: jest.fn(), certByName: jest.f
 const mockQuery = query as jest.MockedFunction<typeof query>;
 const mockQueryOne = queryOne as jest.MockedFunction<typeof queryOne>;
 
-const JUMP_KEY = sshUtils.generateKeyPairSync('ed25519').private;
-const OTHER_KEY = sshUtils.generateKeyPairSync('ed25519').private;
+/**
+ * An Ed25519 key ssh2 can read back. ssh2 1.17 now and then writes one it
+ * can't parse (about 1 in 500), which made these tests fail at random;
+ * production regenerates the same way (utils/sshKeys.ts).
+ */
+function readableEd25519(): string {
+  for (;;) {
+    const key = sshUtils.generateKeyPairSync('ed25519').private;
+    if (!(sshUtils.parseKey(key) instanceof Error)) return key;
+  }
+}
+
+const JUMP_KEY = readableEd25519();
+const OTHER_KEY = readableEd25519();
 const fingerprintOf = (privateKey: string): string => {
   const parsed = sshUtils.parseKey(privateKey);
   if (parsed instanceof Error) throw parsed;

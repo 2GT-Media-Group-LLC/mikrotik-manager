@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { usesApiTls } from '../../utils/apiTls';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import LoadError from '../common/LoadError';
-import { ShieldCheck, ShieldAlert, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell, KeyRound, Globe } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Shield, RefreshCw, Check, AlertTriangle, Lock, BellOff, Bell, KeyRound, Globe } from 'lucide-react';
 import { devicesApi, type ApiSslResult } from '../../services/api';
 import { activeChecks, mutedCount } from '../../utils/securityFindings';
 import type { SecurityCheck } from '../../services/api';
@@ -27,7 +27,11 @@ function scoreColor(score: number) {
   return 'text-red-600 dark:text-red-400';
 }
 
-export default function SecurityTab({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
+export default function SecurityTab({ deviceId, deviceName, onQuickRules }: {
+  deviceId: number; deviceName?: string;
+  /** Open the Firewall tab's Quick rules on Input basics (#330). */
+  onQuickRules?: (family: 'ipv4' | 'ipv6') => void;
+}) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const [serviceError, setServiceError] = useState('');
@@ -300,6 +304,13 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
                           className="btn-primary text-xs py-1 flex items-center gap-1.5">
                           {wwwSsl.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
                           {wwwSsl.isPending ? 'Switching…' : 'Switch to HTTPS'}
+                        </button>
+                      )}
+                      {canWrite && c.fix === 'firewall-quick' && onQuickRules && !c.suppressed && (
+                        <button onClick={() => onQuickRules(c.id.endsWith('-v6') ? 'ipv6' : 'ipv4')}
+                          title="Open Quick rules on the Firewall tab, with the input basics preset"
+                          className="btn-primary text-xs py-1 flex items-center gap-1.5">
+                          <Shield className="w-3 h-3" /> Add input rules
                         </button>
                       )}
                       {canWrite && c.fix === 'romon' && !c.suppressed && (

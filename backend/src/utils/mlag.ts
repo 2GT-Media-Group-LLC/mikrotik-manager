@@ -268,8 +268,13 @@ export interface PeerLinkView {
   b: PeerLinkSide | null;
   /** Members lined up: the two ends of one cable, as neighbour discovery sees it, else by name. */
   members: { a: PeerMember | null; b: PeerMember | null }[];
-  lastFlap: { device: string; member: string; at: string } | null;
+  /** reboot: one of the peers booted around then, so it was a restart rather than a cable or optic. */
+  lastFlap: { device: string; member: string; at: string; reboot: boolean } | null;
 }
+
+/** A link-down recorded this soon around a boot is the reboot (the first poll after it records the drop). */
+const REBOOT_BEFORE_MS = 2 * 60_000;
+const REBOOT_AFTER_MS = 10 * 60_000;
 
 /** What the manager stores about one port, as buildPeerLink takes it. */
 export interface PortFacts {
@@ -291,10 +296,12 @@ export interface PeerLinkInput {
   vlans: Map<number, number[]>;
   /** Neighbour discovery between the two peers. */
   links: { from_device_id: number; from_interface: string | null; to_device_id: number | null; to_interface: string | null }[];
+  /** device id → recent boot times. */
+  boots?: Map<number, (string | Date)[]>;
 }
 
 export function buildPeerLink(input: PeerLinkInput): PeerLinkView {
-  const { pair, ports, macs, vlans, links } = input;
+  const { pair, ports, macs, vlans, links, boots } = input;
   const members = (bond: MlagBond | null, d: MlagBridge | null): PeerMember[] => {
     if (!bond || !d) return [];
     const active = new Set(list(bond.active_ports));
@@ -342,8 +349,16 @@ export function buildPeerLink(input: PeerLinkInput): PeerLinkView {
   for (const [d, list_] of [[pair.a, ma], [pair.b, mb]] as const) {
     if (!d) continue;
     for (const m of list_) {
-      if (m.lastDownAt && (!lastFlap || new Date(m.lastDownAt) > new Date(lastFlap.at))) lastFlap = { device: d.device_name, member: m.name, at: m.lastDownAt };
+      if (m.lastDownAt && (!lastFlap || new Date(m.lastDownAt) > new Date(lastFlap.at))) lastFlap = { device: d.device_name, member: m.name, at: m.lastDownAt, reboot: false };
     }
+  }
+  // Either peer restarting takes the link down at both ends.
+  if (lastFlap && boots) {
+    const at = new Date(lastFlap.at).getTime();
+    lastFlap.reboot = [pair.a, pair.b].some((d) => d && (boots.get(d.device_id) ?? []).some((b) => {
+      const t = new Date(b).getTime();
+      return at >= t - REBOOT_BEFORE_MS && at <= t + REBOOT_AFTER_MS;
+    }));
   }
   return { a: side(pair.peerLinkA, pair.a, pair.b), b: side(pair.peerLinkB, pair.b, pair.a), members: rows, lastFlap };
 }

@@ -392,11 +392,11 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **Bridges** | Every bridge, its ports, VLAN filtering and spanning tree; create, rename, edit, delete |
 | **VLANs** | The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (`/interface vlan`) with their parent and addresses, which you can add, edit and remove |
 | **Radios** | Wireless interfaces, SSIDs, channels, connected clients |
-| **Firewall** | Filter and NAT rules and address lists, for IPv4 and IPv6 (the **IPv4** / **IPv6** switch at the top), with reordering and counters. IPv6 NAT needs RouterOS 7 |
+| **Firewall** | Filter and NAT rules and address lists, for IPv4 and IPv6 (the **IPv4** / **IPv6** switch at the top), with reordering and counters, and [Quick rules](#quick-firewall-rules). IPv6 NAT needs RouterOS 7 |
 | **Routing** | IPv4 routes, IPv6 routes (read-only), OSPF, BGP, routing tables and filters |
 | **Queues** | Traffic shaping |
 | **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing) |
-| **Hardware** | Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages, with the highest reading in each 5 minutes as a dashed line, so a short burst to 100% doesn't hide in the average (#402) |
+| **Hardware** | Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages as lines, with a light band up to the highest reading in each 5 minutes, so a short burst to 100% doesn't hide in the average (#402). Memory's band only shows where the peak is more than two points above the average |
 | **LTE** | Signal, carrier, bands and the data cap — see [Cellular](cellular.md) |
 | **Security** | Baseline hardening checks and the posture score |
 | **Config** | System settings, certificates, SSH keys, clock |
@@ -445,6 +445,40 @@ rule a queue only limits traffic that isn't FastTracked. When the device has one
 dialog says so (#280). To limit a target, exclude it from FastTrack (for example, an accept rule
 for it above the FastTrack rule) or turn FastTrack off.
 
+## Quick firewall rules
+
+**Quick rules** on the Firewall tab adds the rules nearly every router needs, close to MikroTik's
+own default configuration (#330). Pick a preset:
+
+| Preset | Adds |
+|---|---|
+| **Input basics** | Accept established, related and untracked; drop invalid; accept ping (ICMP, or ICMPv6 with traceroute and DHCPv6 prefix delegation for IPv6); accept to the loopback (IPv4, for CAPsMAN); then drop everything else not coming from the LAN |
+| **Management access** (IPv4) | An address list (`mtm-management` unless you name another) holding the manager's own address and any you add, an accept for WinBox, SSH, the API and WebFig from that list, and a drop for those ports from anywhere else. Only services that are enabled are covered, on their configured ports |
+| **Forward basics** | For the traffic passing through: accept established, related and untracked; drop invalid; drop new connections from the WAN that aren't port forwards (IPv6: drop everything not from the LAN). **FastTrack** is optional; with it, IPsec traffic is accepted first so it isn't FastTracked |
+| **Masquerade** (IPv4) | NAT out of the WAN, for a WAN address that changes |
+
+You choose what the LAN and WAN are: an interface list (the form starts on `LAN` and `WAN` when the
+device has them, as defconf makes) or a single interface. Before anything is added, the dialog shows
+each rule and where it goes:
+
+- **Accepts and the invalid drop go to the top** of the table, so they work whatever else is there.
+- **Catch-all drops go to the end**, so the accepts you already have keep working. The management
+  drop is the exception: it goes to the top, right after its accept, since that's its purpose.
+- **A rule that's already there is skipped**: one with the same chain, action and matchers, enabled,
+  whatever its comment.
+
+Every rule is commented `mtm quick: …`. **Review changes** shows the commands, and the preset is
+added in one [Change Guard](change-guard.md) change: the whole preset is checked against the
+manager's own connection first, so a LAN that doesn't include the interface management arrives on
+is caught as a lockout before anything is added. For IPv6 the usual auto-revert applies.
+
+The manager adds its own address to the management list when it can see it on the device. That
+needs connection tracking running there, which it isn't on a device with no firewall rules yet; the
+form then asks for the addresses that manage the router, the manager's included.
+
+The Security tab's **No input-chain firewall rule** finding (IPv4 or IPv6) has an **Add input rules**
+button that opens Quick rules on Input basics.
+
 ## Ports and the faceplate
 
 The faceplate mirrors the physical front panel — copper staggered odd above even as the
@@ -476,7 +510,8 @@ when the Ethernet ports sit in two rows, and is remembered per model in your bro
 
 Selecting a port shows its throughput for the chosen range, and under it **Errors & drops**: how
 many receive and transmit errors, drops and transmit-queue drops the port had in that range, with
-a small chart of them when there were any (#402). They're kept apart from the throughput so a few
+a small chart of them when there were any, or "0 errors · 0 drops in this range" when there were
+none (#402). They're kept apart from the throughput so a few
 aren't flattened by gigabit traffic. Drops are counted from 1.1.0-beta.26 on.
 
 ### Power-cycling a PoE port

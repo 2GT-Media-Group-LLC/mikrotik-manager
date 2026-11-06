@@ -56,7 +56,7 @@ async function addPeerLinks(pairs: MlagPair[], bonds: MlagBond[], ids: number[])
   const peerBonds = bonds.filter((b) => b.is_peer_link);
   const members = [...new Set(peerBonds.flatMap((b) => (csv(b.slaves).length ? csv(b.slaves) : [b.bond])))];
   if (!pairs.length || !members.length) return;
-  const [ports, macRows, vlanRows, linkRows] = await Promise.all([
+  const [ports, macRows, vlanRows, linkRows, bootRows] = await Promise.all([
     query<PortFacts>(
       `SELECT i.device_id, i.name, i.running, COALESCE(NULLIF(i.link_rate, ''), NULLIF(i.speed, '')) AS speed,
               NULLIF(i.config_json->>'link-downs', '')::int AS link_downs,
@@ -73,7 +73,12 @@ async function addPeerLinks(pairs: MlagPair[], bonds: MlagBond[], ids: number[])
     query<{ from_device_id: number; from_interface: string | null; to_device_id: number | null; to_interface: string | null }>(
       `SELECT from_device_id, from_interface, to_device_id, to_interface FROM topology_links
         WHERE from_device_id = ANY($1::int[]) AND to_device_id = ANY($1::int[])`, [ids]),
+    // Boots in the window flaps are kept for, to tell a restart from a real flap.
+    query<{ device_id: number; boot_at: string }>(
+      `SELECT device_id, boot_at FROM device_reboots WHERE device_id = ANY($1::int[]) AND boot_at > NOW() - INTERVAL '8 days'`, [ids]),
   ]);
+  const boots = new Map<number, string[]>();
+  for (const r of bootRows) boots.set(r.device_id, [...(boots.get(r.device_id) ?? []), r.boot_at]);
   const macs = new Map<number, Set<string>>();
   for (const r of macRows) {
     if (!macs.has(r.device_id)) macs.set(r.device_id, new Set());
@@ -88,7 +93,7 @@ async function addPeerLinks(pairs: MlagPair[], bonds: MlagBond[], ids: number[])
         && (v.current_tagged !== null ? csv(v.current_tagged) : v.tagged_ports ?? []).includes(d.mlag_peer_port));
       vlans.set(d.device_id, [...new Set(tagged.map((v) => v.vlan_id))]);
     }
-    const view = buildPeerLink({ pair, ports, macs, vlans, links: linkRows });
+    const view = buildPeerLink({ pair, ports, macs, vlans, links: linkRows, boots });
     pair.peerLink = view;
     const extra = peerLinkFindings(pair, view);
     if (extra.length) {

@@ -144,7 +144,9 @@ check when MLAG goes wrong:
   MLAG bond but missing from the peer link.
 - **LACP partner:** each side's partner should be the other peer. One that's something else means
   the peer link is cabled to another device, which is a critical finding.
-- **Last flap:** the last time a member went down that the manager saw (it keeps 7 days).
+- **Last flap:** the last time a member went down that the manager saw (it keeps 7 days), marked
+  **(reboot)** when one of the peers restarted around then, so a real flap stands out from a
+  maintenance window.
 
 A pair is **critical** when it has a critical finding, **warning** when it has only warnings, and
 **healthy** otherwise. A bond down on both peers that has never been seen up, for example one set up

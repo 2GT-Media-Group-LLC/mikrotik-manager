@@ -4139,6 +4139,35 @@ export class DeviceCollector {
     return this.client.execute(`${firewallMenu(family, 'filter')}/print`, { detail: '', stats: '' });
   }
 
+  /**
+   * What the quick firewall presets (#330) plan against, in one round trip:
+   * the filter (and for IPv4 NAT) rules, address lists, interface lists and
+   * interfaces, the services and their ports, and the RouterOS version.
+   */
+  async getQuickRuleContext(family: FirewallFamily): Promise<{
+    filter: Record<string, string>[]; nat: Record<string, string>[]; addressLists: Record<string, string>[];
+    interfaceLists: string[]; interfaces: string[]; services: Record<string, string>[]; rosMajor: number;
+  }> {
+    const res = await this.client.executeMany([
+      { command: `${firewallMenu(family, 'filter')}/print` },
+      { command: `${firewallMenu(family, 'nat')}/print` },
+      { command: `${firewallMenu(family, 'address-list')}/print` },
+      { command: '/interface/list/print', params: { '.proplist': 'name' } },
+      { command: '/interface/print', params: { '.proplist': 'name' } },
+      { command: '/ip/service/print', params: { '.proplist': 'name,port,disabled' } },
+      { command: '/system/resource/print', params: { '.proplist': 'version' } },
+    ]);
+    if (res[0].error) throw res[0].error;
+    const rows = (i: number) => res[i]?.rows ?? [];
+    return {
+      filter: rows(0), nat: rows(1), addressLists: rows(2),
+      interfaceLists: rows(3).map((r) => r.name).filter(Boolean),
+      interfaces: rows(4).map((r) => r.name).filter(Boolean),
+      services: rows(5),
+      rosMajor: Number((rows(6)[0]?.version ?? '7').split('.')[0]) || 7,
+    };
+  }
+
   async addFirewallRule(params: Record<string, string>, family: FirewallFamily = 'ip'): Promise<void> {
     await this.client.execute(`${firewallMenu(family, 'filter')}/add`, params);
   }

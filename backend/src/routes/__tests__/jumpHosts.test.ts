@@ -24,6 +24,18 @@ jest.mock('../../services/jumpHosts', () => ({
 import request from 'supertest';
 import express from 'express';
 import { utils as sshUtils } from 'ssh2';
+
+/**
+ * An Ed25519 key ssh2 can read back. ssh2 1.17 now and then writes one it
+ * can't parse (about 1 in 500), which made these tests fail at random;
+ * production regenerates the same way (utils/sshKeys.ts).
+ */
+function readableEd25519(): string {
+  for (;;) {
+    const key = sshUtils.generateKeyPairSync('ed25519').private;
+    if (!(sshUtils.parseKey(key) instanceof Error)) return key;
+  }
+}
 import jumpHostsRoutes from '../jumpHosts';
 import { query, queryOne } from '../../config/database';
 import { dropJumpHost, chooseJumpHost, trustNewJumpHostKey } from '../../services/jumpHosts';
@@ -94,7 +106,7 @@ describe('POST /', () => {
   it('takes exactly one login: a password, a key or a preset', async () => {
     const app = makeApp(fleetAdmin);
     expect((await request(app).post('/').send(base)).status).toBe(400);
-    const key = sshUtils.generateKeyPairSync('ed25519').private;
+    const key = readableEd25519();
     const both = await request(app).post('/').send({ ...base, password: 'x', private_key: key });
     expect(both.status).toBe(400);
     expect(both.body.error).toMatch(/exactly one/);

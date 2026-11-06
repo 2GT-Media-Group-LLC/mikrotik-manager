@@ -343,11 +343,18 @@ function PortTrafficGraph({
 
       {trafficData.length > 0 && (
         <div className="mt-3 shrink-0">
-          <div className="flex flex-wrap gap-x-4 mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
+          <div className="flex flex-wrap items-center gap-x-4 mono text-[12px]" style={{ color: 'var(--ink-2)' }}>
             <span className="uppercase tracking-widest text-[10px]" style={{ color: 'var(--ink-4)' }}>Errors &amp; drops · {range}</span>
-            <span style={{ color: totals.errors ? 'var(--bad)' : undefined }}>errors {totals.errors.toLocaleString()}</span>
-            <span style={{ color: totals.drops ? 'var(--warn)' : undefined }}>drops {totals.drops.toLocaleString()}</span>
-            <span style={{ color: totals.queue ? 'var(--warn)' : undefined }}>tx queue drops {totals.queue.toLocaleString()}</span>
+            {/* Checked and clean says so, rather than leaving an empty space (#402). */}
+            {!anyDrops ? (
+              <span style={{ color: 'var(--good, #15803d)' }}>✓ 0 errors · 0 drops in this range</span>
+            ) : (
+              <>
+                <span style={{ color: totals.errors ? 'var(--bad)' : undefined }}>{totals.errors.toLocaleString()} errors</span>
+                <span style={{ color: totals.drops ? 'var(--warn)' : undefined }}>{totals.drops.toLocaleString()} drops</span>
+                <span style={{ color: totals.queue ? 'var(--warn)' : undefined }}>{totals.queue.toLocaleString()} tx queue drops</span>
+              </>
+            )}
           </div>
           {anyDrops && (
             <div className="h-[90px] mt-1">

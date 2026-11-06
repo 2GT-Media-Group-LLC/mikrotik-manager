@@ -142,7 +142,7 @@ function PeerLinkBlock({ pair, view }: { pair: MlagPairView; view: MlagPeerLinkV
         )}
         <div>
           <span className="text-gray-400">Last flap: </span>
-          {view.lastFlap ? <>{view.lastFlap.member} on {view.lastFlap.device}, {formatDateTime(view.lastFlap.at)}</> : 'none in the last 7 days'}
+          {view.lastFlap ? <>{view.lastFlap.member} on {view.lastFlap.device}, {formatDateTime(view.lastFlap.at)}{view.lastFlap.reboot && <span className="text-gray-400" title="One of the peers restarted around then"> (reboot)</span>}</> : 'none in the last 7 days'}
         </div>
       </div>
     </div>

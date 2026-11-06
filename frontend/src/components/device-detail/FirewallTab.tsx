@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import QuickRulesModal from './QuickRulesModal';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Plus, Trash2, Pencil, Power, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield,
+  Plus, Trash2, Pencil, Power, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield, Zap,
   ArrowUp, ArrowDown, List, Activity,
 } from 'lucide-react';
-import { devicesApi, type FirewallFamily } from '../../services/api';
+import { devicesApi, type FirewallFamily, type QuickPreset } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { formatBytes, formatCount, ruleSummary, natSummary } from '../../utils/firewallSummary';
 import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
@@ -743,7 +745,18 @@ function NatCard({ deviceId, family }: { deviceId: number; family: FirewallFamil
  */
 export default function FirewallTab({ deviceId, deviceName }: { deviceId: number; deviceName?: string }) {
   const canWrite = useCanWrite();
-  const [family, setFamily] = useState<FirewallFamily>('ipv4');
+  // ?quick=input-basics[&family=ipv6] opens Quick rules (the Security tab links here).
+  const [params, setParams] = useSearchParams();
+  const linked = params.get('quick') as QuickPreset | null;
+  const [familyChoice, setFamily] = useState<FirewallFamily | null>(null);
+  const family: FirewallFamily = familyChoice ?? (params.get('family') === 'ipv6' ? 'ipv6' : 'ipv4');
+  const [opened, setQuick] = useState<QuickPreset | 'open' | null>(null);
+  // Follows the link as it changes, not only when the tab first appears.
+  const quick = opened ?? (canWrite && linked ? linked : null);
+  const closeQuick = () => {
+    setQuick(null);
+    if (params.get('quick')) { params.delete('quick'); params.delete('family'); setParams(params, { replace: true }); }
+  };
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -763,12 +776,16 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
           </p>
         )}
       </div>
-      <FirewallBody key={family} deviceId={deviceId} deviceName={deviceName} family={family} />
+      <FirewallBody key={family} deviceId={deviceId} deviceName={deviceName} family={family} onQuick={canWrite ? () => setQuick('open') : undefined} />
+      {quick && (
+        <QuickRulesModal deviceId={deviceId} deviceName={deviceName} family={family}
+          initial={quick === 'open' ? undefined : quick} onClose={closeQuick} />
+      )}
     </div>
   );
 }
 
-function FirewallBody({ deviceId, deviceName, family }: { deviceId: number; deviceName?: string; family: FirewallFamily }) {
+function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: number; deviceName?: string; family: FirewallFamily; onQuick?: () => void }) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const v6 = family === 'ipv6';
@@ -871,6 +888,8 @@ function FirewallBody({ deviceId, deviceName, family }: { deviceId: number; devi
           {canWrite && <button onClick={() => resetMut.mutate()} disabled={resetMut.isPending} title="Reset hit counters"
             className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><Activity className="w-3.5 h-3.5" /> Reset Counters</button>}
           <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh</button>
+          {onQuick && <button onClick={onQuick} title="Presets for the rules nearly every router needs"
+            className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><Zap className="w-3.5 h-3.5 text-amber-500" /> Quick rules</button>}
           {canWrite && <button onClick={() => { setForm({ ...EMPTY_FW, chain: chainFilter !== 'all' ? chainFilter : 'forward' }); setErr(''); setShowAdd(true); }}
             className="btn-primary flex items-center gap-1.5 text-xs py-1.5"><Plus className="w-3.5 h-3.5" /> Add Rule</button>}
         </div>

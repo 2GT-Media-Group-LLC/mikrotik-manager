@@ -119,7 +119,14 @@ describe('the peer link in detail (#376)', () => {
     expect(view.members[0].b).toMatchObject({ running: false, active: false });
     expect(view.members[1].a).toMatchObject({ errors24h: 12, speed: '10Gbps', active: true });
     expect(view.a).toEqual({ bond: 'Po15', partner: '04:F4:1C:EE:4A:95', partnerOk: true, vlans: [1, 10, 40] });
-    expect(view.lastFlap).toEqual({ device: 'CSW01', member: 'sfp-sfpplus16', at: '2026-11-05T09:00:00Z' });
+    expect(view.lastFlap).toEqual({ device: 'CSW01', member: 'sfp-sfpplus16', at: '2026-11-05T09:00:00Z', reboot: false });
+    // The other peer booted a minute before: a restart, not a flap.
+    const rebooted = buildPeerLink({ pair, macs, vlans, links: [], boots: new Map([[2, ['2026-11-05T08:59:00Z']]]),
+      ports: [port(1, 'sfp-sfpplus16', { last_down_at: '2026-11-05T09:00:00Z' })] });
+    expect(rebooted.lastFlap?.reboot).toBe(true);
+    const later = buildPeerLink({ pair, macs, vlans, links: [], boots: new Map([[2, ['2026-11-04T08:00:00Z']]]),
+      ports: [port(1, 'sfp-sfpplus16', { last_down_at: '2026-11-05T09:00:00Z' })] });
+    expect(later.lastFlap?.reboot).toBe(false);
     expect(peerLinkFindings(pair, view)).toEqual([]);
   });
 

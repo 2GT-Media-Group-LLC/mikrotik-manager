@@ -1,4 +1,4 @@
-import { PartialApplyError, isPartialApply } from '../services/changeGuard/partialApply';
+import { PartialApplyError, isPartialApply, stepFailure } from '../services/changeGuard/partialApply';
 import { resolveAuth } from '../services/sshExec';
 import { readSshInfo, refreshOverSsh, checkApi, promoteToApi, recordApiCheck, type SshOnlyDevice } from '../services/sshOnly';
 import { describeSshFailure } from '../utils/sshOnly';
@@ -29,7 +29,9 @@ import { parsePort } from '../utils/parsePort';
 import { safeConnectionError } from '../utils/safeClientError';
 import { normalizeDeviceAddress, reconcileAddressPort } from '../utils/deviceAddress';
 import { withSafeApply, probeCapability, probeUndoCapability, GuardRequiredError, type GuardDevice } from '../services/changeGuard/ChangeGuard';
-import { captureSnapshot, resolveManagementPath } from '../services/changeGuard/pathModel';
+import { captureSnapshot, resolveManagementPath, managerIpFromConntrack, type DeviceSnapshot } from '../services/changeGuard/pathModel';
+import { readApiConnections } from '../services/changeGuard/targetedReads';
+import { planPreset, topAnchor, QUICK_PRESETS, type QuickOptions, type QuickPreset, type IfaceRef } from '../utils/firewallPresets';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
 import { runConfigHealth } from '../services/changeGuard/configHealth';
 import { fixFor, noFixReason } from '../utils/configHealthFixes';
@@ -1334,6 +1336,132 @@ router.post('/:id/firewall/move', requireWrite, async (req, res) => {
     async (c) => { await c.moveFirewallRule(ruleId, dest, family); return { message: 'Rule moved' }; });
 });
 
+// ─── Quick rules (#330) ───────────────────────────────────────────────────────
+
+function quickOptions(src: Record<string, unknown>): { preset: QuickPreset | null; options: QuickOptions } {
+  const str = (k: string) => (src[k] === undefined || src[k] === null ? '' : String(src[k]).trim());
+  const ref = (k: string): IfaceRef | undefined => {
+    const name = str(k);
+    if (!name) return undefined;
+    return { kind: str(`${k}_kind`) === 'interface' ? 'interface' : 'list', name };
+  };
+  const listOf = (k: string) => {
+    const v = src[k];
+    const items = Array.isArray(v) ? v.map(String) : str(k).split(',');
+    return items.map((x) => x.trim()).filter(Boolean);
+  };
+  const preset = str('preset') as QuickPreset;
+  return {
+    preset: QUICK_PRESETS.includes(preset) ? preset : null,
+    options: {
+      wan: ref('wan'), lan: ref('lan'),
+      fasttrack: src.fasttrack === true || str('fasttrack') === '1' || str('fasttrack') === 'true',
+      list: str('list') || undefined, addresses: listOf('addresses'), services: listOf('services'),
+    },
+  };
+}
+
+/** Read what a preset plans against, including the manager's own address as the device sees it. */
+async function quickPlanFor(collector: DeviceCollector, device: DeviceRow, family: FirewallFamily, preset: QuickPreset, options: QuickOptions) {
+  const live = await collector.getQuickRuleContext(family);
+  let managerIp: string | null = null;
+  if (preset === 'management-access') {
+    const deviceIp = collector.apiRemoteAddress() || device.ip_address;
+    const conns = await readApiConnections(collector.batchReader(), deviceIp, device.api_port).catch(() => []);
+    managerIp = managerIpFromConntrack({ mgmtConnections: conns, managerLocalPort: collector.apiLocalPort() ?? null } as unknown as DeviceSnapshot, device.api_port);
+  }
+  const plan = planPreset(preset, options, { family, ...live, managerIp });
+  return { live, managerIp, plan };
+}
+
+// GET /api/devices/:id/firewall/quick?family=&preset=&lan=&lan_kind=&wan=&wan_kind=&fasttrack=&list=&addresses=&services=
+// The plan, and what the form offers (interface lists, interfaces, services). Changes nothing.
+router.get('/:id/firewall/quick', async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
+  const { preset, options } = quickOptions(req.query as Record<string, unknown>);
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const collector = new DeviceCollector(deviceRow);
+  try {
+    await collector.connect();
+    const { live, managerIp, plan } = await quickPlanFor(collector, deviceRow, family, preset ?? 'input-basics', options);
+    return res.json({
+      ...(preset ? plan : { steps: [], errors: { preset: 'Choose a preset.' }, notes: [] }),
+      interface_lists: live.interfaceLists.filter((n) => !['all', 'none', 'dynamic', 'static'].includes(n)),
+      interfaces: live.interfaces,
+      services: live.services.filter((s) => s.name).map((s) => ({ name: s.name, port: s.port, disabled: s.disabled === 'true' })),
+      manager_ip: managerIp,
+    });
+  } catch (err) {
+    if (family === 'ipv6' && ipv6Unavailable(res, err, 'filter')) return;
+    throw err;
+  } finally {
+    collector.disconnect();
+  }
+});
+
+// POST /api/devices/:id/firewall/quick[?family=ipv6] { preset, lan, lan_kind, wan, wan_kind, fasttrack, list, addresses, services }
+// Adds what the plan doesn't skip, in one guarded change: Change Guard checks the
+// whole preset against the manager's connection before anything is added.
+router.post('/:id/firewall/quick', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
+  const { preset, options } = quickOptions((req.body ?? {}) as Record<string, unknown>);
+  if (!preset) return res.status(400).json({ error: 'Choose a preset.', errors: { preset: 'Choose a preset.' } });
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  let plan: Awaited<ReturnType<typeof quickPlanFor>>;
+  const reader = new DeviceCollector(deviceRow);
+  try {
+    await reader.connect();
+    plan = await quickPlanFor(reader, deviceRow, family, preset, options);
+  } catch (err) {
+    if (family === 'ipv6' && ipv6Unavailable(res, err, 'filter')) return;
+    throw err;
+  } finally {
+    reader.disconnect();
+  }
+  const { plan: p, live } = plan;
+  if (Object.keys(p.errors).length) return res.status(400).json({ error: Object.values(p.errors)[0], errors: p.errors });
+  const todo = p.steps.filter((s) => !s.skip);
+  if (!todo.length) return res.json({ message: 'Everything in this preset is already there, so nothing was added.', added: 0 });
+
+  const anchor = topAnchor(live.filter);
+  // Address lists first (the accept rule names them), then the top rules in order, the bottom ones, NAT.
+  const ordered = [
+    ...todo.filter((s) => s.table === 'address-list'),
+    ...todo.filter((s) => s.table === 'filter' && s.placement === 'top'),
+    ...todo.filter((s) => s.table === 'filter' && s.placement === 'bottom'),
+    ...todo.filter((s) => s.table === 'nat'),
+  ];
+  const changes: PlannedChange[] = ordered.flatMap((s): PlannedChange[] => {
+    if (s.table === 'address-list') return [{ kind: 'address-list.add', fields: s.params }];
+    if (s.table === 'filter') return [{ kind: 'firewall.add', fields: s.params, ...(s.placement === 'top' && anchor ? { placeBefore: anchor } : {}) }];
+    return [];
+  });
+  const label = { 'input-basics': 'input basics', 'management-access': 'management access', 'forward-basics': 'forward basics', masquerade: 'masquerade' }[preset];
+  const summary = `Quick rules: ${label} (${ordered.length} ${ordered.length === 1 ? 'item' : 'items'})${family === 'ipv6' ? ', IPv6' : ''}`;
+  const meta = family === 'ipv6'
+    ? await ipv6WriteMeta(req.params.id, 'firewall.quick', summary)
+    : { kind: 'firewall.quick', summary, change: { kind: 'batch', changes } as PlannedChange };
+  await withGuardedChange(req.params.id, req, res, meta, async (c) => {
+    let wrote = false;
+    try {
+      for (const s of ordered) {
+        if (s.table === 'address-list') await c.addAddressListEntry(s.params, family);
+        else if (s.table === 'nat') await c.addNatRule(s.params, family);
+        else await c.addFirewallRule(s.placement === 'top' && anchor ? { ...s.params, 'place-before': anchor } : s.params, family);
+        wrote = true;
+      }
+    } catch (err) {
+      // Some of the preset may be in: the restore point puts it all back.
+      throw stepFailure(err, wrote);
+    }
+    return { message: `Added ${ordered.length} of ${p.steps.length}; ${p.steps.length - ordered.length} already there.`, added: ordered.length };
+  });
+});
+
 // POST /api/devices/:id/firewall/reset-counters[?family=ipv6]
 router.post('/:id/firewall/reset-counters', requireWrite, async (req, res) => {
   const family = familyOf(req, res);
@@ -2382,7 +2510,7 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
     const hasInputDrop = fwRules.some(r => (r['chain'] === 'input') && ['drop', 'reject'].includes(r['action'] ?? '') && r['disabled'] !== 'true');
     if (!hasInputDrop) {
       checks.push({
-        id: 'no-input-firewall', severity: isRouter ? 'high' : 'low',
+        id: 'no-input-firewall', severity: isRouter ? 'high' : 'low', fix: 'firewall-quick',
         title: 'No input-chain firewall rule',
         detail: isRouter
           ? 'This router has no enabled drop/reject rule on the input chain, leaving its own services exposed. Add a baseline input firewall.'
@@ -2392,7 +2520,7 @@ export async function securityPosture(c: DeviceCollector, device: PostureDevice)
 
     if (missingIpv6InputFirewall(v6Addresses, v6Rules)) {
       checks.push({
-        id: 'no-input-firewall-v6', severity: isRouter ? 'high' : 'low',
+        id: 'no-input-firewall-v6', severity: isRouter ? 'high' : 'low', fix: 'firewall-quick',
         title: 'No IPv6 input-chain firewall rule',
         detail: isRouter
           ? 'This router has a routable IPv6 address but no enabled drop/reject rule on the IPv6 input chain, so its own services are open over IPv6 whatever the IPv4 firewall says. Add a baseline IPv6 input firewall (/ipv6/firewall/filter).'

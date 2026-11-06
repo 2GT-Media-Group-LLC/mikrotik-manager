@@ -3,6 +3,26 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.27
+
+- **Quick firewall rules**, from [@cybr4nx](https://github.com/cybr4nx)
+  ([#330](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/330)): **Quick rules** on the
+  Firewall tab adds presets close to MikroTik's defconf: input basics, management access (WinBox,
+  SSH, the API and WebFig only from an address list, the manager's own address included), forward
+  basics with optional FastTrack, and masquerade, with IPv6 versions of the input and forward
+  presets. You choose the LAN and WAN, the dialog shows each rule and where it goes, rules already
+  there are skipped, and Change Guard checks the whole preset against the manager's connection first.
+  The Security tab's missing input firewall finding opens it
+  ([Quick firewall rules](devices.md#quick-firewall-rules)).
+- Follow-ups from [@azizfayziev](https://github.com/azizfayziev)'s testing of beta.26:
+  - **Peaks** on the Hardware tab's CPU and memory chart are a light band from the average up to the
+    peak, instead of a dashed line that zig-zagged; memory's only where it differs by more than two
+    points, and the chart is taller ([#402](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/402)).
+  - A port's **Errors & drops** says "0 errors · 0 drops in this range" when there were none, so it's
+    clear it was checked.
+  - MLAG's **last flap** is marked **(reboot)** when a peer restarted around then
+    ([#376](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376)).
+
 ## 1.1.0-beta.26
 
 - **MLAG peer link**, from [@azizfayziev](https://github.com/azizfayziev)'s proposal

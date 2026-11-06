@@ -14,7 +14,7 @@ import { compareRosVersions } from './rosVersion';
 export type PostureSev = 'high' | 'medium' | 'low';
 export type PostureCheck = {
   id: string; severity: PostureSev; title: string; detail: string;
-  serviceId?: string; fix?: 'api-ssl' | 'www-ssl' | 'api-off' | 'romon';
+  serviceId?: string; fix?: 'api-ssl' | 'www-ssl' | 'api-off' | 'romon' | 'firewall-quick';
 };
 export type MarkedCheck = PostureCheck & { suppressed?: true; suppressed_scope?: 'device' | 'fleet'; suppressed_reason?: string | null };
 export interface Suppression { check_id: string; device_id: number | null; reason: string | null }
