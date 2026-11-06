@@ -1,6 +1,6 @@
 import { query } from '../config/database';
 import { siteScopeDevices, type SiteScope } from '../utils/siteScope';
-import { buildPairs, type MlagBond, type MlagBridge, type MlagEvents, type MlagPair, type PeerLink } from '../utils/mlag';
+import { buildPairs, buildPeerLink, peerLinkFindings, type MlagBond, type MlagBridge, type MlagEvents, type MlagPair, type PeerLink, type PortFacts } from '../utils/mlag';
 import { alertService } from './AlertService';
 
 /**
@@ -40,7 +40,62 @@ export async function loadMlagPairs(scope: SiteScope | null): Promise<MlagPair[]
   ]);
   const ev = new Map<number, MlagEvents>(events.map((e) => [Number(e.device_id),
     { heartbeatHour: Number(e.hb), fdbFailHour: Number(e.fdb), peerLinkDownDay: Number(e.pl) }]));
-  return buildPairs(bridges, bonds, links, ev);
+  const pairs = buildPairs(bridges, bonds, links, ev);
+  await addPeerLinks(pairs, bonds, ids);
+  return pairs;
+}
+
+const csv = (v: string | null | undefined) => (v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+
+/**
+ * Each pair's peer link in detail (#376): its members on both switches with
+ * speed, link-downs, errors and the last flap, the VLANs it carries, and
+ * whether each side's LACP partner is the other peer. All from what's stored.
+ */
+async function addPeerLinks(pairs: MlagPair[], bonds: MlagBond[], ids: number[]): Promise<void> {
+  const peerBonds = bonds.filter((b) => b.is_peer_link);
+  const members = [...new Set(peerBonds.flatMap((b) => (csv(b.slaves).length ? csv(b.slaves) : [b.bond])))];
+  if (!pairs.length || !members.length) return;
+  const [ports, macRows, vlanRows, linkRows] = await Promise.all([
+    query<PortFacts>(
+      `SELECT i.device_id, i.name, i.running, COALESCE(NULLIF(i.link_rate, ''), NULLIF(i.speed, '')) AS speed,
+              NULLIF(i.config_json->>'link-downs', '')::int AS link_downs,
+              COALESCE((SELECT SUM(e.fcs + e.align + e.overflow + e.other)::float8 FROM interface_error_events e
+                         WHERE e.device_id = i.device_id AND e.interface = i.name AND e.at > NOW() - INTERVAL '24 hours'), 0) AS errors_24h,
+              (SELECT MAX(e.at) FROM interface_error_events e
+                WHERE e.device_id = i.device_id AND e.interface = i.name AND e.link_downs > 0) AS last_down_at
+         FROM interfaces i WHERE i.device_id = ANY($1::int[]) AND i.name = ANY($2::text[])`, [ids, members]),
+    query<{ device_id: number; mac: string }>(
+      `SELECT DISTINCT device_id, upper(mac_address) AS mac FROM interfaces WHERE device_id = ANY($1::int[]) AND mac_address IS NOT NULL`, [ids]),
+    query<{ device_id: number; bridge: string; vlan_id: number; tagged_ports: string[] | null; current_tagged: string | null }>(
+      `SELECT device_id, bridge, vlan_id, tagged_ports, config_json->>'current-tagged' AS current_tagged
+         FROM vlans WHERE device_id = ANY($1::int[])`, [ids]),
+    query<{ from_device_id: number; from_interface: string | null; to_device_id: number | null; to_interface: string | null }>(
+      `SELECT from_device_id, from_interface, to_device_id, to_interface FROM topology_links
+        WHERE from_device_id = ANY($1::int[]) AND to_device_id = ANY($1::int[])`, [ids]),
+  ]);
+  const macs = new Map<number, Set<string>>();
+  for (const r of macRows) {
+    if (!macs.has(r.device_id)) macs.set(r.device_id, new Set());
+    macs.get(r.device_id)!.add(r.mac);
+  }
+  for (const pair of pairs) {
+    // VLANs tagged on each side's peer port, as RouterOS has them now.
+    const vlans = new Map<number, number[]>();
+    for (const d of [pair.a, pair.b]) {
+      if (!d) continue;
+      const tagged = vlanRows.filter((v) => v.device_id === d.device_id && v.bridge === d.bridge_name
+        && (v.current_tagged !== null ? csv(v.current_tagged) : v.tagged_ports ?? []).includes(d.mlag_peer_port));
+      vlans.set(d.device_id, [...new Set(tagged.map((v) => v.vlan_id))]);
+    }
+    const view = buildPeerLink({ pair, ports, macs, vlans, links: linkRows });
+    pair.peerLink = view;
+    const extra = peerLinkFindings(pair, view);
+    if (extra.length) {
+      pair.findings = [...extra, ...pair.findings];
+      pair.status = 'critical';
+    }
+  }
 }
 
 /** Whether any device in view runs MLAG: the sidebar shows the page only then. */

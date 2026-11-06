@@ -467,6 +467,9 @@ export interface ResourcePoint {
   cpu_load?: number;
   memory_used?: number;
   memory_total?: number;
+  /** The highest reading in the window (#402). */
+  cpu_load_peak?: number;
+  memory_used_peak?: number;
 }
 
 // ─── Wireless ─────────────────────────────────────────────────────────────────

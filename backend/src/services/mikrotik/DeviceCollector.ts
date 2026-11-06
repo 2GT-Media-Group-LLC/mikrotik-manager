@@ -781,7 +781,7 @@ export class DeviceCollector {
     const [r, s, c, v] = await this.client.executeMany([
       { command: '/ip/reverse-proxy/print', params: { detail: '' } },
       { command: '/ip/service/print', params: { detail: '' } },
-      { command: '/certificate/print', params: { '.proplist': '.id,name,common-name,subject-alt-name,issuer,invalid-after,private-key,expired,trusted,ca,fingerprint' } },
+      { command: '/certificate/print', params: { '.proplist': '.id,name,common-name,subject-alt-name,issuer,invalid-after,private-key,expired,trusted,ca,fingerprint,acme-managed,acme-status,directory-url,domain-names,issued' } },
       { command: '/ip/vrf/print', params: { '.proplist': 'name' } },
     ]);
     if (r.error) throw r.error;
@@ -802,6 +802,19 @@ export class DeviceCollector {
 
   async removeReverseProxyRule(id: string): Promise<void> {
     await this.client.execute('/ip/reverse-proxy/remove', { numbers: id });
+  }
+
+  /** Have RouterOS request a Let's Encrypt (ACME) certificate; it renews it itself (#358). */
+  async addAcmeCertificate(name: string, domain: string, directoryUrl: string): Promise<void> {
+    await this.client.execute('/certificate/add-acme', { name, 'domain-names': domain, 'directory-url': directoryUrl });
+  }
+
+  async renewAcmeCertificate(id: string): Promise<void> {
+    await this.client.execute('/certificate/acme-renew', { numbers: id });
+  }
+
+  async removeCertificateById(id: string): Promise<void> {
+    await this.client.execute('/certificate/remove', { numbers: id });
   }
 
   async setServicePort(id: string, port: number): Promise<void> {
@@ -988,6 +1001,10 @@ export class DeviceCollector {
           .intField('tx_packets', parseInt(iface['tx-packet'] || '0', 10))
           .intField('rx_errors', parseInt(iface['rx-error'] || '0', 10))
           .intField('tx_errors', parseInt(iface['tx-error'] || '0', 10))
+          // Drops (#402): the port or its queue discarding frames, apart from errors.
+          .intField('rx_drops', parseInt(iface['rx-drop'] || '0', 10))
+          .intField('tx_drops', parseInt(iface['tx-drop'] || '0', 10))
+          .intField('tx_queue_drops', parseInt(iface['tx-queue-drop'] || '0', 10))
           .booleanField('running', iface['running'] === 'true')
           .timestamp(new Date());
 
@@ -2316,12 +2333,16 @@ export class DeviceCollector {
 
         const size = parseInt(r['key-size'] || '', 10);
         const rev = readRevocation(r);
+        // An ACME certificate not issued yet reports 1970/1969 dates; stored as
+        // they are, it would read as long expired and raise expiry alerts (#358).
+        const acme = r['acme-managed'] === 'true';
+        const undated = acme && r['issued'] !== 'true';
         await query(
           `INSERT INTO device_certificates
              (device_id, name, common_name, serial_number, fingerprint, key_type, key_size,
               invalid_before, invalid_after, is_authority, has_private_key, trusted,
-              revoked, revoked_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+              revoked, revoked_at, acme_managed, acme_status, acme_directory, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
            ON CONFLICT (device_id, name) DO UPDATE SET
              common_name = EXCLUDED.common_name, serial_number = EXCLUDED.serial_number,
              fingerprint = EXCLUDED.fingerprint, key_type = EXCLUDED.key_type,
@@ -2329,7 +2350,8 @@ export class DeviceCollector {
              invalid_after = EXCLUDED.invalid_after, is_authority = EXCLUDED.is_authority,
              has_private_key = EXCLUDED.has_private_key, trusted = EXCLUDED.trusted,
              revoked = EXCLUDED.revoked, revoked_at = EXCLUDED.revoked_at,
-             updated_at = NOW()`,
+             acme_managed = EXCLUDED.acme_managed, acme_status = EXCLUDED.acme_status,
+             acme_directory = EXCLUDED.acme_directory, updated_at = NOW()`,
           [
             this.device.id, name.slice(0, 128),
             (r['common-name'] || '').slice(0, 255) || null,
@@ -2337,8 +2359,8 @@ export class DeviceCollector {
             (r['fingerprint'] || '').slice(0, 160) || null,
             (r['key-type'] || '').slice(0, 16) || null,
             Number.isFinite(size) ? size : null,
-            this.parseCertTime(r['invalid-before']),
-            this.parseCertTime(r['invalid-after']),
+            undated ? null : this.parseCertTime(r['invalid-before']),
+            undated ? null : this.parseCertTime(r['invalid-after']),
             r['authority'] === 'true',
             r['private-key'] === 'true',
             r['trusted'] === 'true',
@@ -2348,6 +2370,9 @@ export class DeviceCollector {
             // written against captures of both cases from a real switch.
             rev.revoked,
             rev.revokedAtRaw ? this.parseCertTime(rev.revokedAtRaw) : null,
+            acme,
+            acme ? (r['acme-status'] || '').slice(0, 2000) || null : null,
+            acme ? (r['directory-url'] || '').slice(0, 255) || null : null,
           ]
         );
       }

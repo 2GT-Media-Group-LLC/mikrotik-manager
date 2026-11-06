@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sniError, certCovers, ruleErrors, movePortError, ISSUE_FROM_CA, type RuleForm } from './reverseProxy';
+import { sniError, certCovers, ruleErrors, movePortError, acmeNameError, ISSUE_FROM_CA, LETS_ENCRYPT, type RuleForm } from './reverseProxy';
 
 const certs = [
   { name: 'nas', commonName: 'nas.example.com', subjectAltName: 'DNS:nas.example.com', privateKey: true, expired: false },
@@ -40,5 +40,13 @@ describe('reverse proxy rule form', () => {
     const both = [...services, { name: 'www-ssl', port: 443, disabled: false }, { name: 'reverse-proxy', port: 8443, disabled: false }];
     expect(movePortError(both, 'reverse-proxy', '443', false)).toBeNull();
     expect(movePortError(both, 'reverse-proxy', '443', true)).toMatch(/www-ssl/);
+  });
+});
+
+describe('Let\'s Encrypt on a rule', () => {
+  it('needs a public name', () => {
+    expect(acmeNameError('nas.example.org')).toBeNull();
+    expect(ruleErrors(form({ sni: 'nas.lan', certificate: LETS_ENCRYPT }), ctx).sni).toMatch(/internal/);
+    expect(ruleErrors(form({ sni: 'nas.example.org', certificate: LETS_ENCRYPT }), ctx)).toEqual({});
   });
 });

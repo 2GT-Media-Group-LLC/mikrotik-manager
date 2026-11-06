@@ -10,7 +10,7 @@ import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import DeviceTypePill from '../devices/DeviceTypePill';
 import { apiErrorMessage } from '../../utils/apiError';
-import { ruleErrors, movePortError, certCovers, normalizeSni, ISSUE_FROM_CA, type RuleForm } from '../../utils/reverseProxy';
+import { ruleErrors, movePortError, certCovers, normalizeSni, sniError, isAcmeName, ISSUE_FROM_CA, LETS_ENCRYPT, type RuleForm } from '../../utils/reverseProxy';
 
 const label = 'block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1';
 const fieldError = (msg?: string | null) => (msg ? <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{msg}</p> : null);
@@ -67,7 +67,18 @@ function RuleModal({ deviceId, existing, onClose }: { deviceId: number; existing
   });
   const [f, setF] = useState<RuleForm>({
     sni: existing?.sni ?? '', ip: existing?.ipAddress ?? '', port: existing?.port ? String(existing.port) : '',
-    certificate: existing ? existing.certificate ?? 'none' : '', vrf: existing?.vrf ?? '', comment: existing?.comment ?? '', enabled: existing ? !existing.disabled : true,
+    certificate: existing ? (isAcmeName(existing.certificate) ? LETS_ENCRYPT : existing.certificate ?? 'none') : '',
+    vrf: existing?.vrf ?? '', comment: existing?.comment ?? '', enabled: existing ? !existing.disabled : true,
+  });
+  // Let's Encrypt's staging server first: no rate limits, but browsers don't trust what it issues.
+  const [staging, setStaging] = useState(existing?.certificate ? /^mtm-le-staging-/.test(existing.certificate) : true);
+  const acmeOn = f.certificate === LETS_ENCRYPT;
+  const dnsName = acmeOn && !sniError(f.sni) ? normalizeSni(f.sni) : '';
+  const { data: dnsHint } = useQuery({
+    queryKey: ['reverse-proxy-dns', dnsName],
+    queryFn: () => reverseProxyApi.dns(dnsName).then((r) => r.data),
+    enabled: !!dnsName,
+    staleTime: 60_000,
   });
   const [fix, setFix] = useState<{ service: ProxyFix['service']; port: string }>({ service: 'www-ssl', port: '8443' });
   const [steps, setSteps] = useState<string[]>([]);
@@ -83,7 +94,8 @@ function RuleModal({ deviceId, existing, onClose }: { deviceId: number; existing
 
   const body = (certificate: string) => {
     const b: Record<string, unknown> = {
-      sni: normalizeSni(f.sni), 'ip-address': f.ip.trim(), port: Number(f.port), certificate, comment: f.comment, disabled: !f.enabled,
+      sni: normalizeSni(f.sni), 'ip-address': f.ip.trim(), port: Number(f.port), comment: f.comment, disabled: !f.enabled,
+      ...(certificate === LETS_ENCRYPT ? { acme: { staging } } : { certificate }),
       ...(f.vrf ? { vrf: f.vrf } : {}),
     };
     if (needsFix) b.fix = { service: fix.service, port: Number(fix.port) };
@@ -149,6 +161,7 @@ function RuleModal({ deviceId, existing, onClose }: { deviceId: number; existing
               <select className="input w-full" value={f.certificate} onChange={(e) => set('certificate', e.target.value)}>
                 <option value="">Choose…</option>
                 {isAdmin && view.ca_ready && <option value={ISSUE_FROM_CA}>Issue one from the manager&apos;s CA (renewed automatically)</option>}
+                <option value={LETS_ENCRYPT}>Let&apos;s Encrypt, for a public name (the router requests and renews it)</option>
                 {fits.length > 0 && (
                   <optgroup label="On the device, for this name">
                     {fits.map((c) => <option key={c.name} value={c.name}>{c.name}{c.invalidAfter ? ` (until ${c.invalidAfter.slice(0, 10)})` : ''}</option>)}
@@ -164,6 +177,27 @@ function RuleModal({ deviceId, existing, onClose }: { deviceId: number; existing
               {fieldError(errors.certificate)}
               {f.certificate === ISSUE_FROM_CA && (
                 <p className="mt-0.5 text-xs text-gray-500">Browsers trust it once the CA certificate is installed on them (Download CA certificate on the PKI tab).</p>
+              )}
+              {acmeOn && (
+                <div className="mt-2 p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-900 dark:text-blue-200 space-y-1.5">
+                  <p>The router asks Let&apos;s Encrypt for the certificate and renews it itself. For that to work:</p>
+                  <ul className="list-disc ml-4 space-y-0.5">
+                    <li>{normalizeSni(f.sni) || 'The name'} must point at this router&apos;s public address in public DNS.</li>
+                    <li>TCP port 80 must reach the router from the internet (a firewall rule or port forward), at least while it&apos;s issued and renewed.</li>
+                  </ul>
+                  {dnsName && dnsHint && (
+                    <p className={dnsHint.addresses.length ? '' : 'text-amber-700 dark:text-amber-300'}>
+                      {dnsHint.addresses.length
+                        ? <>From the manager, {dnsName} resolves to {dnsHint.addresses.join(', ')}. Check that&apos;s the router&apos;s public address.</>
+                        : <>From the manager, {dnsName} doesn&apos;t resolve{dnsHint.error ? ` (${dnsHint.error})` : ''}, so Let&apos;s Encrypt probably can&apos;t find it either.</>}
+                    </p>
+                  )}
+                  <label className="flex items-start gap-2 pt-1">
+                    <input type="checkbox" className="mt-0.5" checked={staging} onChange={(e) => setStaging(e.target.checked)} />
+                    <span><b>Test with the staging server first.</b> It has no rate limits, but browsers don&apos;t trust what it issues.
+                      Once it works, edit the rule and untick this to get the real certificate.</span>
+                  </label>
+                </div>
               )}
               {f.certificate === 'none' && !view.service.certificate && (
                 <p className="mt-0.5 text-xs text-amber-600">The service has no certificate either, so HTTPS for this name would fail.</p>
@@ -245,7 +279,12 @@ function DeviceCard({ d, onNote }: { d: ProxyFleetDevice; onNote: (n: { ok: bool
   const done = () => { qc.invalidateQueries({ queryKey: ['reverse-proxy'] }); qc.invalidateQueries({ queryKey: ['reverse-proxy-device', d.id] }); };
   const write = useMutation({
     mutationFn: (fn: () => Promise<unknown>) => fn(),
-    onSuccess: (res) => { guard.onSuccess(res); setNote(null); done(); },
+    onSuccess: (res) => {
+      guard.onSuccess(res);
+      const warning = (res as { data?: { warning?: string } } | undefined)?.data?.warning;
+      setNote(warning ? { ok: false, text: warning } : null);
+      done();
+    },
     onError: (e) => setNote({ ok: false, text: apiErrorMessage(e) }),
   });
   const certJob = useMutation({
@@ -258,6 +297,24 @@ function DeviceCard({ d, onNote }: { d: ProxyFleetDevice; onNote: (n: { ok: bool
     id: r.rule_id, sni: r.sni, ipAddress: r.ip_address, port: r.port, certificate: r.certificate, vrf: r.vrf, comment: r.comment, disabled: r.disabled, dynamic: r.dynamic,
   });
   const svc = d.service;
+  // While RouterOS is requesting a Let's Encrypt certificate, read the device every few seconds
+  // so its progress shows; the fleet list only refreshes with the slow poll.
+  // A request just made isn't in the slow-poll data yet, so a Let's Encrypt rule without a settled status counts too.
+  const pendingAcme = d.rules.some((r) => isAcmeName(r.certificate) && (!r.acme || r.acme.phase === 'pending'));
+  const cached = qc.getQueryData<ProxyDeviceView>(['reverse-proxy-device', d.id]);
+  const livePending = !!cached?.acme.some((a) => a.phase === 'pending');
+  const { data: liveView } = useQuery({
+    queryKey: ['reverse-proxy-device', d.id],
+    queryFn: () => reverseProxyApi.device(d.id).then((x) => x.data),
+    enabled: (pendingAcme || livePending) && d.status === 'online',
+    refetchInterval: (q) => ((q.state.data as ProxyDeviceView | undefined)?.acme.some((a) => a.phase === 'pending') ? 5_000 : false),
+  });
+  const acmeFor = (r: ProxyFleetDevice['rules'][number]) => {
+    const live = liveView?.acme.find((a) => a.name === r.certificate);
+    return live ? { staging: live.staging, phase: live.phase, status: live.status } : r.acme;
+  };
+  const acmeAgain = (r: ProxyFleetDevice['rules'][number], staging: boolean) =>
+    write.mutate(() => reverseProxyApi.updateRule(d.id, r.rule_id, r.sni, { acme: { staging } }));
 
   return (
     <div className="card overflow-hidden">
@@ -313,9 +370,41 @@ function DeviceCard({ d, onNote }: { d: ProxyFleetDevice; onNote: (n: { ok: bool
                     </td>
                     <td className="px-3 py-2 text-xs font-mono">{r.ip_address}:{r.port}{r.vrf ? ` (${r.vrf})` : ''}</td>
                     <td className="px-3 py-2 text-xs">
-                      {r.effective_certificate ?? <span className="text-red-600">none: HTTPS fails</span>}
-                      {!r.certificate && r.effective_certificate && <span className="text-gray-400"> (service)</span>}
-                      {r.managed && <span className="ml-1 inline-flex items-center gap-0.5 text-green-700 dark:text-green-400"><ShieldCheck className="w-3 h-3" />CA, renews</span>}
+                      {(() => {
+                        const a = acmeFor(r);
+                        if (!a) return (
+                          <>
+                            {r.effective_certificate ?? <span className="text-red-600">none: HTTPS fails</span>}
+                            {!r.certificate && r.effective_certificate && <span className="text-gray-400"> (service)</span>}
+                            {r.managed && <span className="ml-1 inline-flex items-center gap-0.5 text-green-700 dark:text-green-400"><ShieldCheck className="w-3 h-3" />CA, renews</span>}
+                          </>
+                        );
+                        return (
+                          <div className="space-y-0.5">
+                            <div>
+                              Let&apos;s Encrypt{a.staging && <span className="text-amber-600"> (staging, not trusted by browsers)</span>}
+                              {a.phase === 'issued' && <span className="ml-1 inline-flex items-center gap-0.5 text-green-700 dark:text-green-400"><ShieldCheck className="w-3 h-3" />renews itself</span>}
+                              {a.phase === 'pending' && <span className="ml-1 text-blue-600 dark:text-blue-400"><RefreshCw className="w-3 h-3 inline animate-spin" /> {a.status || 'requesting'}…</span>}
+                            </div>
+                            {a.phase === 'failed' && <div className="text-red-600 dark:text-red-400 break-words max-w-md">{a.status}</div>}
+                            {canWrite && !r.dynamic && (
+                              <div className="flex gap-3">
+                                {a.phase === 'failed' && <button className="underline text-blue-600" disabled={write.isPending} onClick={() => acmeAgain(r, a.staging)}>Try again</button>}
+                                {a.phase === 'issued' && a.staging && (
+                                  <button className="underline text-blue-600" disabled={write.isPending}
+                                    onClick={() => { if (confirm(`Staging works for ${r.sni}. Request the real certificate from Let's Encrypt now?`)) acmeAgain(r, false); }}>
+                                    Get the real certificate
+                                  </button>
+                                )}
+                                {a.phase === 'issued' && r.certificate && (
+                                  <button className="underline text-gray-500" disabled={certJob.isPending}
+                                    onClick={() => certJob.mutate(() => reverseProxyApi.renewAcme(d.id, r.certificate!))}>Renew now</button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className={clsx('px-3 py-2 text-xs', soon(r.certificate_expires) ? 'text-amber-600' : 'text-gray-500')}>{day(r.certificate_expires)}</td>
                     {canWrite && (

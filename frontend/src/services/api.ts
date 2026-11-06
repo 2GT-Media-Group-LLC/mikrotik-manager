@@ -1724,6 +1724,9 @@ export const metricsApi = {
     api.get<TrafficPoint[]>(`/metrics/interface/${deviceId}/${encodeURIComponent(iface)}/packets`, {
       params: { range },
     }),
+  interfaceDrops: (deviceId: number, iface: string, range = '1h') =>
+    api.get<{ time: string; errors: number; drops: number; queue_drops: number }[]>(
+      `/metrics/interface/${deviceId}/${encodeURIComponent(iface)}/drops`, { params: { range } }),
   deviceResources: (deviceId: number, range = '24h') =>
     api.get<ResourcePoint[]>(`/metrics/device/${deviceId}/resources`, { params: { range } }),
   deviceAvailability: (deviceId: number, range = '30d') =>
@@ -2903,6 +2906,15 @@ export interface MlagPairView {
   bonds: { mlagId: number; a: MlagBondSide | null; b: MlagBondSide | null; status: 'dual-homed' | 'single-homed' | 'mismatch' | 'down' | 'unused' }[];
   findings: { severity: 'critical' | 'warning'; code: string; text: string }[];
   status: 'healthy' | 'warning' | 'critical';
+  peerLink?: MlagPeerLinkView;
+}
+export interface MlagPeerMember { name: string; running: boolean; active: boolean; speed: string | null; linkDowns: number | null; errors24h: number; lastDownAt: string | null }
+export interface MlagPeerLinkSide { bond: string; partner: string | null; partnerOk: boolean | null; vlans: number[] }
+export interface MlagPeerLinkView {
+  a: MlagPeerLinkSide | null;
+  b: MlagPeerLinkSide | null;
+  members: { a: MlagPeerMember | null; b: MlagPeerMember | null }[];
+  lastFlap: { device: string; member: string; at: string } | null;
 }
 export const mlagApi = {
   pairs: () => api.get<MlagPairView[]>('/mlag'),
@@ -3031,7 +3043,11 @@ export interface ProxyRuleRow {
   device_id: number; rule_id: string; sni: string; ip_address: string | null; port: number | null; certificate: string | null;
   vrf: string | null; comment: string | null; disabled: boolean; dynamic: boolean;
   effective_certificate: string | null; certificate_expires: string | null; managed: boolean;
+  /** A Let's Encrypt certificate RouterOS requests and renews (#358). */
+  acme: { staging: boolean; phase: AcmePhase; status: string | null } | null;
 }
+export type AcmePhase = 'pending' | 'issued' | 'failed';
+export interface AcmeCertView { id: string; name: string; domain: string; staging: boolean; phase: AcmePhase; status: string | null; invalidAfter: string | null }
 export interface ProxyManagedCert { sni: string; cert_name: string; not_after: string; last_error: string | null }
 export interface ProxyFleetDevice {
   id: number; name: string; status: string; device_type: string; model: string | null; ros_version: string | null; architecture: string | null;
@@ -3055,6 +3071,7 @@ export interface ProxyDeviceView {
   certificates: ProxyCertInfo[];
   vrfs: string[];
   managed_certs: ProxyManagedCert[];
+  acme: AcmeCertView[];
   ca_ready: boolean;
 }
 export type ProxyFix = { service: 'www-ssl' | 'reverse-proxy'; port: number };
@@ -3068,6 +3085,8 @@ export const reverseProxyApi = {
     api.put(`/reverse-proxy/rule/${encodeURIComponent(id)}`, body, rp(deviceId, { sni })),
   removeRule: (deviceId: number, id: string, sni: string) => api.delete(`/reverse-proxy/rule/${encodeURIComponent(id)}`, rp(deviceId, { sni })),
   movePort: (deviceId: number, fix: ProxyFix) => api.put('/reverse-proxy/service', fix, rp(deviceId)),
+  renewAcme: (deviceId: number, name: string) => api.post<{ message: string }>('/reverse-proxy/acme/renew', { name }, rp(deviceId)),
+  dns: (name: string) => api.get<{ name: string; addresses: string[]; error?: string }>('/reverse-proxy/dns', { params: { name } }),
   issueCert: (deviceId: number, sni: string, days?: number) =>
     api.post<{ ok: boolean; steps: string[]; message: string; cert_name?: string }>('/reverse-proxy/cert', { sni, ...(days ? { days } : {}) }, { ...rp(deviceId), timeout: 120_000 }),
   removeCert: (deviceId: number, sni: string, forget = false) =>

@@ -1,4 +1,4 @@
-import { buildPairs, pairMlag, mlagFindings, bondRows, type MlagBridge, type MlagBond, type MlagEvents } from '../mlag';
+import { buildPairs, pairMlag, mlagFindings, bondRows, buildPeerLink, peerLinkFindings, type MlagBridge, type MlagBond, type MlagEvents, type PortFacts } from '../mlag';
 
 const bridge = (id: number, over: Partial<MlagBridge> = {}): MlagBridge => ({
   device_id: id, device_name: `CSW0${id}`, ros_version: '7.25', bridge_name: 'bridge', mlag_peer_port: 'Po15',
@@ -24,6 +24,9 @@ describe('MLAG (#376)', () => {
     const pairs = pairMlag([bridge(1), bridge(2)], [peerLink(1), peerLink(2)], links);
     expect(pairs.map(([a, b]) => [a.device_id, b?.device_id])).toEqual([[1, 2]]);
     expect(pairMlag([bridge(1)], [peerLink(1)], [])).toEqual([[expect.objectContaining({ device_id: 1 }), null]]);
+    // Discovery reported from the other end only.
+    const oneWay = pairMlag([bridge(1), bridge(2)], [peerLink(1), peerLink(2)], [{ from_device_id: 2, from_interface: 'sfp-sfpplus16', to_device_id: 1 }]);
+    expect(oneWay.map(([a, b]) => [a.device_id, b?.device_id])).toEqual([[1, 2]]);
   });
 
   it('a healthy pair has nothing to report', () => {
@@ -96,5 +99,37 @@ describe('MLAG (#376)', () => {
   it('a pair with only warnings is a warning, not degraded', () => {
     const [pair] = buildPairs([bridge(1, { mlag_heartbeat: '2s' }), bridge(2)], [peerLink(1), peerLink(2)], links, none, NOW);
     expect(pair.status).toBe('warning');
+  });
+});
+
+describe('the peer link in detail (#376)', () => {
+  const port = (id: number, name: string, over: Partial<PortFacts> = {}): PortFacts => ({
+    device_id: id, name, running: true, speed: '10Gbps', link_downs: 0, errors_24h: 0, last_down_at: null, ...over });
+  const pairOf = (bonds: MlagBond[]) => buildPairs([bridge(1), bridge(2)], bonds, links, none, NOW)[0];
+  const macs = new Map([[1, new Set(['04:F4:1C:EE:49:01'])], [2, new Set(['04:F4:1C:EE:4A:95'])]]);
+  const vlans = new Map([[1, [40, 1, 10]], [2, [1, 10, 40]]]);
+
+  it('lines the members up by cable, and checks each side\'s LACP partner is the other peer', () => {
+    const pair = pairOf([peerLink(1, { partner_sys_id: '04:f4:1c:ee:4a:95' }), peerLink(2, { partner_sys_id: '04:F4:1C:EE:49:01', active_ports: 'sfp-sfpplus15' })]);
+    const view = buildPeerLink({ pair, macs, vlans,
+      ports: [port(1, 'sfp-sfpplus15'), port(1, 'sfp-sfpplus16', { errors_24h: 12, last_down_at: '2026-11-05T09:00:00Z' }), port(2, 'sfp-sfpplus15'), port(2, 'sfp-sfpplus16', { running: false })],
+      // Cabled crosswise: 15 on CSW01 to 16 on CSW02.
+      links: [{ from_device_id: 1, from_interface: 'sfp-sfpplus15', to_device_id: 2, to_interface: 'sfp-sfpplus16' }] });
+    expect(view.members.map((m) => [m.a?.name, m.b?.name])).toEqual([['sfp-sfpplus15', 'sfp-sfpplus16'], ['sfp-sfpplus16', 'sfp-sfpplus15']]);
+    expect(view.members[0].b).toMatchObject({ running: false, active: false });
+    expect(view.members[1].a).toMatchObject({ errors24h: 12, speed: '10Gbps', active: true });
+    expect(view.a).toEqual({ bond: 'Po15', partner: '04:F4:1C:EE:4A:95', partnerOk: true, vlans: [1, 10, 40] });
+    expect(view.lastFlap).toEqual({ device: 'CSW01', member: 'sfp-sfpplus16', at: '2026-11-05T09:00:00Z' });
+    expect(peerLinkFindings(pair, view)).toEqual([]);
+  });
+
+  it('calls a peer link cabled to something else critical', () => {
+    const pair = pairOf([peerLink(1, { partner_sys_id: 'AA:BB:CC:00:00:01' }), peerLink(2, { partner_sys_id: '04:F4:1C:EE:49:01' })]);
+    const view = buildPeerLink({ pair, macs, vlans, ports: [], links: [] });
+    expect(view.a?.partnerOk).toBe(false);
+    expect(peerLinkFindings(pair, view)).toEqual([expect.objectContaining({ severity: 'critical', code: 'peer-link-partner',
+      text: 'CSW01: the LACP partner on the peer link Po15 is AA:BB:CC:00:00:01, not CSW02. The peer link is cabled to another device.' })]);
+    // Members without discovery are paired by name.
+    expect(view.members.map((m) => [m.a?.name, m.b?.name])).toEqual([['sfp-sfpplus15', 'sfp-sfpplus15'], ['sfp-sfpplus16', 'sfp-sfpplus16']]);
   });
 });

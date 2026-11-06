@@ -1873,6 +1873,11 @@ ALTER TABLE devices ADD COLUMN IF NOT EXISTS disabled_packages TEXT[];
 -- MLAG (#376): when a bond was last up, so one never cabled reads "unused".
 ALTER TABLE mlag_bonds ADD COLUMN IF NOT EXISTS last_running_at TIMESTAMPTZ;
 
+-- Let's Encrypt (ACME) certificates RouterOS requests and renews itself (#358).
+ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS acme_managed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS acme_status TEXT;
+ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS acme_directory VARCHAR(255);
+
 -- Reverse proxy (#358): each device's /ip/reverse-proxy rules and the two
 -- services that share port 443, from the slow poll.
 CREATE TABLE IF NOT EXISTS reverse_proxy_rules (

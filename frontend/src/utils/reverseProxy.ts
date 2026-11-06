@@ -36,6 +36,25 @@ export function certCovers(sni: string, commonName: string | undefined, subjectA
 
 /** The value the certificate menu uses for "issue one from the manager's CA". */
 export const ISSUE_FROM_CA = '__issue__';
+/** And for "Let's Encrypt": RouterOS requests and renews it (#358). */
+export const LETS_ENCRYPT = '__acme__';
+
+export const isAcmeName = (name: string | null | undefined) => /^mtm-le-/.test(name ?? '');
+
+const PRIVATE_SUFFIXES = ['local', 'lan', 'internal', 'intranet', 'home', 'home.arpa', 'corp', 'localdomain', 'localhost',
+  'test', 'invalid', 'example', 'private', 'domain', 'arpa'];
+
+/** The server's rule: Let's Encrypt only issues for public names. */
+export function acmeNameError(raw: string): string | null {
+  const s = normalizeSni(raw);
+  const bad = sniError(s);
+  if (bad) return bad;
+  if (!s.includes('.')) return 'Let\'s Encrypt needs a full public name, like nas.example.com.';
+  if (PRIVATE_SUFFIXES.some((x) => s === x || s.endsWith(`.${x}`))) {
+    return `Let's Encrypt only issues certificates for public names, and ${s} is internal. Use the manager's CA for it.`;
+  }
+  return null;
+}
 
 export interface RuleForm {
   sni: string;
@@ -56,7 +75,11 @@ export function ruleErrors(f: RuleForm, ctx: { certs: ProxyCertInfo[]; vrfs: str
   if (!isValidIPv4(ip) && !isValidIPv6(ip)) e.ip = 'Enter the web server\'s IPv4 or IPv6 address.';
   const p = Number(f.port);
   if (!Number.isInteger(p) || p < 1 || p > 65535) e.port = 'Enter the web server\'s port, 1 to 65535.';
-  if (f.certificate && f.certificate !== 'none' && f.certificate !== ISSUE_FROM_CA) {
+  if (f.certificate === LETS_ENCRYPT && !s) {
+    const a = acmeNameError(f.sni);
+    if (a) e.sni = a;
+  }
+  if (f.certificate && f.certificate !== 'none' && f.certificate !== ISSUE_FROM_CA && f.certificate !== LETS_ENCRYPT) {
     const c = ctx.certs.find((x) => x.name === f.certificate);
     if (!c) e.certificate = `${f.certificate} isn't on this device any more.`;
     else if (c.expired) e.certificate = `${c.name} has expired.`;

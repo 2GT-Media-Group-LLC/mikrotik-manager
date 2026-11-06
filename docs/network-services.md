@@ -133,6 +133,19 @@ settings, the peer link and how many of its members are up, and the MLAG bonds s
 neighbour discovery on the peer link, and the primary is shown on the left. It's read with the slow
 poll, and only on devices with MLAG.
 
+Between the two peers, the **peer link** has a block of its own, since it's the first thing to
+check when MLAG goes wrong:
+
+- **Members side by side:** each physical port of the peer link on both switches, up or down (and
+  "not active" when the link is up but LACP hasn't taken it), with the speed, RouterOS's link-downs
+  count and the errors in the last 24 hours. The two ends of each cable are paired from neighbour
+  discovery, or by name when discovery doesn't say.
+- **VLANs carried**, with VLAN 1 called out, since host sync needs it, and any VLAN that's on an
+  MLAG bond but missing from the peer link.
+- **LACP partner:** each side's partner should be the other peer. One that's something else means
+  the peer link is cabled to another device, which is a critical finding.
+- **Last flap:** the last time a member went down that the manager saw (it keeps 7 days).
+
 A pair is **critical** when it has a critical finding, **warning** when it has only warnings, and
 **healthy** otherwise. A bond down on both peers that has never been seen up, for example one set up
 for a switch that isn't cabled yet, shows as grey **unused** and isn't a problem. A bond that has
@@ -146,6 +159,7 @@ It checks, worst first:
 | Both peers primary (split brain), or both secondary | critical |
 | The peer link is down / some of its members aren't active | critical / warning |
 | One `mlag-id` with different LACP partners on the two peers (cabled to two devices) | critical |
+| The peer link's LACP partner isn't the other peer | critical |
 | An `mlag-id` up on one peer only (single-homed) | warning |
 | An `mlag-id` that was up, now down on both peers | warning |
 | A VLAN on an MLAG bond that isn't tagged on the peer link, VLAN 1 included. Hosts in it can't sync between the peers: the "peer failed to sync" storm | warning |

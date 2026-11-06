@@ -244,6 +244,22 @@ function PortTrafficGraph({
     tx: Math.round(p.tx),
   }));
 
+  // Errors and drops on their own scale (#402), so a few aren't flattened by the traffic.
+  const { data: rawDrops = [] } = useQuery({
+    queryKey: ['traffic-drops', deviceId, portName, range],
+    queryFn: () => metricsApi.interfaceDrops(deviceId, portName, range).then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+  const dropData = rawDrops.map((p) => ({
+    time: formatTime(new Date(p.time), { hour: '2-digit', minute: '2-digit', ...(compact ? {} : { month: 'short', day: 'numeric' }) }),
+    errors: p.errors, drops: p.drops, queue: p.queue_drops,
+  }));
+  // Each point is a per-second rate over about a minute.
+  const total = (k: 'errors' | 'drops' | 'queue') => Math.round(dropData.reduce((n, p) => n + p[k] * 60, 0));
+  const totals = { errors: total('errors'), drops: total('drops'), queue: total('queue') };
+  const anyDrops = totals.errors + totals.drops + totals.queue > 0;
+  const perSec = (v: number) => (v >= 100 ? `${Math.round(v)}/s` : v >= 1 ? `${v.toFixed(1)}/s` : `${v.toFixed(2)}/s`);
+
   const rxPeak = trafficData.length > 0 ? Math.max(...trafficData.map(d => d.rx)) : 0;
   const txPeak = trafficData.length > 0 ? Math.max(...trafficData.map(d => d.tx)) : 0;
 
@@ -322,6 +338,33 @@ function PortTrafficGraph({
             </LineChart>
           </ResponsiveContainer>
           </div>
+        </div>
+      )}
+
+      {trafficData.length > 0 && (
+        <div className="mt-3 shrink-0">
+          <div className="flex flex-wrap gap-x-4 mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
+            <span className="uppercase tracking-widest text-[10px]" style={{ color: 'var(--ink-4)' }}>Errors &amp; drops · {range}</span>
+            <span style={{ color: totals.errors ? 'var(--bad)' : undefined }}>errors {totals.errors.toLocaleString()}</span>
+            <span style={{ color: totals.drops ? 'var(--warn)' : undefined }}>drops {totals.drops.toLocaleString()}</span>
+            <span style={{ color: totals.queue ? 'var(--warn)' : undefined }}>tx queue drops {totals.queue.toLocaleString()}</span>
+          </div>
+          {anyDrops && (
+            <div className="h-[90px] mt-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dropData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" opacity={0.5} />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--ink-4)' }} interval="preserveStartEnd" />
+                  <YAxis tickFormatter={(v: number) => perSec(v)} tick={{ fontSize: 10, fill: 'var(--ink-4)' }} width={72} />
+                  <Tooltip formatter={(v) => perSec(v as number)}
+                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: '8px', fontSize: '12px', color: 'var(--ink)' }} />
+                  <Line type="monotone" dataKey="errors" stroke="var(--bad)" name="Errors" dot={false} strokeWidth={1.4} />
+                  <Line type="monotone" dataKey="drops" stroke="var(--warn)" name="Drops" dot={false} strokeWidth={1.4} />
+                  <Line type="monotone" dataKey="queue" stroke="var(--violet)" name="TX queue drops" dot={false} strokeWidth={1.4} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
     </div>

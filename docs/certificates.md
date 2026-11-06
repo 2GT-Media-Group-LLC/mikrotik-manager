@@ -191,7 +191,43 @@ Each rule's certificate is one of:
   **Renew now** and **Remove** are on the device's card. Remove refuses while a rule still uses
   the certificate. Browsers trust it once the CA certificate is installed on them
   ([Trusting the CA](#trusting-the-ca)).
+- **Let's Encrypt**, for a public name ([below](#lets-encrypt)).
 - **The reverse-proxy service's certificate**, set under IP Services. With none there either,
   HTTPS for the name fails, and the tab says so.
 
-Let's Encrypt (ACME) isn't offered yet.
+### Let's Encrypt
+
+For a host name that's public (reachable from the internet), browsers need a certificate from a
+public authority, so the manager's CA won't do. Choose **Let's Encrypt** as the rule's certificate:
+the router requests the certificate from Let's Encrypt itself (RouterOS 7.22 and later), and renews
+it when 80% of its lifetime has passed.
+
+For that to work:
+
+- the name must point at the router's public address in **public DNS**. The form shows what the
+  name resolves to from the manager, as a hint;
+- **TCP port 80 must reach the router from the internet**, at least while the certificate is issued
+  and renewed. Let's Encrypt checks it there (the HTTP-01 challenge);
+- the name must be public: Let's Encrypt doesn't issue for names like `nas.lan` or `nas.local`, and
+  the form refuses them. Use the manager's CA for those.
+
+**Test with the staging server first** is ticked by default. Let's Encrypt's staging server has no
+rate limits, so mistakes cost nothing, but browsers don't trust what it issues. The rule is saved and
+the request made in one go; the rule's row shows the progress (*generating private key*,
+*requesting validation*) and, if it fails, Let's Encrypt's reason, for example that the name has no
+DNS record or that port 80 couldn't be reached. Fix that and press **Try again**. Once staging
+succeeds, **Get the real certificate** requests one from the production server and moves the rule
+to it; the staging certificate is then removed.
+
+**Renew now** asks RouterOS to renew straight away. The manager doesn't keep a copy of these
+certificates: they live on the router, and are listed with the device's other certificates (the
+**Certificates** list on the Security page, and the device's Config tab). Until one is issued it's left
+out of expiry alerts.
+
+Two RouterOS behaviours to know about: a certificate whose request is still running can't be
+removed until the request ends (or the router restarts), and on some RouterOS versions a service
+kept serving the old certificate after a renewal until the router restarted.
+
+The manager can't test this end to end on its own test devices, since none is reachable from the
+internet; if something doesn't behave as described, please say so on
+[#358](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/358).

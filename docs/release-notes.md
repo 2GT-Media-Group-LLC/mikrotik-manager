@@ -3,6 +3,31 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.26
+
+- **MLAG peer link**, from [@azizfayziev](https://github.com/azizfayziev)'s proposal
+  ([#376](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376)): a block of its own
+  between the two peers, with each member side by side (state, speed, link-downs, errors in the
+  last 24 hours), the VLANs it carries with VLAN 1 called out, a check that each side's LACP partner
+  is the other peer, and the last flap. A peer link cabled to another device is a critical finding.
+  Peers are also paired when neighbour discovery only reports the link from one end
+  ([MLAG](network-services.md#mlag)).
+- **Peaks and drops**, from [@azizfayziev](https://github.com/azizfayziev)
+  ([#402](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/402), the first step):
+  CPU and memory history on the **Hardware** tab shows the highest reading in each 5 minutes as a
+  dashed line over the average, and a port's traffic panel shows its **Errors & drops** on their
+  own scale. Drop counters are recorded from this release.
+- **Let's Encrypt for reverse proxy rules**, for [@ronchan44](https://github.com/ronchan44)
+  ([#358](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/358)): for a public host
+  name, choose **Let's Encrypt** as the rule's certificate. The router requests it (RouterOS 7.22 and
+  later) and renews it itself; the rule shows its progress, Let's Encrypt's reason if it fails, and
+  **Try again**, **Get the real certificate** (after testing on the staging server) and **Renew now**
+  ([Let's Encrypt](certificates.md#lets-encrypt)).
+- **Change Guard leaves no restore points behind.** Each protected change saves a restore point
+  on the device and removes it afterwards, but one could be left on its flash when a revert fired,
+  the manager restarted mid-change, or the device couldn't be reached to clean up. Every protected
+  change now also removes older restore points whose revert is no longer armed.
+
 ## 1.1.0-beta.24
 
 - **Firmware tab** on the device page, from [@davidcoulson](https://github.com/davidcoulson)

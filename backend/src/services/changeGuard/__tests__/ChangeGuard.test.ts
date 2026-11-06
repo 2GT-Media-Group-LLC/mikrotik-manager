@@ -153,6 +153,22 @@ describe('withSafeApply', () => {
     expect(deviceFiles).toHaveLength(0);
   });
 
+  it('also clears older restore points whose revert scheduler is gone, and keeps one still armed', async () => {
+    deviceFiles.push({ '.id': '*old', name: 'mtm-rp-3aaaba1929.backup' }, { '.id': '*flash', name: 'flash/mtm-rp-0123456789.backup' },
+      { '.id': '*armed', name: 'mtm-rp-aaaaaaaaaa.backup' }, { '.id': '*mine', name: 'auto-before-reset.backup' });
+    deviceSchedulers.push({ '.id': '*other', name: 'mtm-revert-aaaaaaaaaa' });
+    await withSafeApply(device, { kind: 'test', summary: 's' }, async () => { applyDone = true; return 'ok'; });
+    expect(deviceFiles.map((f) => f.name).sort()).toEqual(['auto-before-reset.backup', 'mtm-rp-aaaaaaaaaa.backup']);
+  });
+
+  it('clears stale restore points in script mode too', async () => {
+    deviceFiles.push({ '.id': '*old', name: 'mtm-rp-3aaaba1929.backup' });
+    const out = await withSafeApply(device, { kind: 'port.vlan', summary: 's', mode: 'script' }, async () => { applyDone = true; return 'ok'; });
+    expect(out.mode).toBe('script');
+    expect(deviceFiles).toHaveLength(0);
+    expect(deviceScripts).toHaveLength(0);
+  });
+
   it('leaves the scheduler ARMED when the device is unreachable after the change', async () => {
     unreachableAfterApply = true;
     const out = await withSafeApply(device, { kind: 'test', summary: 's' }, async () => {

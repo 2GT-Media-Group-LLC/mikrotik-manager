@@ -219,3 +219,73 @@ export function checkRule(
   }
   return { params: Object.keys(errors).length ? {} : params, errors };
 }
+
+// ─── Let's Encrypt (ACME) ────────────────────────────────────────────────────
+//
+// RouterOS 7.22 and later requests the certificate itself (/certificate/add-acme)
+// with the HTTP-01 challenge, so the name must resolve to the router in public
+// DNS and TCP port 80 must reach it from the internet. It renews at 80% of the
+// lifetime. The certificate entry exists from the start (acme-managed) and a
+// rule can use it before it's issued; a failed request is removed and added
+// again to retry. Seen on 7.25.1: acme-status goes "generating private key",
+// "requesting validation", then issued, or "http-01 challenge validation
+// failed, <reason>".
+
+export const LE_PRODUCTION = 'https://acme-v02.api.letsencrypt.org/directory';
+export const LE_STAGING = 'https://acme-staging-v02.api.letsencrypt.org/directory';
+
+/** The certificate's name on the device: one per host name and server. */
+export function acmeCertName(sni: string, staging: boolean): string {
+  return `mtm-le-${staging ? 'staging-' : ''}${normalizeSni(sni)}`;
+}
+
+export const isAcmeName = (name: string | null | undefined) => /^mtm-le-/.test(name ?? '');
+
+/** Suffixes Let's Encrypt never issues for: names that only exist inside a network. */
+const PRIVATE_SUFFIXES = ['local', 'lan', 'internal', 'intranet', 'home', 'home.arpa', 'corp', 'localdomain', 'localhost',
+  'test', 'invalid', 'example', 'private', 'domain', 'arpa'];
+
+export function acmeNameError(raw: string): string | null {
+  const s = normalizeSni(raw);
+  const bad = sniError(s);
+  if (bad) return bad;
+  if (!s.includes('.')) return 'Let\'s Encrypt needs a full public name, like nas.example.com.';
+  if (PRIVATE_SUFFIXES.some((x) => s === x || s.endsWith(`.${x}`))) {
+    return `Let's Encrypt only issues certificates for public names, and ${s} is internal. Use the manager's CA for it.`;
+  }
+  return null;
+}
+
+export type AcmePhase = 'pending' | 'issued' | 'failed';
+
+export interface AcmeCert {
+  id: string;
+  name: string;
+  domain: string;
+  staging: boolean;
+  phase: AcmePhase;
+  status: string | null;
+  invalidAfter: string | null;
+}
+
+export function acmePhase(r: Ros): AcmePhase {
+  if (yes(r.issued) && yes(r['private-key'])) return 'issued';
+  const status = `${r['acme-status'] ?? ''} ${r['.about'] ?? ''}`;
+  return /fail|error|invalid|denied|unauthori[sz]ed|rejected/i.test(status) ? 'failed' : 'pending';
+}
+
+/** The device's ACME certificates, as the page and the routes need them. */
+export function acmeCertsFrom(rows: Ros[]): AcmeCert[] {
+  return rows.filter((r) => yes(r['acme-managed']) && r.name).map((r) => {
+    const phase = acmePhase(r);
+    return {
+      id: r['.id'] ?? '',
+      name: r.name,
+      domain: (r['domain-names'] ?? '').trim(),
+      staging: /staging/i.test(r['directory-url'] ?? ''),
+      phase,
+      status: (r['acme-status'] ?? '').trim() || null,
+      invalidAfter: phase === 'issued' ? r['invalid-after'] ?? null : null,
+    };
+  });
+}

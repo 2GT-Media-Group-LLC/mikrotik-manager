@@ -243,6 +243,42 @@ router.get('/interface/:deviceId/:interface/packets', async (req, res) => {
   res.json(Object.values(pivoted).sort((a, b) => a.time.localeCompare(b.time)));
 });
 
+// GET /api/metrics/interface/:deviceId/:interface/drops?range=1h
+// Errors and drops per second (#402), apart from traffic, so a few aren't
+// flattened by gigabit rates on the same chart.
+const DROP_FIELDS = ['rx_errors', 'tx_errors', 'rx_drops', 'tx_drops', 'tx_queue_drops'];
+router.get('/interface/:deviceId/:interface/drops', async (req, res) => {
+  const range = rangeToFlux(String(req.query.range || '1h'));
+  const fluxQuery = `
+    from(bucket: "${bucket}")
+      |> range(start: -${range})
+      |> filter(fn: (r) => r._measurement == "interface_traffic")
+      |> filter(fn: (r) => r.device_id == ${fluxString(String(req.params.deviceId))})
+      |> filter(fn: (r) => r.interface == ${fluxString(String(req.params.interface))})
+      |> filter(fn: (r) => ${DROP_FIELDS.map((f) => `r._field == "${f}"`).join(' or ')})
+      |> aggregateWindow(every: 1m, fn: last, createEmpty: false)
+      |> derivative(unit: 1s, nonNegative: true)
+      |> yield(name: "drops")
+  `;
+  const pivoted: Record<string, Record<string, number | string>> = {};
+  try {
+    await getQueryApi().collectRows(fluxQuery, (row, tableMeta) => {
+      const t = tableMeta.get(row, '_time') as string;
+      const f = tableMeta.get(row, '_field') as string;
+      if (!pivoted[t]) pivoted[t] = { time: t };
+      pivoted[t][f] = Number(tableMeta.get(row, '_value')) || 0;
+    });
+  } catch {
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
+  }
+  res.json(Object.values(pivoted).sort((a, b) => String(a['time']).localeCompare(String(b['time']))).map((p) => ({
+    time: p.time,
+    errors: (Number(p.rx_errors) || 0) + (Number(p.tx_errors) || 0),
+    drops: (Number(p.rx_drops) || 0) + (Number(p.tx_drops) || 0),
+    queue_drops: Number(p.tx_queue_drops) || 0,
+  })));
+});
+
 // GET /api/metrics/device/:deviceId/resources?range=24h
 router.get('/device/:deviceId/resources', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
@@ -250,13 +286,19 @@ router.get('/device/:deviceId/resources', async (req, res) => {
   const deviceId = req.params.deviceId;
 
   const fluxQuery = `
-    from(bucket: "${bucket}")
+    base = from(bucket: "${bucket}")
       |> range(start: -${range})
       |> filter(fn: (r) => r._measurement == "device_resources")
       |> filter(fn: (r) => r.device_id == ${fluxString(String(deviceId))})
       |> filter(fn: (r) => r._field == "cpu_load" or r._field == "memory_used" or r._field == "memory_total")
-      |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
-      |> yield(name: "resources")
+    avg = base |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+    // The highest reading in each window (#402): a one-minute burst to 100% CPU
+    // reads as 30% on a five-minute average.
+    peak = base
+      |> filter(fn: (r) => r._field == "cpu_load" or r._field == "memory_used")
+      |> aggregateWindow(every: 5m, fn: max, createEmpty: false)
+      |> map(fn: (r) => ({ r with _field: r._field + "_peak" }))
+    union(tables: [avg, peak]) |> yield(name: "resources")
   `;
 
   const points: Record<string, unknown>[] = [];

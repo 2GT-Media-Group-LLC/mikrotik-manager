@@ -251,15 +251,25 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
       }),
       cpu: Math.round(p.cpu_load || 0),
       mem: memPct,
+      // The highest reading in each 5-minute window (#402).
+      cpuPeak: p.cpu_load_peak !== undefined ? Math.round(p.cpu_load_peak) : undefined,
+      memPeak: p.memory_total && p.memory_total > 0 && p.memory_used_peak !== undefined
+        ? Math.round((p.memory_used_peak / p.memory_total) * 100) : undefined,
     };
   });
+  const hasPeaks = resourceData.some((p) => p.cpuPeak !== undefined);
 
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4 text-blue-500" />
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">CPU & Memory Usage</h3>
+        <div>
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-500" />
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">CPU & Memory Usage</h3>
+          </div>
+          {hasPeaks && (
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">5-minute averages; the dashed lines are the highest reading in each 5 minutes.</p>
+          )}
         </div>
         <div className="flex gap-1">
           {RESOURCE_RANGES.map((r) => (
@@ -301,6 +311,8 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="cpu" stroke="#f59e0b" name="CPU Load" dot={false} strokeWidth={2} />
             <Line type="monotone" dataKey="mem" stroke="#8b5cf6" name="Memory Used" dot={false} strokeWidth={2} />
+            {hasPeaks && <Line type="monotone" dataKey="cpuPeak" stroke="#f59e0b" name="CPU peak" dot={false} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.8} />}
+            {hasPeaks && <Line type="monotone" dataKey="memPeak" stroke="#8b5cf6" name="Memory peak" dot={false} strokeWidth={1} strokeDasharray="4 3" strokeOpacity={0.8} />}
           </LineChart>
         </ResponsiveContainer>
       )}

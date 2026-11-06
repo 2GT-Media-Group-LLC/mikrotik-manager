@@ -26,6 +26,12 @@ const collector = {
   getReverseProxy: jest.fn(async () => live),
   addReverseProxyRule: jest.fn(), setReverseProxyRule: jest.fn(), removeReverseProxyRule: jest.fn(), setServicePort: jest.fn(),
   collectReverseProxy: jest.fn(), collectCertificates: jest.fn(),
+  // The new certificate appears on the device, as RouterOS creates it.
+  addAcmeCertificate: jest.fn(async (name: string, domain: string, dir: string) => {
+    live.certs = [...live.certs.filter((c) => c.name !== name), { '.id': `*n${live.certs.length}`, name, 'acme-managed': 'true', issued: 'false',
+      'private-key': 'false', 'domain-names': domain, 'directory-url': dir, 'acme-status': 'generating private key' }];
+  }),
+  removeCertificateById: jest.fn(), renewAcmeCertificate: jest.fn(),
 };
 jest.mock('../../services/mikrotik/DeviceCollector', () => ({ DeviceCollector: jest.fn(() => collector) }));
 const guarded = jest.fn();
@@ -135,5 +141,76 @@ describe('certificates from the CA', () => {
     const res = await request(app('admin')).post('/cert?deviceId=8').send({ sni: 'nas.example.com', days: 365 });
     expect(res.body.ok).toBe(true);
     expect(issueProxyCert).toHaveBeenCalledWith(8, 'nas.example.com', { days: 365 });
+  });
+});
+
+describe('Let\'s Encrypt (#358)', () => {
+  const STAGING = 'https://acme-staging-v02.api.letsencrypt.org/directory';
+  const PROD = 'https://acme-v02.api.letsencrypt.org/directory';
+  const le = (name: string, over: Record<string, string> = {}) => ({ '.id': `*${name.length}`, name, 'acme-managed': 'true', issued: 'false', 'private-key': 'false',
+    'domain-names': 'nas.example.org', 'directory-url': name.includes('staging') ? STAGING : PROD, 'acme-status': 'requesting validation', ...over });
+  beforeEach(() => { live.services = services().map((s) => (s.name === 'www-ssl' ? { ...s, port: '8443' } : s)); });
+
+  it('requests the certificate and saves the rule in one change', async () => {
+    const res = await request(app()).post('/rule?deviceId=8').send({ sni: 'nas.example.org', 'ip-address': '192.168.88.10', port: 5000, acme: { staging: true } });
+    expect(res.status).toBe(200);
+    expect(collector.addAcmeCertificate).toHaveBeenCalledWith('mtm-le-staging-nas.example.org', 'nas.example.org', STAGING);
+    expect(collector.addReverseProxyRule).toHaveBeenCalledWith(expect.objectContaining({ certificate: 'mtm-le-staging-nas.example.org' }));
+    expect(guarded).toHaveBeenCalledWith(expect.objectContaining({ summary: expect.stringMatching(/Let's Encrypt staging/) }));
+  });
+
+  it('takes the certificate back when the rule can\'t be added', async () => {
+    collector.addReverseProxyRule.mockRejectedValueOnce(new Error('input does not match any value of certificate'));
+    const res = await request(app()).post('/rule?deviceId=8').send({ sni: 'nas.example.org', 'ip-address': '192.168.88.10', port: 5000, acme: { staging: true } });
+    expect(res.status).toBe(500);
+    expect(collector.removeCertificateById).toHaveBeenCalled();
+  });
+
+  it('refuses internal names, and a certificate as well as Let\'s Encrypt', async () => {
+    const lan = await request(app()).post('/rule?deviceId=8').send({ sni: 'nas.lan', 'ip-address': '192.168.88.10', port: 80, acme: { staging: true } });
+    expect(lan.body.errors.sni).toMatch(/internal/);
+    const both = await request(app()).post('/rule?deviceId=8').send({ ...rule, sni: 'nas.example.org', acme: { staging: false } });
+    expect(both.body.errors.certificate).toMatch(/not both/);
+    expect(collector.addAcmeCertificate).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed request: the rule lets go, the certificate is requested again, the rule takes it back', async () => {
+    live.rules = [{ '.id': '*1', sni: 'nas.example.org', 'ip-address': '192.168.88.10', port: '5000', certificate: 'mtm-le-staging-nas.example.org' }];
+    live.certs = [le('mtm-le-staging-nas.example.org', { 'acme-status': 'http-01 challenge validation failed, connection refused' })];
+    const res = await request(app()).put('/rule/*1?deviceId=8&sni=nas.example.org').send({ acme: { staging: true } });
+    expect(res.status).toBe(200);
+    expect(collector.setReverseProxyRule.mock.calls).toEqual([['*1', { certificate: 'none' }], ['*1', { certificate: 'mtm-le-staging-nas.example.org' }]]);
+    expect(collector.removeCertificateById).toHaveBeenCalledWith(le('mtm-le-staging-nas.example.org')['.id']);
+    expect(collector.addAcmeCertificate).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a request in progress alone', async () => {
+    live.rules = [{ '.id': '*1', sni: 'nas.example.org', 'ip-address': '192.168.88.10', port: '5000', certificate: 'mtm-le-staging-nas.example.org' }];
+    live.certs = [le('mtm-le-staging-nas.example.org')];
+    const res = await request(app()).put('/rule/*1?deviceId=8&sni=nas.example.org').send({ acme: { staging: true } });
+    expect(res.body.unchanged).toBe(true);
+    expect(collector.addAcmeCertificate).not.toHaveBeenCalled();
+  });
+
+  it('switches from staging to production and drops the staging certificate', async () => {
+    live.rules = [{ '.id': '*1', sni: 'nas.example.org', 'ip-address': '192.168.88.10', port: '5000', certificate: 'mtm-le-staging-nas.example.org' }];
+    live.certs = [le('mtm-le-staging-nas.example.org', { issued: 'true', 'private-key': 'true', 'acme-status': '' })];
+    // The rule takes the new certificate on the device, so the staging one is then unused.
+    collector.setReverseProxyRule.mockImplementationOnce(async (_id: string, params: Record<string, string>) => {
+      live.rules = [{ ...live.rules[0], ...params }];
+    });
+    const res = await request(app()).put('/rule/*1?deviceId=8&sni=nas.example.org').send({ acme: { staging: false } });
+    expect(res.status).toBe(200);
+    expect(collector.addAcmeCertificate).toHaveBeenCalledWith('mtm-le-nas.example.org', 'nas.example.org', PROD);
+    expect(collector.setReverseProxyRule).toHaveBeenCalledWith('*1', { certificate: 'mtm-le-nas.example.org' });
+    expect(collector.removeCertificateById).toHaveBeenCalledWith(le('mtm-le-staging-nas.example.org')['.id']);
+  });
+
+  it('renews only an issued certificate', async () => {
+    live.certs = [le('mtm-le-nas.example.org')];
+    expect((await request(app()).post('/acme/renew?deviceId=8').send({ name: 'mtm-le-nas.example.org' })).status).toBe(409);
+    live.certs = [le('mtm-le-nas.example.org', { issued: 'true', 'private-key': 'true' })];
+    expect((await request(app()).post('/acme/renew?deviceId=8').send({ name: 'mtm-le-nas.example.org' })).status).toBe(200);
+    expect(collector.renewAcmeCertificate).toHaveBeenCalled();
   });
 });

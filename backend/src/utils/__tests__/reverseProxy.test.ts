@@ -1,5 +1,6 @@
 import {
   reverseProxySupport, rulesFrom, serviceFrom, portClash, movePortError, sniError, certCovers, certsFrom, checkRule,
+  acmeCertName, acmeNameError, acmePhase, acmeCertsFrom,
 } from '../reverseProxy';
 
 const services: Record<string, string>[] = [
@@ -102,5 +103,31 @@ describe('rules', () => {
     expect(checkRule({ disabled: true }, { ...ctx, existing })).toEqual({ params: { disabled: 'yes' }, errors: {} });
     // The certificate is checked against the rule's own name when only it changes.
     expect(checkRule({ certificate: 'nas' }, { ...ctx, existing }).params).toEqual({ certificate: 'nas' });
+  });
+});
+
+describe('Let\'s Encrypt (#358)', () => {
+  // Captured from RouterOS 7.25.1 against the staging server.
+  const failed = { '.id': '*7', name: 'mtm-le-staging-nas.example.org', 'domain-names': 'nas.example.org', 'acme-managed': 'true', issued: 'false', 'private-key': 'false',
+    'directory-url': 'https://acme-staging-v02.api.letsencrypt.org/directory', 'acme-status': 'http-01 challenge validation failed, urn:ietf:params:acme:error:dns - no valid A records found for nas.example.org' };
+  it('names certificates per host name and server', () => {
+    expect(acmeCertName('NAS.example.org', true)).toBe('mtm-le-staging-nas.example.org');
+    expect(acmeCertName('nas.example.org', false)).toBe('mtm-le-nas.example.org');
+  });
+  it('only takes public names', () => {
+    expect(acmeNameError('nas.example.org')).toBeNull();
+    expect(acmeNameError('nas.lan')).toMatch(/internal/);
+    expect(acmeNameError('nas.home.arpa')).toMatch(/internal/);
+    expect(acmeNameError('nas')).toMatch(/full public name/);
+    expect(acmeNameError('*.example.org')).toMatch(/exactly/);
+  });
+  it('reads the request\'s progress', () => {
+    expect(acmePhase({ ...failed, 'acme-status': 'generating private key' })).toBe('pending');
+    expect(acmePhase({ ...failed, 'acme-status': 'requesting validation' })).toBe('pending');
+    expect(acmePhase(failed)).toBe('failed');
+    expect(acmePhase({ ...failed, issued: 'true', 'private-key': 'true', 'acme-status': '' })).toBe('issued');
+    expect(acmeCertsFrom([failed, { name: 'other', 'private-key': 'true' }])).toEqual([
+      { id: '*7', name: 'mtm-le-staging-nas.example.org', domain: 'nas.example.org', staging: true, phase: 'failed', status: failed['acme-status'], invalidAfter: null },
+    ]);
   });
 });

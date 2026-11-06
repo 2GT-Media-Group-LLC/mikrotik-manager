@@ -64,6 +64,8 @@ export interface MlagPair {
   findings: MlagFinding[];
   /** critical: a critical finding; warning: only warnings (#376). */
   status: 'healthy' | 'warning' | 'critical';
+  /** The peer link in detail; filled in by services/mlag.ts. */
+  peerLink?: PeerLinkView;
 }
 
 const list = (v: string | null | undefined) => (v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
@@ -75,14 +77,24 @@ const list = (v: string | null | undefined) => (v ?? '').split(',').map((x) => x
  */
 export function pairMlag(bridges: MlagBridge[], bonds: MlagBond[], links: PeerLink[]): Array<[MlagBridge, MlagBridge | null]> {
   const byDevice = new Map(bridges.map((b) => [b.device_id, b]));
-  const peerOf = (br: MlagBridge): MlagBridge | null => {
+  const peerPorts = (br: MlagBridge) => {
     const link = bonds.find((x) => x.device_id === br.device_id && x.is_peer_link && x.bond === br.mlag_peer_port);
-    const ports = new Set([br.mlag_peer_port, ...list(link?.slaves)]);
+    return new Set([br.mlag_peer_port, ...list(link?.slaves)]);
+  };
+  const peerOf = (br: MlagBridge): MlagBridge | null => {
+    const ports = peerPorts(br);
     for (const l of links) {
       if (l.from_device_id !== br.device_id || !l.to_device_id || !l.from_interface) continue;
       if (!ports.has(l.from_interface)) continue;
       const other = byDevice.get(l.to_device_id);
       if (other) return other;
+    }
+    // Discovery may only report the link from the other end: an MLAG peer whose
+    // peer port reaches this bridge's device.
+    for (const l of links) {
+      if (l.to_device_id !== br.device_id || !l.from_interface || l.from_device_id === br.device_id) continue;
+      const other = byDevice.get(l.from_device_id);
+      if (other && peerPorts(other).has(l.from_interface)) return other;
     }
     return null;
   };
@@ -221,4 +233,129 @@ export function buildPairs(bridges: MlagBridge[], bonds: MlagBond[], links: Peer
       status: findings.some((x) => x.severity === 'critical') ? 'critical' : findings.length ? 'warning' : 'healthy',
     };
   });
+}
+
+// ─── The peer link in detail (#376, aziz's item 4) ───────────────────────────
+
+/** One physical member of a peer link on one switch. */
+export interface PeerMember {
+  name: string;
+  /** Link up on the port. */
+  running: boolean;
+  /** Active in the bond (LACP agreed). */
+  active: boolean;
+  speed: string | null;
+  /** RouterOS's link-downs counter since boot. */
+  linkDowns: number | null;
+  /** FCS, alignment and other receive errors in the last 24 hours. */
+  errors24h: number;
+  /** The last time the link went down that the manager saw (7 days kept). */
+  lastDownAt: string | null;
+}
+
+export interface PeerLinkSide {
+  bond: string;
+  /** The LACP partner this side sees on the peer link. */
+  partner: string | null;
+  /** Whether that partner is the other peer: anything else means crossed cabling. */
+  partnerOk: boolean | null;
+  /** VLANs tagged on the peer link. */
+  vlans: number[];
+}
+
+export interface PeerLinkView {
+  a: PeerLinkSide | null;
+  b: PeerLinkSide | null;
+  /** Members lined up: the two ends of one cable, as neighbour discovery sees it, else by name. */
+  members: { a: PeerMember | null; b: PeerMember | null }[];
+  lastFlap: { device: string; member: string; at: string } | null;
+}
+
+/** What the manager stores about one port, as buildPeerLink takes it. */
+export interface PortFacts {
+  device_id: number;
+  name: string;
+  running: boolean | null;
+  speed: string | null;
+  link_downs: number | null;
+  errors_24h: number;
+  last_down_at: string | null;
+}
+
+export interface PeerLinkInput {
+  pair: MlagPair;
+  ports: PortFacts[];
+  /** device id → its interfaces' MACs, upper case. */
+  macs: Map<number, Set<string>>;
+  /** device id → VLANs tagged on its peer port. */
+  vlans: Map<number, number[]>;
+  /** Neighbour discovery between the two peers. */
+  links: { from_device_id: number; from_interface: string | null; to_device_id: number | null; to_interface: string | null }[];
+}
+
+export function buildPeerLink(input: PeerLinkInput): PeerLinkView {
+  const { pair, ports, macs, vlans, links } = input;
+  const members = (bond: MlagBond | null, d: MlagBridge | null): PeerMember[] => {
+    if (!bond || !d) return [];
+    const active = new Set(list(bond.active_ports));
+    const names = list(bond.slaves).length ? list(bond.slaves) : [bond.bond];
+    return names.map((name) => {
+      const p = ports.find((x) => x.device_id === d.device_id && x.name === name);
+      return {
+        name,
+        running: !!p?.running,
+        active: active.has(name),
+        speed: p?.speed ?? null,
+        linkDowns: p?.link_downs ?? null,
+        errors24h: p?.errors_24h ?? 0,
+        lastDownAt: p?.last_down_at ?? null,
+      };
+    });
+  };
+  const side = (bond: MlagBond | null, me: MlagBridge | null, other: MlagBridge | null): PeerLinkSide | null => {
+    if (!bond || !me) return null;
+    const partner = bond.partner_sys_id ? bond.partner_sys_id.toUpperCase() : null;
+    return {
+      bond: bond.bond,
+      partner,
+      partnerOk: partner && other ? !!macs.get(other.device_id)?.has(partner) : null,
+      vlans: [...(vlans.get(me.device_id) ?? [])].sort((x, y) => x - y),
+    };
+  };
+  const ma = members(pair.peerLinkA, pair.a);
+  const mb = members(pair.peerLinkB, pair.b);
+  // The two ends of each cable, from neighbour discovery; what's left is paired by name order.
+  const rows: { a: PeerMember | null; b: PeerMember | null }[] = [];
+  const usedB = new Set<string>();
+  const restA: PeerMember[] = [];
+  for (const m of ma) {
+    const l = pair.b ? links.find((x) => x.from_device_id === pair.a.device_id && x.from_interface === m.name && x.to_device_id === pair.b!.device_id) : undefined;
+    const other = l?.to_interface ? mb.find((x) => x.name === l.to_interface && !usedB.has(x.name)) : undefined;
+    if (other) { usedB.add(other.name); rows.push({ a: m, b: other }); } else restA.push(m);
+  }
+  const restB = mb.filter((x) => !usedB.has(x.name));
+  const byName = (x: PeerMember, y: PeerMember) => x.name.localeCompare(y.name, undefined, { numeric: true });
+  restA.sort(byName); restB.sort(byName);
+  for (let i = 0; i < Math.max(restA.length, restB.length); i++) rows.push({ a: restA[i] ?? null, b: restB[i] ?? null });
+
+  let lastFlap: PeerLinkView['lastFlap'] = null;
+  for (const [d, list_] of [[pair.a, ma], [pair.b, mb]] as const) {
+    if (!d) continue;
+    for (const m of list_) {
+      if (m.lastDownAt && (!lastFlap || new Date(m.lastDownAt) > new Date(lastFlap.at))) lastFlap = { device: d.device_name, member: m.name, at: m.lastDownAt };
+    }
+  }
+  return { a: side(pair.peerLinkA, pair.a, pair.b), b: side(pair.peerLinkB, pair.b, pair.a), members: rows, lastFlap };
+}
+
+/** Critical: a peer link whose LACP partner isn't the other peer is cabled to something else. */
+export function peerLinkFindings(pair: MlagPair, view: PeerLinkView): MlagFinding[] {
+  const out: MlagFinding[] = [];
+  for (const [s, d, other] of [[view.a, pair.a, pair.b], [view.b, pair.b, pair.a]] as const) {
+    if (s && d && other && s.partnerOk === false) {
+      out.push({ severity: 'critical', code: 'peer-link-partner',
+        text: `${d.device_name}: the LACP partner on the peer link ${s.bond} is ${s.partner}, not ${other.device_name}. The peer link is cabled to another device.` });
+    }
+  }
+  return out;
 }

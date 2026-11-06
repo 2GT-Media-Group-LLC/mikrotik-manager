@@ -396,7 +396,7 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **Routing** | IPv4 routes, IPv6 routes (read-only), OSPF, BGP, routing tables and filters |
 | **Queues** | Traffic shaping |
 | **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing) |
-| **Hardware** | Health sensors, PoE, SFP module detail |
+| **Hardware** | Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages, with the highest reading in each 5 minutes as a dashed line, so a short burst to 100% doesn't hide in the average (#402) |
 | **LTE** | Signal, carrier, bands and the data cap — see [Cellular](cellular.md) |
 | **Security** | Baseline hardening checks and the posture score |
 | **Config** | System settings, certificates, SSH keys, clock |
@@ -473,6 +473,11 @@ Use **ports per row** in the faceplate header if the default does not suit your 
 the setting is remembered. Next to it, **top row** says which ports are on top: `1 3 5` (most
 models) or `2 4 6`, for models whose front panel has the even ports on top (#277). It appears
 when the Ethernet ports sit in two rows, and is remembered per model in your browser. A choice you make there overrides the model's built-in Ethernet layout.
+
+Selecting a port shows its throughput for the chosen range, and under it **Errors & drops**: how
+many receive and transmit errors, drops and transmit-queue drops the port had in that range, with
+a small chart of them when there were any (#402). They're kept apart from the throughput so a few
+aren't flattened by gigabit traffic. Drops are counted from 1.1.0-beta.26 on.
 
 ### Power-cycling a PoE port
 
