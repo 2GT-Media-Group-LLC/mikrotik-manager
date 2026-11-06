@@ -3,6 +3,19 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.29
+
+- **Graphs, interfaces**, from [@azizfayziev](https://github.com/azizfayziev)'s check on beta.28
+  ([#402](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/402)): the busiest pick
+  no longer counts the same traffic twice (a bond rather than its members, a PPPoE client rather
+  than its port); the picker lists ports in number order; a bond's utilisation uses its running
+  members' speed together, and a port with no known speed is named; and a series that started
+  inside the range says **Recorded since** ([Device graphs](devices.md#device-graphs)).
+- **SMS inbox** on the LTE tab, and the data-cap rule can **delete the carrier's replies** to the
+  reset SMS, from Stanley's request in
+  [discussion #85](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85)
+  ([SMS inbox](cellular.md#sms-inbox)).
+
 ## 1.1.0-beta.28
 
 - **Graphs**, a new device tab, from [@azizfayziev](https://github.com/azizfayziev)'s proposal

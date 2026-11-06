@@ -33,6 +33,7 @@ import { captureSnapshot, resolveManagementPath, managerIpFromConntrack, type De
 import { readApiConnections } from '../services/changeGuard/targetedReads';
 import { planPreset, topAnchor, bfDefaults, QUICK_PRESETS, type QuickOptions, type QuickPreset, type IfaceRef } from '../utils/firewallPresets';
 import { managerAddressFromActive } from '../utils/logNoise';
+import { messagesFrom, SMS_ID } from '../utils/lteSms';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
 import { runConfigHealth } from '../services/changeGuard/configHealth';
 import { fixFor, noFixReason } from '../utils/configHealthFixes';
@@ -3831,7 +3832,7 @@ router.get('/:id/lte/data-cap', async (req, res) => {
     const rules = await query(
       `SELECT id, interface_name, enabled, phone_number, message, threshold_bytes,
               margin_pct, reset_hour, reset_minute, timezone, cooldown_minutes,
-              period_key, period_bytes, last_sent_at, updated_at
+              period_key, period_bytes, last_sent_at, updated_at, delete_replies, reply_sender
          FROM lte_data_cap_rules WHERE device_id = $1 ORDER BY interface_name`,
       [req.params.id]
     );
@@ -3863,6 +3864,9 @@ router.put('/:id/lte/data-cap/:iface', requireWrite, async (req, res) => {
   try { new Intl.DateTimeFormat('en-CA', { timeZone: tz }); }
   catch { return res.status(400).json({ error: `Unknown timezone "${tz}"` }); }
 
+  const replySender = String(b.reply_sender ?? '').trim();
+  if (replySender.length > 32) return res.status(400).json({ error: 'The reply sender is at most 32 characters.' });
+
   const clamp = (v: unknown, lo: number, hi: number, dflt: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.floor(n))) : dflt;
@@ -3872,18 +3876,20 @@ router.put('/:id/lte/data-cap/:iface', requireWrite, async (req, res) => {
     await query(
       `INSERT INTO lte_data_cap_rules
          (device_id, interface_name, enabled, phone_number, message, threshold_bytes,
-          margin_pct, reset_hour, reset_minute, timezone, cooldown_minutes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          margin_pct, reset_hour, reset_minute, timezone, cooldown_minutes, delete_replies, reply_sender)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        ON CONFLICT (device_id, interface_name) DO UPDATE SET
          enabled = EXCLUDED.enabled, phone_number = EXCLUDED.phone_number,
          message = EXCLUDED.message, threshold_bytes = EXCLUDED.threshold_bytes,
          margin_pct = EXCLUDED.margin_pct, reset_hour = EXCLUDED.reset_hour,
          reset_minute = EXCLUDED.reset_minute, timezone = EXCLUDED.timezone,
-         cooldown_minutes = EXCLUDED.cooldown_minutes, updated_at = NOW()`,
+         cooldown_minutes = EXCLUDED.cooldown_minutes, delete_replies = EXCLUDED.delete_replies,
+         reply_sender = EXCLUDED.reply_sender, updated_at = NOW()`,
       [req.params.id, req.params.iface, b.enabled === true, phone,
        String(b.message ?? ''), Math.floor(threshold),
        clamp(b.margin_pct, 0, 50, 5), clamp(b.reset_hour, 0, 23, 0),
-       clamp(b.reset_minute, 0, 59, 0), tz, clamp(b.cooldown_minutes, 1, 1440, 60)]
+       clamp(b.reset_minute, 0, 59, 0), tz, clamp(b.cooldown_minutes, 1, 1440, 60),
+       b.delete_replies === true, replySender || null]
     );
     res.json({ message: 'Data-cap rule saved' });
   } catch (error) {
@@ -3952,6 +3958,41 @@ router.post('/:id/lte/data-cap/:iface/send', requireWrite, async (req, res) => {
   } finally {
     collector?.disconnect();
   }
+});
+
+// ─── SMS inbox (discussion #85) ──────────────────────────────────────────────
+// Read live from the modem and never stored. Messages can hold anything sent
+// to the SIM (codes included), so reading them needs write access, like
+// deleting them.
+
+// GET /api/devices/:id/lte/sms
+router.get('/:id/lte/sms', requireWrite, async (req, res) => {
+  await withCollector(req.params.id, res, async (c) => {
+    const { settings, messages } = await c.readSms();
+    return {
+      receive_enabled: settings ? settings['receive-enabled'] === 'true' || settings['receive-enabled'] === 'yes' : null,
+      port: settings?.port || null,
+      messages,
+    };
+  });
+});
+
+// POST /api/devices/:id/lte/sms/delete  { ids?: string[], phone?: string, all?: true }
+router.post('/:id/lte/sms/delete', requireWrite, async (req, res) => {
+  const b = (req.body ?? {}) as { ids?: unknown; phone?: unknown; all?: unknown };
+  const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+  if (ids.some((x) => !SMS_ID.test(x))) return res.status(400).json({ error: 'ids must be RouterOS item ids' });
+  const phone = typeof b.phone === 'string' ? b.phone.trim() : '';
+  if (!ids.length && !phone && b.all !== true) return res.status(400).json({ error: 'Choose messages, a sender, or all' });
+  await withCollector(req.params.id, res, async (c) => {
+    let targets = ids;
+    if (!targets.length) {
+      const { messages } = await c.readSms();
+      targets = (phone ? messagesFrom(messages, phone) : messages).map((m) => m.id);
+    }
+    const removed = await c.removeSms(targets);
+    return { removed, message: removed === 1 ? '1 message deleted' : `${removed} messages deleted` };
+  });
 });
 
 // GET /api/devices/:id/lte/history — handovers, re-registrations and band changes

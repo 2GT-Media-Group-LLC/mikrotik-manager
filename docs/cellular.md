@@ -149,3 +149,19 @@ sending fail silently** — the worst possible failure here. Setting
 
 Every send is recorded with the counter reading at the time, so a misfire is explainable
 rather than mysterious.
+
+### The carrier's replies
+
+Carriers often answer the reset SMS, and on a busy day that can be ten or twenty messages, which
+fill the inbox. Tick **Delete the carrier's replies from the inbox** on the rule, and every few
+minutes the messages from the number the rule sends to are removed from the modem, and nothing
+else. If the replies come from somewhere else (a short code or a name such as `Operator`), enter it
+under **Replies come from**. Spaces, dashes, brackets and letter case don't matter.
+
+## SMS inbox
+
+The **SMS inbox** card on the LTE tab shows the modem's inbox: sender, time and text, read from the
+device when you open it and never stored. Delete one message, every message from one sender, or
+all of them. A text can hold anything sent to the SIM, codes included, so the card is only there
+for users who can change the device. If receiving is off on the modem, the card says so; new
+messages then stay on the SIM and don't show.

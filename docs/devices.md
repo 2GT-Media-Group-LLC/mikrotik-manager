@@ -459,8 +459,11 @@ without connection tracking has no Connections section, a single-core device no 
 | **Memory** | Memory used, with the peak band where it differs |
 | **Connections** | Active connections (with the peak, and the share of the table's maximum), connections by protocol and NAT translations (src-nat, dst-nat), and new connections per second where the router counts them (below). Only where connection tracking is running |
 | **Firewall drops** | Packets per second dropped by drop and reject rules, per chain (input, forward, and raw), and the rules that dropped the most in the range |
-| **Interfaces** | The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second |
+| **Interfaces** | The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second. The same traffic isn't picked twice: a bond is picked rather than its members, and a PPPoE client rather than the port under it. A bond's speed is its running members' together; a port whose speed isn't known is named under the utilisation chart. The picker lists ports in number order (ether1, ether2 … ether48, then SFP and QSFP ports, bonds and VLANs) |
 | **Temperature** | Each temperature sensor the device reports |
+
+A series that started inside the range, such as one new in this release or a device added
+recently, says **Recorded since** when, so an empty start isn't read as nothing happening.
 
 What it costs the router: per-core load, the connection-tracking totals and the rule counters ride
 along with the fast poll's existing read. The protocol and NAT split counts the connection table on

@@ -71,8 +71,10 @@ function SeriesChart({ data, lines, unit, height = 150, domain, time }: {
   );
 }
 
-function Section({ id, title, summary, collapsed, onToggle, children }: {
-  id: SectionId; title: string; summary?: React.ReactNode; collapsed: boolean; onToggle: (id: SectionId) => void; children: React.ReactNode;
+function Section({ id, title, summary, collapsed, onToggle, since, children }: {
+  id: SectionId; title: string; summary?: React.ReactNode; collapsed: boolean; onToggle: (id: SectionId) => void;
+  /** When the series began, if that's well inside the range: an empty start is "not recorded yet", not "nothing happened". */
+  since?: string | null; children: React.ReactNode;
 }) {
   return (
     <div className="card overflow-hidden">
@@ -81,7 +83,12 @@ function Section({ id, title, summary, collapsed, onToggle, children }: {
         <span className="text-sm font-semibold text-gray-900 dark:text-white">{title}</span>
         {summary && <span className="text-xs text-gray-500 dark:text-slate-400 truncate">{summary}</span>}
       </button>
-      {!collapsed && <div className="px-4 pb-4 space-y-3">{children}</div>}
+      {!collapsed && (
+        <div className="px-4 pb-4 space-y-3">
+          {since && <p className="text-xs text-gray-400 dark:text-slate-500">Recorded since {since}; nothing before that in this range.</p>}
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -125,6 +132,12 @@ export default function GraphsTab({ deviceId }: { deviceId: number }) {
     refetchInterval: 60_000,
   });
 
+  // A series that began well inside the range (new in this release, or a new
+  // device) gets a note instead of a silently empty left side (aziz, #402).
+  const sinceOf = (times: (string | number | undefined)[]) => {
+    const first = Math.min(...times.map((t) => (typeof t === 'number' ? t : Date.parse(String(t)))).filter(Number.isFinite));
+    return Number.isFinite(first) && first - start > (nowMs - start) * 0.05 ? formatDateTime(new Date(first).toISOString(), { year: undefined }) : null;
+  };
   const fieldsOf = (rows: GraphPoint[] | undefined, re: RegExp) =>
     [...new Set((rows ?? []).flatMap((r) => Object.keys(r)).filter((k) => k !== 'time' && k !== 'label' && re.test(k) && !k.endsWith('_peak')))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const withLabels = (rows: GraphPoint[] | undefined, extra?: (r: GraphPoint) => Record<string, unknown>) =>
@@ -206,7 +219,7 @@ export default function GraphsTab({ deviceId }: { deviceId: number }) {
       </div>
 
       {shown('cpu') && (
-        <Section id="cpu" title="CPU" collapsed={collapsed.has('cpu')} onToggle={onCollapse}
+        <Section id="cpu" title="CPU" collapsed={collapsed.has('cpu')} onToggle={onCollapse} since={sinceOf(res.map((p) => p.ts))}
           summary={cpuAvg !== null ? `average ${Math.round(cpuAvg)}% · peak ${cpuMax}% in ${range}` : undefined}>
           <SeriesChart time={time} data={res} unit={fmtPct} domain={[0, 100]} lines={[{ key: 'cpu', band: 'cpuBand', name: 'CPU', color: '#f59e0b' }]} />
           {coreKeys.length > 1 && (
@@ -220,14 +233,14 @@ export default function GraphsTab({ deviceId }: { deviceId: number }) {
       )}
 
       {shown('memory') && (
-        <Section id="memory" title="Memory" collapsed={collapsed.has('memory')} onToggle={onCollapse}
+        <Section id="memory" title="Memory" collapsed={collapsed.has('memory')} onToggle={onCollapse} since={sinceOf(res.map((p) => p.ts))}
           summary={memNow !== null ? `${memNow}% used now` : undefined}>
           <SeriesChart time={time} data={res} unit={fmtPct} domain={[0, 100]} height={120} lines={[{ key: 'mem', band: 'memBand', name: 'Memory used', color: '#8b5cf6' }]} />
         </Section>
       )}
 
       {shown('connections') && (
-        <Section id="connections" title="Connections" collapsed={collapsed.has('connections')} onToggle={onCollapse}
+        <Section id="connections" title="Connections" collapsed={collapsed.has('connections')} onToggle={onCollapse} since={sinceOf(ctRows.map((r) => r.time))}
           summary={ctLast ? <>conntrack {fmtK(Number(ctLast.total ?? 0))} of {fmtK(Number(ctLast.max ?? 0))}
             {Number(ctLast.max) > 0 ? ` (${Math.round((Number(ctLast.total ?? 0) / Number(ctLast.max)) * 100)}%)` : ''}
             {ctPeak ? ` · peak ${fmtK(ctPeak.v)} at ${formatDateTime(ctPeak.t, { year: undefined })}` : ''}</> : undefined}>
@@ -262,7 +275,7 @@ export default function GraphsTab({ deviceId }: { deviceId: number }) {
       )}
 
       {shown('firewall') && (
-        <Section id="firewall" title="Firewall drops" collapsed={collapsed.has('firewall')} onToggle={onCollapse}
+        <Section id="firewall" title="Firewall drops" collapsed={collapsed.has('firewall')} onToggle={onCollapse} since={sinceOf((drops.data ?? []).map((r) => r.time))}
           summary={dropRules.data && dropRules.data.length ? `top rule: ${dropRules.data[0].label} (${fmtK(dropRules.data[0].packets)} packets in ${range})` : 'packets/s dropped by drop and reject rules'}>
           <SeriesChart time={time} data={withLabels(drops.data)} unit={fmtPps}
             lines={dropKeys.map((k, i) => ({ key: k, name: prettyChain(k), color: COLORS[i % COLORS.length] }))} />
@@ -286,7 +299,7 @@ export default function GraphsTab({ deviceId }: { deviceId: number }) {
       )}
 
       {shown('interfaces') && (
-        <Section id="interfaces" title="Interfaces" collapsed={collapsed.has('interfaces')} onToggle={onCollapse}
+        <Section id="interfaces" title="Interfaces" collapsed={collapsed.has('interfaces')} onToggle={onCollapse} since={sinceOf(ifaceRows.map((r) => r.ts as number))}
           summary={ifacePick.length ? `${ifacePick.length} chosen` : 'the busiest in this range'}>
           <div className="flex flex-wrap gap-1.5">
             {(ifaces.data?.available ?? []).map((n) => {
@@ -323,6 +336,11 @@ export default function GraphsTab({ deviceId }: { deviceId: number }) {
                     <div className={sub}>Utilisation (busier direction, of link speed)</div>
                     <SeriesChart time={time} data={ifaceRows} unit={fmtPct} height={120} domain={[0, 100]}
                       lines={ifaceData.filter((i) => i.speed_bps).map((i) => ({ key: `${i.name}|util`, name: i.name, color: COLORS[ifaceData.indexOf(i) % COLORS.length] }))} />
+                    {ifaceData.some((i) => !i.speed_bps) && (
+                      <p className="text-xs text-gray-400 dark:text-slate-500">
+                        Not shown, link speed unknown: {ifaceData.filter((i) => !i.speed_bps).map((i) => i.name).join(', ')}
+                      </p>
+                    )}
                   </div>
                 )}
                 <div>
@@ -338,7 +356,7 @@ export default function GraphsTab({ deviceId }: { deviceId: number }) {
       )}
 
       {shown('health') && (
-        <Section id="health" title="Temperature" collapsed={collapsed.has('health')} onToggle={onCollapse}
+        <Section id="health" title="Temperature" collapsed={collapsed.has('health')} onToggle={onCollapse} since={sinceOf((temps.data ?? []).map((r) => r.time))}
           summary={temps.data?.length ? tempKeys.map((k) => `${prettyTemp(k)} ${Math.round(Number(temps.data![temps.data!.length - 1][k] ?? 0))}°C`).join(' · ') : undefined}>
           <SeriesChart time={time} data={withLabels(temps.data)} unit={(v) => `${Math.round(v)}°C`} height={130}
             lines={tempKeys.map((k, i) => ({ key: k, name: prettyTemp(k), color: COLORS[i % COLORS.length] }))} />

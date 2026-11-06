@@ -9,6 +9,7 @@ import { chartTooltip, inDeclaredOrder } from '../common/chartTooltip';
 import { Signal, RadioTower, ArrowLeftRight, RotateCcw, Radio, ArrowUpFromLine, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { lteApi, type LteInterface, type LteHistoryEvent, type LteDwellTotal } from '../../services/api';
 import DataCapCard from './DataCapCard';
+import SmsInboxCard from './SmsInboxCard';
 
 interface Props {
   deviceId: number;
@@ -395,6 +396,7 @@ export default function LteTab({ deviceId }: Props) {
       {interfaces.map(iface => (
         <DataCapCard key={`cap-${iface.interface_name}`} deviceId={deviceId} interfaceName={iface.interface_name} />
       ))}
+      {interfaces.length > 0 && <SmsInboxCard deviceId={deviceId} />}
 
       {modemNames.length > 1 && (
         <div className="flex items-center gap-2 text-sm">

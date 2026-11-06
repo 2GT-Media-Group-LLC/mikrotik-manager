@@ -884,6 +884,10 @@ CREATE TABLE IF NOT EXISTS lte_data_cap_sends (
   error          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_data_cap_sends ON lte_data_cap_sends(device_id, at DESC);
+-- Clear the carrier's replies to the reset SMS from the modem's inbox
+-- (discussion #85): messages from reply_sender, or from the reset number.
+ALTER TABLE lte_data_cap_rules ADD COLUMN IF NOT EXISTS delete_replies BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE lte_data_cap_rules ADD COLUMN IF NOT EXISTS reply_sender VARCHAR(32);
 
 -- Per-device SSH keypairs (#110).
 --

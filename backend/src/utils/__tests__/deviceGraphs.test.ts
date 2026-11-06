@@ -1,5 +1,6 @@
 import {
   conntrackActive, conntrackFields, dropRules, dropRates, chainField, coreLoads, temperatures, linkSpeedBps,
+  pickBusiest, ifaceSpeed, ifaceOrder, type GraphIface,
 } from '../deviceGraphs';
 
 describe('device graphs (#402)', () => {
@@ -55,5 +56,36 @@ describe('device graphs (#402)', () => {
     expect(linkSpeedBps('100Mbps')).toBe(100e6);
     expect(linkSpeedBps('2.5Gbps')).toBe(2.5e9);
     expect(linkSpeedBps('auto')).toBeNull();
+  });
+
+  const iface = (name: string, over: Partial<GraphIface> = {}): GraphIface =>
+    ({ name, type: 'ether', running: true, speedBps: 10e9, members: [], parent: null, ...over });
+  const ifs = new Map([
+    iface('sfp-sfpplus1'), iface('sfp-sfpplus2'), iface('ether40', { speedBps: 1e9 }), iface('sfp-sfpplus12'),
+    iface('Po1', { type: 'bond', speedBps: null, members: ['sfp-sfpplus1', 'sfp-sfpplus2'] }),
+    iface('pppoe-out1', { type: 'pppoe-out', speedBps: null, parent: 'sfp-sfpplus12' }),
+    iface('vlan10', { type: 'vlan', parent: 'sfp-sfpplus1' }),
+  ].map((i) => [i.name, i]));
+
+  it('never picks two interfaces that carry the same traffic (aziz, #402)', () => {
+    const totals = new Map([['Po1', 900], ['sfp-sfpplus1', 500], ['sfp-sfpplus2', 400], ['ether40', 50],
+      ['sfp-sfpplus12', 300], ['pppoe-out1', 290], ['vlan10', 800]]);
+    expect(pickBusiest(totals, ifs)).toEqual(['Po1', 'pppoe-out1', 'ether40']);
+  });
+
+  it('gives a bond its running members\' speed', () => {
+    expect(ifaceSpeed(ifs.get('Po1')!, ifs)).toBe(20e9);
+    const down = new Map(ifs);
+    down.set('sfp-sfpplus2', iface('sfp-sfpplus2', { running: false }));
+    expect(ifaceSpeed(ifs.get('Po1')!, down)).toBe(10e9);
+    expect(ifaceSpeed(ifs.get('pppoe-out1')!, ifs)).toBeNull();
+  });
+
+  it('sorts ports the way they are numbered', () => {
+    const names = [['ether10', 'ether'], ['vlan10', 'vlan'], ['qsfpplus1-1', 'ether'], ['ether2', 'ether'], ['Po1', 'bond'],
+      ['sfp-sfpplus2', 'ether'], ['ether1', 'ether'], ['bridge', 'bridge'], ['pppoe-out1', 'pppoe-out'], ['sfp-sfpplus10', 'ether']]
+      .map(([name, type]) => ({ name, type }));
+    expect(names.sort(ifaceOrder).map((x) => x.name)).toEqual(
+      ['ether1', 'ether2', 'ether10', 'sfp-sfpplus2', 'sfp-sfpplus10', 'qsfpplus1-1', 'Po1', 'vlan10', 'pppoe-out1', 'bridge']);
   });
 });

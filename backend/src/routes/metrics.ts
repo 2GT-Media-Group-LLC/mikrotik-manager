@@ -10,7 +10,7 @@ import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, clientS
 import { activeSite } from '../middleware/site';
 import { fluxString } from '@influxdata/influxdb-client';
 import { latestResources, latestInterfaceCounters } from '../services/latestMetrics';
-import { linkSpeedBps } from '../utils/deviceGraphs';
+import { linkSpeedBps, pickBusiest, ifaceSpeed, ifaceOrder, type GraphIface } from '../utils/deviceGraphs';
 
 const router = Router();
 router.use(requireAuth);
@@ -357,17 +357,27 @@ router.get('/device/:deviceId/drop-rules', async (req, res) => {
 router.get('/device/:deviceId/interfaces', async (req, res) => {
   const { range, every } = graphRange(req);
   const deviceId = String(req.params.deviceId);
-  const known = await query<{ name: string; type: string | null; link_rate: string | null; speed: string | null }>(
-    `SELECT name, type, link_rate, speed FROM interfaces WHERE device_id = $1`, [Number(deviceId)]);
-  const byName = new Map(known.map((i) => [i.name, i]));
+  const [known, pppoe] = await Promise.all([
+    query<{ name: string; type: string | null; link_rate: string | null; speed: string | null; running: boolean | null; slaves: string | null }>(
+      `SELECT name, type, link_rate, speed, running, config_json->>'slaves' AS slaves FROM interfaces WHERE device_id = $1`, [Number(deviceId)]),
+    // A PPPoE client's port, so the two aren't both picked (#402).
+    query<{ name: string; local_address: string | null }>(
+      `SELECT name, local_address FROM device_tunnels WHERE device_id = $1 AND kind = 'pppoe-client'`, [Number(deviceId)]).catch(() => []),
+  ]);
+  const parentOf = new Map(pppoe.map((p) => [p.name, p.local_address]));
+  const byName = new Map<string, GraphIface>(known.map((i) => [i.name, {
+    name: i.name, type: i.type, running: !!i.running,
+    speedBps: linkSpeedBps(i.link_rate) ?? linkSpeedBps(i.speed),
+    members: (i.slaves ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+    parent: parentOf.get(i.name) ?? null,
+  }]));
   let names = String(req.query.ifaces ?? '').split(',').map((x) => x.trim()).filter((x) => byName.has(x)).slice(0, 8);
   const scope = `
       |> range(start: -${rangeToFlux(range)})
       |> filter(fn: (r) => r._measurement == "interface_traffic" and r.device_id == ${fluxString(deviceId)})`;
   try {
     if (!names.length) {
-      // The busiest by bytes moved in the range; bridges, VLANs and loopback repeat their ports' traffic.
-      const skip = new Set(['bridge', 'vlan', 'loopback']);
+      // The busiest by bytes moved in the range, never the same traffic twice.
       const totals = new Map<string, number>();
       await getQueryApi().collectRows(`from(bucket: ${fluxString(bucket)})${scope}
         |> filter(fn: (r) => r._field == "rx_bytes" or r._field == "tx_bytes")
@@ -375,8 +385,7 @@ router.get('/device/:deviceId/interfaces', async (req, res) => {
         const n = String(meta.get(row, 'interface'));
         totals.set(n, (totals.get(n) ?? 0) + (Number(meta.get(row, '_value')) || 0));
       });
-      names = [...totals].filter(([n, v]) => v > 0 && byName.has(n) && !skip.has(byName.get(n)!.type ?? ''))
-        .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([n]) => n);
+      names = pickBusiest(totals, byName);
     }
     const series = new Map<string, Map<string, Record<string, number>>>();
     if (names.length) {
@@ -401,11 +410,11 @@ router.get('/device/:deviceId/interfaces', async (req, res) => {
         const i = byName.get(n)!;
         return {
           name: n,
-          speed_bps: linkSpeedBps(i.link_rate) ?? linkSpeedBps(i.speed),
+          speed_bps: ifaceSpeed(i, byName),
           points: [...(series.get(n) ?? new Map()).entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([time, v]) => ({ time, ...v })),
         };
       }),
-      available: known.filter((i) => !['loopback'].includes(i.type ?? '')).map((i) => i.name).sort(),
+      available: known.filter((i) => i.type !== 'loopback').sort(ifaceOrder).map((i) => i.name),
     });
   } catch {
     return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });

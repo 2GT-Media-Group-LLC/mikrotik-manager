@@ -37,6 +37,7 @@ export default function DataCapCard({ deviceId, interfaceName }: { deviceId: num
     reset_hour: 0, reset_minute: 0,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     cooldown_minutes: 60,
+    delete_replies: false, reply_sender: '',
   });
 
   useEffect(() => {
@@ -50,6 +51,8 @@ export default function DataCapCard({ deviceId, interfaceName }: { deviceId: num
       reset_minute: rule.reset_minute,
       timezone: rule.timezone,
       cooldown_minutes: rule.cooldown_minutes,
+      delete_replies: !!rule.delete_replies,
+      reply_sender: rule.reply_sender ?? '',
     });
   }, [rule?.id, rule?.updated_at]);
 
@@ -64,6 +67,8 @@ export default function DataCapCard({ deviceId, interfaceName }: { deviceId: num
       reset_minute: form.reset_minute,
       timezone: form.timezone,
       cooldown_minutes: form.cooldown_minutes,
+      delete_replies: form.delete_replies,
+      reply_sender: form.reply_sender.trim(),
     }),
     onSuccess: (r) => {
       setResult({ ok: true, text: r.data.message });
@@ -169,6 +174,27 @@ export default function DataCapCard({ deviceId, interfaceName }: { deviceId: num
             onChange={e => setForm({ ...form, cooldown_minutes: Number(e.target.value) })} />
         </label>
       </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
+          <input type="checkbox" checked={form.delete_replies}
+            onChange={e => setForm({ ...form, delete_replies: e.target.checked })} />
+          Delete the carrier&rsquo;s replies from the inbox
+        </label>
+        {form.delete_replies && (
+          <label className="text-xs flex items-center gap-2">
+            <span className="text-gray-500 dark:text-slate-400">Replies come from</span>
+            <input className="input w-36 text-sm" maxLength={32} placeholder={form.phone_number || 'the number above'}
+              value={form.reply_sender} onChange={e => setForm({ ...form, reply_sender: e.target.value })} />
+          </label>
+        )}
+      </div>
+      {form.delete_replies && (
+        <p className="-mt-2 text-[11px] text-gray-400 dark:text-slate-500">
+          Every few minutes, messages from {form.reply_sender.trim() || form.phone_number || 'that sender'} are removed from the modem&rsquo;s
+          inbox, and nothing else. The SMS inbox below shows each sender as the modem has it. Saved with the rule.
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">

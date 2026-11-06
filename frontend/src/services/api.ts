@@ -590,6 +590,8 @@ export interface LteDataCapRule {
   cooldown_minutes: number;
   period_key: string | null; period_bytes: string;
   last_sent_at: string | null; updated_at: string;
+  /** Clear the carrier's replies from the inbox (discussion #85). */
+  delete_replies?: boolean; reply_sender?: string | null;
 }
 
 export interface LteDataCapSend {
@@ -605,6 +607,15 @@ export const dataCapApi = {
     api.put<{ message: string }>(`/devices/${deviceId}/lte/data-cap/${encodeURIComponent(iface)}`, body),
   sendNow: (deviceId: number, iface: string) =>
     api.post<{ message: string }>(`/devices/${deviceId}/lte/data-cap/${encodeURIComponent(iface)}/send`),
+};
+
+/** The modem's SMS inbox (discussion #85), read live. */
+export interface SmsMessage { id: string; phone: string; timestamp: string | null; message: string; type: string | null }
+export const smsApi = {
+  inbox: (deviceId: number) =>
+    api.get<{ receive_enabled: boolean | null; port: string | null; messages: SmsMessage[] }>(`/devices/${deviceId}/lte/sms`),
+  remove: (deviceId: number, body: { ids?: string[]; phone?: string; all?: true }) =>
+    api.post<{ removed: number; message: string }>(`/devices/${deviceId}/lte/sms/delete`, body),
 };
 
 

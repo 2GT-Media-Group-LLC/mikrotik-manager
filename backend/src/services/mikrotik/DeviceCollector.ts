@@ -135,6 +135,7 @@ import { poolSize, usedPerPool } from '../../utils/dhcpPools';
 import { recordOptics } from '../opticLevels';
 import { routeOf } from '../jumpHosts';
 import { firewallMenu, type FirewallFamily } from '../../utils/firewallFamily';
+import { smsMessages, messagesFrom, SMS_ID, type SmsMessage } from '../../utils/lteSms';
 
 /** The device tables the bridge-port checks read (#258). */
 export interface BridgeState {
@@ -5194,6 +5195,40 @@ export class DeviceCollector {
     }
   }
 
+  /** The modem's SMS settings and inbox (discussion #85). Read live, never stored. */
+  async readSms(): Promise<{ settings: Record<string, string> | null; messages: SmsMessage[] }> {
+    const [settings, inbox] = await Promise.all([
+      this.client.execute('/tool/sms/print').then((r) => r[0] ?? null).catch(() => null),
+      this.client.execute('/tool/sms/inbox/print'),
+    ]);
+    return { settings, messages: smsMessages(inbox) };
+  }
+
+  /** Remove inbox messages by id; returns how many went. */
+  async removeSms(ids: string[]): Promise<number> {
+    let removed = 0;
+    for (const id of ids.filter((x) => SMS_ID.test(x))) {
+      await this.client.execute('/tool/sms/inbox/remove', { '.id': id });
+      removed++;
+    }
+    return removed;
+  }
+
+  /** Last time each device's inbox was cleared of carrier replies: once every few minutes is plenty. */
+  private static lastReplySweep = new Map<number, number>();
+
+  /** Remove the carrier's replies to the reset SMS, when the rule asks for it. */
+  private async deleteCarrierReplies(interfaceName: string, sender: string): Promise<void> {
+    const last = DeviceCollector.lastReplySweep.get(this.device.id) ?? 0;
+    if (Date.now() - last < 5 * 60_000) return;
+    DeviceCollector.lastReplySweep.set(this.device.id, Date.now());
+    const inbox = smsMessages(await this.client.execute('/tool/sms/inbox/print', { '.proplist': '.id,phone' }));
+    const replies = messagesFrom(inbox, sender);
+    if (!replies.length) return;
+    const removed = await this.removeSms(replies.map((m) => m.id));
+    console.log(`[DataCap] ${this.device.name}/${interfaceName}: removed ${removed} SMS from ${sender} from the inbox`);
+  }
+
   /**
    * Accumulate cellular usage and fire the carrier's reset SMS when due.
    *
@@ -5211,7 +5246,7 @@ export class DeviceCollector {
         threshold_bytes: string; margin_pct: number; reset_hour: number; reset_minute: number;
         timezone: string; cooldown_minutes: number; period_key: string | null;
         period_bytes: string; last_rx: string | null; last_tx: string | null;
-        last_sent_at: string | null;
+        last_sent_at: string | null; delete_replies: boolean; reply_sender: string | null;
       }>(
         `SELECT * FROM lte_data_cap_rules WHERE device_id = $1 AND interface_name = $2`,
         [this.device.id, interfaceName]
@@ -5324,6 +5359,10 @@ export class DeviceCollector {
           WHERE id = $1`,
         [rule.id, key, periodBytesAfter, counters.rxBytes, counters.txBytes, sentAt]
       );
+      if (rule.delete_replies) {
+        await this.deleteCarrierReplies(interfaceName, rule.reply_sender || rule.phone_number)
+          .catch((e) => console.warn(`[DataCap] ${this.device.name}/${interfaceName}: replies not cleared:`, (e as Error).message));
+      }
     } catch (e) {
       console.error(`[DataCap] ${this.device.name}: tracking failed:`, (e as Error).message);
     }

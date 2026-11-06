@@ -129,3 +129,58 @@ export function linkSpeedBps(rate: string | null | undefined): number | null {
   const mult = { k: 1e3, m: 1e6, g: 1e9, t: 1e12 }[m[2].toLowerCase() as 'k' | 'm' | 'g' | 't'];
   return Number(m[1]) * mult;
 }
+
+/**
+ * What the Interfaces graphs know about a port: its own speed, a bond's
+ * members, and the port a PPPoE client or VLAN runs over.
+ */
+export interface GraphIface { name: string; type: string | null; running: boolean; speedBps: number | null; members: string[]; parent: string | null }
+
+/** A bond and its members, or a PPPoE client or VLAN and its port, carry the same traffic. */
+export function carriesSame(a: GraphIface, b: GraphIface): boolean {
+  return a.members.includes(b.name) || b.members.includes(a.name) || a.parent === b.name || b.parent === a.name;
+}
+
+/**
+ * The busiest `n` by bytes moved, never two that carry the same traffic (#402):
+ * a bond wins over its members, a PPPoE client over the port under it.
+ */
+export function pickBusiest(totals: Map<string, number>, ifaces: Map<string, GraphIface>, n = 4): string[] {
+  const skip = new Set(['bridge', 'vlan', 'loopback']);
+  const candidates = [...totals].filter(([name, v]) => v > 0 && ifaces.has(name) && !skip.has(ifaces.get(name)!.type ?? ''))
+    .map(([name, v]) => ({ i: ifaces.get(name)!, v }));
+  // Logical interfaces first among equals: a bond's total is its members' sum,
+  // so it already leads; a PPPoE client can trail its port by the PPPoE overhead.
+  const rank = (i: GraphIface) => (i.members.length || i.parent ? 0 : 1);
+  candidates.sort((a, b) => b.v - a.v);
+  const out: GraphIface[] = [];
+  for (const c of candidates) {
+    if (out.length >= n) break;
+    const clash = out.findIndex((o) => carriesSame(o, c.i));
+    if (clash < 0) out.push(c.i);
+    else if (rank(c.i) < rank(out[clash])) out[clash] = c.i;
+  }
+  return out.map((i) => i.name);
+}
+
+/** A port's speed; a bond's is its running members' together. */
+export function ifaceSpeed(i: GraphIface, ifaces: Map<string, GraphIface>): number | null {
+  if (i.speedBps) return i.speedBps;
+  if (!i.members.length) return null;
+  const sum = i.members.map((m) => ifaces.get(m)).filter((m) => m && m.running && m.speedBps)
+    .reduce((s, m) => s + (m!.speedBps ?? 0), 0);
+  return sum > 0 ? sum : null;
+}
+
+/**
+ * The picker's order: copper, SFP and QSFP ports in number order
+ * (ether1, ether2 … ether48, not ether1, ether10), then other ports, bonds,
+ * VLANs and the rest.
+ */
+export function ifaceOrder(a: { name: string; type: string | null }, b: { name: string; type: string | null }): number {
+  const group = (i: { name: string; type: string | null }) => {
+    if (i.type === 'ether') return /^ether/i.test(i.name) ? 0 : /^q?sfp/i.test(i.name) ? (/^qsfp/i.test(i.name) ? 2 : 1) : 3;
+    return i.type === 'bond' ? 4 : i.type === 'vlan' ? 5 : i.type === 'bridge' ? 7 : 6;
+  };
+  return group(a) - group(b) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+}
