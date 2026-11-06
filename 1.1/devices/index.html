@@ -2881,7 +2881,7 @@ without connection tracking has no Connections section, a single-core device no 
 </tr>
 <tr>
 <td><strong>Interfaces</strong></td>
-<td>The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second</td>
+<td>The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second. The same traffic isn't picked twice: a bond is picked rather than its members, and a PPPoE client rather than the port under it. A bond's speed is its running members' together; a port whose speed isn't known is named under the utilisation chart. The picker lists ports in number order (ether1, ether2 … ether48, then SFP and QSFP ports, bonds and VLANs)</td>
 </tr>
 <tr>
 <td><strong>Temperature</strong></td>
@@ -2889,6 +2889,8 @@ without connection tracking has no Connections section, a single-core device no 
 </tr>
 </tbody>
 </table>
+<p>A series that started inside the range, such as one new in this release or a device added
+recently, says <strong>Recorded since</strong> when, so an empty start isn't read as nothing happening.</p>
 <p>What it costs the router: per-core load, the connection-tracking totals and the rule counters ride
 along with the fast poll's existing read. The protocol and NAT split counts the connection table on
 the router, so it runs with the slow poll, and not at all on a table of more than 200,000
