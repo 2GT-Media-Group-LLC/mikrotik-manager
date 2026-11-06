@@ -1842,7 +1842,7 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 </tr>
 <tr>
 <td><code>config_drift</code></td>
-<td>The device's configuration changed (off by default)</td>
+<td>The device's configuration changed (off by default). The alert carries what changed, as a diff with three lines around each change (#406), cut at 60 lines or about 3,500 characters so it fits every channel; the rest is in <a href="../backups/#reading-and-comparing">Config History</a>. Snapshots never hold passwords or keys, so neither does the diff</td>
 </tr>
 <tr>
 <td><code>device_degraded</code> / <code>device_health_restored</code></td>

@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.28
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta27" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1776,6 +1787,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.28
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta27" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2084,6 +2106,32 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta28">1.1.0-beta.28<a class="headerlink" href="#110-beta28" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Graphs</strong>, a new device tab, from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s proposal
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/402">#402</a>, steps 2–4): CPU with
+  peaks and per core, memory, connections (active, by protocol, NAT translations, new per second),
+  firewall drops per chain with the top drop rules, several interfaces at once with utilisation and
+  packets per second, and temperatures. One range for the tab, a shared hover cursor, section
+  summaries, and sections only where the device has the data
+  (<a href="../devices/#device-graphs">Device graphs</a>).</li>
+<li>MLAG's <strong>last flap</strong> recognises a reboot whose RouterOS took minutes to come back (the link drops
+  when the reboot starts), from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s check on his WAN
+  pair (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376">#376</a>).</li>
+<li><strong>Brute-force protection</strong>, a new Quick rules preset, from
+  <a href="https://github.com/simonkrebsd3">@simonkrebsd3</a>'s request
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/405">#405</a>): bans an address that
+  keeps opening new connections to SSH, WinBox, FTP, Telnet or a VPN server (L2TP/IPsec, PPTP,
+  OpenVPN, SSTP), for an hour, a day or a week. The manager and any addresses you choose are never
+  banned. Banned addresses show on the Firewall tab, with <strong>Unban</strong> and <strong>Never ban</strong>, and across
+  the fleet on the Security page (<a href="../devices/#brute-force-protection">Brute-force protection</a>).</li>
+<li>The <strong>Configuration changed</strong> alert says what changed, as a diff, from
+  <a href="https://github.com/kamils777">@kamils777</a>'s request
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/406">#406</a>), cut to fit each
+  channel (<a href="../alerting/">Alerting</a>).</li>
+<li>Quick rules finds the manager's own address on devices without connection tracking (most
+  switches), from its API session, so Management access adds it there too.</li>
+</ul>
 <h2 id="110-beta27">1.1.0-beta.27<a class="headerlink" href="#110-beta27" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Quick firewall rules</strong>, from <a href="https://github.com/cybr4nx">@cybr4nx</a>
