@@ -275,15 +275,18 @@ router.get('/firewall', async (req, res) => {
      FROM events e
      LEFT JOIN devices d ON d.id = e.device_id
      WHERE ${where}
-     ORDER BY e.event_time DESC
+     ORDER BY e.event_time DESC, e.id DESC
      LIMIT $${idx} OFFSET $${idx + 1}`,
     [...params, requestedLimit, requestedOffset]
   );
 
   const countQuery = query<{ total: string }>(
+    // The join is only needed when the search can match a device name. Without
+    // it the count is an index-only scan of the firewall partial index; with a
+    // needless LEFT JOIN it has to visit the heap for every matching row.
     `SELECT COUNT(*)::text AS total
      FROM events e
-     LEFT JOIN devices d ON d.id = e.device_id
+     ${searchTerm ? 'LEFT JOIN devices d ON d.id = e.device_id' : ''}
      WHERE ${where}`,
     params
   );
@@ -385,19 +388,34 @@ router.get('/', async (req, res) => {
 
   const where = filters.join(' AND ');
 
+  // Page size is clamped so a crafted ?limit= can never ask the server (or the
+  // browser) to materialise more than one screenful's worth of rows.
+  const parsedLimit = parseInt(String(limit), 10);
+  const parsedOffset = parseInt(String(offset), 10);
+  const pageLimit = Number.isFinite(parsedLimit)
+    ? Math.min(Math.max(parsedLimit, 1), 1000)
+    : 200;
+  const pageOffset = Number.isFinite(parsedOffset)
+    ? Math.max(parsedOffset, 0)
+    : 0;
+
   const rowsQuery = query(
-    `SELECT e.*, d.name as device_name
+    // Named columns only: `e.*` dragged raw_json (a full copy of the RouterOS
+    // log object) through the wire for every row, which the page never reads.
+    // id is the tie-breaker so events written in the same batch keep a stable
+    // order across pages instead of duplicating or skipping rows.
+    `SELECT e.id, e.device_id, e.event_time, e.severity, e.topic, e.message,
+            d.name as device_name
      FROM events e
      LEFT JOIN devices d ON d.id = e.device_id
      WHERE ${where}
-     ORDER BY e.event_time DESC
+     ORDER BY e.event_time DESC, e.id DESC
      LIMIT $${idx++} OFFSET $${idx++}`,
-    [...params, parseInt(String(limit), 10), parseInt(String(offset), 10)]
+    [...params, pageLimit, pageOffset]
   );
 
   // ?counts=0 returns the rows alone. The dashboard shows five events and never reads
-  // the totals, and the total is a regex test over every stored event, several seconds
-  // on a large table that also slowed whatever else the database was doing.
+  // the totals, so it should not pay for the two aggregates below.
   if (req.query.counts === '0') {
     res.json({ events: await rowsQuery });
     return;
@@ -405,8 +423,9 @@ router.get('/', async (req, res) => {
 
   const [events, totalResult, criticalCount] = await Promise.all([
     rowsQuery,
-    // Counted up to one past the cap, then stopped: an exact total meant testing every
-    // stored event (millions on a busy install), several seconds on every refresh.
+    // Counted up to one past the cap, then stopped. The partial index added for
+    // the default view makes this an index-only scan over the rows the page can
+    // actually show instead of a regex test over every stored event.
     query<{ count: string }>(
       `SELECT COUNT(*) as count FROM (SELECT 1 FROM events e WHERE ${where} LIMIT ${EVENTS_COUNT_CAP + 1}) c`,
       params

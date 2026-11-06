@@ -1,11 +1,12 @@
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Bell, Search, Trash2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { eventsApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { useSocket } from '../hooks/useSocket';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import type { EventSeverity } from '../types';
 import clsx from 'clsx';
 import DevicePicker from '../components/common/DevicePicker';
@@ -72,12 +73,16 @@ export default function EventsPage() {
       ? undefined
       : [...severities].join(',');
 
+  // The list request also computes table-wide totals, so wait for the typist to
+  // pause instead of sending one of those per keystroke.
+  const debouncedSearch = useDebouncedValue(search);
+
   const { data: eventsData, isLoading } = useQuery({
-    queryKey: ['events', { search, severityParam, topic, deviceId, page, showClock, showFirewall }],
+    queryKey: ['events', { search: debouncedSearch, severityParam, topic, deviceId, page, showClock, showFirewall }],
     queryFn: () =>
       eventsApi
         .list({
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           severity: severityParam,
           topic: topic || undefined,
           deviceId: deviceId ? parseInt(deviceId) : undefined,
@@ -87,6 +92,9 @@ export default function EventsPage() {
           ...(showFirewall ? { firewall: 1 as const } : {}),
         })
         .then((r) => r.data),
+    // Keep the current page on screen while the next one (or a refresh) loads,
+    // so paging and socket-driven refreshes do not blank the table.
+    placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   });
 

@@ -18,6 +18,7 @@ import { pool, queryOne, query } from './config/database';
 import { initOuiDatabase } from './utils/oui';
 import { redis } from './config/redis';
 import { runMigrations } from './db/migrate';
+import { buildEventIndexes } from './db/eventIndexes';
 import { startProxyBackfillsInBackground } from './services/ProxyBackfillService';
 import { errorHandler } from './middleware/errorHandler';
 import { PollerService } from './services/PollerService';
@@ -659,6 +660,13 @@ async function start(): Promise<void> {
   // log strip that prefix.
   httpServer.listen(PORT, () => {
     console.log(`✓ Mikrotik Manager backend running on port ${PORT}`);
+
+    // The Events partial indexes are built concurrently once the server is up:
+    // on a large log table the first build can take minutes, and the compose
+    // health check only waits ~105 s. Startup and writes are not blocked; the
+    // Events pages stay on their previous plans until the indexes are ready.
+    void buildEventIndexes().catch((e) =>
+      console.error('[events] index build failed:', e));
   });
 
   // Scan-heavy proxy backfills (instance list, hourly rollup) run now that the server is
