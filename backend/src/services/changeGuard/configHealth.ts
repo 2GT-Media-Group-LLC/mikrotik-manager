@@ -192,11 +192,11 @@ function ruleBridgedVlanInterface(snap: DeviceSnapshot): ConfigFinding[] {
       title: `VLAN interface ${name} is a port of bridge ${p['bridge']}`,
       detail:
         `Adding a VLAN interface as a bridge port causes outgoing BPDUs to be tagged `
-        + `which violates the IEEE 802.1W standard.`
+        + `which violates the IEEE 802.1W standard.`,
       remediation:
-        `Either Remove ${name} from bridge ${p['bridge']} and use the bridge VLAN table to carry `
+        `Either eemove ${name} from bridge ${p['bridge']} and use the bridge VLAN table to carry `
         + `the VLAN on the physical ports, or set edge=yes on ${name} to prevent BPDUs from being `
-        + `send out the VLAN sub-interface if you have other non-bridged VLAN sub-interfaces on `
+        + `sent out the VLAN sub-interface if you have other non-bridged VLAN sub-interfaces on `
         + `the physical interface.`,
       docUrl: L2_DOC,
       objects: [name, p['bridge']],
