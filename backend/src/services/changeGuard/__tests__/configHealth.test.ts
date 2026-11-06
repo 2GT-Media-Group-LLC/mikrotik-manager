@@ -145,6 +145,17 @@ describe('auditConfig', () => {
       });
       expect(rules(snap)).toContain('bridged-vlan-interface');
     });
+
+    it('leaves an edge port alone, since it sends no BPDUs (#404)', () => {
+      const ports = (edge: string) => healthy({
+        vlanInterfaces: [{ name: 'vlan10', interface: 'sfp28-1', 'vlan-id': '10', disabled: 'false' }],
+        bridgePorts: [{ interface: 'vlan10', bridge: 'bridge', pvid: '1', disabled: 'false', edge }],
+      });
+      expect(rules(ports('yes'))).not.toContain('bridged-vlan-interface');
+      // auto and the discover modes can still send BPDUs.
+      expect(rules(ports('auto'))).toContain('bridged-vlan-interface');
+      expect(rules(ports('yes-discover'))).toContain('bridged-vlan-interface');
+    });
   });
 
   describe('bond-slave-is-bridge-port', () => {

@@ -409,7 +409,7 @@ device-mode can only be changed at the device. Their advice is unchanged.
 |---|---|
 | IP address on a bridge slave port | The address is served by the bridge, or not at all |
 | VLAN interface on a bridge slave port | The interface receives nothing; management may be unreachable |
-| VLAN interface added as a bridge port | Forwarding loop; STP ports flap |
+| VLAN interface added as a bridge port, unless it's an edge port | BPDUs go out tagged, which 802.1w doesn't allow |
 | Bond slave that is also a bridge port | Undefined forwarding path; the bond silently loses members |
 | VLAN interface whose VLAN the bridge is not tagged in | The interface is up and carries nothing |
 | Management surviving only on a dynamic VLAN entry | Works today; disappears the moment a port admits only tagged frames |

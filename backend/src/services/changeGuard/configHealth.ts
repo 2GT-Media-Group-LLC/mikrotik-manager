@@ -174,8 +174,9 @@ function ruleVlanIfaceOnBridgePort(snap: DeviceSnapshot): ConfigFinding[] {
 }
 
 /**
- * A VLAN interface added as a bridge port. Documented as causing loops and RSTP
- * flapping, because the tagged traffic re-enters the same broadcast domain.
+ * A VLAN interface added as a bridge port. The bridge's BPDUs go out of it tagged,
+ * which 802.1w doesn't allow and some switches mishandle (#404). An edge port sends
+ * no BPDUs, so edge=yes on that port is a fix too.
  */
 function ruleBridgedVlanInterface(snap: DeviceSnapshot): ConfigFinding[] {
   const vlanNames = new Set(snap.vlanInterfaces.map((v) => v['name']).filter(Boolean));
@@ -191,10 +192,10 @@ function ruleBridgedVlanInterface(snap: DeviceSnapshot): ConfigFinding[] {
       severity: 'critical',
       title: `VLAN interface ${name} is a port of bridge ${p['bridge']}`,
       detail:
-        `Adding a VLAN interface as a bridge port causes outgoing BPDUs to be tagged `
-        + `which violates the IEEE 802.1W standard.`,
+        `Adding a VLAN interface as a bridge port causes outgoing BPDUs to be tagged, `
+        + `which violates the IEEE 802.1w (RSTP) standard.`,
       remediation:
-        `Either eemove ${name} from bridge ${p['bridge']} and use the bridge VLAN table to carry `
+        `Either remove ${name} from bridge ${p['bridge']} and use the bridge VLAN table to carry `
         + `the VLAN on the physical ports, or set edge=yes on ${name} to prevent BPDUs from being `
         + `sent out the VLAN sub-interface if you have other non-bridged VLAN sub-interfaces on `
         + `the physical interface.`,
