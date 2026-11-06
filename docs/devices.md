@@ -396,6 +396,7 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **Routing** | IPv4 routes, IPv6 routes (read-only), OSPF, BGP, routing tables and filters |
 | **Queues** | Traffic shaping |
 | **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing) |
+| **Graphs** | History for this device, one range for every chart (1h to 30d), with a hover cursor shared across them. See [Device graphs](#device-graphs) |
 | **Hardware** | Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages as lines, with a light band up to the highest reading in each 5 minutes, so a short burst to 100% doesn't hide in the average (#402). Memory's band only shows where the peak is more than two points above the average |
 | **LTE** | Signal, carrier, bands and the data cap — see [Cellular](cellular.md) |
 | **Security** | Baseline hardening checks and the posture score |
@@ -445,6 +446,34 @@ rule a queue only limits traffic that isn't FastTracked. When the device has one
 dialog says so (#280). To limit a target, exclude it from FastTrack (for example, an accept rule
 for it above the FastTrack rule) or turn FastTrack off.
 
+## Device graphs
+
+The **Graphs** tab (#402) shows a device's history in sections, each with a one-line summary in its
+header. Click a header to fold a section, or use the chips at the top to hide ones you don't need;
+both are remembered in your browser. Sections only appear where the device has the data: a switch
+without connection tracking has no Connections section, a single-core device no per-core chart.
+
+| Section | What it shows |
+|---|---|
+| **CPU** | Load as 5-minute (or longer) averages, with a light band up to the highest reading in each window, and each core on its own when there are several: one core pinned at 100% hardly moves the overall load |
+| **Memory** | Memory used, with the peak band where it differs |
+| **Connections** | Active connections (with the peak, and the share of the table's maximum), connections by protocol and NAT translations (src-nat, dst-nat), and new connections per second where the router counts them (below). Only where connection tracking is running |
+| **Firewall drops** | Packets per second dropped by drop and reject rules, per chain (input, forward, and raw), and the rules that dropped the most in the range |
+| **Interfaces** | The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second |
+| **Temperature** | Each temperature sensor the device reports |
+
+What it costs the router: per-core load, the connection-tracking totals and the rule counters ride
+along with the fast poll's existing read. The protocol and NAT split counts the connection table on
+the router, so it runs with the slow poll, and not at all on a table of more than 200,000
+connections.
+
+**New connections per second.** RouterOS has no counter for it. Add a rule that counts them, and
+the Connections section draws it:
+
+```
+/ip firewall mangle add chain=prerouting connection-state=new action=passthrough comment=mtm:new-conn
+```
+
 ## Quick firewall rules
 
 **Quick rules** on the Firewall tab adds the rules nearly every router needs, close to MikroTik's
@@ -456,6 +485,7 @@ own default configuration (#330). Pick a preset:
 | **Management access** (IPv4) | An address list (`mtm-management` unless you name another) holding the manager's own address and any you add, an accept for WinBox, SSH, the API and WebFig from that list, and a drop for those ports from anywhere else. Only services that are enabled are covered, on their configured ports |
 | **Forward basics** | For the traffic passing through: accept established, related and untracked; drop invalid; drop new connections from the WAN that aren't port forwards (IPv6: drop everything not from the LAN). **FastTrack** is optional; with it, IPsec traffic is accepted first so it isn't FastTracked |
 | **Masquerade** (IPv4) | NAT out of the WAN, for a WAN address that changes |
+| **Brute-force protection** (IPv4) | Bans an address that keeps opening new connections to SSH, WinBox, FTP, Telnet or a VPN server. See [Brute-force protection](#brute-force-protection) |
 
 You choose what the LAN and WAN are: an interface list (the form starts on `LAN` and `WAN` when the
 device has them, as defconf makes) or a single interface. Before anything is added, the dialog shows
@@ -472,9 +502,43 @@ added in one [Change Guard](change-guard.md) change: the whole preset is checked
 manager's own connection first, so a LAN that doesn't include the interface management arrives on
 is caught as a lockout before anything is added. For IPv6 the usual auto-revert applies.
 
-The manager adds its own address to the management list when it can see it on the device. That
-needs connection tracking running there, which it isn't on a device with no firewall rules yet; the
-form then asks for the addresses that manage the router, the manager's included.
+The manager adds its own address to the management list when it can see it on the device: from
+connection tracking, or, where that isn't running (most switches), from its own API session in
+**System > Users > Active**. When neither shows it, the form asks for the addresses that manage the
+router, the manager's included.
+
+### Brute-force protection
+
+RouterOS can't see a failed login, so this preset counts new connections instead, the usual way on
+MikroTik (#405). Each new connection to a protected port moves the source address through three
+one-minute stages (`mtm-bf-1` to `mtm-bf-3`); the fourth within those minutes puts it on
+`mtm-banned` for the ban time you choose (1 hour, 1 day or 1 week), and everything from that list is
+dropped, not only the protected ports.
+
+What can be protected:
+
+| Choice | Ports |
+|---|---|
+| SSH, WinBox, FTP, Telnet | The service's configured port, when it's enabled |
+| L2TP/IPsec | UDP 500, 4500 and 1701 |
+| PPTP | TCP 1723 |
+| OpenVPN | The OpenVPN server's port (1194 unless changed), TCP and UDP |
+| SSTP | TCP 443. Off unless you tick it: WebFig HTTPS and the [reverse proxy](certificates.md#reverse-proxy) share the port, so busy web clients could be counted too |
+
+The form starts with the enabled services and the VPN servers that are on. Addresses under **Never
+ban**, and the manager's own address, go in `mtm-bf-exempt` and are never counted: the manager
+opens SSH sessions for backups and the terminal, and a ban would drop its API connection too. If the
+manager can't see its own address on the device, the form won't add the rules until you enter it
+under Never ban.
+
+The rules: a drop for `mtm-banned` and a jump for new connections to the protected ports at the top
+of the input chain, and the counting rules in their own `mtm-bruteforce` chain. A ban rule already
+there is kept as it is; to change its ban time, edit its `address-list-timeout` on the Firewall tab.
+
+Banned addresses show in a **Banned** card at the top of the Firewall tab, with the time left.
+**Unban** removes the address from `mtm-banned`; **Never ban** also adds it to `mtm-bf-exempt`. An
+unbanned address that keeps connecting is banned again. The **Security** page lists what's banned
+across the fleet, as of each device's last slow poll.
 
 The Security tab's **No input-chain firewall rule** finding (IPv4 or IPv6) has an **Add input rules**
 button that opens Quick rules on Input basics.

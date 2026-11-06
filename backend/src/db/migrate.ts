@@ -1878,6 +1878,16 @@ ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS acme_managed BOOLEAN NO
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS acme_status TEXT;
 ALTER TABLE device_certificates ADD COLUMN IF NOT EXISTS acme_directory VARCHAR(255);
 
+-- Brute-force bans (#405): each device's mtm-banned address list, from the slow poll.
+CREATE TABLE IF NOT EXISTS firewall_bans (
+  device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  address    VARCHAR(64) NOT NULL,
+  time_left  VARCHAR(32),
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (device_id, address)
+);
+
 -- Reverse proxy (#358): each device's /ip/reverse-proxy rules and the two
 -- services that share port 443, from the slow poll.
 CREATE TABLE IF NOT EXISTS reverse_proxy_rules (

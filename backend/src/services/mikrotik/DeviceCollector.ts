@@ -3,6 +3,11 @@ import type { BgpConnectionInput } from '../../utils/bgpConnection';
 import { routingPeersFrom } from '../../utils/routingPeers';
 import { tunnelsFrom } from '../../utils/tunnels';
 import { rulesFrom, serviceFrom } from '../../utils/reverseProxy';
+import { unifiedDiff, capText } from '../../utils/configDiff';
+import {
+  conntrackActive, conntrackFields, dropRules, dropRates, chainField, coreLoads, temperatures, CONNTRACK_SPLIT_LIMIT, NEW_CONN_COMMENT,
+  type DropSample,
+} from '../../utils/deviceGraphs';
 import { PartialApplyError, stepFailure } from '../changeGuard/partialApply';
 import { createHash } from 'crypto';
 import { ApiNotEnabledError } from '../../utils/sshOnly';
@@ -408,6 +413,12 @@ export class DeviceCollector {
         { command: '/interface/print', params: { stats: '' } },
         { command: '/interface/ethernet/print', params: { stats: '' } },
         { command: '/system/resource/print' },
+        // Device graphs (#402): per-core CPU, conntrack, drop counters.
+        { command: '/system/resource/cpu/print' },
+        { command: '/ip/firewall/connection/tracking/print' },
+        { command: '/ip/firewall/filter/print', params: { stats: '' } },
+        { command: '/ip/firewall/raw/print', params: { stats: '' } },
+        { command: '/ip/firewall/mangle/print', params: { stats: '' } },
       ];
       if (this.modules.clients) {
         reads.push(
@@ -429,6 +440,7 @@ export class DeviceCollector {
   private async collectFastReads(): Promise<void> {
     await this.collectInterfaceTraffic();
     await this.collectResourceUsage();
+    await this.collectGraphMetrics();
     if (this.modules.clients) await this.updateClients();
     // Radios of its own, whatever it was added as: an all-in-one router such
     // as the hAP ac² is an access point too.
@@ -492,6 +504,8 @@ export class DeviceCollector {
     await this.collectRoutingPeers();
     await this.collectTunnels();
     await this.collectReverseProxy();
+    await this.collectConnTrackSplit();
+    await this.collectBans();
     if (this.shouldCollectWireless()) {
       await this.collectWirelessInterfaces();
       await this.collectSecurityProfiles();
@@ -776,6 +790,32 @@ export class DeviceCollector {
     }
   }
 
+  /**
+   * Addresses brute-force protection (#405) has banned: the mtm-banned list,
+   * stored for the Security page. A device without the list clears what it had.
+   */
+  async collectBans(): Promise<void> {
+    try {
+      const rows = await this.client.execute('/ip/firewall/address-list/print', { '.proplist': 'address,timeout,disabled' }, ['?list=mtm-banned']);
+      const live = rows.filter((r) => r.address && r.disabled !== 'true')
+        .map((r) => ({ address: r.address.slice(0, 64), left: (r.timeout || '').slice(0, 32) || null }));
+      const payload = JSON.stringify(live);
+      if (live.length) {
+        await query(
+          `INSERT INTO firewall_bans (device_id, address, time_left, updated_at)
+           SELECT $1, x.address, x.left, NOW() FROM jsonb_to_recordset($2::jsonb) AS x(address text, "left" text)
+           ON CONFLICT (device_id, address) DO UPDATE SET time_left = EXCLUDED.time_left, updated_at = NOW()`,
+          [this.device.id, payload]);
+      }
+      await query(
+        `DELETE FROM firewall_bans b WHERE b.device_id = $1
+           AND NOT EXISTS (SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS x(address text) WHERE x.address = b.address)`,
+        [this.device.id, payload]);
+    } catch {
+      /* no firewall menu, or no permission: nothing to show */
+    }
+  }
+
   /** The reverse-proxy page's live read: rules, services, certificates and VRFs. */
   async getReverseProxy(): Promise<{ rules: Record<string, string>[]; services: Record<string, string>[]; certs: Record<string, string>[]; vrfs: string[] }> {
     const [r, s, c, v] = await this.client.executeMany([
@@ -856,6 +896,7 @@ export class DeviceCollector {
     await this.collectVlans();
     await this.collectInterfaceTraffic();
     await this.collectResourceUsage();
+    await this.collectGraphMetrics();
     // A manual Sync honours the toggles as well. Collecting something that is
     // switched off would populate data nothing refreshes afterwards, which is
     // worse than not having it.
@@ -873,6 +914,8 @@ export class DeviceCollector {
     await this.collectRoutingPeers();
     await this.collectTunnels();
     await this.collectReverseProxy();
+    await this.collectConnTrackSplit();
+    await this.collectBans();
     // Wireless data belongs in a full resync too — without this, a manual sync
     // never refreshed radios/SSIDs (or pruned ones deleted on the device), so
     // the UI could only catch up on the 5-minute slow poll. A device without a
@@ -1037,6 +1080,90 @@ export class DeviceCollector {
       await recordInterfaceCounters(this.device.id, ethernet, linkDowns, intervalSec);
     } catch (err) {
       console.warn(`[${this.device.name}] Interface error counters not read:`, (err as Error).message);
+    }
+  }
+
+  // ─── Device graphs → InfluxDB (#402) ───────────────────────────────────────
+
+  /** Each device's last drop-counter sample, for packets/s between polls. */
+  private static lastDrops = new Map<number, DropSample>();
+
+  /**
+   * Per-core CPU, connection tracking (where it runs) and packets/s dropped by
+   * drop/reject rules per chain, from reads the fast poll batches. A device
+   * without conntrack or drop rules writes nothing for them.
+   */
+  async collectGraphMetrics(): Promise<void> {
+    try {
+      const none = () => [] as Record<string, string>[];
+      const [cores, tracking, filter, raw, mangle] = await Promise.all([
+        this.client.execute('/system/resource/cpu/print').catch(none),
+        this.client.execute('/ip/firewall/connection/tracking/print').catch(none),
+        this.client.execute('/ip/firewall/filter/print', { stats: '' }).catch(none),
+        this.client.execute('/ip/firewall/raw/print', { stats: '' }).catch(none),
+        this.client.execute('/ip/firewall/mangle/print', { stats: '' }).catch(none),
+      ]);
+      const w = getWriteApi();
+      const now = new Date();
+      const id = String(this.device.id);
+      const loads = coreLoads(cores);
+      if (loads) {
+        const p = new Point('cpu_cores').tag('device_id', id).timestamp(now);
+        for (const [k, v] of Object.entries(loads)) p.intField(k, v);
+        w.writePoint(p);
+      }
+      const rules = dropRules(filter, raw);
+      // A mangle rule: raw runs before connection tracking, so it can't match connection-state=new.
+      const marker = mangle.find((r) => (r.comment ?? '').trim() === NEW_CONN_COMMENT && r.disabled !== 'true');
+      const newConn = marker ? parseInt(marker.packets || '0', 10) || 0 : null;
+      const prev = DeviceCollector.lastDrops.get(this.device.id);
+      const d = dropRates(prev, rules, newConn, now.getTime());
+      DeviceCollector.lastDrops.set(this.device.id, d.sample);
+      const t = tracking[0] ?? {};
+      if (conntrackActive(t)) {
+        const f = conntrackFields(t);
+        const p = new Point('conntrack').tag('device_id', id)
+          .intField('total', f.total).intField('max', f.max).intField('ipv4', f.ipv4).intField('ipv6', f.ipv6).timestamp(now);
+        if (d.newConnPerSec !== null) p.floatField('new_ps', d.newConnPerSec);
+        w.writePoint(p);
+      }
+      if (d.perChain && rules.length) {
+        const p = new Point('firewall_drops').tag('device_id', id).timestamp(now);
+        for (const [chain, pps] of Object.entries(d.perChain)) p.floatField(chainField(chain), pps);
+        w.writePoint(p);
+        for (const r of d.perRule) {
+          w.writePoint(new Point('firewall_rule_drops').tag('device_id', id).tag('rule', r.rule.key).tag('label', r.rule.label)
+            .tag('chain', r.rule.chain).intField('packets', r.packets).timestamp(now));
+        }
+      }
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to collect graph metrics:`, (err as Error).message);
+    }
+  }
+
+  /**
+   * Connections by protocol and NAT direction (#402), on the slow poll: the
+   * count-only reads walk the table on the router, so they're skipped on a
+   * table bigger than CONNTRACK_SPLIT_LIMIT.
+   */
+  async collectConnTrackSplit(): Promise<void> {
+    try {
+      const t = (await this.client.execute('/ip/firewall/connection/tracking/print').catch(() => []))[0] ?? {};
+      if (!conntrackActive(t)) return;
+      const total = conntrackFields(t).ipv4;
+      if (total > CONNTRACK_SPLIT_LIMIT) return;
+      const count = (q: string[]) => this.client.countOnly('/ip/firewall/connection/print', q);
+      const tcp = await count(['?protocol=tcp']);
+      const udp = await count(['?protocol=udp']);
+      const srcnat = await count(['?srcnat=true']);
+      const dstnat = await count(['?dstnat=true']);
+      const w = getWriteApi();
+      w.writePoint(new Point('conntrack_split').tag('device_id', String(this.device.id))
+        .intField('tcp', tcp).intField('udp', udp).intField('other', Math.max(0, total - tcp - udp))
+        .intField('srcnat', srcnat).intField('dstnat', dstnat).timestamp(new Date()));
+      await w.flush().catch(() => {});
+    } catch (err) {
+      console.error(`[${this.device.name}] Failed to split connections:`, (err as Error).message);
     }
   }
 
@@ -2696,10 +2823,14 @@ export class DeviceCollector {
 
       // Alert on drift — skip the very first snapshot (nothing to compare against).
       if (!isFirst) {
+        // What changed, not only how many lines (#406). Snapshots hold no secrets
+        // (an export with them isn't stored as text), so the diff is safe to send.
+        const diff = unifiedDiff(latest.config_text ?? '', text, { maxLines: 60 });
         alertService.dispatch('config_drift', `Configuration changed on ${this.device.name}: ${summary}`, {
           deviceId: this.device.id,
           deviceName: this.device.name,
-          details: summary,
+          // The message already says how many lines; the details are the diff.
+          details: diff ? capText(diff, 3500) : summary,
         }).catch(() => { /* alerting is best-effort */ });
       }
       if (backupId === null) return { status: 'failed', reason: "the snapshot was stored, but its restorable backup couldn't be saved. The next snapshot retries it" };
@@ -2746,6 +2877,13 @@ export class DeviceCollector {
       `SELECT health_status, health_issues, health_ignored FROM devices WHERE id = $1`, [this.device.id]
     );
     const verdict = evaluateHealth(normalizeHealth(rows), { tempLimitC, ignored: prev?.health_ignored ?? [] });
+    // Temperatures over time (#402), from the same read.
+    const temps = temperatures(rows);
+    if (temps) {
+      const p = new Point('health_temps').tag('device_id', String(this.device.id)).timestamp(new Date());
+      for (const [k, v] of Object.entries(temps)) p.floatField(k, v);
+      getWriteApi().writePoint(p);
+    }
     await query(
       `UPDATE devices SET health_status = $2, health_issues = $3, health_checked_at = NOW() WHERE id = $1`,
       [this.device.id, verdict.status, JSON.stringify({ issues: verdict.issues, ignored: verdict.ignored })]
@@ -4147,6 +4285,7 @@ export class DeviceCollector {
   async getQuickRuleContext(family: FirewallFamily): Promise<{
     filter: Record<string, string>[]; nat: Record<string, string>[]; addressLists: Record<string, string>[];
     interfaceLists: string[]; interfaces: string[]; services: Record<string, string>[]; rosMajor: number;
+    vpn: { l2tp: boolean; pptp: boolean; ovpn: boolean; sstp: boolean; ovpnPort: string | null };
   }> {
     const res = await this.client.executeMany([
       { command: `${firewallMenu(family, 'filter')}/print` },
@@ -4156,15 +4295,22 @@ export class DeviceCollector {
       { command: '/interface/print', params: { '.proplist': 'name' } },
       { command: '/ip/service/print', params: { '.proplist': 'name,port,disabled' } },
       { command: '/system/resource/print', params: { '.proplist': 'version' } },
+      // VPN servers, for brute-force protection (#405); missing menus read as off.
+      { command: '/interface/l2tp-server/server/print' },
+      { command: '/interface/pptp-server/server/print' },
+      { command: '/interface/ovpn-server/server/print' },
+      { command: '/interface/sstp-server/server/print' },
     ]);
     if (res[0].error) throw res[0].error;
     const rows = (i: number) => res[i]?.rows ?? [];
+    const enabled = (i: number) => rows(i).some((r) => r.enabled === 'true' || r.enabled === 'yes');
     return {
       filter: rows(0), nat: rows(1), addressLists: rows(2),
       interfaceLists: rows(3).map((r) => r.name).filter(Boolean),
       interfaces: rows(4).map((r) => r.name).filter(Boolean),
       services: rows(5),
       rosMajor: Number((rows(6)[0]?.version ?? '7').split('.')[0]) || 7,
+      vpn: { l2tp: enabled(7), pptp: enabled(8), ovpn: enabled(9), sstp: enabled(10), ovpnPort: rows(9)[0]?.port || null },
     };
   }
 

@@ -272,9 +272,14 @@ export interface PeerLinkView {
   lastFlap: { device: string; member: string; at: string; reboot: boolean } | null;
 }
 
-/** A link-down recorded this soon around a boot is the reboot (the first poll after it records the drop). */
-const REBOOT_BEFORE_MS = 2 * 60_000;
-const REBOOT_AFTER_MS = 10 * 60_000;
+/**
+ * A link-down this close to a boot is the reboot. The link drops when the
+ * reboot starts, but the boot time counts from when RouterOS is back, which
+ * can be minutes later (4½ on aziz's CRS326s, with a package upgrade), so the
+ * window reaches well before the boot, and a little after for clock and poll slack.
+ */
+const REBOOT_BEFORE_MS = 10 * 60_000;
+const REBOOT_AFTER_MS = 3 * 60_000;
 
 /** What the manager stores about one port, as buildPeerLink takes it. */
 export interface PortFacts {

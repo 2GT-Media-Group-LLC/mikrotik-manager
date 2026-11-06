@@ -3,6 +3,32 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.28
+
+- **Graphs**, a new device tab, from [@azizfayziev](https://github.com/azizfayziev)'s proposal
+  ([#402](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/402), steps 2–4): CPU with
+  peaks and per core, memory, connections (active, by protocol, NAT translations, new per second),
+  firewall drops per chain with the top drop rules, several interfaces at once with utilisation and
+  packets per second, and temperatures. One range for the tab, a shared hover cursor, section
+  summaries, and sections only where the device has the data
+  ([Device graphs](devices.md#device-graphs)).
+- MLAG's **last flap** recognises a reboot whose RouterOS took minutes to come back (the link drops
+  when the reboot starts), from [@azizfayziev](https://github.com/azizfayziev)'s check on his WAN
+  pair ([#376](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/376)).
+- **Brute-force protection**, a new Quick rules preset, from
+  [@simonkrebsd3](https://github.com/simonkrebsd3)'s request
+  ([#405](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/405)): bans an address that
+  keeps opening new connections to SSH, WinBox, FTP, Telnet or a VPN server (L2TP/IPsec, PPTP,
+  OpenVPN, SSTP), for an hour, a day or a week. The manager and any addresses you choose are never
+  banned. Banned addresses show on the Firewall tab, with **Unban** and **Never ban**, and across
+  the fleet on the Security page ([Brute-force protection](devices.md#brute-force-protection)).
+- The **Configuration changed** alert says what changed, as a diff, from
+  [@kamils777](https://github.com/kamils777)'s request
+  ([#406](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/406)), cut to fit each
+  channel ([Alerting](alerting.md)).
+- Quick rules finds the manager's own address on devices without connection tracking (most
+  switches), from its API session, so Management access adds it there too.
+
 ## 1.1.0-beta.27
 
 - **Quick firewall rules**, from [@cybr4nx](https://github.com/cybr4nx)

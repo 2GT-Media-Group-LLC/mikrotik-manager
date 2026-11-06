@@ -10,8 +10,8 @@
 import { isIP } from 'net';
 
 export type QuickFamily = 'ip' | 'ipv6';
-export type QuickPreset = 'input-basics' | 'management-access' | 'forward-basics' | 'masquerade';
-export const QUICK_PRESETS: QuickPreset[] = ['input-basics', 'management-access', 'forward-basics', 'masquerade'];
+export type QuickPreset = 'input-basics' | 'management-access' | 'forward-basics' | 'masquerade' | 'brute-force';
+export const QUICK_PRESETS: QuickPreset[] = ['input-basics', 'management-access', 'forward-basics', 'masquerade', 'brute-force'];
 
 /** An interface list or a single interface, as a rule matches it. */
 export interface IfaceRef { kind: 'list' | 'interface'; name: string }
@@ -25,7 +25,12 @@ export interface QuickOptions {
   list?: string;
   addresses?: string[];
   services?: string[];
+  /** Brute-force protection (#405): how long a source stays banned. */
+  banTime?: BanTime;
 }
+
+export type BanTime = '1h' | '1d' | '1w';
+export const BAN_TIMES: BanTime[] = ['1h', '1d', '1w'];
 
 type Ros = Record<string, string>;
 
@@ -52,6 +57,8 @@ export interface QuickContext {
   managerIp: string | null;
   /** RouterOS major version; 6 has no hw-offload on FastTrack. */
   rosMajor?: number;
+  /** VPN servers that are enabled, and OpenVPN's port. */
+  vpn?: { l2tp: boolean; pptp: boolean; ovpn: boolean; sstp: boolean; ovpnPort: string | null };
 }
 
 export interface QuickPlan {
@@ -74,7 +81,7 @@ export const DEFAULT_MGMT_LIST = 'mtm-management';
 /** The fields that decide what a rule matches and does. Comments, counters and logging don't count. */
 const KEY_FIELDS = ['chain', 'action', 'connection-state', 'connection-nat-state', 'protocol', 'in-interface', 'in-interface-list',
   'out-interface', 'out-interface-list', 'src-address', 'src-address-list', 'dst-address', 'dst-address-list', 'dst-port',
-  'ipsec-policy', 'jump-target'];
+  'ipsec-policy', 'jump-target', 'address-list'];
 const SET_FIELDS = new Set(['connection-state', 'dst-port']);
 
 function norm(field: string, v: string | undefined): string {
@@ -207,6 +214,75 @@ function masquerade(o: QuickOptions): Draft[] {
     params: { chain: 'srcnat', action: 'masquerade', ...match('out', o.wan!), comment: COMMENT(`masquerade out ${o.wan!.name}`) } }];
 }
 
+// ─── Brute-force protection (#405) ──────────────────────────────────────────
+//
+// RouterOS's firewall can't see a failed login, so this is the usual RouterOS
+// way: count new connections per source. Each one to a protected port moves
+// the source through three one-minute stages; the fourth within those minutes
+// puts it on the banned list, and everything from that list is dropped.
+
+export const BF_CHAIN = 'mtm-bruteforce';
+export const BANNED_LIST = 'mtm-banned';
+export const BF_EXEMPT = 'mtm-bf-exempt';
+
+/** What can be protected: a service by name (its configured port), or a VPN server's fixed ports. */
+export const BF_TARGETS = ['ssh', 'winbox', 'ftp', 'telnet', 'l2tp', 'pptp', 'ovpn', 'sstp'] as const;
+export type BfTarget = typeof BF_TARGETS[number];
+
+/** Ports per target: tcp and udp. */
+export function bfPorts(target: BfTarget, ctx: QuickContext): { tcp: string[]; udp: string[] } {
+  const svc = (name: string) => ctx.services.find((s) => s.name === name && !yes(s.disabled) && s.port)?.port;
+  switch (target) {
+    case 'ssh': case 'winbox': case 'ftp': case 'telnet': { const p = svc(target); return { tcp: p ? [p] : [], udp: [] }; }
+    case 'l2tp': return { tcp: [], udp: ['500', '4500', '1701'] };
+    case 'pptp': return { tcp: ['1723'], udp: [] };
+    case 'ovpn': { const p = ctx.vpn?.ovpnPort || '1194'; return { tcp: [p], udp: [p] }; }
+    case 'sstp': return { tcp: ['443'], udp: [] };
+  }
+}
+
+/** What's running, so the form starts with it ticked. */
+export function bfDefaults(ctx: QuickContext): BfTarget[] {
+  const on = (name: string) => ctx.services.some((s) => s.name === name && !yes(s.disabled));
+  return BF_TARGETS.filter((t) => (t === 'ssh' || t === 'winbox' || t === 'ftp' || t === 'telnet') ? on(t)
+    : t === 'sstp' ? false : !!ctx.vpn?.[t]);
+}
+
+function bruteForce(o: QuickOptions, ctx: QuickContext): Draft[] {
+  const targets = (o.services && o.services.length ? o.services : bfDefaults(ctx)) as BfTarget[];
+  const tcp = new Set<string>();
+  const udp = new Set<string>();
+  for (const t of targets) { const p = bfPorts(t, ctx); p.tcp.forEach((x) => tcp.add(x)); p.udp.forEach((x) => udp.add(x)); }
+  const sort = (v: Set<string>) => [...v].sort((a, b) => Number(a) - Number(b)).join(',');
+  const ban = o.banTime && BAN_TIMES.includes(o.banTime) ? o.banTime : '1d';
+  const exempt = [...new Set([...(ctx.managerIp ? [ctx.managerIp] : []), ...(o.addresses ?? [])])];
+  const out: Draft[] = exempt.map((a) => ({
+    table: 'address-list' as const, placement: null,
+    description: a === ctx.managerIp ? `Never ban ${a} (MikroTik Manager)` : `Never ban ${a}`,
+    params: { list: BF_EXEMPT, address: a, comment: COMMENT(a === ctx.managerIp ? 'MikroTik Manager' : 'never ban') },
+  }));
+  out.push({ table: 'filter', placement: 'top', description: `Drop everything from ${BANNED_LIST}`,
+    params: { chain: 'input', action: 'drop', 'src-address-list': BANNED_LIST, comment: COMMENT('drop banned') } });
+  if (tcp.size) out.push({ table: 'filter', placement: 'top', description: `Count new connections to TCP ${sort(tcp)}`,
+    params: { chain: 'input', action: 'jump', 'jump-target': BF_CHAIN, 'connection-state': 'new', protocol: 'tcp', 'dst-port': sort(tcp), comment: COMMENT('count new TCP logins') } });
+  if (udp.size) out.push({ table: 'filter', placement: 'top', description: `Count new connections to UDP ${sort(udp)}`,
+    params: { chain: 'input', action: 'jump', 'jump-target': BF_CHAIN, 'connection-state': 'new', protocol: 'udp', 'dst-port': sort(udp), comment: COMMENT('count new UDP logins') } });
+  const stage = (from: string | null, to: string, timeout: string, what: string): Draft => ({
+    table: 'filter', placement: 'bottom', description: what,
+    params: { chain: BF_CHAIN, action: 'add-src-to-address-list', ...(from ? { 'src-address-list': from } : {}),
+      'address-list': to, 'address-list-timeout': timeout, comment: COMMENT(what.toLowerCase()) },
+  });
+  out.push(
+    { table: 'filter', placement: 'bottom', description: `Never count addresses in ${BF_EXEMPT}`,
+      params: { chain: BF_CHAIN, action: 'return', 'src-address-list': BF_EXEMPT, comment: COMMENT('skip exempt') } },
+    stage('mtm-bf-3', BANNED_LIST, ban, `Fourth new connection: ban for ${ban}`),
+    stage('mtm-bf-2', 'mtm-bf-3', '1m', 'Third new connection within a minute'),
+    stage('mtm-bf-1', 'mtm-bf-2', '1m', 'Second new connection within a minute'),
+    stage(null, 'mtm-bf-1', '1m', 'First new connection'),
+  );
+  return out;
+}
+
 /** What a preset needs, so the form shows only those fields. */
 export function presetNeeds(preset: QuickPreset, family: QuickFamily): { wan: boolean; lan: boolean } {
   if (preset === 'input-basics') return { wan: false, lan: true };
@@ -220,8 +296,8 @@ export function planPreset(preset: QuickPreset, o: QuickOptions, ctx: QuickConte
   const notes: string[] = [];
   const v6 = ctx.family === 'ipv6';
   if (!QUICK_PRESETS.includes(preset)) return { steps: [], errors: { preset: 'Choose a preset.' }, notes };
-  if (v6 && (preset === 'management-access' || preset === 'masquerade')) {
-    return { steps: [], errors: { preset: preset === 'masquerade' ? 'Masquerade is for IPv4.' : 'Management access is for IPv4 for now.' }, notes };
+  if (v6 && (preset === 'management-access' || preset === 'masquerade' || preset === 'brute-force')) {
+    return { steps: [], errors: { preset: preset === 'masquerade' ? 'Masquerade is for IPv4.' : 'This preset is for IPv4 for now.' }, notes };
   }
   const needs = presetNeeds(preset, ctx.family);
   if (needs.wan) { const e = refError(o.wan, 'WAN', ctx); if (e) errors.wan = e; }
@@ -242,12 +318,32 @@ export function planPreset(preset: QuickPreset, o: QuickOptions, ctx: QuickConte
     }
     if (!ctx.managerIp) notes.push('The manager couldn\'t see its own address as this device sees it, so it isn\'t added for you. Make sure it\'s in the list.');
   }
+  if (preset === 'brute-force') {
+    const bad = (o.addresses ?? []).filter((a) => !ADDRESS(a));
+    if (bad.length) errors.addresses = `Not an IPv4 address or prefix: ${bad.join(', ')}.`;
+    const unknown = (o.services ?? []).filter((s) => !(BF_TARGETS as readonly string[]).includes(s));
+    if (unknown.length) errors.services = `Can't protect: ${unknown.join(', ')}.`;
+    const targets = (o.services && o.services.length ? o.services : bfDefaults(ctx)) as BfTarget[];
+    if (!errors.services && !targets.some((t) => { const p = bfPorts(t, ctx); return p.tcp.length + p.udp.length > 0; })) {
+      errors.services = 'Choose at least one service that is enabled on this device.';
+    }
+    if (o.banTime && !BAN_TIMES.includes(o.banTime)) errors.banTime = 'Choose 1h, 1d or 1w.';
+    // A ban drops everything from the address, the API included, and the
+    // manager opens SSH sessions too: never plan this without exempting it.
+    if (!ctx.managerIp && !(o.addresses ?? []).length && !errors.addresses) {
+      errors.addresses = 'The manager couldn\'t see its own address on this device. Add it under Never ban, so the manager is never banned.';
+    }
+    if (!ctx.managerIp) notes.push('The manager couldn\'t see its own address as this device sees it, so it isn\'t exempted for you. Make sure it\'s under Never ban.');
+    if (targets.includes('sstp')) notes.push('SSTP shares TCP 443 with WebFig HTTPS and the reverse proxy, so busy web clients could be counted too.');
+    notes.push('RouterOS can\'t see failed logins, so this counts new connections: four from one address within a few minutes bans it. Banned addresses show on the Firewall tab, where you can unban them.');
+  }
   if (Object.keys(errors).length) return { steps: [], errors, notes };
 
   const drafts = preset === 'input-basics' ? inputBasics(o, v6)
     : preset === 'forward-basics' ? forwardBasics(o, v6, ctx.rosMajor ?? 7)
       : preset === 'management-access' ? managementAccess(o, ctx)
-        : masquerade(o);
+        : preset === 'brute-force' ? bruteForce(o, ctx)
+          : masquerade(o);
 
   const steps: QuickStep[] = drafts.map((d) => {
     let skip: string | null = null;
@@ -260,6 +356,15 @@ export function planPreset(preset: QuickPreset, o: QuickOptions, ctx: QuickConte
     }
     return { ...d, skip };
   });
+  // The ban rule is matched without its time, so a different choice would
+  // silently change nothing: say what's there.
+  if (preset === 'brute-force') {
+    const ban = steps.find((st) => st.params['address-list'] === BANNED_LIST && st.skip);
+    const have = ban && findEquivalent(ctx.filter, ban.params);
+    if (have && have['address-list-timeout'] && have['address-list-timeout'] !== ban.params['address-list-timeout']) {
+      notes.push(`The ban rule already there bans for ${have['address-list-timeout']}. To change that, edit its timeout on the Firewall tab.`);
+    }
+  }
   if (preset === 'forward-basics' && !v6 && o.fasttrack) {
     notes.push('FastTrack speeds up routing, but FastTracked traffic skips queues and some firewall and IPsec processing.');
   }

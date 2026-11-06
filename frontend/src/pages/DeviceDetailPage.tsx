@@ -20,6 +20,7 @@ import FirmwareTab from '../components/device-detail/FirmwareTab';
 import SystemConfigTab from '../components/device-detail/SystemConfigTab';
 import ConfigHistoryTab from '../components/device-detail/ConfigHistoryTab';
 import HardwareTab from '../components/device-detail/HardwareTab';
+import GraphsTab from '../components/device-detail/GraphsTab';
 import ToolsTab from '../components/device-detail/ToolsTab';
 import RadiosTab from '../components/device-detail/RadiosTab';
 import AntennaAlignerTab from '../components/device-detail/AntennaAlignerTab';
@@ -37,7 +38,7 @@ import { DeviceIdentityBanner } from '../components/security/IdentityChange';
 import { isWirelessDevice } from '../utils/wireless';
 import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
 
-type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'firmware' | 'config-history' | 'hardware' | 'tools' | 'radios' | 'alignment' | 'lte';
+type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'firmware' | 'config-history' | 'hardware' | 'graphs' | 'tools' | 'radios' | 'alignment' | 'lte';
 
 function formatUptime(raw: string): string {
   if (!raw) return '—';
@@ -66,7 +67,7 @@ export default function DeviceDetailPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [searchParams, setSearchParams] = useSearchParams();
-  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'firmware', 'config-history', 'hardware', 'tools', 'radios', 'alignment', 'lte'];
+  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'firmware', 'config-history', 'hardware', 'graphs', 'tools', 'radios', 'alignment', 'lte'];
   const requestedTab = searchParams.get('tab') as TabKey | null;
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
@@ -190,6 +191,7 @@ export default function DeviceDetailPage() {
     { key: 'firmware', label: 'Firmware' },
     { key: 'config-history', label: 'Config History' },
     { key: 'hardware', label: 'Hardware' },
+    { key: 'graphs', label: 'Graphs' },
     ...(isWirelessAP ? [{ key: 'radios' as TabKey, label: 'Radios' }] : []),
     ...(canAlignAntenna(device) ? [{ key: 'alignment' as TabKey, label: 'Antenna aligner' }] : []),
     // Cellular is a property of the hardware, not the device type: a modem turns
@@ -562,6 +564,7 @@ export default function DeviceDetailPage() {
       {shownTab === 'firmware' && <FirmwareTab deviceId={deviceId} device={device} />}
       {shownTab === 'config-history' && <ConfigHistoryTab deviceId={deviceId} />}
       {shownTab === 'hardware' && <HardwareTab deviceId={deviceId} />}
+      {shownTab === 'graphs' && <GraphsTab deviceId={deviceId} />}
       {shownTab === 'radios' && <RadiosTab deviceId={deviceId} deviceStatus={device.status} />}
       {shownTab === 'alignment' && <AntennaAlignerTab key={deviceId} device={device} />}
       {shownTab === 'lte' && <LteTab deviceId={deviceId} />}

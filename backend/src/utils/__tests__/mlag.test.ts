@@ -127,6 +127,14 @@ describe('the peer link in detail (#376)', () => {
     const later = buildPeerLink({ pair, macs, vlans, links: [], boots: new Map([[2, ['2026-11-04T08:00:00Z']]]),
       ports: [port(1, 'sfp-sfpplus16', { last_down_at: '2026-11-05T09:00:00Z' })] });
     expect(later.lastFlap?.reboot).toBe(false);
+    // aziz's WAN pair: the link dropped at 21:13:32, RouterOS was back at 21:17:57 (an upgrade on the way).
+    const slowBoot = buildPeerLink({ pair, macs, vlans, links: [], boots: new Map([[2, ['2026-11-03T21:17:57Z']]]),
+      ports: [port(1, 'sfp-sfpplus16', { last_down_at: '2026-11-03T21:13:32Z' })] });
+    expect(slowBoot.lastFlap?.reboot).toBe(true);
+    // A link-down long after a boot is a flap.
+    const afterBoot = buildPeerLink({ pair, macs, vlans, links: [], boots: new Map([[2, ['2026-11-03T21:00:00Z']]]),
+      ports: [port(1, 'sfp-sfpplus16', { last_down_at: '2026-11-03T21:10:00Z' })] });
+    expect(afterBoot.lastFlap?.reboot).toBe(false);
     expect(peerLinkFindings(pair, view)).toEqual([]);
   });
 

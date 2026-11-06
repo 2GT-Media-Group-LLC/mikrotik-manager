@@ -1,4 +1,4 @@
-import { planPreset, findEquivalent, topAnchor, presetNeeds, type QuickContext } from '../firewallPresets';
+import { planPreset, findEquivalent, topAnchor, presetNeeds, bfDefaults, type QuickContext } from '../firewallPresets';
 
 const ctx = (over: Partial<QuickContext> = {}): QuickContext => ({
   family: 'ip', filter: [], nat: [], addressLists: [], interfaceLists: ['WAN', 'LAN', 'all'], interfaces: ['ether1', 'bridge'],
@@ -77,5 +77,56 @@ describe('quick firewall presets (#330)', () => {
   it('puts top rules before the first configured rule, past dynamic ones', () => {
     expect(topAnchor([{ '.id': '*0', dynamic: 'true' }, { '.id': '*5' }])).toBe('*5');
     expect(topAnchor([])).toBeNull();
+  });
+});
+
+describe('brute-force protection (#405)', () => {
+  it('protects what is running: enabled services on their ports, enabled VPN servers', () => {
+    const c = ctx({ vpn: { l2tp: true, pptp: false, ovpn: false, sstp: true, ovpnPort: null } });
+    expect(bfDefaults(c)).toEqual(['ssh', 'winbox', 'l2tp']);
+    const p = planPreset('brute-force', {}, c);
+    expect(p.errors).toEqual({});
+    const rules = p.steps.filter((s) => s.table === 'filter');
+    expect(rules.map((s) => [s.placement, s.params.chain, s.params.action])).toEqual([
+      ['top', 'input', 'drop'], ['top', 'input', 'jump'], ['top', 'input', 'jump'],
+      ['bottom', 'mtm-bruteforce', 'return'],
+      ['bottom', 'mtm-bruteforce', 'add-src-to-address-list'], ['bottom', 'mtm-bruteforce', 'add-src-to-address-list'],
+      ['bottom', 'mtm-bruteforce', 'add-src-to-address-list'], ['bottom', 'mtm-bruteforce', 'add-src-to-address-list'],
+    ]);
+    expect(rules[1].params).toMatchObject({ protocol: 'tcp', 'dst-port': '22,8291', 'connection-state': 'new', 'jump-target': 'mtm-bruteforce' });
+    expect(rules[2].params).toMatchObject({ protocol: 'udp', 'dst-port': '500,1701,4500' });
+    // The stages, last first: the fourth new connection bans for a day.
+    expect(rules[4].params).toMatchObject({ 'src-address-list': 'mtm-bf-3', 'address-list': 'mtm-banned', 'address-list-timeout': '1d' });
+    expect(rules[7].params).toMatchObject({ 'address-list': 'mtm-bf-1', 'address-list-timeout': '1m' });
+    expect(rules[7].params['src-address-list']).toBeUndefined();
+    // The manager is never banned.
+    expect(p.steps[0]).toMatchObject({ table: 'address-list', params: expect.objectContaining({ list: 'mtm-bf-exempt', address: '192.168.0.10' }) });
+  });
+
+  it('takes a chosen ban time and services, and refuses ones it can\'t protect', () => {
+    const p = planPreset('brute-force', { services: ['ssh'], banTime: '1w' }, ctx());
+    expect(p.steps.find((s) => s.params['address-list'] === 'mtm-banned')!.params['address-list-timeout']).toBe('1w');
+    expect(p.steps.filter((s) => s.params.action === 'jump')).toHaveLength(1);
+    expect(planPreset('brute-force', { services: ['api'] }, ctx()).errors.services).toMatch(/api/);
+    expect(planPreset('brute-force', { services: ['ftp'] }, ctx()).errors.services).toMatch(/enabled/);
+    expect(planPreset('brute-force', {}, ctx({ family: 'ipv6' })).errors.preset).toMatch(/IPv4/);
+  });
+
+  it('skips the stage rules already there, telling them apart by their target list', () => {
+    const first = planPreset('brute-force', {}, ctx());
+    const existing = first.steps.filter((s) => s.table === 'filter').map((s, i) => ({ '.id': `*${i}`, ...s.params }));
+    const again = planPreset('brute-force', {}, ctx({ filter: existing, addressLists: [{ list: 'mtm-bf-exempt', address: '192.168.0.10' }] }));
+    expect(again.steps.every((s) => s.skip)).toBe(true);
+    expect(again.notes.join(' ')).not.toMatch(/already there bans/);
+    // A different ban time matches the same rule: say what it bans for.
+    const week = planPreset('brute-force', { banTime: '1w' }, ctx({ filter: existing }));
+    expect(week.notes.join(' ')).toMatch(/already there bans for 1d/);
+  });
+
+  it('won\'t plan without exempting the manager', () => {
+    expect(planPreset('brute-force', {}, ctx({ managerIp: null })).errors.addresses).toMatch(/Never ban/);
+    const p = planPreset('brute-force', { addresses: ['192.168.0.10'] }, ctx({ managerIp: null }));
+    expect(p.errors).toEqual({});
+    expect(p.steps[0].params).toMatchObject({ list: 'mtm-bf-exempt', address: '192.168.0.10' });
   });
 });

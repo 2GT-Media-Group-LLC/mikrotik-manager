@@ -31,7 +31,8 @@ import { normalizeDeviceAddress, reconcileAddressPort } from '../utils/deviceAdd
 import { withSafeApply, probeCapability, probeUndoCapability, GuardRequiredError, type GuardDevice } from '../services/changeGuard/ChangeGuard';
 import { captureSnapshot, resolveManagementPath, managerIpFromConntrack, type DeviceSnapshot } from '../services/changeGuard/pathModel';
 import { readApiConnections } from '../services/changeGuard/targetedReads';
-import { planPreset, topAnchor, QUICK_PRESETS, type QuickOptions, type QuickPreset, type IfaceRef } from '../utils/firewallPresets';
+import { planPreset, topAnchor, bfDefaults, QUICK_PRESETS, type QuickOptions, type QuickPreset, type IfaceRef } from '../utils/firewallPresets';
+import { managerAddressFromActive } from '../utils/logNoise';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
 import { runConfigHealth } from '../services/changeGuard/configHealth';
 import { fixFor, noFixReason } from '../utils/configHealthFixes';
@@ -1357,6 +1358,7 @@ function quickOptions(src: Record<string, unknown>): { preset: QuickPreset | nul
       wan: ref('wan'), lan: ref('lan'),
       fasttrack: src.fasttrack === true || str('fasttrack') === '1' || str('fasttrack') === 'true',
       list: str('list') || undefined, addresses: listOf('addresses'), services: listOf('services'),
+      banTime: (str('ban_time') || undefined) as QuickOptions['banTime'],
     },
   };
 }
@@ -1365,10 +1367,16 @@ function quickOptions(src: Record<string, unknown>): { preset: QuickPreset | nul
 async function quickPlanFor(collector: DeviceCollector, device: DeviceRow, family: FirewallFamily, preset: QuickPreset, options: QuickOptions) {
   const live = await collector.getQuickRuleContext(family);
   let managerIp: string | null = null;
-  if (preset === 'management-access') {
+  if (preset === 'management-access' || preset === 'brute-force') {
     const deviceIp = collector.apiRemoteAddress() || device.ip_address;
     const conns = await readApiConnections(collector.batchReader(), deviceIp, device.api_port).catch(() => []);
     managerIp = managerIpFromConntrack({ mgmtConnections: conns, managerLocalPort: collector.apiLocalPort() ?? null } as unknown as DeviceSnapshot, device.api_port);
+    // Conntrack is off on most switches: the manager's API session in
+    // /user/active says the same, when it's the only address for that login.
+    if (!managerIp) {
+      const active = await collector.commandRunner().execute('/user/active/print', { '.proplist': 'name,address,via' }).catch(() => null);
+      managerIp = active ? managerAddressFromActive(active, device.api_username) : null;
+    }
   }
   const plan = planPreset(preset, options, { family, ...live, managerIp });
   return { live, managerIp, plan };
@@ -1392,6 +1400,9 @@ router.get('/:id/firewall/quick', async (req, res) => {
       interfaces: live.interfaces,
       services: live.services.filter((s) => s.name).map((s) => ({ name: s.name, port: s.port, disabled: s.disabled === 'true' })),
       manager_ip: managerIp,
+      // Brute-force protection: what's running, so the form starts with it ticked.
+      vpn: live.vpn,
+      bf_defaults: bfDefaults({ family, ...live, managerIp }),
     });
   } catch (err) {
     if (family === 'ipv6' && ipv6Unavailable(res, err, 'filter')) return;
@@ -1440,7 +1451,7 @@ router.post('/:id/firewall/quick', requireWrite, async (req, res) => {
     if (s.table === 'filter') return [{ kind: 'firewall.add', fields: s.params, ...(s.placement === 'top' && anchor ? { placeBefore: anchor } : {}) }];
     return [];
   });
-  const label = { 'input-basics': 'input basics', 'management-access': 'management access', 'forward-basics': 'forward basics', masquerade: 'masquerade' }[preset];
+  const label = { 'input-basics': 'input basics', 'management-access': 'management access', 'forward-basics': 'forward basics', masquerade: 'masquerade', 'brute-force': 'brute-force protection' }[preset];
   const summary = `Quick rules: ${label} (${ordered.length} ${ordered.length === 1 ? 'item' : 'items'})${family === 'ipv6' ? ', IPv6' : ''}`;
   const meta = family === 'ipv6'
     ? await ipv6WriteMeta(req.params.id, 'firewall.quick', summary)

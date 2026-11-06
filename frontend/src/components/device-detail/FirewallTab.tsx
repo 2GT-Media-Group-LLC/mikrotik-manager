@@ -5,7 +5,7 @@ import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Pencil, Power, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield, Zap,
-  ArrowUp, ArrowDown, List, Activity,
+  ArrowUp, ArrowDown, List, Activity, Ban,
 } from 'lucide-react';
 import { devicesApi, type FirewallFamily, type QuickPreset } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
@@ -435,6 +435,75 @@ function AddressListsCard({ deviceId, deviceName, family }: { deviceId: number; 
   );
 }
 
+// ─── Banned addresses (#405) ──────────────────────────────────────────────────
+
+/**
+ * What brute-force protection has banned (the mtm-banned list), with the time
+ * left. Unban removes the entry; Never ban also adds the address to the
+ * exempt list first, so it isn't counted again.
+ */
+function BannedCard({ deviceId, deviceName, entries, protectedHere, onQuick }: {
+  deviceId: number; deviceName?: string; entries: Row[]; protectedHere: boolean; onQuick?: (preset?: QuickPreset) => void;
+}) {
+  const qc = useQueryClient();
+  const canWrite = useCanWrite();
+  const guard = useGuardedWrite();
+  const [err, setErr] = useState('');
+  const banned = entries.filter((e) => e.list === 'mtm-banned');
+  const invalidate = () => qc.invalidateQueries({ queryKey: fwKey('address-lists', deviceId, 'ipv4') });
+  const fail = (e: unknown) => setErr(errMsg(e));
+  const unban = useMutation({
+    mutationFn: async ({ e, exempt, confirm }: { e: Row; exempt: boolean; confirm?: boolean }) => {
+      if (exempt) {
+        await devicesApi.addAddressListEntry(deviceId, { list: 'mtm-bf-exempt', address: e.address, comment: 'mtm: never ban', ...(confirm ? { confirm_lockout: true } : {}) });
+      }
+      return devicesApi.removeAddressListEntry(deviceId, e['.id'], confirm);
+    },
+    onSuccess: (res) => { invalidate(); setErr(''); guard.onSuccess(res); },
+  });
+  const run = (e: Row, exempt: boolean) =>
+    unban.mutate({ e, exempt }, { onError: guard.onError(() => unban.mutate({ e, exempt, confirm: true }, { onError: fail }), fail) });
+
+  if (!protectedHere && banned.length === 0) return null;
+  return (
+    <div className="card p-4 space-y-2">
+      <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={unban.isPending} />
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 bg-red-50 dark:bg-red-900/20 rounded-lg flex items-center justify-center flex-shrink-0">
+          <Ban className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+        </div>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex-1">
+          Banned <span className="text-gray-400 font-normal">({banned.length})</span>
+        </h3>
+        {!protectedHere && onQuick && (
+          <button onClick={() => onQuick('brute-force')} className="text-xs text-blue-600 dark:text-blue-400 hover:underline">Brute-force protection isn&apos;t set up here</button>
+        )}
+      </div>
+      {err && <p className="text-xs text-red-500">{err}</p>}
+      {banned.length === 0 ? (
+        <p className="text-xs text-gray-500 dark:text-slate-400">Nothing banned. Brute-force protection bans an address that opens four new connections to a protected port within a few minutes.</p>
+      ) : (
+        <div className="divide-y divide-gray-100 dark:divide-slate-700/50 border border-gray-200 dark:border-slate-700 rounded-lg">
+          {banned.map((e) => (
+            <div key={e['.id']} className="flex items-center gap-3 px-3 py-1.5 text-xs">
+              <span className="font-mono text-gray-800 dark:text-slate-200">{e.address}</span>
+              <span className="text-gray-400">{e.timeout ? `${e.timeout} left` : 'until removed'}</span>
+              {e['creation-time'] && <span className="text-gray-400 hidden sm:inline">since {e['creation-time']}</span>}
+              {canWrite && (
+                <div className="ml-auto flex items-center gap-3">
+                  <button onClick={() => run(e, false)} disabled={unban.isPending} className="text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-40">Unban</button>
+                  <button onClick={() => run(e, true)} disabled={unban.isPending} title="Unban, and add to mtm-bf-exempt so it's never counted again"
+                    className="text-gray-500 hover:text-gray-800 dark:hover:text-slate-200 disabled:opacity-40">Never ban</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Counters cell ────────────────────────────────────────────────────────────
 function Counters({ r }: { r: Row }) {
   const bytes = Number(r.bytes || 0); const packets = Number(r.packets || 0);
@@ -776,7 +845,7 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
           </p>
         )}
       </div>
-      <FirewallBody key={family} deviceId={deviceId} deviceName={deviceName} family={family} onQuick={canWrite ? () => setQuick('open') : undefined} />
+      <FirewallBody key={family} deviceId={deviceId} deviceName={deviceName} family={family} onQuick={canWrite ? (p?: QuickPreset) => setQuick(p ?? 'open') : undefined} />
       {quick && (
         <QuickRulesModal deviceId={deviceId} deviceName={deviceName} family={family}
           initial={quick === 'open' ? undefined : quick} onClose={closeQuick} />
@@ -785,7 +854,7 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
   );
 }
 
-function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: number; deviceName?: string; family: FirewallFamily; onQuick?: () => void }) {
+function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: number; deviceName?: string; family: FirewallFamily; onQuick?: (preset?: QuickPreset) => void }) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const v6 = family === 'ipv6';
@@ -867,6 +936,8 @@ function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: num
 
   return (
     <div className="space-y-4">
+      {!v6 && <BannedCard deviceId={deviceId} deviceName={deviceName} entries={addrLists} onQuick={onQuick}
+        protectedHere={rules.some((r) => r.chain === 'mtm-bruteforce')} />}
       <AddressListsCard deviceId={deviceId} deviceName={deviceName} family={family} />
 
       <div className="flex items-center gap-2">
@@ -888,7 +959,7 @@ function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: num
           {canWrite && <button onClick={() => resetMut.mutate()} disabled={resetMut.isPending} title="Reset hit counters"
             className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><Activity className="w-3.5 h-3.5" /> Reset Counters</button>}
           <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh</button>
-          {onQuick && <button onClick={onQuick} title="Presets for the rules nearly every router needs"
+          {onQuick && <button onClick={() => onQuick()} title="Presets for the rules nearly every router needs"
             className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><Zap className="w-3.5 h-3.5 text-amber-500" /> Quick rules</button>}
           {canWrite && <button onClick={() => { setForm({ ...EMPTY_FW, chain: chainFilter !== 'all' ? chainFilter : 'forward' }); setErr(''); setShowAdd(true); }}
             className="btn-primary flex items-center gap-1.5 text-xs py-1.5"><Plus className="w-3.5 h-3.5" /> Add Rule</button>}

@@ -746,7 +746,7 @@ function famParams(family?: FirewallFamily, extra: Record<string, string> = {}):
 }
 
 /** Quick firewall rules (#330). */
-export type QuickPreset = 'input-basics' | 'management-access' | 'forward-basics' | 'masquerade';
+export type QuickPreset = 'input-basics' | 'management-access' | 'forward-basics' | 'masquerade' | 'brute-force';
 export interface QuickFirewallStep {
   table: 'filter' | 'nat' | 'address-list';
   params: Record<string, string>;
@@ -762,6 +762,9 @@ export interface QuickFirewallPlan {
   interfaces: string[];
   services: { name: string; port: string; disabled: boolean }[];
   manager_ip: string | null;
+  /** VPN servers that are on, for brute-force protection (#405). */
+  vpn?: { l2tp: boolean; pptp: boolean; ovpn: boolean; sstp: boolean; ovpnPort: string | null };
+  bf_defaults?: string[];
 }
 
 export const devicesApi = {
@@ -1732,7 +1735,23 @@ export const configHistoryApi = {
 };
 
 // ─── Metrics ─────────────────────────────────────────────────────────────────
+/** Device graphs (#402). */
+export type GraphPoint = { time: string } & Record<string, number | string>;
+export interface DropRuleRow { rule: string; label: string; chain: string; packets: number }
+export interface GraphInterface {
+  name: string;
+  speed_bps: number | null;
+  points: { time: string; rx_bps?: number; tx_bps?: number; rx_pps?: number; tx_pps?: number }[];
+}
+
 export const metricsApi = {
+  deviceSeries: (deviceId: number, m: 'conntrack' | 'conntrack_split' | 'firewall_drops' | 'cpu_cores' | 'health_temps', range: string) =>
+    api.get<GraphPoint[]>(`/metrics/device/${deviceId}/series`, { params: { m, range } }),
+  deviceDropRules: (deviceId: number, range: string) =>
+    api.get<DropRuleRow[]>(`/metrics/device/${deviceId}/drop-rules`, { params: { range } }),
+  deviceInterfaces: (deviceId: number, range: string, ifaces?: string[]) =>
+    api.get<{ interfaces: GraphInterface[]; available: string[] }>(`/metrics/device/${deviceId}/interfaces`,
+      { params: { range, ...(ifaces && ifaces.length ? { ifaces: ifaces.join(',') } : {}) } }),
   /** Every device's CPU series in one request, for list sparklines (#302). */
   cpuHistory: (range = '1h') => api.get<{ devices: Record<string, number[]> }>('/metrics/resources/cpu-history', { params: { range } }),
   summary: () => api.get<MetricsSummary>('/metrics/summary'),
@@ -1948,6 +1967,12 @@ export interface AlertHistoryEntry {
   channels_notified: string[];
   sent_at: string;
 }
+
+/** Addresses brute-force protection has banned (#405), from the slow polls. */
+export interface FirewallBan { device_id: number; device_name: string; address: string; time_left: string | null; first_seen: string; updated_at: string }
+export const firewallBansApi = {
+  list: () => api.get<FirewallBan[]>('/firewall-bans'),
+};
 
 export const alertsApi = {
   getRules: () => api.get<AlertRule[]>('/alerts/rules'),

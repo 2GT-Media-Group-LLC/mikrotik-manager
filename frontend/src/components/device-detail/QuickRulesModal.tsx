@@ -22,7 +22,19 @@ const PRESETS: { id: QuickPreset; title: string; text: string; v6: boolean }[] =
     text: 'Protect what\'s behind the router: accept established and related, drop invalid, drop new connections from the WAN that aren\'t port forwards. FastTrack optional.' },
   { id: 'masquerade', title: 'Masquerade', v6: false,
     text: 'NAT the LAN out of the WAN interface, for a WAN address that changes.' },
+  { id: 'brute-force', title: 'Brute-force protection', v6: false,
+    text: 'Ban an address that keeps opening new connections to SSH, WinBox, FTP, Telnet or a VPN server. The manager is never banned.' },
 ];
+
+/** What brute-force protection can cover: services by their port, VPN servers by theirs. */
+const BF: { id: string; label: string; vpn?: 'l2tp' | 'pptp' | 'ovpn' | 'sstp'; ports?: string }[] = [
+  { id: 'ssh', label: 'SSH' }, { id: 'winbox', label: 'WinBox' }, { id: 'ftp', label: 'FTP' }, { id: 'telnet', label: 'Telnet' },
+  { id: 'l2tp', label: 'L2TP/IPsec', vpn: 'l2tp', ports: 'UDP 500, 4500, 1701' },
+  { id: 'pptp', label: 'PPTP', vpn: 'pptp', ports: 'TCP 1723' },
+  { id: 'ovpn', label: 'OpenVPN', vpn: 'ovpn' },
+  { id: 'sstp', label: 'SSTP', vpn: 'sstp', ports: 'TCP 443, shared with WebFig HTTPS' },
+];
+const BAN_TIMES = [{ v: '1h', label: '1 hour' }, { v: '1d', label: '1 day' }, { v: '1w', label: '1 week' }];
 
 const MGMT = ['winbox', 'ssh', 'api', 'api-ssl', 'www', 'www-ssl', 'telnet', 'ftp'];
 const MGMT_DEFAULT = ['winbox', 'ssh', 'api', 'api-ssl', 'www', 'www-ssl'];
@@ -75,6 +87,12 @@ export default function QuickRulesModal({ deviceId, deviceName, family, initial,
   const [list, setList] = useState('mtm-management');
   const [addresses, setAddresses] = useState('');
   const [services, setServices] = useState<string[]>(MGMT_DEFAULT);
+  // Brute-force protection: null until something is ticked, so the device's own defaults apply.
+  const [bfChoice, setBfChoice] = useState<string[] | null>(null);
+  const [bfDefaults, setBfDefaults] = useState<string[]>([]);
+  const bfServices = bfChoice ?? bfDefaults;
+  const [banTime, setBanTime] = useState('1d');
+  const [neverBan, setNeverBan] = useState('');
   const [done, setDone] = useState<string | null>(null);
   const need = needs(preset, v6);
 
@@ -84,13 +102,17 @@ export default function QuickRulesModal({ deviceId, deviceName, family, initial,
     ...(need.lan ? refParams('lan', lan) : {}),
     ...(preset === 'forward-basics' && fasttrack ? { fasttrack: '1' } : {}),
     ...(preset === 'management-access' ? { list, addresses: addresses.split(/[\s,;]+/).filter(Boolean).join(','), services: services.join(',') } : {}),
-  }), [preset, need.wan, need.lan, wan, lan, fasttrack, list, addresses, services]);
+    ...(preset === 'brute-force' ? {
+      addresses: neverBan.split(/[\s,;]+/).filter(Boolean).join(','), services: (bfChoice ?? []).join(','), ban_time: banTime,
+    } : {}),
+  }), [preset, need.wan, need.lan, wan, lan, fasttrack, list, addresses, services, neverBan, bfChoice, banTime]);
 
   const { data: plan, isFetching, error } = useQuery({
     queryKey: ['quick-firewall', deviceId, family, params],
     queryFn: async () => {
       const data = (await devicesApi.quickFirewallPlan(deviceId, params, family)).data;
       setLists(data.interface_lists);
+      if (data.bf_defaults) setBfDefaults(data.bf_defaults);
       return data;
     },
     placeholderData: (prev) => prev,
@@ -99,7 +121,7 @@ export default function QuickRulesModal({ deviceId, deviceName, family, initial,
   const todo = plan ? plan.steps.filter((s) => !s.skip) : [];
   const errors = plan?.errors ?? {};
   const ready = !!plan && !isFetching && Object.keys(errors).length === 0 && todo.length > 0;
-  const body = () => ({ ...params, ...(preset === 'management-access' ? { addresses: params.addresses?.split(',').filter(Boolean) ?? [] } : {}) });
+  const body = () => ({ ...params, ...(preset === 'management-access' || preset === 'brute-force' ? { addresses: params.addresses?.split(',').filter(Boolean) ?? [] } : {}) });
   const request = () => devicesApi.quickFirewallApply(deviceId, body(), family);
   const apply = useMutation({
     mutationFn: (confirm: boolean) => devicesApi.quickFirewallApply(deviceId, { ...body(), ...(confirm ? { confirm_lockout: true } : {}) }, family),
@@ -191,6 +213,44 @@ export default function QuickRulesModal({ deviceId, deviceName, family, initial,
                   })}
                 </div>
                 {errors.services && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{errors.services}</p>}
+              </div>
+            </div>
+          )}
+          {preset === 'brute-force' && (
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Protect</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  {BF.map((t) => {
+                    const svc = !t.vpn ? plan?.services.find((s) => s.name === t.id) : undefined;
+                    const on = t.vpn ? !!plan?.vpn?.[t.vpn] : !!svc && !svc.disabled;
+                    const ports = t.vpn === 'ovpn' ? `TCP and UDP ${plan?.vpn?.ovpnPort || '1194'}` : t.ports ?? (svc && !svc.disabled ? `port ${svc.port}` : '');
+                    return (
+                      <label key={t.id} className={clsx('flex items-center gap-1.5 text-sm', !on && 'opacity-50')}
+                        title={!on ? (t.vpn ? 'This VPN server is off on this device' : 'Turned off on this device') : ports}>
+                        <input type="checkbox" checked={bfServices.includes(t.id)}
+                          onChange={(e) => setBfChoice(e.target.checked ? [...bfServices, t.id] : bfServices.filter((x) => x !== t.id))} />
+                        {t.label}{on && ports && t.id !== 'sstp' ? <span className="text-xs text-gray-400">{ports.startsWith('port') ? `:${svc?.port}` : ` (${ports})`}</span> : ''}
+                      </label>
+                    );
+                  })}
+                </div>
+                {errors.services && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{errors.services}</p>}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[10rem_1fr] gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Ban for</label>
+                  <select className="input w-full" value={banTime} onChange={(e) => setBanTime(e.target.value)}>
+                    {BAN_TIMES.map((b) => <option key={b.v} value={b.v}>{b.label}</option>)}
+                  </select>
+                  {errors.banTime && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{errors.banTime}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Never ban (addresses or prefixes)</label>
+                  <input className="input w-full font-mono" value={neverBan} onChange={(e) => setNeverBan(e.target.value)} placeholder="192.168.88.0/24, 10.0.0.5" />
+                  {errors.addresses && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{errors.addresses}</p>}
+                  {plan?.manager_ip && <p className="mt-0.5 text-xs text-gray-500">MikroTik Manager ({plan.manager_ip}) is never banned.</p>}
+                </div>
               </div>
             </div>
           )}

@@ -418,6 +418,31 @@ export class RouterOSClient extends EventEmitter {
    * `ret` (RouterOS 7). Used to read values the API leaves out of a reply,
    * so it's for read-only scripts; it never runs during a preview.
    */
+  /**
+   * A print with count-only: RouterOS answers with the count in !done
+   * (=ret=N), not as rows, so execute() would return nothing. Read-only.
+   */
+  async countOnly(command: string, queries: string[] = [], timeoutMs = 15_000): Promise<number> {
+    let ret = '';
+    let error!: Error;
+    await new Promise<void>((resolve) => {
+      this.operationChain = this.operationChain.then(async () => {
+        try {
+          const t = Date.now();
+          try {
+            await this._executeRaw(command, { 'count-only': '' }, queries, timeoutMs, (done) => { ret = done['ret'] ?? ''; });
+          } finally { this.waitedMs += Date.now() - t; }
+        } catch (err) {
+          error = err as Error;
+        }
+        resolve();
+      });
+    });
+    if (error) throw error;
+    const n = parseInt(ret, 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+
   async runScript(source: string, timeoutMs = 30_000): Promise<string> {
     if (previewContext()) throw new RouterOSError('This action runs a script on the device, so it can\'t be previewed');
     let ret = '';

@@ -14,6 +14,7 @@ import clsx from 'clsx';
 import CertificateList from '../components/CertificateList';
 import RouterOsCveCard from '../components/security/RouterOsCveCard';
 import ApiSslCard from '../components/security/ApiSslCard';
+import BannedAddressesCard from '../components/security/BannedAddressesCard';
 import { useCanWrite } from '../hooks/useCanWrite';
 import { PendingIdentityCard } from '../components/security/IdentityChange';
 
@@ -380,6 +381,8 @@ export default function SecurityPage() {
           )}
         </div>
       </div>
+
+      <BannedAddressesCard />
 
       {/* Certificates across the fleet (#143): the full width, because it's a
           table; in a third of the page its columns were crushed. */}

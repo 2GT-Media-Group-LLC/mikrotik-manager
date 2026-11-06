@@ -10,6 +10,7 @@ import { siteScopeDevices, siteScopeByDevice, siteScopeByNullableDevice, clientS
 import { activeSite } from '../middleware/site';
 import { fluxString } from '@influxdata/influxdb-client';
 import { latestResources, latestInterfaceCounters } from '../services/latestMetrics';
+import { linkSpeedBps } from '../utils/deviceGraphs';
 
 const router = Router();
 router.use(requireAuth);
@@ -277,6 +278,138 @@ router.get('/interface/:deviceId/:interface/drops', async (req, res) => {
     drops: (Number(p.rx_drops) || 0) + (Number(p.tx_drops) || 0),
     queue_drops: Number(p.tx_queue_drops) || 0,
   })));
+});
+
+// ─── Device graphs (#402) ─────────────────────────────────────────────────────
+
+/** Window per range: about 200–700 points whatever the range. */
+const GRAPH_WINDOW: Record<string, string> = { '1h': '1m', '6h': '2m', '24h': '5m', '7d': '30m', '30d': '2h' };
+const GRAPH_MEASUREMENTS = new Set(['conntrack', 'conntrack_split', 'firewall_drops', 'cpu_cores', 'health_temps']);
+const FIELD_NAME = /^[a-z0-9_]{1,48}$/;
+
+function graphRange(req: { query: Record<string, unknown> }): { range: string; every: string } {
+  const r = String(req.query.range || '24h');
+  return GRAPH_WINDOW[r] ? { range: r, every: GRAPH_WINDOW[r] } : { range: '24h', every: '5m' };
+}
+
+/**
+ * GET /api/metrics/device/:deviceId/series?m=conntrack&range=24h
+ * Every field of one graph measurement, averaged per window, with the peak
+ * in each window as <field>_peak, so a burst doesn't hide in the average.
+ */
+router.get('/device/:deviceId/series', async (req, res) => {
+  const m = String(req.query.m ?? '');
+  if (!GRAPH_MEASUREMENTS.has(m)) return res.status(400).json({ error: 'Unknown measurement' });
+  const { range, every } = graphRange(req);
+  const base = `
+    base = from(bucket: ${fluxString(bucket)})
+      |> range(start: -${rangeToFlux(range)})
+      |> filter(fn: (r) => r._measurement == ${fluxString(m)} and r.device_id == ${fluxString(String(req.params.deviceId))})`;
+  const flux = `${base}
+    avg = base |> aggregateWindow(every: ${every}, fn: mean, createEmpty: false)
+    peak = base |> aggregateWindow(every: ${every}, fn: max, createEmpty: false) |> map(fn: (r) => ({ r with _field: r._field + "_peak" }))
+    union(tables: [avg, peak]) |> yield(name: "series")`;
+  const pivoted: Record<string, Record<string, number | string>> = {};
+  try {
+    await getQueryApi().collectRows(flux, (row, meta) => {
+      const f = String(meta.get(row, '_field'));
+      if (!FIELD_NAME.test(f.replace(/_peak$/, ''))) return;
+      const t = String(meta.get(row, '_time'));
+      if (!pivoted[t]) pivoted[t] = { time: t };
+      pivoted[t][f] = Number(meta.get(row, '_value')) || 0;
+    });
+  } catch {
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
+  }
+  return res.json(Object.values(pivoted).sort((a, b) => String(a.time).localeCompare(String(b.time))));
+});
+
+// GET /api/metrics/device/:deviceId/drop-rules?range=24h — the rules that dropped the most.
+router.get('/device/:deviceId/drop-rules', async (req, res) => {
+  const { range } = graphRange(req);
+  const flux = `
+    from(bucket: ${fluxString(bucket)})
+      |> range(start: -${rangeToFlux(range)})
+      |> filter(fn: (r) => r._measurement == "firewall_rule_drops" and r.device_id == ${fluxString(String(req.params.deviceId))} and r._field == "packets")
+      |> group(columns: ["rule", "label", "chain"])
+      |> sum()
+      |> group()
+      |> sort(columns: ["_value"], desc: true)
+      |> limit(n: 10)`;
+  const out: { rule: string; label: string; chain: string; packets: number }[] = [];
+  try {
+    await getQueryApi().collectRows(flux, (row, meta) => {
+      out.push({ rule: String(meta.get(row, 'rule')), label: String(meta.get(row, 'label')), chain: String(meta.get(row, 'chain')),
+        packets: Number(meta.get(row, '_value')) || 0 });
+    });
+  } catch {
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
+  }
+  return res.json(out);
+});
+
+/**
+ * GET /api/metrics/device/:deviceId/interfaces?range=24h[&ifaces=a,b]
+ * Several interfaces at once (#402): bits/s and packets/s per window, with
+ * the link speed for utilisation. Without ifaces, the four busiest physical
+ * ports and bonds in the range.
+ */
+router.get('/device/:deviceId/interfaces', async (req, res) => {
+  const { range, every } = graphRange(req);
+  const deviceId = String(req.params.deviceId);
+  const known = await query<{ name: string; type: string | null; link_rate: string | null; speed: string | null }>(
+    `SELECT name, type, link_rate, speed FROM interfaces WHERE device_id = $1`, [Number(deviceId)]);
+  const byName = new Map(known.map((i) => [i.name, i]));
+  let names = String(req.query.ifaces ?? '').split(',').map((x) => x.trim()).filter((x) => byName.has(x)).slice(0, 8);
+  const scope = `
+      |> range(start: -${rangeToFlux(range)})
+      |> filter(fn: (r) => r._measurement == "interface_traffic" and r.device_id == ${fluxString(deviceId)})`;
+  try {
+    if (!names.length) {
+      // The busiest by bytes moved in the range; bridges, VLANs and loopback repeat their ports' traffic.
+      const skip = new Set(['bridge', 'vlan', 'loopback']);
+      const totals = new Map<string, number>();
+      await getQueryApi().collectRows(`from(bucket: ${fluxString(bucket)})${scope}
+        |> filter(fn: (r) => r._field == "rx_bytes" or r._field == "tx_bytes")
+        |> spread()`, (row, meta) => {
+        const n = String(meta.get(row, 'interface'));
+        totals.set(n, (totals.get(n) ?? 0) + (Number(meta.get(row, '_value')) || 0));
+      });
+      names = [...totals].filter(([n, v]) => v > 0 && byName.has(n) && !skip.has(byName.get(n)!.type ?? ''))
+        .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([n]) => n);
+    }
+    const series = new Map<string, Map<string, Record<string, number>>>();
+    if (names.length) {
+      await getQueryApi().collectRows(`from(bucket: ${fluxString(bucket)})${scope}
+        |> filter(fn: (r) => ${names.map((n) => `r.interface == ${fluxString(n)}`).join(' or ')})
+        |> filter(fn: (r) => r._field == "rx_bytes" or r._field == "tx_bytes" or r._field == "rx_packets" or r._field == "tx_packets")
+        |> aggregateWindow(every: ${every}, fn: last, createEmpty: false)
+        |> derivative(unit: 1s, nonNegative: true)`, (row, meta) => {
+        const n = String(meta.get(row, 'interface'));
+        const t = String(meta.get(row, '_time'));
+        const f = String(meta.get(row, '_field'));
+        if (!series.has(n)) series.set(n, new Map());
+        const pts = series.get(n)!;
+        if (!pts.has(t)) pts.set(t, {});
+        const v = Number(meta.get(row, '_value')) || 0;
+        // Bytes/s to bits/s for throughput and utilisation.
+        pts.get(t)![f === 'rx_bytes' ? 'rx_bps' : f === 'tx_bytes' ? 'tx_bps' : f === 'rx_packets' ? 'rx_pps' : 'tx_pps'] = f.endsWith('bytes') ? v * 8 : v;
+      });
+    }
+    return res.json({
+      interfaces: names.map((n) => {
+        const i = byName.get(n)!;
+        return {
+          name: n,
+          speed_bps: linkSpeedBps(i.link_rate) ?? linkSpeedBps(i.speed),
+          points: [...(series.get(n) ?? new Map()).entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([time, v]) => ({ time, ...v })),
+        };
+      }),
+      available: known.filter((i) => !['loopback'].includes(i.type ?? '')).map((i) => i.name).sort(),
+    });
+  } catch {
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
+  }
 });
 
 // GET /api/metrics/device/:deviceId/resources?range=24h
