@@ -745,6 +745,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#quick-firewall-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick firewall rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ports-and-the-faceplate" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2103,6 +2114,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#quick-firewall-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick firewall rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ports-and-the-faceplate" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2697,7 +2719,7 @@ history, uptime figures and reports keep every outage. <strong>Snooze</strong> i
 </tr>
 <tr>
 <td><strong>Firewall</strong></td>
-<td>Filter and NAT rules and address lists, for IPv4 and IPv6 (the <strong>IPv4</strong> / <strong>IPv6</strong> switch at the top), with reordering and counters. IPv6 NAT needs RouterOS 7</td>
+<td>Filter and NAT rules and address lists, for IPv4 and IPv6 (the <strong>IPv4</strong> / <strong>IPv6</strong> switch at the top), with reordering and counters, and <a href="#quick-firewall-rules">Quick rules</a>. IPv6 NAT needs RouterOS 7</td>
 </tr>
 <tr>
 <td><strong>Routing</strong></td>
@@ -2713,7 +2735,7 @@ history, uptime figures and reports keep every outage. <strong>Snooze</strong> i
 </tr>
 <tr>
 <td><strong>Hardware</strong></td>
-<td>Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages, with the highest reading in each 5 minutes as a dashed line, so a short burst to 100% doesn't hide in the average (#402)</td>
+<td>Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages as lines, with a light band up to the highest reading in each 5 minutes, so a short burst to 100% doesn't hide in the average (#402). Memory's band only shows where the peak is more than two points above the average</td>
 </tr>
 <tr>
 <td><strong>LTE</strong></td>
@@ -2768,6 +2790,54 @@ queue. FastTracked connections skip simple queues, so on a device with an enable
 rule a queue only limits traffic that isn't FastTracked. When the device has one, the queue
 dialog says so (#280). To limit a target, exclude it from FastTrack (for example, an accept rule
 for it above the FastTrack rule) or turn FastTrack off.</p>
+<h2 id="quick-firewall-rules">Quick firewall rules<a class="headerlink" href="#quick-firewall-rules" title="Permanent link">&para;</a></h2>
+<p><strong>Quick rules</strong> on the Firewall tab adds the rules nearly every router needs, close to MikroTik's
+own default configuration (#330). Pick a preset:</p>
+<table>
+<thead>
+<tr>
+<th>Preset</th>
+<th>Adds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Input basics</strong></td>
+<td>Accept established, related and untracked; drop invalid; accept ping (ICMP, or ICMPv6 with traceroute and DHCPv6 prefix delegation for IPv6); accept to the loopback (IPv4, for CAPsMAN); then drop everything else not coming from the LAN</td>
+</tr>
+<tr>
+<td><strong>Management access</strong> (IPv4)</td>
+<td>An address list (<code>mtm-management</code> unless you name another) holding the manager's own address and any you add, an accept for WinBox, SSH, the API and WebFig from that list, and a drop for those ports from anywhere else. Only services that are enabled are covered, on their configured ports</td>
+</tr>
+<tr>
+<td><strong>Forward basics</strong></td>
+<td>For the traffic passing through: accept established, related and untracked; drop invalid; drop new connections from the WAN that aren't port forwards (IPv6: drop everything not from the LAN). <strong>FastTrack</strong> is optional; with it, IPsec traffic is accepted first so it isn't FastTracked</td>
+</tr>
+<tr>
+<td><strong>Masquerade</strong> (IPv4)</td>
+<td>NAT out of the WAN, for a WAN address that changes</td>
+</tr>
+</tbody>
+</table>
+<p>You choose what the LAN and WAN are: an interface list (the form starts on <code>LAN</code> and <code>WAN</code> when the
+device has them, as defconf makes) or a single interface. Before anything is added, the dialog shows
+each rule and where it goes:</p>
+<ul>
+<li><strong>Accepts and the invalid drop go to the top</strong> of the table, so they work whatever else is there.</li>
+<li><strong>Catch-all drops go to the end</strong>, so the accepts you already have keep working. The management
+  drop is the exception: it goes to the top, right after its accept, since that's its purpose.</li>
+<li><strong>A rule that's already there is skipped</strong>: one with the same chain, action and matchers, enabled,
+  whatever its comment.</li>
+</ul>
+<p>Every rule is commented <code>mtm quick: …</code>. <strong>Review changes</strong> shows the commands, and the preset is
+added in one <a href="../change-guard/">Change Guard</a> change: the whole preset is checked against the
+manager's own connection first, so a LAN that doesn't include the interface management arrives on
+is caught as a lockout before anything is added. For IPv6 the usual auto-revert applies.</p>
+<p>The manager adds its own address to the management list when it can see it on the device. That
+needs connection tracking running there, which it isn't on a device with no firewall rules yet; the
+form then asks for the addresses that manage the router, the manager's included.</p>
+<p>The Security tab's <strong>No input-chain firewall rule</strong> finding (IPv4 or IPv6) has an <strong>Add input rules</strong>
+button that opens Quick rules on Input basics.</p>
 <h2 id="ports-and-the-faceplate">Ports and the faceplate<a class="headerlink" href="#ports-and-the-faceplate" title="Permanent link">&para;</a></h2>
 <p>The faceplate mirrors the physical front panel — copper staggered odd above even as the
 hardware is, SFP cages and QSFP breakout lanes grouped separately. Bridges and bonds aren't on
@@ -2792,7 +2862,8 @@ models) or <code>2 4 6</code>, for models whose front panel has the even ports o
 when the Ethernet ports sit in two rows, and is remembered per model in your browser. A choice you make there overrides the model's built-in Ethernet layout.</p>
 <p>Selecting a port shows its throughput for the chosen range, and under it <strong>Errors &amp; drops</strong>: how
 many receive and transmit errors, drops and transmit-queue drops the port had in that range, with
-a small chart of them when there were any (#402). They're kept apart from the throughput so a few
+a small chart of them when there were any, or "0 errors · 0 drops in this range" when there were
+none (#402). They're kept apart from the throughput so a few
 aren't flattened by gigabit traffic. Drops are counted from 1.1.0-beta.26 on.</p>
 <h3 id="power-cycling-a-poe-port">Power-cycling a PoE port<a class="headerlink" href="#power-cycling-a-poe-port" title="Permanent link">&para;</a></h3>
 <p>On a port that supplies PoE, <strong>Power-cycle PoE</strong> turns its power off for 5 seconds and back on,
