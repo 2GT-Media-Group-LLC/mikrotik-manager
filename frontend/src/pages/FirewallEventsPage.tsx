@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { RefreshCw, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useFleetRefresh } from '../hooks/useFleetRefresh';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import clsx from 'clsx';
 
 import { devicesApi, eventsApi } from '../services/api';
@@ -45,6 +46,7 @@ export default function FirewallEventsPage() {
   const [action, setAction] = useState('');
   const [protocol, setProtocol] = useState('');
   const [page, setPage] = useState(0);
+  const debouncedSearch = useDebouncedValue(search);
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices'],
@@ -54,12 +56,12 @@ export default function FirewallEventsPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: [
       'firewall-events',
-      { search, deviceId, action, protocol, page },
+      { search: debouncedSearch, deviceId, action, protocol, page },
     ],
     queryFn: () =>
       eventsApi
         .firewall({
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           since: new Date(Date.now() - FIREWALL_WINDOW_MS).toISOString(),
           deviceId: deviceId ? Number(deviceId) : undefined,
           action: action
@@ -70,6 +72,7 @@ export default function FirewallEventsPage() {
           offset: page * PAGE_SIZE,
         })
         .then((r) => r.data),
+    placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   });
   // Refresh asks the devices for their logs now, then reads again as they land.

@@ -50,6 +50,26 @@ describe('GET /api/events', () => {
     expect(params).toEqual(expect.arrayContaining(['error', 'critical', 5]));
   });
 
+  it('reads only the columns the page uses, with a stable tie-breaker', async () => {
+    await request(makeApp()).get('/api/events?limit=5&counts=0');
+    const [sql] = mockedQuery.mock.calls[0] as [string];
+    expect(sql).not.toContain('e.*');
+    expect(sql).toContain('e.id, e.device_id, e.event_time, e.severity, e.topic, e.message');
+    expect(sql).toContain('ORDER BY e.event_time DESC, e.id DESC');
+  });
+
+  it('clamps an oversized limit instead of materialising the whole table', async () => {
+    await request(makeApp()).get('/api/events?limit=999999&counts=0');
+    const [, params] = mockedQuery.mock.calls[0] as [string, unknown[]];
+    expect(params[params.length - 2]).toBe(1000);
+  });
+
+  it('clamps a negative offset to zero', async () => {
+    await request(makeApp()).get('/api/events?offset=-50&counts=0');
+    const [, params] = mockedQuery.mock.calls[0] as [string, unknown[]];
+    expect(params[params.length - 1]).toBe(0);
+  });
+
   it('only treats counts=0 as the opt-out', async () => {
     await request(makeApp()).get('/api/events?counts=1');
     expect(mockedQuery).toHaveBeenCalledTimes(3);
