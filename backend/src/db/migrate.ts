@@ -1,42 +1,6 @@
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
 import { backfillProxyConnections } from '../services/ProxyLogService';
-import { firewallPacketLogSql } from '../utils/firewallEventSql';
-import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
-
-/**
- * Indexes for the high-volume predicates on `events`, kept out of MIGRATION_SQL
- * so the one-time build on an existing install can say what it is doing.
- *
- * Firewall packet logs and NTP/cloud clock corrections are classified by
- * regular expressions over topic/message. On a busy install those are 97%+ of
- * the table, so filtering them per row made the Event page's totals and topic
- * badges scan millions of rows (seconds per request) even though both views
- * hide them. These partial indexes keep only the rows each view can show, in
- * the exact order it reads them, so a limited page is a short index walk and
- * the capped total is an index-only scan. Predicates are interpolated from the
- * same helpers the routes use so the planner can prove they match.
- */
-const EVENT_INDEX_SQL = `
-CREATE INDEX IF NOT EXISTS idx_events_nonfw_time
-  ON events(event_time DESC, id DESC)
-  WHERE NOT ${firewallPacketLogSql()} AND NOT ${CLOCK_CHANGE_SQL};
--- Same non-firewall rows without the clock restriction: the topic badges show
--- clock tokens too, and "show clock changes" reads this ordering. Its INCLUDE
--- lets the topic aggregate run as an index-only scan.
-CREATE INDEX IF NOT EXISTS idx_events_nonfw_all_time
-  ON events(event_time DESC, id DESC) INCLUDE (topic)
-  WHERE NOT ${firewallPacketLogSql()};
-CREATE INDEX IF NOT EXISTS idx_events_fw_time
-  ON events(event_time DESC, id DESC)
-  WHERE ${firewallPacketLogSql()};
--- The header's 24-hour critical badge. Small (errors only) and index-only for
--- the count, which otherwise re-tests the regexes on every recent error.
-CREATE INDEX IF NOT EXISTS idx_events_nonfw_critical_time
-  ON events(event_time DESC, id DESC)
-  WHERE severity IN ('error','critical')
-    AND NOT ${firewallPacketLogSql()} AND NOT ${CLOCK_CHANGE_SQL};
-`;
 
 const MIGRATION_SQL = `
 -- Users
@@ -2051,13 +2015,6 @@ export async function runMigrations(): Promise<void> {
   try {
     await client.query(MIGRATION_SQL);
     console.log('Schema created/verified');
-
-    // Built after the schema is settled. On an existing install with millions
-    // of events this is a one-time scan; the log line says why startup is
-    // taking longer than usual.
-    console.log('Ensuring event indexes (first run on a large log table may take a while)...');
-    await client.query(EVENT_INDEX_SQL);
-    console.log('Event indexes ready');
 
     // Insert default settings
     for (const setting of DEFAULT_SETTINGS) {
