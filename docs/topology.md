@@ -180,8 +180,9 @@ connects to. **Reset layout** forgets the arrangement of everything in view and 
 automatically again.
 
 Any link, discovered or drawn, can be given a colour from its menu, to pick out trunks, say
-(#260); **Default** goes back to the colour its kind gives it. Colours are kept when the layout
-is reset.
+(#260); **Default** goes back to the colour its kind gives it. A link that goes down or is
+blocked by spanning tree turns red whatever its colour, and gets its colour back once it's healthy
+(#403). Colours are kept when the layout is reset.
 
 Links are curved: they leave the bottom of the upper card and enter the top of the lower one, or
 run side to side between cards on the same row, and follow the cards as they move. **Display →

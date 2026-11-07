@@ -56,8 +56,9 @@ type Anchors = Record<string, { sourceHandle: Side | null; targetHandle: Side | 
 /** React Flow edge for a graph edge: the colour says what kind of link it is. */
 function toFlowEdge(e: GraphEdge, anchors: Anchors, colors: Record<string, string>, onDelete: (e: GraphEdge) => void, canWrite: boolean, curved: boolean, ports: PortLabels): Edge {
   const sides = anchors[e.id];
-  // A colour chosen for this link (#260) wins over the one its kind gives it.
-  const custom = colors[e.id] ? { stroke: colors[e.id] } : {};
+  // A colour chosen for this link (#260) wins over the one its kind gives it,
+  // but not over down or blocked: those stay red until the link is healthy (#403).
+  const custom = colors[e.id] && !e.down && e.role !== 'blocked' ? { stroke: colors[e.id] } : {};
   const data: TopoEdgeData = { label: e.label, parallel: e.parallel, sourceSide: sides?.sourceHandle ?? null, targetSide: sides?.targetHandle ?? null, curved, folded: e.folded };
   if (e.kind === 'hand') {
     return {
