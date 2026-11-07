@@ -58,6 +58,9 @@ const DEFAULT_RULES = [
   // A platform backup of MikroTik Manager itself that failed, or didn't reach
   // a destination. On by default: an unnoticed failing backup is the worst kind.
   { event_type: 'platform_backup_failed', enabled: true, threshold: null, cooldown_min: 60 },
+  // A scheduled bulk command that failed on a device, halted, or didn't run
+  // (#359). On by default; each schedule can turn its alerts off.
+  { event_type: 'scheduled_command_failed', enabled: true, threshold: null, cooldown_min: 60 },
   { event_type: 'device_cert_renewal_failed', enabled: true, threshold: null, cooldown_min: 360 },
 ];
 

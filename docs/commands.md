@@ -146,6 +146,49 @@ the device's own words is not actionable.
 Cancelling prevents the **next wave**. Devices already executing finish, because that is
 the only point at which stopping is safe.
 
+## Schedules
+
+**Schedule…**, next to **Run**, saves the command to run later or again, from Ron's request in
+#359. A schedule runs on the devices chosen, plus every device with the tags or in the sites you
+pick, worked out each time it runs, so a device added to a site later is included.
+
+When it runs:
+
+- **Once:** a date and time.
+- **Simple:** daily, weekly on a day, or monthly on a day from 1 to 28, at a time of day.
+- **Advanced:** a cron expression with five fields (minute, hour, day of month, month, day of
+  week), for example `0 3 * * 1-5` for 03:00 on weekdays, or `*/15 * * * *` for every 15
+  minutes.
+
+Times are in the manager's time zone (**Settings → General**), except a one-off's date, which
+you enter in your browser's time.
+
+Each scheduled run is an ordinary run in **Recent runs**, marked with a calendar, with waves,
+Change Guard and output as usual. Its options:
+
+- **Only inside a maintenance window:** a device that isn't in an active
+  [maintenance window](alerting.md#maintenance-windows) when it runs is skipped.
+- **Alert when it fails or doesn't run**, through your alert channels; on by default.
+- **Change Guard**, on by default. A command that can cut management access can only be
+  scheduled with Change Guard on, since nobody is watching when it runs.
+
+Some things stop a scheduled run, and it then shows as **missed** in the run history, with the
+reason:
+
+- The manager wasn't running at that time. It never runs late: a command runs when it was set
+  to run, or not at all. A run can still start up to five minutes late, for example while the
+  manager restarts.
+- Another bulk run was still going after 15 minutes. Only one bulk run goes at a time.
+- The account that last saved it was removed or made read-only. A schedule runs as that
+  account: an account limited to some sites reaches only devices in those sites, and a command
+  with secrets needs a fleet admin.
+- None of its devices was in a maintenance window, when it's set to run only inside one.
+
+The **Schedules** list shows each one's next run, how the last went (click it to open the run),
+and **Run now**, **Pause**, **Edit** and **Delete**. Resuming a paused schedule starts from
+then: times passed while it was paused aren't counted as missed. Deleting a schedule keeps its
+past runs.
+
 ## Requirements
 
 Every targeted device needs an SSH credential: either a password, or a verified

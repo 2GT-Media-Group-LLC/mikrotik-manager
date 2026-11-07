@@ -680,7 +680,25 @@ export interface CommandRunSummary {
   id: number; name: string; command: string; status: string;
   wave_size: number; halt_on_failure: boolean; use_change_guard: boolean;
   total: number; succeeded: number; failed: number; created_at: string;
+  /** The schedule that made it (#359), and why a scheduled run didn't happen. */
+  schedule_id?: number | null; note?: string | null;
 }
+
+/** A scheduled bulk command (#359). */
+export interface CommandSchedule {
+  id: number; name: string; command: string;
+  device_ids: number[]; tag_ids: number[]; site_ids: number[];
+  wave_size: number; halt_on_failure: boolean; use_change_guard: boolean;
+  maintenance_only: boolean; alert_on_failure: boolean;
+  kind: 'once' | 'simple' | 'cron';
+  run_at: string | null; cron: string | null;
+  simple: { freq: 'daily' | 'weekly' | 'monthly'; time: string; weekday?: number; monthday?: number } | null;
+  enabled: boolean; next_run_at: string | null;
+  last_run_id: number | null; last_status: string | null; last_run_at?: string | null;
+  created_by: string | null;
+  description: string; target_count: number;
+}
+export type CommandScheduleInput = Omit<CommandSchedule, 'id' | 'enabled' | 'next_run_at' | 'last_run_id' | 'last_status' | 'last_run_at' | 'created_by' | 'description' | 'target_count'>;
 
 export interface CommandRunDevice {
   id: number; device_id: number; device_name: string; ip_address: string;
@@ -736,6 +754,12 @@ export const commandsApi = {
    */
   exportCsv: (id: number) =>
     api.get(`/commands/runs/${id}/export`, { responseType: 'blob' }),
+  listSchedules: () => api.get<{ time_zone: string; schedules: CommandSchedule[] }>('/commands/schedules'),
+  createSchedule: (body: CommandScheduleInput) => api.post<CommandSchedule>('/commands/schedules', body),
+  updateSchedule: (id: number, body: CommandScheduleInput) => api.put<CommandSchedule>(`/commands/schedules/${id}`, body),
+  setScheduleEnabled: (id: number, enabled: boolean) => api.post(`/commands/schedules/${id}/enabled`, { enabled }),
+  runScheduleNow: (id: number) => api.post<{ id: number }>(`/commands/schedules/${id}/run-now`),
+  deleteSchedule: (id: number) => api.delete(`/commands/schedules/${id}`),
 };
 
 /** Overridable settings (#261): the overrides set here, and what's in force with where it comes from. */

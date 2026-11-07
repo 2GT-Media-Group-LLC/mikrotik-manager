@@ -32,6 +32,7 @@ export type AlertEventType =
   | 'tunnel_down'
   | 'mlag_degraded'
   | 'platform_backup_failed'
+  | 'scheduled_command_failed'
   | 'device_cert_renewal_failed';
 
 export interface AlertContext {
@@ -83,6 +84,7 @@ const EVENT_LABELS: Record<string, string> = {
   tunnel_down:              'Tunnel Down (IPsec/EoIP/GRE/IPIP/PPPoE)',
   mlag_degraded:            'MLAG Degraded',
   platform_backup_failed:   'Platform Backup Failed',
+  scheduled_command_failed: 'Scheduled Command Failed',
   device_cert_renewal_failed: 'Device Certificate Renewal Failed',
 };
 
@@ -108,6 +110,7 @@ const EVENT_EMOJI: Record<string, string> = {
   tunnel_down:              '🚇',
   mlag_degraded:            '🔗',
   platform_backup_failed:   '💾',
+  scheduled_command_failed: '⏰',
   device_cert_renewal_failed: '🔐',
 };
 

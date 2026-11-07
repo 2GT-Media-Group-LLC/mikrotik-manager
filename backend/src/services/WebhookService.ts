@@ -54,6 +54,7 @@ export const WEBHOOK_EVENTS = [
   'tunnel_down',
   'mlag_degraded',
   'platform_backup_failed',
+  'scheduled_command_failed',
   'device_cert_renewal_failed',
 ] as const;
 export type WebhookEvent = typeof WEBHOOK_EVENTS[number] | 'test';

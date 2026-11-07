@@ -438,6 +438,7 @@ export default function SettingsPage() {
     tunnel_down: 'Tunnel down: an IPsec peer, EoIP, GRE or IPIP tunnel, or PPPoE client that was up has been down this long (threshold, minutes)',
     mlag_degraded: 'MLAG degraded: a critical MLAG problem — not connected, both peers primary, peer link down, a bond cabled to two devices, or a heartbeat storm',
     platform_backup_failed: 'Platform backup failed: a backup of MikroTik Manager itself failed or didn’t reach a destination',
+    scheduled_command_failed: 'Scheduled command failed: a scheduled bulk command failed on a device, halted, or didn’t run (each schedule can turn this off)',
     device_cert_renewal_failed: 'Device certificate renewal failed: the manager couldn’t renew a certificate its CA issued to a device',
   };
 

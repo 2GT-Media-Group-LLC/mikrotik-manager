@@ -975,6 +975,39 @@ CREATE TABLE IF NOT EXISTS command_run_devices (
 );
 CREATE INDEX IF NOT EXISTS idx_command_run_devices ON command_run_devices(run_id, wave);
 
+-- Scheduled bulk commands (#359). Targets are worked out at each run: devices
+-- named, plus every device with one of the tags or in one of the sites.
+CREATE TABLE IF NOT EXISTS command_schedules (
+  id                 SERIAL PRIMARY KEY,
+  name               VARCHAR(120) NOT NULL,
+  command            TEXT NOT NULL,
+  device_ids         INTEGER[] NOT NULL DEFAULT '{}',
+  tag_ids            INTEGER[] NOT NULL DEFAULT '{}',
+  site_ids           INTEGER[] NOT NULL DEFAULT '{}',
+  wave_size          INTEGER NOT NULL DEFAULT 1,
+  halt_on_failure    BOOLEAN NOT NULL DEFAULT TRUE,
+  use_change_guard   BOOLEAN NOT NULL DEFAULT TRUE,
+  maintenance_only   BOOLEAN NOT NULL DEFAULT FALSE,
+  alert_on_failure   BOOLEAN NOT NULL DEFAULT TRUE,
+  -- once | simple | cron; simple keeps the choices (for editing) and its cron.
+  kind               VARCHAR(8) NOT NULL,
+  run_at             TIMESTAMPTZ,
+  cron               VARCHAR(100),
+  simple             JSONB,
+  enabled            BOOLEAN NOT NULL DEFAULT TRUE,
+  next_run_at        TIMESTAMPTZ,
+  last_run_id        INTEGER REFERENCES command_runs(id) ON DELETE SET NULL,
+  last_status        VARCHAR(16),
+  created_by         VARCHAR(50),
+  created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_command_schedules_due ON command_schedules(next_run_at) WHERE enabled;
+-- A run a schedule made, and why one didn't happen (status 'missed').
+ALTER TABLE command_runs ADD COLUMN IF NOT EXISTS schedule_id INTEGER REFERENCES command_schedules(id) ON DELETE SET NULL;
+ALTER TABLE command_runs ADD COLUMN IF NOT EXISTS note TEXT;
+
 CREATE TABLE IF NOT EXISTS device_ssh_keys (
   device_id        INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
   key_type         VARCHAR(24) NOT NULL DEFAULT 'ed25519',

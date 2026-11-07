@@ -6,7 +6,7 @@
  * able to see what will happen first.
  */
 import { Router } from 'express';
-import { devicesDenied, guardIdParams, strictIdList, type Role } from '../utils/siteAccess';
+import { devicesDenied, guardIdParams, strictIdList, roleInSite, roleAtLeast, type Role } from '../utils/siteAccess';
 import type { Request, Response } from 'express';
 import { requireAuth, requireWrite, isSiteScoped } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
@@ -17,11 +17,13 @@ import { commandRunner } from '../services/CommandRunner';
 const router = Router();
 router.use(requireAuth);
 // Run ids are plain numbers, read the same way by the site check and the handler.
-guardIdParams(router, ['id'], 'Run not found');
+guardIdParams(router, ['id'], 'Not found');
 
 import { assessCommand } from '../utils/commandRisk';
 import { spreadsheetSafe } from '../utils/csvSafe';
 import { refuseSecrets } from '../utils/secretAccess';
+import { parseScheduleInput, nextRunAt, describeSchedule, type ScheduleInput } from '../utils/commandSchedule';
+import { commandScheduler, resolveTargets, appTimeZone, type ScheduleRow } from '../services/CommandScheduler';
 
 /**
  * POST /api/commands/preview — what would happen, without doing it.
@@ -165,6 +167,9 @@ router.get('/runs', async (req, res) => {
   const conditions = [
     memberFilter ? `EXISTS (SELECT 1 FROM command_run_devices crd WHERE crd.run_id = r.id AND ${memberFilter})` : null,
     ownSites ? `NOT EXISTS (SELECT 1 FROM command_run_devices x WHERE x.run_id = r.id AND NOT (${ownSites}))` : null,
+    // A scheduled run that didn't happen has no devices to judge by: only its
+    // schedule's owner sees it (#359).
+    ownSites ? `(r.schedule_id IS NULL OR EXISTS (SELECT 1 FROM command_schedules cs WHERE cs.id = r.schedule_id AND cs.created_by_user_id = ${Number(req.user!.userId)}))` : null,
   ].filter(Boolean);
   const runs = await query(
     `SELECT r.*,
@@ -268,3 +273,115 @@ router.post('/runs/:id/cancel', requireWrite, async (req, res) => {
 });
 
 export default router;
+
+
+// ─── Schedules (#359) ────────────────────────────────────────────────────────
+
+/** Fleet accounts manage every schedule; a site-limited account only its own. */
+async function scheduleFor(req: Request, res: Response): Promise<ScheduleRow | null> {
+  const s = await queryOne<ScheduleRow>(`SELECT * FROM command_schedules WHERE id = $1`, [req.params.id]);
+  if (!s || (isSiteScoped(req.user) && s.created_by_user_id !== req.user!.userId)) {
+    res.status(404).json({ error: 'Schedule not found' });
+    return null;
+  }
+  return s;
+}
+
+/** The checks a run makes, made when a schedule is saved: what it may reach and run. */
+async function refuseSchedule(req: Request, res: Response, s: ScheduleInput): Promise<boolean> {
+  if (await refuseForeignDevices(req, res, s.device_ids, 'operator')) return true;
+  if (isSiteScoped(req.user)) {
+    const outside = s.site_ids.filter((id) => !roleAtLeast(roleInSite(req.user!, id), 'operator'));
+    if (outside.length) { res.status(404).json({ error: `${outside.length} of the selected sites were not found.` }); return true; }
+  }
+  const secretRefusal = await refuseSecrets(req, s.command);
+  if (secretRefusal) { res.status(secretRefusal.status).json({ error: secretRefusal.error }); return true; }
+  // Nobody watches a scheduled run: a command that could cut management runs
+  // with Change Guard, always.
+  const risk = assessCommand(s.command);
+  if (risk.risky && !s.use_change_guard) {
+    res.status(400).json({ error: `This command ${risk.reasons.join('; ')}. A scheduled command like that has to run with Change Guard on, so it's undone if a device stops answering.`, errors: { use_change_guard: 'Needs Change Guard.' } });
+    return true;
+  }
+  return false;
+}
+
+async function withSummary(rows: ScheduleRow[]) {
+  return Promise.all(rows.map(async (s) => ({
+    ...s,
+    description: describeSchedule(s),
+    target_count: (await resolveTargets(s)).length,
+  })));
+}
+
+// GET /api/commands/schedules
+router.get('/schedules', async (req, res) => {
+  const own = isSiteScoped(req.user);
+  const rows = await query<ScheduleRow>(
+    `SELECT s.*, r.status AS last_run_status, r.created_at AS last_run_at
+       FROM command_schedules s LEFT JOIN command_runs r ON r.id = s.last_run_id
+      ${own ? 'WHERE s.created_by_user_id = $1' : ''}
+      ORDER BY s.enabled DESC, s.next_run_at NULLS LAST, s.id`, own ? [req.user!.userId] : []);
+  res.json({ time_zone: await appTimeZone(), schedules: await withSummary(rows) });
+});
+
+async function saveSchedule(req: Request, res: Response, existing: ScheduleRow | null) {
+  const parsed = parseScheduleInput((req.body ?? {}) as Record<string, unknown>);
+  if ('errors' in parsed) return res.status(400).json({ error: Object.values(parsed.errors)[0], errors: parsed.errors });
+  const s = parsed.schedule;
+  if (await refuseSchedule(req, res, s)) return;
+  const next = nextRunAt(s, new Date(), await appTimeZone());
+  if (!next) return res.status(400).json({ error: 'That schedule never runs.', errors: { kind: 'That schedule never runs.' } });
+  const params = [s.name, s.command, s.device_ids, s.tag_ids, s.site_ids, s.wave_size, s.halt_on_failure, s.use_change_guard,
+    s.maintenance_only, s.alert_on_failure, s.kind, s.run_at, s.cron, s.simple ? JSON.stringify(s.simple) : null, next,
+    req.user?.username ?? null, req.user?.userId ?? null];
+  // Saving makes it yours: it runs as whoever last saved it.
+  const row = existing
+    ? await queryOne<ScheduleRow>(
+      `UPDATE command_schedules SET name=$1, command=$2, device_ids=$3, tag_ids=$4, site_ids=$5, wave_size=$6, halt_on_failure=$7,
+         use_change_guard=$8, maintenance_only=$9, alert_on_failure=$10, kind=$11, run_at=$12, cron=$13, simple=$14, next_run_at=$15,
+         created_by=$16, created_by_user_id=$17, enabled=TRUE, updated_at=NOW() WHERE id=$18 RETURNING *`, [...params, existing.id])
+    : await queryOne<ScheduleRow>(
+      `INSERT INTO command_schedules (name, command, device_ids, tag_ids, site_ids, wave_size, halt_on_failure, use_change_guard,
+         maintenance_only, alert_on_failure, kind, run_at, cron, simple, next_run_at, created_by, created_by_user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`, params);
+  return res.status(existing ? 200 : 201).json((await withSummary([row!]))[0]);
+}
+
+router.post('/schedules', requireWrite, (req, res) => saveSchedule(req, res, null));
+
+router.put('/schedules/:id', requireWrite, async (req, res) => {
+  const s = await scheduleFor(req, res);
+  if (s) await saveSchedule(req, res, s);
+});
+
+// POST /api/commands/schedules/:id/enabled {enabled} — pause or resume
+router.post('/schedules/:id/enabled', requireWrite, async (req, res) => {
+  const s = await scheduleFor(req, res);
+  if (!s) return;
+  const enabled = (req.body as { enabled?: unknown })?.enabled === true;
+  // Resuming starts from now: times that passed while it was paused aren't missed runs.
+  const next = enabled ? nextRunAt(s, new Date(), await appTimeZone()) : s.next_run_at;
+  if (enabled && !next) return res.status(400).json({ error: 'Its time has passed. Edit it to choose a new one.' });
+  await query(`UPDATE command_schedules SET enabled = $2, next_run_at = $3, updated_at = NOW() WHERE id = $1`, [s.id, enabled, next]);
+  res.json({ success: true });
+});
+
+// POST /api/commands/schedules/:id/run-now — run it once now, its next time unchanged
+router.post('/schedules/:id/run-now', requireWrite, async (req, res) => {
+  const s = await scheduleFor(req, res);
+  if (!s) return;
+  const runId = await commandScheduler.fire(s);
+  if (!runId) {
+    const why = await queryOne<{ note: string | null }>(`SELECT r.note FROM command_runs r WHERE r.schedule_id = $1 ORDER BY r.id DESC LIMIT 1`, [s.id]);
+    return res.status(409).json({ error: why?.note ?? "It couldn't run." });
+  }
+  res.json({ id: runId });
+});
+
+router.delete('/schedules/:id', requireWrite, async (req, res) => {
+  const s = await scheduleFor(req, res);
+  if (!s) return;
+  await query(`DELETE FROM command_schedules WHERE id = $1`, [s.id]);
+  res.json({ success: true });
+});

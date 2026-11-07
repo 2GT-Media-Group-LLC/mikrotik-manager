@@ -63,6 +63,7 @@ import firmwareMirrorRoutes from './routes/firmwareMirror';
 import { startMirrorScheduler } from './services/firmwareMirror';
 import automationRoutes from './routes/automation';
 import { reportService } from './services/ReportService';
+import { commandScheduler } from './services/CommandScheduler';
 import { firmwareOrchestrator } from './services/FirmwareOrchestrator';
 import { commandRunner } from './services/CommandRunner';
 import operationsRoutes from './routes/operations';
@@ -653,6 +654,8 @@ async function start(): Promise<void> {
 
   // Scheduled report mailer (hourly check)
   reportService.startScheduler();
+  // Scheduled bulk commands (#359), after interrupted runs are reconciled above.
+  commandScheduler.start();
 
   // Start HTTP server. No host given, Node listens on :: (IPv4 and IPv6) where
   // the kernel has IPv6 and falls back to 0.0.0.0 where it doesn't (#231).

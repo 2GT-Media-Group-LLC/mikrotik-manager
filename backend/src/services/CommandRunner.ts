@@ -38,6 +38,10 @@ interface RunDeviceRow {
 type DeviceRow = SshExecDevice & GuardDevice;
 
 export class CommandRunner {
+  /** Told when a run ends, with its status (the scheduler's failure alerts, #359). */
+  private finishListeners: ((runId: number, status: string) => unknown)[] = [];
+  onFinish(fn: (runId: number, status: string) => unknown): void { this.finishListeners.push(fn); }
+
   private activeRunId: number | null = null;
   private cancelRequested = false;
 
@@ -111,6 +115,7 @@ export class CommandRunner {
       .catch(async (e) => {
         console.error(`[Command] run #${runId} crashed:`, e);
         await query(`UPDATE command_runs SET status='failed', finished_at=NOW() WHERE id=$1`, [runId]);
+        for (const fn of this.finishListeners) await Promise.resolve(fn(runId, 'failed')).catch(() => {});
       })
       .finally(() => { this.activeRunId = null; });
   }
@@ -120,8 +125,10 @@ export class CommandRunner {
   }
 
   private async run(run: RunRow): Promise<void> {
+    // Pending only: a scheduled run marks devices outside a maintenance window
+    // skipped before it starts (#359).
     const items = await query<RunDeviceRow>(
-      `SELECT id, device_id, wave FROM command_run_devices WHERE run_id = $1 ORDER BY wave, id`,
+      `SELECT id, device_id, wave FROM command_run_devices WHERE run_id = $1 AND status = 'pending' ORDER BY wave, id`,
       [run.id]
     );
 
@@ -150,6 +157,7 @@ export class CommandRunner {
     const status = this.cancelRequested ? 'cancelled' : halted ? 'halted' : 'completed';
     await query(`UPDATE command_runs SET status=$2, finished_at=NOW() WHERE id=$1`, [run.id, status]);
     console.log(`[Command] run #${run.id} ${status}`);
+    for (const fn of this.finishListeners) await Promise.resolve(fn(run.id, status)).catch((e) => console.error('[Command] finish listener:', e));
   }
 
   /** Returns true when the device succeeded. */

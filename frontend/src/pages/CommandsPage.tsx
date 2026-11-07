@@ -3,8 +3,10 @@ import { useState } from 'react';
 import type { Device } from '../types';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban, Download } from 'lucide-react';
-import { commandsApi, devicesApi, type CommandRunDetail, tagsApi} from '../services/api';
+import { Terminal, AlertTriangle, Play, ShieldCheck, ChevronDown, ChevronRight, Ban, Download, CalendarClock } from 'lucide-react';
+import { commandsApi, devicesApi, type CommandRunDetail, type CommandSchedule, tagsApi} from '../services/api';
+import ScheduleForm from '../components/commands/ScheduleForm';
+import SchedulesCard from '../components/commands/SchedulesCard';
 import CommandTemplateBar from '../components/commands/CommandTemplateBar';
 import DevicePicker from '../components/devices/DevicePicker';
 
@@ -53,6 +55,13 @@ export default function CommandsPage() {
   const [acknowledged, setAcknowledged] = useState(false);
   const canWrite = useCanWrite();
   const [openRun, setOpenRun] = useState<number | null>(null);
+  // Scheduling (#359): the form is open for a new schedule ('new') or one being edited.
+  const [scheduling, setScheduling] = useState<'new' | CommandSchedule | null>(null);
+  const { data: scheduleData } = useQuery({
+    queryKey: ['command-schedules'],
+    queryFn: () => commandsApi.listSchedules().then(r => r.data),
+    refetchInterval: 30_000,
+  });
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
   const { data: devices = [] } = useQuery({
@@ -236,6 +245,13 @@ export default function CommandsPage() {
             <Play className="w-4 h-4" />
             {startRun.isPending ? 'Starting…' : `Run on ${selected.length || 0} device${selected.length === 1 ? '' : 's'}`}
           </button>
+          {canWrite && (
+            <button className="btn-secondary text-sm flex items-center gap-2"
+                    disabled={!command.trim()}
+                    onClick={() => setScheduling('new')}>
+              <CalendarClock className="w-4 h-4" /> Schedule…
+            </button>
+          )}
           {preview?.unreachable && preview.unreachable.length > 0 && (
             <span className="text-xs text-amber-700 dark:text-amber-400">
               {preview.unreachable.length} selected device(s) have no SSH credential and will fail.
@@ -248,6 +264,26 @@ export default function CommandsPage() {
           )}
         </div>
       </div>
+
+      {scheduling && (
+        <ScheduleForm
+          key={scheduling === 'new' ? 'new' : scheduling.id}
+          initial={{ command, device_ids: selected, wave_size: waveSize, halt_on_failure: haltOnFailure, use_change_guard: useGuard }}
+          existing={scheduling === 'new' ? null : scheduling}
+          tags={tags} devices={devices as Device[]}
+          timeZone={scheduleData?.time_zone ?? 'UTC'}
+          risky={scheduling === 'new' && risky}
+          onDone={() => setScheduling(null)}
+        />
+      )}
+
+      <SchedulesCard
+        schedules={scheduleData?.schedules ?? []}
+        timeZone={scheduleData?.time_zone ?? 'UTC'}
+        canWrite={canWrite}
+        onEdit={(sch) => setScheduling(sch)}
+        onOpenRun={(id) => setOpenRun(id)}
+      />
 
       {/* Results */}
       <div className="card overflow-hidden">
@@ -264,8 +300,10 @@ export default function CommandsPage() {
                         onClick={() => setOpenRun(openRun === r.id ? null : r.id)}>
                   {openRun === r.id ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                   <span className="font-mono text-xs text-gray-900 dark:text-white truncate flex-1">{r.command}</span>
+                  {r.schedule_id != null && <span title="Started by a schedule"><CalendarClock className="w-3.5 h-3.5 text-gray-400" /></span>}
                   <span className={`text-xs px-2 py-0.5 rounded ${
                     r.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+                    : r.status === 'missed' ? 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-300'
                     : r.status === 'running' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
                     : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'}`}>{r.status}</span>
                   <span className="text-xs text-gray-500 dark:text-slate-400 tabular-nums">
@@ -275,6 +313,7 @@ export default function CommandsPage() {
 
                 {openRun === r.id && detail && (
                   <div className="px-5 pb-3 space-y-1">
+                    {detail.note && <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">{detail.note}</p>}
                     <div className="flex items-center gap-2 mb-2">
                       {detail.status === 'running' && (
                         <button className="btn-secondary text-xs flex items-center gap-1.5"

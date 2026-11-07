@@ -26,6 +26,7 @@ cooldown that prevents a flapping device from flooding your channels.
 | `interface_errors` | Bad frames on a port: FCS, alignment, overflow and other receive errors, per minute, averaged over 5 minutes (default 10; off by default). Usually a failing optic or cable while the link stays up. See [Interface errors and flapping](#interface-errors-and-flapping); the cooldown applies to each port separately |
 | `interface_flapping` | A port's link went down at least the threshold number of times in the last hour (default 3; off by default). The cooldown applies to each port separately |
 | `optic_degraded` | An optic's receive or transmit light is at least the threshold in dB away from the port's usual level, either way (default 3 dB; off by default), its receive light crosses an optional fixed limit, or the module is at 70 °C or more. See [Optic light levels](#optic-light-levels); the cooldown applies to each port separately |
+| `scheduled_command_failed` | A [scheduled bulk command](commands.md#schedules) failed on a device, halted, or didn't run: missed while the manager was down, its account removed, or no device in a maintenance window (#359). On by default; each schedule can turn its own off |
 
 Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
 Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
