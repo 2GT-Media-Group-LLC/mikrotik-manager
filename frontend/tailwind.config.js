@@ -5,6 +5,13 @@ export default {
   theme: {
     extend: {
       colors: {
+        // The accent (#329): every blue-N reads a variable, Tailwind's own blue by
+        // default (index.css), replaced by the accent chosen under Appearance.
+        blue: Object.fromEntries([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
+          .map((n) => [n, `rgb(var(--blue-${n}) / <alpha-value>)`])),
+        // Dark surfaces: Tailwind's slate by default, near-black for Midnight.
+        slate: Object.fromEntries([50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
+          .map((n) => [n, `rgb(var(--slate-${n}) / <alpha-value>)`])),
         // Legacy brand palette — kept for backward compat with existing components
         brand: {
           50: '#eff6ff',

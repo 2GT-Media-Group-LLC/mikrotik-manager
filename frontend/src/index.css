@@ -4,6 +4,31 @@
 
 @layer base {
   :root {
+    /* ── accent and slate palettes (#329): Tailwind's blue and slate as "r g b";
+       the accent replaces --blue-*, Midnight replaces --slate-* ── */
+    --blue-50: 239 246 255;
+    --blue-100: 219 234 254;
+    --blue-200: 191 219 254;
+    --blue-300: 147 197 253;
+    --blue-400: 96 165 250;
+    --blue-500: 59 130 246;
+    --blue-600: 37 99 235;
+    --blue-700: 29 78 216;
+    --blue-800: 30 64 175;
+    --blue-900: 30 58 138;
+    --blue-950: 23 37 84;
+    --slate-50: 248 250 252;
+    --slate-100: 241 245 249;
+    --slate-200: 226 232 240;
+    --slate-300: 203 213 225;
+    --slate-400: 148 163 184;
+    --slate-500: 100 116 139;
+    --slate-600: 71 85 105;
+    --slate-700: 51 65 85;
+    --slate-800: 30 41 59;
+    --slate-900: 15 23 42;
+    --slate-950: 2 6 23;
+
     /* ── surfaces (warm-neutral light) ── */
     --bg:          #f8f7f4;
     --surface:     #ffffff;
@@ -113,6 +138,29 @@
     --color-sidebar-bg:     var(--bg);
     --color-sidebar-text:   var(--ink-2);
     --color-sidebar-active: var(--accent);
+  }
+
+  /* Midnight (#329): dark mode on near-black, neutral greys instead of slate. */
+  .dark[data-scheme="midnight"] {
+    --slate-50: 250 250 250;
+    --slate-100: 244 244 245;
+    --slate-200: 228 228 231;
+    --slate-300: 212 212 216;
+    --slate-400: 161 161 170;
+    --slate-500: 113 113 122;
+    --slate-600: 63 63 70;
+    --slate-700: 39 39 42;
+    --slate-800: 24 24 27;
+    --slate-900: 12 12 14;
+    --slate-950: 0 0 0;
+    --bg:          #000000;
+    --surface:     #0b0b0c;
+    --surface-2:   #121214;
+    --surface-3:   #19191c;
+    --line:        #26262a;
+    --line-soft:   #18181b;
+    --faceplate-from: #050506;
+    --faceplate-to:   #0c0c0e;
   }
 
   body {

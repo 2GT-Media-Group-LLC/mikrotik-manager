@@ -14,7 +14,7 @@ import TimeFormatSetting from '../components/settings/TimeFormatSetting';
 import type { CertInfo, AlertRule, AlertChannel } from '../services/api';
 import PollerHealthCard from '../components/system/PollerHealthCard';
 import { useAuthStore } from '../store/authStore';
-import { useThemeStore } from '../store/themeStore';
+import AppearanceCard from '../components/settings/AppearanceCard';
 import type { User, UserRole } from '../types';
 import {
   parseBackupCron, scheduleToCron, describeBackupSchedule, WEEKDAY_NAMES, ordinal,
@@ -66,7 +66,6 @@ export default function SettingsPage() {
   const { formatDateTime, formatTime, timeFormat } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const { theme, setTheme } = useThemeStore();
   const isAdmin = user?.role === 'admin';
   const canWrite = user?.role !== 'viewer';
   // Timezone for scheduled work. The browser's zone is offered as a shortcut
@@ -569,31 +568,7 @@ export default function SettingsPage() {
         <div className="max-w-6xl xl:columns-2 xl:gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
           <TimeFormatSetting />
           {isAdmin && <EncryptionKeyCard />}
-          <div className="card p-5">
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Appearance</h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Theme</label>
-                <p className="text-xs text-gray-400 dark:text-slate-500">Choose your preferred color scheme</p>
-              </div>
-              <div className="flex gap-2">
-                {(['light', 'dark'] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setTheme(t)}
-                    className={clsx(
-                      'px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors capitalize',
-                      theme === t
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400'
-                    )}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          <AppearanceCard />
 
           <div className="card p-5">
             <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Polling Intervals</h3>

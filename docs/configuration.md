@@ -101,6 +101,21 @@ This only changes how times are shown. Schedules still run in the timezone set u
 **Settings → General**, the API's times are unchanged, and the browser's own date and time
 pickers keep their regional format.
 
+## Appearance
+
+**Settings → General → Appearance** sets how the manager looks to you, from
+[@kraken-XIV](https://github.com/kraken-XIV)'s proposal in #329. It's kept in this browser, so
+each person, and each browser, can have their own.
+
+- **Theme:** Light, Dark, or **System**, which follows your computer's light or dark setting and
+  changes with it. The moon and sun in the top bar switch between light and dark.
+- **Accent colour:** blue (the default), indigo, violet, emerald, teal, amber, rose, or your own
+  colour from the rainbow swatch. Buttons, links, tabs, selections and highlights take it. Where a
+  colour is too light to carry white text, the manager uses a darker shade of it, so buttons stay
+  readable. Chart series, map pins and status colours (green, amber, red) don't change.
+- **Dark surfaces:** **Slate**, as before, or **Midnight**, near-black for dark rooms and OLED
+  screens.
+
 ## Sessions
 
 A sign-in lasts up to 24 hours, but every request checks the account as it is now, so a
