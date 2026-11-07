@@ -728,6 +728,26 @@ const DISARM_CUTOFF_MS = 3_000;
  * point is only deleted once the scheduler is proven gone, so a revert that
  * does fire still has something to restore.
  */
+const RESTORE_POINT_FILE = /^mtm-rp-([0-9a-f]{10})\.backup$/;
+
+/**
+ * Restore-point files no revert can use any more: each `mtm-rp-<id>.backup`
+ * is only read by the scheduler `mtm-revert-<id>`, so once that scheduler is
+ * gone the file is dead weight. They pile up when a revert fires (`backup
+ * load` restores from the file and leaves it), when the manager restarts
+ * mid-change, and when cleanup after a failed arm can't reach the device.
+ * Only called while this device's guard lock is held, so no other change's
+ * revert is half-way through on it. Matched by basename: a device with a
+ * flash folder may list it under one.
+ */
+export function staleRestorePoints(files: Record<string, string>[], schedulers: Record<string, string>[]): Record<string, string>[] {
+  const live = new Set(schedulers.map((s) => s['name']));
+  return files.filter((f) => {
+    const m = RESTORE_POINT_FILE.exec(String(f['name'] ?? '').replace(/^.*\//, ''));
+    return !!m && !!f['.id'] && !live.has(`mtm-revert-${m[1]}`);
+  });
+}
+
 async function disarm(
   device: GuardDevice, restorePoint: string, schedulerName: string, mode: GuardMode,
   opts: { requirePresent?: boolean; fireAtMs?: number } = {}
@@ -799,15 +819,13 @@ async function disarm(
         continue;
       }
 
-      if (mode === 'binary') {
-        const wanted = `${restorePoint}.backup`;
-        const files = await client.execute('/file/print').catch(() => [] as Record<string, string>[]);
-        for (const f of files) {
-          if ((f['name'] === wanted || f['name'] === restorePoint) && f['.id']) {
-            await client.execute('/file/remove', { '.id': f['.id'] }).catch(() => {});
-          }
-        }
-      } else {
+      // This change's restore point (binary mode), and in either mode any older
+      // one whose revert scheduler is gone (see staleRestorePoints).
+      const files = await client.execute('/file/print').catch(() => [] as Record<string, string>[]);
+      for (const f of staleRestorePoints(files, after)) {
+        await client.execute('/file/remove', { '.id': f['.id'] }).catch(() => {});
+      }
+      if (mode === 'script') {
         // The restore steps (`<scheduler>-1`, `-2`, …).
         const scripts = await client.execute('/system/script/print').catch(() => [] as Record<string, string>[]);
         for (const sc of scripts) {

@@ -1,6 +1,6 @@
 {
   "name": "mikrotik-manager-frontend",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "type": "module",
   "scripts": {
@@ -45,5 +45,8 @@
     "typescript-eslint": "^8.71.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.5"
   }
 }

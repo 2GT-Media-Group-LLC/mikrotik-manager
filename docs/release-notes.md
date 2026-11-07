@@ -7,6 +7,24 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.7
+
+Released on Saturday 7 November 2026. Housekeeping: restore points left on devices, Postgres's
+shared memory, and two development-only dependency alerts.
+
+- **Old Change Guard restore points are cleared from devices.** Each guarded change saves a
+  restore point (`mtm-rp-….backup`) that only its revert scheduler reads. They were left behind
+  when a revert fired, when the manager restarted mid-change, or when the clean-up couldn't reach
+  the device, and piled up in the device's files. After each change, Change Guard now removes any
+  restore point whose revert scheduler is gone, in binary and script mode, and keeps one that's
+  still armed ([Change Guard](change-guard.md)).
+- **Postgres gets 256 MB of shared memory** (`shm_size` in both compose files). Docker's default
+  is 64 MB, and on a large events table Postgres's parallel queries and parallel `VACUUM` could
+  fail with *could not resize shared memory segment … No space left on device*. If you keep your
+  own copy of the compose file, add `shm_size: 256m` to the `postgres` service.
+- `minimatch` in the build and test tooling is updated to 11, clearing two Dependabot alerts.
+  Neither it nor `deepmerge` (an alert with no fix yet) is in the images.
+
 ## 1.0.6
 
 Released on Thursday 5 November 2026. A fix for Change Guard on bridges whose VLAN table names
