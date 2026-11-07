@@ -1880,6 +1880,10 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 <td><code>optic_degraded</code></td>
 <td>An optic's receive or transmit light is at least the threshold in dB away from the port's usual level, either way (default 3 dB; off by default), its receive light crosses an optional fixed limit, or the module is at 70 °C or more. See <a href="#optic-light-levels">Optic light levels</a>; the cooldown applies to each port separately</td>
 </tr>
+<tr>
+<td><code>scheduled_command_failed</code></td>
+<td>A <a href="../commands/#schedules">scheduled bulk command</a> failed on a device, halted, or didn't run: missed while the manager was down, its account removed, or no device in a maintenance window (#359). On by default; each schedule can turn its own off</td>
+</tr>
 </tbody>
 </table>
 <p>Alerts are suppressed for devices inside an active <a href="#maintenance-windows">maintenance window</a>.

@@ -780,6 +780,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#which-rule-logged-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which rule logged it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#device-logs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1592,6 +1603,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#which-rule-logged-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which rule logged it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#device-logs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1686,6 +1708,26 @@ require the high-volume override.</p>
 logging automatically.</p>
 <p>Disabling monitoring for a rule that MikroTik Manager previously enabled turns
 off its managed logging and removes the managed prefix.</p>
+<h2 id="which-rule-logged-it">Which rule logged it<a class="headerlink" href="#which-rule-logged-it" title="Permanent link">&para;</a></h2>
+<p>RouterOS writes a rule's log prefix in front of each line it logs, and nothing
+else that identifies the rule. So a filter or NAT rule that logs gets a short
+<strong>tag</strong> at the end of its prefix, <code>mtm#</code> and four letters or digits, unique on
+the device, from Ron's request in #369:</p>
+<div class="highlight"><pre><span></span><code>MTM-FW-DROP mtm#7f3a input: in:ether1 out:(unknown 0), proto TCP ...
+</code></pre></div>
+<ul>
+<li>A line with a tag shows <strong>rule mtm#7f3a</strong> next to its chain. It opens the
+  device's Firewall tab with that rule picked out.</li>
+<li>On the Firewall tab, a tagged rule shows <strong>mtm#7f3a · log lines</strong>, which opens
+  this page filtered to that device and that rule's lines.</li>
+<li>A rule added or edited in MikroTik Manager with logging on gets a tag by
+  itself, and an edited rule keeps the tag it had. A prefix you set is kept,
+  with the tag after it.</li>
+<li>Rules that already log without a tag, such as ones made in Winbox, are
+  counted at the top of the Firewall tab, with <strong>Tag all</strong> (and <strong>Review
+  changes</strong>) to tag them in one go. Only their log prefixes change, through
+  <a href="../change-guard/">Change Guard</a>.</li>
+</ul>
 <h2 id="device-logs">Device Logs<a class="headerlink" href="#device-logs" title="Permanent link">&para;</a></h2>
 <p>Firewall packet logs have their own <strong>Events → Firewall Logs</strong> page, so they
 are hidden from <strong>Device Logs</strong> by default.</p>

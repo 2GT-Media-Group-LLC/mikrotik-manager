@@ -997,10 +997,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
+  <a href="#schedules" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requirements
+        Schedules
       
     </span>
   </a>
@@ -1735,10 +1735,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
+  <a href="#schedules" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requirements
+        Schedules
       
     </span>
   </a>
@@ -1873,6 +1873,45 @@ the device's own words is not actionable.</p>
 <h2 id="stopping-a-run">Stopping a run<a class="headerlink" href="#stopping-a-run" title="Permanent link">&para;</a></h2>
 <p>Cancelling prevents the <strong>next wave</strong>. Devices already executing finish, because that is
 the only point at which stopping is safe.</p>
+<h2 id="schedules">Schedules<a class="headerlink" href="#schedules" title="Permanent link">&para;</a></h2>
+<p><strong>Schedule…</strong>, next to <strong>Run</strong>, saves the command to run later or again, from Ron's request in</p>
+<h1 id="359-a-schedule-runs-on-the-devices-chosen-plus-every-device-with-the-tags-or-in-the-sites-you">359. A schedule runs on the devices chosen, plus every device with the tags or in the sites you<a class="headerlink" href="#359-a-schedule-runs-on-the-devices-chosen-plus-every-device-with-the-tags-or-in-the-sites-you" title="Permanent link">&para;</a></h1>
+<p>pick, worked out each time it runs, so a device added to a site later is included.</p>
+<p>When it runs:</p>
+<ul>
+<li><strong>Once:</strong> a date and time.</li>
+<li><strong>Simple:</strong> daily, weekly on a day, or monthly on a day from 1 to 28, at a time of day.</li>
+<li><strong>Advanced:</strong> a cron expression with five fields (minute, hour, day of month, month, day of
+  week), for example <code>0 3 * * 1-5</code> for 03:00 on weekdays, or <code>*/15 * * * *</code> for every 15
+  minutes.</li>
+</ul>
+<p>Times are in the manager's time zone (<strong>Settings → General</strong>), except a one-off's date, which
+you enter in your browser's time.</p>
+<p>Each scheduled run is an ordinary run in <strong>Recent runs</strong>, marked with a calendar, with waves,
+Change Guard and output as usual. Its options:</p>
+<ul>
+<li><strong>Only inside a maintenance window:</strong> a device that isn't in an active
+  <a href="../alerting/#maintenance-windows">maintenance window</a> when it runs is skipped.</li>
+<li><strong>Alert when it fails or doesn't run</strong>, through your alert channels; on by default.</li>
+<li><strong>Change Guard</strong>, on by default. A command that can cut management access can only be
+  scheduled with Change Guard on, since nobody is watching when it runs.</li>
+</ul>
+<p>Some things stop a scheduled run, and it then shows as <strong>missed</strong> in the run history, with the
+reason:</p>
+<ul>
+<li>The manager wasn't running at that time. It never runs late: a command runs when it was set
+  to run, or not at all. A run can still start up to five minutes late, for example while the
+  manager restarts.</li>
+<li>Another bulk run was still going after 15 minutes. Only one bulk run goes at a time.</li>
+<li>The account that last saved it was removed or made read-only. A schedule runs as that
+  account: an account limited to some sites reaches only devices in those sites, and a command
+  with secrets needs a fleet admin.</li>
+<li>None of its devices was in a maintenance window, when it's set to run only inside one.</li>
+</ul>
+<p>The <strong>Schedules</strong> list shows each one's next run, how the last went (click it to open the run),
+and <strong>Run now</strong>, <strong>Pause</strong>, <strong>Edit</strong> and <strong>Delete</strong>. Resuming a paused schedule starts from
+then: times passed while it was paused aren't counted as missed. Deleting a schedule keeps its
+past runs.</p>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <p>Every targeted device needs an SSH credential: either a password, or a verified
 <a href="../ssh-keys/">SSH key</a>. On a fleet of any size, keys are the practical answer.</p>

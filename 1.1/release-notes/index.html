@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.32
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta31" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1820,6 +1831,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.32
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta31" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2172,6 +2194,21 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta32">1.1.0-beta.32<a class="headerlink" href="#110-beta32" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Scheduled bulk commands</strong>, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/359">#359</a>: <strong>Schedule…</strong> on
+  Bulk Commands runs a command once, daily, weekly or monthly, or on your own cron expression, on
+  chosen devices plus every device with a tag or in a site at the time it runs. Options to run only
+  inside maintenance windows and to alert when it fails or doesn't run (a new <strong>Scheduled command
+  failed</strong> alert). A time that passes while the manager is down is marked missed, never run late
+  (<a href="../commands/#schedules">Schedules</a>).</li>
+<li><strong>Which rule logged it</strong>, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369">#369</a>: a firewall or NAT rule
+  that logs gets a short tag in its log prefix, so a line on Firewall Events links to its rule, and
+  a rule links to its lines. <strong>Tag all</strong> on the Firewall tab tags rules made elsewhere
+  (<a href="../firewall-events/#which-rule-logged-it">Which rule logged it</a>).</li>
+</ul>
 <h2 id="110-beta31">1.1.0-beta.31<a class="headerlink" href="#110-beta31" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Appearance</strong>: a <strong>System</strong> theme that follows your computer's light or dark setting, seven
