@@ -180,6 +180,10 @@ services:
 
   postgres:
     image: postgres:15-alpine@sha256:54e0dd8e8cddcdbb9156c2486eed5a43eccb7214d7c6828097d41ce049fb3984
+    # Docker's default /dev/shm is 64 MB. Postgres puts parallel query and
+    # parallel VACUUM workspace there, and on a large events table those fail
+    # with "could not resize shared memory segment ... No space left on device".
+    shm_size: 256m
     environment:
       TZ: ${TZ:-UTC}
       POSTGRES_DB: mikrotik_manager
