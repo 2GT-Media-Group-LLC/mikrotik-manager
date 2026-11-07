@@ -3,6 +3,30 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.31
+
+- **Appearance**: a **System** theme that follows your computer's light or dark setting, seven
+  accent colours or your own, and **Midnight** dark surfaces, under Settings → General, from
+  [@kraken-XIV](https://github.com/kraken-XIV)'s proposal in
+  [#329](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/329)
+  ([Appearance](configuration.md#appearance)). Blue on Slate looks exactly as before.
+- **Routing rules** on a device's Routing tab, from Ron's request in
+  [#370](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/370): in order, each
+  lookup's table and routes, and flags for a rule that repeats or is covered by an earlier one, a
+  missing table, or a table with no active routes; add and remove through Change Guard
+  ([Routing rules](devices.md#routing-rules)).
+- **Traffic**: click an application to see the clients behind it, with each one's share, from
+  [@azizfayziev](https://github.com/azizfayziev)'s
+  [#366](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/366) step 1
+  ([Traffic](traffic.md#what-it-shows)).
+- **Graphs**: VRRP interfaces are left out of the busiest pick (their traffic is already counted on
+  the VLAN and bond under them), and a PPPoE client's utilisation uses its port's speed
+  ([#402](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/402)).
+- **Topology**: a link coloured by hand still turns red when it goes down or is blocked
+  ([#403](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/403)).
+- From 1.0.7: stale Change Guard restore points are cleared from devices, Postgres gets 256 MB of
+  shared memory, and `minimatch` is updated in the build tooling.
+
 ## 1.1.0-beta.30
 
 - **Device Logs and Firewall events open quickly on large log tables**, from
