@@ -73,12 +73,22 @@ describe('device graphs (#402)', () => {
     expect(pickBusiest(totals, ifs)).toEqual(['Po1', 'pppoe-out1', 'ether40']);
   });
 
+  it('leaves out VRRP, which rides on a VLAN or port already counted (aziz, #402)', () => {
+    const gw = new Map(ifs);
+    gw.set('vrrp10', iface('vrrp10', { type: 'vrrp', speedBps: null }));
+    gw.set('wg1', iface('wg1', { type: 'wg', speedBps: null }));
+    const totals = new Map([['Po1', 900], ['pppoe-out1', 600], ['vrrp10', 500], ['sfp-sfpplus12', 590], ['wg1', 20]]);
+    expect(pickBusiest(totals, gw)).toEqual(['Po1', 'pppoe-out1', 'wg1']);
+  });
+
   it('gives a bond its running members\' speed', () => {
     expect(ifaceSpeed(ifs.get('Po1')!, ifs)).toBe(20e9);
     const down = new Map(ifs);
     down.set('sfp-sfpplus2', iface('sfp-sfpplus2', { running: false }));
     expect(ifaceSpeed(ifs.get('Po1')!, down)).toBe(10e9);
-    expect(ifaceSpeed(ifs.get('pppoe-out1')!, ifs)).toBeNull();
+    // A PPPoE client runs at its port's speed.
+    expect(ifaceSpeed(ifs.get('pppoe-out1')!, ifs)).toBe(10e9);
+    expect(ifaceSpeed(iface('wg1', { type: 'wg', speedBps: null }), ifs)).toBeNull();
   });
 
   it('sorts ports the way they are numbered', () => {

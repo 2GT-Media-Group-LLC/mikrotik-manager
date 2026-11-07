@@ -143,10 +143,12 @@ export function carriesSame(a: GraphIface, b: GraphIface): boolean {
 
 /**
  * The busiest `n` by bytes moved, never two that carry the same traffic (#402):
- * a bond wins over its members, a PPPoE client over the port under it.
+ * a bond wins over its members, a PPPoE client over the port under it. Bridges,
+ * VLANs and VRRP are left out: their traffic is already counted on the ports
+ * and bonds they ride on.
  */
 export function pickBusiest(totals: Map<string, number>, ifaces: Map<string, GraphIface>, n = 4): string[] {
-  const skip = new Set(['bridge', 'vlan', 'loopback']);
+  const skip = new Set(['bridge', 'vlan', 'vrrp', 'loopback']);
   const candidates = [...totals].filter(([name, v]) => v > 0 && ifaces.has(name) && !skip.has(ifaces.get(name)!.type ?? ''))
     .map(([name, v]) => ({ i: ifaces.get(name)!, v }));
   // Logical interfaces first among equals: a bond's total is its members' sum,
@@ -163,9 +165,14 @@ export function pickBusiest(totals: Map<string, number>, ifaces: Map<string, Gra
   return out.map((i) => i.name);
 }
 
-/** A port's speed; a bond's is its running members' together. */
-export function ifaceSpeed(i: GraphIface, ifaces: Map<string, GraphIface>): number | null {
+/**
+ * A port's speed; a bond's is its running members' together, and a PPPoE
+ * client's is the port it runs over.
+ */
+export function ifaceSpeed(i: GraphIface, ifaces: Map<string, GraphIface>, depth = 0): number | null {
   if (i.speedBps) return i.speedBps;
+  const parent = i.parent ? ifaces.get(i.parent) : undefined;
+  if (parent && parent !== i && depth < 3) return ifaceSpeed(parent, ifaces, depth + 1);
   if (!i.members.length) return null;
   const sum = i.members.map((m) => ifaces.get(m)).filter((m) => m && m.running && m.speedBps)
     .reduce((s, m) => s + (m!.speedBps ?? 0), 0);
