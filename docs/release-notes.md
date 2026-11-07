@@ -3,6 +3,20 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.30
+
+- **Device Logs and Firewall events open quickly on large log tables**, from
+  [@thanhtrung5763](https://github.com/thanhtrung5763)
+  ([#407](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/407)): indexes for the rows
+  each page shows, built in the background after startup; pages read only the columns they show,
+  keep the table on screen while the next page loads, and wait for you to stop typing before
+  searching.
+- **Config Health** no longer flags a VLAN interface added as a bridge port when it's an edge
+  port, since an edge port sends no BPDUs, and says why the setup is a problem (the bridge's
+  BPDUs go out tagged), from [@eskyuu](https://github.com/eskyuu)
+  ([#404](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/404))
+  ([What it checks](change-guard.md#what-it-checks)).
+
 ## 1.1.0-beta.29
 
 - **Graphs, interfaces**, from [@azizfayziev](https://github.com/azizfayziev)'s check on beta.28
