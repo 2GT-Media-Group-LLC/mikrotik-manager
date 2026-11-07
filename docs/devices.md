@@ -393,7 +393,7 @@ history, uptime figures and reports keep every outage. **Snooze** instead hides 
 | **VLANs** | The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (`/interface vlan`) with their parent and addresses, which you can add, edit and remove |
 | **Radios** | Wireless interfaces, SSIDs, channels, connected clients |
 | **Firewall** | Filter and NAT rules and address lists, for IPv4 and IPv6 (the **IPv4** / **IPv6** switch at the top), with reordering and counters, and [Quick rules](#quick-firewall-rules). IPv6 NAT needs RouterOS 7 |
-| **Routing** | IPv4 routes, IPv6 routes (read-only), OSPF, BGP, routing tables and filters |
+| **Routing** | IPv4 routes, IPv6 routes (read-only), routing rules, OSPF, BGP, routing tables and filters |
 | **Queues** | Traffic shaping |
 | **Connections** | The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing) |
 | **Graphs** | History for this device, one range for every chart (1h to 30d), with a hover cursor shared across them. See [Device graphs](#device-graphs) |
@@ -459,7 +459,7 @@ without connection tracking has no Connections section, a single-core device no 
 | **Memory** | Memory used, with the peak band where it differs |
 | **Connections** | Active connections (with the peak, and the share of the table's maximum), connections by protocol and NAT translations (src-nat, dst-nat), and new connections per second where the router counts them (below). Only where connection tracking is running |
 | **Firewall drops** | Packets per second dropped by drop and reject rules, per chain (input, forward, and raw), and the rules that dropped the most in the range |
-| **Interfaces** | The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second. The same traffic isn't picked twice: a bond is picked rather than its members, and a PPPoE client rather than the port under it. A bond's speed is its running members' together; a port whose speed isn't known is named under the utilisation chart. The picker lists ports in number order (ether1, ether2 … ether48, then SFP and QSFP ports, bonds and VLANs) |
+| **Interfaces** | The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second. The same traffic isn't picked twice: a bond is picked rather than its members, a PPPoE client rather than the port under it, and VLAN and VRRP interfaces are left out (their traffic is counted on the port or bond they ride on). A bond's speed is its running members' together and a PPPoE client's is its port's; an interface whose speed isn't known is named under the utilisation chart. The picker lists ports in number order (ether1, ether2 … ether48, then SFP and QSFP ports, bonds and VLANs) |
 | **Temperature** | Each temperature sensor the device reports |
 
 A series that started inside the range, such as one new in this release or a device added
@@ -763,6 +763,24 @@ any routing table the device has (#328). **IPv6 Routes** lists the IPv6 routing 
 destination, gateway, table, distance, whether it's active and how it was learned (static,
 connected, OSPF, BGP and so on), and blackhole or unreachable routes. It's read-only for now.
 Devices with IPv6 turned off, or without the ipv6 package, say so rather than showing an empty table.
+
+### Routing rules
+
+**Rules** lists the device's policy routing rules (`/routing/rule`, or `/ip/route/rule` on
+RouterOS 6) in the order RouterOS tries them, from Ron's request in #370. Each shows what it
+matches (source, destination, routing mark, in interface) and what it does; for a lookup, click
+the action to see that table's routes under the rule. The first rule that matches decides, so
+the tab flags:
+
+- a rule that's the **same as an earlier one**, or that an earlier rule **already covers** (for
+  example `192.168.52.0/24` after `192.168.0.0/16`): it never applies;
+- a lookup in a **table that doesn't exist** (RouterOS 7);
+- a lookup in a **table with no active routes**; with *Look up only in table* that traffic is
+  unreachable.
+
+A rule with `min-prefix` can pass traffic on to the next rule, so it's never counted as covering
+the ones after it. Rules can be added (at the end) and removed through
+[Change Guard](change-guard.md), with **Review changes** first if you like.
 
 ## Tools
 

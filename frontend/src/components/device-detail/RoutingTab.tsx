@@ -6,6 +6,7 @@ import { Plus, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
 import { devicesApi } from '../../services/api';
 import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import RoutingRulesSubTab from './RoutingRulesSubTab';
 
 // ─── Extended devicesApi type (routing protocol methods added at runtime) ──────
 const dApi = devicesApi as typeof devicesApi & {
@@ -26,7 +27,7 @@ const dApi = devicesApi as typeof devicesApi & {
   removeFilterRule: (id: number, itemId: string) => Promise<unknown>;
 };
 
-const SUB_TABS = ['IPv4 Routes', 'IPv6 Routes', 'OSPF', 'BGP', 'Route Filters', 'Tables'] as const;
+const SUB_TABS = ['IPv4 Routes', 'IPv6 Routes', 'Rules', 'OSPF', 'BGP', 'Route Filters', 'Tables'] as const;
 type SubTab = (typeof SUB_TABS)[number];
 
 // ─── Reusable helpers ─────────────────────────────────────────────────────────
@@ -889,6 +890,7 @@ export default function RoutingTab({ deviceId, deviceName }: { deviceId: number;
       {/* Sub-tab content */}
       {activeSubTab === 'IPv4 Routes'   && <RoutesSubTab deviceId={deviceId} deviceName={deviceName} />}
       {activeSubTab === 'IPv6 Routes'   && <Ipv6RoutesSubTab deviceId={deviceId} />}
+      {activeSubTab === 'Rules'         && <RoutingRulesSubTab deviceId={deviceId} deviceName={deviceName} />}
       {activeSubTab === 'OSPF'          && <OspfSubTab deviceId={deviceId} />}
       {activeSubTab === 'BGP'           && <BgpSubTab deviceId={deviceId} />}
       {activeSubTab === 'Route Filters' && <RouteFiltersSubTab deviceId={deviceId} />}

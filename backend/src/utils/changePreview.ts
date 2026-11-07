@@ -190,7 +190,7 @@ const PREVIEWABLE: [string, RegExp][] = [
   ['PUT', /^\/api\/devices\/\d+\/services\/[^/]+$/],
   ['PUT', /^\/api\/devices\/\d+\/(system-config|clock|l3hw)$/],
   ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/ip-addresses(\/[^/]+)?$/],
-  ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/routing(\/(ospf\/instance|ospf\/area|bgp\/connection|tables|filters\/rule))?(\/[^/]+)?$/],
+  ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/routing(\/(ospf\/instance|ospf\/area|bgp\/connection|tables|rules|filters\/rule))?(\/[^/]+)?$/],
   ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/(vlans|bonds)(\/[^/]+)?$/],
   ['PUT', /^\/api\/devices\/\d+\/bridge\/[^/]+\/vlan-filtering$/],
   ['POST|PUT', /^\/api\/devices\/\d+\/bridges(\/[^/]+)?$/],

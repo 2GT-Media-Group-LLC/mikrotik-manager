@@ -50,12 +50,18 @@ Installs from before 0.24.47 keep the setting they had, which was on.
 | View | Answers |
 |---|---|
 | **Top talkers** | Which clients are using the most, over 1h → 30d |
-| **Application breakdown** | HTTPS, QUIC, DNS, SSH, email, WireGuard and others, by port and protocol |
+| **Application breakdown** | HTTPS, QUIC, DNS, SSH, email, WireGuard and others, by port and protocol; click one to see who's using it |
 | **Per-client history** | What one client has been doing over time |
 | **Time series** | Throughput across the selected range |
 
 Top talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a client opens
 its detail page — see [Clients](clients.md).
+
+Clicking an application in **Traffic by Application**, on the chart or its list, opens the
+clients behind it over the same range: each one's download, upload and share of that
+application's traffic, busiest first, up to 50 (from [@azizfayziev](https://github.com/azizfayziev)'s
+#366). Selecting a client opens its page. The chart's folded **Other** slice is several
+applications together, so it doesn't open a list; the applications in it do, from the list.
 
 With a site selected, every view shows that site's traffic only, and accounts limited to
 particular sites see only theirs. **Flow Sources & Data Health** lists that site's exporting

@@ -10,11 +10,11 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { chartTooltip, pieTooltip } from '../components/common/chartTooltip';
-import { Activity, ArrowDown, ArrowUp, BarChart3, Router as RouterIcon, Settings2, AlertTriangle } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, BarChart3, Router as RouterIcon, Settings2, AlertTriangle, X } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import type { DateTimeFormatters } from '../utils/dateTimeFormat';
 import clsx from 'clsx';
-import { trafficApi } from '../services/api';
+import { trafficApi, type TrafficApp } from '../services/api';
 
 type Range = '1h' | '24h' | '7d' | '30d';
 const RANGES: Range[] = ['1h', '24h', '7d', '30d'];
@@ -57,9 +57,65 @@ function clientLabel(c: { mac: string; custom_name: string | null; hostname: str
   return c.custom_name || c.hostname || c.vendor || c.mac;
 }
 
+/** Who generates one application's traffic (#366 step 1). */
+function AppClientsCard({ app, range, onClose }: { app: string; range: Range; onClose: () => void }) {
+  const navigate = useNavigate();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['traffic-app-clients', app, range],
+    queryFn: () => trafficApi.appClients(app, range).then((r) => r.data),
+  });
+  const max = Math.max(1, ...(data?.clients ?? []).map((c) => c.total_bytes));
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
+        <Activity className="w-4 h-4 text-indigo-500" />
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 truncate">{app}: who&rsquo;s using it</h2>
+        <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto flex-shrink-0">
+          {data ? `${data.client_count} client${data.client_count === 1 ? '' : 's'} · ${formatBytes(data.total_bytes)}` : ''}
+        </span>
+        <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200" title="Close"><X className="w-4 h-4" /></button>
+      </div>
+      {isLoading ? <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
+        : isError ? <div className="p-6 text-center text-sm text-red-500">The metrics database could not be read, so this data is unavailable right now.</div>
+        : !data || data.clients.length === 0 ? <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">No client traffic for {app} in this range.</div>
+        : (
+          <div className="divide-y divide-gray-100 dark:divide-slate-800 max-h-[28rem] overflow-y-auto">
+            {data.clients.map((c) => {
+              const isReal = c.mac !== 'unknown' && c.mac !== 'other';
+              return (
+                <div key={c.mac} onClick={() => isReal && navigate(`/clients/${encodeURIComponent(c.mac)}`)}
+                  className={clsx('px-5 py-2', isReal && 'cursor-pointer hover:bg-blue-50 dark:hover:bg-slate-700/40 transition-colors')}>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="min-w-0 truncate">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{clientLabel(c)}</span>
+                      {isReal && <span className="ml-2 font-mono text-xs text-gray-400 dark:text-slate-500">{c.ip_address || c.mac}</span>}
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex-shrink-0 w-12 text-right">{(c.share * 100).toFixed(1)}%</span>
+                    <span className="text-sm font-semibold text-gray-700 dark:text-slate-200 flex-shrink-0 w-20 text-right">{formatBytes(c.total_bytes)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                    <div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.max(2, (c.total_bytes / max) * 100)}%` }} />
+                  </div>
+                  <div className="mt-0.5 flex gap-3 text-xs text-gray-400 dark:text-slate-500">
+                    <span className="inline-flex items-center gap-0.5"><ArrowDown className="w-3 h-3" />{formatBytes(c.download_bytes)}</span>
+                    <span className="inline-flex items-center gap-0.5"><ArrowUp className="w-3 h-3" />{formatBytes(c.upload_bytes)}</span>
+                  </div>
+                </div>
+              );
+            })}
+            {data.client_count > data.clients.length && (
+              <div className="px-5 py-2 text-xs text-gray-400 dark:text-slate-500">The top {data.clients.length} of {data.client_count} clients.</div>
+            )}
+          </div>
+        )}
+    </div>
+  );
+}
+
 export default function TrafficAnalyticsPage() {
   const { formatDateTime, formatTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<Range>('traffic-analytics', '24h', RANGES);
+  const [selectedApp, setSelectedApp] = useState<string | null>(null);
   // Top Talkers was a fixed list of ten with no way to look anything up, which
   // is unusable on a network of any size — you could see the loudest ten and
   // nothing else. Filtering happens client-side because the rows are already
@@ -119,11 +175,13 @@ export default function TrafficAnalyticsPage() {
   const attributionRate = pktReceived > 0 ? ((pktReceived - pktUnattributed) / pktReceived) * 100 : 0;
 
   // Donut: top 8 categories, rest folded into "Other"
-  const donutData = (() => {
+  const donutData: (TrafficApp & { folded?: boolean })[] = (() => {
     const top = apps.slice(0, 8);
     const rest = apps.slice(8).reduce((s, a) => s + a.bytes, 0);
-    return rest > 0 ? [...top, { app: 'Other', bytes: rest }] : top;
+    return rest > 0 ? [...top, { app: 'Other', bytes: rest, folded: true }] : top;
   })();
+  // A slice or legend row opens who's using that application (#366).
+  const pickApp = (app: string) => setSelectedApp((cur) => (cur === app ? null : app));
 
   return (
     <div className="space-y-6">
@@ -334,7 +392,9 @@ export default function TrafficAnalyticsPage() {
                     <div className="relative w-full sm:w-1/2 flex-shrink-0">
                       <ResponsiveContainer width="100%" height={260}>
                         <PieChart>
-                          <Pie data={donutData} dataKey="bytes" nameKey="app" innerRadius="58%" outerRadius="92%" paddingAngle={1.5} stroke="none">
+                          <Pie data={donutData} dataKey="bytes" nameKey="app" innerRadius="58%" outerRadius="92%" paddingAngle={1.5} stroke="none"
+                            className="cursor-pointer"
+                            onClick={(_d, i) => { const d = donutData[i]; if (d && !d.folded) pickApp(d.app); }}>
                             {donutData.map((entry, i) => (
                               <Cell key={entry.app} fill={APP_COLORS[i % APP_COLORS.length]} />
                             ))}
@@ -357,19 +417,23 @@ export default function TrafficAnalyticsPage() {
                     {/* Legend — uses the vertical space beside the donut */}
                     <div className="flex-1 min-w-0 space-y-1.5">
                       {apps.slice(0, 12).map((a, i) => (
-                        <div key={a.app} className="flex items-center gap-2 text-sm">
+                        <button key={a.app} onClick={() => pickApp(a.app)} title={`Who's using ${a.app}`}
+                          className={clsx('w-full flex items-center gap-2 text-sm text-left rounded px-1 -mx-1 hover:bg-gray-50 dark:hover:bg-slate-700/40',
+                            selectedApp === a.app && 'bg-indigo-50 dark:bg-indigo-900/20')}>
                           <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: APP_COLORS[i % APP_COLORS.length] }} />
                           <span className="text-gray-700 dark:text-slate-300 flex-1 truncate">{a.app}</span>
                           <span className="text-gray-500 dark:text-slate-400 text-xs w-12 text-right">
                             {totalAppBytes > 0 ? `${((a.bytes / totalAppBytes) * 100).toFixed(1)}%` : ''}
                           </span>
                           <span className="font-medium text-gray-900 dark:text-white w-20 text-right">{formatBytes(a.bytes)}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
                 )}
             </div>
+
+            {selectedApp && <AppClientsCard app={selectedApp} range={range} onClose={() => setSelectedApp(null)} />}
 
             {/* Flow sources & data health */}
             <div className="card overflow-hidden">

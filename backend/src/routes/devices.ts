@@ -34,6 +34,7 @@ import { readApiConnections } from '../services/changeGuard/targetedReads';
 import { planPreset, topAnchor, bfDefaults, QUICK_PRESETS, type QuickOptions, type QuickPreset, type IfaceRef } from '../utils/firewallPresets';
 import { managerAddressFromActive } from '../utils/logNoise';
 import { messagesFrom, SMS_ID } from '../utils/lteSms';
+import { readRules, analyseRules, routesByTable, parseRuleInput } from '../utils/routingRules';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
 import { runConfigHealth } from '../services/changeGuard/configHealth';
 import { fixFor, noFixReason } from '../utils/configHealthFixes';
@@ -3283,6 +3284,41 @@ router.post('/:id/routing/tables', requireWrite, async (req, res) => {
 router.delete('/:id/routing/tables/:itemId', requireWrite, async (req, res) => {
   await withGuardedChange(req.params.id, req, res, { kind: 'routing.tables.delete', summary: 'Remove routing tables' },
     async (collector) => { await collector.removeRoutingTable(decodeURIComponent(req.params.itemId)); return { success: true }; });
+});
+
+// ─── Routing Rules (#370) ─────────────────────────────────────────────────────
+router.get('/:id/routing/rules', async (req, res) => {
+  const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  const collector = new DeviceCollector(deviceRow);
+  try {
+    await collector.connect();
+    const data = await collector.getRoutingRulesData();
+    const byTable = routesByTable(data.routes);
+    const rules = analyseRules(readRules(data.rules), data.tables, byTable);
+    // Each table a rule looks up, with its routes, for showing next to the rule.
+    const used = new Set(rules.map((r) => r.table).filter((t): t is string => !!t));
+    const tables = [...used].map((t) => byTable.get(t) ?? { table: t, routes: [] });
+    return res.json({ ros6: data.ros6, rules, tables, table_names: data.tables });
+  } finally { collector.disconnect(); }
+});
+
+router.post('/:id/routing/rules', requireWrite, async (req, res) => {
+  const parsed = parseRuleInput(req.body ?? {});
+  if ('errors' in parsed) return res.status(400).json({ error: Object.values(parsed.errors)[0], errors: parsed.errors });
+  const r = parsed.rule;
+  const what = [r['src-address'] && `from ${r['src-address']}`, r['dst-address'] && `to ${r['dst-address']}`,
+    r['routing-mark'] && `mark ${r['routing-mark']}`, r.interface && `in ${r.interface}`].filter(Boolean).join(' ') || 'all traffic';
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'routing.rules.post', summary: `Add routing rule: ${what} → ${r.action}${r.table ? ` ${r.table}` : ''}` },
+    async (collector) => { await collector.addRoutingRule({ ...r } as Record<string, string>); return { success: true }; });
+});
+
+router.delete('/:id/routing/rules/:itemId', requireWrite, async (req, res) => {
+  const itemId = decodeURIComponent(req.params.itemId);
+  if (!/^\*[0-9A-F]{1,8}$/i.test(itemId)) return res.status(400).json({ error: 'Unknown rule' });
+  await withGuardedChange(req.params.id, req, res, { kind: 'routing.rules.delete', summary: 'Remove routing rule' },
+    async (collector) => { await collector.removeRoutingRule(itemId); return { success: true }; });
 });
 
 // ─── Route Filters ────────────────────────────────────────────────────────────

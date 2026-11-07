@@ -48,7 +48,7 @@ applied; the rest are protected by auto-revert alone.
 | Addressing | IP address add, remove | Yes |
 | VLAN interfaces | add, edit, enable/disable, remove | Yes; an MTU change is flagged when the interface carries management |
 | Routing | static route add, remove | Yes |
-| Routing | OSPF, BGP, routing tables, route filters | No |
+| Routing | routing rules, OSPF, BGP, routing tables, route filters | No |
 | Bonding | create, edit, delete | Flagged when a member or the bond carries management |
 | Services | management service enable/disable | Yes |
 | NAT | add, edit, move, delete | No |
@@ -363,7 +363,7 @@ The review is available on:
 - **VLANs:** add and edit.
 - **Ports:** the port editor (link settings and VLAN role).
 - **IP addresses and routes.**
-- **Routing:** OSPF instances and areas, BGP connections, route filters, routing tables.
+- **Routing:** routing rules, OSPF instances and areas, BGP connections, route filters, routing tables.
 - **Firewall:** filter and NAT rules, and address lists.
 - **Bandwidth queues.**
 - **DHCP:** servers, pools and static leases.

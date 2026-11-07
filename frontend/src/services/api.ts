@@ -1341,6 +1341,28 @@ export interface FirewallEvent {
   length?: number;
 }
 
+/** Policy routing rules (#370), in the device's order, with what's wrong with them. */
+export interface RoutingRule {
+  id: string; position: number;
+  src: string | null; dst: string | null; routingMark: string | null; iface: string | null;
+  action: string; table: string | null; minPrefix: string | null;
+  disabled: boolean; invalid: boolean; dynamic: boolean; comment: string | null;
+  flags: { level: 'warn' | 'info'; text: string }[];
+}
+export interface RoutingRulesData {
+  ros6: boolean;
+  rules: RoutingRule[];
+  /** Each table a rule looks up, with its routes. */
+  tables: { table: string; routes: { dst: string; gateway: string | null; distance: string | null; active: boolean }[] }[];
+  /** The device's routing tables (RouterOS 7), for the add form. */
+  table_names: string[] | null;
+}
+export interface RoutingRuleInput {
+  'src-address'?: string; 'dst-address'?: string; 'routing-mark'?: string; interface?: string;
+  action: string; table?: string; comment?: string;
+  confirm_lockout?: boolean;
+}
+
 export const eventsApi = {
   topics: (params?: { firewall?: 1 }) =>
     api.get<{ topic: string; count: number }[]>('/events/topics', { params }),
@@ -1894,6 +1916,17 @@ export const routersApi = {
   }>('/routers/snmp', config),
 };
 
+/** Policy routing rules on a device (#370). */
+export const routingRulesApi = {
+  list: (id: number) =>
+    api.get<RoutingRulesData>(`/devices/${id}/routing/rules`),
+  add: (id: number, data: RoutingRuleInput) =>
+    api.post(`/devices/${id}/routing/rules`, data),
+  remove: (id: number, itemId: string, confirmLockout = false) =>
+    api.delete(`/devices/${id}/routing/rules/${encodeURIComponent(itemId)}`,
+      confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
+};
+
 // ─── Routing Protocols (per-device) ───────────────────────────────────────────
 Object.assign(devicesApi, {
   getOspf: (id: number) => api.get<Record<string, unknown>>(`/devices/${id}/routing/ospf`),
@@ -2395,6 +2428,12 @@ export interface TrafficTopClient {
   ip_address: string | null;
 }
 export interface TrafficApp { app: string; bytes: number; packets?: number }
+export interface TrafficAppClients {
+  app: string;
+  total_bytes: number;
+  client_count: number;
+  clients: (TrafficTopClient & { share: number })[];
+}
 export interface TrafficCollectorStats {
   listening: boolean;
   port: number;
@@ -2420,6 +2459,9 @@ export const trafficApi = {
     api.get<TrafficTopClient[]>('/traffic/top-clients', { params: { range, limit } }),
   apps: (range = '24h', mac?: string) =>
     api.get<TrafficApp[]>('/traffic/apps', { params: { range, mac } }),
+  /** Who generates one application's traffic (#366). */
+  appClients: (app: string, range = '24h') =>
+    api.get<TrafficAppClients>(`/traffic/apps/${encodeURIComponent(app)}/clients`, { params: { range } }),
   client: (mac: string, range = '24h') =>
     api.get<{ series: ClientTrafficPoint[]; apps: TrafficApp[] }>(
       `/traffic/client/${encodeURIComponent(mac)}`, { params: { range } }

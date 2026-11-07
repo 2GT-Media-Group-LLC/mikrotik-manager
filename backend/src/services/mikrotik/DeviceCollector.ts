@@ -6622,6 +6622,31 @@ export class DeviceCollector {
     await this.client.execute('/routing/table/remove', { '.id': id });
   }
 
+  /** Where this device keeps its routing rules: /routing/rule on RouterOS 7, /ip/route/rule on 6 (#370). */
+  private async routingRulePath(): Promise<'/routing/rule' | '/ip/route/rule'> {
+    return this.client.execute('/routing/rule/print', { '.proplist': '.id' }).then(() => '/routing/rule' as const, () => '/ip/route/rule' as const);
+  }
+
+  /** Routing rules in order, the device's tables (7 only) and its routes (#370). */
+  async getRoutingRulesData(): Promise<{ ros6: boolean; rules: Record<string, string>[]; tables: string[] | null; routes: Record<string, string>[] }> {
+    const path = await this.routingRulePath();
+    const ros6 = path === '/ip/route/rule';
+    const [rules, tables, routes] = await Promise.all([
+      this.client.execute(`${path}/print`, { detail: '' }),
+      ros6 ? Promise.resolve(null) : this.client.execute('/routing/table/print', { '.proplist': 'name' }).then((r) => r.map((t) => t['name']).filter(Boolean)).catch(() => null),
+      this.client.execute('/ip/route/print', { '.proplist': 'dst-address,gateway,immediate-gw,distance,active,disabled,routing-table,routing-mark' }).catch(() => [] as Record<string, string>[]),
+    ]);
+    return { ros6, rules, tables, routes };
+  }
+
+  async addRoutingRule(params: Record<string, string>): Promise<void> {
+    await this.client.execute(`${await this.routingRulePath()}/add`, params);
+  }
+
+  async removeRoutingRule(id: string): Promise<void> {
+    await this.client.execute(`${await this.routingRulePath()}/remove`, { '.id': id });
+  }
+
   async getRouteFiltersData(): Promise<{
     rules: Record<string, string>[];
     chains: string[];

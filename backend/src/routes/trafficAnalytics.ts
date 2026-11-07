@@ -122,6 +122,31 @@ router.get('/timeseries', async (req, res) => {
   res.json(Object.values(pivoted).sort((a, b) => a.time.localeCompare(b.time)));
 });
 
+type ClientNames = { hostname: string | null; custom_name: string | null; vendor: string | null; ip_address: string | null };
+
+/** Client identity from Postgres for real MACs, from the clients in view only. */
+async function withClientNames<T extends { mac: string }>(req: Request, rows: T[]): Promise<(T & ClientNames)[]> {
+  const realMacs = rows.map((r) => r.mac).filter((m) => m !== 'unknown' && m !== 'other');
+  const names = new Map<string, ClientNames>();
+  if (realMacs.length > 0) {
+    // Names come from the clients in view, never another site's record of a MAC.
+    const sites = siteList(activeSite(req));
+    const found = await query<ClientNames & { mac_address: string }>(
+      `SELECT DISTINCT ON (LOWER(c.mac_address)) c.mac_address, c.hostname, c.custom_name, c.vendor, c.ip_address
+       FROM clients c
+       ${sites ? 'JOIN devices d ON d.id = c.device_id AND d.site_id = ANY($2::int[])' : ''}
+       WHERE LOWER(c.mac_address) = ANY($1)
+       ORDER BY LOWER(c.mac_address), c.last_seen DESC NULLS LAST`,
+      sites ? [realMacs, sites] : [realMacs]
+    );
+    for (const row of found) names.set(row.mac_address.toLowerCase(), row);
+  }
+  return rows.map((r) => {
+    const info = names.get(r.mac);
+    return { ...r, hostname: info?.hostname || null, custom_name: info?.custom_name || null, vendor: info?.vendor || null, ip_address: info?.ip_address || null };
+  });
+}
+
 // GET /api/traffic/top-clients?range=24h&limit=10 — top talkers with client names
 router.get('/top-clients', async (req, res) => {
   const range = rangeToFlux(String(req.query.range || '24h'));
@@ -163,35 +188,7 @@ router.get('/top-clients', async (req, res) => {
     .sort((a, b) => b.total_bytes - a.total_bytes)
     .slice(0, limit);
 
-  // Enrich real MACs with client identity from Postgres
-  const realMacs = ranked.map((r) => r.mac).filter((m) => m !== 'unknown' && m !== 'other');
-  const names = new Map<string, { hostname: string | null; custom_name: string | null; vendor: string | null; ip_address: string | null }>();
-  if (realMacs.length > 0) {
-    // Names come from the clients in view, never another site's record of a MAC.
-    const sites = siteList(activeSite(req));
-    const rows = await query<{ mac_address: string; hostname: string | null; custom_name: string | null; vendor: string | null; ip_address: string | null }>(
-      `SELECT DISTINCT ON (LOWER(c.mac_address)) c.mac_address, c.hostname, c.custom_name, c.vendor, c.ip_address
-       FROM clients c
-       ${sites ? 'JOIN devices d ON d.id = c.device_id AND d.site_id = ANY($2::int[])' : ''}
-       WHERE LOWER(c.mac_address) = ANY($1)
-       ORDER BY LOWER(c.mac_address), c.last_seen DESC NULLS LAST`,
-      sites ? [realMacs, sites] : [realMacs]
-    );
-    for (const row of rows) names.set(row.mac_address.toLowerCase(), row);
-  }
-
-  res.json(
-    ranked.map((r) => {
-      const info = names.get(r.mac);
-      return {
-        ...r,
-        hostname: info?.hostname || null,
-        custom_name: info?.custom_name || null,
-        vendor: info?.vendor || null,
-        ip_address: info?.ip_address || null,
-      };
-    })
-  );
+  res.json(await withClientNames(req, ranked));
 });
 
 // GET /api/traffic/apps?range=24h&mac=xx:xx:.. — app-category byte totals
@@ -240,6 +237,48 @@ router.get('/apps', async (req, res) => {
 
   const apps = Array.from(byApp.entries()).map(([app, e]) => ({ app, bytes: e.bytes, packets: e.packets }));
   res.json(apps.sort((a, b) => b.bytes - a.bytes));
+});
+
+// GET /api/traffic/apps/:app/clients?range=24h — who generates one application's
+// traffic (#366 step 1): each client's download, upload and share of the app's total.
+router.get('/apps/:app/clients', async (req, res) => {
+  const app = String(req.params.app);
+  // App names come from the classifier (HTTP, QUIC, DNS, Other…): printable and short.
+  if (!/^[\x20-\x7e]{1,64}$/.test(app)) return res.status(400).json({ error: 'Invalid application' });
+  const range = rangeToFlux(String(req.query.range || '24h'));
+  const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
+  const site = await siteFilter(req);
+
+  const fluxQuery = `
+    from(bucket: "${bucket}")
+      |> range(start: -${range})
+      |> filter(fn: (r) => r._measurement == "client_traffic")
+      ${site}
+      |> filter(fn: (r) => r._field == "bytes" and r.app == ${fluxString(app)})
+      |> group(columns: ["mac", "direction"])
+      |> sum()
+  `;
+
+  const perMac = new Map<string, { upload: number; download: number }>();
+  try {
+    await getQueryApi().collectRows(fluxQuery, (row, tableMeta) => {
+      const mac = tableMeta.get(row, 'mac') as string;
+      const direction = tableMeta.get(row, 'direction') as string;
+      const value = Number(tableMeta.get(row, '_value')) || 0;
+      const e = perMac.get(mac) ?? { upload: 0, download: 0 };
+      if (direction === 'upload') e.upload += value; else e.download += value;
+      perMac.set(mac, e);
+    });
+  } catch {
+    return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
+  }
+
+  const all = Array.from(perMac.entries())
+    .map(([mac, e]) => ({ mac, upload_bytes: e.upload, download_bytes: e.download, total_bytes: e.upload + e.download }))
+    .sort((a, b) => b.total_bytes - a.total_bytes);
+  const total = all.reduce((s, c) => s + c.total_bytes, 0);
+  const top = all.slice(0, limit).map((c) => ({ ...c, share: total > 0 ? c.total_bytes / total : 0 }));
+  res.json({ app, total_bytes: total, client_count: all.length, clients: await withClientNames(req, top) });
 });
 
 // GET /api/traffic/client/:mac?range=24h — per-client time series + app breakdown
