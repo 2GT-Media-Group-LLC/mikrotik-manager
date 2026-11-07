@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.30
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta29" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1798,6 +1809,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.30
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta29" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2128,6 +2150,20 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta30">1.1.0-beta.30<a class="headerlink" href="#110-beta30" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Device Logs and Firewall events open quickly on large log tables</strong>, from
+  <a href="https://github.com/thanhtrung5763">@thanhtrung5763</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/407">#407</a>): indexes for the rows
+  each page shows, built in the background after startup; pages read only the columns they show,
+  keep the table on screen while the next page loads, and wait for you to stop typing before
+  searching.</li>
+<li><strong>Config Health</strong> no longer flags a VLAN interface added as a bridge port when it's an edge
+  port, since an edge port sends no BPDUs, and says why the setup is a problem (the bridge's
+  BPDUs go out tagged), from <a href="https://github.com/eskyuu">@eskyuu</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/404">#404</a>)
+  (<a href="../change-guard/#what-it-checks">What it checks</a>).</li>
+</ul>
 <h2 id="110-beta29">1.1.0-beta.29<a class="headerlink" href="#110-beta29" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Graphs, interfaces</strong>, from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s check on beta.28

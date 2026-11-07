@@ -2479,8 +2479,8 @@ device-mode can only be changed at the device. Their advice is unchanged.</p>
 <td>The interface receives nothing; management may be unreachable</td>
 </tr>
 <tr>
-<td>VLAN interface added as a bridge port</td>
-<td>Forwarding loop; STP ports flap</td>
+<td>VLAN interface added as a bridge port, unless it's an edge port</td>
+<td>BPDUs go out tagged, which 802.1w doesn't allow</td>
 </tr>
 <tr>
 <td>Bond slave that is also a bridge port</td>
