@@ -886,6 +886,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Routes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2283,6 +2300,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Routes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2779,7 +2813,7 @@ history, uptime figures and reports keep every outage. <strong>Snooze</strong> i
 </tr>
 <tr>
 <td><strong>Routing</strong></td>
-<td>IPv4 routes, IPv6 routes (read-only), OSPF, BGP, routing tables and filters</td>
+<td>IPv4 routes, IPv6 routes (read-only), routing rules, OSPF, BGP, routing tables and filters</td>
 </tr>
 <tr>
 <td><strong>Queues</strong></td>
@@ -2881,7 +2915,7 @@ without connection tracking has no Connections section, a single-core device no 
 </tr>
 <tr>
 <td><strong>Interfaces</strong></td>
-<td>The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second. The same traffic isn't picked twice: a bond is picked rather than its members, and a PPPoE client rather than the port under it. A bond's speed is its running members' together; a port whose speed isn't known is named under the utilisation chart. The picker lists ports in number order (ether1, ether2 … ether48, then SFP and QSFP ports, bonds and VLANs)</td>
+<td>The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second. The same traffic isn't picked twice: a bond is picked rather than its members, a PPPoE client rather than the port under it, and VLAN and VRRP interfaces are left out (their traffic is counted on the port or bond they ride on). A bond's speed is its running members' together and a PPPoE client's is its port's; an interface whose speed isn't known is named under the utilisation chart. The picker lists ports in number order (ether1, ether2 … ether48, then SFP and QSFP ports, bonds and VLANs)</td>
 </tr>
 <tr>
 <td><strong>Temperature</strong></td>
@@ -3184,6 +3218,22 @@ any routing table the device has (#328). <strong>IPv6 Routes</strong> lists the 
 destination, gateway, table, distance, whether it's active and how it was learned (static,
 connected, OSPF, BGP and so on), and blackhole or unreachable routes. It's read-only for now.
 Devices with IPv6 turned off, or without the ipv6 package, say so rather than showing an empty table.</p>
+<h3 id="routing-rules">Routing rules<a class="headerlink" href="#routing-rules" title="Permanent link">&para;</a></h3>
+<p><strong>Rules</strong> lists the device's policy routing rules (<code>/routing/rule</code>, or <code>/ip/route/rule</code> on
+RouterOS 6) in the order RouterOS tries them, from Ron's request in #370. Each shows what it
+matches (source, destination, routing mark, in interface) and what it does; for a lookup, click
+the action to see that table's routes under the rule. The first rule that matches decides, so
+the tab flags:</p>
+<ul>
+<li>a rule that's the <strong>same as an earlier one</strong>, or that an earlier rule <strong>already covers</strong> (for
+  example <code>192.168.52.0/24</code> after <code>192.168.0.0/16</code>): it never applies;</li>
+<li>a lookup in a <strong>table that doesn't exist</strong> (RouterOS 7);</li>
+<li>a lookup in a <strong>table with no active routes</strong>; with <em>Look up only in table</em> that traffic is
+  unreachable.</li>
+</ul>
+<p>A rule with <code>min-prefix</code> can pass traffic on to the next rule, so it's never counted as covering
+the ones after it. Rules can be added (at the end) and removed through
+<a href="../change-guard/">Change Guard</a>, with <strong>Review changes</strong> first if you like.</p>
 <h2 id="tools">Tools<a class="headerlink" href="#tools" title="Permanent link">&para;</a></h2>
 <p>All of these run <strong>on the device</strong>, not from the manager, so they see the network from where
 the device sits.</p>

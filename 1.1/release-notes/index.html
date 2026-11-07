@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.31
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta30" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1809,6 +1820,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.31
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta30" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2150,6 +2172,30 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta31">1.1.0-beta.31<a class="headerlink" href="#110-beta31" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Appearance</strong>: a <strong>System</strong> theme that follows your computer's light or dark setting, seven
+  accent colours or your own, and <strong>Midnight</strong> dark surfaces, under Settings → General, from
+  <a href="https://github.com/kraken-XIV">@kraken-XIV</a>'s proposal in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/329">#329</a>
+  (<a href="../configuration/#appearance">Appearance</a>). Blue on Slate looks exactly as before.</li>
+<li><strong>Routing rules</strong> on a device's Routing tab, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/370">#370</a>: in order, each
+  lookup's table and routes, and flags for a rule that repeats or is covered by an earlier one, a
+  missing table, or a table with no active routes; add and remove through Change Guard
+  (<a href="../devices/#routing-rules">Routing rules</a>).</li>
+<li><strong>Traffic</strong>: click an application to see the clients behind it, with each one's share, from
+  <a href="https://github.com/azizfayziev">@azizfayziev</a>'s
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/366">#366</a> step 1
+  (<a href="../traffic/#what-it-shows">Traffic</a>).</li>
+<li><strong>Graphs</strong>: VRRP interfaces are left out of the busiest pick (their traffic is already counted on
+  the VLAN and bond under them), and a PPPoE client's utilisation uses its port's speed
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/402">#402</a>).</li>
+<li><strong>Topology</strong>: a link coloured by hand still turns red when it goes down or is blocked
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/403">#403</a>).</li>
+<li>From 1.0.7: stale Change Guard restore points are cleared from devices, Postgres gets 256 MB of
+  shared memory, and <code>minimatch</code> is updated in the build tooling.</li>
+</ul>
 <h2 id="110-beta30">1.1.0-beta.30<a class="headerlink" href="#110-beta30" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Device Logs and Firewall events open quickly on large log tables</strong>, from

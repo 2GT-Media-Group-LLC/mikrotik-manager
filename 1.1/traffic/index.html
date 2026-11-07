@@ -695,39 +695,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#retention" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Retention
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#proxy-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Proxy usage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#if-no-data-appears" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        If no data appears
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -1602,39 +1569,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#retention" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Retention
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#proxy-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Proxy usage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#if-no-data-appears" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        If no data appears
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -1708,7 +1642,7 @@ the all-sites view only.</p>
 </tr>
 <tr>
 <td><strong>Application breakdown</strong></td>
-<td>HTTPS, QUIC, DNS, SSH, email, WireGuard and others, by port and protocol</td>
+<td>HTTPS, QUIC, DNS, SSH, email, WireGuard and others, by port and protocol; click one to see who's using it</td>
 </tr>
 <tr>
 <td><strong>Per-client history</strong></td>
@@ -1722,6 +1656,11 @@ the all-sites view only.</p>
 </table>
 <p>Top talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a client opens
 its detail page — see <a href="../clients/">Clients</a>.</p>
+<p>Clicking an application in <strong>Traffic by Application</strong>, on the chart or its list, opens the
+clients behind it over the same range: each one's download, upload and share of that
+application's traffic, busiest first, up to 50 (from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s</p>
+<h1 id="366-selecting-a-client-opens-its-page-the-charts-folded-other-slice-is-several">366). Selecting a client opens its page. The chart's folded <strong>Other</strong> slice is several<a class="headerlink" href="#366-selecting-a-client-opens-its-page-the-charts-folded-other-slice-is-several" title="Permanent link">&para;</a></h1>
+<p>applications together, so it doesn't open a list; the applications in it do, from the list.</p>
 <p>With a site selected, every view shows that site's traffic only, and accounts limited to
 particular sites see only theirs. <strong>Flow Sources &amp; Data Health</strong> lists that site's exporting
 devices too; its packet and attribution counts are the collector's own and cover every site.
