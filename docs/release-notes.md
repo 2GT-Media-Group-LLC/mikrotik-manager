@@ -3,6 +3,21 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.32
+
+- **Scheduled bulk commands**, from Ron's request in
+  [#359](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/359): **Schedule…** on
+  Bulk Commands runs a command once, daily, weekly or monthly, or on your own cron expression, on
+  chosen devices plus every device with a tag or in a site at the time it runs. Options to run only
+  inside maintenance windows and to alert when it fails or doesn't run (a new **Scheduled command
+  failed** alert). A time that passes while the manager is down is marked missed, never run late
+  ([Schedules](commands.md#schedules)).
+- **Which rule logged it**, from Ron's request in
+  [#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369): a firewall or NAT rule
+  that logs gets a short tag in its log prefix, so a line on Firewall Events links to its rule, and
+  a rule links to its lines. **Tag all** on the Firewall tab tags rules made elsewhere
+  ([Which rule logged it](firewall-events.md#which-rule-logged-it)).
+
 ## 1.1.0-beta.31
 
 - **Appearance**: a **System** theme that follows your computer's light or dark setting, seven
