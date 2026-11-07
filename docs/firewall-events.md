@@ -68,6 +68,29 @@ logging automatically.
 Disabling monitoring for a rule that MikroTik Manager previously enabled turns
 off its managed logging and removes the managed prefix.
 
+## Which rule logged it
+
+RouterOS writes a rule's log prefix in front of each line it logs, and nothing
+else that identifies the rule. So a filter or NAT rule that logs gets a short
+**tag** at the end of its prefix, `mtm#` and four letters or digits, unique on
+the device, from Ron's request in #369:
+
+```
+MTM-FW-DROP mtm#7f3a input: in:ether1 out:(unknown 0), proto TCP ...
+```
+
+- A line with a tag shows **rule mtm#7f3a** next to its chain. It opens the
+  device's Firewall tab with that rule picked out.
+- On the Firewall tab, a tagged rule shows **mtm#7f3a · log lines**, which opens
+  this page filtered to that device and that rule's lines.
+- A rule added or edited in MikroTik Manager with logging on gets a tag by
+  itself, and an edited rule keeps the tag it had. A prefix you set is kept,
+  with the tag after it.
+- Rules that already log without a tag, such as ones made in Winbox, are
+  counted at the top of the Firewall tab, with **Tag all** (and **Review
+  changes**) to tag them in one go. Only their log prefixes change, through
+  [Change Guard](change-guard.md).
+
 ## Device Logs
 
 Firewall packet logs have their own **Events → Firewall Logs** page, so they

@@ -989,6 +989,9 @@ export const devicesApi = {
     api.post(`/devices/${id}/firewall/move`, { id: ruleId, destination, ...(confirmLockout ? { confirm_lockout: true } : {}) }, famParams(family)),
   /** Count "outages this week" from now on (#85); history is kept. */
   resetOutages: (id: number) => api.post<{ message: string; outages_reset_at: string }>(`/devices/${id}/outages/reset`),
+  /** Tag every rule that logs without a tag, filter and NAT (#369). */
+  tagLoggingRules: (id: number, family?: FirewallFamily, confirm = false) =>
+    api.post<{ tagged: number; message: string }>(`/devices/${id}/firewall/tag-logging`, confirm ? { confirm_lockout: true } : {}, famParams(family)),
   resetFirewallCounters: (id: number, family?: FirewallFamily) =>
     api.post<Record<string, string>[]>(`/devices/${id}/firewall/reset-counters`, undefined, famParams(family)),
   moveNatRule: (id: number, ruleId: string, destination?: string, family?: FirewallFamily) =>

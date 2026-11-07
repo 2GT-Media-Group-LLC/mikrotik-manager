@@ -35,6 +35,7 @@ import { planPreset, topAnchor, bfDefaults, QUICK_PRESETS, type QuickOptions, ty
 import { managerAddressFromActive } from '../utils/logNoise';
 import { messagesFrom, SMS_ID } from '../utils/lteSms';
 import { readRules, analyseRules, routesByTable, parseRuleInput } from '../utils/routingRules';
+import { tagOf, withTag, tagsIn, tagParams, planTags } from '../utils/ruleTags';
 import { analyzeChange, type PlannedChange } from '../services/changeGuard/analyzeChange';
 import { runConfigHealth } from '../services/changeGuard/configHealth';
 import { fixFor, noFixReason } from '../utils/configHealthFixes';
@@ -1294,6 +1295,46 @@ function bodyToRosParams(body: Record<string, unknown>, keepEmpty = false): Reco
 // disabled=no, a move or a delete used to skip the check (outside review P2-8).
 // `force` is the older name for confirm_lockout and is still accepted.
 
+/**
+ * Rule tags (#369): a filter or NAT rule that logs gets a tag in its log
+ * prefix, unique across the device's filter and NAT rules, so its log lines
+ * lead back to it. An edited rule keeps the tag it had.
+ */
+async function withRuleTag(c: DeviceCollector, params: Record<string, string>, family: FirewallFamily,
+  edit?: { table: 'filter' | 'nat'; id: string }): Promise<Record<string, string>> {
+  if (!(params.log === 'yes' || params.log === 'true') || tagOf(params['log-prefix'])) return params;
+  const [filter, nat] = await Promise.all([
+    c.getFirewallRules(family).catch(() => [] as Record<string, string>[]),
+    c.getNatRules(family).catch(() => [] as Record<string, string>[]),
+  ]);
+  const current = edit ? (edit.table === 'filter' ? filter : nat).find((r) => r['.id'] === edit.id) : undefined;
+  const had = tagOf(current?.['log-prefix']);
+  // Only log-prefix sent leaves the device's prefix as it is: tag that.
+  const prefix = 'log-prefix' in params ? params['log-prefix'] : current?.['log-prefix'];
+  if (had) return { ...params, 'log-prefix': withTag(prefix, had) };
+  return tagParams({ ...params, 'log-prefix': prefix ?? '' }, tagsIn(filter, nat));
+}
+
+// POST /api/devices/:id/firewall/tag-logging[?family=ipv6] — tag every logging
+// rule that has no tag yet, filter and NAT (#369). Only log prefixes change.
+router.post('/:id/firewall/tag-logging', requireWrite, async (req, res) => {
+  const family = familyOf(req, res);
+  if (!family) return;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: 'firewall.tag-logging', summary: `Tag the ${family === 'ipv6' ? 'IPv6 ' : ''}firewall rules that log` },
+    async (c) => {
+      const [filter, nat] = await Promise.all([c.getFirewallRules(family), c.getNatRules(family).catch(() => [] as Record<string, string>[])]);
+      const taken = tagsIn(filter, nat);
+      const forFilter = planTags(filter, taken);
+      for (const t of forFilter) taken.add(tagOf(t.to)!);
+      const forNat = planTags(nat, taken);
+      for (const t of forFilter) await c.updateFirewallRule(t.id, { 'log-prefix': t.to }, family);
+      for (const t of forNat) await c.updateNatRule(t.id, { 'log-prefix': t.to }, family);
+      const n = forFilter.length + forNat.length;
+      return { tagged: n, message: n ? `Tagged ${n} rule${n === 1 ? '' : 's'}` : 'Every rule that logs already has a tag' };
+    });
+});
+
 // POST /api/devices/:id/firewall[?family=ipv6]
 router.post('/:id/firewall', requireWrite, async (req, res) => {
   const family = familyOf(req, res);
@@ -1305,7 +1346,7 @@ router.post('/:id/firewall', requireWrite, async (req, res) => {
     ? await ipv6WriteMeta(req.params.id, 'firewall.add', `Add ${chain} ${action} IPv6 firewall rule`)
     : { kind: 'firewall.add', summary: `Add ${chain} ${action} firewall rule`, change: { kind: 'firewall.add', fields: params } as PlannedChange };
   await withGuardedChange(req.params.id, req, res, meta,
-    async (c) => { await c.addFirewallRule(params, family); return { message: 'Rule added' }; });
+    async (c) => { await c.addFirewallRule(await withRuleTag(c, params, family), family); return { message: 'Rule added' }; });
 });
 
 // PUT /api/devices/:id/firewall/:ruleId[?family=ipv6]
@@ -1321,7 +1362,7 @@ router.put('/:id/firewall/:ruleId', requireWrite, async (req, res) => {
     ? await ipv6WriteMeta(req.params.id, 'firewall.set', summary)
     : { kind: 'firewall.set', summary, change: { kind: 'firewall.set', ruleId, fields: params } as PlannedChange };
   await withGuardedChange(req.params.id, req, res, meta,
-    async (c) => { await c.updateFirewallRule(ruleId, params, family); return { message: 'Rule updated' }; });
+    async (c) => { await c.updateFirewallRule(ruleId, await withRuleTag(c, params, family, { table: 'filter', id: ruleId }), family); return { message: 'Rule updated' }; });
 });
 
 // POST /api/devices/:id/firewall/move[?family=ipv6]  { id, destination? }
@@ -1559,7 +1600,7 @@ router.post('/:id/nat', requireWrite, async (req, res) => {
     ? await ipv6WriteMeta(req.params.id, 'nat.add', `Add ${chain} ${action} IPv6 NAT rule`)
     : { kind: 'nat.add', summary: `Add ${chain} ${action} NAT rule` };
   await withGuardedChange(req.params.id, req, res, meta,
-    async (c) => { await c.addNatRule(params, family); return { message: 'NAT rule added' }; });
+    async (c) => { await c.addNatRule(await withRuleTag(c, params, family), family); return { message: 'NAT rule added' }; });
 });
 
 // PUT /api/devices/:id/nat/:ruleId[?family=ipv6]
@@ -1569,7 +1610,7 @@ router.put('/:id/nat/:ruleId', requireWrite, async (req, res) => {
   const params = natBodyToRosParams(req.body, true);
   const meta = family === 'ipv6' ? await ipv6WriteMeta(req.params.id, 'nat.set', 'Edit IPv6 NAT rule') : { kind: 'nat.set', summary: 'Edit NAT rule' };
   await withGuardedChange(req.params.id, req, res, meta,
-    async (c) => { await c.updateNatRule(req.params.ruleId, params, family); return { message: 'NAT rule updated' }; });
+    async (c) => { await c.updateNatRule(req.params.ruleId, await withRuleTag(c, params, family, { table: 'nat', id: req.params.ruleId }), family); return { message: 'NAT rule updated' }; });
 });
 
 // DELETE /api/devices/:id/nat/:ruleId[?family=ipv6]

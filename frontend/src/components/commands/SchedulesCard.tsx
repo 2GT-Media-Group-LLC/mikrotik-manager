@@ -24,6 +24,8 @@ export default function SchedulesCard({ schedules, timeZone, canWrite, onEdit, o
 }) {
   const queryClient = useQueryClient();
   const { formatDateTime } = useDateTimeFormat();
+  // In the manager's zone, which is the one schedules run in and the header names.
+  const inZone = (iso: string) => { try { return formatDateTime(iso, { timeZone }); } catch { return formatDateTime(iso); } };
   const [error, setError] = useState('');
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['command-schedules'] });
@@ -58,7 +60,7 @@ export default function SchedulesCard({ schedules, timeZone, canWrite, onEdit, o
             </div>
             <div className="text-xs text-right shrink-0 space-y-0.5">
               <div className="text-gray-600 dark:text-slate-300">
-                {s.enabled ? (s.next_run_at ? <>Next {formatDateTime(s.next_run_at)}</> : 'Done') : 'Paused'}
+                {s.enabled ? (s.next_run_at ? <>Next {inZone(s.next_run_at)}</> : 'Done') : 'Paused'}
               </div>
               {s.last_status && (
                 <button className={clsx('hover:underline', STATUS[s.last_status] ?? 'text-gray-500')} onClick={() => s.last_run_id && onOpenRun(s.last_run_id)}>

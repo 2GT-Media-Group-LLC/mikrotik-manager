@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { tagOf, logsUntagged, ruleLinesUrl } from '../../utils/ruleTags';
 import QuickRulesModal from './QuickRulesModal';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -517,13 +518,19 @@ function Counters({ r }: { r: Row }) {
 
 // ─── Reusable rule table with reorder ────────────────────────────────────────────
 function RuleTable({
-  rows, fullOrder, canWrite, canReorder, summaryFn, onEdit, onToggle, onDelete, onMove,
+  rows, fullOrder, canWrite, canReorder, summaryFn, onEdit, onToggle, onDelete, onMove, deviceId, highlight,
 }: {
   rows: Row[]; fullOrder: Row[]; canWrite: boolean; canReorder: boolean;
+  /** For links to a rule's log lines (#369). */
+  deviceId: number;
+  /** The tag of a rule to pick out, from a log line's link. */
+  highlight?: string | null;
   summaryFn: (r: Row) => string;
   onEdit: (r: Row) => void; onToggle: (r: Row) => void; onDelete: (r: Row) => void;
   onMove: (r: Row, dir: 'up' | 'down') => void;
 }) {
+  const picked = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => { picked.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [highlight, rows.length]);
   return (
     <div className="card overflow-hidden overflow-x-auto">
       <table className="w-full text-sm">
@@ -541,14 +548,23 @@ function RuleTable({
           {rows.map((r, i) => {
             const disabled = r.disabled === 'true';
             const fullIdx = fullOrder.findIndex(x => x['.id'] === r['.id']);
+            const tag = tagOf(r['log-prefix']);
+            const isPicked = !!tag && tag === highlight;
             return (
-              <tr key={r['.id'] ?? i} className={clsx('hover:bg-gray-50 dark:hover:bg-slate-700/30', disabled && 'opacity-40')}>
+              <tr key={r['.id'] ?? i} ref={isPicked ? picked : undefined}
+                className={clsx('hover:bg-gray-50 dark:hover:bg-slate-700/30', disabled && 'opacity-40', isPicked && 'ring-2 ring-inset ring-blue-500 bg-blue-50/60 dark:bg-blue-900/20')}>
                 <td className="px-3 py-2 text-gray-400 text-xs">{fullIdx >= 0 ? fullIdx + 1 : i + 1}</td>
                 <td className={clsx('px-3 py-2 text-xs font-bold uppercase', ACTION_COLOR[r.action] ?? 'text-gray-500')}>
                   {r.action}{r['jump-target'] ? ` → ${r['jump-target']}` : ''}
                 </td>
-                <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300 font-mono max-w-[320px] truncate" title={summaryFn(r)}>
-                  <span className="text-gray-400">{r.chain}</span> · {summaryFn(r)}
+                <td className="px-3 py-2 text-xs text-gray-600 dark:text-slate-300 font-mono max-w-[320px]" title={summaryFn(r)}>
+                  <div className="truncate"><span className="text-gray-400">{r.chain}</span> · {summaryFn(r)}</div>
+                  {tag && (
+                    <Link to={ruleLinesUrl(deviceId, tag)} title="This rule's log lines, on Firewall Events"
+                      className="inline-block mt-0.5 px-1.5 rounded bg-gray-100 dark:bg-slate-700 text-[10px] text-gray-500 dark:text-slate-300 hover:text-blue-600">
+                      mtm#{tag} · log lines
+                    </Link>
+                  )}
                 </td>
                 <td className="px-3 py-2"><Counters r={r} /></td>
                 <td className="px-3 py-2 text-xs text-gray-400 dark:text-slate-500 italic max-w-[120px] truncate">{r.comment || ''}</td>
@@ -752,7 +768,7 @@ function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, 
 }
 
 // ─── NAT Card ────────────────────────────────────────────────────────────────────
-function NatCard({ deviceId, family }: { deviceId: number; family: FirewallFamily }) {
+function NatCard({ deviceId, family, highlight }: { deviceId: number; family: FirewallFamily; highlight?: string | null }) {
   const v6 = family === 'ipv6';
   const qc = useQueryClient();
   const canWrite = useCanWrite();
@@ -794,7 +810,7 @@ function NatCard({ deviceId, family }: { deviceId: number; family: FirewallFamil
       {unavailable ? <div className="card p-6 text-center text-sm text-gray-400">{unavailable}</div>
         : isLoading ? <div className="text-center py-6 text-gray-400"><RefreshCw className="w-4 h-4 animate-spin inline mr-2" />Loading…</div>
         : rules.length === 0 ? <div className="card p-8 text-center text-gray-400">No {v6 ? 'IPv6 ' : ''}NAT rules.</div>
-        : <RuleTable rows={rules} fullOrder={rules} canWrite={canWrite} canReorder summaryFn={natSummary}
+        : <RuleTable rows={rules} fullOrder={rules} canWrite={canWrite} canReorder summaryFn={natSummary} deviceId={deviceId} highlight={highlight}
             onEdit={r => { setForm(natRuleToForm(r)); setErr(''); setEditing(r); }}
             onToggle={r => toggleMut.mutate({ id: r['.id'], disabled: !(r.disabled === 'true') })}
             onDelete={r => { if (confirm('Delete this NAT rule?')) delMut.mutate(r['.id']); }} onMove={onMove} />}
@@ -845,7 +861,8 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
           </p>
         )}
       </div>
-      <FirewallBody key={family} deviceId={deviceId} deviceName={deviceName} family={family} onQuick={canWrite ? (p?: QuickPreset) => setQuick(p ?? 'open') : undefined} />
+      <FirewallBody key={family} deviceId={deviceId} deviceName={deviceName} family={family} highlight={params.get('rule')}
+        onQuick={canWrite ? (p?: QuickPreset) => setQuick(p ?? 'open') : undefined} />
       {quick && (
         <QuickRulesModal deviceId={deviceId} deviceName={deviceName} family={family}
           initial={quick === 'open' ? undefined : quick} onClose={closeQuick} />
@@ -854,7 +871,7 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
   );
 }
 
-function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: number; deviceName?: string; family: FirewallFamily; onQuick?: (preset?: QuickPreset) => void }) {
+function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { deviceId: number; deviceName?: string; family: FirewallFamily; onQuick?: (preset?: QuickPreset) => void; highlight?: string | null }) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
   const v6 = family === 'ipv6';
@@ -878,6 +895,12 @@ function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: num
     retry: false,
   });
   const listNames = Array.from(new Set(addrLists.map(e => e.list).filter(Boolean))).sort();
+  // NAT rules too, from NatCard's query, to count the logging rules without a tag (#369).
+  const { data: natRules = [] } = useQuery({
+    queryKey: fwKey('nat', deviceId, family), queryFn: () => devicesApi.getNat(deviceId, family).then(r => r.data as Row[]),
+    retry: false,
+  });
+  const untagged = rules.filter(logsUntagged).length + natRules.filter(logsUntagged).length;
   const invalidate = () => qc.invalidateQueries({ queryKey: fwKey('firewall', deviceId, family) });
   const unavailable = v6 ? ipv6Unavailable(loadError) : null;
   const done = (res: unknown) => { invalidate(); setErr(''); guard.onSuccess(res); };
@@ -906,6 +929,11 @@ function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: num
     onSuccess: done,
   });
   const resetMut = useMutation({ mutationFn: () => devicesApi.resetFirewallCounters(deviceId, family), onSuccess: invalidate });
+  const tagMut = useMutation({
+    mutationFn: (confirm?: boolean) => devicesApi.tagLoggingRules(deviceId, family, confirm),
+    onSuccess: (res) => { done(res); qc.invalidateQueries({ queryKey: fwKey('nat', deviceId, family) }); },
+  });
+  const tagAll = () => tagMut.mutate(false, { onError: guard.onError(() => tagMut.mutate(true, { onError: fail }), fail) });
 
   // Each action retries itself with the lockout confirmed if the user overrides.
   const submitAdd = () => {
@@ -924,7 +952,7 @@ function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: num
     delMut.mutate({ id }, { onError: guard.onError(() => delMut.mutate({ id, confirm: true }, { onError: fail }), fail) });
   const move = (id: string, destination?: string) =>
     moveMut.mutate({ id, destination }, { onError: guard.onError(() => moveMut.mutate({ id, destination, confirm: true }, { onError: fail }), fail) });
-  const anyPending = addMut.isPending || updMut.isPending || delMut.isPending || toggleMut.isPending || moveMut.isPending;
+  const anyPending = addMut.isPending || updMut.isPending || delMut.isPending || toggleMut.isPending || moveMut.isPending || tagMut.isPending;
 
   const onMove = (r: Row, dir: 'up' | 'down') => { const d = moveDestination(rules, r, dir); if (d.ok) move(r['.id'], d.destination); };
 
@@ -971,9 +999,22 @@ function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: num
       )}
       {err && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{err}</div>}
       <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={anyPending} />
+      {untagged > 0 && (
+        <div className="flex items-center gap-3 flex-wrap rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-gray-600 dark:text-slate-300">
+          <span className="flex-1 min-w-[16rem]">
+            {untagged} rule{untagged === 1 ? ' logs' : 's log'} without a tag, so {untagged === 1 ? 'its' : 'their'} log lines can&rsquo;t be traced back
+            to {untagged === 1 ? 'it' : 'them'}. A tag goes at the end of the log prefix; nothing else changes.
+          </span>
+          {canWrite && <>
+            <button onClick={tagAll} disabled={anyPending} className="btn-secondary text-xs py-1">Tag {untagged === 1 ? 'it' : `all ${untagged}`}</button>
+            <ReviewChangesButton className="text-xs py-1" deviceName={deviceName} applyLabel="Tag rules" onApply={tagAll} disabled={anyPending}
+              request={() => devicesApi.tagLoggingRules(deviceId, family)} />
+          </>}
+        </div>
+      )}
 
       {filtered.length === 0 ? <div className="card p-8 text-center text-gray-400">No {v6 ? 'IPv6 ' : ''}firewall rules{chainFilter !== 'all' ? ` in "${chainFilter}"` : ''}.</div>
-        : <RuleTable rows={filtered} fullOrder={rules} canWrite={canWrite} canReorder={chainFilter === 'all'} summaryFn={ruleSummary}
+        : <RuleTable rows={filtered} fullOrder={rules} canWrite={canWrite} canReorder={chainFilter === 'all'} summaryFn={ruleSummary} deviceId={deviceId} highlight={highlight}
             onEdit={r => { setForm(ruleToForm(r)); setErr(''); setEditing(r); }}
             onToggle={r => toggle(r['.id'], !(r.disabled === 'true'))}
             onDelete={r => { if (confirm('Delete this firewall rule?')) remove(r['.id']); }} onMove={onMove} />}
@@ -985,7 +1026,7 @@ function FirewallBody({ deviceId, deviceName, family, onQuick }: { deviceId: num
 
       {/* NAT is available on all RouterOS devices */}
       <div className="border-t border-gray-200 dark:border-slate-700 pt-2" />
-      <NatCard deviceId={deviceId} family={family} />
+      <NatCard deviceId={deviceId} family={family} highlight={highlight} />
     </div>
   );
 }

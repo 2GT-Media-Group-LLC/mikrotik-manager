@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { tagOf, ruleUrl } from '../utils/ruleTags';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { RefreshCw, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
@@ -41,8 +43,10 @@ export default function FirewallEventsPage() {
   const canWrite = useCanWrite();
   const [monitoringOpen, setMonitoringOpen] = useState(false);
 
-  const [search, setSearch] = useState('');
-  const [deviceId, setDeviceId] = useState('');
+  // A rule's "log lines" link (#369) arrives as ?device=ID&search=mtm#tag.
+  const [urlParams] = useSearchParams();
+  const [search, setSearch] = useState(() => urlParams.get('search') ?? '');
+  const [deviceId, setDeviceId] = useState(() => (/^\d+$/.test(urlParams.get('device') ?? '') ? urlParams.get('device')! : ''));
   const [action, setAction] = useState('');
   const [protocol, setProtocol] = useState('');
   const [page, setPage] = useState(0);
@@ -303,6 +307,15 @@ export default function FirewallEventsPage() {
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
                       {event.chain}
+                      {(() => {
+                        const tag = tagOf(event.prefix);
+                        return tag && event.deviceId != null && (
+                          <Link to={ruleUrl(event.deviceId, tag)} title="The rule that logged this line"
+                            className="ml-1.5 px-1.5 rounded bg-gray-100 dark:bg-slate-700 text-[10px] text-gray-500 dark:text-slate-300 hover:text-blue-600 normal-case">
+                            rule mtm#{tag}
+                          </Link>
+                        );
+                      })()}
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
