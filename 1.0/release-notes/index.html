@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#107" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.7
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#106" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1544,6 +1555,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#107" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.7
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#106" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1707,6 +1729,23 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="107">1.0.7<a class="headerlink" href="#107" title="Permanent link">&para;</a></h2>
+<p>Released on Saturday 7 November 2026. Housekeeping: restore points left on devices, Postgres's
+shared memory, and two development-only dependency alerts.</p>
+<ul>
+<li><strong>Old Change Guard restore points are cleared from devices.</strong> Each guarded change saves a
+  restore point (<code>mtm-rp-….backup</code>) that only its revert scheduler reads. They were left behind
+  when a revert fired, when the manager restarted mid-change, or when the clean-up couldn't reach
+  the device, and piled up in the device's files. After each change, Change Guard now removes any
+  restore point whose revert scheduler is gone, in binary and script mode, and keeps one that's
+  still armed (<a href="../change-guard/">Change Guard</a>).</li>
+<li><strong>Postgres gets 256 MB of shared memory</strong> (<code>shm_size</code> in both compose files). Docker's default
+  is 64 MB, and on a large events table Postgres's parallel queries and parallel <code>VACUUM</code> could
+  fail with <em>could not resize shared memory segment … No space left on device</em>. If you keep your
+  own copy of the compose file, add <code>shm_size: 256m</code> to the <code>postgres</code> service.</li>
+<li><code>minimatch</code> in the build and test tooling is updated to 11, clearing two Dependabot alerts.
+  Neither it nor <code>deepmerge</code> (an alert with no fix yet) is in the images.</li>
+</ul>
 <h2 id="106">1.0.6<a class="headerlink" href="#106" title="Permanent link">&para;</a></h2>
 <p>Released on Thursday 5 November 2026. A fix for Change Guard on bridges whose VLAN table names
 an interface list.</p>
