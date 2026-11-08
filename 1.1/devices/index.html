@@ -784,6 +784,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#zones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Zones
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Zones">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#turning-zones-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turning zones on
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#applying" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Applying
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#while-zones-are-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        While zones are on
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ports-and-the-faceplate" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2198,6 +2259,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#zones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Zones
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Zones">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#turning-zones-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Turning zones on
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#applying" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Applying
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#while-zones-are-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        While zones are on
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ports-and-the-faceplate" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3035,6 +3157,76 @@ unbanned address that keeps connecting is banned again. The <strong>Security</st
 across the fleet, as of each device's last slow poll.</p>
 <p>The Security tab's <strong>No input-chain firewall rule</strong> finding (IPv4 or IPv6) has an <strong>Add input rules</strong>
 button that opens Quick rules on Input basics.</p>
+<h2 id="zones">Zones<a class="headerlink" href="#zones" title="Permanent link">&para;</a></h2>
+<p><strong>Zones</strong> on the Firewall tab (IPv4) builds the whole filter table from a matrix, the way
+zone-based firewalls work (#369). A zone is an interface list (<code>LAN</code>, <code>WAN</code>, <code>DMZ</code>…). For each pair
+of zones, and from each zone to the router itself, you choose <strong>Deny</strong>, <strong>Allow everything</strong>, or
+<strong>Only these services</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>To</th>
+<th>Services to pick from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Another zone</td>
+<td>Ping, Web (80, 443), DNS, SSH, Remote Desktop, File sharing (SMB), NTP</td>
+</tr>
+<tr>
+<td>The router</td>
+<td>Ping, WinBox, SSH, WebFig, API, DNS, DHCP, NTP, SNMP. WinBox, SSH, WebFig and the API use the ports set in <strong>IP &gt; Services</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Any pair can also have other TCP or UDP ports (<code>8080</code>, <code>5000-5010,6000</code>). Traffic between interfaces
+of the same zone is allowed unless you turn it off for that zone.</p>
+<h3 id="turning-zones-on">Turning zones on<a class="headerlink" href="#turning-zones-on" title="Permanent link">&para;</a></h3>
+<p>Zones replace the whole IPv4 filter table, so they can be turned on only when the table is empty or
+holds just MikroTik's default rules (comments starting <code>defconf</code>). Click <strong>Set up zones</strong>: the form
+starts from the device's interface lists. When it has <code>LAN</code> and <code>WAN</code>, the cells start like the
+defaults: LAN reaches everything, WAN only gets ping to the router.</p>
+<p>Add interfaces to a zone, or a new zone (which creates an interface list on the device). Put routed
+interfaces in zones: a bridge, a VLAN interface, the WAN port. The firewall sees routed traffic on
+the bridge, not on its ports, so a zone made of bridge ports gets a warning. So does an interface
+with an address that's in no zone, since nothing reaches the router or another zone through it.</p>
+<p>As you change the matrix, the form shows what applying will do: the lists and members it changes,
+and how many rules it adds, removes and keeps. <strong>Show the rules</strong> lists them all.</p>
+<h3 id="the-rules">The rules<a class="headerlink" href="#the-rules" title="Permanent link">&para;</a></h3>
+<p>Every rule is commented <code>mtm zone: …</code>. In order:</p>
+<ul>
+<li><strong>Input</strong> (traffic to the router): accept established, related and untracked; drop invalid;
+  accept to the loopback (for CAPsMAN); accept the manager's own address, when MTM can see it on
+  the device; a jump per zone that can reach the router, to <code>&lt;zone&gt;-to-router</code>; then drop the rest.</li>
+<li><strong>Forward</strong> (traffic between zones): FastTrack established and related (optional, with hardware
+  offload on RouterOS 7); accept established, related and untracked; drop invalid; an accept per
+  zone for same-zone traffic; a jump per open pair, to <code>&lt;from&gt;-to-&lt;to&gt;</code>; then drop the rest.</li>
+<li><strong>One chain per open pair</strong>, holding its accepts and ending in a return.</li>
+</ul>
+<p>The two final drops log by default with the prefixes <code>zone drop in</code> and <code>zone drop fwd</code>, tagged so
+<a href="../firewall-events/#which-rule-logged-it">Firewall Events</a> links each line to its rule. Untick <strong>Log
+what's dropped</strong> to leave them quiet. The returns and the final drops aren't shown in the matrix.</p>
+<p>Replies always get back: a connection allowed one way is tracked, and the stateful accepts let its
+replies through. Port forwards (dstnat) are matched after the address is changed, so allow the
+service from the outside zone to the zone the server is in.</p>
+<h3 id="applying">Applying<a class="headerlink" href="#applying" title="Permanent link">&para;</a></h3>
+<p><strong>Apply</strong> runs as one <a href="../change-guard/">Change Guard</a> change. The whole new table is checked
+against the manager's own connection first, including the jumps into each zone's chain and any
+interface moved between lists, so a matrix that would cut the manager off is caught before anything
+is written. <strong>Review changes</strong> shows the commands.</p>
+<p>Rules that are already right stay as they are, with their counters; the rest are added in place or
+removed. New rules go in disabled and are turned on with the drops last, so no step along the way
+drops anything the old table let through.</p>
+<h3 id="while-zones-are-on">While zones are on<a class="headerlink" href="#while-zones-are-on" title="Permanent link">&para;</a></h3>
+<p>Zones own the IPv4 filter table. The rules still show on the Firewall tab, with their counters, but
+they can't be edited, moved or deleted there, and Quick rules other than masquerade are refused.
+NAT, address lists and IPv6 are unchanged.</p>
+<p>If the table is changed outside MTM (in WinBox, say), the Zones card says what differs, and
+<a href="../change-guard/#config-health">Config Health</a> reports <strong>Firewall differs from its zones</strong>.
+<strong>Apply</strong> puts the rules back.</p>
+<p><strong>Turn zones off</strong> stops managing the table. Nothing on the device changes: the rules stay as
+ordinary rules you can edit. Turning zones on again starts from the same matrix.</p>
 <h2 id="ports-and-the-faceplate">Ports and the faceplate<a class="headerlink" href="#ports-and-the-faceplate" title="Permanent link">&para;</a></h2>
 <p>The faceplate mirrors the physical front panel — copper staggered odd above even as the
 hardware is, SFP cages and QSFP breakout lanes grouped separately. Bridges and bonds aren't on
@@ -3054,7 +3246,8 @@ bridge port (Bridge → Ports in WinBox), which is where many people put them (#
 port's comment here sets the interface comment. The column is hidden when no port has a
 comment.</p>
 <p>Use <strong>ports per row</strong> in the faceplate header if the default does not suit your hardware;
-the setting is remembered. Next to it, <strong>top row</strong> says which ports are on top: <code>1 3 5</code> (most
+it's remembered for each device in your browser, and a device you haven't set yet uses the last
+choice you made. Next to it, <strong>top row</strong> says which ports are on top: <code>1 3 5</code> (most
 models) or <code>2 4 6</code>, for models whose front panel has the even ports on top (#277). It appears
 when the Ethernet ports sit in two rows, and is remembered per model in your browser. A choice you make there overrides the model's built-in Ethernet layout.</p>
 <p>Selecting a port shows its throughput for the chosen range, and under it <strong>Errors &amp; drops</strong>: how
