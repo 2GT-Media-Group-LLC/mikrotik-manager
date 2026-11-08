@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Building2, ChevronDown, Check, Plus, Pencil, Globe, X, FolderOpen, Search } from 'lucide-react';
 import clsx from 'clsx';
 import { sitesApi, siteGroupsApi } from '../../services/api';
-import { useSiteStore, type Site } from '../../store/siteStore';
+import { useSiteStore, scopeSwitch, type Site } from '../../store/siteStore';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { useIsSiteScoped } from '../../hooks/useCanWrite';
 
@@ -95,12 +95,14 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
    * observers holding their last result, so the pages never updated.
    */
   function switchTo(id: number | null) {
+    scopeSwitch.at = Date.now();
     setCurrentSite(id);
     closeAll();
     onNavigate?.();
   }
 
   function switchToGroup(id: number) {
+    scopeSwitch.at = Date.now();
     setCurrentGroup(id);
     closeAll();
     onNavigate?.();

@@ -1,4 +1,4 @@
-import { useCanWrite } from '../hooks/useCanWrite';
+import { useIsAdminIn } from '../hooks/useCanWrite';
 import { useState } from 'react';
 import type { Device } from '../types';
 import { useSearchParams } from 'react-router-dom';
@@ -51,7 +51,8 @@ export default function CommandsPage() {
   const [haltOnFailure, setHaltOnFailure] = useState(true);
   const [useGuard, setUseGuard] = useState(true);
   const [acknowledged, setAcknowledged] = useState(false);
-  const canWrite = useCanWrite();
+  // Running commands is for admins (#411).
+  const canWrite = useIsAdminIn(null);
   const [openRun, setOpenRun] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 

@@ -7,6 +7,22 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.9
+
+Released on Sunday 8 November 2026. Who can open a shell or run commands, and the site switcher.
+
+- **The web terminal is for admins only**
+  ([#411](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/411)). A shell signs in
+  as the router's admin account and skips Change Guard and Review changes, so operators no longer
+  get one; a site admin still gets one on devices in their sites. For the same reason, running
+  **bulk commands** is admin-only too. Operators keep every guarded edit on the device tabs, and
+  can still cancel a bulk command run.
+- **Switching sites left you on another site's device**
+  ([#414](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/414)). Picking a site in
+  the selector while a device page was open kept showing that device, even when it belonged to
+  another site. The page now goes back to the device list when the new site doesn't include the
+  device; picking the device's own site keeps it open.
+
 ## 1.0.8
 
 Released on Saturday 7 November 2026. Fixes for the device page's update check and for RouterBOOT

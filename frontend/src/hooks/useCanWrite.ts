@@ -26,3 +26,20 @@ export function useIsSiteScoped(): boolean {
 export function useIsFleetAdmin(): boolean {
   return useAuthStore((state) => state.user?.role === 'admin' && !state.user?.siteRoles);
 }
+
+/**
+ * An admin where it counts: in `siteId` (a device's site) for an account
+ * limited to particular sites, otherwise the account's own role. The web
+ * terminal is offered only to admins (#411); the server checks the same.
+ */
+export function useIsAdminIn(siteId: number | null | undefined): boolean {
+  const user = useAuthStore((state) => state.user);
+  const current = useSiteStore((state) => state.currentSiteId);
+  if (user?.siteRoles) {
+    const id = siteId ?? current;
+    // "All my sites": an admin somewhere; the server checks each device.
+    if (id == null) return Object.values(user.siteRoles).includes('admin');
+    return user.siteRoles[String(id)] === 'admin';
+  }
+  return user?.role === 'admin';
+}

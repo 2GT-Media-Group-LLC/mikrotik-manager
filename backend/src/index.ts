@@ -201,8 +201,10 @@ io.on('connection', (socket) => {
 const terminalNs = io.of('/terminal');
 
 // Roles allowed to open an interactive device shell. The stored SSH account is
-// the router admin, so console access mirrors requireWrite: viewers are rejected.
-const TERMINAL_ROLES = new Set(['admin', 'operator']);
+// the router's admin and a shell bypasses Change Guard, previews and the audit
+// of each change, so only admins get one (#411); operators keep the guarded
+// edits.
+const TERMINAL_ROLES = new Set(['admin']);
 
 // Per-user rate limit on shell starts (in-memory; sliding window).
 const TERMINAL_START_LIMIT = 5;

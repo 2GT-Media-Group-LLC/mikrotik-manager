@@ -660,7 +660,9 @@ the manager, it falls back to `http://` on the device's address.
 
 ### Terminal
 
-The terminal opens an SSH shell on the device, for operators and admins in the device's site.
+The terminal opens an SSH shell on the device, for admins in the device's site. Operators
+don't get one: a shell skips Change Guard and Review changes, so they make their changes
+through the device tabs instead.
 The audit log records each session's start, who opened it, from which address, and when it
 was refused (for example by the rate limit). **What is typed in the shell is not recorded.**
 If you need a record of commands, turn on logging on the device itself (`/system logging`), or
