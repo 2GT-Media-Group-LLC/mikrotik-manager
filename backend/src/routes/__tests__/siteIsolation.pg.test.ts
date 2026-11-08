@@ -113,7 +113,14 @@ suite('site-scoped accounts stay in their sites (GHSA-j9x4-qwcj-p8v8)', () => {
 
   const hex = (n: number) => `0x${n.toString(16)}`;
 
+  it('commands: running is for admins (#411)', async () => {
+    const run = await request(app).post('/api/commands/runs').send({ command: '/system identity print', device_ids: [id.devA], start: false });
+    expect(run.status).toBe(403);
+  });
+
   it('commands: a device id sent as a string is still checked', async () => {
+    // A site admin, so the site check is what answers, not the role (#411).
+    currentUser = { userId: 1, username: 'sa', role: 'admin', siteRoles: { [id.A]: 'admin' } };
     for (const ids of [[String(id.devB)], [id.devB], [` ${id.devB}`], [`+${id.devB}`]]) {
       const run = await request(app).post('/api/commands/runs').send({ command: '/system identity print', device_ids: ids, start: false });
       expect([run.status, ids]).toEqual([404, ids]);

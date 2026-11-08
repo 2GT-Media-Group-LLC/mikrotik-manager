@@ -14,6 +14,19 @@ Each row can show:
 
 IPv4 and IPv6 packet logs are supported.
 
+## Grouped and raw
+
+RouterOS logs every packet a logging rule matches, so one blocked client retrying, or a port
+scan, fills the page. The page opens **Grouped**, the way a Palo Alto or Check Point log reads:
+one line per device, rule, chain, interfaces, protocol, source, destination and destination
+port, with how many lines it stands for and when it was first and last seen. The source port
+is left out, so retries from new ports stay on one line. Click a count to see its lines in
+**Raw**, which shows every line as the device logged it. The page remembers which view you
+used last.
+
+Grouping reads the newest 100,000 lines that match the filters; narrow by device or search to
+look further back.
+
 ## Where the events come from
 
 Firewall logs are collected from the normal RouterOS log stream. A firewall

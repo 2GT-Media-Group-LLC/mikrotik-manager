@@ -1,5 +1,5 @@
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -7,8 +7,10 @@ import {
 } from 'lucide-react';
 import { hostPort, winboxAddress } from '../utils/deviceAddress';
 import { devicesApi, metricsApi } from '../services/api';
-import { useCanWrite } from '../hooks/useCanWrite';
+import { useCanWrite, useIsAdminIn } from '../hooks/useCanWrite';
 import { invalidateDevice } from '../utils/invalidateDevice';
+import { useSiteStore, scopeSwitch, SCOPE_SWITCH_WINDOW_MS } from '../store/siteStore';
+import { useSiteView } from '../hooks/useSiteView';
 import SwitchPortDiagram from '../components/ports/SwitchPortDiagram';
 import DeviceTagPicker from '../components/devices/DeviceTagPicker';
 import TerminalModal from '../components/TerminalModal';
@@ -124,6 +126,24 @@ export default function DeviceDetailPage() {
     },
     onError: (e: unknown) => setSyncNote({ ok: false, text: (e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Sync failed' }),
   });
+
+  // The terminal is for admins in the device's site (#411).
+  const canTerminal = useIsAdminIn(device?.site_id);
+
+  // Picking another site or group in the selector while a device outside it
+  // is open goes back to the devices list, which shows the new scope (#414).
+  // Opening a link to such a device still works; only a switch moves.
+  const { currentGroupId } = useSiteStore();
+  const { view: siteView } = useSiteView();
+  const [switched] = useState(() => Date.now() - scopeSwitch.at < SCOPE_SWITCH_WINDOW_MS);
+  const scopeChecked = useRef(false);
+  useEffect(() => {
+    if (!switched || scopeChecked.current || !device) return;
+    // A group's sites come with the site list; wait for them.
+    if (currentGroupId != null && !siteView?.length) return;
+    scopeChecked.current = true;
+    if (siteView && (device.site_id == null || !siteView.includes(device.site_id))) navigate('/devices');
+  }, [switched, currentGroupId, siteView, device, navigate]);
 
   if (isLoading) {
     return (
@@ -293,7 +313,7 @@ export default function DeviceDetailPage() {
             <GitBranch className="w-4 h-4" />
             <span className="hidden sm:inline">Topology</span>
           </Link>
-          {canWrite && (
+          {canTerminal && (
             <button
               onClick={() => setShowTerminal(true)}
               className="btn-secondary flex items-center gap-2 text-sm"

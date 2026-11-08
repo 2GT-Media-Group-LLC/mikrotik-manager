@@ -113,12 +113,11 @@ What a site-limited account gets:
   tokens, encryption or other fleet settings, and admin-only fleet-wide credential presets are
   as closed to them as to an operator. They do manage their own sites' credential presets
   under **Operations → Credentials**.
-- **Bulk work within its sites.** Bulk commands and firmware rollouts are available only if
-  every device in them is in the account's sites. "Apply to all" actions (SNMP, LLDP, Backup
+- **Bulk work within its sites.** Bulk commands (site admins only) and firmware rollouts are
+  available only if every device in them is in the account's sites. "Apply to all" actions (SNMP, LLDP, Backup
   all) skip sites where it's only a viewer.
 - **Terminals and live updates** follow the same rules: a shell opens only on a device in a
-  site where the account is an operator or admin, and live-update events for other sites
-  never reach it.
+  site where the account is an admin, and live-update events for other sites never reach it.
 
 Not available to site-limited accounts, because each covers the whole fleet:
 

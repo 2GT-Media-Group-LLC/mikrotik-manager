@@ -93,7 +93,90 @@ function strictInteger(
   return parsed;
 }
 
-// GET /api/events/firewall
+/** Grouping reads at most this many of the newest matching lines. */
+export const FIREWALL_GROUP_SCAN = 100_000;
+
+type FirewallGroupRow = {
+  device_id: number | null;
+  device_name: string | null;
+  dst_port: string | null;
+  n: string;
+  first_seen: Date | string;
+  last_seen: Date | string;
+  sample: string;
+  total_groups: string;
+};
+
+/**
+ * The firewall log folded the way a next-generation firewall shows it (#415):
+ * one line per device, rule (log prefix), chain, interfaces, protocol, source,
+ * destination and destination port, with a count and first and last time.
+ * The source port is left out on purpose: a blocked client retrying, or a
+ * scan, is one line instead of hundreds.
+ */
+async function groupedFirewall(
+  where: string, baseParams: unknown[], firstIdx: number, joinDevices: boolean, limit: number, offset: number,
+) {
+  const params = [...baseParams];
+  let idx = firstIdx;
+  const p = (v: unknown) => { params.push(v); return `$${idx++}`; };
+  const prefixRe = p('^(.*?) (input|forward|output):');
+  const chainRe = p('(input|forward|output):');
+  const inRe = p(' in:([^ ,]+)');
+  const outRe = p(' out:([(]unknown 0[)]|[^ ,]+)');
+  const protoRe = p('proto ([A-Za-z0-9-]+)');
+  const epRe = p(', ([[][^]]+[]]|[0-9.]+)(?::[0-9]+)?->([[][^]]+[]]|[0-9.]+)(?::([0-9]+))?');
+  const scan = p(FIREWALL_GROUP_SCAN);
+  const lim = p(limit);
+  const off = p(offset);
+  const rows = await query<FirewallGroupRow>(
+    `WITH m AS (
+       SELECT e.device_id, e.event_time, e.message,
+              substring(e.message from ${prefixRe}) AS prefix,
+              substring(e.message from ${chainRe}) AS chain,
+              substring(e.message from ${inRe}) AS in_if,
+              substring(e.message from ${outRe}) AS out_if,
+              upper(substring(e.message from ${protoRe})) AS proto,
+              regexp_match(e.message, ${epRe}) AS ep
+         FROM events e
+         ${joinDevices ? 'LEFT JOIN devices d ON d.id = e.device_id' : ''}
+        WHERE ${where}
+        ORDER BY e.event_time DESC, e.id DESC
+        LIMIT ${scan}
+     ), g AS (
+       SELECT device_id, prefix, chain, in_if, out_if, proto, ep[1] AS src, ep[2] AS dst, ep[3] AS dst_port,
+              COUNT(*) AS n, MIN(event_time) AS first_seen, MAX(event_time) AS last_seen,
+              (array_agg(message ORDER BY event_time DESC))[1] AS sample
+         FROM m
+        GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+     )
+     SELECT g.device_id, d.name AS device_name, g.dst_port, g.n::text AS n, g.first_seen, g.last_seen, g.sample,
+            (COUNT(*) OVER ())::text AS total_groups
+       FROM g LEFT JOIN devices d ON d.id = g.device_id
+      ORDER BY g.last_seen DESC, g.n DESC
+      LIMIT ${lim} OFFSET ${off}`,
+    params,
+  );
+  const groups = rows.flatMap((r) => {
+    const event = parseFirewallLog(r.sample);
+    if (!event) return [];
+    return [{
+      deviceId: r.device_id,
+      deviceName: r.device_name,
+      count: Number(r.n),
+      firstSeen: r.first_seen,
+      lastSeen: r.last_seen,
+      rawMessage: r.sample,
+      ...event,
+      // Folded over every source port; the destination port is the group's.
+      srcPort: undefined,
+      dstPort: r.dst_port != null ? Number(r.dst_port) : undefined,
+    }];
+  });
+  return { groups, total: Number(rows[0]?.total_groups ?? 0), scanLimit: FIREWALL_GROUP_SCAN };
+}
+
+// GET /api/events/firewall[?view=grouped]
 router.get('/firewall', async (req, res) => {
   const deviceIdRaw = singleQueryValue(req.query.deviceId);
   const sinceRaw = singleQueryValue(req.query.since);
@@ -262,6 +345,10 @@ router.get('/firewall', async (req, res) => {
   }
 
   const where = filters.join(' AND ');
+
+  if (req.query.view === 'grouped') {
+    return res.json(await groupedFirewall(where, params, idx, !!searchTerm, requestedLimit, requestedOffset));
+  }
 
   const rowsQuery = query<FirewallEventRow>(
     `SELECT

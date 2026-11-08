@@ -76,3 +76,13 @@ export const useSiteStore = create<SiteState>()(
     }
   )
 );
+
+/**
+ * When the user last picked a site or group in the selector (#414). Switching
+ * remounts every page (main.tsx), so a page can't compare the scope it was
+ * opened under; a device page checks this instead and, right after a switch,
+ * leaves a device the new scope doesn't include.
+ */
+export const scopeSwitch = { at: 0 };
+/** How long after a switch a remounted page treats itself as switched. */
+export const SCOPE_SWITCH_WINDOW_MS = 5_000;

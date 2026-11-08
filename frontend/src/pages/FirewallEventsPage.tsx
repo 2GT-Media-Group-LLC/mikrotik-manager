@@ -9,7 +9,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import clsx from 'clsx';
 
 import { devicesApi, eventsApi } from '../services/api';
-import type { FirewallEvent } from '../services/api';
+import type { FirewallEvent, FirewallGroup } from '../services/api';
 import DevicePicker from '../components/common/DevicePicker';
 import { useSocket } from '../hooks/useSocket';
 import { useCanWrite } from '../hooks/useCanWrite';
@@ -37,6 +37,20 @@ function endpoint(ip: string, port?: number): string {
   return port != null ? `${ip}:${port}` : ip;
 }
 
+type LogView = 'grouped' | 'raw';
+const VIEW_KEY = 'firewall-logs:view';
+
+function RuleChip({ prefix, deviceId }: { prefix: string; deviceId: number | null }) {
+  const tag = tagOf(prefix);
+  if (!tag || deviceId == null) return null;
+  return (
+    <Link to={ruleUrl(deviceId, tag)} title="The rule that logged this line"
+      className="ml-1.5 px-1.5 rounded bg-gray-100 dark:bg-slate-700 text-[10px] text-gray-500 dark:text-slate-300 hover:text-blue-600 normal-case">
+      rule mtm#{tag}
+    </Link>
+  );
+}
+
 export default function FirewallEventsPage() {
   const { formatTime, formatDateTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
@@ -50,6 +64,9 @@ export default function FirewallEventsPage() {
   const [action, setAction] = useState('');
   const [protocol, setProtocol] = useState('');
   const [page, setPage] = useState(0);
+  // Grouped by default (#415): one line per rule, source, destination and port.
+  const [view, setViewState] = useState<LogView>(() => (localStorage.getItem(VIEW_KEY) === 'raw' ? 'raw' : 'grouped'));
+  const setView = (v: LogView) => { setViewState(v); setPage(0); localStorage.setItem(VIEW_KEY, v); };
   const debouncedSearch = useDebouncedValue(search);
 
   const { data: devices = [] } = useQuery({
@@ -60,22 +77,27 @@ export default function FirewallEventsPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: [
       'firewall-events',
-      { search: debouncedSearch, deviceId, action, protocol, page },
+      { search: debouncedSearch, deviceId, action, protocol, page, view },
     ],
-    queryFn: () =>
-      eventsApi
-        .firewall({
-          search: debouncedSearch || undefined,
-          since: new Date(Date.now() - FIREWALL_WINDOW_MS).toISOString(),
-          deviceId: deviceId ? Number(deviceId) : undefined,
-          action: action
-            ? (action as FirewallEvent['action'])
-            : undefined,
-          protocol: protocol || undefined,
-          limit: PAGE_SIZE,
-          offset: page * PAGE_SIZE,
-        })
-        .then((r) => r.data),
+    queryFn: async (): Promise<{ events: FirewallEvent[]; groups: FirewallGroup[]; total: number; scanLimit?: number }> => {
+      const params = {
+        search: debouncedSearch || undefined,
+        since: new Date(Date.now() - FIREWALL_WINDOW_MS).toISOString(),
+        deviceId: deviceId ? Number(deviceId) : undefined,
+        action: action
+          ? (action as FirewallEvent['action'])
+          : undefined,
+        protocol: protocol || undefined,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      };
+      if (view === 'grouped') {
+        const r = (await eventsApi.firewallGrouped(params)).data;
+        return { events: [], groups: r.groups, total: r.total, scanLimit: r.scanLimit };
+      }
+      const r = (await eventsApi.firewall(params)).data;
+      return { events: r.events, groups: [], total: r.total };
+    },
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   });
@@ -101,8 +123,20 @@ export default function FirewallEventsPage() {
   });
 
   const events = data?.events ?? [];
+  const groups = data?.groups ?? [];
+  const shown = view === 'grouped' ? groups.length : events.length;
   const total = data?.total ?? 0;
   const totalLabel = total.toLocaleString();
+  const groupedLines = groups.reduce((a, g) => a + g.count, 0);
+
+  // A group's own lines: the raw view, narrowed to its source on its device.
+  const openLines = (g: FirewallGroup) => {
+    if (g.deviceId != null) setDeviceId(String(g.deviceId));
+    // As the line spells the source, so 192.168.0.1 doesn't also find .101.
+    const v6 = g.srcIp.includes(':');
+    setSearch(g.dstPort != null ? (v6 ? `[${g.srcIp}]:` : `${g.srcIp}:`) : `${g.srcIp}->`);
+    setView('raw');
+  };
 
   return (
     <div className="space-y-4">
@@ -111,7 +145,7 @@ export default function FirewallEventsPage() {
           Firewall Logs
           {total > 0 && (
             <span className="ml-2 text-sm font-normal text-gray-500 dark:text-slate-400">
-              ({totalLabel})
+              ({totalLabel}{view === 'grouped' ? ` group${total === 1 ? '' : 's'}` : ''})
             </span>
           )}
         </h1>
@@ -173,6 +207,15 @@ export default function FirewallEventsPage() {
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
+        <div className="inline-flex rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden text-sm" role="group" aria-label="View">
+          {(['grouped', 'raw'] as const).map((v) => (
+            <button key={v} onClick={() => setView(v)} aria-pressed={view === v}
+              title={v === 'grouped' ? 'One line per rule, source, destination and port, with a count' : 'Every line as the device logged it'}
+              className={clsx('px-3 py-1.5', view === v ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/40')}>
+              {v === 'grouped' ? 'Grouped' : 'Raw'}
+            </button>
+          ))}
+        </div>
         <div className="relative w-full sm:flex-1 sm:min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -237,11 +280,73 @@ export default function FirewallEventsPage() {
         <div className="flex items-center justify-center h-48 text-gray-400">
           Loading...
         </div>
-      ) : events.length === 0 ? (
+      ) : shown === 0 ? (
         <div className="card p-12 flex flex-col items-center gap-3 text-center">
           <ShieldCheck className="w-12 h-12 text-gray-300 dark:text-slate-600" />
           <p className="text-gray-500 dark:text-slate-400">
             No firewall events found
+          </p>
+        </div>
+      ) : view === 'grouped' ? (
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-slate-700">
+                  <th className="table-header px-4 py-2.5 text-left">Last seen</th>
+                  <th className="table-header px-4 py-2.5 text-left">Action</th>
+                  <th className="table-header px-4 py-2.5 text-right">Count</th>
+                  <th className="table-header px-4 py-2.5 text-left">Device</th>
+                  <th className="table-header px-4 py-2.5 text-left">Source</th>
+                  <th className="table-header px-4 py-2.5 text-left">Destination</th>
+                  <th className="table-header px-4 py-2.5 text-left">Proto</th>
+                  <th className="table-header px-4 py-2.5 text-left">Rule</th>
+                  <th className="table-header px-4 py-2.5 text-left">In</th>
+                  <th className="table-header px-4 py-2.5 text-left">Out</th>
+                  <th className="table-header px-4 py-2.5 text-left">First seen</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-slate-700 table-zebra">
+                {groups.map((g, i) => (
+                  <tr key={`${g.deviceId}|${g.prefix}|${g.chain}|${g.srcIp}|${g.dstIp}|${g.dstPort}|${g.protocol}|${i}`}
+                    title={`Latest line: ${g.rawMessage}`}
+                    className={clsx('hover:bg-gray-50 dark:hover:bg-slate-700/30', g.action === 'drop' && 'bg-red-50/30 dark:bg-red-900/10')}>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
+                      {formatDateTime(g.lastSeen, { year: undefined, second: '2-digit' })}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={clsx('inline-flex px-2 py-0.5 rounded-full text-xs font-medium uppercase', actionClass(g.action))}>
+                        {g.action}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button onClick={() => openLines(g)} title="Show these lines"
+                        className="text-xs font-mono font-semibold text-blue-600 dark:text-blue-400 hover:underline">
+                        {g.count.toLocaleString()}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{g.deviceName || '—'}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">{g.srcIp}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">{endpoint(g.dstIp, g.dstPort)}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 uppercase whitespace-nowrap">{g.protocol}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
+                      {g.chain}
+                      <RuleChip prefix={g.prefix} deviceId={g.deviceId} />
+                    </td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">{g.inInterface || '—'}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">{g.outInterface || '—'}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
+                      {formatDateTime(g.firstSeen, { year: undefined, second: '2-digit' })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="px-4 py-2 text-xs text-gray-500 dark:text-slate-400 border-t border-gray-100 dark:border-slate-700">
+            {groupedLines.toLocaleString()} line{groupedLines === 1 ? '' : 's'} in the groups on this page, folded by device, rule,
+            source, destination and port (any source port). Grouping reads the newest {(data?.scanLimit ?? 0).toLocaleString()} matching
+            lines; narrow by device or search to go further back. Click a count to see its lines.
           </p>
         </div>
       ) : (
@@ -307,15 +412,7 @@ export default function FirewallEventsPage() {
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
                       {event.chain}
-                      {(() => {
-                        const tag = tagOf(event.prefix);
-                        return tag && event.deviceId != null && (
-                          <Link to={ruleUrl(event.deviceId, tag)} title="The rule that logged this line"
-                            className="ml-1.5 px-1.5 rounded bg-gray-100 dark:bg-slate-700 text-[10px] text-gray-500 dark:text-slate-300 hover:text-blue-600 normal-case">
-                            rule mtm#{tag}
-                          </Link>
-                        );
-                      })()}
+                      <RuleChip prefix={event.prefix} deviceId={event.deviceId} />
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
@@ -337,7 +434,7 @@ export default function FirewallEventsPage() {
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-500 dark:text-slate-400">
             Showing {(page * PAGE_SIZE + 1).toLocaleString()}–
-            {(page * PAGE_SIZE + events.length).toLocaleString()} of {totalLabel}
+            {(page * PAGE_SIZE + shown).toLocaleString()} of {totalLabel}
           </span>
 
           <div className="flex gap-2">

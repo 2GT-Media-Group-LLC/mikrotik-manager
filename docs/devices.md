@@ -870,6 +870,19 @@ the device sits.
 | Wake-on-LAN | Magic packet sent from the device |
 | Packet capture | 5–60s sniff, downloaded as `.pcap`. Requires SSH |
 | Bandwidth test | Between two managed devices; the target's test server is enabled and disabled for you |
+| Torch | Live traffic on one interface, flow by flow, refreshed every second (below) |
+
+### Torch
+
+**Torch** shows who is talking on an interface right now: protocol, source and destination
+with ports, and each flow's TX and RX rate, busiest first, refreshed every second. Narrow it
+by source, destination (IPv4 or IPv6, a single address or a prefix), port and protocol before
+starting. It is RouterOS's own `/tool torch`, read over the API.
+
+Torch costs the router CPU while it runs, so it is bounded: it stops when you press **Stop**
+or leave the page, and by itself after 10 minutes. A device runs at most two at once. Traffic
+that a switch chip forwards in hardware never reaches the CPU, so on a CRS switch Torch shows
+only what the CPU handles. Operators and admins can use it, and each start is in the audit log.
 
 ### Web Admin
 
@@ -883,7 +896,9 @@ the manager, it falls back to `http://` on the device's address.
 
 ### Terminal
 
-The terminal opens an SSH shell on the device, for operators and admins in the device's site.
+The terminal opens an SSH shell on the device, for admins in the device's site. Operators
+don't get one: a shell skips Change Guard and Review changes, so they make their changes
+through the tabs and bulk commands instead.
 The audit log records each session's start, who opened it, from which address, and when it
 was refused (for example by the rate limit). **What is typed in the shell is not recorded.**
 If you need a record of commands, turn on logging on the device itself (`/system logging`), or

@@ -37,6 +37,7 @@ import { convertConfigTemplates } from './services/convertConfigTemplates';
 import { netflowCollector } from './services/netflow/NetflowCollector';
 import { verifyToken, highestRole, type AuthPayload } from './middleware/auth';
 import { roleOnDevice } from './utils/siteAccess';
+import { attachTorch, TORCH_ROLES } from './services/torch';
 import { validateSession } from './utils/sessionState';
 import { verifyDeviceIdentity } from './services/identityPins';
 import { RouterOSClient } from './services/mikrotik/RouterOSClient';
@@ -215,12 +216,21 @@ io.on('connection', (socket) => {
   });
 });
 
+// ─── Torch namespace (#416) ────────────────────────────────────────────────────
+const torchNs = attachTorch(io, {
+  socketSession,
+  roleOnDevice,
+  clientIp: (socket) => clientIpBehindProxy(socket.handshake.headers['x-forwarded-for'], socket.handshake.address),
+});
+
 // ─── SSH Terminal namespace ────────────────────────────────────────────────────
 const terminalNs = io.of('/terminal');
 
 // Roles allowed to open an interactive device shell. The stored SSH account is
-// the router admin, so console access mirrors requireWrite: viewers are rejected.
-const TERMINAL_ROLES = new Set(['admin', 'operator']);
+// the router's admin and a shell bypasses Change Guard, previews and the audit
+// of each change, so only admins get one (#411); operators keep the guarded
+// edits and bulk commands.
+const TERMINAL_ROLES = new Set(['admin']);
 
 // Per-user rate limit on shell starts (in-memory; sliding window).
 const TERMINAL_START_LIMIT = 5;
@@ -281,6 +291,7 @@ setInterval(() => {
   };
   for (const s of io.sockets.sockets.values()) void check(s);
   for (const s of terminalNs.sockets.values()) void check(s, TERMINAL_ROLES);
+  for (const s of torchNs.sockets.values()) void check(s, TORCH_ROLES);
 }, SOCKET_RECHECK_MS).unref();
 
 terminalNs.on('connection', (socket) => {

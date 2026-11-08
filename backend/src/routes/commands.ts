@@ -8,7 +8,7 @@
 import { Router } from 'express';
 import { devicesDenied, guardIdParams, strictIdList, roleInSite, roleAtLeast, type Role } from '../utils/siteAccess';
 import type { Request, Response } from 'express';
-import { requireAuth, requireWrite, isSiteScoped } from '../middleware/auth';
+import { requireAuth, requireWrite, requireSiteAdmin, isSiteScoped } from '../middleware/auth';
 import { siteScopeByDevice } from '../utils/siteScope';
 import { activeSite } from '../middleware/site';
 import { query, queryOne } from '../config/database';
@@ -16,6 +16,8 @@ import { commandRunner } from '../services/CommandRunner';
 
 const router = Router();
 router.use(requireAuth);
+// Running and scheduling commands is for admins (#411): a command can do
+// anything the router's admin account can. Operators can still cancel a run.
 // Run ids are plain numbers, read the same way by the site check and the handler.
 guardIdParams(router, ['id'], 'Not found');
 
@@ -90,7 +92,7 @@ router.post('/preview', async (req, res) => {
 });
 
 // POST /api/commands/runs — create a run, optionally starting it immediately
-router.post('/runs', requireWrite, async (req, res) => {
+router.post('/runs', requireSiteAdmin, async (req, res) => {
   const {
     name, command, device_ids, wave_size, halt_on_failure, use_change_guard, start, acknowledge_risk,
   } = req.body as {
@@ -102,7 +104,7 @@ router.post('/runs', requireWrite, async (req, res) => {
   if (!Array.isArray(device_ids) || device_ids.length === 0) {
     return res.status(400).json({ error: 'device_ids array is required' });
   }
-  if (await refuseForeignDevices(req, res, device_ids, 'operator')) return;
+  if (await refuseForeignDevices(req, res, device_ids, 'admin')) return;
   if (!strictIdList(device_ids)) return res.status(400).json({ error: 'device_ids must be device ids' });
   // {{secret:name}} (#259): fleet admins only, and every name must exist.
   const secretRefusal = await refuseSecrets(req, command);
@@ -253,8 +255,8 @@ router.get('/runs/:id/export', async (req, res) => {
 });
 
 // POST /api/commands/runs/:id/start
-router.post('/runs/:id/start', requireWrite, async (req, res) => {
-  if (await refuseForeignRun(req, res, req.params.id, 'operator')) return;
+router.post('/runs/:id/start', requireSiteAdmin, async (req, res) => {
+  if (await refuseForeignRun(req, res, req.params.id, 'admin')) return;
   try {
     await commandRunner.start(Number(req.params.id));
     res.json({ message: 'Run started' });
@@ -289,9 +291,9 @@ async function scheduleFor(req: Request, res: Response): Promise<ScheduleRow | n
 
 /** The checks a run makes, made when a schedule is saved: what it may reach and run. */
 async function refuseSchedule(req: Request, res: Response, s: ScheduleInput): Promise<boolean> {
-  if (await refuseForeignDevices(req, res, s.device_ids, 'operator')) return true;
+  if (await refuseForeignDevices(req, res, s.device_ids, 'admin')) return true;
   if (isSiteScoped(req.user)) {
-    const outside = s.site_ids.filter((id) => !roleAtLeast(roleInSite(req.user!, id), 'operator'));
+    const outside = s.site_ids.filter((id) => !roleAtLeast(roleInSite(req.user!, id), 'admin'));
     if (outside.length) { res.status(404).json({ error: `${outside.length} of the selected sites were not found.` }); return true; }
   }
   const secretRefusal = await refuseSecrets(req, s.command);
@@ -348,15 +350,15 @@ async function saveSchedule(req: Request, res: Response, existing: ScheduleRow |
   return res.status(existing ? 200 : 201).json((await withSummary([row!]))[0]);
 }
 
-router.post('/schedules', requireWrite, (req, res) => saveSchedule(req, res, null));
+router.post('/schedules', requireSiteAdmin, (req, res) => saveSchedule(req, res, null));
 
-router.put('/schedules/:id', requireWrite, async (req, res) => {
+router.put('/schedules/:id', requireSiteAdmin, async (req, res) => {
   const s = await scheduleFor(req, res);
   if (s) await saveSchedule(req, res, s);
 });
 
 // POST /api/commands/schedules/:id/enabled {enabled} — pause or resume
-router.post('/schedules/:id/enabled', requireWrite, async (req, res) => {
+router.post('/schedules/:id/enabled', requireSiteAdmin, async (req, res) => {
   const s = await scheduleFor(req, res);
   if (!s) return;
   const enabled = (req.body as { enabled?: unknown })?.enabled === true;
@@ -368,7 +370,7 @@ router.post('/schedules/:id/enabled', requireWrite, async (req, res) => {
 });
 
 // POST /api/commands/schedules/:id/run-now — run it once now, its next time unchanged
-router.post('/schedules/:id/run-now', requireWrite, async (req, res) => {
+router.post('/schedules/:id/run-now', requireSiteAdmin, async (req, res) => {
   const s = await scheduleFor(req, res);
   if (!s) return;
   const runId = await commandScheduler.fire(s);
@@ -379,7 +381,7 @@ router.post('/schedules/:id/run-now', requireWrite, async (req, res) => {
   res.json({ id: runId });
 });
 
-router.delete('/schedules/:id', requireWrite, async (req, res) => {
+router.delete('/schedules/:id', requireSiteAdmin, async (req, res) => {
   const s = await scheduleFor(req, res);
   if (!s) return;
   await query(`DELETE FROM command_schedules WHERE id = $1`, [s.id]);

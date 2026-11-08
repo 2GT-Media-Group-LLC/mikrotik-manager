@@ -3,6 +3,28 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.34
+
+- **Torch**, from Ron's request in
+  [#416](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/416): a new card on a
+  device's **Tools** tab shows the traffic on an interface live, flow by flow, refreshed every
+  second, busiest first. Narrow it by source, destination, port and protocol. It stops when you
+  press Stop or leave the page, and by itself after 10 minutes, and a device runs at most two at
+  once ([Torch](devices.md#torch)).
+- **Firewall Logs open grouped**, the first step on Ron's
+  [#415](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415): one line per device,
+  rule, interfaces, protocol, source, destination and port, with a count and first and last seen,
+  the way Palo Alto and Check Point show their logs. Retries and scans no longer fill the page.
+  **Raw** shows every line as before, and a group's count opens its lines
+  ([Grouped and raw](firewall-events.md#grouped-and-raw)). Lines on the input chain no longer show
+  an output interface of "(unknown".
+- **Zones**: **Review changes** works while Change Guard is holding the device after an earlier
+  change. It only reads, but it was refused with "a protected change is still in progress"
+  ([#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369)).
+- Running and scheduling **bulk commands** is now for admins too, as in 1.0.9; operators can still
+  cancel a run. Schedules an operator saved earlier keep running.
+- Fixes from 1.0.9.
+
 ## 1.1.0-beta.33
 
 - **Zones**, phase 2 of Ron's
@@ -501,6 +523,22 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.9
+
+Released on Sunday 8 November 2026. Who can open a shell or run commands, and the site switcher.
+
+- **The web terminal is for admins only**
+  ([#411](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/411)). A shell signs in
+  as the router's admin account and skips Change Guard and Review changes, so operators no longer
+  get one; a site admin still gets one on devices in their sites. For the same reason, running
+  **bulk commands** is admin-only too. Operators keep every guarded edit on the device tabs, and
+  can still cancel a bulk command run.
+- **Switching sites left you on another site's device**
+  ([#414](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/414)). Picking a site in
+  the selector while a device page was open kept showing that device, even when it belonged to
+  another site. The page now goes back to the device list when the new site doesn't include the
+  device; picking the device's own site keeps it open.
 
 ## 1.0.8
 

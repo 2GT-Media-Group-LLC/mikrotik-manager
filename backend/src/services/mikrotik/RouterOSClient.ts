@@ -82,6 +82,21 @@ function readKey(command: string, params: Record<string, string>, queries: strin
   return JSON.stringify([command, Object.entries(params).sort(([a], [b]) => a.localeCompare(b)), queries]);
 }
 
+/** Options for executeStreaming. */
+export interface StreamingOpts {
+  /** Stop (and cancel) once this many rows have arrived. */
+  maxRows?: number;
+  /** API query words ("?protocol=tcp") for the router to filter. */
+  queries?: string[];
+  /** Each row as it arrives, instead of collecting them (a live tool such as Torch). */
+  onRow?: (row: Record<string, string>) => void;
+  /** Stops the command early; it is then cancelled on the device. */
+  signal?: AbortSignal;
+}
+
+/** How long a stoppable stream waits for a row before checking its signal. */
+const STREAM_SLICE_MS = 1_000;
+
 export class RouterOSClient extends EventEmitter {
   private socket: Duplex | null = null;
   /** The TCP socket, on a direct connection; null through a jump host. */
@@ -972,7 +987,7 @@ export class RouterOSClient extends EventEmitter {
      * of a huge table (a busy router's connections, #300) never transfers it
      * all. queries: API query words ("?protocol=tcp") for the router to filter.
      */
-    opts: { maxRows?: number; queries?: string[] } = {},
+    opts: StreamingOpts = {},
   ): Promise<Record<string, string>[]> {
     if (previewContext()) throw new RouterOSError('This action runs a tool on the device, so it can\'t be previewed');
     let result!: Record<string, string>[];
@@ -998,7 +1013,7 @@ export class RouterOSClient extends EventEmitter {
     command: string,
     params: Record<string, string>,
     maxDurationMs: number,
-    opts: { maxRows?: number; queries?: string[] } = {},
+    opts: StreamingOpts = {},
   ): Promise<Record<string, string>[]> {
     if (!this.socket || !this.connected) {
       throw new RouterOSError('Not connected');
@@ -1023,18 +1038,26 @@ export class RouterOSClient extends EventEmitter {
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
 
+      if (opts.signal?.aborted) break;
+
       let sentence: RouterOSSentence;
       try {
         // Reaching the deadline is how a streaming command normally ends, so
         // it must not poison the connection: cancelStreaming() below drains
         // what is still in flight, and drops the connection if it can't.
-        sentence = await this.readNextSentence(Math.min(remaining, this.readTimeoutMs), false);
+        // With a signal the wait is sliced, so a stop is noticed within a
+        // second even while the device sends nothing.
+        const slice = opts.signal ? Math.min(remaining, STREAM_SLICE_MS) : Math.min(remaining, this.readTimeoutMs);
+        sentence = await this.readNextSentence(slice, false);
       } catch {
-        // Timeout or socket error — fall through to cancel
+        // A quiet slice of a stoppable stream: keep listening. Otherwise a
+        // timeout or socket error — fall through to cancel.
+        if (opts.signal && !opts.signal.aborted && this.connected && !this.poisoned && Date.now() < deadline) continue;
         break;
       }
 
       if (sentence.type === '!re') {
+        if (opts.onRow) { opts.onRow(sentence.words); continue; }
         results.push(sentence.words);
         if (results.length >= maxRows) break;
       } else if (sentence.type === '!done') {

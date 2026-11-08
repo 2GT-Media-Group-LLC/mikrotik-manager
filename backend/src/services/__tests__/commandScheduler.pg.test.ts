@@ -12,7 +12,7 @@ jest.mock('../../middleware/auth', () => {
     ...actual,
     requireAuth: (req: { user?: unknown }, _res: unknown, next: () => void) => {
       const user = JSON.parse(JSON.stringify(currentUser)) as { role: string; siteRoles?: Record<string, string> };
-      if (user.siteRoles) user.role = Object.values(user.siteRoles).includes('operator') ? 'operator' : 'viewer';
+      if (user.siteRoles) { const r = Object.values(user.siteRoles); user.role = r.includes('admin') ? 'admin' : r.includes('operator') ? 'operator' : 'viewer'; }
       req.user = user;
       next();
     },
@@ -173,7 +173,11 @@ suite('scheduled bulk commands (#359)', () => {
     expect(ok.status).toBe(201);
     expect(ok.body).toMatchObject({ description: 'Daily at 03:00', target_count: 1, use_change_guard: true });
 
+    // Saving a schedule is for admins (#411).
     currentUser = { userId: id.op, username: 'siteop', role: 'operator', siteRoles: { [id.A]: 'operator' } };
+    expect((await request(app).post('/api/commands/schedules').send({ ...body, device_ids: [id.a1] })).status).toBe(403);
+    // A site admin sees only its own schedules and can't reach another site.
+    currentUser = { userId: id.op, username: 'siteop', role: 'admin', siteRoles: { [id.A]: 'admin' } };
     expect((await request(app).get('/api/commands/schedules')).body.schedules).toEqual([]);
     expect((await request(app).delete(`/api/commands/schedules/${ok.body.id}`)).status).toBe(404);
     const foreign = await request(app).post('/api/commands/schedules').send({ ...body, command: ':put x', device_ids: [id.b1] });

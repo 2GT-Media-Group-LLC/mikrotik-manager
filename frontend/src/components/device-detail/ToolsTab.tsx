@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Play, Loader2, CheckCircle, XCircle, Wifi, RotateCcw, Download, Activity } from 'lucide-react';
+import { Play, Loader2, CheckCircle, XCircle, Wifi, RotateCcw, Download, Activity, Flame } from 'lucide-react';
 import { deviceToolsApi, devicesApi } from '../../services/api';
 import clsx from 'clsx';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import DevicePicker from '../common/DevicePicker';
+import TorchTool from './TorchTool';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -663,6 +664,12 @@ export default function ToolsTab({ deviceId }: { deviceId: number }) {
       </ToolCard>
 
       </>)}
+
+      {canWrite && (
+        <ToolCard title="Torch" icon={Flame}>
+          <TorchTool deviceId={deviceId} interfaces={interfaceNames} />
+        </ToolCard>
+      )}
 
       {canWrite && (
         <ToolCard title="Wake-on-LAN" icon={Wifi}>

@@ -1368,6 +1368,13 @@ export interface FirewallEvent {
   length?: number;
 }
 
+/** Firewall log lines folded by rule, source, destination and port (#415). */
+export interface FirewallGroup extends Omit<FirewallEvent, 'id' | 'eventTime' | 'severity' | 'topic' | 'srcPort'> {
+  count: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
 /** Policy routing rules (#370), in the device's order, with what's wrong with them. */
 export interface RoutingRule {
   id: string; position: number;
@@ -1423,6 +1430,17 @@ export const eventsApi = {
       events: FirewallEvent[];
       total: number;
     }>('/events/firewall', { params }),
+  /** The same filters, folded into groups (#415). */
+  firewallGrouped: (params?: {
+    deviceId?: number;
+    search?: string;
+    since?: string;
+    action?: FirewallEvent['action'];
+    protocol?: string;
+    limit?: number;
+    offset?: number;
+  }) =>
+    api.get<{ groups: FirewallGroup[]; total: number; scanLimit: number }>('/events/firewall', { params: { ...params, view: 'grouped' } }),
   clearFirewall: (deviceId?: number) =>
     api.delete<{ message: string; deleted: number }>('/events/firewall', {
       params: deviceId ? { deviceId } : {},

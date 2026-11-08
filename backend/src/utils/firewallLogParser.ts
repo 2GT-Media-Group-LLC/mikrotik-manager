@@ -101,8 +101,13 @@ export function parseFirewallLog(message: string): FirewallLogEvent | null {
   const dst = parseEndpoint(endpointsMatch[2]);
   if (!src || !dst) return null;
 
-  const inInterface = body.match(/\bin:([^\s,]+)/i)?.[1];
-  const outInterface = body.match(/\bout:([^\s,]+)/i)?.[1];
+  // "(unknown 0)" is RouterOS for no interface, e.g. out: on the input chain.
+  const iface = (re: RegExp) => {
+    const v = body.match(re)?.[1];
+    return v && !v.startsWith('(unknown') ? v : undefined;
+  };
+  const inInterface = iface(/\bin:(\(unknown \d+\)|[^\s,]+)/i);
+  const outInterface = iface(/\bout:(\(unknown \d+\)|[^\s,]+)/i);
   const connectionState = body.match(
     /\bconnection-state:([^\s,]+)/i
   )?.[1];

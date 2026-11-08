@@ -100,4 +100,11 @@ describe('parseFirewallLog', () => {
       parseFirewallLog('user operator logged in from 192.0.2.50 via api')
     ).toBeNull();
   });
+
+  it('reads "(unknown 0)" as no interface', () => {
+    const e = parseFirewallLog('zone drop in mtm#0khn input: in:bridge out:(unknown 0), connection-state:new src-mac D0:EA:11:05:2E:44, proto UDP, 192.168.0.84:5678->255.255.255.255:5678, len 193');
+    expect(e?.inInterface).toBe('bridge');
+    expect(e?.outInterface).toBeUndefined();
+    expect(e?.prefix).toBe('zone drop in mtm#0khn');
+  });
 });

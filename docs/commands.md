@@ -8,6 +8,11 @@ failure. Several commands on separate lines run in order.
 Commands run over **SSH**, because console syntax — `:put`, `:foreach`, `/interface print`
 — is not reachable through the binary API, which has its own command tree.
 
+Running and scheduling commands is for **admins** (fleet admins, or site admins on devices in
+their sites), since a command can do anything the router's admin account can. Operators can
+see runs and schedules and cancel a run in progress. Schedules an operator saved earlier
+keep running; an admin can edit, pause or delete them.
+
 ## Templates
 
 Commands you run more than once can be saved as templates: firewall rules, LTE settings, DNS

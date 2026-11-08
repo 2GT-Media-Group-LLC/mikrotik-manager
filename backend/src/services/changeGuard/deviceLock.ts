@@ -109,6 +109,7 @@ const UNLOCKED_DEVICE_ROUTES: RegExp[] = [
   /^\/\d+\/(location|monitoring)\/?$/,
   /^\/\d+\/(preflight|sync|test|ap-scan|check-update|check-routerboard)\/?$/,
   /^\/\d+\/(config-health\/scan|change-guard\/(check|probe)|ssh-key\/verify)\/?$/,
+  /^\/\d+\/firewall\/zones\/plan\/?$/, // what applying zones would do: reads only
   /^\/\d+\/identity\//, // trusting a changed certificate or host key: manager records only
   /^\/\d+\/tools\//,
   /^\/\d+\/spectral-scan\//,
