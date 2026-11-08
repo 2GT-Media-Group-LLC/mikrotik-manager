@@ -90,6 +90,8 @@ export interface Device {
   firmware_version?: string;
   ros_version?: string;
   latest_ros_version?: string;
+  /** The channel the device reported at its last update check (#413). */
+  reported_update_channel?: string | null;
   firmware_update_available?: boolean;
   routerboard_upgrade_available?: boolean;
   upgrade_firmware_version?: string;

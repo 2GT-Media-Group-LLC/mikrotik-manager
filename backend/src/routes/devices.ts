@@ -498,7 +498,7 @@ router.get('/bulk-add/jobs/:jobId', requireWrite, async (req: Request, res: Resp
 router.get('/:id', async (req: Request, res: Response) => {
   const device = await queryOne(
     `SELECT ${DEVICE_BASE_COLUMNS},
-            ssh_port, ssh_username, latest_ros_version,
+            ssh_port, ssh_username, latest_ros_version, reported_update_channel,
             firmware_update_available, routerboard_upgrade_available, upgrade_firmware_version,
             location_address,
             location_lat::float8 AS location_lat,

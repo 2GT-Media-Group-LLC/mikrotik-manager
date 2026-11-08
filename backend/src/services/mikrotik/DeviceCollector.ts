@@ -5804,6 +5804,8 @@ export class DeviceCollector {
 
   async installRouterboardUpgrade(): Promise<void> {
     await this.client.execute('/system/routerboard/upgrade');
+    // Let the bootloader write settle before asking for the reboot.
+    await new Promise((r) => setTimeout(r, 3000));
     // Through reboot(), which expects the session to die. Calling /system/reboot
     // directly reported "Connection closed" as a failed RouterBOOT upgrade
     // whenever the socket closed before RouterOS acknowledged the command, a
@@ -5824,7 +5826,12 @@ export class DeviceCollector {
       await this.client.execute('/system/reboot');
     } catch (e) {
       const msg = (e as Error).message || '';
-      if (/closed|reset|EPIPE|not connected|timed? ?out|socket/i.test(msg)) return;
+      if (/closed|reset|EPIPE|not connected|timed? ?out|socket/i.test(msg)) {
+        // Usually the reboot taking the session down. Logged, because when the
+        // device didn't in fact reboot this line is the only trace of why.
+        console.log(`[Reboot] ${this.device.name}: ${msg} (taken as the reboot dropping the session)`);
+        return;
+      }
       throw e;
     }
   }

@@ -7,6 +7,23 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.8
+
+Released on Saturday 7 November 2026. Fixes for the device page's update check and for RouterBOOT
+upgrades.
+
+- **The update check forgot the update channel.** On a device's **Config** tab (the **Firmware** tab
+  in 1.1), the channel showed after **Check for Updates** until the page was reloaded, then went back
+  to *not checked yet*. The manager saves the channel each device reports, but the device page
+  didn't load it. It does now
+  ([#413](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/413)).
+- **A RouterBOOT upgrade could be reported as failed when only its reboot hadn't happened.** In a
+  rollout, a CRS310 took the new RouterBOOT but not the reboot after it, and stayed up. The rollout
+  waited 12 minutes and reported *device did not come back*, although the device was reachable the
+  whole time, and it showed as up to date after its next reboot. Now, if a device is still up two
+  minutes after the reboot was sent, the manager sends it again. If it still doesn't restart, the
+  rollout says so: the RouterBOOT was written, the device is running, and a reboot finishes it.
+
 ## 1.0.7
 
 Released on Saturday 7 November 2026. Housekeeping: restore points left on devices, Postgres's
