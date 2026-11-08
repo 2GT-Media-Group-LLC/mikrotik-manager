@@ -12,14 +12,16 @@ import FloatingWindow from '../common/FloatingWindow';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import ChangeGuardDialog, { guardOutcomeMessage, LockoutVerdictDialog, lockoutVerdictOf, type GuardResult, type LockoutVerdict } from '../ChangeGuardDialog';
 import type { SwitchPort, Vlan, TrafficPoint, PortMonitorData, PortClient } from '../../types';
-import { classifyPort, portBasis, portLabel, portSortKey } from '../../utils/portClass';
+import { classifyPort, portBasis, portSortKey } from '../../utils/portClass';
 import { parseVlanList, toggleVlan, formatVlanList } from '../../utils/vlanList';
 import { changeErrorText } from '../../utils/changeError';
 import {
-  staggerBlocks, chunkRows, resolveColumns,
+  staggerBlocks, chunkRows, resolveColumns, TILE_PX, PORTS_TILE_PX,
   DENSITY_OPTIONS, parseDensity, densityLabel, type Density, type StaggerBlock,
 } from '../../utils/faceplateLayout';
 import { lookupModelLayout, resolveEvenOnTop, arrangeSfp, stackCages, cageTiles } from '../../utils/faceplateModels';
+import PortGlyph, { glyphKind, GLYPH_WIDTH, GLYPH_SCALE } from './PortGlyph';
+import { useThemeStore } from '../../store/themeStore';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -92,11 +94,13 @@ function portErrorLine(e: PortErrorSummary): string {
 }
 
 function PortTile({
-  port, selected, hovered, isMember, watts, errors, optic,
+  port, selected, hovered, isMember, watts, errors, optic, wholeCage,
   onClick, onMouseEnter, onMouseLeave, onDoubleClick,
 }: {
   port: SwitchPort; selected: boolean; hovered: boolean; isMember?: boolean; watts?: number;
   errors?: PortErrorSummary; optic?: OpticStatus;
+  /** A QSFP cage shown as one port: drawn as the whole cage, not a lane. */
+  wholeCage?: boolean;
   onClick: (e: React.MouseEvent) => void;
   onMouseEnter: () => void; onMouseLeave: () => void; onDoubleClick: () => void;
 }) {
@@ -111,13 +115,39 @@ function PortTile({
   const border = isMember && !selected ? 'var(--warn)' : selected ? 'var(--accent)' : state === 'up' ? 'var(--port-up-border)' : state === 'down' ? 'var(--port-down-border)' : 'var(--line)';
   const textColor = selected ? '#ffffff' : state === 'up' ? 'var(--good)' : state === 'down' ? 'var(--bad)' : 'var(--ink-4)';
   const ledBg = selected ? '#ffffff' : state === 'up' ? 'var(--good)' : 'transparent';
+  const portStyle = useThemeStore((s) => s.portStyle);
+  const title = `${port.name}${port.comment || port.bridgeInfo?.config_json?.comment ? ` — ${port.comment || port.bridgeInfo?.config_json?.comment}` : ''}${port.link_rate || port.speed ? ` · ${port.link_rate || port.speed}` : ''}${watts && watts > 0 ? ` · ${watts.toFixed(1)}W PoE` : ''}${problems ? ` · ${problems}` : ''}`;
+  if (portStyle === 'ports') {
+    // Drawn ports (#412): the jack or cage, with its label under it. Selection
+    // tints the whole tile, so it stays distinct from "up", which is also the accent.
+    const kind = glyphKind(port, wholeCage);
+    return (
+      <div
+        onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onDoubleClick={onDoubleClick}
+        title={title}
+        style={{
+          minWidth: Math.round(GLYPH_WIDTH[kind] * GLYPH_SCALE) + 6, padding: '3px 3px 4px', borderRadius: 6, flexShrink: 0, cursor: 'pointer',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+          background: selected ? 'color-mix(in srgb, var(--accent) 22%, transparent)' : undefined,
+          boxShadow: selected ? '0 0 0 1.5px var(--accent)' : isMember ? '0 0 0 1.5px var(--warn)' : undefined,
+          opacity: hovered ? 0.8 : 1, transition: 'opacity 0.1s',
+        }}
+      >
+        <PortGlyph kind={kind} state={state} tone={errTone} watts={watts} />
+        <span style={{
+          fontFamily: 'Geist Mono, monospace', fontSize: 11, fontWeight: 600, lineHeight: 1,
+          color: selected || state === 'up' ? 'var(--ink)' : 'var(--ink-4)',
+        }}>{classifyPort(port).label}</span>
+      </div>
+    );
+  }
   return (
     <div
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onDoubleClick={onDoubleClick}
-      title={`${port.name}${port.comment || port.bridgeInfo?.config_json?.comment ? ` — ${port.comment || port.bridgeInfo?.config_json?.comment}` : ''}${port.link_rate || port.speed ? ` · ${port.link_rate || port.speed}` : ''}${watts && watts > 0 ? ` · ${watts.toFixed(1)}W PoE` : ''}${problems ? ` · ${problems}` : ''}`}
+      title={title}
       style={{
         width: 46, height: 46, borderRadius: 4, position: 'relative', flexShrink: 0,
         background: bg, border: errTone && !selected ? `2px solid ${errTone}` : `1px solid ${border}`,
@@ -138,7 +168,7 @@ function PortTile({
           color: selected ? '#ffffff' : errTone,
         }}>!</div>
       )}
-      <span>{portLabel(portBasis(port))}</span>
+      <span>{classifyPort(port).label}</span>
       {watts && watts > 0 ? (
         <span style={{
           position: 'absolute', bottom: 2, left: 0, right: 0, textAlign: 'center',
@@ -797,6 +827,7 @@ function PortClientsCard({ deviceId, portName }: { deviceId: number; portName: s
 }
 
 export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, autoOpenBridge, onBridgeOpened }: Props) {
+  const portStyle = useThemeStore((s) => s.portStyle);
   const { formatTime } = useDateTimeFormat();
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
@@ -1316,13 +1347,19 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
   // The geometry lives in utils/faceplateLayout.ts. What used to be here was a
   // coordinate system for an absolute-positioned faceplate that no longer
   // exists -- every constant fed only the next one and none reached the render.
+  // Remembered per device in this browser; a device not set yet uses the last
+  // choice made on any device.
+  const densityKey = `faceplate.density.${deviceId}`;
   const [density, setDensity] = useState<Density>(() => {
-    try { return parseDensity(localStorage.getItem('faceplate.density')); }
+    try { return parseDensity(localStorage.getItem(densityKey) ?? localStorage.getItem('faceplate.density')); }
     catch { return 'auto'; }
   });
   const chooseDensity = (d: Density) => {
     setDensity(d);
-    try { localStorage.setItem('faceplate.density', String(d)); } catch { /* private mode */ }
+    try {
+      localStorage.setItem(densityKey, String(d));
+      localStorage.setItem('faceplate.density', String(d));
+    } catch { /* private mode */ }
   };
 
   // Measured rather than assumed, so "fit to width" actually fits.
@@ -1339,7 +1376,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
     return () => ro.disconnect();
   }, []);
 
-  const columns = resolveColumns(density, rackWidth);
+  const columns = resolveColumns(density, rackWidth, portStyle === 'ports' ? PORTS_TILE_PX : TILE_PX);
   // Odd ports on the top row, or even (2 4 6 8 over 1 3 5 7) for models wired
   // that way (#277). Remembered per model in this browser: every unit of a
   // model is the same.
@@ -1493,7 +1530,17 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
             <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
               {([['up', 'var(--accent)', ports.filter(p => !p.disabled && p.running).length], ['down', 'var(--bad)', ports.filter(p => !p.disabled && !p.running).length], ['disabled', 'var(--ink-4)', ports.filter(p => p.disabled).length], ['selected', 'var(--accent)', selectedPorts.size]] as [string,string,number][]).map(([l, c, n]) => (
                 <span key={l} className="mono text-[11px]" style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-3)' }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: c, opacity: l === 'disabled' ? 0.4 : 1, flexShrink: 0 }} />
+                  {portStyle === 'ports' ? (
+                    // Drawn ports: the swatch is a small port frame in that state's colours.
+                    <span style={{
+                      width: 10, height: 10, borderRadius: 3, flexShrink: 0,
+                      border: `1.5px ${l === 'disabled' ? 'dashed' : 'solid'} ${l === 'up' || l === 'selected' ? 'var(--accent)' : 'var(--port-frame-off)'}`,
+                      background: l === 'selected' ? 'color-mix(in srgb, var(--accent) 35%, transparent)' : 'var(--port-metal-off-lo)',
+                      boxShadow: l === 'up' ? '0 0 4px color-mix(in srgb, var(--accent) 60%, transparent)' : undefined,
+                    }} />
+                  ) : (
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: c, opacity: l === 'disabled' ? 0.4 : 1, flexShrink: 0 }} />
+                  )}
                   {l} <span className="num-tab" style={{ color: 'var(--ink-2)' }}>{n}</span>
                 </span>
               ))}
@@ -1623,10 +1670,15 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
               return (
                 <div key={cage.key}>
                   <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em', marginBottom: 6 }}>{cage.label}</div>
-                  <div style={{ display: 'flex', gap: 4 }}>
+                  <div style={{
+                    display: 'flex', gap: 4,
+                    // Drawn ports: a broken-out cage's lanes sit in one cage outline (#412).
+                    ...(portStyle === 'ports' && tiles.length > 1
+                      ? { gap: 2, padding: '3px 3px 0', border: '1.5px solid var(--port-frame-off)', borderRadius: 8 } : {}),
+                  }}>
                     {tiles.map((lane) => {
                       return (
-                        <PortTile key={lane.name} port={lane} selected={selectedPorts.has(lane.name)} hovered={hoveredPort === lane.name} watts={poeWattsMap[lane.name]} errors={portErrMap[lane.name]} optic={opticMap[lane.name]} onClick={e => togglePort(lane.name, e)} onMouseEnter={() => setHoveredPort(lane.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(lane)} />
+                        <PortTile key={lane.name} port={lane} wholeCage={tiles.length === 1} selected={selectedPorts.has(lane.name)} hovered={hoveredPort === lane.name} watts={poeWattsMap[lane.name]} errors={portErrMap[lane.name]} optic={opticMap[lane.name]} onClick={e => togglePort(lane.name, e)} onMouseEnter={() => setHoveredPort(lane.name)} onMouseLeave={() => setHoveredPort(null)} onDoubleClick={() => canWrite && openEditPanel(lane)} />
                       );
                     })}
                   </div>

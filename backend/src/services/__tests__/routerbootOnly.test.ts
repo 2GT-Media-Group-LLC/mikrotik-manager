@@ -58,3 +58,41 @@ it('upgrades a pending RouterBOOT and confirms the new version after the reboot'
   expect(statuses).toEqual(expect.arrayContaining(['routerboot', 'rebooting', 'success']));
   expect(statuses.indexOf('routerboot')).toBeLessThan(statuses.indexOf('rebooting'));
 });
+
+it('sends the reboot again when the device stays up after the RouterBOOT write (rollout 35)', async () => {
+  jest.useFakeTimers();
+  let rebooted = false;
+  const install = jest.fn(async () => { /* written, but the reboot is ignored */ });
+  const reboot = jest.fn(async () => { rebooted = true; });
+  (DeviceCollector as unknown as jest.Mock).mockImplementation(() => ({
+    connect: jest.fn(), disconnect: jest.fn(), checkForUpdates: jest.fn(), installRouterboardUpgrade: install, reboot,
+    getUptimeSeconds: jest.fn(async () => (rebooted ? 20 : 86400)),
+    checkRouterboardUpgrade: jest.fn(async () => (rebooted
+      ? { currentFirmware: '7.25.1', upgradeFirmware: '7.25.1', upgradeAvailable: false }
+      : { currentFirmware: '7.25', upgradeFirmware: '7.25.1', upgradeAvailable: true })),
+  }));
+  const done = upgrade(new FirmwareOrchestrator());
+  await jest.advanceTimersByTimeAsync(4 * 60_000);
+  expect(await done).toBe(true);
+  jest.useRealTimers();
+  expect(reboot).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(itemUpdates())).toMatch(/success/);
+});
+
+it('says the device never restarted, not that it never came back, when it ignores both reboots', async () => {
+  jest.useFakeTimers();
+  const reboot = jest.fn(async () => { /* ignored again */ });
+  (DeviceCollector as unknown as jest.Mock).mockImplementation(() => ({
+    connect: jest.fn(), disconnect: jest.fn(), checkForUpdates: jest.fn(), installRouterboardUpgrade: jest.fn(), reboot,
+    getUptimeSeconds: jest.fn(async () => 86400),
+    checkRouterboardUpgrade: jest.fn(async () => ({ currentFirmware: '7.25', upgradeFirmware: '7.25.1', upgradeAvailable: true })),
+  }));
+  const done = upgrade(new FirmwareOrchestrator());
+  await jest.advanceTimersByTimeAsync(13 * 60_000);
+  expect(await done).toBe(false);
+  jest.useRealTimers();
+  expect(reboot).toHaveBeenCalledTimes(1);
+  const updates = JSON.stringify(itemUpdates());
+  expect(updates).toMatch(/RouterBOOT 7\.25\.1 was written, but the device didn't restart when asked \(twice\)/);
+  expect(updates).not.toMatch(/did not come back/);
+});

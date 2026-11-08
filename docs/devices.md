@@ -546,6 +546,80 @@ across the fleet, as of each device's last slow poll.
 The Security tab's **No input-chain firewall rule** finding (IPv4 or IPv6) has an **Add input rules**
 button that opens Quick rules on Input basics.
 
+## Zones
+
+**Zones** on the Firewall tab (IPv4) builds the whole filter table from a matrix, the way
+zone-based firewalls work (#369). A zone is an interface list (`LAN`, `WAN`, `DMZ`…). For each pair
+of zones, and from each zone to the router itself, you choose **Deny**, **Allow everything**, or
+**Only these services**:
+
+| To | Services to pick from |
+|---|---|
+| Another zone | Ping, Web (80, 443), DNS, SSH, Remote Desktop, File sharing (SMB), NTP |
+| The router | Ping, WinBox, SSH, WebFig, API, DNS, DHCP, NTP, SNMP. WinBox, SSH, WebFig and the API use the ports set in **IP > Services** |
+
+Any pair can also have other TCP or UDP ports (`8080`, `5000-5010,6000`). Traffic between interfaces
+of the same zone is allowed unless you turn it off for that zone.
+
+### Turning zones on
+
+Zones replace the whole IPv4 filter table, so they can be turned on only when the table is empty or
+holds just MikroTik's default rules (comments starting `defconf`). Click **Set up zones**: the form
+starts from the device's interface lists. When it has `LAN` and `WAN`, the cells start like the
+defaults: LAN reaches everything, WAN only gets ping to the router.
+
+Add interfaces to a zone, or a new zone (which creates an interface list on the device). Put routed
+interfaces in zones: a bridge, a VLAN interface, the WAN port. The firewall sees routed traffic on
+the bridge, not on its ports, so a zone made of bridge ports gets a warning. So does an interface
+with an address that's in no zone, since nothing reaches the router or another zone through it.
+
+As you change the matrix, the form shows what applying will do: the lists and members it changes,
+and how many rules it adds, removes and keeps. **Show the rules** lists them all.
+
+### The rules
+
+Every rule is commented `mtm zone: …`. In order:
+
+- **Input** (traffic to the router): accept established, related and untracked; drop invalid;
+  accept to the loopback (for CAPsMAN); accept the manager's own address, when MTM can see it on
+  the device; a jump per zone that can reach the router, to `<zone>-to-router`; then drop the rest.
+- **Forward** (traffic between zones): FastTrack established and related (optional, with hardware
+  offload on RouterOS 7); accept established, related and untracked; drop invalid; an accept per
+  zone for same-zone traffic; a jump per open pair, to `<from>-to-<to>`; then drop the rest.
+- **One chain per open pair**, holding its accepts and ending in a return.
+
+The two final drops log by default with the prefixes `zone drop in` and `zone drop fwd`, tagged so
+[Firewall Events](firewall-events.md#which-rule-logged-it) links each line to its rule. Untick **Log
+what's dropped** to leave them quiet. The returns and the final drops aren't shown in the matrix.
+
+Replies always get back: a connection allowed one way is tracked, and the stateful accepts let its
+replies through. Port forwards (dstnat) are matched after the address is changed, so allow the
+service from the outside zone to the zone the server is in.
+
+### Applying
+
+**Apply** runs as one [Change Guard](change-guard.md) change. The whole new table is checked
+against the manager's own connection first, including the jumps into each zone's chain and any
+interface moved between lists, so a matrix that would cut the manager off is caught before anything
+is written. **Review changes** shows the commands.
+
+Rules that are already right stay as they are, with their counters; the rest are added in place or
+removed. New rules go in disabled and are turned on with the drops last, so no step along the way
+drops anything the old table let through.
+
+### While zones are on
+
+Zones own the IPv4 filter table. The rules still show on the Firewall tab, with their counters, but
+they can't be edited, moved or deleted there, and Quick rules other than masquerade are refused.
+NAT, address lists and IPv6 are unchanged.
+
+If the table is changed outside MTM (in WinBox, say), the Zones card says what differs, and
+[Config Health](change-guard.md#config-health) reports **Firewall differs from its zones**.
+**Apply** puts the rules back.
+
+**Turn zones off** stops managing the table. Nothing on the device changes: the rules stay as
+ordinary rules you can edit. Turning zones on again starts from the same matrix.
+
 ## Ports and the faceplate
 
 The faceplate mirrors the physical front panel — copper staggered odd above even as the
@@ -571,7 +645,8 @@ port's comment here sets the interface comment. The column is hidden when no por
 comment.
 
 Use **ports per row** in the faceplate header if the default does not suit your hardware;
-the setting is remembered. Next to it, **top row** says which ports are on top: `1 3 5` (most
+it's remembered for each device in your browser, and a device you haven't set yet uses the last
+choice you made. Next to it, **top row** says which ports are on top: `1 3 5` (most
 models) or `2 4 6`, for models whose front panel has the even ports on top (#277). It appears
 when the Ethernet ports sit in two rows, and is remembered per model in your browser. A choice you make there overrides the model's built-in Ethernet layout.
 

@@ -28,16 +28,17 @@ export default function FirmwareTab({ deviceId, device }: Props) {
   useEffect(() => {
     if (device.ros_version || device.latest_ros_version || device.firmware_update_available) {
       // Pre-populated from the database, not from the device. The status is
-      // derived from the stored flag and the channel is simply not stored at
-      // all, so presenting this identically to a fresh check invites exactly the
-      // confusion it caused: a synthesised "New version is available" beside a
-      // blank channel, with no way to tell it was last week's answer (#144).
+      // derived from the stored flag, so presenting this identically to a fresh
+      // check invites exactly the confusion it caused: a synthesised "New
+      // version is available" with no way to tell it was last week's answer
+      // (#144). The channel is the one the device reported at its last check
+      // (#162); it was left blank here until #413.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setUpdateInfo({
         'installed-version': device.ros_version || '',
         'latest-version': device.latest_ros_version || '',
         'status': device.firmware_update_available ? 'New version is available' : 'System is up to date',
-        'channel': '',
+        'channel': device.reported_update_channel || '',
         'from-stored-state': 'yes',
       });
     }

@@ -60,6 +60,13 @@
     --port-up-border:    #6abf72;
     --port-down-bg:      #fde8e8;
     --port-down-border:  #e07070;
+    /* Drawn ports (#412): the metal shield, the jack's opening, an idle frame. */
+    --port-metal-hi:     #e4e8ed;
+    --port-metal-lo:     #9aa2ac;
+    --port-metal-off-hi: #d3d6da;
+    --port-metal-off-lo: #a9adb3;
+    --port-jack:         #2a2d33;
+    --port-frame-off:    #b9b6ad;
 
     /* ── status ── */
     --good:        #2d7a2a;
@@ -116,6 +123,12 @@
     --port-up-border:    #3b6f3a;
     --port-down-bg:      #291417;
     --port-down-border:  #5b2024;
+    --port-metal-hi:     #c3c9d1;
+    --port-metal-lo:     #6b727c;
+    --port-metal-off-hi: #7a8089;
+    --port-metal-off-lo: #3d4249;
+    --port-jack:         #0b0c0e;
+    --port-frame-off:    #4a4f57;
 
     /* ── status ── */
     --good:        #8de08a;

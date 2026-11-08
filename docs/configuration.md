@@ -115,6 +115,10 @@ each person, and each browser, can have their own.
   readable. Chart series, map pins and status colours (green, amber, red) don't change.
 - **Dark surfaces:** **Slate**, as before, or **Midnight**, near-black for dark rooms and OLED
   screens.
+- **Faceplate ports:** **Ports** (the default) draws each port on a device's Ports tab as the
+  hardware looks: RJ45 jacks, SFP cages, QSFP28 and QSFP-DD cages, and broken-out cages as their
+  lanes inside one cage outline. Up ports take the accent colour, with a green link light. **Tiles**
+  brings back the plain green and red squares.
 
 ## Sessions
 

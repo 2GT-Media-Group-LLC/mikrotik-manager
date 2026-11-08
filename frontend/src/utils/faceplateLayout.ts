@@ -30,6 +30,8 @@
 /** Rendered size of one PortTile, and the flex gap between tiles. */
 export const TILE_PX = 46;
 export const TILE_GAP_PX = 4;
+/** A drawn port's tile (#412): the 52px port plus 3px either side. */
+export const PORTS_TILE_PX = 58;
 /** Padding inside the rack unit, both sides. */
 export const RACK_PAD_PX = 52;
 
@@ -45,9 +47,9 @@ export interface StaggerBlock<T> {
  * Clamped rather than allowed to reach zero: a very narrow container should
  * produce a cramped faceplate, not an empty one or a division by zero.
  */
-export function columnsForWidth(availablePx: number, min = 4, max = 32): number {
+export function columnsForWidth(availablePx: number, min = 4, max = 32, tilePx = TILE_PX): number {
   const usable = availablePx - RACK_PAD_PX;
-  const per = TILE_PX + TILE_GAP_PX;
+  const per = tilePx + TILE_GAP_PX;
   if (!Number.isFinite(usable) || usable <= 0) return min;
   return Math.max(min, Math.min(max, Math.floor(usable / per)));
 }
@@ -125,7 +127,7 @@ export function densityLabel(d: Density, effective: number): string {
  * shown: otherwise "nothing happened" is indistinguishable from "nothing needed
  * to happen".
  */
-export function resolveColumns(density: Density, measuredPx: number): number {
-  if (density === 'auto') return columnsForWidth(measuredPx);
+export function resolveColumns(density: Density, measuredPx: number, tilePx = TILE_PX): number {
+  if (density === 'auto') return columnsForWidth(measuredPx, 4, 32, tilePx);
   return Math.max(1, Math.floor(density));
 }

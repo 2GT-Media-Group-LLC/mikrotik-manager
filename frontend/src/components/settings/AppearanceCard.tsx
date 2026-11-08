@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { Check } from 'lucide-react';
-import { useThemeStore, type ThemeMode, type DarkScheme } from '../../store/themeStore';
+import { useThemeStore, type ThemeMode, type DarkScheme, type PortStyle } from '../../store/themeStore';
 import { ACCENTS, PALETTES, accentPalette, paletteFrom } from '../../theme/palette';
 
 /**
@@ -8,7 +8,7 @@ import { ACCENTS, PALETTES, accentPalette, paletteFrom } from '../../theme/palet
  * kraken-XIV's proposal). Blue on Slate is the look MTM has always had.
  */
 export default function AppearanceCard() {
-  const { mode, accent, customAccent, darkScheme, setMode, setAccent, setCustomAccent, setDarkScheme } = useThemeStore();
+  const { mode, accent, customAccent, darkScheme, portStyle, setMode, setAccent, setCustomAccent, setDarkScheme, setPortStyle } = useThemeStore();
 
   const segmented = <T extends string>(value: T, options: { v: T; label: string }[], onPick: (v: T) => void, label: string) => (
     <div className="flex gap-2" role="radiogroup" aria-label={label}>
@@ -70,6 +70,14 @@ export default function AppearanceCard() {
           <p className="text-xs text-gray-400 dark:text-slate-500">Midnight is near-black, for dark rooms and OLED screens</p>
         </div>
         {segmented<DarkScheme>(darkScheme, [{ v: 'slate', label: 'Slate' }, { v: 'midnight', label: 'Midnight' }], setDarkScheme, 'Dark surfaces')}
+      </div>
+
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Faceplate ports</label>
+          <p className="text-xs text-gray-400 dark:text-slate-500">Drawn jacks and cages, or the plain green and red tiles</p>
+        </div>
+        {segmented<PortStyle>(portStyle, [{ v: 'ports', label: 'Ports' }, { v: 'tiles', label: 'Tiles' }], setPortStyle, 'Faceplate ports')}
       </div>
     </div>
   );

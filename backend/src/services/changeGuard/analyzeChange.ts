@@ -52,6 +52,10 @@ export type PlannedChange =
   | { kind: 'address-list.add'; fields: Record<string, string> }
   | { kind: 'address-list.set'; entryId: string; fields: Record<string, string> }
   | { kind: 'address-list.remove'; entryId: string }
+  // Interface lists and their members (#369 zones).
+  | { kind: 'interface-list.add'; name: string }
+  | { kind: 'interface-list.member.add'; list: string; interface: string }
+  | { kind: 'interface-list.member.remove'; memberId: string }
   /**
    * A change the model can't simulate on an object the management path uses
    * (port speed, a bond's settings): not predicted to break, but reported as
@@ -407,6 +411,21 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
 
     case 'address-list.remove': {
       s.addressLists = (s.addressLists ?? []).filter((e) => e['.id'] !== change.entryId);
+      break;
+    }
+
+    case 'interface-list.add': {
+      s.interfaceLists = [...(s.interfaceLists ?? []), { '.id': '*simulated', name: change.name }];
+      break;
+    }
+
+    case 'interface-list.member.add': {
+      s.interfaceListMembers = [...(s.interfaceListMembers ?? []), { '.id': '*simulated', list: change.list, interface: change.interface }];
+      break;
+    }
+
+    case 'interface-list.member.remove': {
+      s.interfaceListMembers = (s.interfaceListMembers ?? []).filter((m) => m['.id'] !== change.memberId);
       break;
     }
 

@@ -1954,6 +1954,51 @@ export const routingRulesApi = {
       confirmLockout ? { params: { confirm_lockout: 'true' } } : undefined),
 };
 
+// ─── Zone-based firewall (#369) ───────────────────────────────────────────────
+export type ZoneAction = 'deny' | 'allow' | 'services';
+export interface ZoneCustomService { protocol: 'tcp' | 'udp'; ports: string }
+export interface ZonePolicy { action: ZoneAction; services: string[]; custom: ZoneCustomService[] }
+export interface ZoneConfig {
+  zones: string[];
+  intra: Record<string, boolean>;
+  /** `${from}>${to}`, where `to` is a zone or '@router'. */
+  policies: Record<string, ZonePolicy>;
+  fasttrack: boolean;
+  logDrops: boolean;
+}
+export interface ZoneRequest { config: ZoneConfig; members: Record<string, string[]> }
+export interface ZonesData {
+  enabled: boolean;
+  config: ZoneConfig | null;
+  applied_at: string | null;
+  applied_by: string | null;
+  eligible: boolean;
+  foreign_rules: number;
+  lists: { name: string; members: { interface: string; dynamic: boolean }[] }[];
+  interfaces: { name: string; type: string; running: boolean; disabled: boolean; bridge_port: boolean; addresses: string[] }[];
+  manager_ip: string | null;
+  drift: { missing: string[]; extra: string[] } | null;
+  services: { forward: { key: string; label: string }[]; router: { key: string; label: string }[] };
+}
+export interface ZonePlan {
+  errors: Record<string, string>;
+  warnings: string[];
+  rules: (Record<string, string> & { hidden: boolean; description: string })[];
+  changes: {
+    add: number; remove: number; keep: number; lists: string[];
+    members_added: { list: string; interface: string }[]; members_removed: { list: string; interface: string }[];
+  } | null;
+}
+
+export const zonesApi = {
+  get: (id: number) => api.get<ZonesData>(`/devices/${id}/firewall/zones`),
+  plan: (id: number, body: ZoneRequest) => api.post<ZonePlan>(`/devices/${id}/firewall/zones/plan`, body),
+  apply: (id: number, body: ZoneRequest, confirmLockout = false) =>
+    api.put<{ message: string; added: number; removed: number; kept: number }>(`/devices/${id}/firewall/zones`,
+      { ...body, ...(confirmLockout ? { confirm_lockout: true } : {}) }),
+  turnOff: (id: number) => api.delete<{ message: string }>(`/devices/${id}/firewall/zones`),
+};
+
 // ─── Routing Protocols (per-device) ───────────────────────────────────────────
 Object.assign(devicesApi, {
   getOspf: (id: number) => api.get<Record<string, unknown>>(`/devices/${id}/routing/ospf`),

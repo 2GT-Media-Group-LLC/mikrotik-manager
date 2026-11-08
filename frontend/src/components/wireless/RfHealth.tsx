@@ -285,8 +285,21 @@ export function RssiDensity({ deviceId }: { deviceId?: number }) {
 
 // ─── TX Retries histogram ───────────────────────────────────────────────────────
 
+const TX_BAND_KEY = 'rf:tx-retries-band';
+
 export function TxRetries({ deviceId }: { deviceId?: number }) {
-  const [band, setBand] = useState<RfBand>('5');
+  // The band you picked last, in this browser (#410), like the charts' ranges.
+  const [band, setBandState] = useState<RfBand>(() => {
+    try {
+      const stored = localStorage.getItem(TX_BAND_KEY);
+      if (stored && (ALL_BANDS as string[]).includes(stored)) return stored as RfBand;
+    } catch { /* private mode */ }
+    return '5';
+  });
+  const setBand = (b: RfBand) => {
+    setBandState(b);
+    try { localStorage.setItem(TX_BAND_KEY, b); } catch { /* private mode */ }
+  };
   const { data: radios = [] } = useQuery({
     queryKey: ['rf-tx-quality', deviceId],
     queryFn: () => wirelessApi.getTxQuality(deviceId, '6h').then(r => r.data),

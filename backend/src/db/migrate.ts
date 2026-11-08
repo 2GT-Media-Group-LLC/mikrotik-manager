@@ -1008,6 +1008,18 @@ CREATE INDEX IF NOT EXISTS idx_command_schedules_due ON command_schedules(next_r
 ALTER TABLE command_runs ADD COLUMN IF NOT EXISTS schedule_id INTEGER REFERENCES command_schedules(id) ON DELETE SET NULL;
 ALTER TABLE command_runs ADD COLUMN IF NOT EXISTS note TEXT;
 
+-- Zone-based firewall (#369 phase 2): the matrix, which RouterOS has no
+-- notion of, and the rules it compiled to at the last apply (for drift).
+CREATE TABLE IF NOT EXISTS firewall_zone_configs (
+  device_id    INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  config       JSONB NOT NULL,
+  desired      JSONB NOT NULL,
+  enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+  applied_at   TIMESTAMPTZ,
+  applied_by   VARCHAR(50),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS device_ssh_keys (
   device_id        INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
   key_type         VARCHAR(24) NOT NULL DEFAULT 'ed25519',

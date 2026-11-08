@@ -16,7 +16,8 @@
  * `auditConfig` is pure over a snapshot so every rule is testable against fixtures;
  * persistence lives in `runConfigHealth`.
  */
-import { query } from '../../config/database';
+import { query, queryOne } from '../../config/database';
+import { zoneDrift, type CompiledRule, type ZoneDrift } from '../../utils/zoneFirewall';
 import { expandVlanIds, rosList } from '../../utils/vlan';
 import {
   captureSnapshot,
@@ -889,6 +890,24 @@ export function auditConfig(snap: DeviceSnapshot, device: GuardDevice): ConfigFi
   );
 }
 
+/** The firewall no longer matches its zones: a hand edit, or rules added outside MTM. */
+export function zoneDriftFinding(d: ZoneDrift): ConfigFinding {
+  const parts = [
+    ...(d.extra.length ? [`${d.extra.length} rule${d.extra.length === 1 ? ' is' : 's are'} on the device that the zones didn't write (${d.extra.slice(0, 3).join('; ')}${d.extra.length > 3 ? '; …' : ''})`] : []),
+    ...(d.missing.length ? [`${d.missing.length} rule${d.missing.length === 1 ? ' the zones wrote is' : 's the zones wrote are'} missing or changed (${d.missing.slice(0, 3).join('; ')}${d.missing.length > 3 ? '; …' : ''})`] : []),
+  ];
+  return {
+    rule: 'zone-firewall-drift',
+    fingerprint: 'zone-firewall-drift',
+    severity: 'warning',
+    title: 'Firewall differs from its zones',
+    detail: `Zones manage this device's IPv4 filter table, but it has changed since the last apply: ${parts.join(', and ')}.`,
+    remediation: 'Open the Firewall tab and apply the zones to put the rules back, or turn zones off to keep the hand edits.',
+    docUrl: 'https://2gt-media-group-llc.github.io/mikrotik-manager/1.1/devices/#zones',
+    objects: [...d.extra, ...d.missing].slice(0, 20),
+  };
+}
+
 export interface ConfigHealthResult {
   findings: ConfigFinding[];
   checkedAt: Date;
@@ -902,6 +921,15 @@ export interface ConfigHealthResult {
 export async function runConfigHealth(device: GuardDevice): Promise<ConfigHealthResult> {
   const snap = await captureSnapshot(device);
   let findings = auditConfig(snap, device);
+  // Zones (#369): the filter table should still be what the last apply wrote.
+  try {
+    const zone = await queryOne<{ desired: CompiledRule[] }>(
+      `SELECT desired FROM firewall_zone_configs WHERE device_id = $1 AND enabled`, [device.id]);
+    const drift = zone && snap.firewallFilter.length ? zoneDrift(snap.firewallFilter, zone.desired) : null;
+    if (drift) findings.push(zoneDriftFinding(drift));
+  } catch (e) {
+    console.warn(`[config-health] zone drift check skipped for ${device.name}: ${(e as Error).message}`);
+  }
   // Spanning-tree checks that need the rest of the fleet (#260).
   try {
     const [fleetBridges, devices, neighbours, sightings] = await Promise.all([

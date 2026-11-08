@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   chunkRows, staggerBlocks, columnsForWidth, resolveColumns,
   DENSITY_OPTIONS, parseDensity,
-  TILE_PX, TILE_GAP_PX,
+  TILE_PX, TILE_GAP_PX, PORTS_TILE_PX,
 } from './faceplateLayout';
 
 describe('columnsForWidth', () => {
@@ -22,6 +22,12 @@ describe('columnsForWidth', () => {
 
   it('caps very wide screens so a faceplate stays readable', () => {
     expect(columnsForWidth(9000)).toBe(32);
+  });
+
+  it('fits fewer drawn ports, which are wider (#412)', () => {
+    // 1200px less 52px padding is 18 tiles of 58px plus the 4px gap.
+    expect(columnsForWidth(1200, 4, 32, PORTS_TILE_PX)).toBe(18);
+    expect(resolveColumns('auto', 1200, PORTS_TILE_PX)).toBe(18);
   });
 });
 

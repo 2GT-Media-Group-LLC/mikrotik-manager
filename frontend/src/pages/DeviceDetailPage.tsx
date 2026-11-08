@@ -530,6 +530,7 @@ export default function DeviceDetailPage() {
 
       {shownTab === 'ports' && (
         <SwitchPortDiagram
+          key={deviceId}
           deviceId={deviceId}
           deviceName={device?.name}
           deviceModel={device?.model}

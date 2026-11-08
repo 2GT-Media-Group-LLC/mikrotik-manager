@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { tagOf, logsUntagged, ruleLinesUrl } from '../../utils/ruleTags';
 import QuickRulesModal from './QuickRulesModal';
+import ZonesCard from './ZonesCard';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Pencil, Power, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield, Zap,
   ArrowUp, ArrowDown, List, Activity, Ban,
 } from 'lucide-react';
-import { devicesApi, type FirewallFamily, type QuickPreset } from '../../services/api';
+import { devicesApi, zonesApi, type FirewallFamily, type QuickPreset } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { formatBytes, formatCount, ruleSummary, natSummary } from '../../utils/firewallSummary';
 import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
@@ -900,6 +901,13 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
     queryKey: fwKey('nat', deviceId, family), queryFn: () => devicesApi.getNat(deviceId, family).then(r => r.data as Row[]),
     retry: false,
   });
+  // Zones (#369) own the IPv4 filter table when they're on: the rules are shown but not edited here.
+  const { data: zones } = useQuery({
+    queryKey: ['firewall-zones', deviceId], queryFn: () => zonesApi.get(deviceId).then(r => r.data),
+    retry: false, enabled: !v6,
+  });
+  const zoned = !v6 && !!zones?.enabled;
+  const canEdit = canWrite && !zoned;
   const untagged = rules.filter(logsUntagged).length + natRules.filter(logsUntagged).length;
   const invalidate = () => qc.invalidateQueries({ queryKey: fwKey('firewall', deviceId, family) });
   const unavailable = v6 ? ipv6Unavailable(loadError) : null;
@@ -967,6 +975,7 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
       {!v6 && <BannedCard deviceId={deviceId} deviceName={deviceName} entries={addrLists} onQuick={onQuick}
         protectedHere={rules.some((r) => r.chain === 'mtm-bruteforce')} />}
       <AddressListsCard deviceId={deviceId} deviceName={deviceName} family={family} />
+      {!v6 && <ZonesCard deviceId={deviceId} deviceName={deviceName} onApplied={invalidate} />}
 
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center"><Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /></div>
@@ -989,7 +998,7 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
           <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh</button>
           {onQuick && <button onClick={() => onQuick()} title="Presets for the rules nearly every router needs"
             className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><Zap className="w-3.5 h-3.5 text-amber-500" /> Quick rules</button>}
-          {canWrite && <button onClick={() => { setForm({ ...EMPTY_FW, chain: chainFilter !== 'all' ? chainFilter : 'forward' }); setErr(''); setShowAdd(true); }}
+          {canEdit && <button onClick={() => { setForm({ ...EMPTY_FW, chain: chainFilter !== 'all' ? chainFilter : 'forward' }); setErr(''); setShowAdd(true); }}
             className="btn-primary flex items-center gap-1.5 text-xs py-1.5"><Plus className="w-3.5 h-3.5" /> Add Rule</button>}
         </div>
       </div>
@@ -999,7 +1008,12 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
       )}
       {err && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{err}</div>}
       <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={anyPending} />
-      {untagged > 0 && (
+      {zoned && (
+        <p className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
+          <AlertCircle className="w-3.5 h-3.5" /> Zones manage these rules: change them under Zones above, or turn zones off to edit them here.
+        </p>
+      )}
+      {untagged > 0 && !zoned && (
         <div className="flex items-center gap-3 flex-wrap rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-gray-600 dark:text-slate-300">
           <span className="flex-1 min-w-[16rem]">
             {untagged} rule{untagged === 1 ? ' logs' : 's log'} without a tag, so {untagged === 1 ? 'its' : 'their'} log lines can&rsquo;t be traced back
@@ -1014,7 +1028,7 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
       )}
 
       {filtered.length === 0 ? <div className="card p-8 text-center text-gray-400">No {v6 ? 'IPv6 ' : ''}firewall rules{chainFilter !== 'all' ? ` in "${chainFilter}"` : ''}.</div>
-        : <RuleTable rows={filtered} fullOrder={rules} canWrite={canWrite} canReorder={chainFilter === 'all'} summaryFn={ruleSummary} deviceId={deviceId} highlight={highlight}
+        : <RuleTable rows={filtered} fullOrder={rules} canWrite={canEdit} canReorder={chainFilter === 'all'} summaryFn={ruleSummary} deviceId={deviceId} highlight={highlight}
             onEdit={r => { setForm(ruleToForm(r)); setErr(''); setEditing(r); }}
             onToggle={r => toggle(r['.id'], !(r.disabled === 'true'))}
             onDelete={r => { if (confirm('Delete this firewall rule?')) remove(r['.id']); }} onMove={onMove} />}

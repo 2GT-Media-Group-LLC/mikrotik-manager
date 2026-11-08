@@ -7,6 +7,8 @@ type Theme = 'light' | 'dark';
 export type ThemeMode = Theme | 'system';
 /** Dark surfaces: the usual slate, or near-black. */
 export type DarkScheme = 'slate' | 'midnight';
+/** How the faceplate draws ports: drawn jacks and cages (#412), or the plain tiles from before. */
+export type PortStyle = 'ports' | 'tiles';
 
 interface ThemeState {
   mode: ThemeMode;
@@ -15,6 +17,7 @@ interface ThemeState {
   accent: AccentChoice;
   customAccent: string;
   darkScheme: DarkScheme;
+  portStyle: PortStyle;
   setMode: (mode: ThemeMode) => void;
   /** Light or dark, explicitly. */
   setTheme: (theme: Theme) => void;
@@ -23,6 +26,7 @@ interface ThemeState {
   setAccent: (accent: AccentChoice) => void;
   setCustomAccent: (hex: string) => void;
   setDarkScheme: (scheme: DarkScheme) => void;
+  setPortStyle: (style: PortStyle) => void;
 }
 
 const darkQuery = (): MediaQueryList | null =>
@@ -59,23 +63,25 @@ export const useThemeStore = create<ThemeState>()(
         accent: 'blue',
         customAccent: DEFAULT_CUSTOM,
         darkScheme: 'slate',
+        portStyle: 'ports',
         setMode: (mode) => update({ mode, theme: resolve(mode) }),
         setTheme: (theme) => update({ mode: theme, theme }),
         toggleTheme: () => { const next = get().theme === 'light' ? 'dark' : 'light'; update({ mode: next, theme: next }); },
         setAccent: (accent) => update({ accent: isAccent(accent) ? accent : 'blue' }),
         setCustomAccent: (hex) => { const c = normalizeHex(hex); if (c) update({ accent: 'custom', customAccent: c }); },
         setDarkScheme: (darkScheme) => update({ darkScheme: darkScheme === 'midnight' ? 'midnight' : 'slate' }),
+        setPortStyle: (portStyle) => set({ portStyle: portStyle === 'tiles' ? 'tiles' : 'ports' }),
       };
     },
     {
       name: 'mikrotik-theme',
       version: 1,
-      partialize: (s) => ({ mode: s.mode, accent: s.accent, customAccent: s.customAccent, darkScheme: s.darkScheme }),
+      partialize: (s) => ({ mode: s.mode, accent: s.accent, customAccent: s.customAccent, darkScheme: s.darkScheme, portStyle: s.portStyle }),
       // Before 1.1 only `theme` (light or dark) was kept.
       migrate: (old) => {
         const o = (old ?? {}) as { theme?: unknown };
-        return { mode: o.theme === 'dark' ? 'dark' : 'light', accent: 'blue', customAccent: DEFAULT_CUSTOM, darkScheme: 'slate' } as
-          Pick<ThemeState, 'mode' | 'accent' | 'customAccent' | 'darkScheme'>;
+        return { mode: o.theme === 'dark' ? 'dark' : 'light', accent: 'blue', customAccent: DEFAULT_CUSTOM, darkScheme: 'slate', portStyle: 'ports' } as
+          Pick<ThemeState, 'mode' | 'accent' | 'customAccent' | 'darkScheme' | 'portStyle'>;
       },
       // Whatever was stored, only known values reach the page.
       merge: (stored, current) => {
@@ -86,6 +92,7 @@ export const useThemeStore = create<ThemeState>()(
           accent: isAccent(s.accent) ? s.accent : 'blue',
           customAccent: normalizeHex(s.customAccent) ?? DEFAULT_CUSTOM,
           darkScheme: s.darkScheme === 'midnight' ? 'midnight' : 'slate',
+          portStyle: s.portStyle === 'tiles' ? 'tiles' : 'ports',
         };
       },
       onRehydrateStorage: () => (state) => { if (state) applyTheme(state); },

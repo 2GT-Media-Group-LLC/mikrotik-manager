@@ -110,6 +110,12 @@ const MENUS = {
     path: '/interface/bridge/vlan', mode: 'keyed', hasDynamic: true,
     only: ['bridge', 'vlan-ids', 'tagged', 'untagged', 'disabled', 'comment'],
   },
+  // Zones (#369): which interfaces are in each list. The lists themselves
+  // aren't restored; a new one left behind is empty and harmless.
+  interfaceListMember: {
+    path: '/interface/list/member', mode: 'keyed', hasDynamic: true,
+    only: ['list', 'interface', 'disabled', 'comment'],
+  },
   ipAddress: {
     path: '/ip/address', mode: 'keyed', hasDynamic: true,
     only: ['address', 'network', 'interface', 'disabled', 'comment'],
@@ -187,6 +193,9 @@ const SCOPES: Record<string, MenuKey[]> = {
   'nat.set': ['firewallNat'],
   'nat.move': ['firewallNat'],
   'nat.remove': ['firewallNat'],
+  'firewall.quick': ['addressList', 'firewallFilter', 'firewallNat'],
+  'firewall.tag-logging': ['firewallFilter', 'firewallNat'],
+  'firewall.zones': ['interfaceListMember', 'firewallFilter'],
   'address-list.add': ['addressList'],
   'address-list.set': ['addressList'],
   'address-list.remove': ['addressList'],

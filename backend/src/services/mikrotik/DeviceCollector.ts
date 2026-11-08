@@ -4315,6 +4315,44 @@ export class DeviceCollector {
     };
   }
 
+  /**
+   * What zone mode (#369) plans against, in one round trip: the IPv4 filter
+   * table, interface lists and members, interfaces, addresses, services and
+   * the RouterOS version.
+   */
+  async getZoneContext(): Promise<{
+    filter: Record<string, string>[]; lists: Record<string, string>[]; members: Record<string, string>[];
+    interfaces: Record<string, string>[]; addresses: Record<string, string>[]; services: Record<string, string>[]; rosMajor: number;
+  }> {
+    const res = await this.client.executeMany([
+      { command: '/ip/firewall/filter/print' },
+      { command: '/interface/list/print' },
+      { command: '/interface/list/member/print' },
+      { command: '/interface/print', params: { '.proplist': 'name,type,running,disabled,slave,comment' } },
+      { command: '/ip/address/print', params: { '.proplist': 'address,interface,actual-interface,disabled,invalid,dynamic' } },
+      { command: '/ip/service/print', params: { '.proplist': 'name,port,disabled' } },
+      { command: '/system/resource/print', params: { '.proplist': 'version' } },
+    ]);
+    for (const r of res.slice(0, 3)) if (r.error) throw r.error;
+    const rows = (i: number) => res[i]?.rows ?? [];
+    return {
+      filter: rows(0), lists: rows(1), members: rows(2), interfaces: rows(3), addresses: rows(4), services: rows(5),
+      rosMajor: Number((rows(6)[0]?.version ?? '7').split('.')[0]) || 7,
+    };
+  }
+
+  async addInterfaceList(name: string): Promise<void> {
+    await this.client.execute('/interface/list/add', { name });
+  }
+
+  async addInterfaceListMember(list: string, iface: string): Promise<void> {
+    await this.client.execute('/interface/list/member/add', { list, interface: iface });
+  }
+
+  async removeInterfaceListMember(id: string): Promise<void> {
+    await this.client.execute('/interface/list/member/remove', { '.id': id });
+  }
+
   async addFirewallRule(params: Record<string, string>, family: FirewallFamily = 'ip'): Promise<void> {
     await this.client.execute(`${firewallMenu(family, 'filter')}/add`, params);
   }
@@ -6450,6 +6488,8 @@ export class DeviceCollector {
 
   async installRouterboardUpgrade(): Promise<void> {
     await this.client.execute('/system/routerboard/upgrade');
+    // Let the bootloader write settle before asking for the reboot.
+    await new Promise((r) => setTimeout(r, 3000));
     // Through reboot(), which expects the session to die. Calling /system/reboot
     // directly reported "Connection closed" as a failed RouterBOOT upgrade
     // whenever the socket closed before RouterOS acknowledged the command, a
@@ -6470,7 +6510,12 @@ export class DeviceCollector {
       await this.client.execute('/system/reboot');
     } catch (e) {
       const msg = (e as Error).message || '';
-      if (/closed|reset|EPIPE|not connected|timed? ?out|socket/i.test(msg)) return;
+      if (/closed|reset|EPIPE|not connected|timed? ?out|socket/i.test(msg)) {
+        // Usually the reboot taking the session down. Logged, because when the
+        // device didn't in fact reboot this line is the only trace of why.
+        console.log(`[Reboot] ${this.device.name}: ${msg} (taken as the reboot dropping the session)`);
+        return;
+      }
       throw e;
     }
   }

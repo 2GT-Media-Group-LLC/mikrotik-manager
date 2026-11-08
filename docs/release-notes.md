@@ -3,6 +3,29 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.33
+
+- **Zones**, phase 2 of Ron's
+  [#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369): on the Firewall tab,
+  group interfaces into zones and fill in a matrix of what each zone can reach, the other zones and
+  the router itself: deny, everything, or chosen services and ports. MTM writes the whole IPv4
+  filter table from it, one chain per open pair, and reports any change made outside MTM as drift,
+  on the card and in Config Health. Applying keeps the rules that are already right and runs through
+  Change Guard ([Zones](devices.md#zones)).
+- **Change Guard**: Quick rules and **Tag all** now get a script-mode restore of just the firewall
+  tables they touch, so with script mode on a revert no longer reboots the device.
+- **Drawn ports** on the Ports tab, from Ron's mockup in
+  [#412](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/412): RJ45 jacks, SFP cages,
+  QSFP28 and QSFP-DD cages, and broken-out cages as their lanes in one cage outline, with link and
+  activity lights. Up ports take your accent colour. **Settings → General → Appearance → Faceplate
+  ports → Tiles** brings back the old squares ([Appearance](configuration.md#appearance)).
+- Broken-out QSFP lanes are labelled `1/1`, `1/2` and so on again, rather than `qsfp`.
+- The faceplate's ports-per-row choice is remembered for each device, in this browser. A device
+  you haven't set yet uses the last choice you made.
+- **AP Radio TX Retries** remembers the band you picked, in this browser
+  ([#410](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/410)).
+- Fixes from 1.0.8.
+
 ## 1.1.0-beta.32
 
 - **Scheduled bulk commands**, from Ron's request in
@@ -478,6 +501,41 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.8
+
+Released on Saturday 7 November 2026. Fixes for the device page's update check and for RouterBOOT
+upgrades.
+
+- **The update check forgot the update channel.** On a device's **Config** tab (the **Firmware** tab
+  in 1.1), the channel showed after **Check for Updates** until the page was reloaded, then went back
+  to *not checked yet*. The manager saves the channel each device reports, but the device page
+  didn't load it. It does now
+  ([#413](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/413)).
+- **A RouterBOOT upgrade could be reported as failed when only its reboot hadn't happened.** In a
+  rollout, a CRS310 took the new RouterBOOT but not the reboot after it, and stayed up. The rollout
+  waited 12 minutes and reported *device did not come back*, although the device was reachable the
+  whole time, and it showed as up to date after its next reboot. Now, if a device is still up two
+  minutes after the reboot was sent, the manager sends it again. If it still doesn't restart, the
+  rollout says so: the RouterBOOT was written, the device is running, and a reboot finishes it.
+
+## 1.0.7
+
+Released on Saturday 7 November 2026. Housekeeping: restore points left on devices, Postgres's
+shared memory, and two development-only dependency alerts.
+
+- **Old Change Guard restore points are cleared from devices.** Each guarded change saves a
+  restore point (`mtm-rp-….backup`) that only its revert scheduler reads. They were left behind
+  when a revert fired, when the manager restarted mid-change, or when the clean-up couldn't reach
+  the device, and piled up in the device's files. After each change, Change Guard now removes any
+  restore point whose revert scheduler is gone, in binary and script mode, and keeps one that's
+  still armed ([Change Guard](change-guard.md)).
+- **Postgres gets 256 MB of shared memory** (`shm_size` in both compose files). Docker's default
+  is 64 MB, and on a large events table Postgres's parallel queries and parallel `VACUUM` could
+  fail with *could not resize shared memory segment … No space left on device*. If you keep your
+  own copy of the compose file, add `shm_size: 256m` to the `postgres` service.
+- `minimatch` in the build and test tooling is updated to 11, clearing two Dependabot alerts.
+  Neither it nor `deepmerge` (an alert with no fix yet) is in the images.
 
 ## 1.0.6
 
