@@ -1771,6 +1771,10 @@
 failure. Several commands on separate lines run in order.</p>
 <p>Commands run over <strong>SSH</strong>, because console syntax — <code>:put</code>, <code>:foreach</code>, <code>/interface print</code>
 — is not reachable through the binary API, which has its own command tree.</p>
+<p>Running and scheduling commands is for <strong>admins</strong> (fleet admins, or site admins on devices in
+their sites), since a command can do anything the router's admin account can. Operators can
+see runs and schedules and cancel a run in progress. Schedules an operator saved earlier
+keep running; an admin can edit, pause or delete them.</p>
 <h2 id="templates">Templates<a class="headerlink" href="#templates" title="Permanent link">&para;</a></h2>
 <p>Commands you run more than once can be saved as templates: firewall rules, LTE settings, DNS
 and NTP defaults, anything you would otherwise keep in a notes file.</p>

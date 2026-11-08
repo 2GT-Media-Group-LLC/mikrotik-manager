@@ -979,6 +979,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#torch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Torch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#web-admin" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2454,6 +2465,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#torch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Torch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#web-admin" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3462,8 +3484,21 @@ the device sits.</p>
 <td>Bandwidth test</td>
 <td>Between two managed devices; the target's test server is enabled and disabled for you</td>
 </tr>
+<tr>
+<td>Torch</td>
+<td>Live traffic on one interface, flow by flow, refreshed every second (below)</td>
+</tr>
 </tbody>
 </table>
+<h3 id="torch">Torch<a class="headerlink" href="#torch" title="Permanent link">&para;</a></h3>
+<p><strong>Torch</strong> shows who is talking on an interface right now: protocol, source and destination
+with ports, and each flow's TX and RX rate, busiest first, refreshed every second. Narrow it
+by source, destination (IPv4 or IPv6, a single address or a prefix), port and protocol before
+starting. It is RouterOS's own <code>/tool torch</code>, read over the API.</p>
+<p>Torch costs the router CPU while it runs, so it is bounded: it stops when you press <strong>Stop</strong>
+or leave the page, and by itself after 10 minutes. A device runs at most two at once. Traffic
+that a switch chip forwards in hardware never reaches the CPU, so on a CRS switch Torch shows
+only what the CPU handles. Operators and admins can use it, and each start is in the audit log.</p>
 <h3 id="web-admin">Web Admin<a class="headerlink" href="#web-admin" title="Permanent link">&para;</a></h3>
 <p><strong>Web Admin</strong> at the top of a device's page opens its web interface (WebFig) in a new tab. It
 asks the device where WebFig answers: over HTTPS when <code>www-ssl</code> is on (even with plain <code>www</code>
@@ -3473,7 +3508,9 @@ has no certificate it warns that HTTPS may not answer (the Security tab's <stron
 sets one up). When the device doesn't answer
 the manager, it falls back to <code>http://</code> on the device's address.</p>
 <h3 id="terminal">Terminal<a class="headerlink" href="#terminal" title="Permanent link">&para;</a></h3>
-<p>The terminal opens an SSH shell on the device, for operators and admins in the device's site.
+<p>The terminal opens an SSH shell on the device, for admins in the device's site. Operators
+don't get one: a shell skips Change Guard and Review changes, so they make their changes
+through the tabs and bulk commands instead.
 The audit log records each session's start, who opened it, from which address, and when it
 was refused (for example by the rate limit). <strong>What is typed in the shell is not recorded.</strong>
 If you need a record of commands, turn on logging on the device itself (<code>/system logging</code>), or

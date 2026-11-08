@@ -741,6 +741,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#grouped-and-raw" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Grouped and raw
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-the-events-come-from" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1564,6 +1575,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#grouped-and-raw" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Grouped and raw
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-the-events-come-from" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1668,6 +1690,16 @@ structured events.</p>
 <li>input and output interface</li>
 </ul>
 <p>IPv4 and IPv6 packet logs are supported.</p>
+<h2 id="grouped-and-raw">Grouped and raw<a class="headerlink" href="#grouped-and-raw" title="Permanent link">&para;</a></h2>
+<p>RouterOS logs every packet a logging rule matches, so one blocked client retrying, or a port
+scan, fills the page. The page opens <strong>Grouped</strong>, the way a Palo Alto or Check Point log reads:
+one line per device, rule, chain, interfaces, protocol, source, destination and destination
+port, with how many lines it stands for and when it was first and last seen. The source port
+is left out, so retries from new ports stay on one line. Click a count to see its lines in
+<strong>Raw</strong>, which shows every line as the device logged it. The page remembers which view you
+used last.</p>
+<p>Grouping reads the newest 100,000 lines that match the filters; narrow by device or search to
+look further back.</p>
 <h2 id="where-the-events-come-from">Where the events come from<a class="headerlink" href="#where-the-events-come-from" title="Permanent link">&para;</a></h2>
 <p>Firewall logs are collected from the normal RouterOS log stream. A firewall
 rule therefore produces entries on this page only when logging is enabled for
