@@ -795,6 +795,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../sessions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sessions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../scaling/" class="md-nav__link">
         
   
@@ -1626,6 +1654,10 @@ client only when the address exists in exactly one site. With a single site that
 the case. If the same addresses are in use at more than one site, those flows are counted in
 the all-sites view only.</p>
 <p>Installs from before 0.24.47 keep the setting they had, which was on.</p>
+<p>With accepting on, a router behind NAT is usually still recognised by when it booted: every
+NetFlow packet carries that time, and polling records it for each device. Its flows are then
+counted under its own name and site, as if they came from its address. Two routers that booted
+within 10 seconds of each other stay unidentified.</p>
 <p><strong>Network Services → NetFlow</strong> configures the exporters and the collector.</p>
 <h2 id="what-it-shows">What it shows<a class="headerlink" href="#what-it-shows" title="Permanent link">&para;</a></h2>
 <table>

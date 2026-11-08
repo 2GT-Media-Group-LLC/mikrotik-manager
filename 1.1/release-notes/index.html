@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta35" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.35
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta34" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1117,6 +1128,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../sessions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sessions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../scaling/" class="md-nav__link">
         
   
@@ -1853,6 +1892,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta35" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.35
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta34" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2238,6 +2288,34 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta35">1.1.0-beta.35<a class="headerlink" href="#110-beta35" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Sessions</strong>, the second part of Ron's
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415">#415</a>: a new
+  <strong>Security → Sessions</strong> page lists connections from NetFlow, one row each, the way a Palo Alto
+  or Check Point traffic log reads. Each row has the client and server, the addresses NAT
+  changed, application, bytes and packets each way, duration, and how it ended (closed, reset
+  by client or server, no reply, aged out). Both directions of a connection, which RouterOS
+  exports separately, become one row, through masquerade and port forwards too, and a long
+  connection stays one row as it goes on. Turn it on per router with the new <strong>Sessions</strong>
+  switch on <strong>Network Services → NetFlow</strong>; it is off by default and kept for 3 days. See
+  <a href="../sessions/">Sessions</a>.</li>
+<li><strong>Menu: Firewall Logs and Sessions move under Security.</strong> <strong>Security</strong> opens the security
+  page as before and now unfolds to <strong>Firewall Logs</strong> and <strong>Sessions</strong> under it. <strong>Events</strong> is
+  a single entry for device logs. Page addresses haven't changed, so bookmarks still work.</li>
+<li><strong>Routers behind NAT are recognised.</strong> When NAT sits between the routers and MikroTik Manager,
+  their flows all arrive from one address and couldn't be told apart. Now each router is
+  recognised by when it booted, which every NetFlow packet carries and polling records, so its
+  flows count under its own name and site on Traffic and NetFlow. Two routers that booted
+  together still can't be told apart.</li>
+<li><strong>Zones on routers without FastTrack offload</strong>, fixing Ron's failed <strong>Turn on zones</strong> in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369">#369</a>: the FastTrack rule
+  was always written with <code>hw-offload=yes</code> on RouterOS 7, and some builds don't take that
+  parameter, so the whole change was refused and Change Guard put the old firewall back.
+  MikroTik Manager now asks the router which parameters a firewall rule takes and adds
+  <code>hw-offload</code> only where it is listed. The <strong>Forward basics</strong> preset had the same problem and
+  the same fix.</li>
+</ul>
 <h2 id="110-beta34">1.1.0-beta.34<a class="headerlink" href="#110-beta34" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Torch</strong>, from Ron's request in

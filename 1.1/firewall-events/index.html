@@ -14,7 +14,7 @@
         <link rel="prev" href="../security/">
       
       
-        <link rel="next" href="../scaling/">
+        <link rel="next" href="../sessions/">
       
       
         
@@ -827,6 +827,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sessions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sessions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1678,7 +1706,7 @@
 
 
 <h1 id="firewall-logs">Firewall logs<a class="headerlink" href="#firewall-logs" title="Permanent link">&para;</a></h1>
-<p>The <strong>Events → Firewall Logs</strong> page presents RouterOS firewall packet logs as
+<p>The <strong>Security → Firewall Logs</strong> page presents RouterOS firewall packet logs as
 structured events.</p>
 <p>Each row can show:</p>
 <ul>
@@ -1700,6 +1728,8 @@ is left out, so retries from new ports stay on one line. Click a count to see it
 used last.</p>
 <p>Grouping reads the newest 100,000 lines that match the filters; narrow by device or search to
 look further back.</p>
+<p>For whole connections rather than logged packets, with bytes each way and how each one ended,
+see <a href="../sessions/">Sessions</a>, built from NetFlow.</p>
 <h2 id="where-the-events-come-from">Where the events come from<a class="headerlink" href="#where-the-events-come-from" title="Permanent link">&para;</a></h2>
 <p>Firewall logs are collected from the normal RouterOS log stream. A firewall
 rule therefore produces entries on this page only when logging is enabled for
@@ -1761,7 +1791,7 @@ the device, from Ron's request in #369:</p>
   <a href="../change-guard/">Change Guard</a>.</li>
 </ul>
 <h2 id="device-logs">Device Logs<a class="headerlink" href="#device-logs" title="Permanent link">&para;</a></h2>
-<p>Firewall packet logs have their own <strong>Events → Firewall Logs</strong> page, so they
+<p>Firewall packet logs have their own <strong>Security → Firewall Logs</strong> page, so they
 are hidden from <strong>Device Logs</strong> by default.</p>
 <p>Enable the <strong>Firewall packets</strong> toggle on Device Logs to include them in that
 view when needed.</p>
