@@ -20,6 +20,17 @@ export interface FlowRecord {
    */
   natSrcAddr?: string;
   natDstAddr?: string;
+  /** Post-NAT ports (227/228), only when NAT changed them. */
+  natSrcPort?: number;
+  natDstPort?: number;
+  /** TCP flags seen across the flow, OR'd (field 6), when exported. */
+  tcpFlags?: number;
+  /**
+   * First and last packet of the flow, epoch ms, when the exporter sends them
+   * (v9 FIRST/LAST_SWITCHED against the header uptime, or IPFIX absolute times).
+   */
+  startMs?: number;
+  endMs?: number;
 }
 
 interface TemplateField {
@@ -72,6 +83,17 @@ export function pruneTemplateCache(
 
 export interface DecodeResult {
   flows: FlowRecord[];
+  /** v9 source id or IPFIX observation domain: one exporter can send several. */
+  sourceId?: number;
+  /** Header export time, epoch ms. */
+  exportMs?: number;
+  /** v9 header uptime, ms (IPFIX has none). */
+  uptimeMs?: number;
+  /**
+   * When the exporter booted, epoch ms: export time less uptime for v9, or
+   * IPFIX systemInitTimeMilliseconds when a record carries it.
+   */
+  bootMs?: number;
   templatesParsed: number;
   // Data records that arrived before their template (dropped)
   recordsWithoutTemplate: number;
@@ -87,11 +109,33 @@ const FIELD = {
   DST_IPV4: 12, // IPV4_DST_ADDR / destinationIPv4Address
   SRC_IPV6: 27, // IPV6_SRC_ADDR / sourceIPv6Address
   DST_IPV6: 28, // IPV6_DST_ADDR / destinationIPv6Address
+  TCP_FLAGS: 6, // TCP_FLAGS / tcpControlBits
+  LAST_SWITCHED: 21, // sysUpTime ms of the last packet (IPFIX flowEndSysUpTime)
+  FIRST_SWITCHED: 22, // sysUpTime ms of the first packet (IPFIX flowStartSysUpTime)
+  START_SECONDS: 150, // flowStartSeconds
+  END_SECONDS: 151, // flowEndSeconds
+  START_MS: 152, // flowStartMilliseconds
+  END_MS: 153, // flowEndMilliseconds
+  SYS_INIT_MS: 160, // systemInitTimeMilliseconds (IPFIX uptime base)
   NAT_SRC_IPV4: 225, // postNATSourceIPv4Address
   NAT_DST_IPV4: 226, // postNATDestinationIPv4Address
   NAT_SRC_IPV6: 281, // postNATSourceIPv6Address
   NAT_DST_IPV6: 282, // postNATDestinationIPv6Address
+  NAT_SRC_PORT: 227, // postNAPTSourceTransportPort
+  NAT_DST_PORT: 228, // postNAPTDestinationTransportPort
 } as const;
+
+/**
+ * Header clock, for turning uptime-relative times into wall-clock ones. v9
+ * carries the exporter's uptime next to the export time; IPFIX has no uptime
+ * in its header and needs systemInitTimeMilliseconds in the record instead.
+ */
+interface HeaderClock {
+  exportMs: number;
+  uptimeMs?: number;
+  /** IPFIX systemInitTimeMilliseconds, from the first record that has it. */
+  sysInitMs?: number;
+}
 
 /** RouterOS fills a post-NAT field with zeros when nothing was translated. */
 const NO_ADDRESS = new Set(['0.0.0.0', '::']);
@@ -195,7 +239,8 @@ function parseDataSet(
   start: number,
   setEnd: number,
   template: Template,
-  flows: FlowRecord[]
+  flows: FlowRecord[],
+  clock: HeaderClock
 ): void {
   let off = start;
   // Records are packed back to back; trailing bytes < minLength are padding
@@ -210,6 +255,14 @@ function parseDataSet(
     let protocol = 0;
     let bytes = -1;
     let packets = 0;
+    let natSrcPort = 0;
+    let natDstPort = 0;
+    let tcpFlags: number | undefined;
+    let firstUp: number | undefined;
+    let lastUp: number | undefined;
+    let startAbs: number | undefined;
+    let endAbs: number | undefined;
+    let sysInit: number | undefined;
     let valid = true;
 
     for (const field of template.fields) {
@@ -242,6 +295,16 @@ function parseDataSet(
           case FIELD.NAT_DST_IPV4: if (len === 4) natDstAddr = formatIPv4(buf, off); break;
           case FIELD.NAT_SRC_IPV6: if (len === 16 && !natSrcAddr) natSrcAddr = formatIPv6(buf, off); break;
           case FIELD.NAT_DST_IPV6: if (len === 16 && !natDstAddr) natDstAddr = formatIPv6(buf, off); break;
+          case FIELD.NAT_SRC_PORT: natSrcPort = readUInt(buf, off, len); break;
+          case FIELD.NAT_DST_PORT: natDstPort = readUInt(buf, off, len); break;
+          case FIELD.TCP_FLAGS: tcpFlags = readUInt(buf, off, len) & 0xff; break;
+          case FIELD.FIRST_SWITCHED: firstUp = readUInt(buf, off, len); break;
+          case FIELD.LAST_SWITCHED: lastUp = readUInt(buf, off, len); break;
+          case FIELD.START_MS: startAbs = readUInt(buf, off, len); break;
+          case FIELD.END_MS: endAbs = readUInt(buf, off, len); break;
+          case FIELD.START_SECONDS: if (startAbs === undefined) startAbs = readUInt(buf, off, len) * 1000; break;
+          case FIELD.END_SECONDS: if (endAbs === undefined) endAbs = readUInt(buf, off, len) * 1000; break;
+          case FIELD.SYS_INIT_MS: sysInit = readUInt(buf, off, len); break;
         }
       }
       off += len;
@@ -259,9 +322,53 @@ function parseDataSet(
       // (and the existing tests) look exactly as before.
       if (natSrcAddr && !NO_ADDRESS.has(natSrcAddr) && natSrcAddr !== srcAddr) flow.natSrcAddr = natSrcAddr;
       if (natDstAddr && !NO_ADDRESS.has(natDstAddr) && natDstAddr !== dstAddr) flow.natDstAddr = natDstAddr;
+      if (natSrcPort && natSrcPort !== srcPort) flow.natSrcPort = natSrcPort;
+      if (natDstPort && natDstPort !== dstPort) flow.natDstPort = natDstPort;
+      if (tcpFlags !== undefined) flow.tcpFlags = tcpFlags;
+      if (sysInit && clock.sysInitMs === undefined) clock.sysInitMs = sysInit;
+      const times = flowTimes(clock, firstUp, lastUp, startAbs, endAbs, sysInit);
+      if (times) { flow.startMs = times.start; flow.endMs = times.end; }
       flows.push(flow);
     }
   }
+}
+
+/** A plausible epoch-ms time: after 2000, and not more than a day ahead of the export. */
+function plausible(ms: number, exportMs: number): boolean {
+  return ms > 946_684_800_000 && ms <= exportMs + 86_400_000;
+}
+
+/**
+ * Wall-clock start and end of a flow, or nothing when the record doesn't say.
+ * Uptime-relative times count back from the export: the exporter's uptime at
+ * export, less the uptime at the packet, is how long before the export it was.
+ */
+function flowTimes(
+  clock: HeaderClock, firstUp?: number, lastUp?: number, startAbs?: number, endAbs?: number, sysInit?: number
+): { start: number; end: number } | null {
+  let start: number | undefined;
+  let end: number | undefined;
+  if (startAbs !== undefined && endAbs !== undefined) {
+    start = startAbs; end = endAbs;
+  } else if (firstUp !== undefined && lastUp !== undefined) {
+    if (sysInit) { start = sysInit + firstUp; end = sysInit + lastUp; }
+    else if (clock.uptimeMs !== undefined) {
+      // Unsigned 32-bit ms wraps after 49.7 days; a flow straddling the wrap
+      // reads as just before it.
+      const ago = (t: number) => ((clock.uptimeMs! - t) >>> 0);
+      start = clock.exportMs - ago(firstUp);
+      end = clock.exportMs - ago(lastUp);
+    } else {
+      // Uptimes with nothing to anchor them: the length is still right, and
+      // a flow is exported soon after its last packet, so end it at the export.
+      end = clock.exportMs;
+      start = end - ((lastUp - firstUp) >>> 0);
+    }
+  }
+  if (start === undefined || end === undefined) return null;
+  if (end < start) [start, end] = [end, start];
+  if (!plausible(start, clock.exportMs) || !plausible(end, clock.exportMs)) return null;
+  return { start, end };
 }
 
 export function decodePacket(buf: Buffer, exporterKey: string, cache: TemplateCache): DecodeResult {
@@ -273,22 +380,28 @@ export function decodePacket(buf: Buffer, exporterKey: string, cache: TemplateCa
   let end: number;
   let sourceId: number;
   let ipfix: boolean;
+  let clock: HeaderClock;
 
   if (version === 9) {
     if (buf.length < 20) return result;
     ipfix = false;
     sourceId = buf.readUInt32BE(16);
+    clock = { uptimeMs: buf.readUInt32BE(4), exportMs: buf.readUInt32BE(8) * 1000 };
     offset = 20;
     end = buf.length;
   } else if (version === 10) {
     ipfix = true;
     const declaredLength = buf.readUInt16BE(2);
     sourceId = buf.readUInt32BE(12); // observation domain ID
+    clock = { exportMs: buf.readUInt32BE(4) * 1000 };
     offset = 16;
     end = Math.min(declaredLength, buf.length);
   } else {
     return result; // unsupported version (v5 etc.)
   }
+  result.sourceId = sourceId;
+  result.exportMs = clock.exportMs;
+  if (clock.uptimeMs !== undefined) result.uptimeMs = clock.uptimeMs;
 
   while (offset + 4 <= end) {
     const setId = buf.readUInt16BE(offset);
@@ -306,7 +419,7 @@ export function decodePacket(buf: Buffer, exporterKey: string, cache: TemplateCa
       const template = cache.get(`${exporterKey}|${sourceId}|${setId}`);
       if (template) {
         template.lastUsed = Date.now(); // keep actively-used templates alive
-        parseDataSet(buf, setStart, setEnd, template, result.flows);
+        parseDataSet(buf, setStart, setEnd, template, result.flows, clock);
       } else {
         result.recordsWithoutTemplate++;
       }
@@ -314,5 +427,7 @@ export function decodePacket(buf: Buffer, exporterKey: string, cache: TemplateCa
     offset = setEnd;
   }
 
+  if (clock.uptimeMs !== undefined) result.bootMs = clock.exportMs - clock.uptimeMs;
+  else if (clock.sysInitMs !== undefined) result.bootMs = clock.sysInitMs;
   return result;
 }

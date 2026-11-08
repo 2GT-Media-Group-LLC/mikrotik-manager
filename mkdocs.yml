@@ -69,6 +69,7 @@ nav:
       - Change Guard and Config Health: change-guard.md
       - Security page: security.md
       - Firewall logs: firewall-events.md
+      - Sessions: sessions.md
       - Polling and scaling: scaling.md
       - Alerting: alerting.md
       - SSH keys: ssh-keys.md

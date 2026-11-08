@@ -43,6 +43,11 @@ the all-sites view only.
 
 Installs from before 0.24.47 keep the setting they had, which was on.
 
+With accepting on, a router behind NAT is usually still recognised by when it booted: every
+NetFlow packet carries that time, and polling records it for each device. Its flows are then
+counted under its own name and site, as if they came from its address. Two routers that booted
+within 10 seconds of each other stay unidentified.
+
 **Network Services → NetFlow** configures the exporters and the collector.
 
 ## What it shows

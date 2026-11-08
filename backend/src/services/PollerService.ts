@@ -949,13 +949,16 @@ export class PollerService {
    * progress is never deleted.
    */
   private async pruneHistoryTables(settings: Record<string, unknown>): Promise<void> {
-    const tables: Array<{ table: string; where: string; setting: string; fallback: number }> = [
+    const tables: Array<{ table: string; where: string; setting: string; fallback: number; batches?: number }> = [
       { table: 'spectral_scan_data', where: 'scanned_at < $1', setting: 'retention_scan_days', fallback: 30 },
       { table: 'ap_scan_data', where: 'scanned_at < $1', setting: 'retention_scan_days', fallback: 30 },
       { table: 'lte_cell_history', where: 'at < $1', setting: 'retention_lte_history_days', fallback: 90 },
       { table: 'alert_history', where: 'sent_at < $1', setting: 'retention_alert_history_days', fallback: 180 },
       { table: 'audit_log', where: 'created_at < $1', setting: 'retention_audit_days', fallback: 365 },
       { table: 'device_availability', where: 'came_back_online_at IS NOT NULL AND came_back_online_at < $1', setting: 'retention_availability_days', fallback: 400 },
+      // A busy router can write a session every few milliseconds, so this one
+      // gets more room per run (#415).
+      { table: 'netflow_sessions', where: 'ended_at < $1', setting: 'retention_sessions_days', fallback: 3, batches: 200 },
     ];
     const BATCH = 20_000;
     const settingMap = new Map(Object.entries(settings));
@@ -964,7 +967,7 @@ export class PollerService {
       if (!Number.isFinite(days) || days <= 0) continue;
       const cutoff = new Date(Date.now() - days * 86_400_000);
       let total = 0;
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < (t.batches ?? 50); i++) {
         // Table names and conditions come from the fixed list above.
         const deleted = await query<{ n: number }>(
           `WITH gone AS (

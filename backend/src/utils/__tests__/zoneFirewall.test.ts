@@ -8,7 +8,7 @@ import type { DeviceSnapshot, RosRow } from '../../services/changeGuard/pathMode
 import type { GuardDevice } from '../../services/changeGuard/ChangeGuard';
 
 const live = { lists: ['LAN', 'WAN'], interfaces: ['bridge', 'ether1', 'ether2', 'ether5'] };
-const ctx = { services: [{ name: 'ssh', port: '2222' }, { name: 'winbox', port: '8291' }], rosMajor: 7, managerIp: '10.9.0.5' };
+const ctx = { services: [{ name: 'ssh', port: '2222' }, { name: 'winbox', port: '8291' }], rosMajor: 7, fasttrackHwOffload: true, managerIp: '10.9.0.5' };
 
 /** Ron's layout (#369): trust and untrust, trust can go out, trust manages the router. */
 const POLICIES: Record<string, ZonePolicy> = {
@@ -90,6 +90,9 @@ describe('compiling zones', () => {
     const plain = compileZones({ ...input!.config, logDrops: false }, { ...ctx, managerIp: null, rosMajor: 6 });
     expect(plain.some((r) => r.params['src-address'])).toBe(false);
     expect(plain.find((r) => r.params.action === 'fasttrack-connection')!.params['hw-offload']).toBeUndefined();
+    // A RouterOS 7 build that doesn't take hw-offload refuses the whole change (#369).
+    const noHw = compileZones(input!.config, { ...ctx, fasttrackHwOffload: false });
+    expect(noHw.find((r) => r.params.action === 'fasttrack-connection')!.params['hw-offload']).toBeUndefined();
     expect(plain.filter((r) => r.params.log)).toEqual([]);
     const noFt = compileZones({ ...input!.config, fasttrack: false }, ctx);
     expect(noFt.some((r) => r.params.action === 'fasttrack-connection')).toBe(false);

@@ -1,4 +1,4 @@
-import { AMBIGUOUS, buildAttributionMaps, canonicalIp, isLocalAddress, matchClient, type DeviceRow, type ClientRow } from '../attribution';
+import { AMBIGUOUS, buildAttributionMaps, canonicalIp, exporterByBoot, isLocalAddress, matchClient, type DeviceRow, type ClientRow } from '../attribution';
 
 // Outside review P2-23 / J4: two customers on the RouterOS default subnet.
 const devices: DeviceRow[] = [
@@ -99,5 +99,35 @@ describe('attributionDestination (#345)', () => {
     expect(attributionDestination({ dstAddr: '10.200.10.27' })).toBe('10.200.10.27');
     expect(attributionDestination({ dstAddr: '10.200.10.27', natDstAddr: '10.200.99.1' })).toBe('10.200.10.27');
     expect(attributionDestination({ dstAddr: '93.184.216.34', natDstAddr: '198.51.100.9' })).toBe('93.184.216.34');
+  });
+});
+
+describe('exporterByBoot (#415)', () => {
+  const now = Date.UTC(2026, 10, 8, 21, 0, 0);
+  const booted = (id: number, msAgo: number): DeviceRow => ({
+    id, name: `r${id}`, site_id: 1, ip_address: `10.0.0.${id}`, ip_addresses_jsonb: null, boot_at: new Date(now - msAgo),
+  });
+
+  it('names the router behind NAT whose polled boot time the header matches', () => {
+    const maps = buildAttributionMaps([booted(1, 12 * 86_400_000), booted(2, 3_600_000)], []);
+    expect(exporterByBoot(maps, now - 3_600_000 - 1_500)?.deviceId).toBe(2);
+    expect(exporterByBoot(maps, now - 12 * 86_400_000 + 2_000)?.deviceId).toBe(1);
+    expect(exporterByBoot(maps, now - 7_200_000)).toBeNull();
+  });
+
+  it('names nobody when two routers booted together', () => {
+    const maps = buildAttributionMaps([booted(1, 3_600_000), booted(2, 3_600_000 + 3_000)], []);
+    expect(exporterByBoot(maps, now - 3_600_000)).toBeNull();
+  });
+
+  it('matches past the 49.7-day uptime wrap', () => {
+    const up = 60 * 86_400_000; // 60 days: the header's 32-bit counter has wrapped once
+    const maps = buildAttributionMaps([booted(1, up)], []);
+    expect(exporterByBoot(maps, now - (up % 2 ** 32))?.deviceId).toBe(1);
+  });
+
+  it('lists the devices with the session log on', () => {
+    const maps = buildAttributionMaps([{ ...booted(1, 1), netflow_sessions: true }, booted(2, 1)], []);
+    expect([...maps.sessionDevices]).toEqual([1]);
   });
 });

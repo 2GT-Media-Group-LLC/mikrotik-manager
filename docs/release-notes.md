@@ -3,6 +3,34 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.35
+
+- **Sessions**, the second part of Ron's
+  [#415](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415): a new
+  **Security → Sessions** page lists connections from NetFlow, one row each, the way a Palo Alto
+  or Check Point traffic log reads. Each row has the client and server, the addresses NAT
+  changed, application, bytes and packets each way, duration, and how it ended (closed, reset
+  by client or server, no reply, aged out). Both directions of a connection, which RouterOS
+  exports separately, become one row, through masquerade and port forwards too, and a long
+  connection stays one row as it goes on. Turn it on per router with the new **Sessions**
+  switch on **Network Services → NetFlow**; it is off by default and kept for 3 days. See
+  [Sessions](sessions.md).
+- **Menu: Firewall Logs and Sessions move under Security.** **Security** opens the security
+  page as before and now unfolds to **Firewall Logs** and **Sessions** under it. **Events** is
+  a single entry for device logs. Page addresses haven't changed, so bookmarks still work.
+- **Routers behind NAT are recognised.** When NAT sits between the routers and MikroTik Manager,
+  their flows all arrive from one address and couldn't be told apart. Now each router is
+  recognised by when it booted, which every NetFlow packet carries and polling records, so its
+  flows count under its own name and site on Traffic and NetFlow. Two routers that booted
+  together still can't be told apart.
+- **Zones on routers without FastTrack offload**, fixing Ron's failed **Turn on zones** in
+  [#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369): the FastTrack rule
+  was always written with `hw-offload=yes` on RouterOS 7, and some builds don't take that
+  parameter, so the whole change was refused and Change Guard put the old firewall back.
+  MikroTik Manager now asks the router which parameters a firewall rule takes and adds
+  `hw-offload` only where it is listed. The **Forward basics** preset had the same problem and
+  the same fix.
+
 ## 1.1.0-beta.34
 
 - **Torch**, from Ron's request in

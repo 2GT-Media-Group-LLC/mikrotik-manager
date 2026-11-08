@@ -693,7 +693,8 @@ router.get('/netflow/fleet', async (req, res) => {
       const e = live.get(device.id)!;
       const exporterStats = statsByDevice.get(device.id);
       const base = { id: device.id, name: device.name, ip_address: device.ip_address, fetched_at: e.fetchedAt, refreshing: e.refreshing,
-        flows_received: exporterStats?.flows || 0, last_flow_at: exporterStats?.lastSeen || null };
+        flows_received: exporterStats?.flows || 0, last_flow_at: exporterStats?.lastSeen || null,
+        sessions: (device as DeviceRow & { netflow_sessions?: boolean }).netflow_sessions === true };
       if (!e.data) {
         return { ...base, enabled: null, interfaces: '', targets: [], target_matches_collector: false, ...(e.error ? { error: e.error } : {}) };
       }

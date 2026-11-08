@@ -5,6 +5,9 @@
 The Security page brings together the fleet's firewall posture, certificates, and known
 vulnerabilities in the RouterOS versions it runs.
 
+**Security** in the menu opens this page and, under it, [Firewall logs](firewall-events.md) and
+[Sessions](sessions.md).
+
 Each device's checks are read in the background, a few devices at a time, and kept for up to
 15 minutes, so the page opens at once on a large fleet and fills in as readings arrive (#302).
 **Re-scan fleet** reads every device again. A change made to a device drops its cached reading,

@@ -57,6 +57,8 @@ export interface QuickContext {
   managerIp: string | null;
   /** RouterOS major version; 6 has no hw-offload on FastTrack. */
   rosMajor?: number;
+  /** The device takes hw-offload on a FastTrack rule (some RouterOS 7 builds don't, #369). */
+  fasttrackHwOffload?: boolean;
   /** VPN servers that are enabled, and OpenVPN's port. */
   vpn?: { l2tp: boolean; pptp: boolean; ovpn: boolean; sstp: boolean; ovpnPort: string | null };
 }
@@ -152,7 +154,7 @@ function inputBasics(o: QuickOptions, v6: boolean): Draft[] {
   return rules;
 }
 
-function forwardBasics(o: QuickOptions, v6: boolean, rosMajor: number): Draft[] {
+function forwardBasics(o: QuickOptions, v6: boolean, rosMajor: number, hwOffload: boolean): Draft[] {
   const rules: Draft[] = [];
   if (!v6 && o.fasttrack) {
     // IPsec traffic is accepted first so it isn't FastTracked past its policy, as defconf does.
@@ -163,7 +165,7 @@ function forwardBasics(o: QuickOptions, v6: boolean, rosMajor: number): Draft[] 
         params: { chain: 'forward', action: 'accept', 'ipsec-policy': 'out,ipsec', comment: COMMENT('accept out IPsec policy') } },
       { table: 'filter', placement: 'top', description: 'FastTrack established and related connections',
         params: { chain: 'forward', action: 'fasttrack-connection', 'connection-state': 'established,related',
-          ...(rosMajor >= 7 ? { 'hw-offload': 'yes' } : {}), comment: COMMENT('fasttrack') } },
+          ...(rosMajor >= 7 && hwOffload ? { 'hw-offload': 'yes' } : {}), comment: COMMENT('fasttrack') } },
     );
   }
   rules.push(
@@ -340,7 +342,7 @@ export function planPreset(preset: QuickPreset, o: QuickOptions, ctx: QuickConte
   if (Object.keys(errors).length) return { steps: [], errors, notes };
 
   const drafts = preset === 'input-basics' ? inputBasics(o, v6)
-    : preset === 'forward-basics' ? forwardBasics(o, v6, ctx.rosMajor ?? 7)
+    : preset === 'forward-basics' ? forwardBasics(o, v6, ctx.rosMajor ?? 7, ctx.fasttrackHwOffload === true)
       : preset === 'management-access' ? managementAccess(o, ctx)
         : preset === 'brute-force' ? bruteForce(o, ctx)
           : masquerade(o);

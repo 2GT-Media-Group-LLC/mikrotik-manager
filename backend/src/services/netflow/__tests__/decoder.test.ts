@@ -457,3 +457,85 @@ describe('post-NAT addresses (#345)', () => {
     expect(flows[2]).toEqual({ srcAddr: '10.200.20.5', dstAddr: '10.200.10.27', srcPort: 443, dstPort: 51515, protocol: 6, bytes: 500, packets: 10 });
   });
 });
+
+describe('fields for the session log (#415)', () => {
+  // RouterOS's v9 template has these after the usual ones.
+  const FIELDS: FieldSpec[] = [
+    ...V9_FIELDS,
+    { id: 21, length: 4 }, // LAST_SWITCHED
+    { id: 22, length: 4 }, // FIRST_SWITCHED
+    { id: 6, length: 1 }, // TCP_FLAGS
+    { id: 225, length: 4 }, // postNATSourceIPv4Address
+    { id: 226, length: 4 }, // postNATDestinationIPv4Address
+    { id: 227, length: 2 }, // postNAPTSourceTransportPort
+    { id: 228, length: 2 }, // postNAPTDestinationTransportPort
+  ];
+  const UPTIME = 12345; // v9Packet's header uptime, ms
+  const EXPORT_MS = 1700000000 * 1000;
+
+  it('reads flags, NAT ports and wall-clock start and end from uptime', () => {
+    const cache: TemplateCache = new Map();
+    const rec = Buffer.concat([
+      record('192.168.1.10', '1.1.1.1', 51000, 443, 6, 1000, 10),
+      u32(UPTIME - 2000), // last packet 2 s before export
+      u32(UPTIME - 9000), // first 9 s before
+      Buffer.from([0x1b]), // FIN SYN PSH ACK
+      ipv4('203.0.113.5'), ipv4('0.0.0.0'),
+      u16(61000), u16(0),
+    ]);
+    const { flows, sourceId, exportMs, uptimeMs, bootMs } = decodePacket(
+      v9Packet(7, [flowset(0, templateBody(256, FIELDS)), flowset(256, rec)]), '10.0.0.1', cache);
+    expect({ sourceId, exportMs, uptimeMs, bootMs }).toEqual({ sourceId: 7, exportMs: EXPORT_MS, uptimeMs: UPTIME, bootMs: EXPORT_MS - UPTIME });
+    expect(flows[0]).toMatchObject({
+      tcpFlags: 0x1b, natSrcAddr: '203.0.113.5', natSrcPort: 61000,
+      startMs: EXPORT_MS - 9000, endMs: EXPORT_MS - 2000,
+    });
+    // Zero means untranslated.
+    expect(flows[0].natDstAddr).toBeUndefined();
+    expect(flows[0].natDstPort).toBeUndefined();
+  });
+
+  it('counts back across the 32-bit uptime wrap', () => {
+    const cache: TemplateCache = new Map();
+    const rec = Buffer.concat([
+      record('192.168.1.10', '1.1.1.1', 51000, 443, 6, 1000, 10),
+      u32(UPTIME - 1000),
+      u32(2 ** 32 - 5000), // just before the counter wrapped
+      Buffer.from([0x10]),
+      ipv4('0.0.0.0'), ipv4('0.0.0.0'), u16(0), u16(0),
+    ]);
+    const { flows } = decodePacket(v9Packet(0, [flowset(0, templateBody(256, FIELDS)), flowset(256, rec)]), '10.0.0.1', cache);
+    expect(flows[0].startMs).toBe(EXPORT_MS - UPTIME - 5000);
+    expect(flows[0].endMs).toBe(EXPORT_MS - 1000);
+  });
+
+  it('reads IPFIX absolute times', () => {
+    const cache: TemplateCache = new Map();
+    const fields: FieldSpec[] = [...V9_FIELDS, { id: 152, length: 8 }, { id: 153, length: 8 }];
+    const u64 = (n: number) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b; };
+    const rec = Buffer.concat([record('192.168.1.10', '1.1.1.1', 51000, 443, 6, 1000, 10), u64(EXPORT_MS - 4000), u64(EXPORT_MS - 1000)]);
+    const { flows, uptimeMs } = decodePacket(ipfixPacket(1, [flowset(2, templateBody(300, fields)), flowset(300, rec)]), '10.0.0.1', cache);
+    expect(flows[0]).toMatchObject({ startMs: EXPORT_MS - 4000, endMs: EXPORT_MS - 1000 });
+    expect(uptimeMs).toBeUndefined();
+  });
+
+  it('reads IPFIX uptimes against systemInitTimeMilliseconds, and gives the boot time', () => {
+    const cache: TemplateCache = new Map();
+    const fields: FieldSpec[] = [...V9_FIELDS, { id: 22, length: 4 }, { id: 21, length: 4 }, { id: 160, length: 8 }];
+    const u64 = (n: number) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); return b; };
+    const boot = EXPORT_MS - 86_400_000;
+    const rec = Buffer.concat([record('192.168.1.10', '1.1.1.1', 51000, 443, 6, 1000, 10), u32(5_000), u32(9_000), u64(boot)]);
+    const r = decodePacket(ipfixPacket(1, [flowset(2, templateBody(300, fields)), flowset(300, rec)]), '10.0.0.1', cache);
+    expect(r.flows[0]).toMatchObject({ startMs: boot + 5_000, endMs: boot + 9_000 });
+    expect(r.bootMs).toBe(boot);
+  });
+
+  it('ends an IPFIX flow at the export when its uptimes have nothing to count from', () => {
+    const cache: TemplateCache = new Map();
+    const fields: FieldSpec[] = [...V9_FIELDS, { id: 22, length: 4 }, { id: 21, length: 4 }];
+    const rec = Buffer.concat([record('192.168.1.10', '1.1.1.1', 51000, 443, 6, 1000, 10), u32(5_000), u32(9_000)]);
+    const r = decodePacket(ipfixPacket(1, [flowset(2, templateBody(300, fields)), flowset(300, rec)]), '10.0.0.1', cache);
+    expect(r.flows[0]).toMatchObject({ startMs: EXPORT_MS - 4_000, endMs: EXPORT_MS });
+    expect(r.bootMs).toBeUndefined();
+  });
+});

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { networkServicesApi, settingsApi, trafficApi } from '../services/api';
+import { networkServicesApi, sessionsApi, settingsApi, trafficApi } from '../services/api';
 import { liveRefetch, freshnessLabel, type LiveRow } from '../utils/liveFreshness';
 import { useCanWrite, useIsFleetAdmin } from '../hooks/useCanWrite';
 
@@ -41,6 +41,7 @@ export default function NetworkServicesNetflowPage() {
   const [port, setPort] = useState('2055');
   const [version, setVersion] = useState('9');
   const [acceptUnknown, setAcceptUnknown] = useState(false);
+  const [sessionsUnidentified, setSessionsUnidentified] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
@@ -52,6 +53,7 @@ export default function NetworkServicesNetflowPage() {
       setPort(String(settings['netflow_collector_port'] ?? '2055'));
       setVersion(String(settings['netflow_version'] ?? '9'));
       setAcceptUnknown(settings['netflow_accept_unknown'] === true);
+      setSessionsUnidentified(settings['netflow_sessions_unidentified'] === true);
       setLoaded(true);
     }
   }, [settings, loaded]);
@@ -112,6 +114,25 @@ export default function NetworkServicesNetflowPage() {
     } finally {
       setTogglePending(null);
     }
+  }
+
+  // The session log is the manager's own setting, nothing is written to the device (#415).
+  async function handleSessionsToggle(deviceId: number, value: boolean) {
+    setTogglePending(deviceId); setToggleError('');
+    try {
+      await sessionsApi.setDevice(deviceId, value);
+      qc.invalidateQueries({ queryKey: ['ns-netflow-fleet'] });
+    } catch (e) {
+      const err = e as { response?: { data?: { error?: string } }; message: string };
+      setToggleError(err.response?.data?.error || err.message);
+    } finally {
+      setTogglePending(null);
+    }
+  }
+
+  async function handleSessionsUnidentified(value: boolean) {
+    setSessionsUnidentified(value);
+    await saveCollectorSettings({ netflow_sessions_unidentified: value });
   }
 
   const addressMissing = !address.trim();
@@ -228,6 +249,21 @@ export default function NetworkServicesNetflowPage() {
             </div>
           )}
 
+          {isFleetAdmin && acceptUnknown && (
+            <div className="flex items-start gap-3">
+              <Toggle checked={sessionsUnidentified} onChange={(v) => { void handleSessionsUnidentified(v); }} disabled={saving} />
+              <div>
+                <div className="text-sm font-medium text-gray-700 dark:text-slate-200">Keep sessions from unidentified exporters</div>
+                <p className="text-xs text-gray-400 dark:text-slate-500">
+                  Behind NAT, a router is usually still recognised by when it booted, and then its own Sessions switch
+                  below applies. This keeps <Link to="/sessions" className="text-blue-600 dark:text-blue-400 hover:underline">sessions</Link>{' '}
+                  from the ones that can&apos;t be told apart (two that booted together). They show under their source
+                  address, and only with all sites selected.
+                </p>
+              </div>
+            </div>
+          )}
+
           {addressMissing && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5" />Set the collector address before enabling devices below.
@@ -296,6 +332,15 @@ export default function NetworkServicesNetflowPage() {
                 <div className="text-xs text-gray-400 dark:text-slate-500">Unknown exporters</div>
                 <div className="text-sm font-semibold text-gray-900 dark:text-white">{status.packetsFromUnknownExporter.toLocaleString()}</div>
               </div>
+              {status.sessions && (status.sessions.written > 0 || status.sessions.open > 0) && (
+                <div title={status.sessions.dropped > 0 ? `${status.sessions.dropped.toLocaleString()} not kept: more than the collector stores at once` : undefined}>
+                  <div className="text-xs text-gray-400 dark:text-slate-500">Sessions written</div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {status.sessions.written.toLocaleString()}
+                    {status.sessions.dropped > 0 && <span className="ml-1 text-xs font-normal text-amber-600 dark:text-amber-400">({status.sessions.dropped.toLocaleString()} dropped)</span>}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -335,6 +380,8 @@ export default function NetworkServicesNetflowPage() {
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Status</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Flows</th>
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Last Flow</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide"
+                    title="Keep one row per connection on the Sessions page">Sessions</th>
                   <th className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Export</th>
                 </tr>
               </thead>
@@ -351,6 +398,15 @@ export default function NetworkServicesNetflowPage() {
                     <td className="px-4 py-3 text-gray-700 dark:text-slate-300">{d.flows_received.toLocaleString()}</td>
                     <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs">
                       {d.last_flow_at ? formatDistanceToNow(parseISO(d.last_flow_at), { addSuffix: true }) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end">
+                        <Toggle
+                          checked={!!d.sessions}
+                          onChange={v => { void handleSessionsToggle(d.id, v); }}
+                          disabled={!canWrite || togglePending === d.id}
+                        />
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end">

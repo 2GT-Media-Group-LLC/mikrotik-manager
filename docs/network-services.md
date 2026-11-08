@@ -256,6 +256,10 @@ This is separate from the events the platform collects itself. The platform read
 Configuration of the exporters on each device, and the collector built into the platform. See
 [Traffic analytics](traffic.md) for what is done with the data.
 
+The **Sessions** switch on each device keeps one row per connection from its flows, on
+**Security → [Sessions](sessions.md)**. It is MikroTik Manager's own setting; nothing is written
+to the device.
+
 ## Discovery and SNMP
 
 Neighbour discovery protocol settings (LLDP, CDP, MNDP) per device, and SNMP configuration.

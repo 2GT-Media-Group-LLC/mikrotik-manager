@@ -11,6 +11,7 @@ import DeviceDetailPage from './pages/DeviceDetailPage';
 import ClientsPage from './pages/ClientsPage';
 import EventsPage from './pages/EventsPage';
 import FirewallEventsPage from './pages/FirewallEventsPage';
+import SessionsPage from './pages/SessionsPage';
 import TopologyPage from './pages/TopologyPage';
 import BackupsPage from './pages/BackupsPage';
 import FirmwarePage from './pages/FirmwarePage';
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="clients/:mac" element={<KeyedByParam param="mac"><ClientDetailPage /></KeyedByParam>} />
           <Route path="events" element={<EventsPage />} />
           <Route path="firewall-events" element={<FirewallEventsPage />} />
+          <Route path="sessions" element={<SessionsPage />} />
           <Route path="topology" element={<TopologyPage />} />
           <Route path="backups" element={<BackupsPage />} />
           <Route path="firmware" element={<FirmwarePage />} />

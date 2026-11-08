@@ -4287,6 +4287,7 @@ export class DeviceCollector {
     filter: Record<string, string>[]; nat: Record<string, string>[]; addressLists: Record<string, string>[];
     interfaceLists: string[]; interfaces: string[]; services: Record<string, string>[]; rosMajor: number;
     vpn: { l2tp: boolean; pptp: boolean; ovpn: boolean; sstp: boolean; ovpnPort: string | null };
+    fasttrackHwOffload: boolean;
   }> {
     const res = await this.client.executeMany([
       { command: `${firewallMenu(family, 'filter')}/print` },
@@ -4301,6 +4302,7 @@ export class DeviceCollector {
       { command: '/interface/pptp-server/server/print' },
       { command: '/interface/ovpn-server/server/print' },
       { command: '/interface/sstp-server/server/print' },
+      filterAddArgs(family === 'ipv6' ? 'ipv6' : 'ip'),
     ]);
     if (res[0].error) throw res[0].error;
     const rows = (i: number) => res[i]?.rows ?? [];
@@ -4312,6 +4314,7 @@ export class DeviceCollector {
       services: rows(5),
       rosMajor: Number((rows(6)[0]?.version ?? '7').split('.')[0]) || 7,
       vpn: { l2tp: enabled(7), pptp: enabled(8), ovpn: enabled(9), sstp: enabled(10), ovpnPort: rows(9)[0]?.port || null },
+      fasttrackHwOffload: hasArg(rows(11), 'hw-offload'),
     };
   }
 
@@ -4323,6 +4326,7 @@ export class DeviceCollector {
   async getZoneContext(): Promise<{
     filter: Record<string, string>[]; lists: Record<string, string>[]; members: Record<string, string>[];
     interfaces: Record<string, string>[]; addresses: Record<string, string>[]; services: Record<string, string>[]; rosMajor: number;
+    fasttrackHwOffload: boolean;
   }> {
     const res = await this.client.executeMany([
       { command: '/ip/firewall/filter/print' },
@@ -4332,12 +4336,14 @@ export class DeviceCollector {
       { command: '/ip/address/print', params: { '.proplist': 'address,interface,actual-interface,disabled,invalid,dynamic' } },
       { command: '/ip/service/print', params: { '.proplist': 'name,port,disabled' } },
       { command: '/system/resource/print', params: { '.proplist': 'version' } },
+      filterAddArgs('ip'),
     ]);
     for (const r of res.slice(0, 3)) if (r.error) throw r.error;
     const rows = (i: number) => res[i]?.rows ?? [];
     return {
       filter: rows(0), lists: rows(1), members: rows(2), interfaces: rows(3), addresses: rows(4), services: rows(5),
       rosMajor: Number((rows(6)[0]?.version ?? '7').split('.')[0]) || 7,
+      fasttrackHwOffload: hasArg(rows(7), 'hw-offload'),
     };
   }
 
@@ -7001,4 +7007,19 @@ export class DeviceCollector {
   async removeTrafficFlowTarget(id: string): Promise<void> {
     await this.client.execute('/ip/traffic-flow/target/remove', { '.id': id });
   }
+}
+
+/**
+ * The arguments this device's firewall filter `add` takes, read with
+ * /console/inspect (RouterOS 7). Not every version or build knows every
+ * one: hw-offload on FastTrack is refused as "unknown parameter" on some
+ * (#369), so it is only set where the device lists it. An error, as on
+ * RouterOS 6, reads as an empty list.
+ */
+function filterAddArgs(menu: 'ip' | 'ipv6'): { command: string; params: Record<string, string> } {
+  return { command: '/console/inspect', params: { request: 'child', path: `${menu},firewall,filter,add` } };
+}
+
+function hasArg(rows: Record<string, string>[], name: string): boolean {
+  return rows.some((r) => r.name === name);
 }

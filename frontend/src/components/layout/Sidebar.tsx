@@ -4,7 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useIsFleetAdmin } from '../../hooks/useCanWrite';
 import {
-  LayoutDashboard, Router, Users, Bell, GitBranch, HardDrive, ShieldCheck,
+  LayoutDashboard, Router, Users, Bell, GitBranch, HardDrive, ShieldCheck, ArrowRightLeft,
   Settings, Network, ChevronLeft, ChevronRight, Layers, ChevronDown, SlidersHorizontal, X, Wifi,
   Server, Globe, Clock, Shield, FileText, Activity, BarChart3, Ticket, ArrowUpCircle, Radio,
   LayoutGrid, TerminalSquare, KeyRound, UserCheck,
@@ -22,7 +22,6 @@ const monitorItems = [
 ];
 
 const monitorAfterEventsItems = [
-  { to: '/security',  icon: Shield,          label: 'Security' },
   // Reported as unreachable (#148): the only route to this page was the
   // "All sites" entry in the selector under the logo, itself hidden unless more
   // than one site exists — so a single-site install could not get here at all.
@@ -31,9 +30,11 @@ const monitorAfterEventsItems = [
   { to: '/sites',     icon: Globe,           label: 'Sites' },
 ];
 
-const eventsSubItems = [
-  { to: '/events',          icon: FileText,    label: 'Device Logs' },
-  { to: '/firewall-events', icon: ShieldCheck, label: 'Firewall Logs' },
+// Under Security, which opens the security overview itself: the firewall's
+// own logs and the connections it passed. Events is just device logs now.
+const securitySubItems = [
+  { to: '/firewall-events', icon: ShieldCheck,    label: 'Firewall Logs' },
+  { to: '/sessions',        icon: ArrowRightLeft, label: 'Sessions' },
 ];
 
 const wirelessSubItems = [
@@ -151,6 +152,55 @@ function GroupHeader({
   );
 }
 
+/**
+ * A group whose header is a page of its own: the label opens that page, and
+ * the chevron opens or closes the group without leaving the current page.
+ */
+function LinkGroupHeader({
+  to,
+  icon: Icon,
+  label,
+  isOpen,
+  onToggle,
+  onClick,
+}: {
+  to: string;
+  icon: React.ElementType;
+  label: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex items-center">
+      <NavLink
+        to={to}
+        end
+        onClick={onClick}
+        className={({ isActive }) =>
+          clsx(
+            'flex-1 flex items-center gap-[10px] rounded-[6px] text-[13px] font-medium transition-colors duration-150 px-[10px] py-[7px]',
+            isActive
+              ? 'bg-surface-3 text-ink font-semibold border-l-2 border-accent pl-[8px]'
+              : 'text-ink-2 hover:bg-surface-3 hover:text-ink border-l-2 border-transparent'
+          )
+        }
+      >
+        <Icon className="w-[17px] h-[17px] flex-shrink-0" />
+        <span className="flex-1 text-left">{label}</span>
+      </NavLink>
+      <button
+        onClick={onToggle}
+        aria-label={isOpen ? `Collapse ${label}` : `Expand ${label}`}
+        aria-expanded={isOpen}
+        className="p-[7px] rounded-[6px] text-ink-2 hover:bg-surface-3 hover:text-ink"
+      >
+        <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', isOpen ? 'rotate-0' : '-rotate-90')} />
+      </button>
+    </div>
+  );
+}
+
 /** Collapsed-sidebar icon link that represents a whole group. */
 function CollapsedGroupLink({
   to,
@@ -217,11 +267,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   const [devicesOpenPref, setDevicesOpenPref] = useState<boolean | null>(null);
   const devicesOpen = devicesOpenPref ?? devicesActive;
 
-  const eventsActive =
-    location.pathname === '/events' ||
-    location.pathname === '/firewall-events';
-  const [eventsOpenPref, setEventsOpenPref] = useState<boolean | null>(null);
-  const eventsOpen = eventsOpenPref ?? eventsActive;
+  const securityActive =
+    location.pathname.startsWith('/security') ||
+    location.pathname === '/firewall-events' ||
+    location.pathname === '/sessions';
+  const [securityOpenPref, setSecurityOpenPref] = useState<boolean | null>(null);
+  const securityOpen = securityOpenPref ?? securityActive;
 
   const wirelessActive = location.pathname.startsWith('/wireless');
   const [wirelessOpenPref, setWirelessOpenPref] = useState<boolean | null>(null);
@@ -296,29 +347,32 @@ export default function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           <NavItem key={to} to={to} icon={icon} label={label} isCollapsed={isCollapsed} onClick={handleNavClick} />
         ))}
 
+        <NavItem to="/events" icon={Bell} label="Events" isCollapsed={isCollapsed} onClick={handleNavClick} />
+
         {isCollapsed ? (
           <CollapsedGroupLink
-            to="/events"
-            icon={Bell}
-            label="Events"
-            groupActive={eventsActive}
+            to="/security"
+            icon={Shield}
+            label="Security"
+            groupActive={securityActive}
             onClick={handleNavClick}
           />
         ) : (
           <>
-            <GroupHeader
-              icon={Bell}
-              label="Events"
-              isActive={eventsActive}
-              isOpen={eventsOpen}
-              onToggle={() => setEventsOpenPref(!eventsOpen)}
+            <LinkGroupHeader
+              to="/security"
+              icon={Shield}
+              label="Security"
+              isOpen={securityOpen}
+              onToggle={() => setSecurityOpenPref(!securityOpen)}
+              onClick={() => { setSecurityOpenPref(true); handleNavClick(); }}
             />
-            {eventsOpen && (
+            {securityOpen && (
               <div
                 className="ml-4 pl-3 space-y-[1px]"
                 style={{ borderLeft: '1px solid var(--line)' }}
               >
-                {eventsSubItems.map(({ to, icon, label }) => (
+                {securitySubItems.map(({ to, icon, label }) => (
                   <NavItem
                     key={to}
                     to={to}

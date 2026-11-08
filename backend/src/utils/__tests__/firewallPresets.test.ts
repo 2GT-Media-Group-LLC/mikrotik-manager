@@ -5,7 +5,7 @@ const ctx = (over: Partial<QuickContext> = {}): QuickContext => ({
   services: [{ name: 'winbox', port: '8291', disabled: 'false' }, { name: 'ssh', port: '22', disabled: 'false' },
     { name: 'api', port: '8728', disabled: 'true' }, { name: 'api-ssl', port: '8729', disabled: 'false' },
     { name: 'www', port: '80', disabled: 'true' }, { name: 'www-ssl', port: '443', disabled: 'false' }],
-  managerIp: '192.168.0.10', rosMajor: 7, ...over,
+  managerIp: '192.168.0.10', rosMajor: 7, fasttrackHwOffload: true, ...over,
 });
 const LAN = { kind: 'list' as const, name: 'LAN' };
 const WAN = { kind: 'list' as const, name: 'WAN' };
@@ -45,6 +45,7 @@ describe('quick firewall presets (#330)', () => {
     expect(p.steps[2].params['hw-offload']).toBe('yes');
     expect(p.steps[5]).toMatchObject({ placement: 'bottom', params: expect.objectContaining({ 'connection-nat-state': '!dstnat', 'in-interface-list': 'WAN' }) });
     expect(planPreset('forward-basics', { wan: WAN, fasttrack: true }, ctx({ rosMajor: 6 })).steps[2].params['hw-offload']).toBeUndefined();
+    expect(planPreset('forward-basics', { wan: WAN, fasttrack: true }, ctx({ fasttrackHwOffload: false })).steps[2].params['hw-offload']).toBeUndefined();
     expect(planPreset('forward-basics', { wan: WAN }, ctx()).steps).toHaveLength(3);
   });
 

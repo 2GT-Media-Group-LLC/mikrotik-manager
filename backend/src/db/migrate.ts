@@ -1982,6 +1982,41 @@ CREATE TABLE IF NOT EXISTS proxy_certs (
   renewed_at      TIMESTAMPTZ,
   PRIMARY KEY (device_id, sni)
 );
+
+-- Session log from NetFlow (#415 step 2): one row per connection, both
+-- directions paired, client to server. Off until turned on per device.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS netflow_sessions BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS netflow_sessions (
+  id              BIGSERIAL PRIMARY KEY,
+  device_id       INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+  -- The source address, when the exporting router couldn't be identified.
+  exporter        VARCHAR(64),
+  protocol        SMALLINT NOT NULL,
+  client_addr     VARCHAR(45) NOT NULL,
+  client_port     INTEGER NOT NULL,
+  server_addr     VARCHAR(45) NOT NULL,
+  server_port     INTEGER NOT NULL,
+  client_nat_addr VARCHAR(45),
+  client_nat_port INTEGER,
+  server_nat_addr VARCHAR(45),
+  server_nat_port INTEGER,
+  client_mac      VARCHAR(17),
+  app             VARCHAR(32),
+  started_at      TIMESTAMPTZ NOT NULL,
+  ended_at        TIMESTAMPTZ NOT NULL,
+  bytes_out       BIGINT NOT NULL DEFAULT 0,
+  bytes_in        BIGINT NOT NULL DEFAULT 0,
+  packets_out     BIGINT NOT NULL DEFAULT 0,
+  packets_in      BIGINT NOT NULL DEFAULT 0,
+  flags_out       SMALLINT,
+  flags_in        SMALLINT,
+  end_reason      VARCHAR(16) NOT NULL,
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_netflow_sessions_ended ON netflow_sessions(ended_at DESC);
+CREATE INDEX IF NOT EXISTS idx_netflow_sessions_device ON netflow_sessions(device_id, ended_at DESC);
+CREATE INDEX IF NOT EXISTS idx_netflow_sessions_client ON netflow_sessions(client_addr, ended_at DESC);
+CREATE INDEX IF NOT EXISTS idx_netflow_sessions_server ON netflow_sessions(server_addr, ended_at DESC);
 `;
 
 const DEFAULT_SETTINGS = [
@@ -2029,6 +2064,10 @@ const DEFAULT_SETTINGS = [
   { key: 'netflow_accept_unknown', value: false },
   { key: 'netflow_retention_days', value: 30 },
   { key: 'netflow_daily_retention_days', value: 365 },
+  // Session log (#415 step 2): sessions from routers that can't be identified
+  // are kept only when this is on, and sessions are kept this many days.
+  { key: 'netflow_sessions_unidentified', value: false },
+  { key: 'retention_sessions_days', value: 3 },
   { key: 'change_guard_enabled', value: true },
   { key: 'change_guard_mode', value: 'binary' },
   { key: 'change_guard_timeout_sec', value: 120 },

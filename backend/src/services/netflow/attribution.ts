@@ -9,6 +9,7 @@
 // searched, and then only an address that exists in exactly one site counts.
 
 import { isIPv6 } from 'net';
+import { BOOT_DRIFT_MS } from '../../utils/bootTime';
 
 export interface ExporterInfo {
   deviceId: number;
@@ -22,6 +23,10 @@ export interface DeviceRow {
   site_id: number | null;
   ip_address: string;
   ip_addresses_jsonb: { address: string }[] | null;
+  /** When the device last booted, from its polled uptime. */
+  boot_at?: Date | string | null;
+  /** Session log turned on for this device. */
+  netflow_sessions?: boolean | null;
 }
 
 export interface ClientRow {
@@ -41,6 +46,10 @@ export interface AttributionMaps {
   clientAnySite: Map<string, { siteId: number | null; mac: string } | typeof AMBIGUOUS>;
   /** The only site with devices, if there is exactly one. */
   soleSite: number | null;
+  /** Devices by boot time, to tell apart exporters that share a source address. */
+  bootTimes: Array<{ bootMs: number; exporter: ExporterInfo }>;
+  /** Devices with the session log turned on. */
+  sessionDevices: Set<number>;
 }
 
 const siteKey = (siteId: number | null): number => siteId ?? 0;
@@ -124,7 +133,42 @@ export function buildAttributionMaps(devices: DeviceRow[], clients: ClientRow[])
   }
 
   const soleSite = sites.size === 1 ? [...sites][0] : null;
-  return { exporterByIp, clientBySite, clientAnySite, soleSite };
+  const bootTimes: AttributionMaps['bootTimes'] = [];
+  const sessionDevices = new Set<number>();
+  for (const d of devices) {
+    if (d.netflow_sessions) sessionDevices.add(d.id);
+    const bootMs = d.boot_at ? new Date(d.boot_at).getTime() : NaN;
+    if (Number.isFinite(bootMs)) bootTimes.push({ bootMs, exporter: { deviceId: d.id, deviceName: d.name, siteId: d.site_id } });
+  }
+  return { exporterByIp, clientBySite, clientAnySite, soleSite, bootTimes, sessionDevices };
+}
+
+/**
+ * How far a NetFlow header's boot time may be from the polled one: the poller
+ * keeps a boot time until it drifts by more than this (utils/bootTime).
+ */
+export const BOOT_MATCH_MS = BOOT_DRIFT_MS;
+const UPTIME_WRAP = 2 ** 32;
+
+/**
+ * The device that sent a NetFlow packet, from when its header says it booted
+ * (v9: export time less uptime; IPFIX: systemInitTimeMilliseconds), when the
+ * source address can't say: NAT between the routers and the collector gives
+ * every router the same source. Polling records when each device booted, to
+ * a second or two. Only a single device within BOOT_MATCH_MS counts; two that
+ * booted together (a power cut) stay unidentified. A v9 uptime is 32-bit
+ * milliseconds and wraps every 49.7 days, so the comparison is made modulo
+ * the wrap.
+ */
+export function exporterByBoot(maps: AttributionMaps, bootMs: number): ExporterInfo | null {
+  let found: ExporterInfo | null = null;
+  for (const b of maps.bootTimes) {
+    const diff = (((bootMs - b.bootMs) % UPTIME_WRAP) + UPTIME_WRAP) % UPTIME_WRAP;
+    if (Math.min(diff, UPTIME_WRAP - diff) > BOOT_MATCH_MS) continue;
+    if (found) return null;
+    found = b.exporter;
+  }
+  return found;
 }
 
 export interface ClientMatch {

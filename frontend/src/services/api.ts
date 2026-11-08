@@ -2501,6 +2501,8 @@ export interface NetflowDeviceState {
   target_matches_collector: boolean;
   flows_received: number;
   last_flow_at: string | null;
+  /** Session log on for this device (#415). */
+  sessions?: boolean;
   error?: string;
 }
 
@@ -2539,7 +2541,60 @@ export interface TrafficCollectorStats {
   rejectedSources?: { address: string; reason: 'unknown_exporter' | 'public_address'; packets: number; lastSeen: string }[];
   /** True when `exporters` is limited to the selected site; the counters stay collector-wide (#236). */
   site_filtered?: boolean;
+  /** Session log (#415): open in memory, written since start, dropped for being over a bound. */
+  sessions?: { open: number; written: number; dropped: number };
 }
+
+// ─── Session log (#415) ──────────────────────────────────────────────────────
+
+export type SessionEndReason = 'fin' | 'reset-client' | 'reset-server' | 'no-reply' | 'aged-out';
+
+export interface NetflowSession {
+  id: number;
+  device_id: number | null;
+  device_name: string | null;
+  exporter: string | null;
+  protocol: number;
+  client_addr: string;
+  client_port: number;
+  server_addr: string;
+  server_port: number;
+  client_nat_addr: string | null;
+  client_nat_port: number | null;
+  server_nat_addr: string | null;
+  server_nat_port: number | null;
+  client_mac: string | null;
+  client_name: string | null;
+  app: string | null;
+  started_at: string;
+  ended_at: string;
+  bytes_out: number;
+  bytes_in: number;
+  packets_out: number;
+  packets_in: number;
+  flags_out: number | null;
+  flags_in: number | null;
+  end_reason: SessionEndReason;
+}
+
+export interface SessionFilters {
+  deviceId?: number;
+  since?: string;
+  address?: string;
+  port?: string;
+  protocol?: string;
+  reason?: string;
+  app?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const sessionsApi = {
+  list: (params: SessionFilters) =>
+    api.get<{ sessions: NetflowSession[]; total: number; totalCapped: boolean }>('/sessions', { params }),
+  setDevice: (deviceId: number, enabled: boolean) =>
+    api.put<{ id: number; sessions: boolean }>(`/sessions/devices/${deviceId}`, { enabled }),
+};
 
 export const trafficApi = {
   status: () => api.get<TrafficCollectorStats>('/traffic/status'),

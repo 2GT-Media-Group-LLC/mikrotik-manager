@@ -1,6 +1,6 @@
 # Firewall logs
 
-The **Events → Firewall Logs** page presents RouterOS firewall packet logs as
+The **Security → Firewall Logs** page presents RouterOS firewall packet logs as
 structured events.
 
 Each row can show:
@@ -26,6 +26,9 @@ used last.
 
 Grouping reads the newest 100,000 lines that match the filters; narrow by device or search to
 look further back.
+
+For whole connections rather than logged packets, with bytes each way and how each one ended,
+see [Sessions](sessions.md), built from NetFlow.
 
 ## Where the events come from
 
@@ -106,7 +109,7 @@ MTM-FW-DROP mtm#7f3a input: in:ether1 out:(unknown 0), proto TCP ...
 
 ## Device Logs
 
-Firewall packet logs have their own **Events → Firewall Logs** page, so they
+Firewall packet logs have their own **Security → Firewall Logs** page, so they
 are hidden from **Device Logs** by default.
 
 Enable the **Firewall packets** toggle on Device Logs to include them in that

@@ -874,6 +874,7 @@ export default function SettingsPage() {
                 { key: 'retention_availability_days', label: 'Outage history retention', desc: 'Auto-delete ended outages older than this many days (uptime reports look back up to 90)' },
                 { key: 'netflow_retention_days', label: 'Traffic detail retention', desc: 'Auto-delete per-client NetFlow time-series data older than this many days' },
                 { key: 'netflow_daily_retention_days', label: 'Traffic daily rollup retention', desc: 'Auto-delete per-client daily traffic totals older than this many days' },
+                { key: 'retention_sessions_days', label: 'Session log retention', desc: 'Auto-delete NetFlow sessions that ended more than this many days ago' },
               ].map(({ key, label, desc }) => (
                 <div key={key} className="flex items-center justify-between gap-4">
                   <div>

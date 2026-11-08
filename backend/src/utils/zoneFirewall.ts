@@ -47,6 +47,8 @@ export interface ZoneContext {
   rosMajor: number;
   /** The manager's address as the device sees it, when known: always let in. */
   managerIp: string | null;
+  /** The device takes hw-offload on a FastTrack rule (some RouterOS 7 builds don't, #369). */
+  fasttrackHwOffload?: boolean;
 }
 
 // ─── Services ────────────────────────────────────────────────────────────────
@@ -259,7 +261,7 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
 
   // Forward: between zones.
   if (config.fasttrack) {
-    add({ chain: 'forward', action: 'fasttrack-connection', 'connection-state': 'established,related', ...(ctx.rosMajor >= 7 ? { 'hw-offload': 'yes' } : {}) }, 'fasttrack established, related');
+    add({ chain: 'forward', action: 'fasttrack-connection', 'connection-state': 'established,related', ...(ctx.rosMajor >= 7 && ctx.fasttrackHwOffload ? { 'hw-offload': 'yes' } : {}) }, 'fasttrack established, related');
   }
   add({ chain: 'forward', action: 'accept', 'connection-state': 'established,related,untracked' }, 'accept established, related, untracked');
   add({ chain: 'forward', action: 'drop', 'connection-state': 'invalid' }, 'drop invalid');

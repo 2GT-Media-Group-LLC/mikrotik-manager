@@ -57,6 +57,11 @@ const PORT_MAP: Record<string, string> = {
   [`${TCP}/5061`]: 'Video/Voice Calls',
 };
 
+/** A port this table names a service for, such as 443 or 53. */
+export function isKnownServicePort(protocol: number, port: number): boolean {
+  return PORT_MAP[`${protocol}/${port}`] !== undefined;
+}
+
 export function classifyApp(
   protocol: number,
   localPort: number,

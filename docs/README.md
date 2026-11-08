@@ -12,6 +12,7 @@ whether to try it, the [project README](https://github.com/2GT-Media-Group-LLC/m
 | [Topology](topology.md) | How links are discovered, spanning-tree resolution, client devices, your own nodes and hand-drawn links |
 | [Traffic analytics](traffic.md) | The NetFlow collector, top talkers, application breakdown, retention |
 | [Firewall logs](firewall-events.md) | Structured RouterOS firewall events and per-rule monitoring |
+| [Sessions](sessions.md) | One row per connection from NetFlow: client, server, NAT, bytes each way, how it ended |
 | [Wireless](wireless.md) | Radios and SSIDs, RF health, signal bands, rogue APs, guest WiFi |
 | [Antenna aligner](antenna-aligner.md) | Wireless Systems, live signal from both ends of a PTP link and alignment tone |
 | [Network services](network-services.md) | DHCP, DNS, NTP, WireGuard, logging, discovery and SNMP |

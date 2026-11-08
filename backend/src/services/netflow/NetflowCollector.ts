@@ -13,8 +13,11 @@ import { decodePacket, pruneTemplateCache, TemplateCache } from './decoder';
 import { classifyApp, APP_LAN } from './appCategories';
 import { FlowAggregator, CLIENT_UNKNOWN, Direction } from './FlowAggregator';
 import { PacketRateLimiter } from './rateLimiter';
+import { SessionTracker } from './sessions';
+import { writeSessions } from './sessionStore';
+import { rosDurationSeconds } from '../../utils/rosDuration';
 import {
-  AMBIGUOUS, attributionDestination, buildAttributionMaps, isLocalAddress, matchClient,
+  AMBIGUOUS, attributionDestination, buildAttributionMaps, exporterByBoot, isLocalAddress, matchClient,
   type AttributionMaps, type ClientRow, type DeviceRow, type ExporterInfo,
   canonicalIp,
 } from './attribution';
@@ -22,6 +25,9 @@ import {
 const FLUSH_INTERVAL_MS = 60_000;
 const MAP_REFRESH_MS = 60_000;
 const SETTINGS_RECONCILE_MS = 60_000;
+/** Sessions are handed to the database this often, at most this many at a time. */
+const SESSION_FLUSH_MS = 5_000;
+const MAX_SESSION_WRITES = 5_000;
 
 // Smallest packet that could carry a usable header (v9 needs 20, IPFIX 16).
 const MIN_PACKET_BYTES = 16;
@@ -73,6 +79,8 @@ export interface CollectorStats {
   exporters: ExporterStats[];
   acceptUnknown: boolean;
   rejectedSources: RejectedSource[];
+  /** Session log (#415): open in memory, written, and dropped for being over a bound. */
+  sessions: { open: number; written: number; dropped: number };
 }
 
 interface NetflowSettings {
@@ -80,6 +88,9 @@ interface NetflowSettings {
   port: number;
   topN: number;
   acceptUnknown: boolean;
+  /** Keep sessions from routers that can't be identified (#415). */
+  sessionsUnidentified: boolean;
+  activeTimeoutMs: number;
 }
 
 export class NetflowCollector {
@@ -89,7 +100,14 @@ export class NetflowCollector {
 
   private maps: AttributionMaps = buildAttributionMaps([], []);
 
-  private settings: NetflowSettings = { enabled: false, port: 2055, topN: 50, acceptUnknown: false };
+  private settings: NetflowSettings = {
+    enabled: false, port: 2055, topN: 50, acceptUnknown: false, sessionsUnidentified: false, activeTimeoutMs: 60_000,
+  };
+  private sessions = new SessionTracker();
+  private sessionTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionWriting = false;
+  private sessionsWritten = 0;
+  private sessionsDropped = 0;
   private listening = false;
 
   // Pseudo-exporter ids for sources that don't match a managed device (e.g.
@@ -132,20 +150,24 @@ export class NetflowCollector {
     this.reconcileTimer = setInterval(() => {
       this.reconcile().catch(() => {});
     }, SETTINGS_RECONCILE_MS);
+    this.sessionTimer = setInterval(() => { void this.flushSessions(); }, SESSION_FLUSH_MS);
   }
 
   async stop(): Promise<void> {
     if (this.flushTimer) clearInterval(this.flushTimer);
     if (this.mapTimer) clearInterval(this.mapTimer);
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+    if (this.sessionTimer) clearInterval(this.sessionTimer);
     this.closeSocket();
     await this.flush().catch(() => {});
+    await this.flushSessions(true);
   }
 
   // Re-read settings and (re)bind or close the socket as needed. Called on an
   // interval and directly by the settings route when netflow_* keys change.
   async reconcile(): Promise<void> {
     const next = await this.readSettings();
+    this.sessions.setActiveTimeout(next.activeTimeoutMs);
     // Also when it should be listening and isn't: a port busy at start, or a
     // socket error, used to stop the collector until a restart (J5).
     const needsRebind =
@@ -176,6 +198,11 @@ export class NetflowCollector {
       exporters: Array.from(this.exporterStats.values()),
       acceptUnknown: this.settings.acceptUnknown,
       rejectedSources: Array.from(this.rejected.values()),
+      sessions: {
+        open: this.sessions.stats().open,
+        written: this.sessionsWritten,
+        dropped: this.sessionsDropped + this.sessions.stats().dropped,
+      },
     };
   }
 
@@ -184,7 +211,7 @@ export class NetflowCollector {
       const rows = await query<{ key: string; value: unknown }>(
         `SELECT key, value FROM app_settings
          WHERE key IN ('netflow_enabled', 'netflow_collector_port', 'netflow_topn_clients',
-                       'netflow_accept_unknown')`
+                       'netflow_accept_unknown', 'netflow_sessions_unidentified', 'netflow_active_timeout')`
       );
       const map: Record<string, unknown> = {};
       for (const row of rows) map[row.key] = row.value;
@@ -198,6 +225,8 @@ export class NetflowCollector {
         // Off unless turned on (outside review P2-23). Installs from before
         // keep the stored value they had.
         acceptUnknown: map['netflow_accept_unknown'] === true,
+        sessionsUnidentified: map['netflow_sessions_unidentified'] === true,
+        activeTimeoutMs: (rosDurationSeconds(String(map['netflow_active_timeout'] ?? '1m')) ?? 60) * 1000,
       };
     } catch {
       return this.settings;
@@ -266,32 +295,41 @@ export class NetflowCollector {
     // as for an unidentified exporter.
     const found = this.maps.exporterByIp.get(source);
     let identified: ExporterInfo | null = null;
-    let statsId: number;
-    let statsName: string;
     if (found && found !== AMBIGUOUS) {
       identified = found;
-      statsId = found.deviceId;
-      statsName = found.deviceName;
-    } else {
-      if (!found) {
-        // Doesn't match any managed device. Usually NAT between the routers
-        // and the collector, so every packet arrives from the NAT gateway. But
-        // NetFlow is unauthenticated, so anyone who can reach the port could
-        // send forged flows naming real clients (outside review P2-23). These
-        // are taken only when the admin has turned that on, and never from a
-        // public address: a NAT gateway in front of the collector is local.
-        this.packetsFromUnknownExporter++;
-        if (!this.settings.acceptUnknown) { this.reject(source, 'unknown_exporter'); return; }
-        if (!isLocalAddress(source)) { this.reject(source, 'public_address'); return; }
-      }
-      const pseudo = this.pseudoExporter(source, found === AMBIGUOUS);
-      statsId = pseudo.id;
-      statsName = pseudo.name;
+    } else if (!found) {
+      // Doesn't match any managed device. Usually NAT between the routers
+      // and the collector, so every packet arrives from the NAT gateway. But
+      // NetFlow is unauthenticated, so anyone who can reach the port could
+      // send forged flows naming real clients (outside review P2-23). These
+      // are taken only when the admin has turned that on, and never from a
+      // public address: a NAT gateway in front of the collector is local.
+      this.packetsFromUnknownExporter++;
+      if (!this.settings.acceptUnknown) { this.reject(source, 'unknown_exporter'); return; }
+      if (!isLocalAddress(source)) { this.reject(source, 'public_address'); return; }
     }
 
     const result = decodePacket(msg, source, this.templates);
     this.flowsDecoded += result.flows.length;
     this.recordsWithoutTemplate += result.recordsWithoutTemplate;
+
+    // Behind NAT every router has the same source address; the boot time its
+    // packets carry (v9 export time less uptime, or IPFIX's) tells them apart, matched against
+    // when polling saw each device boot. Only for packets already let in as
+    // from an unidentified exporter, so it lets nothing new in.
+    if (!identified && result.bootMs !== undefined) {
+      identified = exporterByBoot(this.maps, result.bootMs);
+    }
+    let statsId: number;
+    let statsName: string;
+    if (identified) {
+      statsId = identified.deviceId;
+      statsName = identified.deviceName;
+    } else {
+      const pseudo = this.pseudoExporter(source, found === AMBIGUOUS);
+      statsId = pseudo.id;
+      statsName = pseudo.name;
+    }
 
     let stats = this.exporterStats.get(statsId);
     if (!stats) {
@@ -306,10 +344,60 @@ export class NetflowCollector {
     // The manager's own traffic with this exporter (polling, backups, an SSTP
     // or VPN path to it) isn't a client's (#345).
     const manager = identified ? managerAddressesFor(statsId) : null;
+    this.trackSessions(source, identified, result);
     for (const flow of result.flows) {
       const dstAddr = attributionDestination(flow);
       if (manager && (manager.has(flow.srcAddr) || manager.has(dstAddr))) continue;
       this.attribute(statsId, identified, flow.srcAddr, dstAddr, flow.srcPort, flow.dstPort, flow.protocol, flow.bytes, flow.packets);
+    }
+  }
+
+  /**
+   * Hand a packet's flows to the session tracker, for a device with the
+   * session log on, or an unidentified router when that is allowed (#415).
+   */
+  private trackSessions(source: string, exporter: ExporterInfo | null, result: ReturnType<typeof decodePacket>): void {
+    if (result.flows.length === 0) return;
+    const on = exporter ? this.maps.sessionDevices.has(exporter.deviceId) : this.settings.sessionsUnidentified;
+    if (!on) return;
+    let key: string;
+    if (exporter) key = `d${exporter.deviceId}`;
+    else {
+      // Routers behind one NAT address: their boot time, to ten seconds, keeps
+      // one router's flows from merging into another's sessions.
+      const boot = result.bootMs !== undefined ? Math.round(result.bootMs / 10_000) : 0;
+      key = `${source}/${result.sourceId ?? 0}/${boot}`;
+    }
+    const now = Date.now();
+    for (const flow of result.flows) this.sessions.add(key, exporter, exporter ? null : source, flow, now);
+  }
+
+  /** Write sessions that have gone quiet; everything with `all` (shutting down). */
+  private async flushSessions(all = false): Promise<void> {
+    if (this.sessionWriting) return;
+    this.sessionWriting = true;
+    try {
+      const now = Date.now();
+      let recs = this.sessions.drain(now, all);
+      if (recs.length === 0) return;
+      if (recs.length > MAX_SESSION_WRITES) {
+        // More than the database is asked to take at once: the rest are
+        // counted, not kept, so memory stays bounded.
+        this.sessionsDropped += recs.length - MAX_SESSION_WRITES;
+        recs = recs.slice(0, MAX_SESSION_WRITES);
+      }
+      const items = recs.map((rec) => ({
+        rec,
+        deviceId: rec.exporter?.deviceId ?? null,
+        clientMac: matchClient(this.maps, rec.exporter, rec.client.addr).mac ?? null,
+      }));
+      const ids = await writeSessions(items);
+      this.sessionsWritten += recs.filter((r) => r.rowId === undefined).length;
+      recs.forEach((rec, i) => { const id = ids[i]; if (id !== undefined) this.sessions.stored(rec, id, now); });
+    } catch (e) {
+      console.error('[NetFlow] Session write error:', (e as Error).message);
+    } finally {
+      this.sessionWriting = false;
     }
   }
 
@@ -394,10 +482,15 @@ export class NetflowCollector {
     // Neither endpoint local — transit or post-NAT duplicate; drop.
   }
 
+  /** Re-read devices now, after a setting that changes what the collector does with them. */
+  refreshDevices(): void {
+    this.refreshMaps().catch(() => {});
+  }
+
   private async refreshMaps(): Promise<void> {
     // Exporters: management IP + every cached /ip/address, with their site.
     const devices = await query<DeviceRow>(
-      `SELECT id, name, site_id, ip_address, ip_addresses_jsonb FROM devices`
+      `SELECT id, name, site_id, ip_address, ip_addresses_jsonb, boot_at, netflow_sessions FROM devices`
     );
     // Clients, with the site of the device that saw them; newest holder of an
     // address in a site first (DHCP reuse).

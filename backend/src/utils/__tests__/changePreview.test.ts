@@ -8,6 +8,7 @@ describe('isReadCommand', () => {
     expect(isReadCommand('/interface/ethernet/switch/l3hw-settings/monitor', { once: '' })).toBe(true);
     expect(isReadCommand('/system/resource/getall')).toBe(true);
     expect(isReadCommand('/export')).toBe(true);
+    expect(isReadCommand('/console/inspect', { request: 'child', path: 'ip,firewall,filter,add' })).toBe(true);
   });
   it('treats everything else as a write', () => {
     for (const c of ['/interface/vlan/add', '/interface/vlan/set', '/ip/address/remove', '/ip/firewall/filter/move',

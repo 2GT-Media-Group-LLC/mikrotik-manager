@@ -1374,7 +1374,7 @@ function zonePlan(body: unknown, live: ZoneLiveContext, managerIp: string | null
   if (!input.config.zones.some((z) => input.config.policies[pairKey(z, ROUTER)])) {
     warnings.push('No zone can reach the router. Only the manager and replies to the router\'s own connections get in.');
   }
-  const desired = compileZones(input.config, { services: live.services, rosMajor: live.rosMajor, managerIp });
+  const desired = compileZones(input.config, { services: live.services, rosMajor: live.rosMajor, fasttrackHwOffload: live.fasttrackHwOffload, managerIp });
   return { input, errors, warnings, desired };
 }
 

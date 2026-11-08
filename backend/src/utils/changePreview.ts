@@ -35,6 +35,8 @@ const READ_VERBS = new Set(['print', 'getall', 'get', 'monitor', 'monitor-traffi
 export function isReadCommand(command: string, params: Record<string, string> = {}): boolean {
   const verb = command.split('/').filter(Boolean).pop() ?? '';
   if (READ_VERBS.has(verb)) return true;
+  // What a menu's commands take, for features some builds lack (#369).
+  if (command === '/console/inspect') return true;
   // /export prints the configuration; with file= it writes one.
   if (verb === 'export') return !('file' in params);
   return false;
