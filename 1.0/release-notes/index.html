@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#109" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.9
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#108" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1566,6 +1577,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#109" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.9
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#108" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1751,6 +1773,21 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="109">1.0.9<a class="headerlink" href="#109" title="Permanent link">&para;</a></h2>
+<p>Released on Sunday 8 November 2026. Who can open a shell or run commands, and the site switcher.</p>
+<ul>
+<li><strong>The web terminal is for admins only</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/411">#411</a>). A shell signs in
+  as the router's admin account and skips Change Guard and Review changes, so operators no longer
+  get one; a site admin still gets one on devices in their sites. For the same reason, running
+  <strong>bulk commands</strong> is admin-only too. Operators keep every guarded edit on the device tabs, and
+  can still cancel a bulk command run.</li>
+<li><strong>Switching sites left you on another site's device</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/414">#414</a>). Picking a site in
+  the selector while a device page was open kept showing that device, even when it belonged to
+  another site. The page now goes back to the device list when the new site doesn't include the
+  device; picking the device's own site keeps it open.</li>
+</ul>
 <h2 id="108">1.0.8<a class="headerlink" href="#108" title="Permanent link">&para;</a></h2>
 <p>Released on Saturday 7 November 2026. Fixes for the device page's update check and for RouterBOOT
 upgrades.</p>

@@ -2887,7 +2887,9 @@ has no certificate it warns that HTTPS may not answer (the Security tab's <stron
 sets one up). When the device doesn't answer
 the manager, it falls back to <code>http://</code> on the device's address.</p>
 <h3 id="terminal">Terminal<a class="headerlink" href="#terminal" title="Permanent link">&para;</a></h3>
-<p>The terminal opens an SSH shell on the device, for operators and admins in the device's site.
+<p>The terminal opens an SSH shell on the device, for admins in the device's site. Operators
+don't get one: a shell skips Change Guard and Review changes, so they make their changes
+through the device tabs instead.
 The audit log records each session's start, who opened it, from which address, and when it
 was refused (for example by the rate limit). <strong>What is typed in the shell is not recorded.</strong>
 If you need a record of commands, turn on logging on the device itself (<code>/system logging</code>), or
