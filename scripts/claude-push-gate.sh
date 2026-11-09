@@ -25,11 +25,14 @@ fi
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -x "$REPO/scripts/ci-preflight.sh" ]] || exit 0   # nothing to enforce
 
-if OUTPUT="$("$REPO/scripts/ci-preflight.sh" 2>&1)"; then
+# Its own failure file, so a preflight already running elsewhere can't empty it.
+FAILURES="$(mktemp -t ci-preflight-gate.XXXXXX)"
+trap 'rm -f "$FAILURES"' EXIT
+if OUTPUT="$(CI_PREFLIGHT_FAILURES="$FAILURES" "$REPO/scripts/ci-preflight.sh" 2>&1)"; then
   exit 0
 fi
 
-DETAIL="$(tail -60 /tmp/ci-preflight-failures 2>/dev/null)"
+DETAIL="$(tail -60 "$FAILURES" 2>/dev/null)"
 python3 - "$OUTPUT" "$DETAIL" <<'PY'
 import json, sys
 summary, detail = sys.argv[1], sys.argv[2]
