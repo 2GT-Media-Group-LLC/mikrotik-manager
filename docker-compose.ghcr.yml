@@ -184,6 +184,9 @@ services:
     # parallel VACUUM workspace there, and on a large events table those fail
     # with "could not resize shared memory segment ... No space left on device".
     shm_size: 256m
+    # Time for a clean shutdown (a checkpoint) before Docker kills it. The
+    # default is 10 seconds, and an update that changes the image stops it.
+    stop_grace_period: 60s
     environment:
       TZ: ${TZ:-UTC}
       POSTGRES_DB: mikrotik_manager
@@ -220,11 +223,44 @@ services:
     # rather than quietly corrupting queue state: the host stays up, and the
     # failure is loud. Retention limits and the stale-pending sweep are what keep
     # us away from the ceiling in the first place.
-    command: >
-      redis-server --appendonly yes
-      --maxmemory ${REDIS_MAXMEMORY:-512mb}
-      --maxmemory-policy noeviction
-      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    #
+    # Before starting, the append-only file is checked, and repaired if it's
+    # damaged. Redis refuses to start on a damaged one, and the whole stack waits
+    # on Redis, so one bad patch in it kept everything down: a production install
+    # read back 80 bytes of zeros from its disk in the middle of the file, ran on
+    # for 20 hours without noticing (Redis reads the file only at start), and
+    # then wouldn't start after an update restarted it. Redis holds only the job
+    # queue, which refills itself, so the repair (Redis's own redis-check-aof,
+    # which cuts the file at the last good record) costs at most queued jobs. A
+    # copy of the damaged files is kept beside them, the newest two.
+    #
+    # The password and memory limit reach the script as variables, never pasted
+    # into it, so a password with quotes or $ in it can't break it. The image's
+    # own entrypoint still starts Redis: it fixes ownership and drops root.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+    command:
+      - sh
+      - -c
+      - |
+        m=/data/appendonlydir/appendonly.aof.manifest
+        if [ -f "$$m" ] && ! redis-check-aof "$$m" >/dev/null 2>&1; then
+          keep="/data/appendonlydir.damaged-$$(date -u +%Y%m%dT%H%M%SZ)"
+          cp -a /data/appendonlydir "$$keep"
+          ls -d /data/appendonlydir.damaged-* | sort -r | tail -n +3 | while read -r old; do rm -rf "$$old"; done
+          if echo y | redis-check-aof --fix "$$m" >/dev/null 2>&1; then
+            echo "[mtm] Redis's append-only file was damaged. It was repaired by cutting it at the last good record; queued jobs after that point are lost and will be queued again. The damaged copy is in $$keep."
+          else
+            echo "[mtm] Redis's append-only file is damaged and couldn't be repaired. The damaged copy is in $$keep."
+          fi
+        fi
+        set -- redis-server --appendonly yes --maxmemory "$$REDIS_MAXMEMORY" --maxmemory-policy noeviction
+        if [ -n "$$REDIS_PASSWORD" ]; then set -- "$$@" --requirepass "$$REDIS_PASSWORD"; fi
+        exec docker-entrypoint.sh "$$@"
+    # Time to finish writing on the way down before Docker kills it. The default
+    # is 10 seconds, and an update that changes the image stops it.
+    stop_grace_period: 60s
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -232,13 +268,17 @@ services:
     networks:
       - data-network
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli --no-auth-warning ${REDIS_PASSWORD:+-a ${REDIS_PASSWORD}} ping | grep -q PONG"]
+      # The password from the container's environment, through REDISCLI_AUTH:
+      # pasted into the command, one with quotes or $ in it broke the check.
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then export REDISCLI_AUTH=\"$$REDIS_PASSWORD\"; fi; redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   influxdb:
     image: influxdb:2.7@sha256:b8d940ca9376f85118260f5b6bd236b8a00b1749c3350c5578d4cde8e27f31f2
+    # Time to flush its write-ahead log before Docker kills it, as for Postgres.
+    stop_grace_period: 60s
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
       DOCKER_INFLUXDB_INIT_USERNAME: admin
