@@ -122,18 +122,19 @@ fi
 ACME_DOMAIN="${ACME_DOMAIN:-}"
 ACME_EMAIL="${ACME_EMAIL:-}"
 ACME_SERVER="${ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
-ACME_CA_BUNDLE="${ACME_CA_BUNDLE:-}"
 if [ -n "$ACME_DOMAIN" ] && [ -n "$ACME_EMAIL" ] && [ "$TLS_MODE" = "https" ]; then
     ACME_CONFIG=/certs/letsencrypt
     ACME_WORK=/tmp/letsencrypt-work
     ACME_LOGS=/tmp/letsencrypt-logs
     ACME_DEPLOY_HOOK='cp "$RENEWED_LINEAGE/fullchain.pem" /certs/server.crt && cp "$RENEWED_LINEAGE/privkey.pem" /certs/server.key && chmod 644 /certs/server.crt && chmod 600 /certs/server.key && touch /certs/.reload'
-    if [ -n "$ACME_CA_BUNDLE" ]; then
-        export REQUESTS_CA_BUNDLE="$ACME_CA_BUNDLE"
-    fi
     echo "[entrypoint] ACME enabled for $ACME_DOMAIN via $ACME_SERVER; the first certificate will be requested in the background."
     (
         while true; do
+            if [ -f /certs/acme-ca-bundle.crt ]; then
+                export REQUESTS_CA_BUNDLE=/certs/acme-ca-bundle.crt
+            else
+                unset REQUESTS_CA_BUNDLE
+            fi
             if [ -f "$ACME_CONFIG/live/$ACME_DOMAIN/fullchain.pem" ]; then
                 su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
                     --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \

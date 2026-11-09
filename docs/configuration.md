@@ -20,22 +20,15 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `PASSWORD_LOGIN` | `true` | `false` makes sign-in SSO-only. See [SSO-only sign-in](sso-oidc.md#behaviour-and-safety) |
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS, or serves the app with `TLS_MODE=proxy`) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
-| `HTTPS_PROXY` | *unset* | Optional proxy URL passed to `npm` and `apk` while building source images |
 | `ACME_DOMAIN` | *unset* | Optional DNS name for an ACME HTTP-01 certificate; requires `ACME_EMAIL` and public access to port 80 |
 | `ACME_EMAIL` | *unset* | Contact email for ACME certificate registration and expiry notices |
 | `ACME_SERVER` | Let's Encrypt production | ACME directory URL; override for a staging or private ACME server |
-| `ACME_CA_BUNDLE` | *unset* | Optional path inside the nginx container to a CA bundle trusted by Certbot for a private ACME server |
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
 | `TLS_MODE` | `https` | `proxy` when your own reverse proxy terminates TLS. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
 | `TRUSTED_PROXIES` | *none* | Your reverse proxy's address or range, so the client address it forwards is believed. |
 
 > Never commit `.env`. It is already listed in `.gitignore`.
-
-For source builds behind a network proxy, set `HTTPS_PROXY` in `.env` (for example,
-`HTTPS_PROXY=http://proxy.example.com:3128`) and build with `docker compose build`. It is
-passed as Docker's proxy build argument in both cases accepted by `npm` and `apk`; it is not
-set in the running containers. The prebuilt GHCR images do not need this setting.
 
 For a production deployment the only variable you genuinely must set is `CORS_ORIGIN`.
 Both secrets generate themselves safely — see below.
@@ -330,13 +323,8 @@ certificate automation instead. While ACME is enabled, its certificate will repl
 certificate uploaded through Settings when ACME issues or renews.
 
 To use a staging or local ACME service, set `ACME_SERVER` to its directory URL. If its HTTPS
-certificate uses a private CA, set `ACME_CA_BUNDLE` to the CA bundle's host path, relative to
-the Compose project directory or absolute. Compose automatically mounts it read-only at
-`/run/acme-ca.pem` inside nginx and passes that path to Certbot. For example:
-
-```dotenv
-ACME_CA_BUNDLE=./acme-ca.pem
-```
+certificate uses a private CA, copy the CA bundle to:
+/var/lib/docker/volumes/{name}_certs_data/_data/acme_ca_bundle.crt
 
 The ACME service must be reachable from the nginx container, and its HTTP-01 validator must
 be able to reach the configured domain on port 80. Certbot TLS verification remains enabled;
