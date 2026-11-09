@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta39" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.39
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta38" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1925,6 +1936,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta39" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.39
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta38" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2354,6 +2376,14 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta39">1.1.0-beta.39<a class="headerlink" href="#110-beta39" title="Permanent link">&para;</a></h2>
+<p><strong>This update restarts Postgres, Redis and InfluxDB once</strong>, because their settings changed. Your
+data stays as it is.</p>
+<ul>
+<li><strong>Redis repairs a damaged data file instead of refusing to start, and the databases get 60
+  seconds to stop cleanly</strong>, as in 1.0.13 below. See
+  <a href="../configuration/#the-databases-during-an-update">The databases during an update</a>.</li>
+</ul>
 <h2 id="110-beta38">1.1.0-beta.38<a class="headerlink" href="#110-beta38" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Zone rules can name addresses</strong>, from Ron's request in
@@ -2935,6 +2965,26 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1013">1.0.13<a class="headerlink" href="#1013" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 9 November 2026. Updates are safer for the databases.</p>
+<p><strong>This update restarts Postgres, Redis and InfluxDB once</strong>, because their settings changed. Your
+data stays as it is.</p>
+<ul>
+<li><strong>Redis repairs a damaged data file instead of refusing to start.</strong> If Redis's append-only
+  file is damaged, for example because the disk lost a write in a power cut or a hard reset,
+  Redis wouldn't start, and the whole manager waited for it. This happened on a production
+  install: the damage sat unnoticed for a day, because Redis reads the file only when it starts,
+  until an update restarted it. The file is now checked before Redis starts and, if it's
+  damaged, repaired with Redis's own tool, which cuts it at the last good record. Redis holds
+  only the job queue, which refills itself, so nothing else is lost. A copy of the damaged files
+  is kept, and Redis's log says what happened. See
+  <a href="../configuration/#the-databases-during-an-update">The databases during an update</a>.</li>
+<li><strong>Postgres, Redis and InfluxDB get 60 seconds to stop cleanly</strong> when an update or a restart
+  stops them, instead of Docker's 10, so none is cut off mid-write.</li>
+<li><strong>A Redis password with quotes or <code>$</code> in it broke Redis's health check.</strong> The password now
+  reaches Redis and the check through the container's environment instead of being pasted into
+  a shell command.</li>
+</ul>
 <h2 id="1012">1.0.12<a class="headerlink" href="#1012" title="Permanent link">&para;</a></h2>
 <p>Released on Monday 9 November 2026. Clients that stayed online, mirror rollouts on small
 switches, and the CRS354's QSFP+ ports.</p>
