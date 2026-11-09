@@ -179,7 +179,7 @@ services:
       start_period: 20s
 
   postgres:
-    image: postgres:15-alpine@sha256:54e0dd8e8cddcdbb9156c2486eed5a43eccb7214d7c6828097d41ce049fb3984
+    image: postgres:15-alpine@sha256:aae6554de426ae1990f1a939ff183a0299146cf7142a6f4c379c3357af9cc2d8
     # Docker's default /dev/shm is 64 MB. Postgres puts parallel query and
     # parallel VACUUM workspace there, and on a large events table those fail
     # with "could not resize shared memory segment ... No space left on device".
