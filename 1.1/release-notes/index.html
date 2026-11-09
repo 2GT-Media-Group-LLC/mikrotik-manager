@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta37" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.37
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta36" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1903,6 +1914,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta37" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.37
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta36" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2310,6 +2332,13 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta37">1.1.0-beta.37<a class="headerlink" href="#110-beta37" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Trunk ports carry a native VLAN</strong>, as in 1.0.11 below: a trunk now accepts untagged frames
+  into its native VLAN instead of dropping them, so a device that doesn't use VLANs works on a
+  trunk port. <strong>Tagged only</strong> in the port editor keeps the old behaviour. See
+  <a href="../devices/#changing-a-ports-vlan">Changing a port's VLAN</a>.</li>
+</ul>
 <h2 id="110-beta36">1.1.0-beta.36<a class="headerlink" href="#110-beta36" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>PPP users and sessions</strong>, from Hector's request in
@@ -2862,6 +2891,19 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1011">1.0.11<a class="headerlink" href="#1011" title="Permanent link">&para;</a></h2>
+<p>Released on Sunday 8 November 2026. Trunk ports and their native VLAN.</p>
+<ul>
+<li><strong>A trunk port dropped untagged traffic.</strong> Setting a port to trunk wrote
+  <code>frame-types=admit-only-vlan-tagged</code>, so the native VLAN the port editor offered never
+  applied: a laptop, printer or unmanaged switch plugged into a trunk port couldn't talk at all.
+  A trunk now accepts both kinds of frame. Tagged frames go to its tagged VLANs, and untagged
+  frames join the native VLAN, which the port carries untagged. Tick <strong>Tagged only</strong> for a trunk
+  that should drop untagged frames, as before. Saving a trunk also takes the port out of any
+  untagged VLAN other than its native one. Trunks saved by older versions open with
+  <strong>Tagged only</strong> ticked and keep working as they did until you untick it and save. See
+  <a href="../devices/#changing-a-ports-vlan">Changing a port's VLAN</a>.</li>
+</ul>
 <h2 id="1010">1.0.10<a class="headerlink" href="#1010" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 8 November 2026. Switching a device to API-SSL.</p>
 <ul>
