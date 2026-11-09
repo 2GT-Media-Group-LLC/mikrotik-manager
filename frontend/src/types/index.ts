@@ -50,6 +50,8 @@ export interface PortVlanConfig {
   mode?: 'access' | 'trunk';
   /** Trunk only: tagged_vlans is the complete set, so unlisted VLANs are removed. */
   replace_tagged?: boolean;
+  /** Trunk only: drop untagged frames rather than put them in the PVID's VLAN. */
+  tagged_only?: boolean;
 }
 
 export type DeviceStatus = 'online' | 'offline' | 'unknown';

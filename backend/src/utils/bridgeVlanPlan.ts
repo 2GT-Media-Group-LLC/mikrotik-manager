@@ -94,19 +94,26 @@ export interface FrameTypeConfig {
  * frames the port would accept. A trunk kept admitting untagged frames and an
  * access port kept admitting tagged ones — the port type was half decorative.
  *
+ * A trunk admits everything: tagged frames for its tagged VLANs, and untagged
+ * frames, which join the native VLAN (the PVID). Until 1.0.11 a trunk admitted
+ * only tagged frames, so the native VLAN the editor offered was dropped at the
+ * port and an untagged device on a trunk couldn't talk at all. Tagged-only is
+ * still there, asked for by name.
+ *
  * Returned as a value rather than applied here so the caller can decide, and so
  * this is testable without a device.
  */
-export function frameTypesFor(role: 'access' | 'trunk'): FrameTypeConfig {
-  return role === 'access'
-    ? {
-        'frame-types': 'admit-only-untagged-and-priority-tagged',
-        'ingress-filtering': 'yes',
-      }
-    : {
-        'frame-types': 'admit-only-vlan-tagged',
-        'ingress-filtering': 'yes',
-      };
+export function frameTypesFor(role: 'access' | 'trunk', taggedOnly = false): FrameTypeConfig {
+  if (role === 'access') {
+    return {
+      'frame-types': 'admit-only-untagged-and-priority-tagged',
+      'ingress-filtering': 'yes',
+    };
+  }
+  return {
+    'frame-types': taggedOnly ? 'admit-only-vlan-tagged' : 'admit-all',
+    'ingress-filtering': 'yes',
+  };
 }
 
 export interface BridgeVlanTableRow extends BridgeVlanRow {
@@ -130,14 +137,20 @@ export interface TaggedRemovalPlan {
  *
  * Saving used to be add-only: VLANs were added to the port but never taken
  * away, so unticking one in the editor changed nothing on the device. This is
- * the removal half. Only static rows are touched (dynamic ones reject writes),
- * and only the `tagged` list — untagged/PVID membership is left alone.
+ * the removal half. Only static rows are touched (dynamic ones reject writes).
+ *
+ * `native` also tidies the untagged side: given a VLAN, the port leaves every
+ * other row it's untagged in, so it sends out one untagged VLAN rather than
+ * several mixed together (an access port turned trunk kept its old VLAN
+ * untagged). Given null (a tagged-only trunk), it leaves them all. Left out,
+ * untagged membership isn't touched.
  */
 export function planTaggedRemovals(
   rows: BridgeVlanTableRow[],
   bridge: string,
   port: string,
-  keep: number[]
+  keep: number[],
+  native?: number | null
 ): TaggedRemovalPlan {
   const keepSet = new Set(keep);
   const plan: TaggedRemovalPlan = { writes: [], mixed: [] };
@@ -145,22 +158,30 @@ export function planTaggedRemovals(
     if (row.bridge !== undefined && row.bridge !== bridge) continue;
     if (row.dynamic === 'true' || row.dynamic === 'yes' || !row['.id']) continue;
     const tagged = list(row.tagged);
-    if (!tagged.includes(port)) continue;
+    const untagged = list(row.untagged);
     const vids = expandVlanIds(row['vlan-ids']);
-    const leaving = vids.filter((v) => !keepSet.has(v));
-    if (leaving.length === 0) continue;
-    if (leaving.length < vids.length) {
-      plan.mixed.push(...leaving);
-      continue;
+
+    let leaveTagged = false;
+    if (tagged.includes(port)) {
+      const leaving = vids.filter((v) => !keepSet.has(v));
+      if (leaving.length === vids.length) leaveTagged = true;
+      else if (leaving.length) plan.mixed.push(...leaving);
     }
+    let leaveUntagged = false;
+    if (native !== undefined && untagged.includes(port)) {
+      const leaving = vids.filter((v) => v !== native);
+      if (leaving.length === vids.length) leaveUntagged = true;
+      else if (leaving.length) plan.mixed.push(...leaving);
+    }
+    if (!leaveTagged && !leaveUntagged) continue;
     plan.writes.push({
       id: row['.id'],
-      tagged: tagged.filter((p) => p !== port).join(','),
-      untagged: list(row.untagged).join(','),
+      tagged: (leaveTagged ? tagged.filter((p) => p !== port) : tagged).join(','),
+      untagged: (leaveUntagged ? untagged.filter((p) => p !== port) : untagged).join(','),
       vlanIds: vids,
     });
   }
-  plan.mixed.sort((a, b) => a - b);
+  plan.mixed = [...new Set(plan.mixed)].sort((a, b) => a - b);
   return plan;
 }
 

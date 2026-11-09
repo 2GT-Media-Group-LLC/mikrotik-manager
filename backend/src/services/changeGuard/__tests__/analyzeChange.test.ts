@@ -137,10 +137,20 @@ describe('analyzeChange — the VLAN lockout (golden case)', () => {
     // nothing to model. admit-only-vlan-tagged on the port carrying untagged
     // management traffic strands it even though every VLAN row still lists it.
     const change: PlannedChange = {
-      kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [], untagged: [], mode: 'trunk',
+      kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [], untagged: [], mode: 'trunk', taggedOnly: true,
     };
     const v = analyzeChange(baseSnapshot(), device, change);
     expect(v.severity).toBe('critical');
+  });
+
+  it('lets the management port be a trunk whose native VLAN carries management', () => {
+    // From 1.0.11 a trunk admits untagged frames into its PVID, so untagged
+    // management on native VLAN 1 keeps working.
+    const change: PlannedChange = {
+      kind: 'port.vlan', port: 'sfp28-1', pvid: 1, tagged: [10], untagged: [1], mode: 'trunk', replaceTagged: true,
+    };
+    expect(simulate(baseSnapshot(), change).bridgePorts.find((p) => p['interface'] === 'sfp28-1')?.['frame-types']).toBe('admit-all');
+    expect(analyzeChange(baseSnapshot(), device, change).severity).not.toBe('critical');
   });
 
   it('does not flag the same change when frame admission is left alone', () => {

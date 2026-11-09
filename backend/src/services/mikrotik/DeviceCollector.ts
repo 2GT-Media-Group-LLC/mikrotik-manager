@@ -5551,7 +5551,9 @@ export class DeviceCollector {
     taggedVlans: number[],
     untaggedVlans: number[],
     role?: 'access' | 'trunk',
-    replaceTagged = false
+    replaceTagged = false,
+    /** A trunk that drops untagged frames instead of putting them in the PVID's VLAN. */
+    taggedOnly = false
   ): Promise<{ notRemoved: number[] }> {
     const bridgePorts = await this.client
       .execute('/interface/bridge/port/print', {}, [`?interface=${portName}`])
@@ -5565,7 +5567,7 @@ export class DeviceCollector {
       await this.client.execute('/interface/bridge/port/set', {
         '.id': bridgePortEntry['.id'],
         pvid: String(pvid),
-        ...(role ? frameTypesFor(role) : {}),
+        ...(role ? frameTypesFor(role, taggedOnly) : {}),
       });
     }
 
@@ -5610,7 +5612,9 @@ export class DeviceCollector {
       .catch(() => []);
     const plan = role === 'access'
       ? planAccessRemovals(rows as Record<string, string>[], bridge, portName, pvid)
-      : planTaggedRemovals(rows as Record<string, string>[], bridge, portName, taggedVlans);
+      // A trunk keeps one untagged VLAN, its native one, or none when it's tagged-only.
+      : planTaggedRemovals(rows as Record<string, string>[], bridge, portName, taggedVlans,
+        role === 'trunk' ? (taggedOnly ? null : pvid) : undefined);
     for (const w of plan.writes) {
       await this.client.execute('/interface/bridge/vlan/set', {
         '.id': w.id, tagged: w.tagged, untagged: w.untagged,

@@ -60,8 +60,15 @@ describe('frameTypesFor', () => {
     });
   });
 
-  it('admits only tagged on a trunk', () => {
+  it('admits tagged and untagged on a trunk, untagged joining the native VLAN', () => {
     expect(frameTypesFor('trunk')).toEqual({
+      'frame-types': 'admit-all',
+      'ingress-filtering': 'yes',
+    });
+  });
+
+  it('admits only tagged on a trunk asked to be tagged-only', () => {
+    expect(frameTypesFor('trunk', true)).toEqual({
       'frame-types': 'admit-only-vlan-tagged',
       'ingress-filtering': 'yes',
     });
@@ -138,5 +145,43 @@ describe('planAccessRemovals', () => {
   it('reports a range row that also covers the PVID rather than splitting it', () => {
     const plan = planAccessRemovals([{ '.id': '*8', bridge: 'bridge', 'vlan-ids': '5-7', tagged: 'sfp1', untagged: '' }], 'bridge', 'sfp1', 6);
     expect(plan).toEqual({ writes: [], mixed: [5, 7] });
+  });
+});
+
+describe('planTaggedRemovals with a native VLAN', () => {
+  // An access port on VLAN 20 made a trunk with native VLAN 1, tagged 10.
+  const rows = [
+    { '.id': '*1', bridge: 'bridge', 'vlan-ids': '1', tagged: '', untagged: 'bridge,ether1' },
+    { '.id': '*2', bridge: 'bridge', 'vlan-ids': '10', tagged: 'ether1', untagged: '' },
+    { '.id': '*3', bridge: 'bridge', 'vlan-ids': '20', tagged: 'sfp1', untagged: 'ether1,ether2' },
+    { '.id': '*4', bridge: 'bridge', 'vlan-ids': '30-31', tagged: '', untagged: 'ether1' },
+  ];
+
+  it('takes the port out of every untagged row but the native one', () => {
+    const plan = planTaggedRemovals(rows, 'bridge', 'ether1', [10], 1);
+    expect(plan.writes).toEqual([
+      { id: '*3', tagged: 'sfp1', untagged: 'ether2', vlanIds: [20] },
+      { id: '*4', tagged: '', untagged: '', vlanIds: [30, 31] },
+    ]);
+    expect(plan.mixed).toEqual([]);
+  });
+
+  it('takes it out of all of them for a tagged-only trunk', () => {
+    const plan = planTaggedRemovals(rows, 'bridge', 'ether1', [10], null);
+    expect(plan.writes.map((w) => w.id)).toEqual(['*1', '*3', '*4']);
+    expect(plan.writes[0]).toEqual({ id: '*1', tagged: '', untagged: 'bridge', vlanIds: [1] });
+  });
+
+  it('reports a range row that also covers the native VLAN instead of splitting it', () => {
+    const plan = planTaggedRemovals(
+      [{ '.id': '*9', bridge: 'bridge', 'vlan-ids': '1-3', tagged: '', untagged: 'ether1' }],
+      'bridge', 'ether1', [], 1);
+    expect(plan.writes).toEqual([]);
+    expect(plan.mixed).toEqual([2, 3]);
+  });
+
+  it('leaves untagged rows alone when no native VLAN is given (the old behaviour)', () => {
+    const plan = planTaggedRemovals(rows, 'bridge', 'ether1', [10]);
+    expect(plan.writes).toEqual([]);
   });
 });

@@ -1038,7 +1038,7 @@ router.put('/:id/interfaces/:name', requireWrite, async (req, res) => {
 // Guarded: changing a port's PVID or its tagged/untagged membership is one of the
 // most common ways to strand the management VLAN on a switch.
 router.put('/:id/ports/:name/vlan', requireWrite, async (req, res) => {
-  const { pvid, tagged_vlans = [], untagged_vlans = [], mode, replace_tagged } = req.body;
+  const { pvid, tagged_vlans = [], untagged_vlans = [], mode, replace_tagged, tagged_only } = req.body;
   if (pvid !== undefined && (typeof pvid !== 'number' || pvid < 1 || pvid > 4094)) {
     return res.status(400).json({ error: 'pvid must be 1-4094' });
   }
@@ -1050,6 +1050,9 @@ router.put('/:id/ports/:name/vlan', requireWrite, async (req, res) => {
   // VLANs left out are removed. Only meaningful for a trunk (#165). An access
   // port always leaves every VLAN but its PVID's.
   const replaceTagged = role === 'trunk' && replace_tagged === true;
+  // A trunk admits untagged frames into its native VLAN (the PVID) unless this
+  // says otherwise. Before 1.0.11 every trunk was tagged-only.
+  const taggedOnly = role === 'trunk' && tagged_only === true;
 
   await withGuardedChange(
     req.params.id,
@@ -1057,7 +1060,7 @@ router.put('/:id/ports/:name/vlan', requireWrite, async (req, res) => {
     res,
     {
       kind: 'port.vlan',
-      summary: `VLAN config on port ${req.params.name} (pvid ${pvid ?? 1}${role ? `, ${role}` : ''})`,
+      summary: `VLAN config on port ${req.params.name} (pvid ${pvid ?? 1}${role ? `, ${role}${taggedOnly ? ', tagged only' : ''}` : ''})`,
       change: {
         kind: 'port.vlan',
         port: req.params.name,
@@ -1068,6 +1071,7 @@ router.put('/:id/ports/:name/vlan', requireWrite, async (req, res) => {
         // a far bigger change than a PVID edit, and the summary should say so.
         mode: role,
         replaceTagged,
+        taggedOnly,
       },
     },
     async (c) => {
@@ -1077,7 +1081,8 @@ router.put('/:id/ports/:name/vlan', requireWrite, async (req, res) => {
         tagged_vlans as number[],
         untagged_vlans as number[],
         role,
-        replaceTagged
+        replaceTagged,
+        taggedOnly
       );
       return {
         message: notRemoved.length

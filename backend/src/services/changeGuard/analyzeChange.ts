@@ -7,7 +7,7 @@
  * before and violated after is a predicted lockout, and the invariant explains
  * itself, so the warning names the actual mechanism instead of being generic.
  */
-import { planVlanWrite, planAccessRemovals } from '../../utils/bridgeVlanPlan';
+import { planVlanWrite, planAccessRemovals, planTaggedRemovals } from '../../utils/bridgeVlanPlan';
 import { evaluate, INVARIANTS, type InvariantStatus } from './invariants';
 import { resolveManagementPath, expandVlanIds, type DeviceSnapshot, type ManagementPath, type RosRow } from './pathModel';
 import type { GuardDevice } from './ChangeGuard';
@@ -24,6 +24,8 @@ export type PlannedChange =
        * materially smaller change (#151).
        */
       mode?: 'access' | 'trunk';
+      /** A trunk that drops untagged frames. Otherwise a trunk admits all (1.0.11). */
+      taggedOnly?: boolean;
     }
   | { kind: 'vlan.add'; bridge: string; vlanId: number; tagged: string[]; untagged: string[] }
   | { kind: 'vlan.update'; bridge: string; vlanId: number; tagged: string[]; untagged: string[] }
@@ -186,7 +188,7 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
       if (port && change.mode) {
         port['frame-types'] = change.mode === 'access'
           ? 'admit-only-untagged-and-priority-tagged'
-          : 'admit-only-vlan-tagged';
+          : change.taggedOnly ? 'admit-only-vlan-tagged' : 'admit-all';
         port['ingress-filtering'] = 'true';
       }
       const bridge = port?.['bridge'];
@@ -211,18 +213,22 @@ export function simulate(snap: DeviceSnapshot, change: PlannedChange): DeviceSna
       for (const vid of change.tagged) applyVlan(vid, 'tagged');
       for (const vid of change.untagged) applyVlan(vid, 'untagged');
 
-      // The removal half, when requested. Mirrors planTaggedRemovals: static
+      // The removal half, when requested, by the writer's own planner: static
       // rows only, whole rows only — a range row that still covers a kept VLAN
-      // is left as it is, exactly as the device write leaves it.
+      // is left as it is, exactly as the device write leaves it. A trunk also
+      // leaves the untagged rows other than its native VLAN's.
       if (change.replaceTagged) {
-        const keep = new Set(change.tagged);
-        for (const row of s.bridgeVlans) {
-          if (row['bridge'] !== bridge || isDynamic(row)) continue;
-          const tagged = csv(row['current-tagged'] ?? row['tagged']);
-          if (!tagged.includes(change.port)) continue;
-          const vids = expandVlanIds(row['vlan-ids']);
-          if (vids.some((v) => keep.has(v))) continue;
-          setMembership(row, tagged.filter((p) => p !== change.port), csv(row['current-untagged'] ?? row['untagged']));
+        const rows = s.bridgeVlans
+          .map((row, i) => ({ row, i }))
+          .filter(({ row }) => row['bridge'] === bridge);
+        const native = change.mode === 'trunk' ? (change.taggedOnly ? null : change.pvid) : undefined;
+        const plan = planTaggedRemovals(rows.map(({ row, i }) => ({
+          '.id': String(i), bridge, dynamic: row['dynamic'], 'vlan-ids': row['vlan-ids'],
+          tagged: row['current-tagged'] ?? row['tagged'], untagged: row['current-untagged'] ?? row['untagged'],
+        })), bridge, change.port, change.tagged, native);
+        for (const w of plan.writes) {
+          const row = s.bridgeVlans[Number(w.id)];
+          if (row) setMembership(row, csv(w.tagged), csv(w.untagged));
         }
       }
       // An access port leaves every VLAN but its PVID's, by the writer's own
