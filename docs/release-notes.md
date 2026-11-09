@@ -3,6 +3,28 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.38
+
+- **Zone rules can name addresses**, from Ron's request in
+  [#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369). A custom rule in a
+  zone pair now takes a source and a destination as well as ports: an address, a subnet or a range,
+  with TCP, UDP or any protocol. WAN to DMZ can let one partner reach one server on 443, and LAN
+  to the router can take SSH from the admin subnet only. Setups saved before keep exactly the rules
+  they had. See [Zones](devices.md#zones).
+- **Firewall Logs: a period, and logged rules on the Firewall tab**, contributed by aziz in
+  [#437](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/437). Firewall Logs reads
+  the last hour, 24 hours, 7 days or 30 days, in Grouped and Raw, and a link can open it with
+  `?range=`. **Logged (N)** on the Firewall tab shows only the rules that log.
+- **Clients hides more network devices**
+  ([#363](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/363)): switches, routers
+  and access points the manager doesn't manage, when they announce themselves over LLDP, CDP or
+  MNDP as one. An IP phone that also reports itself as a bridge stays a client.
+- **Clients no longer kept online by stale ARP entries, mirror rollouts on 16 MB-flash devices,
+  and the CRS354's QSFP+ cages**, as in 1.0.12 below.
+- **Dependencies**: vitest 5, vite 8.3.6, react-router 7.18.5, TanStack Query 5.106.1, lucide
+  1.70, openid-client 6.8.9, otpauth 9.6.0, bullmq 6.7.1, and current Postgres, Redis and nginx
+  images.
+
 ## 1.1.0-beta.37
 
 - **Trunk ports carry a native VLAN**, as in 1.0.11 below: a trunk now accepts untagged frames
@@ -599,6 +621,29 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.12
+
+Released on Monday 9 November 2026. Clients that stayed online, mirror rollouts on small
+switches, and the CRS354's QSFP+ ports.
+
+- **Clients stayed online long after they'd left**
+  ([#363](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/363)). RouterOS keeps
+  `stale` and `failed` ARP entries, MAC and all, for days on a quiet VLAN, and any that wasn't
+  `failed` counted as the client being there, so phones stayed online all weekend. Only entries
+  the router is in touch with count now (`reachable`, `delay`, `probe`, or static). A `stale` one
+  keeps a client that's already online for 15 minutes, so a quiet printer doesn't flicker, but
+  never brings one online. Thanks to aziz for tracking down the cause. See
+  [Clients](clients.md#where-the-data-comes-from).
+- **Mirror rollouts refused switches with 16 MB of flash.** A device such as a CRS309 or hAP ac²
+  runs from RAM and downloads packages into RAM, but the rollout measured them against its free
+  flash, about 3 MB, and stopped with "Not enough space". It checks free memory on those devices
+  now, keeping a margin for the device itself. Reported by Manuel in
+  [Discussion #85](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85).
+- **The CRS354's QSFP+ ports drew as eight separate cages.** The CRS3xx names its QSFP+ lanes
+  `qsfpplus1-1` to `qsfpplus2-4`, which didn't fit the lane naming the faceplate knew, so each lane
+  was a cage of its own (Q1, Q1, Q2, Q2 and so on). They're two cages of four lanes now. Also
+  reported by Manuel.
 
 ## 1.0.11
 
