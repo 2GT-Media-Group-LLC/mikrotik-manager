@@ -259,3 +259,31 @@ export function suggestDisk(disks: MirrorDisk[]): string | null {
   const best = disks.filter((d) => !d.ram).sort((a, b) => b.free_bytes - a.free_bytes)[0];
   return best?.mount_point ?? null;
 }
+
+/**
+ * Whether a device has room to download a set of packages from the mirror.
+ *
+ * Most devices keep downloads on their storage, so it's free-hdd-space. A
+ * device with 16 MB of flash (CRS309, hAP ac², many older boards) runs its
+ * root filesystem in RAM and has the flash mounted as `flash`: packages
+ * downloaded to the top level go to RAM and are installed from there on
+ * reboot. Measuring those against the flash's free space refused every
+ * upgrade (a CRS309 has about 3 MB free on flash and 450 MB of RAM), so for
+ * them it's free memory, keeping a margin for the device itself to run on.
+ */
+export function packageRoom(opts: {
+  needBytes: number;
+  freeHdd: number;
+  freeMemory: number;
+  totalMemory: number;
+  /** True when the device has a top-level `flash` disk, so its root is in RAM. */
+  ramRoot: boolean;
+}): { ok: boolean; where: 'storage' | 'memory'; freeBytes: number; needBytes: number } {
+  if (!opts.ramRoot) {
+    // free-hdd-space 0 or missing reads as unknown, not as full.
+    return { ok: !opts.freeHdd || opts.needBytes <= opts.freeHdd, where: 'storage', freeBytes: opts.freeHdd, needBytes: opts.needBytes };
+  }
+  const reserve = Math.max(32 * 1048576, Math.round(opts.totalMemory * 0.15));
+  const needBytes = opts.needBytes + reserve;
+  return { ok: !opts.freeMemory || needBytes <= opts.freeMemory, where: 'memory', freeBytes: opts.freeMemory, needBytes };
+}

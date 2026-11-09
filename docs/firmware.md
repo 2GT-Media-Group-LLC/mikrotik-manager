@@ -184,7 +184,10 @@ When any selected device uses a mirror, the rollout bar offers **Packages from: 
    Upgrading routeros alone would leave, say, wifi-qcom at the old version, and RouterOS
    disables a mismatched package on reboot, so an access point would come back with no
    wireless. A device whose packages aren't all on the mirror fails before anything changes.
-2. Is checked for free space against the size of those packages.
+2. Is checked for room for those packages. That's free storage on most devices. A device with
+   16 MB of flash (a CRS309 or hAP ac², say) runs from RAM with its flash mounted as `flash`,
+   and downloads into RAM, so for it the check is free memory, leaving some for the device to
+   run on.
 3. Asks the mirror for them and downloads them through local update.
 4. Is confirmed to have every file, at the size the mirror recorded, before it reboots.
    RouterOS's download runs in the background and can fail without saying so, so the files

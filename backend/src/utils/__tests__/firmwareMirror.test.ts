@@ -1,6 +1,6 @@
 import {
   packageFileName, parseNewest, parseSha256File, planFiles, versionsToPrune, supportsLocalUpdate,
-  matchLocalUpdate, clampKeepVersions, isMirrorFolder, downloadUrl, newestCompleteFrom, type FleetDevice,
+  matchLocalUpdate, clampKeepVersions, isMirrorFolder, downloadUrl, newestCompleteFrom, packageRoom, type FleetDevice,
 } from '../firmwareMirror';
 
 describe('packageFileName (#193)', () => {
@@ -176,5 +176,31 @@ describe('mirror disks', () => {
     expect(isDiskName('usb1-part1')).toBe(true);
     expect(isDiskName('sd1/x')).toBe(false);
     expect(isDiskName('')).toBe(false);
+  });
+});
+
+describe('packageRoom (Discussion #85)', () => {
+  const MB = 1048576;
+
+  it('checks storage on an ordinary device', () => {
+    expect(packageRoom({ needBytes: 20 * MB, freeHdd: 90 * MB, freeMemory: 30 * MB, totalMemory: 256 * MB, ramRoot: false }))
+      .toMatchObject({ ok: true, where: 'storage' });
+    expect(packageRoom({ needBytes: 20 * MB, freeHdd: 10 * MB, freeMemory: 300 * MB, totalMemory: 512 * MB, ramRoot: false }))
+      .toMatchObject({ ok: false, where: 'storage' });
+  });
+
+  it('checks memory on a 16 MB-flash device, whose downloads go to RAM (TEST, a CRS309)', () => {
+    const r = packageRoom({ needBytes: 13 * MB, freeHdd: 2.8 * MB, freeMemory: 438 * MB, totalMemory: 512 * MB, ramRoot: true });
+    expect(r).toMatchObject({ ok: true, where: 'memory' });
+  });
+
+  it('keeps a margin of memory for the device to run on', () => {
+    // hAP lite class: 32 MB of RAM can't take a 12 MB package and still run.
+    expect(packageRoom({ needBytes: 12 * MB, freeHdd: 1 * MB, freeMemory: 14 * MB, totalMemory: 32 * MB, ramRoot: true }))
+      .toMatchObject({ ok: false, where: 'memory' });
+  });
+
+  it('treats an unreported free figure as unknown rather than full', () => {
+    expect(packageRoom({ needBytes: 12 * MB, freeHdd: 0, freeMemory: 0, totalMemory: 0, ramRoot: false }).ok).toBe(true);
   });
 });
