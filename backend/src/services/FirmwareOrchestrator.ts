@@ -17,7 +17,7 @@ import { interruptedOutcome, INTERRUPTED_RUN_ERROR } from '../utils/interrupted'
 import { describeUpdateStatus, type UpdateStatus } from '../utils/updateStatus';
 import { upgradeDecision, verifyUpgrade, scheduleDecision } from '../utils/firmwarePlan';
 import { mirrorForDevice, newestCompleteVersion, type MirrorRow } from './firmwareMirror';
-import { matchLocalUpdate, packageFileName } from '../utils/firmwareMirror';
+import { matchLocalUpdate, packageFileName, packageRoom } from '../utils/firmwareMirror';
 import { runSshCommand, looksLikeFailure, type SshExecDevice } from './sshExec';
 import { withSafeApply, type GuardDevice } from './changeGuard/ChangeGuard';
 import { fillSecrets, maskSecrets } from './commandSecrets';
@@ -749,9 +749,27 @@ export class FirmwareOrchestrator {
       return { pkg: p, name, size: Number(expected.find((e) => e.filename === name)?.size_bytes || 0) };
     });
     const needBytes = want.reduce((n, w) => n + w.size, 0);
-    const free = Number(res['free-hdd-space'] || 0);
-    if (free && needBytes > free) {
-      return { kind: 'fail', error: `Not enough space for ${target}: the packages need ${Math.round(needBytes / 1048576)} MB and the device has ${Math.round(free / 1048576)} MB free. Nothing was downloaded.` };
+    // A 16 MB-flash device keeps downloads in RAM: its root is RAM, with the
+    // flash mounted as `flash` (Manuel, Discussion #85).
+    const ramRoot = await Promise.resolve()
+      .then(() => collector.getFiles())
+      .then((files) => files.some((f) => f['name'] === 'flash' && (f['type'] === 'disk' || f['type'] === 'directory')))
+      .catch(() => false);
+    const room = packageRoom({
+      needBytes,
+      freeHdd: Number(res['free-hdd-space'] || 0),
+      freeMemory: Number(res['free-memory'] || 0),
+      totalMemory: Number(res['total-memory'] || 0),
+      ramRoot,
+    });
+    if (!room.ok) {
+      const mb = (n: number) => Math.round(n / 1048576);
+      return {
+        kind: 'fail',
+        error: room.where === 'memory'
+          ? `Not enough memory for ${target}: this device downloads packages into RAM, and the packages need ${mb(needBytes)} MB plus ${mb(room.needBytes - needBytes)} MB to keep running on, against ${mb(room.freeBytes)} MB free. Nothing was downloaded.`
+          : `Not enough space for ${target}: the packages need ${mb(needBytes)} MB and the device has ${mb(room.freeBytes)} MB free. Nothing was downloaded.`,
+      };
     }
     const uptimeBefore = await collector.getUptimeSeconds();
 
