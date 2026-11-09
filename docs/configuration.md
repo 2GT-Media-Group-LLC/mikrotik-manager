@@ -411,6 +411,27 @@ redirects. So when updating:
 
 To check that a setting arrived, ask the container: `docker compose exec nginx printenv TLS_MODE`.
 
+### The databases during an update
+
+An update that changes the Postgres, Redis or InfluxDB image restarts that container, and the
+release notes say so when it does. Each gets 60 seconds to shut down cleanly before Docker stops
+it (Docker's own default is 10), so an update never cuts one off mid-write.
+
+Redis holds only the manager's job queue, which refills itself. If its append-only file is
+damaged (for example, the disk lost a write in a power cut or a hard reset), Redis refuses to
+start, and the rest of the stack waits for it. So before Redis starts, the file is checked, and
+if it's damaged it's repaired with Redis's own `redis-check-aof --fix`, which cuts it at the last
+good record. At most, jobs queued after that point are lost, and they're queued again. Redis's
+log says when this happens:
+
+```
+[mtm] Redis's append-only file was damaged. It was repaired by cutting it at the last good record; ...
+```
+
+A copy of the damaged files is kept in the Redis volume as `appendonlydir.damaged-<time>`, the
+newest two. Once all is well you can remove them:
+`docker compose exec redis sh -c 'rm -rf /data/appendonlydir.damaged-*'`.
+
 ### Release channels
 
 From 1.0 there are two lines, and you choose which one you follow:
