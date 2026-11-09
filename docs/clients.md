@@ -20,6 +20,14 @@ a switch forgets an idle PC while the router's ARP table still lists it, and the
 switch port rather than moving to the router. Whether a client is online, and when it was last
 seen, come from all of its sightings: online if any device sees it now.
 
+An ARP entry only counts while the router is actually in touch with the client: `reachable`,
+`delay`, `probe`, or a static entry. RouterOS keeps `stale` and `failed` entries, MAC and all,
+until it gets round to clearing them, which on a quiet VLAN can take days, so counting them kept
+phones online all weekend after they'd left (#363). A `failed` entry never counts. A `stale`
+one keeps a client that's already online there for 15 minutes after the router last saw it
+properly, since a printer or a phone on standby that's still there spends most of its time
+`stale`, but it doesn't bring a client online, and it doesn't move **Last seen**.
+
 On the client's page, **Connection Path** shows that device and its way up: the spanning-tree
 root port where there is one, otherwise a link on a bridge port (or a member of a bonded one)
 rather than an out-of-band management port, and among those a neighbour heard over LLDP. Bridges
@@ -42,6 +50,12 @@ shows that switch, marked **not managed**. Names wrap in full and link to the de
     [Polling and scaling](scaling.md).
 
 ## The list
+
+Network devices aren't clients, so the list leaves them out: the MAC addresses of managed
+devices (any interface or radio), VRRP's virtual MACs, and switches, routers and access points
+the manager doesn't manage but that announce themselves over LLDP, CDP or MNDP as a bridge,
+router or WLAN access point (#363). An IP phone that also says it's a bridge, for its PC port,
+stays a client. The filter bar says how many are hidden, with **show** to bring them back.
 
 Filter by status (online, or all including inactive clients), type (wired or wireless), the
 device a client is connected to, VLAN, or signal range, in the same filter bar as the device

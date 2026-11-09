@@ -106,10 +106,19 @@ router.get('/:mac/roaming', async (req, res) => {
  * A sighting whose MAC is a managed device's own (any interface or radio it
  * has) or a VRRP virtual router MAC, 00:00:5e:00:01:xx for IPv4 and
  * 00:00:5e:00:02:xx for IPv6 (RFC 5798). Neither is a client (#363).
+ *
+ * Nor is an unmanaged switch, router or access point that announces itself
+ * over LLDP/CDP/MNDP: a neighbour whose enabled capabilities include bridge,
+ * router or wlan-ap. One that also says telephone is kept as a client, since
+ * an IP phone with a PC port reports bridge too.
  */
 const INFRA_MAC = `(LOWER(c.mac_address) LIKE '00:00:5e:00:01:%' OR LOWER(c.mac_address) LIKE '00:00:5e:00:02:%'
   OR UPPER(c.mac_address) IN (SELECT UPPER(i.mac_address) FROM interfaces i WHERE i.mac_address IS NOT NULL
-                               UNION SELECT UPPER(w.mac_address) FROM wireless_interfaces w WHERE w.mac_address IS NOT NULL))`;
+                               UNION SELECT UPPER(w.mac_address) FROM wireless_interfaces w WHERE w.mac_address IS NOT NULL
+                               UNION SELECT UPPER(t.neighbor_mac) FROM topology_links t
+                                WHERE t.neighbor_mac IS NOT NULL
+                                  AND t.neighbor_caps ~* '(^|,)\\s*(bridge|router|wlan-ap)\\s*(,|$)'
+                                  AND t.neighbor_caps !~* 'telephone'))`;
 
 router.get('/', async (req, res) => {
   const {
