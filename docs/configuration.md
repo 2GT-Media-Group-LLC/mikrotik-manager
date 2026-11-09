@@ -287,15 +287,12 @@ certificate automation instead. While ACME is enabled, its certificate will repl
 certificate uploaded through Settings when ACME issues or renews.
 
 To use a staging or local ACME service, set `ACME_SERVER` to its directory URL. If its HTTPS
-certificate uses a private CA, mount that CA bundle into the nginx container and set
-`ACME_CA_BUNDLE` to the in-container path. For example, add this under `services.nginx.volumes`
-in a Compose override file, then set `ACME_CA_BUNDLE=/run/acme-ca.pem`:
+certificate uses a private CA, set `ACME_CA_BUNDLE` to the CA bundle's host path, relative to
+the Compose project directory or absolute. Compose automatically mounts it read-only at
+`/run/acme-ca.pem` inside nginx and passes that path to Certbot. For example:
 
-```yaml
-services:
-  nginx:
-    volumes:
-      - ./acme-ca.pem:/run/acme-ca.pem:ro
+```dotenv
+ACME_CA_BUNDLE=./acme-ca.pem
 ```
 
 The ACME service must be reachable from the nginx container, and its HTTP-01 validator must
