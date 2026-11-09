@@ -34,8 +34,16 @@ services:
       # proxy (address or CIDR) whose X-Forwarded-For / -Proto are believed.
       TLS_MODE: ${TLS_MODE:-https}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # Optional HTTP-01 Let's Encrypt support; requires public DNS and port 80.
+      ACME_DOMAIN: ${ACME_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # Override the ACME directory for a staging or private CA.
+      ACME_SERVER: ${ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+      # Optional path to a mounted CA bundle for a private ACME server.
+      ACME_CA_BUNDLE: ${ACME_CA_BUNDLE:-}
     volumes:
       - certs_data:/certs
+      - acme_challenge:/var/www/certbot
     depends_on:
       backend:
         condition: service_healthy
@@ -265,6 +273,7 @@ volumes:
   influxdb_data:
   backups_data:
   certs_data:
+  acme_challenge:
   app_data:
 
 networks:

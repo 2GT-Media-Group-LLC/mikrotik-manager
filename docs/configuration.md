@@ -20,6 +20,10 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `PASSWORD_LOGIN` | `true` | `false` makes sign-in SSO-only. See [SSO-only sign-in](sso-oidc.md#behaviour-and-safety) |
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS, or serves the app with `TLS_MODE=proxy`) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
+| `ACME_DOMAIN` | *unset* | Optional DNS name for an ACME HTTP-01 certificate; requires `ACME_EMAIL` and public access to port 80 |
+| `ACME_EMAIL` | *unset* | Contact email for ACME certificate registration and expiry notices |
+| `ACME_SERVER` | Let's Encrypt production | ACME directory URL; override for a staging or private ACME server |
+| `ACME_CA_BUNDLE` | *unset* | Optional path inside the nginx container to a CA bundle trusted by Certbot for a private ACME server |
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
 | `TLS_MODE` | `https` | `proxy` when your own reverse proxy terminates TLS. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
@@ -268,6 +272,35 @@ A self-signed certificate is generated on first run. Replace it under
 **Settings → TLS Certificate** by uploading a certificate and private key, or regenerate the
 self-signed one; nginx terminates TLS, picks up the new certificate within a few seconds, and
 redirects HTTP to HTTPS.
+
+For a public DNS name, nginx can obtain and renew a Let's Encrypt certificate using ACME
+HTTP-01. Set `ACME_DOMAIN` and `ACME_EMAIL` in `.env`, point the domain's DNS at this host,
+and make sure port 80 is reachable from the internet. Keep `TLS_MODE=https`, then run
+`docker compose up -d`. Nginx serves the ACME challenge over HTTP and redirects other HTTP
+requests as usual; once issued, the certificate replaces the self-signed one and nginx
+reloads automatically. Renewal is checked every 12 hours. Check `docker compose logs nginx`
+if issuance fails.
+
+ACME is disabled unless both variables are set. It uses HTTP-01, so it does not work when
+port 80 is blocked or when `TLS_MODE=proxy`; in that setup, use the reverse proxy's own
+certificate automation instead. While ACME is enabled, its certificate will replace a
+certificate uploaded through Settings when ACME issues or renews.
+
+To use a staging or local ACME service, set `ACME_SERVER` to its directory URL. If its HTTPS
+certificate uses a private CA, mount that CA bundle into the nginx container and set
+`ACME_CA_BUNDLE` to the in-container path. For example, add this under `services.nginx.volumes`
+in a Compose override file, then set `ACME_CA_BUNDLE=/run/acme-ca.pem`:
+
+```yaml
+services:
+  nginx:
+    volumes:
+      - ./acme-ca.pem:/run/acme-ca.pem:ro
+```
+
+The ACME service must be reachable from the nginx container, and its HTTP-01 validator must
+be able to reach the configured domain on port 80. Certbot TLS verification remains enabled;
+the mounted CA bundle supplies trust without disabling certificate checks.
 
 Before 0.24.37 both failed with "permission denied": the certificate volume was owned by
 root and the backend runs as a normal user. The nginx container now hands the volume to the
