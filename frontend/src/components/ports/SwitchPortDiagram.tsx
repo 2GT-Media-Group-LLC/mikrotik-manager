@@ -53,6 +53,8 @@ interface PortEditForm {
   vlan_mode: 'access' | 'trunk' | 'none';
   pvid: number;
   tagged_vlans: string; // comma-separated string
+  /** Trunk only: drop untagged frames instead of putting them in the native VLAN. */
+  tagged_only: boolean;
 }
 
 interface CreateTrunkForm {
@@ -792,6 +794,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
     vlan_mode: 'none',
     pvid: 1,
     tagged_vlans: '',
+    tagged_only: false,
   });
   const [saveError, setSaveError] = useState('');
   const [saveNotice, setSaveNotice] = useState('');
@@ -896,7 +899,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
 
   const updateVlanMutation = useMutation({
     meta: { inlineError: true },
-    mutationFn: ({ name, data, confirm }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk'; replace_tagged?: boolean }; confirm?: boolean }) =>
+    mutationFn: ({ name, data, confirm }: { name: string; data: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk'; replace_tagged?: boolean; tagged_only?: boolean }; confirm?: boolean }) =>
       devicesApi.configurePortVlan(deviceId, name, confirm ? { ...data, confirm_lockout: true } : data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ports', deviceId] });
@@ -1176,6 +1179,9 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
       // Prefill from the port's actual tagged membership so opening the dialog and
       // saving does not silently strip the trunk's VLANs.
       tagged_vlans: formatVlanList((port.bridgeInfo?.tagged_vlan_ids ?? []).map(Number).filter((n) => n > 0)),
+      // What the port does now, so opening and saving changes nothing. Trunks
+      // MTM set before 1.0.11 were all tagged-only.
+      tagged_only: port.bridgeInfo?.config_json?.['frame-types'] === 'admit-only-vlan-tagged',
     });
   };
 
@@ -1201,12 +1207,12 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
 
     if (confirmLockout) ifaceUpdates.confirm_lockout = true;
 
-    let vlanData: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk'; replace_tagged?: boolean } | null = null;
+    let vlanData: { pvid?: number; tagged_vlans?: number[]; untagged_vlans?: number[]; mode?: 'access' | 'trunk'; replace_tagged?: boolean; tagged_only?: boolean } | null = null;
     if (editForm.vlan_mode !== 'none') {
       // parseVlanList understands ranges. The previous split-and-parseInt read
       // "10-12" as 10 and saved the wrong VLANs without complaint. The native
       // VLAN is untagged by definition, so it is never also sent as tagged.
-      const taggedList = parseVlanList(editForm.tagged_vlans).filter((n) => n !== editForm.pvid);
+      const taggedList = parseVlanList(editForm.tagged_vlans).filter((n) => editForm.tagged_only || n !== editForm.pvid);
 
       // mode is sent explicitly so the server sets frame-types and
       // ingress-filtering to match, rather than only the PVID (#151).
@@ -1214,7 +1220,15 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         ? { pvid: editForm.pvid, untagged_vlans: [editForm.pvid], tagged_vlans: [], mode: 'access' as const }
         // replace_tagged: the list is the port's whole tagged set, so an
         // unticked VLAN is removed rather than quietly left in place (#165).
-        : { pvid: editForm.pvid, tagged_vlans: taggedList, untagged_vlans: [], mode: 'trunk' as const, replace_tagged: true };
+        // The native VLAN goes out untagged, unless the trunk is tagged-only.
+        : {
+          pvid: editForm.pvid,
+          tagged_vlans: taggedList,
+          untagged_vlans: editForm.tagged_only ? [] : [editForm.pvid],
+          mode: 'trunk' as const,
+          replace_tagged: true,
+          tagged_only: editForm.tagged_only,
+        };
     }
     return { ifaceUpdates, vlanData };
   };
@@ -1996,7 +2010,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                       >
                         <option value="none">— No change —</option>
                         <option value="access">Access (single untagged VLAN)</option>
-                        <option value="trunk">Trunk (tagged VLANs)</option>
+                        <option value="trunk">Trunk (tagged VLANs, plus a native VLAN)</option>
                       </select>
                     </div>
 
@@ -2028,6 +2042,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                           <label className="label">Native VLAN (PVID — untagged)</label>
                           <select
                             className="input"
+                            disabled={editForm.tagged_only}
                             value={editForm.pvid}
                             onChange={(e) =>
                               setEditForm((f) => ({ ...f, pvid: parseInt(e.target.value) }))
@@ -2040,6 +2055,20 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                               </option>
                             ))}
                           </select>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {editForm.tagged_only
+                              ? 'Untagged devices on this port are dropped. Untick "Tagged only" to put them in the native VLAN.'
+                              : "Untagged devices on this port (anything that doesn't use VLANs) join this VLAN."}
+                          </p>
+                          <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="w-3.5 h-3.5"
+                              checked={editForm.tagged_only}
+                              onChange={(e) => setEditForm((f) => ({ ...f, tagged_only: e.target.checked }))}
+                            />
+                            Tagged only (drop untagged frames)
+                          </label>
                         </div>
                         <div>
                           <label className="label">Tagged VLANs</label>
@@ -2048,7 +2077,8 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                               tagging it too would be a misconfiguration. */}
                           <div className="flex flex-wrap gap-1.5 mb-2">
                             {[...vlans].sort((a, b) => a.vlan_id - b.vlan_id).map((v) => {
-                              const native = v.vlan_id === editForm.pvid;
+                              // A tagged-only trunk has no native VLAN, so any VLAN can be tagged.
+                              const native = !editForm.tagged_only && v.vlan_id === editForm.pvid;
                               // RouterOS-generated names ("VLAN 100") only repeat the number.
                               const label = v.name && v.name.trim() !== `VLAN ${v.vlan_id}` ? v.name : '';
                               const on = !native && parseVlanList(editForm.tagged_vlans).includes(v.vlan_id);
