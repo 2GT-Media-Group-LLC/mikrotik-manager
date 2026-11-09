@@ -1850,9 +1850,13 @@ site.</p>
 <p>Choosing <strong>All sites</strong> also makes every other page fleet-wide, which is the honest reading
 of "all sites" — useful for a fleet-wide search, less so for a dashboard that averages
 several unrelated networks.</p>
-<p>Pins require an address, which is geocoded via Nominatim when you save it. If
-<strong>Settings → Maps enabled</strong> is off, no geocoding or tile request is made and the map is
-hidden; addresses are still stored and shown as text.</p>
+<p>A pin comes from the site's address, which is geocoded via Nominatim when you save it. When
+the address can't be found, or the pin lands in the wrong place, edit the site and set <strong>Map
+position</strong> yourself: type a latitude and longitude (<code>51.5072, -0.1276</code>, as most map sites copy
+them), or press <strong>Pick on map</strong> and click where the site is. A position set this way wins
+over the address, and <strong>remove pin</strong> takes the site off the map.</p>
+<p>If <strong>Settings → Maps enabled</strong> is off, no geocoding or tile request is made and the map is
+hidden; addresses and typed positions are still stored.</p>
 <h2 id="site-address-and-device-locations">Site address and device locations<a class="headerlink" href="#site-address-and-device-locations" title="Permanent link">&para;</a></h2>
 <p>A device uses its site's address unless it has its own location. That covers the dashboard
 map, the Devices location filter and the SNMP <code>{location}</code> variable. Set a device's own

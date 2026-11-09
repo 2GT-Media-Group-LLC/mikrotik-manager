@@ -921,6 +921,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-template-from-a-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A template from a device
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#secrets-in-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1659,6 +1670,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-template-from-a-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A template from a device
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#secrets-in-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1816,6 +1838,20 @@ and NTP defaults, anything you would otherwise keep in a notes file.</p>
 the same waves, halt-on-failure and Change Guard. A template can also run on each device after
 a firmware upgrade: pick it under <strong>Then run</strong> when creating a rollout (see
 <a href="../firmware/#the-pipeline">Firmware rollouts</a>).</p>
+<h3 id="a-template-from-a-device">A template from a device<a class="headerlink" href="#a-template-from-a-device" title="Permanent link">&para;</a></h3>
+<p>To copy settings from a device you've already set up, press <strong>From a device…</strong> on the
+Templates page. Choose the device and what to take: DNS servers, the NTP client, IP services
+(on or off, port and allowed addresses), SNMP (on or off, contact and location), the remote
+syslog target and the time zone. The device is read there and then, and its settings are
+written as the commands that set them, for example
+<code>/ip dns set servers=1.1.1.1,9.9.9.9 allow-remote-requests=yes</code>, in a new template to check
+and edit before you save it. Anything it couldn't take is listed under the commands.</p>
+<p>Nothing secret is taken: no SNMP communities, passwords or keys. Neither is anything that
+belongs to the device itself, such as its identity, addresses and interfaces. NTP is written for
+the RouterOS version the device runs (a server list on 7, primary and secondary on 6), so
+capture from a device on the same major version as the ones you'll run it on.</p>
+<p>To point many devices at a package source, use the
+<a href="../firmware/#switching-devices-to-the-mirror">local package mirror</a> instead.</p>
 <h3 id="secrets-in-commands">Secrets in commands<a class="headerlink" href="#secrets-in-commands" title="Permanent link">&para;</a></h3>
 <p>A command that sets a password, such as creating a dedicated user for the manager on every
 device, would otherwise show that password in the template, the run, its history and its output.

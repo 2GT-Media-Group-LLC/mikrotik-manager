@@ -3269,9 +3269,12 @@ is written. <strong>Review changes</strong> shows the commands.</p>
 removed. New rules go in disabled and are turned on with the drops last, so no step along the way
 drops anything the old table let through.</p>
 <h3 id="while-zones-are-on">While zones are on<a class="headerlink" href="#while-zones-are-on" title="Permanent link">&para;</a></h3>
-<p>Zones own the IPv4 filter table. The rules still show on the Firewall tab, with their counters, but
-they can't be edited, moved or deleted there, and Quick rules other than masquerade are refused.
-NAT, address lists and IPv6 are unchanged.</p>
+<p>Zones own the IPv4 filter table. The RouterOS rules that carry them out (one chain per zone,
+with its jumps and returns) are folded away on the Firewall tab, so the tab reads as zones and
+what each can reach. <strong>Show RouterOS rules</strong> opens them, with their counters, and the browser
+remembers the choice; following a log line's rule link opens them too. They can't be edited,
+moved or deleted there, and Quick rules other than masquerade are refused. NAT, address lists and
+IPv6 are unchanged.</p>
 <p>If the table is changed outside MTM (in WinBox, say), the Zones card says what differs, and
 <a href="../change-guard/#config-health">Config Health</a> reports <strong>Firewall differs from its zones</strong>.
 <strong>Apply</strong> puts the rules back.</p>

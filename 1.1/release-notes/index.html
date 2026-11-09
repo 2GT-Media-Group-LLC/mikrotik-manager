@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta36" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.36
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta35" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1892,6 +1903,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta36" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.36
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta35" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2288,6 +2310,47 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta36">1.1.0-beta.36<a class="headerlink" href="#110-beta36" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>PPP users and sessions</strong>, from Hector's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85">Discussion #85</a>:
+  <strong>Tunnels &amp; PPP</strong> now reads one router's PPPoE servers, sessions and PPP users live. Operators
+  can disconnect a session, turn a PPP user off or on, and turn a PPPoE server off or on. User
+  and server changes run under Change Guard and can be reviewed first, and everything is in the
+  audit log. Passwords aren't read. See
+  <a href="../network-services/#ppp-users-and-sessions">PPP users and sessions</a>.</li>
+<li><strong>Clients leaves out your network devices</strong>, as promised in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/363">#363</a>: the MAC addresses
+  of managed devices (any interface or radio) and VRRP's virtual MACs no longer show as clients.
+  The filter bar says how many are hidden, with <strong>show</strong> to bring them back.</li>
+<li><strong>Place a site on the map by hand</strong>, as promised in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/362">#362</a>: when editing a
+  site, type a latitude and longitude or press <strong>Pick on map</strong> and click. It wins over the
+  address, for sites the geocoder can't find or puts in the wrong place. See
+  <a href="../sites/">Sites</a>.</li>
+<li><strong>A template from a device</strong>, from Manuel's idea in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85">Discussion #85</a>:
+  <strong>Templates → From a device…</strong> reads DNS, NTP, IP services, SNMP, remote syslog and the time
+  zone off a device you've set up, and writes them as the commands that set them, in a new
+  template to check before saving. Nothing secret is taken. See
+  <a href="../commands/#a-template-from-a-device">A template from a device</a>.</li>
+<li><strong>Zones hide the RouterOS rules behind them</strong>, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369">#369</a>. With zones on, the
+  Firewall tab reads as zones and what each can reach: the chains, jumps and returns that carry
+  them out are folded away. <strong>Show RouterOS rules</strong> opens them, with their counters, and the
+  browser remembers the choice. Following a log line's link to its rule opens them too.</li>
+<li><strong>Switch to API-SSL: a failure now says why</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417">#417</a>). When the
+  manager's reply never reached the browser, for example because a reverse proxy in front of
+  MikroTik Manager gave up while a router signed its certificate, the page said only "Could not
+  enable API-SSL". It now says what happened, such as a lost reply with its HTTP status or no
+  answer in time, and that the switch may still finish, and the device list refreshes to show it.
+  Failures are also written to the backend log. Tested on RouterOS 6.49.21.</li>
+<li><strong>Switch to API-SSL could refuse its own check.</strong> When a device that had been on API-SSL
+  before was switched again and kept the certificate already on api-ssl, the certificate pinned
+  the first time no longer matched, so the login that decides the switch was refused. The old pin
+  is now cleared when a switch starts.</li>
+</ul>
 <h2 id="110-beta35">1.1.0-beta.35<a class="headerlink" href="#110-beta35" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Sessions</strong>, the second part of Ron's
@@ -2799,6 +2862,21 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1010">1.0.10<a class="headerlink" href="#1010" title="Permanent link">&para;</a></h2>
+<p>Released on Sunday 8 November 2026. Switching a device to API-SSL.</p>
+<ul>
+<li><strong>Switch to API-SSL: a failure now says why</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417">#417</a>). When the
+  manager's reply never reached the browser, for example because a reverse proxy in front of
+  MikroTik Manager gave up while a router signed its certificate, the page said only "Could not
+  enable API-SSL". It now says what happened, such as a lost reply with its HTTP status or no
+  answer in time, and that the switch may still finish, and the device list refreshes to show it.
+  Failures are also written to the backend log. Tested on RouterOS 6.49.21.</li>
+<li><strong>Switch to API-SSL could refuse its own check.</strong> When a device that had been on API-SSL
+  before was switched again and kept the certificate already on api-ssl, the certificate pinned
+  the first time no longer matched, so the login that decides the switch was refused. The old pin
+  is now cleared when a switch starts.</li>
+</ul>
 <h2 id="109">1.0.9<a class="headerlink" href="#109" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 8 November 2026. Who can open a shell or run commands, and the site switcher.</p>
 <ul>
