@@ -102,10 +102,19 @@ router.get('/:mac/roaming', async (req, res) => {
 });
 
 // GET /api/clients
+/**
+ * A sighting whose MAC is a managed device's own (any interface or radio it
+ * has) or a VRRP virtual router MAC, 00:00:5e:00:01:xx for IPv4 and
+ * 00:00:5e:00:02:xx for IPv6 (RFC 5798). Neither is a client (#363).
+ */
+const INFRA_MAC = `(LOWER(c.mac_address) LIKE '00:00:5e:00:01:%' OR LOWER(c.mac_address) LIKE '00:00:5e:00:02:%'
+  OR UPPER(c.mac_address) IN (SELECT UPPER(i.mac_address) FROM interfaces i WHERE i.mac_address IS NOT NULL
+                               UNION SELECT UPPER(w.mac_address) FROM wireless_interfaces w WHERE w.mac_address IS NOT NULL))`;
+
 router.get('/', async (req, res) => {
   const {
     deviceId, active, search, client_type, limit = '100', offset = '0', sort, dir,
-    vlan_id, signal_min, signal_max,
+    vlan_id, signal_min, signal_max, infra,
   } = req.query;
 
   // Whitelist sortable columns → safe SQL expressions on the outer (deduped)
@@ -177,6 +186,12 @@ router.get('/', async (req, res) => {
     filterParams.push(`%${search}%`);
     idx++;
   }
+
+  // Managed devices' own MACs and VRRP's virtual MACs aren't clients (#363):
+  // left out unless asked for, and counted so the page can say so.
+  const scopeFilters = [...filters];
+  const scopeParams = [...filterParams];
+  if (infra !== 'show') filters.push(`NOT ${INFRA_MAC}`);
 
   // The sighting filters alone, for the VLAN choices below.
   const preParams = [...filterParams];
@@ -279,10 +294,18 @@ router.get('/', async (req, res) => {
     preParams
   ).catch(() => []);
 
+  // How many network-device MACs the list leaves out, among the sightings in view.
+  const infraRows = await query<{ n: number }>(
+    `SELECT COUNT(DISTINCT c.mac_address)::int AS n FROM clients c
+      WHERE ${[...scopeFilters, INFRA_MAC].join(' AND ')}`,
+    scopeParams,
+  ).catch(() => []);
+
   res.json({
     clients: (clients as Record<string, unknown>[]).map((r) => withCategory(withMacColumns(r))),
     total: parseInt(countResult[0]?.total || '0', 10),
     vlans: vlanRows.map((v) => v.vlan_id),
+    network_device_macs: infraRows[0]?.n ?? 0,
   });
 });
 

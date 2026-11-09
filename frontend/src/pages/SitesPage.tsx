@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import L from 'leaflet';
+import clsx from 'clsx';
 import 'leaflet/dist/leaflet.css';
 import { Building2, MapPin, Plus, Pencil, Trash2, Check, X, AlertCircle, RefreshCw } from 'lucide-react';
 import { sitesApi, settingsApi, siteGroupsApi, jumpHostsApi } from '../services/api';
@@ -9,7 +10,7 @@ import { useSiteStore, type Site } from '../store/siteStore';
 import { useCanWrite, useIsSiteScoped } from '../hooks/useCanWrite';
 import GroupsCard from '../components/sites/GroupsCard';
 import RomonCard from '../components/sites/RomonCard';
-import { geocodeAddress, NOT_ON_MAP, OSM_TILE_URL, OSM_ATTRIBUTION } from '../utils/geocode';
+import { geocodeAddress, NOT_ON_MAP, OSM_TILE_URL, OSM_ATTRIBUTION, parseCoords, formatCoords } from '../utils/geocode';
 import { escapeHtml } from '../utils/escapeHtml';
 import PollOverridesCard from '../components/common/PollOverridesCard';
 
@@ -64,6 +65,43 @@ function SitesMap({ sites, onSelect }: { sites: Site[]; onSelect: (id: number) =
   );
 }
 
+/**
+ * Click to put the site's pin where it is (#362), for when the address can't
+ * be found or isn't precise enough. Starts on the current pin, or the world.
+ */
+function PinPicker({ value, onPick }: { value: { lat: number; lng: number } | null; onPick: (lat: number, lng: number) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const markerRef = useRef<L.CircleMarker | null>(null);
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const map = L.map(containerRef.current, { scrollWheelZoom: true, worldCopyJump: true });
+    L.tileLayer(OSM_TILE_URL, { attribution: OSM_ATTRIBUTION }).addTo(map);
+    map.on('click', (e: L.LeafletMouseEvent) => onPickRef.current(e.latlng.lat, L.Util.wrapNum(e.latlng.lng, [-180, 180], true)));
+    mapRef.current = map;
+    if (value) map.setView([value.lat, value.lng], 13); else map.setView([20, 0], 2);
+    return () => { map.remove(); mapRef.current = null; markerRef.current = null; };
+    // The view is set once; later pins only move the marker.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const lat = value?.lat;
+  const lng = value?.lng;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (lat == null || lng == null) { markerRef.current?.remove(); markerRef.current = null; return; }
+    if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
+    else markerRef.current = L.circleMarker([lat, lng], { radius: 9, color: '#fff', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.9 }).addTo(map);
+  }, [lat, lng]);
+
+  return <div ref={containerRef} className="rounded-lg overflow-hidden border border-gray-200 dark:border-slate-700 cursor-crosshair"
+    style={{ height: 260, isolation: 'isolate' }} aria-label="Click the map to place the site" />;
+}
+
 export default function SitesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -88,6 +126,13 @@ export default function SitesPage() {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
+  // The pin, as typed or picked on the map (#362). Untouched, saving
+  // geocodes a changed address as before; touched, the pin is what's saved.
+  const [coordsText, setCoordsText] = useState('');
+  const [coordsTouched, setCoordsTouched] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const typedCoords = parseCoords(coordsText);
+  const pin = typedCoords && !('empty' in typedCoords) ? typedCoords : null;
   // A saved site whose address couldn't be placed on the map (#362).
   const [mapNote, setMapNote] = useState('');
   const [error, setError] = useState('');
@@ -124,6 +169,7 @@ export default function SitesPage() {
   async function save() {
     const trimmed = name.trim();
     if (!trimmed) { setError('Site name is required'); return; }
+    if (coordsTouched && !typedCoords) { setError('Map position must be a latitude and longitude, like 51.5072, -0.1276'); return; }
     setBusy(true);
     setError('');
     try {
@@ -132,18 +178,21 @@ export default function SitesPage() {
       // Nominatim is a courtesy service, not something to hammer on every save.
       let coords: { lat: number; lng: number } | null = null;
       const addressChanged = addr && addr !== (editing?.address ?? '');
-      if (mapsEnabled && addressChanged) coords = await geocodeAddress(addr);
+      if (mapsEnabled && addressChanged && !coordsTouched) coords = await geocodeAddress(addr);
       // Saved either way; say so when the address couldn't be placed (#362).
-      setMapNote(mapsEnabled && addressChanged && !coords ? `${trimmed}: ${NOT_ON_MAP}` : '');
+      setMapNote(mapsEnabled && addressChanged && !coordsTouched && !coords
+        ? `${trimmed}: ${NOT_ON_MAP} Or edit the site and place it on the map by hand.` : '');
 
       const payload = {
         name: trimmed,
         address: addr,
         ...(!isScoped && (editing ? (editing.group_id ?? null) !== groupId : groupId != null) ? { group_id: groupId } : {}),
         ...(editing && (editing.default_jump_host_id ?? null) !== defaultJumpHost ? { default_jump_host_id: defaultJumpHost } : {}),
-        ...(addressChanged
-          ? { location_lat: coords?.lat ?? null, location_lng: coords?.lng ?? null }
-          : {}),
+        ...(coordsTouched
+          ? { location_lat: pin?.lat ?? null, location_lng: pin?.lng ?? null }
+          : addressChanged
+            ? { location_lat: coords?.lat ?? null, location_lng: coords?.lng ?? null }
+            : {}),
       };
       if (editing) await sitesApi.update(editing.id, payload);
       else await sitesApi.create(payload);
@@ -169,11 +218,14 @@ export default function SitesPage() {
 
   function cancel() {
     setEditing(null); setAdding(false); setName(''); setAddress(''); setError(''); setGroupId(null); setDefaultJumpHost(null);
+    setCoordsText(''); setCoordsTouched(false); setShowPicker(false);
   }
 
   function startEdit(s: Site) {
     setEditing(s); setAdding(false); setName(s.name); setAddress(s.address ?? ''); setError(''); setGroupId(s.group_id ?? null);
     setDefaultJumpHost(s.default_jump_host_id ?? null);
+    setCoordsText(s.location_lat != null && s.location_lng != null ? formatCoords(Number(s.location_lat), Number(s.location_lng)) : '');
+    setCoordsTouched(false); setShowPicker(false);
   }
 
   // A site's own jump hosts and fleet-wide ones.
@@ -261,10 +313,38 @@ export default function SitesPage() {
               </label>
             )}
           </div>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm flex-wrap" style={{ color: 'var(--ink-3)' }}>
+              Map position
+              <input
+                value={coordsText}
+                onChange={(e) => { setCoordsText(e.target.value); setCoordsTouched(true); }}
+                placeholder={mapsEnabled ? 'From the address, or latitude, longitude' : 'Latitude, longitude'}
+                aria-invalid={coordsTouched && !typedCoords}
+                className={clsx('input max-w-xs mono', coordsTouched && !typedCoords && 'border-red-400 dark:border-red-500')}
+              />
+              {mapsEnabled && (
+                <button type="button" onClick={() => setShowPicker((v) => !v)} className="btn-secondary text-xs py-1 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5" /> {showPicker ? 'Hide map' : 'Pick on map'}
+                </button>
+              )}
+              {pin && (
+                <button type="button" onClick={() => { setCoordsText(''); setCoordsTouched(true); }} className="text-xs underline" style={{ color: 'var(--ink-4)' }}>
+                  remove pin
+                </button>
+              )}
+            </label>
+            {coordsTouched && !typedCoords && (
+              <p className="text-xs text-red-600 dark:text-red-400">Type a latitude and longitude, like 51.5072, -0.1276, or leave it empty for no pin.</p>
+            )}
+            {mapsEnabled && showPicker && (
+              <PinPicker value={pin} onPick={(lat, lng) => { setCoordsText(formatCoords(lat, lng)); setCoordsTouched(true); }} />
+            )}
+          </div>
           <p className="text-xs text-gray-400">
             {mapsEnabled
-              ? 'The address is geocoded so the site appears on the map above.'
-              : 'Maps are disabled in Settings, so the address is stored as text only.'}
+              ? 'The address is geocoded so the site appears on the map above. To place it yourself, type its position or pick it on the map; that wins over the address.'
+              : 'Maps are disabled in Settings, so nothing is looked up. A position typed here is stored and used if maps are turned on.'}
           </p>
           <div className="flex gap-2">
             <button

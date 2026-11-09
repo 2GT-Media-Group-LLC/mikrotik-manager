@@ -609,9 +609,12 @@ drops anything the old table let through.
 
 ### While zones are on
 
-Zones own the IPv4 filter table. The rules still show on the Firewall tab, with their counters, but
-they can't be edited, moved or deleted there, and Quick rules other than masquerade are refused.
-NAT, address lists and IPv6 are unchanged.
+Zones own the IPv4 filter table. The RouterOS rules that carry them out (one chain per zone,
+with its jumps and returns) are folded away on the Firewall tab, so the tab reads as zones and
+what each can reach. **Show RouterOS rules** opens them, with their counters, and the browser
+remembers the choice; following a log line's rule link opens them too. They can't be edited,
+moved or deleted there, and Quick rules other than masquerade are refused. NAT, address lists and
+IPv6 are unchanged.
 
 If the table is changed outside MTM (in WinBox, say), the Zones card says what differs, and
 [Config Health](change-guard.md#config-health) reports **Firewall differs from its zones**.

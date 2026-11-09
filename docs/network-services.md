@@ -105,9 +105,9 @@ connection failed on 7.20 and later with *missing =instance=*.
 **Network Services → Tunnels & PPP** lists, across the fleet or the selected site (#310), every
 IPsec peer, PPPoE server, PPPoE client, active PPP session, and EoIP, GRE and IPIP tunnel. It
 shows each one's local and remote address, its state, how long it's been up and when it last
-changed. Problems are listed first. It's read-only: set these up on the device. Everything is
-read with each device's slow poll, in one batched request, so a change shows within that
-interval; **Refresh** asks for a fresh poll.
+changed. Problems are listed first. Everything is read with each device's slow poll, in one
+batched request, so a change shows within that interval; **Refresh** asks for a fresh poll.
+Apart from PPP (below), set these up on the device.
 
 | Type | One row per | Up when |
 |---|---|---|
@@ -123,6 +123,24 @@ RouterOS doesn't say which PPPoE server a session is on, so with more than one s
 covers all of them. Secrets (the IPsec secret on an EoIP or GRE tunnel) are never stored or
 shown, and PPP passwords aren't read at all. Up to 5,000 sessions are kept per device, and the page shows the first 500
 that match the filters.
+
+### PPP users and sessions
+
+**PPP users and sessions**, at the top of the page, reads one router live: its PPPoE servers,
+who is connected, and its PPP users (`/ppp secret`). Choose the router, or press **manage** on
+a PPPoE server or PPP session row. Operators and admins can:
+
+- **Disconnect** a session. Its client usually dials straight back in; turn the user off first
+  to keep it out. A session whose address is a managed device asks again, since ending it cuts
+  the manager off from that device until it reconnects.
+- **Turn a user off or on.** Off stops it logging in; a session it already has stays up until
+  you disconnect it. Each user shows whether it is connected, its last caller and when it last
+  logged out.
+- **Turn a PPPoE server off or on.** Off ends every PPPoE session on the router, so it asks
+  first.
+
+User and server changes run under [Change Guard](change-guard.md) and can be reviewed first;
+every action is in the audit log. Passwords aren't read.
 
 ## MLAG
 

@@ -33,3 +33,26 @@ export const NOT_ON_MAP =
 export const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+/**
+ * Coordinates typed by hand (#362): "51.5072, -0.1276" as copied from most
+ * map sites, with a comma, spaces or both between. Null when it isn't a
+ * latitude and longitude in range; empty input is `{ empty: true }`.
+ */
+export function parseCoords(text: string): { lat: number; lng: number } | { empty: true } | null {
+  const t = text.trim();
+  if (!t) return { empty: true };
+  const parts = t.length > 64 ? [] : t.split(/[\s,]+/);
+  const num = /^-?\d+(?:\.\d+)?$/;
+  const m = parts.length === 2 && num.test(parts[0]!) && num.test(parts[1]!) ? [t, parts[0]!, parts[1]!] : null;
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+/** Coordinates as shown in the field: six decimals is about 10 cm. */
+export function formatCoords(lat: number, lng: number): string {
+  return `${Number(lat.toFixed(6))}, ${Number(lng.toFixed(6))}`;
+}

@@ -209,6 +209,8 @@ const PREVIEWABLE: [string, RegExp][] = [
   ['POST|DELETE', /^\/api\/network-services\/netinstall\/cache$/],
   ['PUT', /^\/api\/network-services\/netinstall\/settings$/],
   ['POST', /^\/api\/network-services\/netinstall\/(package|devices\/install|devices\/clear)$/],
+  // PPP users and PPPoE servers (Discussion #85); disconnecting isn't config
+  ['PUT', /^\/api\/tunnels\/ppp\/(user|server)$/],
   // Reverse proxy (#358)
   ['POST|PUT|DELETE', /^\/api\/reverse-proxy\/rule(\/[^/]+)?$/],
   ['PUT', /^\/api\/reverse-proxy\/service$/],

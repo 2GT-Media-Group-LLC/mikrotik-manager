@@ -4924,6 +4924,57 @@ export class DeviceCollector {
     await this.client.execute('/ip/service/set', { '.id': id, disabled: disabled ? 'yes' : 'no' });
   }
 
+  /**
+   * The settings a template can be captured from (Discussion #85), in one
+   * round trip. A menu the device lacks comes back undefined.
+   */
+  async readForCapture(): Promise<{ dns?: Record<string, string>; ntp?: Record<string, string>; services?: Record<string, string>[];
+    snmp?: Record<string, string>; loggingActions?: Record<string, string>[]; clock?: Record<string, string> }> {
+    const replies = await this.client.executeMany([
+      { command: '/ip/dns/print' },
+      { command: '/system/ntp/client/print' },
+      { command: '/ip/service/print', params: { detail: '' } },
+      { command: '/snmp/print', params: { '.proplist': 'enabled,contact,location' } },
+      { command: '/system/logging/action/print' },
+      { command: '/system/clock/print' },
+    ]);
+    const one = (i: number) => (replies[i]?.error ? undefined : replies[i]?.rows?.[0]);
+    const all = (i: number) => (replies[i]?.error ? undefined : replies[i]?.rows ?? []);
+    return { dns: one(0), ntp: one(1), services: all(2), snmp: one(3), loggingActions: all(4), clock: one(5) };
+  }
+
+  // ─── PPP (Hector, Discussion #85) ─────────────────────────────────────────
+
+  /**
+   * PPP users, PPPoE servers and active sessions, live, in one round trip.
+   * Secrets are read by .proplist so the password never leaves the router.
+   * A device without PPP has three empty lists.
+   */
+  async getPpp(): Promise<{ secrets: Record<string, string>[]; servers: Record<string, string>[]; sessions: Record<string, string>[] }> {
+    const replies = await this.client.executeMany([
+      { command: '/ppp/secret/print', params: { '.proplist': '.id,name,service,profile,remote-address,disabled,comment,last-logged-out,last-caller-id,last-disconnect-reason' } },
+      { command: '/interface/pppoe-server/server/print', params: { '.proplist': '.id,service-name,interface,disabled,default-profile' } },
+      { command: '/ppp/active/print', params: { '.proplist': '.id,name,service,caller-id,address,uptime,encoding' } },
+    ]);
+    const bad = replies.find((r) => r.error && !isNoSuchCommand(r.error));
+    if (bad?.error) throw bad.error;
+    const [secrets, servers, sessions] = replies.map((r) => r.rows ?? []);
+    return { secrets: secrets!, servers: servers!, sessions: sessions! };
+  }
+
+  async setPppSecretDisabled(id: string, disabled: boolean): Promise<void> {
+    await this.client.execute('/ppp/secret/set', { '.id': id, disabled: disabled ? 'yes' : 'no' });
+  }
+
+  async setPppoeServerDisabled(id: string, disabled: boolean): Promise<void> {
+    await this.client.execute('/interface/pppoe-server/server/set', { '.id': id, disabled: disabled ? 'yes' : 'no' });
+  }
+
+  /** End an active PPP session; the client usually dials straight back in. */
+  async removePppActive(id: string): Promise<void> {
+    await this.client.execute('/ppp/active/remove', { '.id': id });
+  }
+
   // ─── Bridge ────────────────────────────────────────────────────────────────
 
   async setBridgeVlanFiltering(bridgeName: string, enabled: boolean): Promise<void> {

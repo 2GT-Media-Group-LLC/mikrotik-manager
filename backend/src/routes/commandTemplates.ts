@@ -1,6 +1,9 @@
 import { Router } from 'express';
-import { query } from '../config/database';
+import { query, queryOne } from '../config/database';
 import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
+import { strictId } from '../utils/siteAccess';
+import { DeviceCollector, type DeviceRow } from '../services/mikrotik/DeviceCollector';
+import { captureCommands, CAPTURE_SECTIONS, CAPTURE_LABELS, type CaptureSection } from '../utils/templateCapture';
 
 /**
  * Saved command templates (#163).
@@ -42,6 +45,43 @@ router.get('/', async (_req, res) => {
     `SELECT id, name, description, command, created_by, created_at, updated_at
        FROM command_templates ORDER BY lower(name)`
   ));
+});
+
+// GET /command-templates/capture/sections — what a template can be captured from.
+router.get('/capture/sections', (_req, res) => {
+  res.json(CAPTURE_SECTIONS.map((key) => ({ key, label: CAPTURE_LABELS[key] })));
+});
+
+// GET /command-templates/capture?deviceId=&sections=dns,ntp — a draft template
+// from a configured device (Discussion #85). Nothing is saved: the page opens
+// it to check and edit first. For the same people who can save templates.
+router.get('/capture', requireWrite, fleetOnly, async (req, res) => {
+  const id = strictId(req.query.deviceId);
+  if (!id) return res.status(400).json({ error: 'deviceId is required' });
+  const sections = String(req.query.sections ?? '').split(',').filter(Boolean);
+  const bad = sections.find((s) => !(CAPTURE_SECTIONS as readonly string[]).includes(s));
+  if (bad || sections.length === 0) return res.status(400).json({ error: `sections must be some of ${CAPTURE_SECTIONS.join(', ')}` });
+  const device = await queryOne<DeviceRow & { ros_version: string | null }>(`SELECT * FROM devices WHERE id = $1`, [id]);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const c = new DeviceCollector(device);
+  let read: Awaited<ReturnType<DeviceCollector['readForCapture']>>;
+  try {
+    await c.connect();
+    read = await c.readForCapture();
+  } catch (err) {
+    return res.status(502).json({ error: `Couldn't read ${device.name}: ${(err as Error).message}` });
+  } finally {
+    c.disconnect();
+  }
+  const rosMajor = parseInt(String(device.ros_version ?? '7'), 10) || 7;
+  const { lines, skipped } = captureCommands({ rosMajor, ...read }, sections as CaptureSection[]);
+  return res.json({
+    name: `From ${device.name}`,
+    description: `Captured from ${device.name}${device.ros_version ? ` (RouterOS ${device.ros_version})` : ''}: `
+      + sections.map((s) => CAPTURE_LABELS[s as CaptureSection].replace(/ \(.*\)$/, '')).join(', '),
+    command: lines.join('\n'),
+    skipped,
+  });
 });
 
 router.post('/', requireWrite, fleetOnly, async (req, res) => {

@@ -66,9 +66,14 @@ Choosing **All sites** also makes every other page fleet-wide, which is the hone
 of "all sites" — useful for a fleet-wide search, less so for a dashboard that averages
 several unrelated networks.
 
-Pins require an address, which is geocoded via Nominatim when you save it. If
-**Settings → Maps enabled** is off, no geocoding or tile request is made and the map is
-hidden; addresses are still stored and shown as text.
+A pin comes from the site's address, which is geocoded via Nominatim when you save it. When
+the address can't be found, or the pin lands in the wrong place, edit the site and set **Map
+position** yourself: type a latitude and longitude (`51.5072, -0.1276`, as most map sites copy
+them), or press **Pick on map** and click where the site is. A position set this way wins
+over the address, and **remove pin** takes the site off the map.
+
+If **Settings → Maps enabled** is off, no geocoding or tile request is made and the map is
+hidden; addresses and typed positions are still stored.
 
 ## Site address and device locations
 

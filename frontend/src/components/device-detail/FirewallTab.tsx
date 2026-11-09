@@ -7,7 +7,7 @@ import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Pencil, Power, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield, Zap,
-  ArrowUp, ArrowDown, List, Activity, Ban,
+  ArrowUp, ArrowDown, List, Activity, Ban, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { devicesApi, zonesApi, type FirewallFamily, type QuickPreset } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
@@ -872,6 +872,8 @@ export default function FirewallTab({ deviceId, deviceName }: { deviceId: number
   );
 }
 
+const ADVANCED_KEY = 'mtm.firewall.zonesShowRules';
+
 function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { deviceId: number; deviceName?: string; family: FirewallFamily; onQuick?: (preset?: QuickPreset) => void; highlight?: string | null }) {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
@@ -908,6 +910,12 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
   });
   const zoned = !v6 && !!zones?.enabled;
   const canEdit = canWrite && !zoned;
+  // With zones on, the chains, jumps and returns behind them are detail most
+  // people don't need (#369): they're folded away unless asked for, and the
+  // choice is remembered. A link to one rule (from a log line) opens them.
+  const [advanced, setAdvanced] = useState(() => localStorage.getItem(ADVANCED_KEY) === '1');
+  const toggleAdvanced = () => setAdvanced((a) => { localStorage.setItem(ADVANCED_KEY, a ? '0' : '1'); return !a; });
+  const showRules = !zoned || advanced || !!highlight;
   const untagged = rules.filter(logsUntagged).length + natRules.filter(logsUntagged).length;
   const invalidate = () => qc.invalidateQueries({ queryKey: fwKey('firewall', deviceId, family) });
   const unavailable = v6 ? ipv6Unavailable(loadError) : null;
@@ -980,8 +988,29 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center"><Shield className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /></div>
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{v6 ? 'IPv6 Firewall Filter Rules' : 'Firewall Filter Rules'}</h3>
+        {zoned && !highlight && (
+          <button onClick={toggleAdvanced} aria-expanded={showRules}
+            className="ml-auto flex items-center gap-1 text-xs text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white">
+            {showRules ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            {showRules ? 'Hide RouterOS rules' : `Show RouterOS rules (${rules.length})`}
+          </button>
+        )}
       </div>
 
+      {!showRules && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="flex-1 min-w-[16rem] text-xs text-gray-500 dark:text-slate-400">
+            Zones above decide what is allowed. The {rules.length} RouterOS rules that carry them out (chains, jumps and returns) are
+            hidden; <button onClick={toggleAdvanced} className="underline hover:text-gray-900 dark:hover:text-white">show them</button> to see
+            exactly what is on the router.
+          </p>
+          {/* Masquerade is the one Quick rule zones leave open. */}
+          {onQuick && <button onClick={() => onQuick()} title="Presets for the rules nearly every router needs"
+            className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><Zap className="w-3.5 h-3.5 text-amber-500" /> Quick rules</button>}
+        </div>
+      )}
+
+      {showRules && <>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 p-1 rounded-lg flex-wrap">
           {allChains.map(c => (
@@ -1032,6 +1061,7 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
             onEdit={r => { setForm(ruleToForm(r)); setErr(''); setEditing(r); }}
             onToggle={r => toggle(r['.id'], !(r.disabled === 'true'))}
             onDelete={r => { if (confirm('Delete this firewall rule?')) remove(r['.id']); }} onMove={onMove} />}
+      </>}
 
       {showAdd && <RuleModal title={v6 ? 'Add IPv6 Firewall Rule' : 'Add Firewall Rule'} form={form} setForm={setForm} isPending={addMut.isPending} error={err} lists={listNames} family={family}
         onClose={() => setShowAdd(false)} onSave={submitAdd} onReview={() => devicesApi.addFirewallRule(deviceId, fwPayload(form), family)} />}

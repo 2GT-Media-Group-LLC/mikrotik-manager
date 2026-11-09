@@ -735,6 +735,11 @@ export const commandTemplatesApi = {
   update: (id: number, data: Partial<Pick<CommandTemplate, 'name' | 'command' | 'description'>>) =>
     api.put<CommandTemplate>(`/command-templates/${id}`, data),
   delete: (id: number) => api.delete(`/command-templates/${id}`),
+  /** What a template can be captured from, and a draft read off a device (Discussion #85). */
+  captureSections: () => api.get<{ key: string; label: string }[]>('/command-templates/capture/sections'),
+  capture: (deviceId: number, sections: string[]) =>
+    api.get<{ name: string; description: string; command: string; skipped: string[] }>('/command-templates/capture',
+      { params: { deviceId, sections: sections.join(',') } }),
 };
 
 export const commandsApi = {
@@ -1285,8 +1290,10 @@ export const clientsApi = {
     offset?: number;
     sort?: string;
     dir?: 'asc' | 'desc';
+    /** 'show' includes managed devices' own MACs and VRRP MACs (#363). */
+    infra?: 'show';
   }) =>
-    api.get<{ clients: Client[]; total: number; vlans?: number[] }>('/clients', { params }),
+    api.get<{ clients: Client[]; total: number; vlans?: number[]; network_device_macs?: number }>('/clients', { params }),
   get: (mac: string) => api.get<ClientDetail>(`/clients/${encodeURIComponent(mac)}`),
   getRoaming: (mac: string, range = '24h') =>
     api.get<RoamingHistory>(`/clients/${encodeURIComponent(mac)}/roaming`, { params: { range } }),
@@ -3082,8 +3089,28 @@ export interface TunnelRowView {
   last_change_at: string;
   updated_at: string;
 }
+/** One router's PPP users, PPPoE servers and sessions, read live (Discussion #85). */
+export interface PppUser {
+  id: string; name: string; service: string; profile: string | null; remote_address: string | null;
+  disabled: boolean; comment: string | null; last_logged_out: string | null; last_caller_id: string | null;
+  last_disconnect_reason: string | null; sessions: number;
+}
+export interface PppServer { id: string; service_name: string; interface: string | null; disabled: boolean }
+export interface PppSession { id: string; name: string; service: string; caller_id: string | null; address: string | null; uptime: string | null }
+export interface PppState { users: PppUser[]; servers: PppServer[]; sessions: PppSession[] }
+
 export const tunnelsApi = {
   list: () => api.get<TunnelRowView[]>('/tunnels'),
+  ppp: (deviceId: number) => api.get<PppState>('/tunnels/ppp', { params: { deviceId } }),
+  setUser: (deviceId: number, id: string, disabled: boolean, confirmLockout = false) =>
+    api.put<{ message: string }>('/tunnels/ppp/user', { id, disabled, ...(confirmLockout ? { confirm_lockout: true } : {}) },
+      { params: { deviceId }, ...GUARDED }),
+  setServer: (deviceId: number, id: string, disabled: boolean, confirmLockout = false) =>
+    api.put<{ message: string }>('/tunnels/ppp/server', { id, disabled, ...(confirmLockout ? { confirm_lockout: true } : {}) },
+      { params: { deviceId }, ...GUARDED }),
+  disconnect: (deviceId: number, id: string, name: string, confirmManaged = false) =>
+    api.post<{ message: string }>('/tunnels/ppp/disconnect', { id, name, ...(confirmManaged ? { confirm_managed: true } : {}) },
+      { params: { deviceId } }),
 };
 
 /** Netinstall from RouterOS devices (#310). */

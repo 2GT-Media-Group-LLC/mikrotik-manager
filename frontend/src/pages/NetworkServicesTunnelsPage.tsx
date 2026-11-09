@@ -6,7 +6,8 @@ import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import { Cable, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
-import { tunnelsApi, type TunnelKind, type TunnelRowView } from '../services/api';
+import { tunnelsApi, devicesApi, type TunnelKind, type TunnelRowView } from '../services/api';
+import PppCard from '../components/tunnels/PppCard';
 import { FilterBar, FilterSearch, FilterSelect } from '../components/common/FilterBar';
 
 const KIND_LABEL: Record<TunnelKind, string> = {
@@ -32,8 +33,9 @@ function StatusBadge({ t }: { t: TunnelRowView }) {
 
 /**
  * IPsec peers, PPPoE servers and clients, active PPP sessions and EoIP, GRE
- * and IPIP tunnels across the fleet (#310), from the slow polls. Read-only:
- * set them up on the device.
+ * and IPIP tunnels across the fleet (#310), from the slow polls. PPP users,
+ * servers and sessions can be managed per router (Discussion #85); the rest is
+ * set up on the device.
  */
 export default function NetworkServicesTunnelsPage() {
   const { formatDateTime } = useDateTimeFormat();
@@ -46,6 +48,15 @@ export default function NetworkServicesTunnelsPage() {
     refetchInterval: 60_000,
   });
   const { refresh, refreshing } = useFleetRefresh(['slow'], refetch);
+  const [pppDevice, setPppDevice] = useState<number | null>(null);
+  const { data: allDevices = [] } = useQuery({ queryKey: ['devices'], queryFn: () => devicesApi.list().then((r) => r.data), staleTime: 60_000 });
+  // Routers with PPP found first, then the rest of the online ones.
+  const pppDevices = useMemo(() => {
+    const withPpp = new Set(rows.filter((t) => t.kind === 'pppoe-server' || t.kind === 'ppp-session').map((t) => t.device_id));
+    return allDevices.filter((d) => d.status === 'online' || withPpp.has(d.id))
+      .sort((a, b) => Number(withPpp.has(b.id)) - Number(withPpp.has(a.id)) || a.name.localeCompare(b.name))
+      .map((d) => ({ id: d.id, name: d.name }));
+  }, [rows, allDevices]);
 
   const shown = useMemo(() => rows.filter((t) => {
     if (kind && t.kind !== kind) return false;
@@ -70,7 +81,7 @@ export default function NetworkServicesTunnelsPage() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Tunnels &amp; PPP</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400">
             IPsec peers, PPPoE servers, clients and sessions, and EoIP, GRE and IPIP tunnels across the fleet,
-            refreshed with each slow poll. Read-only: set them up on the device.
+            refreshed with each slow poll. PPP users, servers and sessions can be managed per router below; the rest is set up on the device.
           </p>
         </div>
         <button onClick={() => void refresh()} disabled={isFetching || refreshing} className="btn-secondary flex items-center gap-2 text-sm flex-shrink-0">
@@ -91,6 +102,8 @@ export default function NetworkServicesTunnelsPage() {
           </div>
         ))}
       </div>
+
+      <div id="ppp-card"><PppCard devices={pppDevices} deviceId={pppDevice} onDevice={setPppDevice} /></div>
 
       <FilterBar>
         <FilterSearch value={search} onChange={setSearch} placeholder="Filter by device, name, address, user, MAC…" />
@@ -132,7 +145,13 @@ export default function NetworkServicesTunnelsPage() {
                       <Link to={`/devices/${t.device_id}`} className="text-blue-600 dark:text-blue-400 hover:underline">{t.device_name}</Link>
                       {t.device_status !== 'online' && <span className="ml-1.5 text-xs text-gray-400">({t.device_status})</span>}
                     </td>
-                    <td className="px-4 py-2 text-xs text-gray-600 dark:text-slate-300 whitespace-nowrap">{KIND_LABEL[t.kind] ?? t.kind}</td>
+                    <td className="px-4 py-2 text-xs text-gray-600 dark:text-slate-300 whitespace-nowrap">
+                      {KIND_LABEL[t.kind] ?? t.kind}
+                      {(t.kind === 'pppoe-server' || t.kind === 'ppp-session') && (
+                        <button onClick={() => { setPppDevice(t.device_id); document.getElementById('ppp-card')?.scrollIntoView({ behavior: 'smooth' }); }}
+                          className="ml-2 text-blue-600 dark:text-blue-400 hover:underline">manage</button>
+                      )}
+                    </td>
                     <td className="px-4 py-2">
                       <div className="font-mono text-xs text-gray-900 dark:text-white">{t.name}</div>
                       {t.detail && <div className="text-xs text-gray-400">{t.detail}</div>}

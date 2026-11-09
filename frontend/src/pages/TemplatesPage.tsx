@@ -2,8 +2,9 @@ import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Plus, Play, Pencil, Copy, Trash2, Search, X } from 'lucide-react';
-import { commandTemplatesApi, type CommandTemplate } from '../services/api';
+import { FileText, Plus, Play, Pencil, Copy, Trash2, Search, X, Download } from 'lucide-react';
+import { commandTemplatesApi, devicesApi, type CommandTemplate } from '../services/api';
+import { apiErrorMessage } from '../utils/apiError';
 import { useCanWrite } from '../hooks/useCanWrite';
 import SecretsCard from '../components/templates/SecretsCard';
 import { useAuthStore } from '../store/authStore';
@@ -29,6 +30,29 @@ export default function TemplatesPage() {
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState('');
+  // Capture a draft from a configured device (Discussion #85).
+  const [capturing, setCapturing] = useState(false);
+  const [captureDevice, setCaptureDevice] = useState<number | null>(null);
+  const [captureSections, setCaptureSections] = useState<string[]>(['dns', 'ntp', 'services', 'snmp']);
+  const [captureNote, setCaptureNote] = useState('');
+  const { data: sectionChoices = [] } = useQuery({
+    queryKey: ['template-capture-sections'], enabled: capturing,
+    queryFn: () => commandTemplatesApi.captureSections().then((r) => r.data),
+  });
+  const { data: devices = [] } = useQuery({
+    queryKey: ['devices'], enabled: capturing, staleTime: 60_000,
+    queryFn: () => devicesApi.list().then((r) => r.data),
+  });
+  const capture = useMutation({
+    mutationFn: () => commandTemplatesApi.capture(captureDevice!, captureSections),
+    onSuccess: (r) => {
+      setError('');
+      setCapturing(false);
+      setCaptureNote(r.data.skipped.length ? `Not included: ${r.data.skipped.join('; ')}.` : '');
+      setDraft({ id: null, name: r.data.name, description: r.data.description, command: r.data.command });
+    },
+    onError: (e) => setError(apiErrorMessage(e, 'Could not read the device')),
+  });
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ['command-templates'],
@@ -75,11 +99,50 @@ export default function TemplatesPage() {
           </p>
         </div>
         {canWrite && !draft && (
-          <button className="btn-primary flex items-center gap-1.5 text-sm" onClick={() => { setError(''); setDraft({ ...EMPTY }); }}>
-            <Plus className="w-4 h-4" /> New template
-          </button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary flex items-center gap-1.5 text-sm" onClick={() => { setError(''); setCapturing((v) => !v); }}
+                    title="Read settings off a device you've already set up, as commands to run on others">
+              <Download className="w-4 h-4" /> From a device…
+            </button>
+            <button className="btn-primary flex items-center gap-1.5 text-sm" onClick={() => { setError(''); setCaptureNote(''); setDraft({ ...EMPTY }); }}>
+              <Plus className="w-4 h-4" /> New template
+            </button>
+          </div>
         )}
       </div>
+
+      {capturing && !draft && (
+        <div className="card p-5 space-y-3">
+          <h2 className="font-semibold text-gray-900 dark:text-white">Template from a device</h2>
+          <p className="text-sm text-gray-600 dark:text-slate-300">
+            Pick a device you&rsquo;ve set up the way you want, and what to take from it. It&rsquo;s read now and written as the commands
+            that set it, in a new template to check before saving. Secrets (SNMP communities, passwords) and the device&rsquo;s own
+            identity and addresses are never taken.
+          </p>
+          <select className="input max-w-sm" value={captureDevice ?? ''} onChange={(e) => setCaptureDevice(e.target.value ? Number(e.target.value) : null)} aria-label="Device">
+            <option value="">Choose a device…</option>
+            {[...devices].sort((a, b) => a.name.localeCompare(b.name)).map((d) => (
+              <option key={d.id} value={d.id} disabled={d.status !== 'online'}>{d.name}{d.status !== 'online' ? ` (${d.status})` : ''}</option>
+            ))}
+          </select>
+          <div className="flex flex-wrap gap-x-5 gap-y-1">
+            {sectionChoices.map((c) => (
+              <label key={c.key} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300">
+                <input type="checkbox" checked={captureSections.includes(c.key)}
+                       onChange={(e) => setCaptureSections((v) => e.target.checked ? [...v, c.key] : v.filter((k) => k !== c.key))} />
+                {c.label}
+              </label>
+            ))}
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex items-center gap-2">
+            <button className="btn-primary text-sm" disabled={!captureDevice || captureSections.length === 0 || capture.isPending} onClick={() => capture.mutate()}>
+              {capture.isPending ? 'Reading…' : 'Read it'}
+            </button>
+            <button className="btn-secondary text-sm" onClick={() => setCapturing(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {draft && (
         <div className="card p-5 space-y-3">
@@ -92,6 +155,7 @@ export default function TemplatesPage() {
                     placeholder={'/interface lte set [ find default-name=lte1 ] allow-roaming=yes\n/interface list member add interface=lte1 list=WAN'}
                     value={draft.command} onChange={(e) => setDraft({ ...draft, command: e.target.value })} />
           <p className="text-xs text-gray-500 dark:text-slate-400">One command per line; they run in order over SSH.</p>
+          {captureNote && !draft.id && <p className="text-xs text-amber-600 dark:text-amber-400">{captureNote}</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex items-center gap-2">
             <button className="btn-primary text-sm" disabled={!draft.name.trim() || !draft.command.trim() || save.isPending}

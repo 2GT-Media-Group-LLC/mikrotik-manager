@@ -37,6 +37,7 @@ const STORAGE_KEY = 'clients-refresh-interval';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const PAGE_SIZE_KEY = 'clients-page-size';
+const INFRA_KEY = 'mtm.clients.showNetworkDevices';
 
 function readStoredPageSize(): number {
   const n = Number(localStorage.getItem(PAGE_SIZE_KEY));
@@ -306,8 +307,11 @@ export default function ClientsPage() {
     setPage(0);
   };
 
+  // Managed devices' own MACs and VRRP MACs are left out unless asked for (#363).
+  const [showInfra, setShowInfra] = useState(() => localStorage.getItem(INFRA_KEY) === '1');
+  const toggleInfra = () => setShowInfra((v) => { localStorage.setItem(INFRA_KEY, v ? '0' : '1'); setPage(0); return !v; });
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ['clients', { search, showAll, typeFilter, vlanFilter, deviceFilter, signalMin, signalMax, page, pageSize, sortCol, sortDir }],
+    queryKey: ['clients', { search, showAll, typeFilter, vlanFilter, deviceFilter, signalMin, signalMax, page, pageSize, sortCol, sortDir, showInfra }],
     queryFn: () =>
       clientsApi
         .list({
@@ -319,6 +323,7 @@ export default function ClientsPage() {
           signal_min: signalMin,
           signal_max: signalMax,
           limit: pageSize, offset: page * pageSize, sort: sortCol, dir: sortDir,
+          infra: showInfra ? 'show' : undefined,
         })
         .then((r) => r.data),
     refetchInterval: refreshInterval ?? false,
@@ -496,6 +501,14 @@ export default function ClientsPage() {
             style={{ color: 'var(--ink-3)' }}
           >
             clear {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}
+          </button>
+        )}
+        {(showInfra || (data?.network_device_macs ?? 0) > 0) && (
+          <button onClick={toggleInfra} className="mono text-[11.5px] px-[8px] py-[4px] rounded-[5px]" style={{ color: 'var(--ink-3)' }}
+            title="MAC addresses of your managed MikroTik devices and of VRRP, which other devices learn but aren't clients">
+            {showInfra
+              ? 'hide network devices'
+              : `${data?.network_device_macs} network device MAC${data?.network_device_macs === 1 ? '' : 's'} hidden · show`}
           </button>
         )}
         <div className="ml-auto"><ColumnPicker prefs={colPrefs} onChange={setColPrefs} columns={CLIENT_COLUMNS} /></div>

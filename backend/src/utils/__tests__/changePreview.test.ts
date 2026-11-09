@@ -94,6 +94,10 @@ describe('targetQuery', () => {
 describe('isPreviewableRoute', () => {
   it('accepts the edit forms', () => {
     expect(isPreviewableRoute('POST', '/api/devices/7/vlans')).toBe(true);
+    // PPP users and servers are config; disconnecting a session isn't (Discussion #85).
+    expect(isPreviewableRoute('PUT', '/api/tunnels/ppp/user?deviceId=3')).toBe(true);
+    expect(isPreviewableRoute('PUT', '/api/tunnels/ppp/server?deviceId=3')).toBe(true);
+    expect(isPreviewableRoute('POST', '/api/tunnels/ppp/disconnect?deviceId=3')).toBe(false);
     expect(isPreviewableRoute('PUT', '/api/devices/7/vlans/12')).toBe(true);
     expect(isPreviewableRoute('PUT', '/api/devices/7/ports/ether1/vlan')).toBe(true);
     expect(isPreviewableRoute('POST', '/api/devices/7/firewall')).toBe(true);

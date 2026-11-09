@@ -28,6 +28,24 @@ the same waves, halt-on-failure and Change Guard. A template can also run on eac
 a firmware upgrade: pick it under **Then run** when creating a rollout (see
 [Firmware rollouts](firmware.md#the-pipeline)).
 
+### A template from a device
+
+To copy settings from a device you've already set up, press **From a device…** on the
+Templates page. Choose the device and what to take: DNS servers, the NTP client, IP services
+(on or off, port and allowed addresses), SNMP (on or off, contact and location), the remote
+syslog target and the time zone. The device is read there and then, and its settings are
+written as the commands that set them, for example
+`/ip dns set servers=1.1.1.1,9.9.9.9 allow-remote-requests=yes`, in a new template to check
+and edit before you save it. Anything it couldn't take is listed under the commands.
+
+Nothing secret is taken: no SNMP communities, passwords or keys. Neither is anything that
+belongs to the device itself, such as its identity, addresses and interfaces. NTP is written for
+the RouterOS version the device runs (a server list on 7, primary and secondary on 6), so
+capture from a device on the same major version as the ones you'll run it on.
+
+To point many devices at a package source, use the
+[local package mirror](firmware.md#switching-devices-to-the-mirror) instead.
+
 ### Secrets in commands
 
 A command that sets a password, such as creating a dedicated user for the manager on every
