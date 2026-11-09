@@ -74,7 +74,9 @@ export default function FirewallEventsPage() {
   // ?range=7d lets a link open a longer window; anything else means the default.
   const [range, setRange] = useState(() => {
     const r = urlParams.get('range') ?? DEFAULT_RANGE;
-    return r in RANGES ? r : DEFAULT_RANGE;
+    // Own keys only: `in` also accepts toString or __proto__, which then had
+    // no window and broke the page.
+    return Object.prototype.hasOwnProperty.call(RANGES, r) ? r : DEFAULT_RANGE;
   });
   const [page, setPage] = useState(0);
   // Grouped by default (#415): one line per rule, source, destination and port.
