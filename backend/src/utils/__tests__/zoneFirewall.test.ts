@@ -1,6 +1,6 @@
 import {
   parseZoneInput, compileZones, planApply, planMembers, zoneEligibility, zoneDrift, unzoned, signature, pairChain,
-  ROUTER, type ZoneConfig, type ZonePolicy,
+  addressError, ROUTER, type ZoneConfig, type ZonePolicy,
 } from '../zoneFirewall';
 import { evaluateInputChain, type MgmtConnection } from '../../services/changeGuard/firewallPath';
 import { analyzeChange, type PlannedChange } from '../../services/changeGuard/analyzeChange';
@@ -51,6 +51,44 @@ describe('zone input (#369)', () => {
     expect(bad({ policies: { 'LAN>WAN': { action: 'services', services: [], custom: [{ protocol: 'tcp', ports: '70000' }] } } })['pair:LAN>WAN']).toMatch(/valid port/);
     expect(bad({}, { LAN: ['bridge'], WAN: ['bridge'] }).members).toMatch(/both LAN and WAN/);
     expect(bad({}, { LAN: ['nope'], WAN: [] })['zone:LAN']).toMatch(/isn't an interface/);
+  });
+});
+
+describe('custom rules with addresses (#369 follow-up)', () => {
+  const pair = (custom: unknown[]) => body({ policies: { 'WAN>LAN': { action: 'services', services: [], custom } as ZonePolicy } });
+
+  it('takes a source and destination, with or without ports', () => {
+    const { input, errors } = parseZoneInput(pair([
+      { protocol: 'tcp', ports: '443', src: '203.0.113.7', dst: '192.168.88.10' },
+      { protocol: 'any', ports: '', src: '198.51.100.0/24' },
+      { protocol: 'udp', ports: '', dst: '192.168.88.20-192.168.88.30' },
+    ]), live);
+    expect(errors).toEqual({});
+    const rules = compileZones(input!.config, ctx).filter((r) => r.params.chain === pairChain('WAN', 'LAN') && r.params.action === 'accept');
+    expect(rules.map((r) => r.params)).toEqual([
+      expect.objectContaining({ protocol: 'tcp', 'dst-port': '443', 'src-address': '203.0.113.7', 'dst-address': '192.168.88.10' }),
+      expect.not.objectContaining({ protocol: expect.anything() }),
+      expect.objectContaining({ protocol: 'udp', 'dst-address': '192.168.88.20-192.168.88.30' }),
+    ]);
+    expect(rules[1].params['src-address']).toBe('198.51.100.0/24');
+    expect(rules[1].params['dst-port']).toBeUndefined();
+    expect(rules[0].description).toBe('WAN to LAN: TCP 443 from 203.0.113.7 to 192.168.88.10');
+  });
+
+  it('writes a ports-only rule exactly as before, so saved setups don\'t drift', () => {
+    const { input } = parseZoneInput(body(), live);
+    const r = compileZones(input!.config, ctx).find((x) => x.params['dst-port'] === '2055')!;
+    expect(r.params).toEqual(expect.objectContaining({ protocol: 'tcp', 'dst-port': '2055', comment: 'mtm zone: LAN to router: tcp 2055' }));
+    expect(r.params['src-address']).toBeUndefined();
+  });
+
+  it('refuses what RouterOS would', () => {
+    const err = (c: unknown) => parseZoneInput(pair([c]), live).errors['pair:WAN>LAN'];
+    expect(err({ protocol: 'any', ports: '80' })).toMatch(/TCP or UDP/);
+    expect(err({ protocol: 'tcp', ports: '', src: '10.0.0.300' })).toMatch(/isn't an IPv4 address/);
+    expect(err({ protocol: 'tcp', ports: '', dst: '10.0.0.0/33' })).toMatch(/prefix length/);
+    expect(err({ protocol: 'tcp', ports: '', src: '10.0.0.9-10.0.0.1' })).toMatch(/backwards/);
+    expect(addressError('10.0.0.0/8')).toBeNull();
   });
 });
 

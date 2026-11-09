@@ -2,7 +2,7 @@
  * Zone-based firewall (#369): the editor's draft, its checks and summaries.
  * The server checks the same things; these keep the form honest as you type.
  */
-import type { ZoneRequest, ZonePolicy, ZonesData } from '../services/api';
+import type { ZoneRequest, ZonePolicy, ZonesData, ZoneCustomService } from '../services/api';
 
 export const ROUTER = '@router';
 export const pairKey = (from: string, to: string) => `${from}>${to}`;
@@ -20,6 +20,45 @@ export function portsError(ports: string): string | null {
     if (lo < 1 || lo > 65535 || (hi !== undefined && (hi < lo || hi > 65535))) return `${part} isn't a valid port or range.`;
   }
   return null;
+}
+
+const OCTETS = (a: string) => {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+  return m && m.slice(1).every((o) => Number(o) <= 255) ? m.slice(1).map(Number) : null;
+};
+const ipNum = (o: number[]) => ((o[0] << 24) >>> 0) + (o[1] << 16) + (o[2] << 8) + o[3];
+
+/** An IPv4 address, subnet or range, as the server checks it. */
+export function addressError(value: string): string | null {
+  const v = value.trim();
+  const range = v.split('-');
+  if (range.length === 2) {
+    const [a, b] = range.map((x) => OCTETS(x.trim()));
+    if (!a || !b) return 'Two addresses for a range, such as 10.0.0.10-10.0.0.20.';
+    return ipNum(a) <= ipNum(b) ? null : 'That range runs backwards.';
+  }
+  const [addr, prefix, extra] = v.split('/');
+  if (extra !== undefined || !OCTETS(addr)) return 'An IPv4 address, a subnet such as 10.0.0.0/24, or a range.';
+  if (prefix !== undefined && !(/^\d{1,2}$/.test(prefix) && Number(prefix) <= 32)) return 'A prefix length is 0 to 32.';
+  return null;
+}
+
+/**
+ * A custom rule's problem, if any. Ports are needed only without an address;
+ * with "any" protocol there are none.
+ */
+export function customError(c: ZoneCustomService): string | null {
+  const ports = c.ports.replace(/\s+/g, '');
+  const src = (c.src ?? '').trim();
+  const dst = (c.dst ?? '').trim();
+  if (c.protocol === 'any' && ports) return 'Ports need TCP or UDP.';
+  if (!ports && !src && !dst) return c.protocol === 'any' ? 'Enter a source or destination address.' : 'Enter a port, or an address.';
+  return (ports ? portsError(ports) : null) ?? (src ? addressError(src) : null) ?? (dst ? addressError(dst) : null);
+}
+
+/** A custom rule in a few words. */
+export function customLabel(c: ZoneCustomService): string {
+  return [c.protocol.toUpperCase(), c.ports, c.src ? `from ${c.src}` : '', c.dst ? `to ${c.dst}` : ''].filter(Boolean).join(' ');
 }
 
 export function zoneNameError(name: string, existing: string[]): string | null {
@@ -45,7 +84,7 @@ export function draftErrors(d: ZoneRequest): Record<string, string> {
   }
   for (const [key, p] of Object.entries(d.config.policies)) {
     if (p.action !== 'services') continue;
-    const bad = p.custom.map((c) => portsError(c.ports)).find(Boolean);
+    const bad = p.custom.map(customError).find(Boolean);
     if (bad) errors[`pair:${key}`] = bad;
     else if (!p.services.length && !p.custom.length) errors[`pair:${key}`] = 'Pick at least one service, or deny it.';
   }
@@ -56,7 +95,7 @@ export function draftErrors(d: ZoneRequest): Record<string, string> {
 export function policySummary(p: ZonePolicy | undefined, labels: Record<string, string>): string {
   if (!p || p.action === 'deny') return 'Deny';
   if (p.action === 'allow') return 'Allow all';
-  const names = [...p.services.map((s) => labels[s] ?? s), ...p.custom.map((c) => `${c.protocol.toUpperCase()} ${c.ports}`)];
+  const names = [...p.services.map((s) => labels[s] ?? s), ...p.custom.map(customLabel)];
   return names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(', ');
 }
 

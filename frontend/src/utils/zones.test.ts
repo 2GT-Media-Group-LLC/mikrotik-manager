@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ZonesData } from '../services/api';
-import { initialDraft, draftErrors, policySummary, addZone, removeZone, setPolicy, zoneNameError, portsError, pairKey, ROUTER } from './zones';
+import { initialDraft, draftErrors, policySummary, addZone, removeZone, setPolicy, zoneNameError, portsError, customError, customLabel, pairKey, ROUTER } from './zones';
 
 const data = (over: Partial<ZonesData> = {}): ZonesData => ({
   enabled: false, config: null, applied_at: null, applied_by: null, eligible: true, foreign_rules: 0,
@@ -56,5 +56,22 @@ describe('zone editor (#369)', () => {
     expect(policySummary({ action: 'services', services: ['ping', 'ssh'], custom: [] }, labels)).toBe('Ping, SSH');
     expect(policySummary({ action: 'services', services: ['ping', 'ssh', 'dns'], custom: [{ protocol: 'udp', ports: '500' }] }, labels)).toBe('Ping, SSH +2');
     expect(ROUTER).toBe('@router');
+  });
+});
+
+describe('custom rules with addresses (#369)', () => {
+  it('needs a port or an address, and no ports with any protocol', () => {
+    expect(customError({ protocol: 'tcp', ports: '443' })).toBeNull();
+    expect(customError({ protocol: 'any', ports: '', src: '203.0.113.7' })).toBeNull();
+    expect(customError({ protocol: 'udp', ports: '', dst: '10.0.0.10-10.0.0.20' })).toBeNull();
+    expect(customError({ protocol: 'tcp', ports: '' })).toMatch(/port, or an address/);
+    expect(customError({ protocol: 'any', ports: '80' })).toMatch(/TCP or UDP/);
+    expect(customError({ protocol: 'tcp', ports: '', src: '10.0.0.0/40' })).toMatch(/0 to 32/);
+    expect(customError({ protocol: 'tcp', ports: '', dst: '10.0.0.9-10.0.0.1' })).toMatch(/backwards/);
+  });
+
+  it('labels a rule in a few words', () => {
+    expect(customLabel({ protocol: 'tcp', ports: '443', src: '203.0.113.7', dst: '10.0.0.5' })).toBe('TCP 443 from 203.0.113.7 to 10.0.0.5');
+    expect(customLabel({ protocol: 'tcp', ports: '8080' })).toBe('TCP 8080');
   });
 });

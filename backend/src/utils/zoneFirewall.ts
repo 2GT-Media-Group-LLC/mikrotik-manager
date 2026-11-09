@@ -26,7 +26,13 @@ type Ros = Record<string, string>;
 export const ROUTER = '@router';
 
 export type PolicyAction = 'deny' | 'allow' | 'services';
-export interface CustomService { protocol: 'tcp' | 'udp'; ports: string }
+/**
+ * A rule of your own inside a pair's "only these": a protocol and ports, and
+ * from #369's follow-up, optionally a source and destination address (an
+ * address, a subnet or a range). With an address, ports are optional, and the
+ * protocol can be any.
+ */
+export interface CustomService { protocol: 'tcp' | 'udp' | 'any'; ports: string; src?: string; dst?: string }
 export interface ZonePolicy { action: PolicyAction; services: string[]; custom: CustomService[] }
 
 export interface ZoneConfig {
@@ -116,6 +122,33 @@ function portsError(ports: string): string | null {
   return null;
 }
 
+const OCTETS = (a: string) => {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+  return m && m.slice(1).every((o) => Number(o) <= 255) ? m.slice(1).map(Number) : null;
+};
+const ipNum = (o: number[]) => ((o[0] << 24) >>> 0) + (o[1] << 16) + (o[2] << 8) + o[3];
+
+/** An IPv4 address, subnet (10.0.0.0/24) or range (10.0.0.10-10.0.0.20), as RouterOS takes in src-address. */
+export function addressError(value: string): string | null {
+  const v = value.trim();
+  const range = v.split('-');
+  if (range.length === 2) {
+    const [a, b] = range.map((x) => OCTETS(x.trim()));
+    if (!a || !b) return `"${v}" isn't an address range. Use two addresses, such as 10.0.0.10-10.0.0.20.`;
+    return ipNum(a) <= ipNum(b) ? null : `${v} runs backwards.`;
+  }
+  const [addr, prefix, extra] = v.split('/');
+  if (extra !== undefined || !OCTETS(addr)) return `"${v}" isn't an IPv4 address. Use an address, a subnet such as 10.0.0.0/24, or a range.`;
+  if (prefix !== undefined && !(/^\d{1,2}$/.test(prefix) && Number(prefix) <= 32)) return `/${prefix} isn't a prefix length (0 to 32).`;
+  return null;
+}
+
+/** A custom rule's parts in a few words, for the comment and the plan. */
+export function customText(cs: CustomService): string {
+  const parts = [cs.protocol === 'any' ? 'any' : cs.protocol, cs.ports || '', cs.src ? `from ${cs.src}` : '', cs.dst ? `to ${cs.dst}` : ''];
+  return parts.filter(Boolean).join(' ');
+}
+
 export interface ZoneInput {
   config: ZoneConfig;
   /** Interfaces in each zone, as they should be. */
@@ -171,14 +204,20 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
       const custom: CustomService[] = [];
       for (const raw of Array.isArray(p.custom) ? p.custom : []) {
         const r = raw as Record<string, unknown>;
-        const protocol = r.protocol === 'udp' ? 'udp' : 'tcp';
+        const protocol = r.protocol === 'udp' ? 'udp' : r.protocol === 'any' ? 'any' : 'tcp';
         const ports = String(r.ports ?? '').replace(/\s+/g, '');
-        if (!ports) continue;
-        const e = portsError(ports);
+        const src = String(r.src ?? '').replace(/\s+/g, '');
+        const dst = String(r.dst ?? '').replace(/\s+/g, '');
+        // An empty row is left out, as before.
+        if (!ports && !src && !dst) continue;
+        const e = (ports && protocol === 'any' ? 'Ports need TCP or UDP.' : null)
+          ?? (ports ? portsError(ports) : null)
+          ?? (src ? addressError(src) : null)
+          ?? (dst ? addressError(dst) : null);
         if (e) { errors[`pair:${key}`] = e; continue; }
-        custom.push({ protocol, ports });
+        custom.push({ protocol, ports, ...(src ? { src } : {}), ...(dst ? { dst } : {}) });
       }
-      if (custom.length > 10) errors[`pair:${key}`] = 'Up to 10 custom ports per pair.';
+      if (custom.length > 10) errors[`pair:${key}`] = 'Up to 10 custom rules per pair.';
       if (action === 'services' && !services.length && !custom.length && !errors[`pair:${key}`]) {
         errors[`pair:${key}`] = `Pick at least one service from ${from} to ${toLabel(to)}, or deny it.`;
       }
@@ -231,9 +270,19 @@ function serviceRules(key: string, p: ZonePolicy, to: string, ctx: ZoneContext):
     }
   }
   for (const cs of p.custom) {
+    // A protocol and ports alone write the same rule and comment as before
+    // addresses existed, so a saved setup doesn't show as drifted.
+    const text = customText(cs);
     out.push({
-      params: { chain, action: 'accept', protocol: cs.protocol, 'dst-port': cs.ports, comment: COMMENT(`${label}: ${cs.protocol} ${cs.ports}`) },
-      hidden: false, description: `${label}: ${cs.protocol.toUpperCase()} ${cs.ports}`,
+      params: {
+        chain, action: 'accept',
+        ...(cs.protocol !== 'any' ? { protocol: cs.protocol } : {}),
+        ...(cs.ports ? { 'dst-port': cs.ports } : {}),
+        ...(cs.src ? { 'src-address': cs.src } : {}),
+        ...(cs.dst ? { 'dst-address': cs.dst } : {}),
+        comment: COMMENT(`${label}: ${text}`),
+      },
+      hidden: false, description: `${label}: ${text.replace(/^(tcp|udp|any)\b/, (m) => m.toUpperCase())}`,
     });
   }
   return out;

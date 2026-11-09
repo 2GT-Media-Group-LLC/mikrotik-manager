@@ -1981,7 +1981,8 @@ export const routingRulesApi = {
 
 // ─── Zone-based firewall (#369) ───────────────────────────────────────────────
 export type ZoneAction = 'deny' | 'allow' | 'services';
-export interface ZoneCustomService { protocol: 'tcp' | 'udp'; ports: string }
+/** A rule of your own: protocol and ports, and optionally a source and destination address (#369). */
+export interface ZoneCustomService { protocol: 'tcp' | 'udp' | 'any'; ports: string; src?: string; dst?: string }
 export interface ZonePolicy { action: ZoneAction; services: string[]; custom: ZoneCustomService[] }
 export interface ZoneConfig {
   zones: string[];

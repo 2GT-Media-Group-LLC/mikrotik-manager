@@ -9,7 +9,7 @@ import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import {
-  ROUTER, pairKey, draftErrors, policySummary, initialDraft, addZone, removeZone, setPolicy, zoneNameError, portsError,
+  ROUTER, pairKey, draftErrors, policySummary, initialDraft, addZone, removeZone, setPolicy, zoneNameError, customError,
 } from '../../utils/zones';
 
 const errMsg = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error || (e as Error)?.message || 'That didn’t work';
@@ -360,22 +360,35 @@ function PolicyEditor({ from, to, policy, options, editable, error, onChange, on
           </div>
           <div className="space-y-1">
             {p.custom.map((c, i) => {
-              const bad = portsError(c.ports);
+              const bad = customError(c);
+              const edit = (patch: Partial<typeof c>) => set({ custom: p.custom.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
               return (
-                <div key={i} className="flex items-center gap-1.5">
-                  <select className="input text-xs py-1 w-20" disabled={!editable} value={c.protocol}
-                    onChange={(e) => set({ custom: p.custom.map((x, j) => (j === i ? { ...x, protocol: e.target.value as 'tcp' | 'udp' } : x)) })}>
-                    <option value="tcp">TCP</option><option value="udp">UDP</option>
-                  </select>
-                  <input className={clsx('input text-xs py-1 w-40 font-mono', bad && 'border-red-400')} disabled={!editable} value={c.ports} placeholder="8080 or 5000-5010"
-                    onChange={(e) => set({ custom: p.custom.map((x, j) => (j === i ? { ...x, ports: e.target.value } : x)) })} />
-                  {editable && <button className="text-gray-400 hover:text-red-500" onClick={() => set({ custom: p.custom.filter((_, j) => j !== i) })}><X className="w-3.5 h-3.5" /></button>}
-                  {bad && <span className="text-[11px] text-red-600 dark:text-red-400">{bad}</span>}
+                <div key={i} className="space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <select className="input text-xs py-1 w-20" disabled={!editable} value={c.protocol} aria-label="Protocol"
+                      onChange={(e) => {
+                        const protocol = e.target.value as 'tcp' | 'udp' | 'any';
+                        edit(protocol === 'any' ? { protocol, ports: '' } : { protocol });
+                      }}>
+                      <option value="tcp">TCP</option><option value="udp">UDP</option><option value="any">Any</option>
+                    </select>
+                    <input className="input text-xs py-1 w-32 font-mono" disabled={!editable || c.protocol === 'any'} value={c.ports}
+                      placeholder={c.protocol === 'any' ? 'all ports' : '8080 or 5000-5010'} aria-label="Ports"
+                      onChange={(e) => edit({ ports: e.target.value })} />
+                    <span className="text-[11px] text-gray-500 dark:text-slate-400">from</span>
+                    <input className="input text-xs py-1 w-36 font-mono" disabled={!editable} value={c.src ?? ''}
+                      placeholder="anywhere" aria-label="Source address" onChange={(e) => edit({ src: e.target.value })} />
+                    <span className="text-[11px] text-gray-500 dark:text-slate-400">to</span>
+                    <input className="input text-xs py-1 w-36 font-mono" disabled={!editable} value={c.dst ?? ''}
+                      placeholder="anywhere" aria-label="Destination address" onChange={(e) => edit({ dst: e.target.value })} />
+                    {editable && <button className="text-gray-400 hover:text-red-500" aria-label="Remove this rule" onClick={() => set({ custom: p.custom.filter((_, j) => j !== i) })}><X className="w-3.5 h-3.5" /></button>}
+                  </div>
+                  {bad && <p className="text-[11px] text-red-600 dark:text-red-400">{bad}</p>}
                 </div>
               );
             })}
             {editable && p.custom.length < 10 && (
-              <button className="text-[11px] text-blue-600 hover:underline" onClick={() => set({ custom: [...p.custom, { protocol: 'tcp', ports: '' }] })}>+ Other port</button>
+              <button className="text-[11px] text-blue-600 hover:underline" onClick={() => set({ custom: [...p.custom, { protocol: 'tcp', ports: '' }] })}>+ Custom rule (ports, addresses)</button>
             )}
           </div>
         </>

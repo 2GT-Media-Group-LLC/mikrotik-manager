@@ -558,8 +558,13 @@ of zones, and from each zone to the router itself, you choose **Deny**, **Allow 
 | Another zone | Ping, Web (80, 443), DNS, SSH, Remote Desktop, File sharing (SMB), NTP |
 | The router | Ping, WinBox, SSH, WebFig, API, DNS, DHCP, NTP, SNMP. WinBox, SSH, WebFig and the API use the ports set in **IP > Services** |
 
-Any pair can also have other TCP or UDP ports (`8080`, `5000-5010,6000`). Traffic between interfaces
-of the same zone is allowed unless you turn it off for that zone.
+Any pair can also have up to 10 rules of your own, under **+ Custom rule**: TCP or UDP ports
+(`8080`, `5000-5010,6000`), a source address, a destination address, or any of them together. An
+address can be one address, a subnet (`10.0.0.0/24`) or a range (`10.0.0.10-10.0.0.20`). With an
+address the ports are optional, and the protocol can be **Any**. So WAN to DMZ can let one partner's
+address reach one server on 443 and nothing else, and LAN to the router can take SSH from the admin
+subnet only. Traffic between interfaces of the same zone is allowed unless you turn it off for that
+zone.
 
 ### Turning zones on
 
