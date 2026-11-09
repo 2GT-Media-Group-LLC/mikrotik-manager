@@ -118,6 +118,7 @@ import { readRevocation } from '../../utils/certRecord';
 import { managerAddressFromActive, stripOwnSessionNoise } from '../../utils/logNoise';
 import { ALL_MODULES, type PollModules } from '../../utils/pollModules';
 import { planVlanWrite, frameTypesFor, planTaggedRemovals, planAccessRemovals } from '../../utils/bridgeVlanPlan';
+import { arpSighting, ARP_STALE_GRACE_MINUTES } from '../../utils/arpPresence';
 import { planBridgePortMove, bridgeDeleteRefusal } from '../../utils/bridgePortMove';
 import { normalizeHealth, evaluateHealth, type HealthVerdict, type HealthIssue } from '../../utils/deviceHealth';
 import { resolveChannel } from '../../utils/updateChannel';
@@ -1628,19 +1629,32 @@ export class DeviceCollector {
       }
 
       // ARP table — IP enrichment and activity validation.
-      // Only accept entries where ARP resolution succeeded (status != failed).
-      // RouterOS v7 marks stale/unreachable entries with status=failed.
+      // Any entry that still has a MAC fills in an address, but only a live one
+      // is a sighting (#363): stale and failed entries linger for days, and
+      // counting them kept phones online all weekend. A stale entry only holds
+      // an online client for a short grace period, below.
       const arpIPs: Record<string, string> = {};
       const arpInterfaces: Record<string, string> = {};
+      const arpLive = new Set<string>();
+      const arpStale = new Set<string>();
       const arpFailed = new Set<string>(); // MACs confirmed offline by this device's ARP
       for (const arp of arpEntries) {
         const mac = (arp['mac-address'] || '').toLowerCase();
         if (!mac) continue;
-        if (arp['incomplete'] === 'true') continue;
         if (arp['BCAST'] === 'true') continue;
-        if (arp['status'] === 'failed') { arpFailed.add(mac); continue; }
-        arpIPs[mac] = arp['address'] || '';
-        arpInterfaces[mac] = arp['interface'] || '';
+        const seen = arpSighting(arp);
+        if (seen === 'none') {
+          if (arp['status'] === 'failed') arpFailed.add(mac);
+          continue;
+        }
+        // A live entry's address wins over a stale one for the same MAC
+        // (vrrp20 stale, vlan20 reachable).
+        if (seen === 'live' || !arpLive.has(mac)) {
+          arpIPs[mac] = arp['address'] || '';
+          arpInterfaces[mac] = arp['interface'] || '';
+        }
+        if (seen === 'live') { arpLive.add(mac); arpStale.delete(mac); }
+        else if (!arpLive.has(mac)) arpStale.add(mac);
       }
 
 
@@ -1672,7 +1686,7 @@ export class DeviceCollector {
 
       const allMacs = new Set<string>([
         ...Object.keys(wifiSignal),
-        ...Object.keys(arpIPs),
+        ...arpLive,
         ...Object.keys(bridgeHostMap),
       ]);
 
@@ -1735,10 +1749,21 @@ export class DeviceCollector {
 
       // Clients this device no longer sees go inactive, but only when every
       // read succeeded; after a failed read their absence means nothing (P2-21).
+      // A client this device sees only in a stale ARP entry stays online for a
+      // few minutes after its last live sighting, without that counting as a
+      // sighting itself (last_seen isn't moved), so it can't hold itself up.
       if (complete) {
+        const staleOnly = [...arpStale].filter((m) => !allMacs.has(m) && normalizeMac(m));
+        const held = staleOnly.length
+          ? (await query<{ mac_address: string }>(
+            `SELECT mac_address FROM clients
+              WHERE device_id = $1 AND active AND mac_address = ANY($2::text[])
+                AND last_seen > NOW() - make_interval(mins => $3)`,
+            [this.device.id, staleOnly, ARP_STALE_GRACE_MINUTES])).map((r) => r.mac_address)
+          : [];
         await query(
           `UPDATE clients SET active = FALSE WHERE device_id = $1 AND active AND NOT (mac_address = ANY($2::text[]))`,
-          [this.device.id, seenMacs]);
+          [this.device.id, [...seenMacs, ...held]]);
       }
 
       // OUI vendor lookup: fill in up to 10 clients that are missing vendor per cycle
