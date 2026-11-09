@@ -138,17 +138,26 @@ if [ -n "$ACME_DOMAIN" ] && [ -n "$ACME_EMAIL" ] && [ "$TLS_MODE" = "https" ]; t
             if [ -f "$ACME_CONFIG/live/$ACME_DOMAIN/fullchain.pem" ]; then
                 su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
                     --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
-                    --server "$ACME_SERVER" renew --deploy-hook "$ACME_DEPLOY_HOOK" \
-                    || echo "[entrypoint] ACME renewal failed; it will be retried."
+                    --server "$ACME_SERVER" renew --deploy-hook "$ACME_DEPLOY_HOOK"
+                CERTBOT_RET=$?
+                test $CERTBOT_RET -eq 0 || echo "[entrypoint] ACME renewal failed; it will be retried."
             else
                 su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
                     --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
                     --server "$ACME_SERVER" certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
                     --email "$ACME_EMAIL" --cert-name "$ACME_DOMAIN" -d "$ACME_DOMAIN" \
-                    --deploy-hook "$ACME_DEPLOY_HOOK" \
-                    || echo "[entrypoint] ACME certificate request failed; it will be retried."
+                    --deploy-hook "$ACME_DEPLOY_HOOK"
+                CERTBOT_RET=$?
+                test $CERTBOT_RET -eq 0 || echo "[entrypoint] ACME certificate request failed; it will be retried."
             fi
-            sleep 43200
+
+            # Retry every 12 hours on success, or 1 hour on failure
+            if [ $CERTBOT_RET -eq 0 ]
+            then
+                sleep 43200
+            else
+                sleep 3600
+            fi
         done
     ) &
 elif [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
