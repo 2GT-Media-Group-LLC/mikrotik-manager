@@ -7,6 +7,28 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.13
+
+Released on Monday 9 November 2026. Updates are safer for the databases.
+
+**This update restarts Postgres, Redis and InfluxDB once**, because their settings changed. Your
+data stays as it is.
+
+- **Redis repairs a damaged data file instead of refusing to start.** If Redis's append-only
+  file is damaged, for example because the disk lost a write in a power cut or a hard reset,
+  Redis wouldn't start, and the whole manager waited for it. This happened on a production
+  install: the damage sat unnoticed for a day, because Redis reads the file only when it starts,
+  until an update restarted it. The file is now checked before Redis starts and, if it's
+  damaged, repaired with Redis's own tool, which cuts it at the last good record. Redis holds
+  only the job queue, which refills itself, so nothing else is lost. A copy of the damaged files
+  is kept, and Redis's log says what happened. See
+  [The databases during an update](configuration.md#the-databases-during-an-update).
+- **Postgres, Redis and InfluxDB get 60 seconds to stop cleanly** when an update or a restart
+  stops them, instead of Docker's 10, so none is cut off mid-write.
+- **A Redis password with quotes or `$` in it broke Redis's health check.** The password now
+  reaches Redis and the check through the container's environment instead of being pasted into
+  a shell command.
+
 ## 1.0.12
 
 Released on Monday 9 November 2026. Clients that stayed online, mirror rollouts on small
