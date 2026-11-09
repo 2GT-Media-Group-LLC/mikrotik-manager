@@ -27,6 +27,20 @@ describe('classifyPort', () => {
     expect(classifyPort({ name: 'qsfp28-2' })).toMatchObject({ kind: 'qsfp', label: 'Q2' });
   });
 
+  it('reads CRS3xx QSFP+ ports (qsfpplus1-1) as lanes of their cage (Discussion #85)', () => {
+    expect(classifyPort({ name: 'qsfpplus2-3' })).toMatchObject({
+      kind: 'qsfp-lane', cageKey: 'qsfpplus2', lane: 3, label: '2/3',
+    });
+    expect(classifyPort({ name: 'qsfpplus1-1' })).toMatchObject({ kind: 'qsfp-lane', cageKey: 'qsfpplus1', lane: 1 });
+    // Sorted cage first, then lane, after the SFP ports.
+    const names = ['qsfpplus2-1', 'qsfpplus1-2', 'sfp-sfpplus1', 'qsfpplus1-1'];
+    const sorted = [...names].sort((a, b) => {
+      const ka = portSortKey({ name: a }); const kb = portSortKey({ name: b });
+      return ka[0] - kb[0] || ka[1] - kb[1] || ka[2].localeCompare(kb[2]);
+    });
+    expect(sorted).toEqual(['sfp-sfpplus1', 'qsfpplus1-1', 'qsfpplus1-2', 'qsfpplus2-1']);
+  });
+
   it('classifies bridges, bonds and VLANs by type, not name', () => {
     // A bridge called "ether-core" is still a bridge.
     expect(classifyPort({ name: 'ether-core', type: 'bridge' }).kind).toBe('virtual');

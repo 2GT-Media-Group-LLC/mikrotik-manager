@@ -99,6 +99,8 @@ export function portLabel(basis: string): string {
   if (bondMatch) return `B${bondMatch[1]}`;
   const lagMatch = basis.match(/^lag(\d*)$/i);
   if (lagMatch) return `L${lagMatch[1]}`;
+  const plus = basis.match(/^qsfpplus(\d+)-(\d+)$/i);
+  if (plus) return `${plus[1]}/${plus[2]}`;
   if (/^qsfp/i.test(basis) && !basis.match(/-\d+-\d+$/)) {
     return `Q${basis.match(/-(\d+)$/)?.[1] ?? ''}`;
   }
@@ -121,6 +123,22 @@ export function classifyPort(port: PortLike): PortIdentity {
   // monitor says nothing about which cage a lane belongs to.
   if (port.sfp_present !== undefined && port.sfp_present !== null && !/^qsfp/i.test(basis)) {
     return { kind: 'sfp', cageKey: null, lane: null, label: portLabel(basis), basis };
+  }
+
+  // QSFP+ lanes as the CRS3xx name them: qsfpplus1-1 to qsfpplus2-4, the cage
+  // number joined to "qsfpplus". With one hyphen they don't fit the breakout
+  // pattern below, so each lane drew as a cage of its own, labelled with its
+  // lane number (Q1, Q1, Q2, Q2 … on a CRS354, Discussion #85). A 40G module
+  // runs on lane 1 of its cage.
+  const plusLane = /^(qsfpplus(\d+))-(\d+)$/i.exec(basis);
+  if (plusLane) {
+    return {
+      kind: 'qsfp-lane',
+      cageKey: plusLane[1],
+      lane: Number(plusLane[3]),
+      label: `${plusLane[2]}/${plusLane[3]}`,
+      basis,
+    };
   }
 
   // Breakout lane: qsfp28-1-3, qsfp-4-2. The cage index and the lane index are

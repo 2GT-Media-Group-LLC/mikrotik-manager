@@ -219,7 +219,8 @@ function groupQsfpCages(ports: SwitchPort[]): { cages: QsfpCage[]; individual: S
       (a, b) => (classifyPort(a).lane ?? 0) - (classifyPort(b).lane ?? 0)
     );
     lanes.forEach(p => laneNames.add(p.name));
-    const cageNum = key.match(/-(\d+)$/)?.[1] ?? '?';
+    // qsfp28-1 or, for QSFP+ on a CRS3xx, qsfpplus1.
+    const cageNum = key.match(/(\d+)$/)?.[1] ?? '?';
     cages.push({ key, label: `Q${cageNum}`, lanes });
   }
 
