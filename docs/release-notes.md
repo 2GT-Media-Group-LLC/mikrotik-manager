@@ -7,6 +7,29 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.12
+
+Released on Monday 9 November 2026. Clients that stayed online, mirror rollouts on small
+switches, and the CRS354's QSFP+ ports.
+
+- **Clients stayed online long after they'd left**
+  ([#363](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/363)). RouterOS keeps
+  `stale` and `failed` ARP entries, MAC and all, for days on a quiet VLAN, and any that wasn't
+  `failed` counted as the client being there, so phones stayed online all weekend. Only entries
+  the router is in touch with count now (`reachable`, `delay`, `probe`, or static). A `stale` one
+  keeps a client that's already online for 15 minutes, so a quiet printer doesn't flicker, but
+  never brings one online. Thanks to aziz for tracking down the cause. See
+  [Clients](clients.md#where-the-data-comes-from).
+- **Mirror rollouts refused switches with 16 MB of flash.** A device such as a CRS309 or hAP ac²
+  runs from RAM and downloads packages into RAM, but the rollout measured them against its free
+  flash, about 3 MB, and stopped with "Not enough space". It checks free memory on those devices
+  now, keeping a margin for the device itself. Reported by Manuel in
+  [Discussion #85](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85).
+- **The CRS354's QSFP+ ports drew as eight separate cages.** The CRS3xx names its QSFP+ lanes
+  `qsfpplus1-1` to `qsfpplus2-4`, which didn't fit the lane naming the faceplate knew, so each lane
+  was a cage of its own (Q1, Q1, Q2, Q2 and so on). They're two cages of four lanes now. Also
+  reported by Manuel.
+
 ## 1.0.11
 
 Released on Sunday 8 November 2026. Trunk ports and their native VLAN.
