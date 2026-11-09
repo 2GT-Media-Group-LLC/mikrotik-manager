@@ -3230,8 +3230,13 @@ of zones, and from each zone to the router itself, you choose <strong>Deny</stro
 </tr>
 </tbody>
 </table>
-<p>Any pair can also have other TCP or UDP ports (<code>8080</code>, <code>5000-5010,6000</code>). Traffic between interfaces
-of the same zone is allowed unless you turn it off for that zone.</p>
+<p>Any pair can also have up to 10 rules of your own, under <strong>+ Custom rule</strong>: TCP or UDP ports
+(<code>8080</code>, <code>5000-5010,6000</code>), a source address, a destination address, or any of them together. An
+address can be one address, a subnet (<code>10.0.0.0/24</code>) or a range (<code>10.0.0.10-10.0.0.20</code>). With an
+address the ports are optional, and the protocol can be <strong>Any</strong>. So WAN to DMZ can let one partner's
+address reach one server on 443 and nothing else, and LAN to the router can take SSH from the admin
+subnet only. Traffic between interfaces of the same zone is allowed unless you turn it off for that
+zone.</p>
 <h3 id="turning-zones-on">Turning zones on<a class="headerlink" href="#turning-zones-on" title="Permanent link">&para;</a></h3>
 <p>Zones replace the whole IPv4 filter table, so they can be turned on only when the table is empty or
 holds just MikroTik's default rules (comments starting <code>defconf</code>). Click <strong>Set up zones</strong>: the form

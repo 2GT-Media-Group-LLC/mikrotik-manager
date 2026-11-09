@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta38" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.38
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta37" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1914,6 +1925,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta38" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.38
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta37" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2332,6 +2354,28 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta38">1.1.0-beta.38<a class="headerlink" href="#110-beta38" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Zone rules can name addresses</strong>, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369">#369</a>. A custom rule in a
+  zone pair now takes a source and a destination as well as ports: an address, a subnet or a range,
+  with TCP, UDP or any protocol. WAN to DMZ can let one partner reach one server on 443, and LAN
+  to the router can take SSH from the admin subnet only. Setups saved before keep exactly the rules
+  they had. See <a href="../devices/#zones">Zones</a>.</li>
+<li><strong>Firewall Logs: a period, and logged rules on the Firewall tab</strong>, contributed by aziz in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/437">#437</a>. Firewall Logs reads
+  the last hour, 24 hours, 7 days or 30 days, in Grouped and Raw, and a link can open it with
+  <code>?range=</code>. <strong>Logged (N)</strong> on the Firewall tab shows only the rules that log.</li>
+<li><strong>Clients hides more network devices</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/363">#363</a>): switches, routers
+  and access points the manager doesn't manage, when they announce themselves over LLDP, CDP or
+  MNDP as one. An IP phone that also reports itself as a bridge stays a client.</li>
+<li><strong>Clients no longer kept online by stale ARP entries, mirror rollouts on 16 MB-flash devices,
+  and the CRS354's QSFP+ cages</strong>, as in 1.0.12 below.</li>
+<li><strong>Dependencies</strong>: vitest 5, vite 8.3.6, react-router 7.18.5, TanStack Query 5.106.1, lucide
+  1.70, openid-client 6.8.9, otpauth 9.6.0, bullmq 6.7.1, and current Postgres, Redis and nginx
+  images.</li>
+</ul>
 <h2 id="110-beta37">1.1.0-beta.37<a class="headerlink" href="#110-beta37" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Trunk ports carry a native VLAN</strong>, as in 1.0.11 below: a trunk now accepts untagged frames
@@ -2891,6 +2935,28 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1012">1.0.12<a class="headerlink" href="#1012" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 9 November 2026. Clients that stayed online, mirror rollouts on small
+switches, and the CRS354's QSFP+ ports.</p>
+<ul>
+<li><strong>Clients stayed online long after they'd left</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/363">#363</a>). RouterOS keeps
+  <code>stale</code> and <code>failed</code> ARP entries, MAC and all, for days on a quiet VLAN, and any that wasn't
+  <code>failed</code> counted as the client being there, so phones stayed online all weekend. Only entries
+  the router is in touch with count now (<code>reachable</code>, <code>delay</code>, <code>probe</code>, or static). A <code>stale</code> one
+  keeps a client that's already online for 15 minutes, so a quiet printer doesn't flicker, but
+  never brings one online. Thanks to aziz for tracking down the cause. See
+  <a href="../clients/#where-the-data-comes-from">Clients</a>.</li>
+<li><strong>Mirror rollouts refused switches with 16 MB of flash.</strong> A device such as a CRS309 or hAP ac²
+  runs from RAM and downloads packages into RAM, but the rollout measured them against its free
+  flash, about 3 MB, and stopped with "Not enough space". It checks free memory on those devices
+  now, keeping a margin for the device itself. Reported by Manuel in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85">Discussion #85</a>.</li>
+<li><strong>The CRS354's QSFP+ ports drew as eight separate cages.</strong> The CRS3xx names its QSFP+ lanes
+  <code>qsfpplus1-1</code> to <code>qsfpplus2-4</code>, which didn't fit the lane naming the faceplate knew, so each lane
+  was a cage of its own (Q1, Q1, Q2, Q2 and so on). They're two cages of four lanes now. Also
+  reported by Manuel.</li>
+</ul>
 <h2 id="1011">1.0.11<a class="headerlink" href="#1011" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 8 November 2026. Trunk ports and their native VLAN.</p>
 <ul>

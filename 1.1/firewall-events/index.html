@@ -1734,9 +1734,11 @@ see <a href="../sessions/">Sessions</a>, built from NetFlow.</p>
 <p>Firewall logs are collected from the normal RouterOS log stream. A firewall
 rule therefore produces entries on this page only when logging is enabled for
 that rule.</p>
-<p>By default, the page requests firewall events from the last 24 hours. Results
-can be filtered by device, action, protocol, or text such as an address, port,
-interface, or log prefix.</p>
+<p>By default, the page requests firewall events from the last 24 hours. The
+period selector changes that to the last hour, 7 days or 30 days (only lines
+still within the firewall log retention are there to find), and a link can
+open it with <code>?range=1h|24h|7d|30d</code>. Results can be filtered by device, action,
+protocol, or text such as an address, port, interface, or log prefix.</p>
 <h2 id="enabling-firewall-monitoring">Enabling firewall monitoring<a class="headerlink" href="#enabling-firewall-monitoring" title="Permanent link">&para;</a></h2>
 <p>Users with write access can select <strong>Configure monitoring</strong> on the Firewall
 Logs page.</p>
@@ -1781,7 +1783,8 @@ the device, from Ron's request in #369:</p>
 <li>A line with a tag shows <strong>rule mtm#7f3a</strong> next to its chain. It opens the
   device's Firewall tab with that rule picked out.</li>
 <li>On the Firewall tab, a tagged rule shows <strong>mtm#7f3a · log lines</strong>, which opens
-  this page filtered to that device and that rule's lines.</li>
+  this page filtered to that device and that rule's lines. <strong>Logged</strong> narrows
+  the tab to the rules that log at all (<code>log=yes</code>).</li>
 <li>A rule added or edited in MikroTik Manager with logging on gets a tag by
   itself, and an edited rule keeps the tag it had. A prefix you set is kept,
   with the tag after it.</li>
