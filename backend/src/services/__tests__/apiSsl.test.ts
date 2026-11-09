@@ -156,6 +156,9 @@ describe('enableApiSsl', () => {
     expect(r.switched).toBe(true);
     expect(calls.some((c) => c.cmd === '/certificate/add')).toBe(false);
     expect(calls.some((c) => c.cmd === '/ip/service/set')).toBe(false);
+    // A pin from an earlier time on API-SSL would refuse the deciding login
+    // even though the certificate is kept (#417), so it goes first.
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringMatching(/DELETE FROM device_identity_pins/), [8, 'api-tls']);
   });
 
   it("gives api-ssl the plain api's allowed addresses, skipping live-session rows (#192)", async () => {
@@ -210,7 +213,7 @@ describe('enableApiSsl', () => {
     const r = await enableApiSsl(device);
     expect(r.switched).toBe(false);
     expect(r.message).toMatch(/firewall/);
-    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalledWith(expect.stringMatching(/UPDATE devices/), expect.anything());
   });
 
   it('does nothing for a device already on API-SSL', async () => {
