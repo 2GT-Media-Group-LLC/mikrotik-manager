@@ -7,7 +7,7 @@ import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Pencil, Power, AlertCircle, RefreshCw, Check, X, ArrowRightLeft, Shield, Zap,
-  ArrowUp, ArrowDown, List, Activity, Ban, ChevronDown, ChevronRight,
+  ArrowUp, ArrowDown, List, Activity, Ban, ChevronDown, ChevronRight, ScrollText,
 } from 'lucide-react';
 import { devicesApi, zonesApi, type FirewallFamily, type QuickPreset } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
@@ -879,6 +879,8 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
   const canWrite = useCanWrite();
   const v6 = family === 'ipv6';
   const [chainFilter, setChainFilter] = useState('all');
+  // Only the rules that log (log=yes): the ones with lines on Firewall Logs.
+  const [loggedOnly, setLoggedOnly] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState<RuleForm>(EMPTY_FW);
@@ -973,7 +975,10 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
   const onMove = (r: Row, dir: 'up' | 'down') => { const d = moveDestination(rules, r, dir); if (d.ok) move(r['.id'], d.destination); };
 
   const allChains = ['all', ...Array.from(new Set(rules.map(r => r.chain).filter(Boolean))).sort()];
-  const filtered = chainFilter === 'all' ? rules : rules.filter(r => r.chain === chainFilter);
+  const logs = (r: Row) => r.log === 'yes' || r.log === 'true';
+  const byChain = chainFilter === 'all' ? rules : rules.filter(r => r.chain === chainFilter);
+  const filtered = loggedOnly ? byChain.filter(logs) : byChain;
+  const loggedCount = rules.filter(logs).length;
 
   if (isLoading) return <div className="text-center py-8 text-gray-400">Loading…</div>;
   if (unavailable) return <div className="card p-8 text-center text-sm text-gray-500 dark:text-slate-400">{unavailable}</div>;
@@ -1022,6 +1027,10 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setLoggedOnly(v => !v)} title="Show only the rules that log (log=yes)" aria-pressed={loggedOnly}
+            className={clsx('btn-secondary flex items-center gap-1.5 text-xs py-1.5', loggedOnly && 'ring-1 ring-blue-500 text-blue-600 dark:text-blue-400')}>
+            <ScrollText className="w-3.5 h-3.5" /> Logged ({loggedCount})
+          </button>
           {canWrite && <button onClick={() => resetMut.mutate()} disabled={resetMut.isPending} title="Reset hit counters"
             className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><Activity className="w-3.5 h-3.5" /> Reset Counters</button>}
           <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5"><RefreshCw className={clsx('w-3.5 h-3.5', isFetching && 'animate-spin')} /> Refresh</button>
@@ -1032,8 +1041,8 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
         </div>
       </div>
 
-      {chainFilter !== 'all' && (
-        <p className="text-xs text-gray-400 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> Switch to &quot;All&quot; to reorder rules (order is global across chains).</p>
+      {(chainFilter !== 'all' || loggedOnly) && (
+        <p className="text-xs text-gray-400 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> Switch to &quot;All&quot; and turn off &quot;Logged&quot; to reorder rules (order is global across chains).</p>
       )}
       {err && <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{err}</div>}
       <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={deviceName} pending={anyPending} />
@@ -1056,8 +1065,8 @@ function FirewallBody({ deviceId, deviceName, family, onQuick, highlight }: { de
         </div>
       )}
 
-      {filtered.length === 0 ? <div className="card p-8 text-center text-gray-400">No {v6 ? 'IPv6 ' : ''}firewall rules{chainFilter !== 'all' ? ` in "${chainFilter}"` : ''}.</div>
-        : <RuleTable rows={filtered} fullOrder={rules} canWrite={canEdit} canReorder={chainFilter === 'all'} summaryFn={ruleSummary} deviceId={deviceId} highlight={highlight}
+      {filtered.length === 0 ? <div className="card p-8 text-center text-gray-400">No {loggedOnly ? 'logging ' : ''}{v6 ? 'IPv6 ' : ''}firewall rules{chainFilter !== 'all' ? ` in "${chainFilter}"` : ''}.</div>
+        : <RuleTable rows={filtered} fullOrder={rules} canWrite={canEdit} canReorder={chainFilter === 'all' && !loggedOnly} summaryFn={ruleSummary} deviceId={deviceId} highlight={highlight}
             onEdit={r => { setForm(ruleToForm(r)); setErr(''); setEditing(r); }}
             onToggle={r => toggle(r['.id'], !(r.disabled === 'true'))}
             onDelete={r => { if (confirm('Delete this firewall rule?')) remove(r['.id']); }} onMove={onMove} />}

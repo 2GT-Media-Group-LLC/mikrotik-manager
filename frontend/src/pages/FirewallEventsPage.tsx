@@ -16,7 +16,15 @@ import { useCanWrite } from '../hooks/useCanWrite';
 import FirewallMonitoringModal from '../components/firewall/FirewallMonitoringModal';
 
 const PAGE_SIZE = 100;
-const FIREWALL_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** How far back the page reads. Stored lines older than retention are gone anyway. */
+const RANGES: Record<string, { label: string; ms: number }> = {
+  '1h': { label: 'Last hour', ms: 60 * 60 * 1000 },
+  '24h': { label: 'Last 24 hours', ms: 24 * 60 * 60 * 1000 },
+  '7d': { label: 'Last 7 days', ms: 7 * 24 * 60 * 60 * 1000 },
+  '30d': { label: 'Last 30 days', ms: 30 * 24 * 60 * 60 * 1000 },
+};
+const DEFAULT_RANGE = '24h';
 
 function actionClass(action: FirewallEvent['action']): string {
   switch (action) {
@@ -63,6 +71,11 @@ export default function FirewallEventsPage() {
   const [deviceId, setDeviceId] = useState(() => (/^\d+$/.test(urlParams.get('device') ?? '') ? urlParams.get('device')! : ''));
   const [action, setAction] = useState('');
   const [protocol, setProtocol] = useState('');
+  // ?range=7d lets a link open a longer window; anything else means the default.
+  const [range, setRange] = useState(() => {
+    const r = urlParams.get('range') ?? DEFAULT_RANGE;
+    return r in RANGES ? r : DEFAULT_RANGE;
+  });
   const [page, setPage] = useState(0);
   // Grouped by default (#415): one line per rule, source, destination and port.
   const [view, setViewState] = useState<LogView>(() => (localStorage.getItem(VIEW_KEY) === 'raw' ? 'raw' : 'grouped'));
@@ -77,12 +90,12 @@ export default function FirewallEventsPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: [
       'firewall-events',
-      { search: debouncedSearch, deviceId, action, protocol, page, view },
+      { search: debouncedSearch, deviceId, action, protocol, range, page, view },
     ],
     queryFn: async (): Promise<{ events: FirewallEvent[]; groups: FirewallGroup[]; total: number; scanLimit?: number }> => {
       const params = {
         search: debouncedSearch || undefined,
-        since: new Date(Date.now() - FIREWALL_WINDOW_MS).toISOString(),
+        since: new Date(Date.now() - RANGES[range].ms).toISOString(),
         deviceId: deviceId ? Number(deviceId) : undefined,
         action: action
           ? (action as FirewallEvent['action'])
@@ -261,6 +274,20 @@ export default function FirewallEventsPage() {
           <option value="icmpv6">ICMPv6</option>
           <option value="gre">GRE</option>
           <option value="esp">ESP</option>
+        </select>
+
+        <select
+          className="input w-full sm:w-40"
+          aria-label="Period"
+          value={range}
+          onChange={(e) => {
+            setRange(e.target.value);
+            setPage(0);
+          }}
+        >
+          {Object.entries(RANGES).map(([key, r]) => (
+            <option key={key} value={key}>{r.label}</option>
+          ))}
         </select>
 
         <DevicePicker

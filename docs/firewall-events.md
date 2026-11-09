@@ -36,9 +36,11 @@ Firewall logs are collected from the normal RouterOS log stream. A firewall
 rule therefore produces entries on this page only when logging is enabled for
 that rule.
 
-By default, the page requests firewall events from the last 24 hours. Results
-can be filtered by device, action, protocol, or text such as an address, port,
-interface, or log prefix.
+By default, the page requests firewall events from the last 24 hours. The
+period selector changes that to the last hour, 7 days or 30 days (only lines
+still within the firewall log retention are there to find), and a link can
+open it with `?range=1h|24h|7d|30d`. Results can be filtered by device, action,
+protocol, or text such as an address, port, interface, or log prefix.
 
 ## Enabling firewall monitoring
 
@@ -98,7 +100,8 @@ MTM-FW-DROP mtm#7f3a input: in:ether1 out:(unknown 0), proto TCP ...
 - A line with a tag shows **rule mtm#7f3a** next to its chain. It opens the
   device's Firewall tab with that rule picked out.
 - On the Firewall tab, a tagged rule shows **mtm#7f3a · log lines**, which opens
-  this page filtered to that device and that rule's lines.
+  this page filtered to that device and that rule's lines. **Logged** narrows
+  the tab to the rules that log at all (`log=yes`).
 - A rule added or edited in MikroTik Manager with logging on gets a tag by
   itself, and an edited rule keeps the tag it had. A prefix you set is kept,
   with the tag after it.
