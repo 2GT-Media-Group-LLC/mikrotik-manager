@@ -7,6 +7,22 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.10
+
+Released on Sunday 8 November 2026. Switching a device to API-SSL.
+
+- **Switch to API-SSL: a failure now says why**
+  ([#417](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417)). When the
+  manager's reply never reached the browser, for example because a reverse proxy in front of
+  MikroTik Manager gave up while a router signed its certificate, the page said only "Could not
+  enable API-SSL". It now says what happened, such as a lost reply with its HTTP status or no
+  answer in time, and that the switch may still finish, and the device list refreshes to show it.
+  Failures are also written to the backend log. Tested on RouterOS 6.49.21.
+- **Switch to API-SSL could refuse its own check.** When a device that had been on API-SSL
+  before was switched again and kept the certificate already on api-ssl, the certificate pinned
+  the first time no longer matched, so the login that decides the switch was refused. The old pin
+  is now cleared when a switch starts.
+
 ## 1.0.9
 
 Released on Sunday 8 November 2026. Who can open a shell or run commands, and the site switcher.
