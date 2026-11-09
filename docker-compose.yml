@@ -11,6 +11,9 @@ services:
     build:
       context: .
       dockerfile: nginx/Dockerfile
+      args:
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
     ports:
       # BIND_ADDRESS limits the web UI to one host address (e.g. a LAN or VPN
       # address). Unset, it listens on every interface, IPv4 and IPv6. Docker
@@ -63,6 +66,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
     environment: &backend-environment
       NODE_ENV: production
       TZ: ${TZ:-UTC}
