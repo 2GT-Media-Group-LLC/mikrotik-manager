@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1011" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.11
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1010" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1588,6 +1599,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1011" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.11
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1010" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1795,6 +1817,19 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1011">1.0.11<a class="headerlink" href="#1011" title="Permanent link">&para;</a></h2>
+<p>Released on Sunday 8 November 2026. Trunk ports and their native VLAN.</p>
+<ul>
+<li><strong>A trunk port dropped untagged traffic.</strong> Setting a port to trunk wrote
+  <code>frame-types=admit-only-vlan-tagged</code>, so the native VLAN the port editor offered never
+  applied: a laptop, printer or unmanaged switch plugged into a trunk port couldn't talk at all.
+  A trunk now accepts both kinds of frame. Tagged frames go to its tagged VLANs, and untagged
+  frames join the native VLAN, which the port carries untagged. Tick <strong>Tagged only</strong> for a trunk
+  that should drop untagged frames, as before. Saving a trunk also takes the port out of any
+  untagged VLAN other than its native one. Trunks saved by older versions open with
+  <strong>Tagged only</strong> ticked and keep working as they did until you untick it and save. See
+  <a href="../devices/#changing-a-ports-vlan">Changing a port's VLAN</a>.</li>
+</ul>
 <h2 id="1010">1.0.10<a class="headerlink" href="#1010" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 8 November 2026. Switching a device to API-SSL.</p>
 <ul>

@@ -2709,10 +2709,19 @@ powered may be carrying the manager's connection.</p>
 <h3 id="changing-a-ports-vlan">Changing a port's VLAN<a class="headerlink" href="#changing-a-ports-vlan" title="Permanent link">&para;</a></h3>
 <p>Selecting a port and setting it to <strong>access</strong> or <strong>trunk</strong> writes three things: the PVID, the
 bridge VLAN membership, and frame admission (<code>frame-types</code> and <code>ingress-filtering</code>).</p>
-<p>For a trunk, tick the tagged VLANs. The native VLAN (PVID) is greyed out because it is carried
-untagged. The text box below the checkboxes holds the same list, for copying between switches,
-and accepts ranges such as <code>10,20,100-110</code>. A VLAN typed there that the switch does not have
-yet is created on the bridge when you save.</p>
+<p>For a trunk, pick the native VLAN and tick the tagged VLANs. A trunk accepts both kinds of
+frame: tagged frames for its tagged VLANs, and untagged frames, which join the native VLAN
+(the PVID). So a device that doesn't use VLANs, such as a laptop or an unmanaged switch, works
+on a trunk port and lands in the native VLAN. The native VLAN is greyed out in the tagged list
+because it is carried untagged. The text box below the checkboxes holds the same list, for
+copying between switches, and accepts ranges such as <code>10,20,100-110</code>. A VLAN typed there that
+the switch does not have yet is created on the bridge when you save.</p>
+<p>Tick <strong>Tagged only</strong> for a trunk that should drop untagged frames instead (<code>frame-types=admit-only-vlan-tagged</code>).
+It then has no native VLAN. Before 1.0.11 every trunk was set this way, so a trunk saved by an
+older version opens with <strong>Tagged only</strong> ticked. Untick it and save to let untagged devices use
+the native VLAN.</p>
+<p>Saving a trunk also takes the port out of any untagged VLAN other than its native one, so a
+former access port stops sending its old VLAN untagged.</p>
 <p>Unticking a VLAN removes the port from it. One exception: if the switch holds several VLANs
 in one bridge VLAN entry (for example <code>vlan-ids=100-110</code>) and the port keeps some of them,
 that entry is left alone and the editor tells you which VLANs are still tagged. Split the
@@ -2720,7 +2729,7 @@ entry on the VLANs tab to remove them.</p>
 <p>An access port carries one VLAN, its PVID, untagged. Setting a port to access takes it out of
 every other VLAN it was in, tagged or untagged, so a former trunk stops sending its VLANs. The
 editor opens a port in the mode its frame admission says: a port that only admits untagged
-frames shows as access, one that only admits tagged frames as trunk.</p>
+frames shows as access, one that only admits tagged frames as a tagged-only trunk.</p>
 <div class="admonition warning">
 <p class="admonition-title">This is a guarded change</p>
 <p>Moving the port that carries management traffic is the most common way to lock a MikroTik
