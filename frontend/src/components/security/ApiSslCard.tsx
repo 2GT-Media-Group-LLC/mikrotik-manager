@@ -7,6 +7,7 @@ import type { Device } from '../../types';
 import clsx from 'clsx';
 import { unmutedForApiSslNotice } from '../../utils/apiSslNotice';
 import { usesApiTls } from '../../utils/apiTls';
+import { longRequestError } from '../../utils/apiError';
 
 
 type Outcome = { state: 'working' } | { state: 'done'; result: ApiSslResult; plainApi?: { ok: boolean; message: string } } | { state: 'error'; message: string };
@@ -58,8 +59,10 @@ export default function ApiSslCard() {
       }
       setOutcomes((o) => ({ ...o, [d.id]: { state: 'done', result: res.data, plainApi } }));
     } catch (err) {
-      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not enable API-SSL';
+      const message = longRequestError(err, 'Could not enable API-SSL');
       setOutcomes((o) => ({ ...o, [d.id]: { state: 'error', message } }));
+      // A switch whose reply was lost may still have finished on the manager.
+      void qc.invalidateQueries({ queryKey: ['devices'] });
     }
   };
 

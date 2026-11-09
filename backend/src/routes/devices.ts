@@ -2033,6 +2033,8 @@ router.post('/:id/api-ssl', requireWrite, async (req: Request, res: Response) =>
     const msg = (err as Error).message ?? String(err);
     const connectionProblem = !!(err as NodeJS.ErrnoException).code
       || /timeout|connection|invalid user name or password/i.test(msg);
+    // In the log too, for when the reply never reaches the browser (#417).
+    if (!connectionProblem) console.warn(`[api-ssl] ${device.name}: ${msg}`);
     return res.status(502).json({
       error: `Could not enable API-SSL: ${connectionProblem ? safeConnectionError('api-ssl', err) : msg}`,
     });

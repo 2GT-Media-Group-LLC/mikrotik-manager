@@ -11,6 +11,7 @@ import { LockoutVerdictDialog, lockoutVerdictOf, type LockoutVerdict } from '../
 import clsx from 'clsx';
 import ListInput from '../common/ListInput';
 import { isIpOrPrefix } from '../../utils/ipPrefix';
+import { longRequestError } from '../../utils/apiError';
 
 type Row = Record<string, string> & { '.id': string };
 
@@ -147,7 +148,8 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
     },
     onError: (err: unknown) => {
       setSslResult(null);
-      setSslError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not enable API-SSL');
+      setSslError(longRequestError(err, 'Could not enable API-SSL'));
+      qc.invalidateQueries({ queryKey: ['devices'] });
     },
   });
 
@@ -158,7 +160,7 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
     onSuccess: (res) => { setSslResult(res.data); setSslError(''); invalidate(); },
     onError: (err: unknown) => {
       setSslResult(null);
-      setSslError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Could not switch WebFig to HTTPS');
+      setSslError(longRequestError(err, 'Could not switch WebFig to HTTPS'));
     },
   });
 

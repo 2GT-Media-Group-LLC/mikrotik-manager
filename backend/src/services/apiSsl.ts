@@ -124,6 +124,11 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
     return { switched: false, steps: [], message: `${device.name} is already managed over API-SSL.` };
   }
   const steps: string[] = [];
+  // The device is on the plain API, so any API-SSL certificate pinned from an
+  // earlier time on 8729 is stale, even when the certificate is kept below:
+  // left in place it refused the login that decides the switch (#417). The
+  // login below pins what the device presents now.
+  await forgetIdentity(device.id, 'api-tls');
   const client = new RouterOSClient(
     device.ip_address, device.api_port, device.api_username, decrypt(device.api_password_encrypted), 15_000, 30_000, false);
   try {
@@ -146,12 +151,7 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
     }
 
     const changes: Record<string, string> = {};
-    if (svc['certificate'] !== certName) {
-      changes['certificate'] = certName;
-      // The manager is replacing the certificate itself, so the old pin is
-      // expected to stop matching; the login below pins the new one.
-      await forgetIdentity(device.id, 'api-tls');
-    }
+    if (svc['certificate'] !== certName) changes['certificate'] = certName;
     if (isTrue(svc['disabled'])) changes['disabled'] = 'no';
     if (svc['port'] !== String(API_SSL_PORT)) changes['port'] = String(API_SSL_PORT);
     // api-ssl takes over api's job, so it gets api's allowed addresses too
@@ -180,6 +180,7 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
   // The deciding step: a real login over TLS, on a new connection.
   const failure = await tryApiSsl(device);
   if (failure) {
+    console.warn(`[api-ssl] ${device.name}: enabled, but the login over ${API_SSL_PORT} failed: ${failure}`);
     return {
       switched: false,
       steps,
