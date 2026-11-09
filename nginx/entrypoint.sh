@@ -33,6 +33,13 @@ chmod 700 /certs
 chmod 600 "$KEY"
 chmod 644 "$CERT"
 
+# The HTTP-01 challenge webroot is separate from /certs so nginx workers can
+# read challenge files without gaining access to the private key.
+ACME_WEBROOT=/var/www/certbot
+mkdir -p "$ACME_WEBROOT"
+chown -R "$BACKEND_UID:$BACKEND_GID" "$ACME_WEBROOT" 2>/dev/null || echo "[entrypoint] warning: could not hand the ACME webroot to the backend user"
+chmod 755 "$ACME_WEBROOT"
+
 # The HTTPS port the browser is redirected to (outside review O5). Only
 # digits are accepted, so nothing else can reach the nginx config.
 HTTPS_PORT="${HTTPS_PORT:-443}"
@@ -59,7 +66,7 @@ if [ "$TLS_MODE" = "proxy" ]; then
     echo "[entrypoint] TLS_MODE=proxy: serving the app over plain HTTP on port 80 for a reverse proxy."
     echo "[entrypoint] Keep port ${HTTP_PORT:-80} reachable only by the proxy (BIND_ADDRESS, or a firewall), since logins cross it unencrypted."
 else
-    printf '%s\n' 'include /var/cache/nginx/https-port.conf;' 'return 301 https://$host$https_port_suffix$request_uri;' > /var/cache/nginx/http-mode.conf
+    printf '%s\n' 'location / {' '    include /var/cache/nginx/https-port.conf;' '    return 301 https://$host$https_port_suffix$request_uri;' '}' > /var/cache/nginx/http-mode.conf
 fi
 
 # TRUSTED_PROXIES (#256): reverse proxies whose X-Forwarded-For and
@@ -108,6 +115,43 @@ else
     echo "[entrypoint] IPv6 isn't available; listening on IPv4 only."
     : > /var/cache/nginx/listen-v6-http.conf
     : > /var/cache/nginx/listen-v6-https.conf
+fi
+
+# Optional HTTP-01 ACME issuance and renewal. The challenge location remains
+# reachable over HTTP while all other requests follow the normal HTTP mode.
+ACME_DOMAIN="${ACME_DOMAIN:-}"
+ACME_EMAIL="${ACME_EMAIL:-}"
+ACME_SERVER="${ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
+ACME_CA_BUNDLE="${ACME_CA_BUNDLE:-}"
+if [ -n "$ACME_DOMAIN" ] && [ -n "$ACME_EMAIL" ] && [ "$TLS_MODE" = "https" ]; then
+    ACME_CONFIG=/certs/letsencrypt
+    ACME_WORK=/tmp/letsencrypt-work
+    ACME_LOGS=/tmp/letsencrypt-logs
+    ACME_DEPLOY_HOOK='cp "$RENEWED_LINEAGE/fullchain.pem" /certs/server.crt && cp "$RENEWED_LINEAGE/privkey.pem" /certs/server.key && chmod 644 /certs/server.crt && chmod 600 /certs/server.key && touch /certs/.reload'
+    if [ -n "$ACME_CA_BUNDLE" ]; then
+        export REQUESTS_CA_BUNDLE="$ACME_CA_BUNDLE"
+    fi
+    echo "[entrypoint] ACME enabled for $ACME_DOMAIN via $ACME_SERVER; the first certificate will be requested in the background."
+    (
+        while true; do
+            if [ -f "$ACME_CONFIG/live/$ACME_DOMAIN/fullchain.pem" ]; then
+                su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
+                    --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
+                    --server "$ACME_SERVER" renew --deploy-hook "$ACME_DEPLOY_HOOK" \
+                    || echo "[entrypoint] ACME renewal failed; it will be retried."
+            else
+                su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
+                    --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
+                    --server "$ACME_SERVER" certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
+                    --email "$ACME_EMAIL" --cert-name "$ACME_DOMAIN" -d "$ACME_DOMAIN" \
+                    --deploy-hook "$ACME_DEPLOY_HOOK" \
+                    || echo "[entrypoint] ACME certificate request failed; it will be retried."
+            fi
+            sleep 43200
+        done
+    ) &
+elif [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
+    echo "[entrypoint] warning: ACME requires both ACME_DOMAIN and ACME_EMAIL, and TLS_MODE=https; ACME is disabled."
 fi
 
 # Background watcher: reload nginx when backend writes a .reload signal file

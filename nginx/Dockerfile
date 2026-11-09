@@ -15,8 +15,9 @@ RUN npm run build
 # Stage 2: Serve with nginx
 FROM nginx:alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606
 
-# Install openssl for self-signed certificate generation
-RUN apk add --no-cache openssl
+# Certbot obtains and renews ACME certificates; su-exec runs it as the owner of
+# the shared certificate volume. openssl generates the local fallback cert.
+RUN apk add --no-cache certbot openssl su-exec
 
 # Copy built frontend
 COPY --from=frontend-builder /frontend/dist /usr/share/nginx/html

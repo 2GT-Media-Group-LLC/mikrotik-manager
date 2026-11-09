@@ -11,6 +11,9 @@ services:
     build:
       context: .
       dockerfile: nginx/Dockerfile
+      args:
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
     ports:
       # BIND_ADDRESS limits the web UI to one host address (e.g. a LAN or VPN
       # address). Unset, it listens on every interface, IPv4 and IPv6. Docker
@@ -26,8 +29,22 @@ services:
       # proxy (address or CIDR) whose X-Forwarded-For / -Proto are believed.
       TLS_MODE: ${TLS_MODE:-https}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # Optional HTTP-01 Let's Encrypt support; requires public DNS and port 80.
+      ACME_DOMAIN: ${ACME_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # Override the ACME directory for a staging or private CA.
+      ACME_SERVER: ${ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+      # Optional host path; mounted below and passed to Certbot when set.
+      ACME_CA_BUNDLE: ${ACME_CA_BUNDLE:+/run/acme-ca.pem}
     volumes:
       - certs_data:/certs
+      - acme_challenge:/var/www/certbot
+      - type: bind
+        source: ${ACME_CA_BUNDLE:-/dev/null}
+        target: /run/acme-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       backend:
         condition: service_healthy
@@ -58,6 +75,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
     environment: &backend-environment
       NODE_ENV: production
       TZ: ${TZ:-UTC}
@@ -261,6 +281,7 @@ volumes:
   influxdb_data:
   backups_data:
   certs_data:
+  acme_challenge:
   app_data:
 
 networks:
