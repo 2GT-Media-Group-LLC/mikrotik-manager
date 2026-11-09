@@ -3,6 +3,13 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.37
+
+- **Trunk ports carry a native VLAN**, as in 1.0.11 below: a trunk now accepts untagged frames
+  into its native VLAN instead of dropping them, so a device that doesn't use VLANs works on a
+  trunk port. **Tagged only** in the port editor keeps the old behaviour. See
+  [Changing a port's VLAN](devices.md#changing-a-ports-vlan).
+
 ## 1.1.0-beta.36
 
 - **PPP users and sessions**, from Hector's request in
@@ -592,6 +599,20 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.11
+
+Released on Sunday 8 November 2026. Trunk ports and their native VLAN.
+
+- **A trunk port dropped untagged traffic.** Setting a port to trunk wrote
+  `frame-types=admit-only-vlan-tagged`, so the native VLAN the port editor offered never
+  applied: a laptop, printer or unmanaged switch plugged into a trunk port couldn't talk at all.
+  A trunk now accepts both kinds of frame. Tagged frames go to its tagged VLANs, and untagged
+  frames join the native VLAN, which the port carries untagged. Tick **Tagged only** for a trunk
+  that should drop untagged frames, as before. Saving a trunk also takes the port out of any
+  untagged VLAN other than its native one. Trunks saved by older versions open with
+  **Tagged only** ticked and keep working as they did until you untick it and save. See
+  [Changing a port's VLAN](devices.md#changing-a-ports-vlan).
 
 ## 1.0.10
 
