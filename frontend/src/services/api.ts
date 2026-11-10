@@ -2025,6 +2025,8 @@ export interface ZoneConfig {
   policies: Record<string, ZonePolicy>;
   fasttrack: boolean;
   logDrops: boolean;
+  /** The manager reaches only its API, API-SSL and SSH ports on the router; missing means everything (#369). */
+  managerAccess?: 'management';
 }
 export interface ZoneRequest { config: ZoneConfig; members: Record<string, string[]> }
 export interface ZonesData {

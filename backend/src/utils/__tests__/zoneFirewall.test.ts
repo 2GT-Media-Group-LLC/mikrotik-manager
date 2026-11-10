@@ -298,6 +298,21 @@ describe('Change Guard on a zone apply', () => {
     expect(analyzeChange(snap(DEFCONF), device, batch(input!.config, null)).severity).toBe('critical');
   });
 
+  it('limits the manager to the API, API-SSL and SSH ports when asked, and still lets it in (#369)', () => {
+    const { input: limited } = parseZoneInput(body({ managerAccess: 'management' }), live);
+    expect(limited!.config.managerAccess).toBe('management');
+    expect(parseZoneInput(body(), live).input!.config).not.toHaveProperty('managerAccess');
+    const rules = compileZones(limited!.config, { ...ctx, managerIp: '10.9.0.5' });
+    // SSH is on 2222 on this device (ctx.services).
+    expect(rules.find((r) => r.params['src-address'] === '10.9.0.5')!.params).toEqual(expect.objectContaining({
+      chain: 'input', action: 'accept', protocol: 'tcp', 'dst-port': '8728,8729,2222', comment: 'mtm zone: accept the manager on 8728,8729,2222',
+    }));
+    expect(analyzeChange(snap(DEFCONF), device, batch(limited!.config, '10.9.0.5')).severity).not.toBe('critical');
+    const onDevice = planApply([], rules).add.map((a, i) => ({ '.id': `*${i + 1}`, ...a.params }));
+    expect(evaluateInputChain(snap(onDevice), conn).outcome).toBe('accepted');
+    expect(evaluateInputChain(snap(onDevice), { ...conn, dstPort: 80 }).outcome).toBe('dropped');
+  });
+
   it('sees a membership change move the management interface out of its zone', () => {
     const withApi = parseZoneInput(body({ policies: { 'LAN>@router': { action: 'allow', services: [], custom: [] } } }), live).input!;
     expect(analyzeChange(snap(DEFCONF), device, batch(withApi.config, null)).severity).not.toBe('critical');

@@ -133,6 +133,20 @@ export default function ZonesCard({ deviceId, deviceName, onApplied }: { deviceI
             <input type="checkbox" disabled={!editing} checked={d.config.logDrops} onChange={(e) => update({ ...d, config: { ...d.config, logDrops: e.target.checked } })} />
             Log what&rsquo;s dropped (shows on Firewall Events)
           </label>
+          {data.manager_ip && (
+            <label className="flex items-center gap-1.5">
+              The manager ({data.manager_ip}) can reach
+              <select className="input text-xs py-0.5 w-auto" disabled={!editing} value={d.config.managerAccess ?? 'all'}
+                onChange={(e) => {
+                  const { managerAccess: _drop, ...rest } = d.config;
+                  void _drop;
+                  update({ ...d, config: e.target.value === 'management' ? { ...rest, managerAccess: 'management' } : rest });
+                }}>
+                <option value="all">everything on the router</option>
+                <option value="management">only the API, API-SSL and SSH ports</option>
+              </select>
+            </label>
+          )}
         </div>
 
         {editing && (dirty || setup || data.drift) && (
@@ -335,7 +349,9 @@ function Matrix({ draft, labels, errors, editable, onChange, services, managerIp
       )}
       <p className="text-[11px] text-gray-400 dark:text-slate-500">
         Replies to allowed connections always get back. Anything not allowed here is dropped.
-        {managerIp && <> The manager ({managerIp}) can always reach the router.</>}
+        {managerIp && (draft.config.managerAccess === 'management'
+          ? <> The manager ({managerIp}) can always reach the router&rsquo;s API, API-SSL and SSH ports.</>
+          : <> The manager ({managerIp}) can always reach the router.</>)}
       </p>
     </div>
   );

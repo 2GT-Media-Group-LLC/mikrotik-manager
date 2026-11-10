@@ -80,6 +80,12 @@ export interface ZoneConfig {
   policies: Record<string, ZonePolicy>;
   fasttrack: boolean;
   logDrops: boolean;
+  /**
+   * What the manager's own address may reach on the router (#369): everything
+   * (missing, as before), or only the ports the manager uses: the API, API-SSL
+   * and SSH, on the ports /ip/service has.
+   */
+  managerAccess?: 'management';
 }
 
 /** What the compiler needs from the device. */
@@ -300,7 +306,11 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
     members[z] = list;
   }
 
-  const config: ZoneConfig = { zones, intra, policies, fasttrack: c.fasttrack !== false, logDrops: c.logDrops !== false };
+  const config: ZoneConfig = {
+    zones, intra, policies, fasttrack: c.fasttrack !== false, logDrops: c.logDrops !== false,
+    // Only written when chosen, so a setup saved before the choice existed is unchanged.
+    ...(c.managerAccess === 'management' ? { managerAccess: 'management' as const } : {}),
+  };
   return { input: Object.keys(errors).length ? null : { config, members }, errors };
 }
 
@@ -366,7 +376,14 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
   add({ chain: 'input', action: 'accept', 'connection-state': 'established,related,untracked' }, 'accept established, related, untracked to the router');
   add({ chain: 'input', action: 'drop', 'connection-state': 'invalid' }, 'drop invalid to the router');
   add({ chain: 'input', action: 'accept', 'dst-address': '127.0.0.1' }, 'accept loopback (CAPsMAN)');
-  if (ctx.managerIp) add({ chain: 'input', action: 'accept', 'src-address': ctx.managerIp }, 'accept the manager');
+  if (ctx.managerIp && config.managerAccess === 'management') {
+    // All the manager connects to: the API (8728 or 8729) and SSH (terminal,
+    // SSH-only devices, keys). It doesn't ping or poll SNMP.
+    const ports = servicePorts(['api', 'api-ssl', 'ssh'], ctx.services, '8728,8729,22');
+    add({ chain: 'input', action: 'accept', protocol: 'tcp', 'src-address': ctx.managerIp, 'dst-port': ports }, `accept the manager on ${ports}`);
+  } else if (ctx.managerIp) {
+    add({ chain: 'input', action: 'accept', 'src-address': ctx.managerIp }, 'accept the manager');
+  }
   for (const z of config.zones) {
     if (open(z, ROUTER)) add({ chain: 'input', action: 'jump', 'jump-target': pairChain(z, ROUTER), 'in-interface-list': z }, `${z} to router`);
   }

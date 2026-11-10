@@ -600,6 +600,13 @@ Every rule is commented `mtm zone: …`. In order:
   zone for same-zone traffic; a jump per open pair, to `<from>-to-<to>`; then drop the rest.
 - **One chain per open pair**, holding its accepts and ending in a return.
 
+The manager's rule lets its address reach everything on the router by default. To narrow it,
+set **The manager can reach** to **only the API, API-SSL and SSH ports**. Those are all the
+manager connects to: the API for everything it reads and changes, and SSH for the terminal,
+SSH-only devices and keys. It doesn't ping devices or poll them over SNMP. The ports are the ones
+set in **IP > Services**, so an SSH server moved to 2222 is the port allowed. The choice only
+appears when MTM can see its own address on the device.
+
 The two final drops log by default with the prefixes `zone drop in` and `zone drop fwd`, tagged so
 [Firewall Events](firewall-events.md#which-rule-logged-it) links each line to its rule. Untick **Log
 what's dropped** to leave them quiet. The returns and the final drops aren't shown in the matrix.
