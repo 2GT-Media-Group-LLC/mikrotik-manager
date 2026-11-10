@@ -194,14 +194,18 @@ if [ "$TLS_MODE" = "https" ]; then
                 fi
             fi
             if [ $FIRST_CHECK -eq 1 ] || [ "$ACME_DOMAIN" != "$LAST_DOMAIN" ] || [ "$ACME_EMAIL" != "$LAST_EMAIL" ] || [ "$ACME_SERVER" != "$LAST_SERVER" ] || [ "$CA_CHECKSUM" != "$LAST_CA_CHECKSUM" ]; then
+                PREVIOUS_DOMAIN="$LAST_DOMAIN"
                 LAST_DOMAIN="$ACME_DOMAIN"
                 LAST_EMAIL="$ACME_EMAIL"
                 LAST_SERVER="$ACME_SERVER"
                 LAST_CA_CHECKSUM="$CA_CHECKSUM"
                 FIRST_CHECK=0
                 NEXT_RUN=0
-                if [ -z "$ACME_DOMAIN" ]; then
-                    echo "[entrypoint] warning: ACME requires a domain; ACME is disabled."
+                if ! has_non_space "$ACME_DOMAIN"; then
+                    # Most installs never set ACME up: say nothing unless it was on.
+                    if has_non_space "$PREVIOUS_DOMAIN"; then
+                        echo "[entrypoint] ACME turned off; the current certificate stays in place."
+                    fi
                 else
                     echo "[entrypoint] ACME enabled for $ACME_DOMAIN via $ACME_SERVER."
                     if [ -z "$ACME_EMAIL" ]; then

@@ -26,6 +26,16 @@ jobs:
       - name: Check docker-compose.ghcr.yml is current
         run: node scripts/generate-ghcr-compose.mjs --check
 
+  # The nginx entrypoint's ACME loop (#420): issue, renew, failure, disable and
+  # proxy mode, with Certbot stubbed, plus one real offline Certbot run.
+  nginx:
+    name: nginx — ACME entrypoint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: ACME entrypoint tests
+        run: sh nginx/tests/run-acme-tests.sh
+
   frontend:
     name: Frontend — Lint, Type-check, Test & Build
     runs-on: ubuntu-latest

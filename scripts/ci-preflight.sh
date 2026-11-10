@@ -85,8 +85,10 @@ e2e_pg() {
 }
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   run "backend: Postgres tests"     backend  e2e_pg
+  run "nginx: ACME entrypoint"      nginx    sh tests/run-acme-tests.sh
 else
   printf '  %-34s%s\n' "backend: Postgres tests" "skipped (no Docker)"
+  printf '  %-34s%s\n' "nginx: ACME entrypoint" "skipped (no Docker)"
 fi
 run "frontend: lint"       frontend npm run lint
 run "frontend: type-check" frontend npx tsc --noEmit

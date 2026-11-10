@@ -3,6 +3,16 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.42
+
+- **Let's Encrypt certificates for the manager**, contributed by eskyuu in
+  [#420](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/420). With a public DNS name
+  and port 80 open, **Settings → Certificate** can get and renew a certificate by itself, show the
+  last Certbot attempt, and use staging or a private ACME server with its own CA. The settings can
+  also come from `.env`. Nothing changes until a domain is set. See
+  [Let's Encrypt](configuration.md#lets-encrypt-acme).
+- The nginx image is about 100 MB larger, for Certbot.
+
 ## 1.1.0-beta.41
 
 - **Zone rules can name a hostname**, from Ron's request in
