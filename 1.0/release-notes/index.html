@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1014" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.14
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1013" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1621,6 +1632,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1014" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.14
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1013" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1861,6 +1883,17 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1014">1.0.14<a class="headerlink" href="#1014" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 9 November 2026.</p>
+<ul>
+<li><strong>Switching a device to API-SSL or WebFig to HTTPS failed behind Cloudflare</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417">#417</a>). On an older
+  router, creating and signing the certificate can take a few minutes, and Cloudflare gives up on a
+  request after 100 seconds and shows its own 502, while the switch carried on unseen. Now a switch
+  that takes longer than about 25 seconds carries on in the background, the page checks back
+  every few seconds and shows the outcome when it's ready, and no other change can reach the device
+  until it's done. See <a href="../configuration/#behind-a-reverse-proxy">Behind a reverse proxy</a>.</li>
+</ul>
 <h2 id="1013">1.0.13<a class="headerlink" href="#1013" title="Permanent link">&para;</a></h2>
 <p>Released on Monday 9 November 2026. Updates are safer for the databases.</p>
 <p><strong>This update restarts Postgres, Redis and InfluxDB once</strong>, because their settings changed. Your
