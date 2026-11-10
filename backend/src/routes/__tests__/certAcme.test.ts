@@ -19,6 +19,7 @@ import express from 'express';
 import request from 'supertest';
 import { readFile, writeFile, unlink, rename } from 'fs/promises';
 import routes from '../cert';
+import { createCa } from '../../utils/pki';
 
 const directory = 'https://acme-v02.api.letsencrypt.org/directory';
 const valid = { domain: 'manager.example.com', email: 'admin@example.com', server: directory };
@@ -26,12 +27,14 @@ const originalEnv = { ...process.env };
 
 function app() {
   const server = express();
-  server.use(express.json());
+  server.use(express.json({ limit: '10mb' }));
   server.use('/api/cert', routes);
   return server;
 }
 
 describe('manager ACME settings', () => {
+  let ca: { certPem: string; keyPem: string };
+  beforeAll(async () => { ca = await createCa({ commonName: 'ACME test CA', days: 30 }); });
   beforeEach(() => {
     jest.resetAllMocks();
     delete process.env.ACME_DOMAIN;
@@ -147,5 +150,66 @@ describe('manager ACME settings', () => {
   it('allows the web override to be removed while the environment is incomplete', async () => {
     expect((await request(app()).delete('/api/cert/acme').set('x-test-role', 'admin')).status).toBe(200);
     expect(unlink).toHaveBeenCalledWith('/certs/acme-settings.conf');
+  });
+
+  it('requires an administrator for all CA bundle operations', async () => {
+    expect((await request(app()).get('/api/cert/acme/ca-bundle')).status).toBe(401);
+    expect((await request(app()).get('/api/cert/acme/ca-bundle').set('x-test-role', 'viewer')).status).toBe(403);
+    expect((await request(app()).put('/api/cert/acme/ca-bundle').set('x-test-role', 'viewer').send({ certificate: ca.certPem })).status).toBe(403);
+    expect((await request(app()).delete('/api/cert/acme/ca-bundle').set('x-test-role', 'viewer')).status).toBe(403);
+  });
+
+  it('reports whether the CA bundle exists and surfaces read errors', async () => {
+    expect((await request(app()).get('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).body)
+      .toEqual({ installed: false, readOnly: false });
+    jest.mocked(readFile).mockResolvedValue(ca.certPem as never);
+    expect((await request(app()).get('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).body)
+      .toEqual({ installed: true, readOnly: false });
+    jest.mocked(readFile).mockRejectedValue(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    expect((await request(app()).get('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).status).toBe(500);
+  });
+
+  it('installs an entire PEM bundle atomically at the Certbot trust path', async () => {
+    const res = await request(app()).put('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')
+      .send({ certificate: `\n${ca.certPem}\n${ca.certPem}\n` });
+    expect(res.status).toBe(200);
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/certs\/acme-ca-bundle\.crt\..*\.tmp$/),
+      expect.stringMatching(/-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----/),
+      { mode: 0o644 },
+    );
+    expect(rename).toHaveBeenCalledWith(expect.stringMatching(/^\/certs\/acme-ca-bundle\.crt\..*\.tmp$/), '/certs/acme-ca-bundle.crt');
+  });
+
+  it('rejects invalid PEM, private keys, and oversized files without replacing the bundle', async () => {
+    for (const certificate of ['', 'not a certificate', ca.certPem + ca.keyPem, 'x'.repeat(1024 * 1024 + 1)]) {
+      expect((await request(app()).put('/api/cert/acme/ca-bundle').set('x-test-role', 'admin').send({ certificate })).status).toBe(400);
+    }
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  it('prevents CA bundle changes while environment settings are locked', async () => {
+    process.env.ACME_DOMAIN = 'env.example.com';
+    process.env.ACME_EMAIL = 'admin@example.com';
+    process.env.ACME_SERVER = 'https://ca.example.com/';
+    expect((await request(app()).get('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).body)
+      .toEqual({ installed: false, readOnly: true });
+    expect((await request(app()).put('/api/cert/acme/ca-bundle').set('x-test-role', 'admin').send({ certificate: ca.certPem })).status).toBe(409);
+    expect((await request(app()).delete('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).status).toBe(409);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(unlink).not.toHaveBeenCalled();
+  });
+
+  it('removes the CA bundle without touching the HTTPS certificate', async () => {
+    expect((await request(app()).delete('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).status).toBe(200);
+    expect(unlink).toHaveBeenCalledWith('/certs/acme-ca-bundle.crt');
+    expect(unlink).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports and cleans up a failed atomic bundle write', async () => {
+    jest.mocked(rename).mockRejectedValue(new Error('cannot replace bundle'));
+    expect((await request(app()).put('/api/cert/acme/ca-bundle').set('x-test-role', 'admin').send({ certificate: ca.certPem })).status).toBe(500);
+    expect(unlink).toHaveBeenCalledWith(expect.stringMatching(/^\/certs\/acme-ca-bundle\.crt\..*\.tmp$/));
   });
 });

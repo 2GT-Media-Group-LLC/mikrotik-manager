@@ -2195,6 +2195,9 @@ export const certApi = {
   getAcme: () => api.get<AcmeSettings>('/cert/acme'),
   updateAcme: (data: Pick<AcmeSettings, 'domain' | 'email' | 'server'>) => api.put('/cert/acme', data),
   resetAcme: () => api.delete('/cert/acme'),
+  getAcmeCaBundle: () => api.get<{ installed: boolean; readOnly: boolean }>('/cert/acme/ca-bundle'),
+  uploadAcmeCaBundle: (certificate: string) => api.put('/cert/acme/ca-bundle', { certificate }),
+  deleteAcmeCaBundle: () => api.delete('/cert/acme/ca-bundle'),
 };
 
 // ─── Wireless ─────────────────────────────────────────────────────────────────

@@ -334,8 +334,14 @@ your reverse proxy's own certificate automation instead. While ACME is enabled, 
 will replace a certificate uploaded through Settings when ACME issues or renews.
 
 To use a staging or local ACME service, set its directory URL in the web interface or in
-`ACME_SERVER`. If its HTTPS certificate uses a private CA, copy the CA bundle to:
-/var/lib/docker/volumes/{name}_certs_data/_data/acme_ca_bundle.crt
+`ACME_SERVER`. If its HTTPS certificate uses a private CA, paste a PEM certificate bundle or
+load it from a file under **Settings → Certificate → ACME Server CA Bundle**. The bundle replaces Certbot's
+default trust store, so include all CAs needed by the ACME server. It can be replaced or
+removed there; removing it restores the default trust store. When all three ACME environment
+variables are set, the bundle controls are read-only like the other ACME settings.
+
+Alternatively, place the PEM bundle at `acme-ca-bundle.crt` in the `certs_data` Docker volume.
+Nginx checks for bundle changes and retries ACME when the bundle changes.
 
 The ACME service must be reachable from the nginx container, and its HTTP-01 validator must
 be able to reach the configured domain on port 80. Certbot TLS verification remains enabled;

@@ -17,6 +17,7 @@ const CERTS_DIR = '/certs';
 const CERT_PATH = path.join(CERTS_DIR, 'server.crt');
 const KEY_PATH  = path.join(CERTS_DIR, 'server.key');
 const ACME_SETTINGS_PATH = path.join(CERTS_DIR, 'acme-settings.conf');
+const ACME_CA_BUNDLE_PATH = path.join(CERTS_DIR, 'acme-ca-bundle.crt');
 const DEFAULT_ACME_SERVER = 'https://acme-v02.api.letsencrypt.org/directory';
 
 type AcmeSettings = { domain: string; email: string; server: string };
@@ -144,6 +145,60 @@ router.delete('/acme', requireAdmin, async (_req, res) => {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
   return res.json({ message: 'Using ACME environment settings' });
+});
+
+// GET /api/cert/acme/ca-bundle — whether a custom ACME trust bundle is installed
+router.get('/acme/ca-bundle', requireAdmin, async (_req, res) => {
+  try {
+    await readFile(ACME_CA_BUNDLE_PATH);
+    return res.json({ installed: true, readOnly: acmeEnvironmentLocked() });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return res.json({ installed: false, readOnly: acmeEnvironmentLocked() });
+    }
+    throw err;
+  }
+});
+
+// PUT /api/cert/acme/ca-bundle — install only validated PEM certificates
+router.put('/acme/ca-bundle', requireAdmin, async (req, res) => {
+  if (acmeEnvironmentLocked()) {
+    return res.status(409).json({ error: 'ACME settings are read-only while all three ACME environment variables are set.' });
+  }
+  const certificate = (req.body as { certificate?: unknown } | null)?.certificate;
+  if (typeof certificate !== 'string' || Buffer.byteLength(certificate, 'utf8') > 1024 * 1024) {
+    return res.status(400).json({ error: 'Provide a PEM certificate bundle no larger than 1 MB.' });
+  }
+  let pem: string;
+  try {
+    ({ pem } = parseCertificateBundle(certificate));
+  } catch (err) {
+    return res.status(400).json({ error: `Invalid CA bundle: ${err instanceof Error ? err.message : String(err)}` });
+  }
+  const tmp = `${ACME_CA_BUNDLE_PATH}.${crypto.randomUUID()}.tmp`;
+  try {
+    await writeFile(tmp, pem, { mode: 0o644 });
+    await rename(tmp, ACME_CA_BUNDLE_PATH);
+  } catch (err) {
+    await unlink(tmp).catch((cleanupError: NodeJS.ErrnoException) => {
+      if (cleanupError.code !== 'ENOENT') console.error('[acme] Could not remove temporary CA bundle:', cleanupError);
+    });
+    throw err;
+  }
+  return res.json({ message: 'ACME CA bundle installed' });
+});
+
+// DELETE /api/cert/acme/ca-bundle — return to Certbot's default trust store
+router.delete('/acme/ca-bundle', requireAdmin, async (_req, res) => {
+  if (acmeEnvironmentLocked()) {
+    return res.status(409).json({ error: 'ACME settings are read-only while all three ACME environment variables are set.' });
+  }
+  try {
+    await unlink(ACME_CA_BUNDLE_PATH);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  return res.json({ message: 'ACME CA bundle removed' });
 });
 
 function parseCertInfo(pem: string) {

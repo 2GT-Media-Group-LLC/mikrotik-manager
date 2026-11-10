@@ -31,6 +31,7 @@ import EncryptionKeyCard from '../components/settings/EncryptionKeyCard';
 import OidcSettings from '../components/settings/OidcSettings';
 import AiConnectionsSettings from '../components/settings/AiConnectionsSettings';
 import PlatformBackupSettings from '../components/settings/PlatformBackupSettings';
+import AcmeCaBundleCard from '../components/settings/AcmeCaBundleCard';
 import { useIsSiteScoped } from '../hooks/useCanWrite';
 import SiteAccessDialog, { type UserSiteRole, type UserGroupRole } from '../components/settings/SiteAccessDialog';
 
@@ -1657,6 +1658,8 @@ export default function SettingsPage() {
               )}
             </div>
           )}
+
+          {isAdmin && <AcmeCaBundleCard />}
 
           {/* Regenerate self-signed */}
           <div className="card p-5">

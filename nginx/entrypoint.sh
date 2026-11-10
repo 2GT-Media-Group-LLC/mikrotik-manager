@@ -175,14 +175,24 @@ if [ "$TLS_MODE" = "https" ]; then
         LAST_DOMAIN=
         LAST_EMAIL=
         LAST_SERVER=
+        LAST_CA_CHECKSUM=
         FIRST_CHECK=1
         NEXT_RUN=0
         while true; do
             read_acme_settings
-            if [ $FIRST_CHECK -eq 1 ] || [ "$ACME_DOMAIN" != "$LAST_DOMAIN" ] || [ "$ACME_EMAIL" != "$LAST_EMAIL" ] || [ "$ACME_SERVER" != "$LAST_SERVER" ]; then
+            CA_CHECKSUM=none
+            if [ -f /certs/acme-ca-bundle.crt ]; then
+                if ! CA_CHECKSUM=$(cksum < /certs/acme-ca-bundle.crt); then
+                    echo "[entrypoint] error: cannot read the ACME CA bundle; ACME check deferred."
+                    sleep 5
+                    continue
+                fi
+            fi
+            if [ $FIRST_CHECK -eq 1 ] || [ "$ACME_DOMAIN" != "$LAST_DOMAIN" ] || [ "$ACME_EMAIL" != "$LAST_EMAIL" ] || [ "$ACME_SERVER" != "$LAST_SERVER" ] || [ "$CA_CHECKSUM" != "$LAST_CA_CHECKSUM" ]; then
                 LAST_DOMAIN="$ACME_DOMAIN"
                 LAST_EMAIL="$ACME_EMAIL"
                 LAST_SERVER="$ACME_SERVER"
+                LAST_CA_CHECKSUM="$CA_CHECKSUM"
                 FIRST_CHECK=0
                 NEXT_RUN=0
                 if [ -z "$ACME_DOMAIN" ]; then
