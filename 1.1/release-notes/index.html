@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta43" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.43
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta42" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1969,6 +1980,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta43" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.43
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta42" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2442,6 +2464,16 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta43">1.1.0-beta.43<a class="headerlink" href="#110-beta43" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>nginx kept restarting after updating to beta.42</strong> with an existing compose file
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/439">#439</a>, reported by Ron).
+  The Let's Encrypt support needed a directory that only the new compose file provided, and on
+  the read-only container nginx stopped before starting. It now uses space every compose file
+  already has, so no compose change is needed, and if it can't, Let's Encrypt turns off and nginx
+  starts anyway. The <code>acme_challenge</code> volume is gone from the compose files; an existing one is
+  unused and can be removed with <code>docker volume rm</code>.</li>
+</ul>
 <h2 id="110-beta42">1.1.0-beta.42<a class="headerlink" href="#110-beta42" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Let's Encrypt certificates for the manager</strong>, contributed by eskyuu in
