@@ -327,6 +327,7 @@ Saving requires both a domain and contact email. Web settings are stored in the 
 volume and override an incomplete environment configuration; choose **Use .env Values** to
 remove that override. To disable ACME, unset at least one of `ACME_DOMAIN` and `ACME_EMAIL`
 in `.env`, restart the containers, and choose **Use .env Values** if a web override exists.
+The web settings file uses `ACME_DOMAIN=`, `ACME_EMAIL=`, and `ACME_SERVER=` entries.
 HTTP-01 requires public access to port 80 and does not work when `TLS_MODE=proxy`; in that setup, use
 your reverse proxy's own certificate automation instead. While ACME is enabled, its certificate
 will replace a certificate uploaded through Settings when ACME issues or renews.

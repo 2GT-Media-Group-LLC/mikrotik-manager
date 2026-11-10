@@ -71,7 +71,7 @@ describe('manager ACME settings', () => {
     expect(res.status).toBe(200);
     expect(writeFile).toHaveBeenCalledWith(
       expect.stringMatching(/^\/certs\/acme-settings\.conf\..*\.tmp$/),
-      `${valid.domain}\n${valid.email}\n${valid.server}\n`,
+      `ACME_DOMAIN=${valid.domain}\nACME_EMAIL=${valid.email}\nACME_SERVER=${valid.server}\n`,
       { mode: 0o600 },
     );
     expect(rename).toHaveBeenCalled();
@@ -87,9 +87,27 @@ describe('manager ACME settings', () => {
   it('uses web settings if any environment setting is absent', async () => {
     process.env.ACME_DOMAIN = 'env.example.com';
     process.env.ACME_EMAIL = 'env@example.com';
-    jest.mocked(readFile).mockResolvedValue(`${valid.domain}\n${valid.email}\n${valid.server}\n` as never);
+    jest.mocked(readFile).mockResolvedValue(`ACME_DOMAIN=${valid.domain}\nACME_EMAIL=${valid.email}\nACME_SERVER=${valid.server}\n` as never);
     const res = await request(app()).get('/api/cert/acme').set('x-test-role', 'admin');
     expect(res.body).toEqual({ ...valid, source: 'web', readOnly: false });
+  });
+
+  it('reads named settings in any order and preserves equals signs in values', async () => {
+    const server = `${directory}?param=a=b`;
+    jest.mocked(readFile).mockResolvedValue(`ACME_SERVER=${server}\nACME_DOMAIN=${valid.domain}\nACME_EMAIL=${valid.email}\n` as never);
+    const res = await request(app()).get('/api/cert/acme').set('x-test-role', 'admin');
+    expect(res.body).toEqual({ ...valid, server, source: 'web', readOnly: false });
+  });
+
+  it('rejects duplicate or missing named settings', async () => {
+    jest.mocked(readFile).mockResolvedValue(`ACME_DOMAIN=${valid.domain}\nACME_DOMAIN=other.example.com\nACME_SERVER=${directory}\n` as never);
+    const res = await request(app()).get('/api/cert/acme').set('x-test-role', 'admin');
+    expect(res.status).toBe(500);
+  });
+
+  it('rejects the old positional format', async () => {
+    jest.mocked(readFile).mockResolvedValue(`${valid.domain}\n${valid.email}\n${valid.server}\n` as never);
+    expect((await request(app()).get('/api/cert/acme').set('x-test-role', 'admin')).status).toBe(500);
   });
 
   it('locks all settings to the complete environment even if a web override exists', async () => {

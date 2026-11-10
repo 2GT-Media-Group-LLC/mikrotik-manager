@@ -139,11 +139,29 @@ if has_non_space "$ACME_ENV_DOMAIN" && has_non_space "$ACME_ENV_EMAIL" && has_no
 fi
 read_acme_settings() {
     if [ "$ACME_ENV_LOCKED" = 0 ] && [ -f "$ACME_SETTINGS_FILE" ]; then
-        {
-            IFS= read -r ACME_DOMAIN
-            IFS= read -r ACME_EMAIL
-            IFS= read -r ACME_SERVER
-        } < "$ACME_SETTINGS_FILE"
+        acme_domain_seen=0
+        acme_email_seen=0
+        acme_server_seen=0
+        acme_invalid=0
+        if ! {
+            while IFS= read -r acme_line || [ -n "$acme_line" ]; do
+                case "$acme_line" in
+                    ACME_DOMAIN=*) ACME_DOMAIN=${acme_line#ACME_DOMAIN=}; acme_domain_seen=$((acme_domain_seen + 1)) ;;
+                    ACME_EMAIL=*) ACME_EMAIL=${acme_line#ACME_EMAIL=}; acme_email_seen=$((acme_email_seen + 1)) ;;
+                    ACME_SERVER=*) ACME_SERVER=${acme_line#ACME_SERVER=}; acme_server_seen=$((acme_server_seen + 1)) ;;
+                    '') ;;
+                    *) acme_invalid=1 ;;
+                esac
+            done < "$ACME_SETTINGS_FILE"
+        }; then
+            acme_invalid=1
+        fi
+        if [ "$acme_invalid" -ne 0 ] || [ "$acme_domain_seen" -ne 1 ] || [ "$acme_email_seen" -ne 1 ] || [ "$acme_server_seen" -ne 1 ]; then
+            echo "[entrypoint] error: invalid ACME settings file; ACME is disabled."
+            ACME_DOMAIN=
+            ACME_EMAIL=
+            ACME_SERVER=
+        fi
     else
         ACME_DOMAIN=$ACME_ENV_DOMAIN
         ACME_EMAIL=$ACME_ENV_EMAIL

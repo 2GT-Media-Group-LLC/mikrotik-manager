@@ -37,9 +37,23 @@ function environmentAcmeSettings(): AcmeSettings {
 async function readAcmeSettings(): Promise<AcmeSettings & { source: 'web' | 'environment'; readOnly: boolean }> {
   if (acmeEnvironmentLocked()) return { ...environmentAcmeSettings(), source: 'environment', readOnly: true };
   try {
-    const lines = (await readFile(ACME_SETTINGS_PATH, 'utf8')).split('\n');
-    if (lines.length < 3) throw new Error('ACME settings file is incomplete');
-    return { domain: lines[0], email: lines[1], server: lines[2], source: 'web', readOnly: false };
+    const lines = (await readFile(ACME_SETTINGS_PATH, 'utf8')).split('\n').filter(Boolean);
+    const entries = lines.map((line) => {
+      const separator = line.indexOf('=');
+      if (separator < 0) throw new Error('Invalid ACME settings file');
+      return [line.slice(0, separator), line.slice(separator + 1)] as const;
+    });
+    const values = new Map(entries);
+    if (entries.length !== 3 || values.size !== 3 || !values.has('ACME_DOMAIN') || !values.has('ACME_EMAIL') || !values.has('ACME_SERVER')) {
+      throw new Error('Invalid ACME settings file');
+    }
+    return {
+      domain: values.get('ACME_DOMAIN')!,
+      email: values.get('ACME_EMAIL')!,
+      server: values.get('ACME_SERVER')!,
+      source: 'web',
+      readOnly: false,
+    };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     return { ...environmentAcmeSettings(), source: 'environment', readOnly: false };
@@ -84,7 +98,7 @@ function parseAcmeSettings(raw: unknown): AcmeSettings | string {
 async function writeAcmeSettings(settings: AcmeSettings): Promise<void> {
   const tmp = `${ACME_SETTINGS_PATH}.${crypto.randomUUID()}.tmp`;
   try {
-    await writeFile(tmp, `${settings.domain}\n${settings.email}\n${settings.server}\n`, { mode: 0o600 });
+    await writeFile(tmp, `ACME_DOMAIN=${settings.domain}\nACME_EMAIL=${settings.email}\nACME_SERVER=${settings.server}\n`, { mode: 0o600 });
     await rename(tmp, ACME_SETTINGS_PATH);
   } catch (err) {
     await unlink(tmp).catch(() => undefined);
