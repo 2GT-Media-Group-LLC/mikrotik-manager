@@ -41,7 +41,6 @@ services:
       ACME_SERVER: ${ACME_SERVER:-}
     volumes:
       - certs_data:/certs
-      - acme_challenge:/var/www/certbot
     depends_on:
       backend:
         condition: service_healthy
@@ -315,7 +314,6 @@ volumes:
   influxdb_data:
   backups_data:
   certs_data:
-  acme_challenge:
   app_data:
 
 networks:

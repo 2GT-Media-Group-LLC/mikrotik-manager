@@ -3,6 +3,16 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.43
+
+- **nginx kept restarting after updating to beta.42** with an existing compose file
+  ([#439](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/439), reported by Ron).
+  The Let's Encrypt support needed a directory that only the new compose file provided, and on
+  the read-only container nginx stopped before starting. It now uses space every compose file
+  already has, so no compose change is needed, and if it can't, Let's Encrypt turns off and nginx
+  starts anyway. The `acme_challenge` volume is gone from the compose files; an existing one is
+  unused and can be removed with `docker volume rm`.
+
 ## 1.1.0-beta.42
 
 - **Let's Encrypt certificates for the manager**, contributed by eskyuu in

@@ -34,11 +34,16 @@ chmod 600 "$KEY"
 chmod 644 "$CERT"
 
 # The HTTP-01 challenge webroot is separate from /certs so nginx workers can
-# read challenge files without gaining access to the private key.
-ACME_WEBROOT=/var/www/certbot
-mkdir -p "$ACME_WEBROOT"
-chown -R "$BACKEND_UID:$BACKEND_GID" "$ACME_WEBROOT" 2>/dev/null || echo "[entrypoint] warning: could not hand the ACME webroot to the backend user"
-chmod 755 "$ACME_WEBROOT"
+# read challenge files without gaining access to the private key. It lives on
+# the /var/cache/nginx tmpfs, writable under read_only in every compose file
+# (#439: a path needing a new volume stopped nginx on existing installs). The
+# files only matter while Certbot runs, so nothing is lost on restart. If it
+# can't be made, ACME is off and nginx starts regardless.
+ACME_WEBROOT=/var/cache/nginx/acme
+ACME_WEBROOT_OK=1
+if ! mkdir -p "$ACME_WEBROOT" 2>/dev/null || ! chown "$BACKEND_UID:$BACKEND_GID" "$ACME_WEBROOT" 2>/dev/null || ! chmod 755 "$ACME_WEBROOT" 2>/dev/null; then
+    ACME_WEBROOT_OK=0
+fi
 
 # The HTTPS port the browser is redirected to (outside review O5). Only
 # digits are accepted, so nothing else can reach the nginx config.
@@ -167,7 +172,9 @@ read_acme_settings() {
     fi
 }
 read_acme_settings
-if [ "$TLS_MODE" = "https" ]; then
+if [ "$TLS_MODE" = "https" ] && [ "$ACME_WEBROOT_OK" = 0 ]; then
+    echo "[entrypoint] error: could not create the ACME challenge directory $ACME_WEBROOT; ACME is off."
+elif [ "$TLS_MODE" = "https" ]; then
     (
         ACME_CONFIG=/certs/letsencrypt
         ACME_WORK=/tmp/letsencrypt-work
