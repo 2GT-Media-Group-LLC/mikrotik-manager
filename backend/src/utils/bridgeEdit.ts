@@ -62,8 +62,38 @@ export function parseBridgeUpdate(body: Record<string, unknown>): Result {
     if (typeof body.disabled !== 'boolean') return { error: 'disabled must be true or false' };
     fields.disabled = body.disabled ? 'yes' : 'no';
   }
+  if (body.mtu !== undefined) {
+    const m = parseBridgeMtu(body.mtu);
+    if (!m) return { error: 'MTU: auto, or a number from 576 to 65535' };
+    fields.mtu = m;
+  }
   if (Object.keys(fields).length === 0) return { error: 'Nothing to change' };
   return { fields };
+}
+
+/** A bridge MTU: "auto" (RouterOS's default, the lowest of its ports') or a number. */
+export function parseBridgeMtu(v: unknown): string | null {
+  const s = String(v ?? '').trim().toLowerCase();
+  if (s === 'auto') return 'auto';
+  if (!/^\d{3,5}$/.test(s)) return null;
+  const n = Number(s);
+  return n >= 576 && n <= 65535 ? String(n) : null;
+}
+
+/**
+ * Why a bridge can't take `mtu`, or null. RouterOS refuses an MTU above the
+ * lowest L2 MTU of the bridge's ports with only "could not set mtu" (checked
+ * on a CRS3xx running 7.25), so the ports that are too small are named here.
+ */
+export function bridgeMtuProblem(mtu: string, ports: { name: string; l2mtu: number | null }[]): string | null {
+  if (mtu === 'auto') return null;
+  const n = Number(mtu);
+  const small = ports.filter((p) => p.l2mtu !== null && p.l2mtu < n).sort((a, b) => (a.l2mtu ?? 0) - (b.l2mtu ?? 0));
+  if (!small.length) return null;
+  const listed = small.slice(0, 4).map((p) => `${p.name} (${p.l2mtu})`).join(', ') + (small.length > 4 ? ` and ${small.length - 4} more` : '');
+  const ceiling = small[0].l2mtu;
+  return `An MTU of ${n} is more than the L2 MTU of ${small.length === 1 ? 'its port' : 'these ports'}: ${listed}. `
+    + `Raise ${small.length === 1 ? 'that port\u2019s' : 'their'} MTU on the Ports tab first (MTM raises the L2 MTU with it), or keep the bridge at ${ceiling} or less.`;
 }
 
 export function validBridgeName(name: string): boolean {

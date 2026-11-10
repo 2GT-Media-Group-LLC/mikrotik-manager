@@ -823,13 +823,18 @@ has a small chip icon; hover a port for its PVID and spanning tree role.
 - **New bridge** creates an empty one, with RSTP unless you choose otherwise. Add ports to it
   on the **Ports** tab (see [Moving ports between bridges](#moving-ports-between-bridges)).
 - **Edit** renames it, changes its spanning tree mode or priority (0 to 61440 in steps of
-  4096; the lowest wins the root election), changes its comment, or turns it off. Renaming
-  keeps its ports, VLANs and addresses.
+  4096; the lowest wins the root election), changes its comment or MTU, or turns it off.
+  Renaming keeps its ports, VLANs and addresses.
+- **MTU** is `auto` by default: RouterOS uses the lowest MTU of the bridge's ports. Set a
+  number for jumbo frames, or `auto` to go back. A bridge's MTU can't be more than the
+  smallest L2 MTU of its ports, and the field says what that is. Asked for more, the manager
+  names the ports that are too small, because RouterOS's own answer is only "could not set mtu".
+  Raise those ports' MTU on the **Ports** tab first; the manager raises their L2 MTU with it.
 - **turn on / turn off** next to VLAN filtering works as it does from the faceplate.
 - The bin deletes a bridge with no ports, addresses or VLAN entries.
 
 Everything runs through [Change Guard](change-guard.md). Renaming the bridge the manager
-connects through, or changing its spanning tree, can't be simulated, so it runs with
+connects through, or changing its spanning tree or MTU, can't be simulated, so it runs with
 auto-revert required; turning that bridge off is predicted as a lockout and asks first.
 
 ## Routing between VLANs in hardware

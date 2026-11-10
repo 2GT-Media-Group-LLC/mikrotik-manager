@@ -1010,7 +1010,7 @@ export const devicesApi = {
   addBridge: (id: number, data: { name: string; protocol_mode?: string; priority?: string; vlan_filtering?: boolean; comment?: string }) =>
     api.post(`/devices/${id}/bridges`, data, GUARDED),
   updateBridge: (id: number, bridgeName: string,
-    data: { name?: string; protocol_mode?: string; priority?: string; comment?: string; disabled?: boolean }, confirmLockout = false) =>
+    data: { name?: string; protocol_mode?: string; priority?: string; comment?: string; disabled?: boolean; mtu?: string }, confirmLockout = false) =>
     api.put(`/devices/${id}/bridges/${encodeURIComponent(bridgeName)}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
   setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`,
@@ -3071,7 +3071,9 @@ export const platformBackupApi = {
 export interface BridgeView {
   id: string; name: string; protocolMode: string; priority: string | null; vlanFiltering: boolean;
   running: boolean; disabled: boolean; dynamic: boolean; comment: string | null; mtu: string | null; macAddress: string | null;
-  ports: { name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null }[];
+  /** The MTU as set: "auto" or a number. `mtu` is what it is in effect. */
+  mtuSetting?: string;
+  ports: { name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null; l2mtu?: number | null }[];
   vlans: string[];
   dynamicVlans?: string[];
   addresses: string[];

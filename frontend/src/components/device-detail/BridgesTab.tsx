@@ -4,6 +4,7 @@ import { Network, Plus, Pencil, Trash2, Check, X, RefreshCw, AlertCircle, Cpu } 
 import clsx from 'clsx';
 import { devicesApi, type BridgeView } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
+import { bridgeMtuCeiling, bridgeMtuError } from '../../utils/bridgeMtu';
 import { LockoutVerdictDialog, lockoutVerdictOf, guardOutcomeMessage, type LockoutVerdict, type GuardResult } from '../ChangeGuardDialog';
 
 const MODES = [
@@ -17,7 +18,7 @@ function errText(e: unknown): string {
   return (e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'That didn’t work';
 }
 
-interface EditForm { name: string; protocol_mode: string; priority: string; comment: string; enabled: boolean }
+interface EditForm { name: string; protocol_mode: string; priority: string; comment: string; enabled: boolean; mtu: string }
 
 /**
  * Every bridge on the device (#284): its settings, ports (hardware-switched or
@@ -65,12 +66,14 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
   });
 
   const changesOf = (b: BridgeView, f: EditForm) => {
-    const d: { name?: string; protocol_mode?: string; priority?: string; comment?: string; disabled?: boolean } = {};
+    const d: { name?: string; protocol_mode?: string; priority?: string; comment?: string; disabled?: boolean; mtu?: string } = {};
     if (f.name.trim() !== b.name) d.name = f.name.trim();
     if (f.protocol_mode !== b.protocolMode) d.protocol_mode = f.protocol_mode;
     if (f.priority.trim() && f.priority.trim().toLowerCase() !== (b.priority ?? '').toLowerCase()) d.priority = f.priority.trim();
     if (f.comment !== (b.comment ?? '')) d.comment = f.comment;
     if (f.enabled !== !b.disabled) d.disabled = !f.enabled;
+    const mtu = f.mtu.trim().toLowerCase() || 'auto';
+    if (mtu !== (b.mtuSetting ?? 'auto')) d.mtu = mtu;
     return d;
   };
   const update = useMutation({
@@ -162,6 +165,8 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
         const hw = b.ports.filter((p) => p.hw).length;
         const cpu = b.ports.length - hw;
         const pending = e ? Object.keys(changesOf(b, e.form)).length : 0;
+        const mtuErr = e ? bridgeMtuError(e.form.mtu, b) : null;
+        const ceiling = bridgeMtuCeiling(b);
         const emptyBridge = b.ports.length === 0 && b.addresses.length === 0 && b.vlans.length === 0;
         return (
           <div key={b.id || b.name} className={clsx('card p-4 space-y-3', b.disabled && 'opacity-70')}>
@@ -174,12 +179,12 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                     : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400')}>
                 {b.disabled ? 'disabled' : b.running ? 'running' : 'not running'}
               </span>
-              <span className="text-xs text-gray-500 dark:text-slate-400 font-mono">{b.protocolMode.toUpperCase()}{b.priority ? ` · priority ${b.priority}` : ''}</span>
+              <span className="text-xs text-gray-500 dark:text-slate-400 font-mono">{b.protocolMode.toUpperCase()}{b.priority ? ` · priority ${b.priority}` : ''}{b.mtu ? ` · MTU ${b.mtu}${b.mtuSetting && b.mtuSetting !== 'auto' ? '' : ' (auto)'}` : ''}</span>
               {b.comment && <span className="text-xs text-gray-400">· {b.comment}</span>}
               {canWrite && !e && !b.dynamic && (
                 <div className="ml-auto flex items-center gap-1">
                   <button type="button" title="Edit" disabled={busy}
-                    onClick={() => { setNote(null); setAdding(null); setEditing({ bridge: b, form: { name: b.name, protocol_mode: b.protocolMode, priority: b.priority ?? '', comment: b.comment ?? '', enabled: !b.disabled } }); }}
+                    onClick={() => { setNote(null); setAdding(null); setEditing({ bridge: b, form: { name: b.name, protocol_mode: b.protocolMode, priority: b.priority ?? '', comment: b.comment ?? '', enabled: !b.disabled, mtu: b.mtuSetting ?? 'auto' } }); }}
                     className="btn-secondary text-xs py-1 flex items-center gap-1.5"><Pencil className="w-3 h-3" /> Edit</button>
                   <button type="button" disabled={busy || !emptyBridge}
                     title={emptyBridge ? 'Delete this bridge' : 'Only a bridge with no ports, addresses or VLANs can be deleted'}
@@ -191,7 +196,7 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
 
             {e && (
               <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   <div><label className="label">Name</label>
                     <input className="input font-mono" value={e.form.name} onChange={(ev) => setEditing({ ...e, form: { ...e.form, name: ev.target.value } })} /></div>
                   <div><label className="label">Spanning tree</label>
@@ -203,6 +208,13 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                       onChange={(ev) => setEditing({ ...e, form: { ...e.form, priority: ev.target.value } })} /></div>
                   <div><label className="label">Comment</label>
                     <input className="input" value={e.form.comment} onChange={(ev) => setEditing({ ...e, form: { ...e.form, comment: ev.target.value } })} /></div>
+                  <div><label className="label">MTU</label>
+                    <input className={clsx('input font-mono', mtuErr && 'border-red-400')} value={e.form.mtu} placeholder="auto"
+                      title="auto follows the lowest MTU of the bridge's ports"
+                      onChange={(ev) => setEditing({ ...e, form: { ...e.form, mtu: ev.target.value } })} />
+                    <p className={clsx('text-[11px] mt-1', mtuErr ? 'text-red-600 dark:text-red-400' : 'text-gray-400')}>
+                      {mtuErr ?? `auto, or up to ${ceiling ?? 'the ports\u2019 L2 MTU'}${b.mtu ? ` · now ${b.mtu}` : ''}`}
+                    </p></div>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
                   <input type="checkbox" checked={e.form.enabled} onChange={(ev) => setEditing({ ...e, form: { ...e.form, enabled: ev.target.checked } })} />
@@ -211,10 +223,11 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                 <p className="text-xs text-gray-400">
                   Renaming keeps the bridge&apos;s ports, VLANs and addresses. Changing spanning tree reconverges the bridge;
                   on the bridge the manager connects through, both run with auto-revert. Disabling that bridge is predicted
-                  as a lockout and asks first.
+                  as a lockout and asks first. An MTU change on that bridge also runs with auto-revert; for jumbo frames,
+                  raise the ports&apos; MTU on the Ports tab first.
                 </p>
                 <div className="flex gap-2">
-                  <button onClick={() => update.mutate({ b, d: changesOf(b, e.form) })} disabled={busy || pending === 0 || !e.form.name.trim()}
+                  <button onClick={() => update.mutate({ b, d: changesOf(b, e.form) })} disabled={busy || pending === 0 || !e.form.name.trim() || !!mtuErr}
                     className="btn-primary flex items-center gap-2 text-sm">
                     {update.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Save
                   </button>

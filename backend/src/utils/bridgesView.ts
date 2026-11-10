@@ -8,10 +8,14 @@ const isTrue = (v: string | undefined) => v === 'true' || v === 'yes';
 
 export interface BridgePortView {
   name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null;
+  /** The port's L2 MTU: the most a bridge MTU can be. Null when the device didn't say. */
+  l2mtu: number | null;
 }
 export interface BridgeView {
   id: string; name: string; protocolMode: string; priority: string | null; vlanFiltering: boolean;
   running: boolean; disabled: boolean; dynamic: boolean; comment: string | null; mtu: string | null; macAddress: string | null;
+  /** The MTU as set: "auto" (the lowest of its ports') or a number. */
+  mtuSetting: string;
   ports: BridgePortView[];
   /** VLAN ids configured on this bridge, each once, in order (ranges kept). */
   vlans: string[];
@@ -27,7 +31,10 @@ function vlanIds(rows: Row[]): string[] {
   return [...ids].sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b));
 }
 
-export function bridgesView(input: { bridges: Row[]; ports: Row[]; vlans: Row[]; addresses: Row[] }): BridgeView[] {
+const num = (v: string | undefined): number | null => (v && /^\d+$/.test(v) ? Number(v) : null);
+
+export function bridgesView(input: { bridges: Row[]; ports: Row[]; vlans: Row[]; addresses: Row[]; interfaces?: Row[] }): BridgeView[] {
+  const l2mtu = new Map((input.interfaces ?? []).map((i) => [i['name'] ?? '', num(i['l2mtu'])]));
   return input.bridges.map((b) => {
     const name = b['name'] ?? '';
     return {
@@ -41,12 +48,14 @@ export function bridgesView(input: { bridges: Row[]; ports: Row[]; vlans: Row[];
       dynamic: isTrue(b['dynamic']),
       comment: b['comment'] || null,
       mtu: b['actual-mtu'] || b['mtu'] || null,
+      mtuSetting: b['mtu'] || 'auto',
       macAddress: b['mac-address'] || null,
       ports: input.ports
         .filter((p) => p['bridge'] === name)
         .map((p) => ({
           name: p['interface'] ?? '', hw: isTrue(p['hw']), pvid: p['pvid'] || null,
           disabled: isTrue(p['disabled']), inactive: isTrue(p['inactive']), dynamic: isTrue(p['dynamic']), role: p['role'] || null,
+          l2mtu: l2mtu.get(p['interface'] ?? '') ?? null,
         }))
         .sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true })),
       // RouterOS adds a dynamic entry per PVID and per wifi interface, so the

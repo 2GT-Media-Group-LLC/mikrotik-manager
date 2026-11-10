@@ -91,7 +91,7 @@ import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit } from '../utils/ipAddressEdit';
 import { parseBgpConnection } from '../utils/bgpConnection';
-import { parseBridgeCreate, parseBridgeUpdate } from '../utils/bridgeEdit';
+import { parseBridgeCreate, parseBridgeUpdate, bridgeMtuProblem } from '../utils/bridgeEdit';
 import { bridgesView } from '../utils/bridgesView';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
@@ -4024,9 +4024,9 @@ router.post('/:id/bridges', requireWrite, async (req, res) => {
     async (c) => { await c.collectInterfaces(); });
 });
 
-// PUT /api/devices/:id/bridges/:bridgeName { name?, protocol_mode?, priority?, comment?, disabled? }
-// Renaming or changing spanning tree on the bridge management runs through
-// can't be simulated, so it requires auto-revert; disabling it is predicted
+// PUT /api/devices/:id/bridges/:bridgeName { name?, protocol_mode?, priority?, comment?, disabled?, mtu? }
+// Renaming, changing spanning tree or the MTU on the bridge management runs
+// through can't be simulated, so it requires auto-revert; disabling it is predicted
 // as a lockout. VLAN filtering has its own route with its own analysis.
 router.put('/:id/bridges/:bridgeName', requireWrite, async (req, res) => {
   const name = req.params.bridgeName;
@@ -4034,12 +4034,32 @@ router.put('/:id/bridges/:bridgeName', requireWrite, async (req, res) => {
   const parsed = parseBridgeUpdate(req.body ?? {});
   if ('error' in parsed) return res.status(400).json({ error: parsed.error });
   const f = parsed.fields;
+  // An MTU the ports can't carry is refused by RouterOS with no reason given,
+  // so it's checked here first against each port's L2 MTU.
+  if (f.mtu && f.mtu !== 'auto') {
+    const deviceRow = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+    if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+    const reader = new DeviceCollector(deviceRow);
+    let bridge: ReturnType<typeof bridgesView>[number] | undefined;
+    try {
+      await reader.connect();
+      bridge = bridgesView(await reader.getBridgesDetail()).find((b) => b.name === name);
+    } catch (err) {
+      return res.status(502).json({ error: `Couldn't read the device's bridges: ${(err as Error).message}` });
+    } finally {
+      reader.disconnect();
+    }
+    if (!bridge) return res.status(404).json({ error: `There is no bridge called ${name} on this device.` });
+    const problem = bridgeMtuProblem(f.mtu, bridge.ports);
+    if (problem) return res.status(400).json({ error: problem });
+  }
   const changes: PlannedChange[] = [];
   if (f.name && f.name !== name) changes.push({ kind: 'path-object.change', name, what: `Renaming the bridge to ${f.name}` });
+  if (f.mtu) changes.push({ kind: 'path-object.change', name, what: 'Changing the MTU' });
   if (f['protocol-mode'] || f.priority) changes.push({ kind: 'path-object.change', name, what: 'Changing spanning tree' });
   if (f.disabled) changes.push({ kind: 'interface.disable', name, disabled: f.disabled === 'yes' });
   const what = [f.name && f.name !== name ? `rename to '${f.name}'` : '', f['protocol-mode'] ? `protocol ${f['protocol-mode']}` : '',
-    f.priority ? `priority ${f.priority}` : '', f.disabled ? (f.disabled === 'yes' ? 'disable' : 'enable') : '',
+    f.priority ? `priority ${f.priority}` : '', f.mtu ? `MTU ${f.mtu}` : '', f.disabled ? (f.disabled === 'yes' ? 'disable' : 'enable') : '',
     f.comment !== undefined ? 'comment' : ''].filter(Boolean).join(', ');
   await withGuardedChange(req.params.id, req, res,
     {

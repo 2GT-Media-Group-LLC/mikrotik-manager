@@ -5805,16 +5805,18 @@ export class DeviceCollector {
   /** Every bridge with its ports, VLAN entries and addresses, read live. */
   async getBridgesDetail(): Promise<{
     bridges: Record<string, string>[]; ports: Record<string, string>[];
-    vlans: Record<string, string>[]; addresses: Record<string, string>[];
+    vlans: Record<string, string>[]; addresses: Record<string, string>[]; interfaces: Record<string, string>[];
   }> {
     const none = () => [] as Record<string, string>[];
-    const [bridges, ports, vlans, addresses] = await Promise.all([
+    const [bridges, ports, vlans, addresses, interfaces] = await Promise.all([
       this.client.execute('/interface/bridge/print', { detail: '' }),
       this.client.execute('/interface/bridge/port/print', { detail: '' }).catch(none),
       this.client.execute('/interface/bridge/vlan/print', { detail: '' }).catch(none),
       this.client.execute('/ip/address/print', { detail: '' }).catch(none),
+      // Each port's L2 MTU, the ceiling for the bridge's MTU.
+      this.client.execute('/interface/print', { '.proplist': 'name,l2mtu' }).catch(none),
     ]);
-    return { bridges, ports, vlans, addresses };
+    return { bridges, ports, vlans, addresses, interfaces };
   }
 
   async addBridge(fields: Record<string, string>): Promise<void> {
