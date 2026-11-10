@@ -3,6 +3,13 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.41
+
+- **A bridge's MTU can be set**, from the bridge's **Edit** on the **Bridges** tab: a number for
+  jumbo frames, or `auto` for RouterOS's default. A bridge can't carry more than the smallest L2
+  MTU of its ports. RouterOS only answers "could not set mtu", so the manager says which ports are
+  too small and how high the bridge can go. See [Bridges](devices.md#bridges).
+
 ## 1.1.0-beta.40
 
 - **Zone rules can be ICMP, or any IP protocol by number**, from Ron's request in
