@@ -752,6 +752,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#zones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Zones
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resolve-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolve names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-the-events-come-from" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1614,6 +1636,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#zones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Zones
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resolve-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolve names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-the-events-come-from" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1712,10 +1756,10 @@ structured events.</p>
 <ul>
 <li>time and device</li>
 <li>inferred firewall action</li>
-<li>source and destination address and port</li>
+<li>source and destination address (or name) and port</li>
 <li>protocol</li>
 <li>firewall chain</li>
-<li>input and output interface</li>
+<li>input and output interface, or from and to zone on a zone-managed device</li>
 </ul>
 <p>IPv4 and IPv6 packet logs are supported.</p>
 <h2 id="grouped-and-raw">Grouped and raw<a class="headerlink" href="#grouped-and-raw" title="Permanent link">&para;</a></h2>
@@ -1730,6 +1774,29 @@ used last.</p>
 look further back.</p>
 <p>For whole connections rather than logged packets, with bytes each way and how each one ended,
 see <a href="../sessions/">Sessions</a>, built from NetFlow.</p>
+<h2 id="zones">Zones<a class="headerlink" href="#zones" title="Permanent link">&para;</a></h2>
+<p>On a device whose firewall is managed with <a href="../devices/#zones">zones</a>, the In and Out columns
+become <strong>From zone</strong> and <strong>To zone</strong> and show zone names instead of interfaces. Traffic to or
+from the router itself shows <strong>Router</strong> as its zone. The chain is left out on those lines,
+since the zones already say where the traffic went.</p>
+<ul>
+<li>An interface in no zone shows as the interface name, in italics.</li>
+<li>When the page mixes zone and non-zone devices, the columns are labelled <strong>From</strong> and <strong>To</strong>.</li>
+<li>The manager reads zone membership when you apply zones, when you open the Zones tab, and
+  with the hourly config check. A membership change made on the device shows here within the
+  hour.</li>
+</ul>
+<h2 id="resolve-names">Resolve names<a class="headerlink" href="#resolve-names" title="Permanent link">&para;</a></h2>
+<p><strong>Resolve names</strong> shows names in place of addresses. Hover a name to see its address. A name
+comes from one of two places:</p>
+<ul>
+<li>the hostname of a <a href="../clients/">client</a> the manager knows at the same site;</li>
+<li>otherwise, a reverse DNS (PTR) lookup from the manager's own resolver.</li>
+</ul>
+<p>Reverse DNS answers are kept for an hour and misses for ten minutes. A page waits at most
+1.5 seconds for them, and slower answers show on the next refresh. The setting is off by
+default, because reverse DNS sends the addresses on the page to the manager's DNS server.
+Search still matches addresses, not names.</p>
 <h2 id="where-the-events-come-from">Where the events come from<a class="headerlink" href="#where-the-events-come-from" title="Permanent link">&para;</a></h2>
 <p>Firewall logs are collected from the normal RouterOS log stream. A firewall
 rule therefore produces entries on this page only when logging is enabled for

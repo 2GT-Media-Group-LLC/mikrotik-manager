@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta44" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.44
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta43" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1980,6 +1991,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta44" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.44
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta43" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2464,6 +2486,17 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta44">1.1.0-beta.44<a class="headerlink" href="#110-beta44" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Firewall Logs reads in zones</strong>, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415">#415</a>. On a device running
+  <a href="../devices/#zones">zones</a>, In and Out become <strong>From zone</strong> and <strong>To zone</strong>, with "Router" for
+  traffic to or from the router itself, and the chain is left out. A device already on zones
+  shows them within the hour, or as soon as its Zones tab is opened.</li>
+<li><strong>Resolve names</strong> on Firewall Logs shows client hostnames and reverse DNS in place of
+  addresses, with the address on hover (#415). Off by default. See
+  <a href="../firewall-events/#resolve-names">Resolve names</a>.</li>
+</ul>
 <h2 id="110-beta43">1.1.0-beta.43<a class="headerlink" href="#110-beta43" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>nginx kept restarting after updating to beta.42</strong> with an existing compose file
