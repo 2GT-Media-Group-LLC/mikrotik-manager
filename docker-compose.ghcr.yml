@@ -34,8 +34,14 @@ services:
       # proxy (address or CIDR) whose X-Forwarded-For / -Proto are believed.
       TLS_MODE: ${TLS_MODE:-https}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # Optional HTTP-01 Let's Encrypt support; requires public DNS and port 80.
+      ACME_DOMAIN: ${ACME_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # Override the ACME directory for a staging or private CA.
+      ACME_SERVER: ${ACME_SERVER:-}
     volumes:
       - certs_data:/certs
+      - acme_challenge:/var/www/certbot
     depends_on:
       backend:
         condition: service_healthy
@@ -88,6 +94,10 @@ services:
       # effect only while SSO is configured; set it back to true to get in if
       # SSO breaks. See docs/sso-oidc.md.
       PASSWORD_LOGIN: ${PASSWORD_LOGIN:-true}
+      # ACME defaults are read by the admin UI when no web override is saved.
+      ACME_DOMAIN: ${ACME_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_SERVER: ${ACME_SERVER:-}
       PORT: 3001
       NETFLOW_BIND_PORT: 2055
       # Poller tuning. These were documented in .env.example but never passed
@@ -305,6 +315,7 @@ volumes:
   influxdb_data:
   backups_data:
   certs_data:
+  acme_challenge:
   app_data:
 
 networks:
