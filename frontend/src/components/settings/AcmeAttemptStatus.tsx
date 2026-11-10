@@ -29,7 +29,7 @@ export default function AcmeAttemptStatus() {
           </p>
           {attempt.output && (
             <details>
-              <summary className="text-sm text-gray-600 dark:text-slate-300 cursor-pointer">Certbot output</summary>
+              <summary className="text-sm text-gray-600 dark:text-slate-300 cursor-pointer">Certbot output and log</summary>
               <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-100 dark:bg-slate-800 p-3 text-xs text-gray-700 dark:text-slate-200">{attempt.output}</pre>
             </details>
           )}

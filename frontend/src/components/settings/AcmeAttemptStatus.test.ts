@@ -25,11 +25,13 @@ describe('ACME attempt status', () => {
   });
 
   it('shows the outcome and output of a failed request', () => {
-    state.data.lastAttempt = { time: '2026-11-10T08:30:00Z', action: 'issue', exitCode: 1, domain: 'manager.example.com', output: 'Challenge failed' };
+    state.data.lastAttempt = { time: '2026-11-10T08:30:00Z', action: 'issue', exitCode: 1, domain: 'manager.example.com', output: 'Challenge failed\nCertbot detailed log:\nAuthorization error' };
     const markup = renderToStaticMarkup(createElement(AcmeAttemptStatus));
     expect(markup).toContain('Certificate request failed (exit code 1)');
     expect(markup).toContain('manager.example.com');
     expect(markup).toContain('Challenge failed');
+    expect(markup).toContain('Certbot output and log');
+    expect(markup).toContain('Authorization error');
   });
 
   it('distinguishes a successful renewal check from a renewed certificate', () => {

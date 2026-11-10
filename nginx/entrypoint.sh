@@ -171,7 +171,6 @@ if [ "$TLS_MODE" = "https" ]; then
     (
         ACME_CONFIG=/certs/letsencrypt
         ACME_WORK=/tmp/letsencrypt-work
-        ACME_LOGS=/tmp/letsencrypt-logs
         ACME_DEPLOY_HOOK='cp "$RENEWED_LINEAGE/fullchain.pem" /certs/server.crt && cp "$RENEWED_LINEAGE/privkey.pem" /certs/server.key && chmod 644 /certs/server.crt && chmod 600 /certs/server.key && touch /certs/.reload'
         LAST_DOMAIN=
         LAST_EMAIL=
@@ -217,6 +216,17 @@ if [ "$TLS_MODE" = "https" ]; then
                     ATTEMPT_DOMAIN=$ACME_DOMAIN
                     ATTEMPT_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
                     ATTEMPT_OUTPUT="/tmp/acme-attempt-$$.log"
+                    if ! ATTEMPT_LOG_DIR=$(mktemp -d /tmp/acme-certbot-XXXXXX); then
+                        echo "[entrypoint] error: could not create the Certbot log directory; ACME check deferred."
+                        sleep 5
+                        continue
+                    fi
+                    if ! chown "$BACKEND_UID:$BACKEND_GID" "$ATTEMPT_LOG_DIR"; then
+                        echo "[entrypoint] error: could not hand the Certbot log directory to the backend user; ACME check deferred."
+                        rmdir "$ATTEMPT_LOG_DIR" || echo "[entrypoint] error: could not remove the Certbot log directory."
+                        sleep 5
+                        continue
+                    fi
                     if [ -f /certs/acme-ca-bundle.crt ]; then
                         export REQUESTS_CA_BUNDLE=/certs/acme-ca-bundle.crt
                     else
@@ -225,7 +235,7 @@ if [ "$TLS_MODE" = "https" ]; then
                     if [ -f "$ACME_CONFIG/live/$ACME_DOMAIN/fullchain.pem" ]; then
                         ATTEMPT_ACTION=renew
                         if su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
-                            --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
+                            --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ATTEMPT_LOG_DIR" --max-log-backups 1 \
                             --server "$ACME_SERVER" renew --cert-name "$ACME_DOMAIN" --deploy-hook "$ACME_DEPLOY_HOOK" > "$ATTEMPT_OUTPUT" 2>&1; then
                             CERTBOT_RET=0
                         else
@@ -240,7 +250,7 @@ if [ "$TLS_MODE" = "https" ]; then
                             set -- --register-unsafely-without-email
                         fi
                         if su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
-                            --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
+                            --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ATTEMPT_LOG_DIR" --max-log-backups 1 \
                             --server "$ACME_SERVER" certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
                             "$@" --cert-name "$ACME_DOMAIN" -d "$ACME_DOMAIN" \
                             --deploy-hook "$ACME_DEPLOY_HOOK" > "$ATTEMPT_OUTPUT" 2>&1; then
@@ -257,7 +267,14 @@ if [ "$TLS_MODE" = "https" ]; then
                     if has_non_space "$ACME_DOMAIN"; then
                         STATUS_TMP="${ACME_STATUS_FILE}.$$.tmp"
                         if { printf '%s\n%s\n%s\n%s\n' "$ATTEMPT_TIME" "$ATTEMPT_ACTION" "$CERTBOT_RET" "$ATTEMPT_DOMAIN" &&
-                             tail -c 65536 "$ATTEMPT_OUTPUT"; } > "$STATUS_TMP" &&
+                             printf '%s\n' 'Certbot command output (last 64 KiB):' &&
+                             tail -c 65536 "$ATTEMPT_OUTPUT" &&
+                             printf '\n\n%s\n' 'Certbot detailed log (last 64 KiB):' &&
+                             if [ -f "$ATTEMPT_LOG_DIR/letsencrypt.log" ]; then
+                                 tail -c 65536 "$ATTEMPT_LOG_DIR/letsencrypt.log"
+                             else
+                                 printf '%s\n' 'No Certbot log was produced for this attempt.'
+                             fi; } > "$STATUS_TMP" &&
                            chmod 600 "$STATUS_TMP" &&
                            chown "$BACKEND_UID:$BACKEND_GID" "$STATUS_TMP" &&
                            mv -f "$STATUS_TMP" "$ACME_STATUS_FILE"; then
@@ -272,6 +289,10 @@ if [ "$TLS_MODE" = "https" ]; then
                         fi
                     fi
                     rm -f "$ATTEMPT_OUTPUT"
+                    if ! rm -f "$ATTEMPT_LOG_DIR/letsencrypt.log" "$ATTEMPT_LOG_DIR/letsencrypt.log.1" ||
+                       ! rmdir "$ATTEMPT_LOG_DIR"; then
+                        echo "[entrypoint] error: could not remove the Certbot attempt logs in $ATTEMPT_LOG_DIR."
+                    fi
                     NOW=$(date +%s)
                     if [ $CERTBOT_RET -eq 0 ]; then
                         NEXT_RUN=$((NOW + 43200))

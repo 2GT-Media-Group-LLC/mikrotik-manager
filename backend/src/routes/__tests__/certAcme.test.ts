@@ -68,11 +68,11 @@ describe('manager ACME settings', () => {
     process.env.ACME_DOMAIN = valid.domain;
     const time = '2026-11-10T08:30:00Z';
     jest.mocked(readFile).mockImplementation(async (file) => {
-      if (file === '/certs/acme-last-attempt') return `${time}\n${action}\n${code}\n${valid.domain}\nCertbot output\n` as never;
+      if (file === '/certs/acme-last-attempt') return `${time}\n${action}\n${code}\n${valid.domain}\nCertbot output\nCertbot detailed log:\nDetailed failure\n` as never;
       throw Object.assign(new Error('missing'), { code: 'ENOENT' });
     });
     expect((await request(app()).get('/api/cert/acme/status').set('x-test-role', 'admin')).body).toEqual({
-      lastAttempt: { time, action, exitCode: code, domain: valid.domain, output: 'Certbot output\n' },
+      lastAttempt: { time, action, exitCode: code, domain: valid.domain, output: 'Certbot output\nCertbot detailed log:\nDetailed failure\n' },
     });
   });
 
