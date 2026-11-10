@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta42" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.42
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta41" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1958,6 +1969,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta42" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.42
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta41" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2420,6 +2442,16 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta42">1.1.0-beta.42<a class="headerlink" href="#110-beta42" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Let's Encrypt certificates for the manager</strong>, contributed by eskyuu in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/420">#420</a>. With a public DNS name
+  and port 80 open, <strong>Settings → Certificate</strong> can get and renew a certificate by itself, show the
+  last Certbot attempt, and use staging or a private ACME server with its own CA. The settings can
+  also come from <code>.env</code>. Nothing changes until a domain is set. See
+  <a href="../configuration/#lets-encrypt-acme">Let's Encrypt</a>.</li>
+<li>The nginx image is about 100 MB larger, for Certbot.</li>
+</ul>
 <h2 id="110-beta41">1.1.0-beta.41<a class="headerlink" href="#110-beta41" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Zone rules can name a hostname</strong>, from Ron's request in

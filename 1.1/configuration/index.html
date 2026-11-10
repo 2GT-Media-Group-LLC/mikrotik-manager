@@ -598,6 +598,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="TLS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lets-encrypt-acme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let's Encrypt (ACME)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1937,6 +1954,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="TLS">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lets-encrypt-acme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let's Encrypt (ACME)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2109,6 +2143,21 @@
 <td><code>HTTPS_PORT</code></td>
 <td><code>443</code></td>
 <td>Host port for HTTPS</td>
+</tr>
+<tr>
+<td><code>ACME_DOMAIN</code></td>
+<td><em>unset</em></td>
+<td>DNS name for a Let's Encrypt certificate. See <a href="#lets-encrypt-acme">Let's Encrypt</a></td>
+</tr>
+<tr>
+<td><code>ACME_EMAIL</code></td>
+<td><em>unset</em></td>
+<td>Contact email for Let's Encrypt expiry notices</td>
+</tr>
+<tr>
+<td><code>ACME_SERVER</code></td>
+<td>Let's Encrypt</td>
+<td>Another ACME directory URL, such as staging or a private CA</td>
 </tr>
 <tr>
 <td><code>BIND_ADDRESS</code></td>
@@ -2395,12 +2444,35 @@ all: the first command in the container fails with "operation not permitted". 0.
 and on such hosts the update left the databases restarting; 0.24.52 removes it.</p>
 <h2 id="tls">TLS<a class="headerlink" href="#tls" title="Permanent link">&para;</a></h2>
 <p>A self-signed certificate is generated on first run. Replace it under
-<strong>Settings → TLS Certificate</strong> by uploading a certificate and private key, or regenerate the
+<strong>Settings → Certificate</strong> by uploading a certificate and private key, or regenerate the
 self-signed one; nginx terminates TLS, picks up the new certificate within a few seconds, and
 redirects HTTP to HTTPS.</p>
 <p>Before 0.24.37 both failed with "permission denied": the certificate volume was owned by
 root and the backend runs as a normal user. The nginx container now hands the volume to the
 backend user (uid 100, gid 101) at every start, which also fixes existing installs.</p>
+<h3 id="lets-encrypt-acme">Let's Encrypt (ACME)<a class="headerlink" href="#lets-encrypt-acme" title="Permanent link">&para;</a></h3>
+<p>With a public DNS name, the manager can get and renew its own certificate from Let's Encrypt
+(#420, contributed by eskyuu). Point the name at the host, make sure port 80 is reachable from the
+internet, keep <code>TLS_MODE=https</code>, and enter the name under <strong>Settings → Certificate → Automatic HTTPS
+Certificate (ACME)</strong>. The email is optional, but without one you get no expiry notices.</p>
+<ul>
+<li>It starts within a few seconds of saving, with no restart. The certificate replaces the one
+  in use, including an uploaded one, and nginx reloads.</li>
+<li>Renewal is checked every 12 hours. A failed request is retried after an hour, and the
+  certificate in use stays until a new one arrives.</li>
+<li><strong>Last Certbot attempt</strong> on the same card shows the result and Certbot's output, which is the
+  place to look when it fails. <code>docker compose logs nginx</code> has it too.</li>
+<li>To turn it off, press <strong>Use .env Values</strong> with no <code>ACME_DOMAIN</code> in <code>.env</code>. The certificate it
+  got stays in place.</li>
+<li>It can't work with <code>TLS_MODE=proxy</code>; there, use your proxy's own certificates.</li>
+</ul>
+<p>The same settings can come from <code>.env</code>: <code>ACME_DOMAIN</code>, <code>ACME_EMAIL</code> and <code>ACME_SERVER</code> (blank means
+Let's Encrypt). Settings saved in the page win over <code>.env</code>, and <strong>Use .env Values</strong> drops them.
+When all three are set in <code>.env</code>, they win and the page is read-only.</p>
+<p><strong>Staging or a private ACME server.</strong> Set its directory URL. If its own HTTPS certificate comes
+from a private CA, paste that CA under <strong>ACME Server CA Bundle</strong>. The bundle replaces Certbot's
+usual trust store, so include every CA the server needs; removing it goes back to the usual one.
+Certificate checks stay on either way.</p>
 <h2 id="behind-a-reverse-proxy">Behind a reverse proxy<a class="headerlink" href="#behind-a-reverse-proxy" title="Permanent link">&para;</a></h2>
 <p>If you already run a reverse proxy (Nginx Proxy Manager, Traefik, Caddy, HAProxy) that holds
 your certificates, let it terminate TLS and hand plain HTTP to the manager (#256). Set in
