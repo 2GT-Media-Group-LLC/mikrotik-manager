@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.41
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta40" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1947,6 +1958,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.41
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta40" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2398,6 +2420,37 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta41">1.1.0-beta.41<a class="headerlink" href="#110-beta41" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Zone rules can name a hostname</strong>, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369">#369</a>: trust to untrust on
+  587 to <code>smtp.outlook.com</code>, say. The router keeps an address list of every address the name
+  resolves to, and the rule matches the list. See <a href="../devices/#zones">Zones</a>.</li>
+<li><strong>Zones can limit what the manager reaches on the router</strong> to the API, API-SSL and SSH ports,
+  the only ones it uses, instead of everything (#369).</li>
+<li><strong>Each site can have a map zoom</strong> (#362): 1 (the world) to 19 (a building), 12 being about
+  street level. The dashboard map opens at it when it shows only that site's devices. See
+  <a href="../sites/">Sites</a>.</li>
+<li><strong>Switching to API-SSL or HTTPS explains "not enough permissions"</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417">#417</a>): which step the
+  router refused, and that the user the manager logs in as needs the <code>full</code> group or the missing
+  policies.</li>
+<li><strong>A bridge's MTU can be set</strong>, from the bridge's <strong>Edit</strong> on the <strong>Bridges</strong> tab: a number, or
+  <code>auto</code> for RouterOS's default. It's the MTU for the router's own traffic on the bridge; jumbo
+  frames switched between ports only need the ports' MTU raised. A bridge can't carry more than
+  the smallest L2 MTU of its ports, and RouterOS only answers "could not set mtu", so the manager
+  says which ports are too small, and which can't go higher at all and have to leave the bridge.
+  See <a href="../devices/#bridges">Bridges</a>.</li>
+<li><strong>A port's MTU stops at what its hardware takes</strong>, and the form says what that is ("up to 10218
+  on this port"). RouterOS quietly kept a lower MTU than asked when a port couldn't take it (a
+  CRS510's management port stops at 2028), and the save reported success; now the manager
+  refuses it, and says so if the device keeps a different value. The fixed 9216 limit is gone,
+  so CRS3xx and CRS5xx ports can go to 10218. See <a href="../devices/#a-ports-mtu">A port's MTU</a>.</li>
+<li><strong>Saving a port no longer lowers its L2 MTU.</strong> Every save sent the MTU, and setting it also
+  set the L2 MTU to the MTU plus 8, so a comment edit on a port raised for VLAN tags or jumbo
+  frames brought it back down. The MTU is now sent only when it changes, and the L2 MTU is only
+  ever raised.</li>
+</ul>
 <h2 id="110-beta40">1.1.0-beta.40<a class="headerlink" href="#110-beta40" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Zone rules can be ICMP, or any IP protocol by number</strong>, from Ron's request in

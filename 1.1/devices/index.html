@@ -857,6 +857,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-ports-mtu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A port's MTU
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#power-cycling-a-poe-port" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2371,6 +2382,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-ports-mtu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A port's MTU
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#power-cycling-a-poe-port" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3241,6 +3263,12 @@ subnet only.</p>
 <strong>Protocol #</strong>: <code>89</code> for OSPF, <code>47</code> for GRE, <code>112</code> for VRRP. RouterOS shows a protocol it has a name
 for by that name, so the rule appears on the device as <code>protocol=ospf</code>. Neither takes ports, and
 both can take addresses.</p>
+<p>A source or destination can also be a <strong>hostname</strong>, such as <code>smtp.office365.com</code>. The router looks
+it up with its own DNS (<strong>IP &gt; DNS</strong>) and keeps an address list of every address it resolves to,
+updated as the name's records change, so a service behind several changing addresses stays
+matched. The manager keeps one list per name, called <code>mtm-zone-&lt;name&gt;</code>, holding a single entry
+commented <code>mtm zone host</code>, and removes it once no rule uses the name. If the router can't
+resolve a name, rules using it match nothing.</p>
 <p>Traffic between interfaces of the same zone is allowed unless you turn it off for that zone.</p>
 <h3 id="turning-zones-on">Turning zones on<a class="headerlink" href="#turning-zones-on" title="Permanent link">&para;</a></h3>
 <p>Zones replace the whole IPv4 filter table, so they can be turned on only when the table is empty or
@@ -3264,6 +3292,12 @@ and how many rules it adds, removes and keeps. <strong>Show the rules</strong> l
   zone for same-zone traffic; a jump per open pair, to <code>&lt;from&gt;-to-&lt;to&gt;</code>; then drop the rest.</li>
 <li><strong>One chain per open pair</strong>, holding its accepts and ending in a return.</li>
 </ul>
+<p>The manager's rule lets its address reach everything on the router by default. To narrow it,
+set <strong>The manager can reach</strong> to <strong>only the API, API-SSL and SSH ports</strong>. Those are all the
+manager connects to: the API for everything it reads and changes, and SSH for the terminal,
+SSH-only devices and keys. It doesn't ping devices or poll them over SNMP. The ports are the ones
+set in <strong>IP &gt; Services</strong>, so an SSH server moved to 2222 is the port allowed. The choice only
+appears when MTM can see its own address on the device.</p>
 <p>The two final drops log by default with the prefixes <code>zone drop in</code> and <code>zone drop fwd</code>, tagged so
 <a href="../firewall-events/#which-rule-logged-it">Firewall Events</a> links each line to its rule. Untick <strong>Log
 what's dropped</strong> to leave them quiet. The returns and the final drops aren't shown in the matrix.</p>
@@ -3318,6 +3352,17 @@ many receive and transmit errors, drops and transmit-queue drops the port had in
 a small chart of them when there were any, or "0 errors · 0 drops in this range" when there were
 none (#402). They're kept apart from the throughput so a few
 aren't flattened by gigabit traffic. Drops are counted from 1.1.0-beta.26 on.</p>
+<h3 id="a-ports-mtu">A port's MTU<a class="headerlink" href="#a-ports-mtu" title="Permanent link">&para;</a></h3>
+<p>A port's edit form takes its MTU, from 576 up to what the port's hardware takes. RouterOS calls
+that <code>max-l2mtu</code>, and the field shows it ("up to 10218 on this port"). It varies by port: most
+SFP+ and QSFP28 ports on CRS3xx and CRS5xx switches take 10218, while a CRS510's management port
+(ether1) stops at 2028. RouterOS doesn't refuse a higher MTU; it keeps the most it can without
+saying so. So the manager refuses one the port can't take, and reports it if the device keeps a
+different value than asked.</p>
+<p>The port's L2 MTU is raised with the MTU when it's too small, and is never lowered, so a port
+raised for VLAN tags or jumbo frames keeps it. The MTU is only sent when you change it.</p>
+<p>Jumbo frames switched between ports only need those ports' MTU raised. The bridge's own MTU
+(see <a href="#bridges">Bridges</a>) is only for the router's own traffic on the bridge.</p>
 <h3 id="power-cycling-a-poe-port">Power-cycling a PoE port<a class="headerlink" href="#power-cycling-a-poe-port" title="Permanent link">&para;</a></h3>
 <p>On a port that supplies PoE, <strong>Power-cycle PoE</strong> turns its power off for 5 seconds and back on,
 which restarts the access point, camera or phone it powers (#291). It's in the selection bar
@@ -3447,13 +3492,23 @@ has a small chip icon; hover a port for its PVID and spanning tree role.</p>
 <li><strong>New bridge</strong> creates an empty one, with RSTP unless you choose otherwise. Add ports to it
   on the <strong>Ports</strong> tab (see <a href="#moving-ports-between-bridges">Moving ports between bridges</a>).</li>
 <li><strong>Edit</strong> renames it, changes its spanning tree mode or priority (0 to 61440 in steps of
-  4096; the lowest wins the root election), changes its comment, or turns it off. Renaming
-  keeps its ports, VLANs and addresses.</li>
-<li><strong>turn on / turn off</strong> next to VLAN filtering works as it does from the faceplate.</li>
-<li>The bin deletes a bridge with no ports, addresses or VLAN entries.</li>
+  4096; the lowest wins the root election), changes its comment or MTU, or turns it off.
+  Renaming keeps its ports, VLANs and addresses.</li>
+<li><strong>MTU</strong> is <code>auto</code> by default: RouterOS uses the lowest MTU of the bridge's ports. Set a
+  number, or <code>auto</code> to go back. The bridge's MTU is for the router's own traffic on the bridge:
+  its address, routing in and out, and VLAN interfaces on it. Jumbo frames switched between
+  ports don't use it; they only need those ports' MTU raised (see
+  <a href="#a-ports-mtu">A port's MTU</a>).</li>
 </ul>
+<p>A bridge's MTU can't be more than the smallest L2 MTU of its ports, and the field says what
+  that is. Asked for more, the manager names the ports that are too small, because RouterOS's
+  own answer is only "could not set mtu". Raise those ports' MTU on the <strong>Ports</strong> tab first. A
+  port whose hardware can't go that high, such as a CRS510's 2028-byte management port, has to
+  leave the bridge instead.
+- <strong>turn on / turn off</strong> next to VLAN filtering works as it does from the faceplate.
+- The bin deletes a bridge with no ports, addresses or VLAN entries.</p>
 <p>Everything runs through <a href="../change-guard/">Change Guard</a>. Renaming the bridge the manager
-connects through, or changing its spanning tree, can't be simulated, so it runs with
+connects through, or changing its spanning tree or MTU, can't be simulated, so it runs with
 auto-revert required; turning that bridge off is predicted as a lockout and asks first.</p>
 <h2 id="routing-between-vlans-in-hardware">Routing between VLANs in hardware<a class="headerlink" href="#routing-between-vlans-in-hardware" title="Permanent link">&para;</a></h2>
 <p>On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),
