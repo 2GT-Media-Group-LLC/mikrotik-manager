@@ -13,6 +13,7 @@ import { enableApiSsl, type ApiSslDevice } from '../services/apiSsl';
 import { enableWwwSsl } from '../services/wwwSsl';
 import { deviceWriteLock, deviceIdFromPath, detachHeldLock } from '../services/changeGuard/deviceLock';
 import { answerWithTask, answerTaskStatus } from '../services/deviceTasks';
+import { permissionProblem } from '../utils/devicePermission';
 import { randomUUID } from 'crypto';
 import { Client as SshClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
@@ -2044,8 +2045,9 @@ router.post('/:id/api-ssl', requireWrite, async (req: Request, res: Response) =>
       const connectionProblem = !!(err as NodeJS.ErrnoException).code
         || /timeout|connection|invalid user name or password/i.test(msg);
       // In the log too, for when the reply never reaches the browser (#417).
-      if (!connectionProblem) console.warn(`[api-ssl] ${device.name}: ${msg}`);
-      return { httpStatus: 502, error: `Could not enable API-SSL: ${connectionProblem ? safeConnectionError('api-ssl', err) : msg}` };
+      if (!connectionProblem) console.warn(`[api-ssl] ${device.name}: ${msg}${(err as { during?: string }).during ? ` (${(err as { during?: string }).during})` : ''}`);
+      const denied = permissionProblem(err, device.api_username);
+      return { httpStatus: 502, error: `Could not enable API-SSL: ${denied ?? (connectionProblem ? safeConnectionError('api-ssl', err) : msg)}` };
     },
     // Read by a page loaded before this change, which expects a result.
     stillRunning: { switched: false, steps: [], message: `Still working on ${device.name.trim()} (signing a certificate can take a few minutes). Reload the page shortly to see the outcome.` },
@@ -2062,6 +2064,7 @@ router.get('/:id/api-ssl/status', (req: Request, res: Response) => {
 // on, and plain www off only once HTTPS answers.
 router.post('/:id/www-ssl', requireWrite, async (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
+  const apiUser = (await queryOne<{ api_username: string }>(`SELECT api_username FROM devices WHERE id = $1`, [id]))?.api_username;
   // Same as API-SSL above: it may sign a certificate, so it may answer 202 (#417).
   await answerWithTask(res, `www-ssl:${id}`, () => enableWwwSsl(id), {
     failure: (err) => {
@@ -2069,7 +2072,8 @@ router.post('/:id/www-ssl', requireWrite, async (req: Request, res: Response) =>
       if (msg === 'Device not found') return { httpStatus: 404, error: msg };
       const connectionProblem = !!(err as NodeJS.ErrnoException).code
         || /timeout|connection|invalid user name or password/i.test(msg);
-      return { httpStatus: 502, error: `Could not switch WebFig to HTTPS: ${connectionProblem ? safeConnectionError('api', err) : msg}` };
+      const denied = permissionProblem(err, apiUser);
+      return { httpStatus: 502, error: `Could not switch WebFig to HTTPS: ${denied ?? (connectionProblem ? safeConnectionError('api', err) : msg)}` };
     },
     stillRunning: { switched: false, steps: [], message: 'Still working on the device (signing a certificate can take a few minutes). Reload the page shortly to see the outcome.' },
     detach: () => detachHeldLock(id),

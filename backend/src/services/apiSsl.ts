@@ -24,6 +24,7 @@ import { usesApiTls } from '../utils/apiTls';
 import { API_SSL_PORT } from './mikrotik/apiConnect';
 import { forgetIdentity } from './identityPins';
 import { configuredServices, allowedFrom, allowedFromKey } from '../utils/ipServices';
+import { during } from '../utils/devicePermission';
 
 export const MTM_CERT_NAME = 'mtm-api-ssl';
 
@@ -72,11 +73,11 @@ export async function ensureCertificate(client: CommandRunner, device: { name: s
     return MTM_CERT_NAME;
   }
   if (existing?.['.id']) {
-    await client.execute('/certificate/remove', { '.id': existing['.id'] });
+    await during('removing the old certificate', () => client.execute('/certificate/remove', { '.id': existing['.id'] }));
     steps.push(`Removed an unusable "${MTM_CERT_NAME}" certificate`);
   }
   const identity = (await client.execute('/system/identity/print').catch(() => []))[0]?.['name'] || device.name;
-  await client.execute('/certificate/add', {
+  await during('creating the certificate', () => client.execute('/certificate/add', {
     name: MTM_CERT_NAME,
     'common-name': identity.slice(0, 64),
     'key-size': '2048',
@@ -84,7 +85,7 @@ export async function ensureCertificate(client: CommandRunner, device: { name: s
     // key-cert-sign is needed for a certificate to sign itself; without it
     // RouterOS refuses with "CA not found".
     'key-usage': 'digital-signature,key-encipherment,key-cert-sign,tls-server',
-  });
+  }));
   steps.push(`Created a self-signed certificate "${MTM_CERT_NAME}" (valid 10 years)`);
 
   // Signing generates the key, which takes a while on small devices. The
@@ -92,7 +93,7 @@ export async function ensureCertificate(client: CommandRunner, device: { name: s
   const added = await certByName(client, MTM_CERT_NAME);
   if (!added?.['.id']) throw new Error('The certificate was created but could not be found to sign it.');
   // By .id: the API's /certificate/sign refuses `numbers`.
-  await client.execute('/certificate/sign', { '.id': added['.id'] }, [], { timeoutMs: SIGN_TIMEOUT_MS });
+  await during('signing the certificate', () => client.execute('/certificate/sign', { '.id': added['.id'] }, [], { timeoutMs: SIGN_TIMEOUT_MS }));
   const deadline = Date.now() + SIGN_WAIT_MS;
   while (Date.now() < deadline) {
     if (usable(await certByName(client, MTM_CERT_NAME))) {
@@ -135,7 +136,7 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
     await client.connect();
     // Configured rows only: a live api-ssl session is printed as another
     // "api-ssl" row (#192).
-    const services = configuredServices(await client.execute('/ip/service/print', { detail: '' }));
+    const services = configuredServices(await during('reading the services', () => client.execute('/ip/service/print', { detail: '' })));
     const svc = services.find((r) => r['name'] === 'api-ssl');
     if (!svc?.['.id']) throw new Error('This device has no api-ssl service.');
     const plainApi = services.find((r) => r['name'] === 'api');
@@ -163,7 +164,7 @@ export async function enableApiSsl(device: ApiSslDevice): Promise<ApiSslResult> 
       changes[allowedFromKey(svc)] = apiList.join(',');
     }
     if (Object.keys(changes).length > 0) {
-      await client.execute('/ip/service/set', { '.id': svc['.id'], ...changes });
+      await during('changing the api-ssl service', () => client.execute('/ip/service/set', { '.id': svc['.id'], ...changes }));
       if (changes['disabled']) steps.push('Enabled the api-ssl service');
       if (changes['certificate']) steps.push(`Assigned "${certName}" to the api-ssl service`);
       if (changes['port']) steps.push(`Moved api-ssl to port ${API_SSL_PORT} (it was on ${svc['port']})`);

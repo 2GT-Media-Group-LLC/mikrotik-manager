@@ -25,6 +25,7 @@ import { queryOne } from '../config/database';
 import { DeviceCollector, type DeviceRow } from './mikrotik/DeviceCollector';
 import { ensureCertificate, certByName, usable } from './apiSsl';
 import { allowedFrom, allowedFromKey } from '../utils/ipServices';
+import { during } from '../utils/devicePermission';
 
 export interface WwwSslResult {
   /** True once www-ssl answers and plain www is off. */
@@ -104,7 +105,7 @@ export async function enableWwwSsl(deviceId: number): Promise<WwwSslResult> {
     if (wwwList.length > 0 && allowedFrom(ssl).length === 0) changes[allowedFromKey(ssl)] = wwwList.join(',');
 
     if (Object.keys(changes).length > 0) {
-      await run.execute('/ip/service/set', { '.id': ssl['.id'], ...changes });
+      await during('changing the www-ssl service', () => run.execute('/ip/service/set', { '.id': ssl['.id'], ...changes }));
       if (changes['certificate']) steps.push(`Assigned "${certName}" to www-ssl`);
       if (changes['disabled']) steps.push(`Enabled www-ssl on port ${port}`);
       if (changes[allowedFromKey(ssl)] !== undefined) steps.push(`Limited www-ssl to the addresses www allows: ${wwwList.join(', ')}`);
@@ -130,7 +131,7 @@ export async function enableWwwSsl(deviceId: number): Promise<WwwSslResult> {
     steps.push(`WebFig answers at ${url}`);
 
     if (www?.['.id'] && !isTrue(www['disabled'])) {
-      await run.execute('/ip/service/set', { '.id': www['.id'], disabled: 'yes' });
+      await during('turning off plain www', () => run.execute('/ip/service/set', { '.id': www['.id'], disabled: 'yes' }));
       steps.push('Turned off plain www (HTTP)');
     }
     return {
