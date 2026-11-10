@@ -2717,6 +2717,8 @@ export interface SitePayload {
   notes?: string;
   location_lat?: number | null;
   location_lng?: number | null;
+  /** The zoom its map opens at, 1 to 19; null to fit the map (#362). */
+  map_zoom?: number | null;
   /** The group it belongs to; null for none (#306). */
   group_id?: number | null;
   /** Pre-fills new devices in the site; null for direct. */

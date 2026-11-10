@@ -2017,6 +2017,9 @@ CREATE INDEX IF NOT EXISTS idx_netflow_sessions_ended ON netflow_sessions(ended_
 CREATE INDEX IF NOT EXISTS idx_netflow_sessions_device ON netflow_sessions(device_id, ended_at DESC);
 CREATE INDEX IF NOT EXISTS idx_netflow_sessions_client ON netflow_sessions(client_addr, ended_at DESC);
 CREATE INDEX IF NOT EXISTS idx_netflow_sessions_server ON netflow_sessions(server_addr, ended_at DESC);
+-- The zoom a site's map opens at (#362): 1 (world) to 19 (a building). NULL
+-- fits the map to what's on it, as before.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS map_zoom SMALLINT;
 `;
 
 const DEFAULT_SETTINGS = [

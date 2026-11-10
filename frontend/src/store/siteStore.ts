@@ -7,6 +7,8 @@ export interface Site {
   address: string | null;
   location_lat: number | null;
   location_lng: number | null;
+  /** The zoom its map opens at, 1 (world) to 19 (building); null fits the map (#362). */
+  map_zoom?: number | null;
   notes: string | null;
   is_default: boolean;
   device_count: number;

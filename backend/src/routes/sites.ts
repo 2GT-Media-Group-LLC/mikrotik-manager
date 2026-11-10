@@ -21,6 +21,7 @@ export interface SiteRow {
   address: string | null;
   location_lat: number | null;
   location_lng: number | null;
+  map_zoom?: number | null;
   notes: string | null;
   is_default: boolean;
   created_at: string;
@@ -53,6 +54,19 @@ function normaliseName(raw: unknown): { name?: string; error?: string } {
   if (!name) return { error: 'Site name is required' };
   if (name.length > MAX_NAME) return { error: `Site name must be ${MAX_NAME} characters or fewer` };
   return { name };
+}
+
+/**
+ * The zoom a site's map opens at (#362): a whole number from 1 (the world) to
+ * 19 (a building), or null for the map to fit what's on it. Undefined when not
+ * given, so an edit that doesn't mention it leaves it alone.
+ */
+export function parseMapZoom(v: unknown): { ok: true; value: number | null | undefined } | { ok: false; error: string } {
+  if (v === undefined) return { ok: true, value: undefined };
+  if (v === null || v === '') return { ok: true, value: null };
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1 || n > 19) return { ok: false, error: 'Map zoom: a whole number from 1 (the world) to 19 (a building), or blank to fit the map.' };
+  return { ok: true, value: n };
 }
 
 /** Coordinates are optional, but a half-pair is a bug rather than a location. */
@@ -124,7 +138,7 @@ router.get('/', async (req, res) => {
   const sites = await query<SiteRow & { device_count: string }>(
     `SELECT s.id, s.name, s.address,
             s.location_lat::float8 AS location_lat,
-            s.location_lng::float8 AS location_lng,
+            s.location_lng::float8 AS location_lng, s.map_zoom,
             s.notes, s.is_default, s.created_at, s.group_id, g.name AS group_name, s.default_jump_host_id,
             COUNT(d.id)::text AS device_count,
             COUNT(d.id) FILTER (WHERE d.status = 'online')::text AS online_count
@@ -155,6 +169,8 @@ router.post('/', requireWrite, async (req, res) => {
     (req.body as { location_lng?: unknown }).location_lng
   );
 
+  const zoom = parseMapZoom((req.body as { map_zoom?: unknown }).map_zoom);
+  if (!zoom.ok) { res.status(400).json({ error: zoom.error }); return; }
   const existing = await queryOne<{ id: number }>(
     `SELECT id FROM sites WHERE LOWER(name) = LOWER($1)`, [name]
   );
@@ -163,11 +179,11 @@ router.post('/', requireWrite, async (req, res) => {
   if (!group.ok) return;
 
   const rows = await query<SiteRow>(
-    `INSERT INTO sites (name, address, location_lat, location_lng, notes, group_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO sites (name, address, location_lat, location_lng, notes, group_id, map_zoom)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, name, address, location_lat::float8 AS location_lat,
-               location_lng::float8 AS location_lng, notes, is_default, created_at, group_id`,
-    [name, address?.trim() || null, lat, lng, notes?.trim() || null, group.value ?? null]
+               location_lng::float8 AS location_lng, map_zoom, notes, is_default, created_at, group_id`,
+    [name, address?.trim() || null, lat, lng, notes?.trim() || null, group.value ?? null, zoom.value ?? null]
   );
   if (group.value != null) groupsChanged();
   res.status(201).json({ ...rows[0], device_count: 0, online_count: 0 });
@@ -182,8 +198,10 @@ router.put('/:id', requireWrite, async (req, res) => {
   const body = req.body as {
     name?: string; address?: string; notes?: string;
     location_lat?: unknown; location_lng?: unknown;
-    default_jump_host_id?: unknown;
+    default_jump_host_id?: unknown; map_zoom?: unknown;
   };
+  const zoom = parseMapZoom(body.map_zoom);
+  if (!zoom.ok) { res.status(400).json({ error: zoom.error }); return; }
 
   // Pre-fills new devices only: existing devices keep their own route.
   let defaultJumpHost: number | null | undefined;
@@ -224,12 +242,14 @@ router.put('/:id', requireWrite, async (req, res) => {
        notes        = COALESCE($6, notes),
        group_id     = CASE WHEN $8::boolean THEN $9 ELSE group_id END,
        default_jump_host_id = CASE WHEN $10::boolean THEN $11::integer ELSE default_jump_host_id END,
+       map_zoom     = CASE WHEN $12::boolean THEN $13::smallint ELSE map_zoom END,
        updated_at   = NOW()
      WHERE id = $7
      RETURNING id, name, address, location_lat::float8 AS location_lat,
-               location_lng::float8 AS location_lng, notes, is_default, created_at, group_id, default_jump_host_id`,
+               location_lng::float8 AS location_lng, map_zoom, notes, is_default, created_at, group_id, default_jump_host_id`,
     [name, addressGiven, body.address?.trim() || null, lat, lng, body.notes?.trim() ?? null, id,
-     group.value !== undefined, group.value ?? null, defaultJumpHost !== undefined, defaultJumpHost ?? null]
+     group.value !== undefined, group.value ?? null, defaultJumpHost !== undefined, defaultJumpHost ?? null,
+     zoom.value !== undefined, zoom.value ?? null]
   );
   if (!rows[0]) { res.status(404).json({ error: 'Site not found' }); return; }
   if (group.value !== undefined) groupsChanged();

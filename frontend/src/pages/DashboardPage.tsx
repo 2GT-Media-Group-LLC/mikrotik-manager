@@ -11,7 +11,7 @@ import {
   Shield, Clock, FileText, Bell, ChevronRight, } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { metricsApi, eventsApi, devicesApi, clientsApi, trafficApi, operationsApi, topologyApi, systemApi, settingsApi} from '../services/api';
+import { metricsApi, eventsApi, devicesApi, clientsApi, trafficApi, operationsApi, topologyApi, systemApi, settingsApi, sitesApi } from '../services/api';
 import type { OpsAttentionItem, OpsCapacityRow, OpsActivityItem } from '../services/api';
 import TerminalModal from '../components/TerminalModal';
 import ProxyUsageCard from '../components/ProxyUsageCard';
@@ -112,6 +112,15 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
     devices.filter(d => d.effective_location?.lat != null && d.effective_location?.lng != null),
     [devices]
   );
+  // When every device on the map is in one site with a zoom of its own (#362),
+  // the map opens at that zoom instead of fitting the devices.
+  const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: () => sitesApi.list().then((r) => r.data), staleTime: 300_000 });
+  const siteZoom = useMemo(() => {
+    const ids = new Set(mapped.map((d) => d.site_id ?? null));
+    if (ids.size !== 1) return null;
+    const site = sites.find((s) => s.id === [...ids][0]);
+    return site?.map_zoom ?? null;
+  }, [mapped, sites]);
 
   useEffect(() => {
     if (!containerRef.current || mapped.length === 0) return;
@@ -166,13 +175,15 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
       markers.push(marker);
     });
 
-    if (markers.length === 1) {
+    if (siteZoom != null) {
+      map.setView(L.featureGroup(markers).getBounds().getCenter(), siteZoom);
+    } else if (markers.length === 1) {
       map.setView([Number(mapped[0].effective_location!.lat), Number(mapped[0].effective_location!.lng)], 13);
     } else {
       map.fitBounds(L.featureGroup(markers).getBounds(), { padding: [40, 40] });
     }
     return () => { map.remove(); };
-  }, [mapped]);
+  }, [mapped, siteZoom]);
 
   if (mapped.length === 0) {
     return (

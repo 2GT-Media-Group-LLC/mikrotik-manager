@@ -72,6 +72,12 @@ position** yourself: type a latitude and longitude (`51.5072, -0.1276`, as most 
 them), or press **Pick on map** and click where the site is. A position set this way wins
 over the address, and **remove pin** takes the site off the map.
 
+**Map zoom** sets how close the site's map opens, from 1 (the whole world) to 19 (a single
+building); 12 is about street level. Blank fits the map to what's on it, as before. It's used
+when the dashboard shows only that site's devices, by the sites map when it's the only site
+with a pin, and by **Pick on map**. While picking, **Use the map's zoom** takes the zoom you've
+zoomed the picker to.
+
 If **Settings → Maps enabled** is off, no geocoding or tile request is made and the map is
 hidden; addresses and typed positions are still stored.
 
