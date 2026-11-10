@@ -7,6 +7,18 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.14
+
+Released on Monday 9 November 2026.
+
+- **Switching a device to API-SSL or WebFig to HTTPS failed behind Cloudflare**
+  ([#417](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417)). On an older
+  router, creating and signing the certificate can take a few minutes, and Cloudflare gives up on a
+  request after 100 seconds and shows its own 502, while the switch carried on unseen. Now a switch
+  that takes longer than about 25 seconds carries on in the background, the page checks back
+  every few seconds and shows the outcome when it's ready, and no other change can reach the device
+  until it's done. See [Behind a reverse proxy](configuration.md#behind-a-reverse-proxy).
+
 ## 1.0.13
 
 Released on Monday 9 November 2026. Updates are safer for the databases.
