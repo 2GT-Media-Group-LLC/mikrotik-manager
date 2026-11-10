@@ -263,6 +263,33 @@ export default function SettingsPage() {
     queryFn: () => certApi.get().then((r) => r.data as CertInfo),
     enabled: activeTab === 'certificate',
   });
+  const { data: acmeSettings, isLoading: acmeLoading, error: acmeLoadError } = useQuery({
+    queryKey: ['cert-acme'],
+    queryFn: () => certApi.getAcme().then((r) => r.data),
+    enabled: activeTab === 'certificate' && isAdmin,
+  });
+  const [acmeForm, setAcmeForm] = useState({ domain: '', email: '', server: '' });
+  const [acmeError, setAcmeError] = useState('');
+  const [acmeSuccess, setAcmeSuccess] = useState('');
+  useEffect(() => {
+    if (acmeSettings) {
+      setAcmeForm({ domain: acmeSettings.domain, email: acmeSettings.email, server: acmeSettings.server });
+    }
+  }, [acmeSettings]);
+  const acmeMutation = useMutation({
+    mutationFn: (settings: { domain: string; email: string; server: string } | null) =>
+      settings ? certApi.updateAcme(settings) : certApi.resetAcme(),
+    onSuccess: (_data, settings) => {
+      queryClient.invalidateQueries({ queryKey: ['cert-acme'] });
+      setAcmeError('');
+      setAcmeSuccess(settings ? 'ACME settings saved.' : 'Now using the ACME values from the deployment environment.');
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setAcmeError(msg || 'Failed to save ACME settings');
+      setAcmeSuccess('');
+    },
+  });
 
   const [certUpload, setCertUpload] = useState({ certificate: '', private_key: '' });
   const [certError, setCertError] = useState('');
@@ -1542,6 +1569,93 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+
+          {isAdmin && (
+            <div className="card p-5 space-y-4">
+              <div>
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-blue-500" />
+                  Automatic HTTPS Certificate (ACME)
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  Request and renew a certificate for this web interface using HTTP-01. The domain must point to this host, port 80 must be reachable from the internet, and TLS_MODE must be https. Changes take effect without restarting the containers.
+                </p>
+              </div>
+              {acmeLoading ? (
+                <p className="text-sm text-gray-400">Loading ACME settings...</p>
+              ) : acmeLoadError ? (
+                <p className="text-sm text-red-600 dark:text-red-400">
+                  Failed to load ACME settings: {acmeLoadError instanceof Error ? acmeLoadError.message : 'Unknown error'}
+                </p>
+              ) : (
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  if (acmeSettings?.readOnly) return;
+                  if (!acmeForm.domain.trim() || !acmeForm.email.trim()) {
+                    setAcmeError('Both domain and contact email are required.');
+                    return;
+                  }
+                  setAcmeError('');
+                  setAcmeSuccess('');
+                  acmeMutation.mutate(acmeForm);
+                }}>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">
+                    {acmeSettings?.readOnly
+                      ? 'All ACME environment variables are set. These settings are read-only; change .env and restart the containers to modify them.'
+                      : acmeSettings?.source === 'web'
+                      ? 'Web settings override the ACME values in .env.'
+                      : 'Using ACME values from .env until you save web settings.'}
+                  </p>
+                  <fieldset disabled={acmeSettings?.readOnly || acmeMutation.isPending} className="grid gap-3 sm:grid-cols-2 mt-3 min-w-0">
+                    <div>
+                      <label className="label" htmlFor="acme-domain">Domain (required)</label>
+                      <input id="acme-domain" required className="input w-full" value={acmeForm.domain} onChange={(e) => setAcmeForm((s) => ({ ...s, domain: e.target.value }))} placeholder="manager.example.com" />
+                    </div>
+                    <div>
+                      <label className="label" htmlFor="acme-email">Contact email (required)</label>
+                      <input id="acme-email" required className="input w-full" type="email" value={acmeForm.email} onChange={(e) => setAcmeForm((s) => ({ ...s, email: e.target.value }))} placeholder="admin@example.com" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="label" htmlFor="acme-server">ACME directory URL</label>
+                      <input id="acme-server" className="input w-full" type="url" value={acmeForm.server} onChange={(e) => setAcmeForm((s) => ({ ...s, server: e.target.value }))} placeholder="https://acme-v02.api.letsencrypt.org/directory" />
+                      <p className="mt-1 text-xs text-gray-400">Defaults to Let&apos;s Encrypt production.</p>
+                    </div>
+                  </fieldset>
+                  {acmeError && (
+                    <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                      <p className="text-sm text-red-600 dark:text-red-400">{acmeError}</p>
+                    </div>
+                  )}
+                  {acmeSuccess && (
+                    <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      <p className="text-sm text-green-600 dark:text-green-400">{acmeSuccess}</p>
+                    </div>
+                  )}
+                  {!acmeSettings?.readOnly && <div className="flex flex-wrap gap-2 mt-4">
+                    <button
+                      type="submit"
+                      className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={acmeMutation.isPending}
+                    >
+                      {acmeMutation.isPending ? 'Saving...' : 'Save ACME Settings'}
+                    </button>
+                    {acmeSettings?.source === 'web' && (
+                      <button
+                        type="button"
+                        className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={acmeMutation.isPending}
+                        onClick={() => { setAcmeError(''); setAcmeSuccess(''); acmeMutation.mutate(null); }}
+                      >
+                        Use .env Values
+                      </button>
+                    )}
+                  </div>}
+                </form>
+              )}
+            </div>
+          )}
 
           {/* Regenerate self-signed */}
           <div className="card p-5">

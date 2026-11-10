@@ -2179,11 +2179,22 @@ export interface CertInfo {
   san?: string | null;
 }
 
+export interface AcmeSettings {
+  domain: string;
+  email: string;
+  server: string;
+  source: 'web' | 'environment';
+  readOnly: boolean;
+}
+
 export const certApi = {
   get: () => api.get<CertInfo>('/cert'),
   regenerate: () => api.post<CertInfo & { message: string }>('/cert/regenerate'),
   upload: (certificate: string, private_key: string) =>
     api.post<CertInfo & { message: string }>('/cert/upload', { certificate, private_key }),
+  getAcme: () => api.get<AcmeSettings>('/cert/acme'),
+  updateAcme: (data: Pick<AcmeSettings, 'domain' | 'email' | 'server'>) => api.put('/cert/acme', data),
+  resetAcme: () => api.delete('/cert/acme'),
 };
 
 // ─── Wireless ─────────────────────────────────────────────────────────────────

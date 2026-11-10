@@ -117,51 +117,110 @@ else
     : > /var/cache/nginx/listen-v6-https.conf
 fi
 
-# Optional HTTP-01 ACME issuance and renewal. The challenge location remains
-# reachable over HTTP while all other requests follow the normal HTTP mode.
+# Optional HTTP-01 ACME issuance and renewal. Web settings are stored in the
+# shared certificate volume and checked here every few seconds. A complete
+# environment configuration takes precedence over the web settings.
+ACME_SETTINGS_FILE=/certs/acme-settings.conf
 ACME_DOMAIN="${ACME_DOMAIN:-}"
 ACME_EMAIL="${ACME_EMAIL:-}"
-ACME_SERVER="${ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
-if [ -n "$ACME_DOMAIN" ] && [ -n "$ACME_EMAIL" ] && [ "$TLS_MODE" = "https" ]; then
-    ACME_CONFIG=/certs/letsencrypt
-    ACME_WORK=/tmp/letsencrypt-work
-    ACME_LOGS=/tmp/letsencrypt-logs
-    ACME_DEPLOY_HOOK='cp "$RENEWED_LINEAGE/fullchain.pem" /certs/server.crt && cp "$RENEWED_LINEAGE/privkey.pem" /certs/server.key && chmod 644 /certs/server.crt && chmod 600 /certs/server.key && touch /certs/.reload'
-    echo "[entrypoint] ACME enabled for $ACME_DOMAIN via $ACME_SERVER; the first certificate will be requested in the background."
+ACME_SERVER="${ACME_SERVER:-}"
+ACME_ENV_DOMAIN=$ACME_DOMAIN
+ACME_ENV_EMAIL=$ACME_EMAIL
+ACME_ENV_SERVER=$ACME_SERVER
+has_non_space() {
+    case "$1" in
+        *[![:space:]]*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+ACME_ENV_LOCKED=0
+if has_non_space "$ACME_ENV_DOMAIN" && has_non_space "$ACME_ENV_EMAIL" && has_non_space "$ACME_ENV_SERVER"; then
+    ACME_ENV_LOCKED=1
+fi
+read_acme_settings() {
+    if [ "$ACME_ENV_LOCKED" = 0 ] && [ -f "$ACME_SETTINGS_FILE" ]; then
+        {
+            IFS= read -r ACME_DOMAIN
+            IFS= read -r ACME_EMAIL
+            IFS= read -r ACME_SERVER
+        } < "$ACME_SETTINGS_FILE"
+    else
+        ACME_DOMAIN=$ACME_ENV_DOMAIN
+        ACME_EMAIL=$ACME_ENV_EMAIL
+        ACME_SERVER=${ACME_ENV_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+    fi
+}
+read_acme_settings
+if [ "$TLS_MODE" = "https" ]; then
     (
+        ACME_CONFIG=/certs/letsencrypt
+        ACME_WORK=/tmp/letsencrypt-work
+        ACME_LOGS=/tmp/letsencrypt-logs
+        ACME_DEPLOY_HOOK='cp "$RENEWED_LINEAGE/fullchain.pem" /certs/server.crt && cp "$RENEWED_LINEAGE/privkey.pem" /certs/server.key && chmod 644 /certs/server.crt && chmod 600 /certs/server.key && touch /certs/.reload'
+        LAST_DOMAIN=
+        LAST_EMAIL=
+        LAST_SERVER=
+        FIRST_CHECK=1
+        NEXT_RUN=0
         while true; do
-            if [ -f /certs/acme-ca-bundle.crt ]; then
-                export REQUESTS_CA_BUNDLE=/certs/acme-ca-bundle.crt
-            else
-                unset REQUESTS_CA_BUNDLE
-            fi
-            if [ -f "$ACME_CONFIG/live/$ACME_DOMAIN/fullchain.pem" ]; then
-                su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
-                    --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
-                    --server "$ACME_SERVER" renew --deploy-hook "$ACME_DEPLOY_HOOK"
-                CERTBOT_RET=$?
-                test $CERTBOT_RET -eq 0 || echo "[entrypoint] ACME renewal failed; it will be retried."
-            else
-                su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
-                    --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
-                    --server "$ACME_SERVER" certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
-                    --email "$ACME_EMAIL" --cert-name "$ACME_DOMAIN" -d "$ACME_DOMAIN" \
-                    --deploy-hook "$ACME_DEPLOY_HOOK"
-                CERTBOT_RET=$?
-                test $CERTBOT_RET -eq 0 || echo "[entrypoint] ACME certificate request failed; it will be retried."
+            read_acme_settings
+            if [ "$FIRST_CHECK" = 1 ] || [ "$ACME_DOMAIN" != "$LAST_DOMAIN" ] || [ "$ACME_EMAIL" != "$LAST_EMAIL" ] || [ "$ACME_SERVER" != "$LAST_SERVER" ]; then
+                LAST_DOMAIN="$ACME_DOMAIN"
+                LAST_EMAIL="$ACME_EMAIL"
+                LAST_SERVER="$ACME_SERVER"
+                FIRST_CHECK=0
+                NEXT_RUN=0
+                if [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
+                    if [ -z "$ACME_DOMAIN" ] || [ -z "$ACME_EMAIL" ]; then
+                        echo "[entrypoint] warning: ACME requires both a domain and email; ACME is disabled."
+                    else
+                        echo "[entrypoint] ACME enabled for $ACME_DOMAIN via $ACME_SERVER."
+                    fi
+                fi
             fi
 
-            # Retry every 12 hours on success, or 1 hour on failure
-            if [ $CERTBOT_RET -eq 0 ]
-            then
-                sleep 43200
-            else
-                sleep 3600
+            if [ -n "$ACME_DOMAIN" ] && [ -n "$ACME_EMAIL" ]; then
+                NOW=$(date +%s)
+                if [ "$NEXT_RUN" -eq 0 ] || [ "$NOW" -ge "$NEXT_RUN" ]; then
+                    if [ -f /certs/acme-ca-bundle.crt ]; then
+                        export REQUESTS_CA_BUNDLE=/certs/acme-ca-bundle.crt
+                    else
+                        unset REQUESTS_CA_BUNDLE
+                    fi
+                    if [ -f "$ACME_CONFIG/live/$ACME_DOMAIN/fullchain.pem" ]; then
+                        if su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
+                            --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
+                            --server "$ACME_SERVER" renew --cert-name "$ACME_DOMAIN" --deploy-hook "$ACME_DEPLOY_HOOK"; then
+                            CERTBOT_RET=0
+                        else
+                            CERTBOT_RET=$?
+                        fi
+                        test "$CERTBOT_RET" -eq 0 || echo "[entrypoint] ACME renewal failed; it will be retried."
+                    else
+                        if su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
+                            --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
+                            --server "$ACME_SERVER" certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
+                            --email "$ACME_EMAIL" --cert-name "$ACME_DOMAIN" -d "$ACME_DOMAIN" \
+                            --deploy-hook "$ACME_DEPLOY_HOOK"; then
+                            CERTBOT_RET=0
+                        else
+                            CERTBOT_RET=$?
+                        fi
+                        test "$CERTBOT_RET" -eq 0 || echo "[entrypoint] ACME certificate request failed; it will be retried."
+                    fi
+                    NOW=$(date +%s)
+                    if [ "$CERTBOT_RET" -eq 0 ]; then
+                        NEXT_RUN=$((NOW + 43200))
+                    else
+                        NEXT_RUN=$((NOW + 3600))
+                    fi
+                fi
             fi
+            sleep 5
         done
     ) &
 elif [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
-    echo "[entrypoint] warning: ACME requires both ACME_DOMAIN and ACME_EMAIL, and TLS_MODE=https; ACME is disabled."
+    echo "[entrypoint] warning: ACME requires both a domain and email, and TLS_MODE=https; ACME is disabled."
 fi
 
 # Background watcher: reload nginx when backend writes a .reload signal file

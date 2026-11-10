@@ -38,7 +38,7 @@ services:
       ACME_DOMAIN: ${ACME_DOMAIN:-}
       ACME_EMAIL: ${ACME_EMAIL:-}
       # Override the ACME directory for a staging or private CA.
-      ACME_SERVER: ${ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+      ACME_SERVER: ${ACME_SERVER:-}
     volumes:
       - certs_data:/certs
       - acme_challenge:/var/www/certbot
@@ -94,6 +94,10 @@ services:
       # effect only while SSO is configured; set it back to true to get in if
       # SSO breaks. See docs/sso-oidc.md.
       PASSWORD_LOGIN: ${PASSWORD_LOGIN:-true}
+      # ACME defaults are read by the admin UI when no web override is saved.
+      ACME_DOMAIN: ${ACME_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_SERVER: ${ACME_SERVER:-}
       PORT: 3001
       NETFLOW_BIND_PORT: 2055
       # Poller tuning. These were documented in .env.example but never passed

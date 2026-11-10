@@ -20,9 +20,9 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `PASSWORD_LOGIN` | `true` | `false` makes sign-in SSO-only. See [SSO-only sign-in](sso-oidc.md#behaviour-and-safety) |
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS, or serves the app with `TLS_MODE=proxy`) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
-| `ACME_DOMAIN` | *unset* | Optional DNS name for an ACME HTTP-01 certificate; requires `ACME_EMAIL` and public access to port 80 |
-| `ACME_EMAIL` | *unset* | Contact email for ACME certificate registration and expiry notices |
-| `ACME_SERVER` | Let's Encrypt production | ACME directory URL; override for a staging or private ACME server |
+| `ACME_DOMAIN` | *unset* | Optional default DNS name for the manager's ACME HTTP-01 certificate; requires `ACME_EMAIL` and public access to port 80. Can also be set in **Settings → Certificate** |
+| `ACME_EMAIL` | *unset* | Contact email for the manager's ACME certificate; can also be set in **Settings → Certificate** |
+| `ACME_SERVER` | Let's Encrypt production | ACME directory URL; can also be set in **Settings → Certificate** for staging or a private ACME server |
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
 | `TLS_MODE` | `https` | `proxy` when your own reverse proxy terminates TLS. See [Behind a reverse proxy](#behind-a-reverse-proxy). |
@@ -305,25 +305,34 @@ and on such hosts the update left the databases restarting; 0.24.52 removes it.
 ## TLS
 
 A self-signed certificate is generated on first run. Replace it under
-**Settings → TLS Certificate** by uploading a certificate and private key, or regenerate the
+**Settings → Certificate** by uploading a certificate and private key, or regenerate the
 self-signed one; nginx terminates TLS, picks up the new certificate within a few seconds, and
 redirects HTTP to HTTPS.
 
-For a public DNS name, nginx can obtain and renew a Let's Encrypt certificate using ACME
-HTTP-01. Set `ACME_DOMAIN` and `ACME_EMAIL` in `.env`, point the domain's DNS at this host,
-and make sure port 80 is reachable from the internet. Keep `TLS_MODE=https`, then run
-`docker compose up -d`. Nginx serves the ACME challenge over HTTP and redirects other HTTP
-requests as usual; once issued, the certificate replaces the self-signed one and nginx
-reloads automatically. Renewal is checked every 12 hours. Check `docker compose logs nginx`
-if issuance fails.
+For a public DNS name, configure the manager to obtain and renew a Let's Encrypt certificate
+using **Settings → Certificate → Automatic HTTPS Certificate**. Enter the domain and contact
+email, point the domain's DNS at this host, and make sure port 80 is reachable from the
+internet. Keep `TLS_MODE=https`. Nginx checks web settings every few seconds, serves the ACME
+challenge over HTTP, and redirects other HTTP requests as usual. Once issued, the certificate
+replaces the current certificate and nginx reloads automatically; renewal is checked every
+12 hours. Check `docker compose logs nginx` if issuance fails.
 
-ACME is disabled unless both variables are set. It uses HTTP-01, so it does not work when
-port 80 is blocked or when `TLS_MODE=proxy`; in that setup, use the reverse proxy's own
-certificate automation instead. While ACME is enabled, its certificate will replace a
-certificate uploaded through Settings when ACME issues or renews.
+Alternatively, set `ACME_DOMAIN` and `ACME_EMAIL` in `.env` and restart the containers. The
+directory defaults to Let's Encrypt production when `ACME_SERVER` is unset. If all three
+variables are set, the environment values take precedence and ACME settings in the web
+interface are read-only. Change `.env` and restart the containers to change them.
 
-To use a staging or local ACME service, set `ACME_SERVER` to its directory URL. If its HTTPS
-certificate uses a private CA, copy the CA bundle to:
+Otherwise, environment values are used until ACME settings are saved in the web interface.
+Saving requires both a domain and contact email. Web settings are stored in the certificate
+volume and override an incomplete environment configuration; choose **Use .env Values** to
+remove that override. To disable ACME, unset at least one of `ACME_DOMAIN` and `ACME_EMAIL`
+in `.env`, restart the containers, and choose **Use .env Values** if a web override exists.
+HTTP-01 requires public access to port 80 and does not work when `TLS_MODE=proxy`; in that setup, use
+your reverse proxy's own certificate automation instead. While ACME is enabled, its certificate
+will replace a certificate uploaded through Settings when ACME issues or renews.
+
+To use a staging or local ACME service, set its directory URL in the web interface or in
+`ACME_SERVER`. If its HTTPS certificate uses a private CA, copy the CA bundle to:
 /var/lib/docker/volumes/{name}_certs_data/_data/acme_ca_bundle.crt
 
 The ACME service must be reachable from the nginx container, and its HTTP-01 validator must
