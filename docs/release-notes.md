@@ -10,6 +10,9 @@
   allow ICMP of one type (`8`) or type and code (`3:4`), or every type, and **Protocol #** takes a
   protocol number such as `89` for OSPF or `47` for GRE. Both can take a source and destination
   address. See [Zones](devices.md#zones).
+- **Zones are easier to edit.** The matrix says that a cell opens what one zone can reach in
+  another, and a zone that holds bridge ports says so on the zone itself. Rules can't see traffic
+  through a bridge port, so the warning says what to use instead.
 - **Switching to API-SSL or HTTPS works behind Cloudflare**, as in 1.0.14 below.
 
 ## 1.1.0-beta.39

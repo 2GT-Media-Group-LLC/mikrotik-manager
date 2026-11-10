@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ChevronDown, ChevronRight, Layers, Plus, Power, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Layers, Pencil, Plus, Power, Trash2, X } from 'lucide-react';
 import { zonesApi, type ZonePlan, type ZonePolicy, type ZoneRequest, type ZonesData } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
@@ -192,6 +192,9 @@ function ZoneList({ data, draft, errors, editable, onChange }: {
       {draft.config.zones.map((z) => {
         const dynamic = data.lists.find((l) => l.name === z)?.members.filter((m) => m.dynamic).map((m) => m.interface) ?? [];
         const free = ifaces.filter((i) => !owner.has(i.name) && !dynamic.includes(i.name));
+        // Bridge ports in a zone match nothing: switched traffic skips the
+        // firewall, and routed traffic shows up on the bridge.
+        const ports = (draft.members[z] ?? []).filter((i) => data.interfaces.some((x) => x.name === i && x.bridge_port));
         return (
           <div key={z} className="flex items-start gap-2 flex-wrap rounded-lg border border-gray-200 dark:border-slate-700 px-3 py-2">
             <span className="text-xs font-semibold text-gray-900 dark:text-white w-24 shrink-0 pt-0.5 truncate" title={z}>{z}</span>
@@ -217,6 +220,17 @@ function ZoneList({ data, draft, errors, editable, onChange }: {
                 </select>
               )}
               {errors[`zone:${z}`] && <span className="text-[11px] text-red-600 dark:text-red-400">{errors[`zone:${z}`]}</span>}
+              {ports.length > 0 && (
+                <p className="basis-full flex items-start gap-1 text-[11px] text-amber-700 dark:text-amber-400">
+                  <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                  <span>
+                    {ports.join(', ')} {ports.length === 1 ? 'is a bridge port' : 'are bridge ports'}, so {z}&rsquo;s rules won&rsquo;t see traffic
+                    through {ports.length === 1 ? 'it' : 'them'}: traffic between bridge ports is switched past the firewall, and routed
+                    traffic shows up on the bridge. Use the bridge or a VLAN interface, or take {ports.length === 1 ? 'the port' : 'the ports'} out
+                    of the bridge to route {ports.length === 1 ? 'it' : 'them'} on {ports.length === 1 ? 'its' : 'their'} own.
+                  </span>
+                </p>
+              )}
             </div>
             {editable && (
               <button className="p-1 text-gray-400 hover:text-red-500" title={`Remove the ${z} zone. The interface list stays on the device.`} onClick={() => onChange(removeZone(draft, z))}>
@@ -257,7 +271,12 @@ function Matrix({ draft, labels, errors, editable, onChange, services, managerIp
   const pickedTo = picked?.split('>')[1];
   return (
     <div className="space-y-2">
-      <div className="text-xs font-medium text-gray-700 dark:text-slate-300">What each zone can reach</div>
+      <div>
+        <div className="text-xs font-medium text-gray-700 dark:text-slate-300">What each zone can reach</div>
+        <div className="text-[11px] text-gray-500 dark:text-slate-400">
+          {editable ? 'Click a cell to choose what the zone on the left can reach in the zone or router above it.' : 'Click a cell to see what\u2019s allowed.'}
+        </div>
+      </div>
       <div className="overflow-x-auto">
         <table className="text-xs border-collapse">
           <thead>
@@ -290,15 +309,16 @@ function Matrix({ draft, labels, errors, editable, onChange, services, managerIp
                   const text = policySummary(p, to === ROUTER ? labels.router : labels.forward);
                   return (
                     <td key={to} className="px-1 py-1">
-                      <button onClick={() => setPicked(picked === key ? null : key)}
-                        className={clsx('w-28 px-2 py-1 rounded border text-left truncate',
+                      <button onClick={() => setPicked(picked === key ? null : key)} aria-label={`${from} to ${to === ROUTER ? 'router' : to}: ${text}. Click to change.`}
+                        className={clsx('group w-28 px-2 py-1 rounded border text-left cursor-pointer hover:border-blue-400 hover:shadow-sm flex items-center gap-1',
                           picked === key && 'ring-2 ring-blue-500',
                           errors[`pair:${key}`] ? 'border-red-400 text-red-600'
                             : !p ? 'border-gray-200 dark:border-slate-700 text-gray-400'
                               : p.action === 'allow' ? 'border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
                                 : 'border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300')}
                         title={text}>
-                        {text}
+                        <span className="truncate flex-1">{text}</span>
+                        {editable && <Pencil className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-60" />}
                       </button>
                     </td>
                   );

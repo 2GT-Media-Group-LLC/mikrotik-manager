@@ -1374,7 +1374,10 @@ function zonePlan(body: unknown, live: ZoneLiveContext, managerIp: string | null
   for (const z of input.config.zones) {
     const inZone = (input.members[z] ?? []).filter((i) => ports.has(i));
     if (inZone.length) {
-      warnings.push(`${z} has bridge ports (${inZone.slice(0, 3).join(', ')}${inZone.length > 3 ? ', …' : ''}). The firewall sees routed traffic on the bridge, not its ports, so put the bridge in ${z} instead.`);
+      const many = inZone.length > 1;
+      warnings.push(`${z} has bridge ports (${inZone.slice(0, 3).join(', ')}${inZone.length > 3 ? ', …' : ''}), so its rules won't match `
+        + `traffic through ${many ? 'them' : 'it'}: traffic between bridge ports is switched past the firewall, and routed traffic shows up on the bridge. `
+        + `Put the bridge or a VLAN interface in ${z} instead, or take ${many ? 'the ports' : 'the port'} out of the bridge to route ${many ? 'them' : 'it'} on ${many ? 'their' : 'its'} own.`);
     }
   }
   const empty = input.config.zones.filter((z) => !(input.members[z] ?? []).length && !live.members.some((m) => m.list === z && isYes(m.dynamic)));
