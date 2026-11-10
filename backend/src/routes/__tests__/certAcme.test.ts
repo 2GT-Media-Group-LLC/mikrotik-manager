@@ -53,6 +53,42 @@ describe('manager ACME settings', () => {
     expect((await request(app()).put('/api/cert/acme').set('x-test-role', 'viewer').send(valid)).status).toBe(403);
   });
 
+  it('requires an administrator to read the last Certbot attempt', async () => {
+    expect((await request(app()).get('/api/cert/acme/status')).status).toBe(401);
+    expect((await request(app()).get('/api/cert/acme/status').set('x-test-role', 'viewer')).status).toBe(403);
+  });
+
+  it('returns no attempt when ACME is disabled or no attempt exists', async () => {
+    expect((await request(app()).get('/api/cert/acme/status').set('x-test-role', 'admin')).body).toEqual({ lastAttempt: null });
+    process.env.ACME_DOMAIN = valid.domain;
+    expect((await request(app()).get('/api/cert/acme/status').set('x-test-role', 'admin')).body).toEqual({ lastAttempt: null });
+  });
+
+  it.each([['issue', 0], ['renew', 1]])('reads the last %s attempt with exit code %i', async (action, code) => {
+    process.env.ACME_DOMAIN = valid.domain;
+    const time = '2026-11-10T08:30:00Z';
+    jest.mocked(readFile).mockImplementation(async (file) => {
+      if (file === '/certs/acme-last-attempt') return `${time}\n${action}\n${code}\n${valid.domain}\nCertbot output\n` as never;
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    });
+    expect((await request(app()).get('/api/cert/acme/status').set('x-test-role', 'admin')).body).toEqual({
+      lastAttempt: { time, action, exitCode: code, domain: valid.domain, output: 'Certbot output\n' },
+    });
+  });
+
+  it('surfaces invalid or unreadable attempt status instead of reporting no attempt', async () => {
+    process.env.ACME_DOMAIN = valid.domain;
+    jest.mocked(readFile).mockImplementation(async (file) => {
+      if (file === '/certs/acme-last-attempt') return 'invalid status' as never;
+      throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+    });
+    expect((await request(app()).get('/api/cert/acme/status').set('x-test-role', 'admin')).status).toBe(500);
+    jest.mocked(readFile).mockImplementation(async (file) => {
+      throw Object.assign(new Error('read failed'), { code: file === '/certs/acme-last-attempt' ? 'EACCES' : 'ENOENT' });
+    });
+    expect((await request(app()).get('/api/cert/acme/status').set('x-test-role', 'admin')).status).toBe(500);
+  });
+
   it.each([
     { domain: '', email: '' },
     { domain: '', email: 'admin@example.com' },
@@ -150,6 +186,21 @@ describe('manager ACME settings', () => {
   it('allows the web override to be removed while the environment is incomplete', async () => {
     expect((await request(app()).delete('/api/cert/acme').set('x-test-role', 'admin')).status).toBe(200);
     expect(unlink).toHaveBeenCalledWith('/certs/acme-settings.conf');
+    expect(unlink).toHaveBeenCalledWith('/certs/acme-last-attempt');
+  });
+
+  it('keeps the last attempt when reverting to an enabled environment configuration', async () => {
+    process.env.ACME_DOMAIN = 'env.example.com';
+    expect((await request(app()).delete('/api/cert/acme').set('x-test-role', 'admin')).status).toBe(200);
+    expect(unlink).toHaveBeenCalledWith('/certs/acme-settings.conf');
+    expect(unlink).not.toHaveBeenCalledWith('/certs/acme-last-attempt');
+  });
+
+  it('surfaces errors clearing the last attempt on disable', async () => {
+    jest.mocked(unlink).mockImplementation(async (file) => {
+      if (file === '/certs/acme-last-attempt') throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    });
+    expect((await request(app()).delete('/api/cert/acme').set('x-test-role', 'admin')).status).toBe(500);
   });
 
   it('requires an administrator for all CA bundle operations', async () => {

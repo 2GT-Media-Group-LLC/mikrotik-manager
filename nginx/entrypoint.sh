@@ -121,6 +121,7 @@ fi
 # shared certificate volume and checked here every few seconds. A complete
 # environment configuration takes precedence over the web settings.
 ACME_SETTINGS_FILE=/certs/acme-settings.conf
+ACME_STATUS_FILE=/certs/acme-last-attempt
 ACME_ENV_DOMAIN="${ACME_DOMAIN:-}"
 ACME_ENV_EMAIL="${ACME_EMAIL:-}"
 ACME_ENV_SERVER="${ACME_SERVER:-}"
@@ -180,6 +181,11 @@ if [ "$TLS_MODE" = "https" ]; then
         NEXT_RUN=0
         while true; do
             read_acme_settings
+            if ! has_non_space "$ACME_DOMAIN"; then
+                if ! rm -f "$ACME_STATUS_FILE"; then
+                    echo "[entrypoint] error: could not clear the ACME attempt status."
+                fi
+            fi
             CA_CHECKSUM=none
             if [ -f /certs/acme-ca-bundle.crt ]; then
                 if ! CA_CHECKSUM=$(cksum < /certs/acme-ca-bundle.crt); then
@@ -205,24 +211,29 @@ if [ "$TLS_MODE" = "https" ]; then
                 fi
             fi
 
-            if [ -n "$ACME_DOMAIN" ]; then
+            if has_non_space "$ACME_DOMAIN"; then
                 NOW=$(date +%s)
                 if [ "$NEXT_RUN" -eq 0 ] || [ "$NOW" -ge "$NEXT_RUN" ]; then
+                    ATTEMPT_DOMAIN=$ACME_DOMAIN
+                    ATTEMPT_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+                    ATTEMPT_OUTPUT="/tmp/acme-attempt-$$.log"
                     if [ -f /certs/acme-ca-bundle.crt ]; then
                         export REQUESTS_CA_BUNDLE=/certs/acme-ca-bundle.crt
                     else
                         unset REQUESTS_CA_BUNDLE
                     fi
                     if [ -f "$ACME_CONFIG/live/$ACME_DOMAIN/fullchain.pem" ]; then
+                        ATTEMPT_ACTION=renew
                         if su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
                             --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
-                            --server "$ACME_SERVER" renew --cert-name "$ACME_DOMAIN" --deploy-hook "$ACME_DEPLOY_HOOK"; then
+                            --server "$ACME_SERVER" renew --cert-name "$ACME_DOMAIN" --deploy-hook "$ACME_DEPLOY_HOOK" > "$ATTEMPT_OUTPUT" 2>&1; then
                             CERTBOT_RET=0
                         else
                             CERTBOT_RET=$?
                         fi
                         test "$CERTBOT_RET" -eq 0 || echo "[entrypoint] ACME renewal failed; it will be retried."
                     else
+                        ATTEMPT_ACTION=issue
                         if [ -n "$ACME_EMAIL" ]; then
                             set -- --email "$ACME_EMAIL"
                         else
@@ -232,13 +243,35 @@ if [ "$TLS_MODE" = "https" ]; then
                             --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
                             --server "$ACME_SERVER" certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
                             "$@" --cert-name "$ACME_DOMAIN" -d "$ACME_DOMAIN" \
-                            --deploy-hook "$ACME_DEPLOY_HOOK"; then
+                            --deploy-hook "$ACME_DEPLOY_HOOK" > "$ATTEMPT_OUTPUT" 2>&1; then
                             CERTBOT_RET=0
                         else
                             CERTBOT_RET=$?
                         fi
                         test $CERTBOT_RET -eq 0 || echo "[entrypoint] ACME certificate request failed; it will be retried."
                     fi
+                    if ! cat "$ATTEMPT_OUTPUT"; then
+                        echo "[entrypoint] error: could not read Certbot output."
+                    fi
+                    read_acme_settings
+                    if has_non_space "$ACME_DOMAIN"; then
+                        STATUS_TMP="${ACME_STATUS_FILE}.$$.tmp"
+                        if { printf '%s\n%s\n%s\n%s\n' "$ATTEMPT_TIME" "$ATTEMPT_ACTION" "$CERTBOT_RET" "$ATTEMPT_DOMAIN" &&
+                             tail -c 65536 "$ATTEMPT_OUTPUT"; } > "$STATUS_TMP" &&
+                           chmod 600 "$STATUS_TMP" &&
+                           chown "$BACKEND_UID:$BACKEND_GID" "$STATUS_TMP" &&
+                           mv -f "$STATUS_TMP" "$ACME_STATUS_FILE"; then
+                            :
+                        else
+                            echo "[entrypoint] error: could not save the ACME attempt status."
+                            rm -f "$STATUS_TMP"
+                        fi
+                    else
+                        if ! rm -f "$ACME_STATUS_FILE"; then
+                            echo "[entrypoint] error: could not clear the ACME attempt status."
+                        fi
+                    fi
+                    rm -f "$ATTEMPT_OUTPUT"
                     NOW=$(date +%s)
                     if [ $CERTBOT_RET -eq 0 ]; then
                         NEXT_RUN=$((NOW + 43200))
@@ -250,8 +283,13 @@ if [ "$TLS_MODE" = "https" ]; then
             sleep 5
         done
     ) &
-elif [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
-    echo "[entrypoint] warning: ACME requires a domain and TLS_MODE=https; ACME is disabled."
+else
+    if ! rm -f "$ACME_STATUS_FILE"; then
+        echo "[entrypoint] error: could not clear the ACME attempt status."
+    fi
+    if [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
+        echo "[entrypoint] warning: ACME requires a domain and TLS_MODE=https; ACME is disabled."
+    fi
 fi
 
 # Background watcher: reload nginx when backend writes a .reload signal file

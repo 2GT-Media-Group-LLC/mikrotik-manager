@@ -316,6 +316,10 @@ internet. Keep `TLS_MODE=https`. Nginx checks web settings every few seconds, se
 challenge over HTTP, and redirects other HTTP requests as usual. Once issued, the certificate
 replaces the current certificate and nginx reloads automatically; renewal is checked every
 12 hours. Check `docker compose logs nginx` if issuance fails.
+The certificate settings page shows the last completed Certbot attempt, including its result and
+the last 64 KiB of output; it refreshes automatically while the page is open. The attempt is
+stored in the certificate volume and cleared when ACME is disabled (no configured domain or
+`TLS_MODE=proxy`). A successful renewal check does not necessarily mean a certificate was renewed.
 
 Alternatively, set `ACME_DOMAIN` and optionally `ACME_EMAIL` in `.env` and restart the containers. The
 directory defaults to Let's Encrypt production when `ACME_SERVER` is unset. If all three

@@ -18,6 +18,7 @@ const CERT_PATH = path.join(CERTS_DIR, 'server.crt');
 const KEY_PATH  = path.join(CERTS_DIR, 'server.key');
 const ACME_SETTINGS_PATH = path.join(CERTS_DIR, 'acme-settings.conf');
 const ACME_CA_BUNDLE_PATH = path.join(CERTS_DIR, 'acme-ca-bundle.crt');
+const ACME_STATUS_PATH = path.join(CERTS_DIR, 'acme-last-attempt');
 const DEFAULT_ACME_SERVER = 'https://acme-v02.api.letsencrypt.org/directory';
 
 type AcmeSettings = { domain: string; email: string; server: string };
@@ -123,6 +124,26 @@ router.get('/acme', requireAdmin, async (_req, res) => {
   res.json(await readAcmeSettings());
 });
 
+// GET /api/cert/acme/status — last completed Certbot attempt
+router.get('/acme/status', requireAdmin, async (_req, res) => {
+  const settings = await readAcmeSettings();
+  if (!settings.domain.trim()) return res.json({ lastAttempt: null });
+  let contents: string;
+  try {
+    contents = await readFile(ACME_STATUS_PATH, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return res.json({ lastAttempt: null });
+    throw err;
+  }
+  const match = contents.match(/^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\n(issue|renew)\n(\d+)\n([^\r\n]+)\n([\s\S]*)$/);
+  if (!match || Number(match[3]) > 255 || Number.isNaN(Date.parse(match[1]))) {
+    throw new Error('Invalid ACME attempt status file');
+  }
+  return res.json({ lastAttempt: {
+    time: match[1], action: match[2], exitCode: Number(match[3]), domain: match[4], output: match[5],
+  } });
+});
+
 // PUT /api/cert/acme — persist settings in the shared certificate volume
 router.put('/acme', requireAdmin, async (req, res) => {
   if (acmeEnvironmentLocked()) {
@@ -143,6 +164,13 @@ router.delete('/acme', requireAdmin, async (_req, res) => {
     await unlink(ACME_SETTINGS_PATH);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  if (!process.env.ACME_DOMAIN?.trim()) {
+    try {
+      await unlink(ACME_STATUS_PATH);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
   }
   return res.json({ message: 'Using ACME environment settings' });
 });

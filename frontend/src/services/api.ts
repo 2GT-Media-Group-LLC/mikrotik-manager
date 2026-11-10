@@ -2187,12 +2187,21 @@ export interface AcmeSettings {
   readOnly: boolean;
 }
 
+export interface AcmeAttempt {
+  time: string;
+  action: 'issue' | 'renew';
+  exitCode: number;
+  domain: string;
+  output: string;
+}
+
 export const certApi = {
   get: () => api.get<CertInfo>('/cert'),
   regenerate: () => api.post<CertInfo & { message: string }>('/cert/regenerate'),
   upload: (certificate: string, private_key: string) =>
     api.post<CertInfo & { message: string }>('/cert/upload', { certificate, private_key }),
   getAcme: () => api.get<AcmeSettings>('/cert/acme'),
+  getAcmeStatus: () => api.get<{ lastAttempt: AcmeAttempt | null }>('/cert/acme/status'),
   updateAcme: (data: Pick<AcmeSettings, 'domain' | 'email' | 'server'>) => api.put('/cert/acme', data),
   resetAcme: () => api.delete('/cert/acme'),
   getAcmeCaBundle: () => api.get<{ installed: boolean; readOnly: boolean }>('/cert/acme/ca-bundle'),
