@@ -3,6 +3,15 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.40
+
+- **Zone rules can be ICMP, or any IP protocol by number**, from Ron's request in
+  [#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369). A custom rule can
+  allow ICMP of one type (`8`) or type and code (`3:4`), or every type, and **Protocol #** takes a
+  protocol number such as `89` for OSPF or `47` for GRE. Both can take a source and destination
+  address. See [Zones](devices.md#zones).
+- **Switching to API-SSL or HTTPS works behind Cloudflare**, as in 1.0.14 below.
+
 ## 1.1.0-beta.39
 
 **This update restarts Postgres, Redis and InfluxDB once**, because their settings changed. Your
@@ -630,6 +639,18 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.14
+
+Released on Monday 9 November 2026.
+
+- **Switching a device to API-SSL or WebFig to HTTPS failed behind Cloudflare**
+  ([#417](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417)). On an older
+  router, creating and signing the certificate can take a few minutes, and Cloudflare gives up on a
+  request after 100 seconds and shows its own 502, while the switch carried on unseen. Now a switch
+  that takes longer than about 25 seconds carries on in the background, the page checks back
+  every few seconds and shows the outcome when it's ready, and no other change can reach the device
+  until it's done. See [Behind a reverse proxy](configuration.md#behind-a-reverse-proxy).
 
 ## 1.0.13
 
