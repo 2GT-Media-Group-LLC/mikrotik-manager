@@ -5,10 +5,21 @@
 
 ## 1.1.0-beta.41
 
-- **A bridge's MTU can be set**, from the bridge's **Edit** on the **Bridges** tab: a number for
-  jumbo frames, or `auto` for RouterOS's default. A bridge can't carry more than the smallest L2
-  MTU of its ports. RouterOS only answers "could not set mtu", so the manager says which ports are
-  too small and how high the bridge can go. See [Bridges](devices.md#bridges).
+- **A bridge's MTU can be set**, from the bridge's **Edit** on the **Bridges** tab: a number, or
+  `auto` for RouterOS's default. It's the MTU for the router's own traffic on the bridge; jumbo
+  frames switched between ports only need the ports' MTU raised. A bridge can't carry more than
+  the smallest L2 MTU of its ports, and RouterOS only answers "could not set mtu", so the manager
+  says which ports are too small, and which can't go higher at all and have to leave the bridge.
+  See [Bridges](devices.md#bridges).
+- **A port's MTU stops at what its hardware takes**, and the form says what that is ("up to 10218
+  on this port"). RouterOS quietly kept a lower MTU than asked when a port couldn't take it (a
+  CRS510's management port stops at 2028), and the save reported success; now the manager
+  refuses it, and says so if the device keeps a different value. The fixed 9216 limit is gone,
+  so CRS3xx and CRS5xx ports can go to 10218. See [A port's MTU](devices.md#a-ports-mtu).
+- **Saving a port no longer lowers its L2 MTU.** Every save sent the MTU, and setting it also
+  set the L2 MTU to the MTU plus 8, so a comment edit on a port raised for VLAN tags or jumbo
+  frames brought it back down. The MTU is now sent only when it changes, and the L2 MTU is only
+  ever raised.
 
 ## 1.1.0-beta.40
 

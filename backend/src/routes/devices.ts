@@ -982,6 +982,19 @@ router.get('/:id/optics/:port/history', async (req, res) => {
 router.put('/:id/interfaces/:name', requireWrite, async (req, res) => {
   const name = req.params.name;
   const { disabled, comment, mtu, poe_out, fec_mode, tx_flow_control, rx_flow_control, auto_negotiation, speed } = req.body;
+  // An MTU the port can't take used to be dropped without a word (outside
+  // 576–9216), or clamped by RouterOS to the hardware's max-l2mtu (2028 on a
+  // CRS510's management port) while the save reported success.
+  if (mtu !== undefined) {
+    const row = await queryOne<{ config_json: Record<string, string> | null }>(
+      `SELECT config_json FROM interfaces WHERE device_id = $1 AND name = $2`, [req.params.id, name]);
+    const max = Number(row?.config_json?.['max-l2mtu']) || 65535;
+    if (!Number.isInteger(mtu) || mtu < 576 || mtu > max) {
+      return res.status(400).json({ error: max < 65535
+        ? `MTU on ${name}: 576 to ${max}. ${max} is the most its hardware takes.`
+        : `MTU on ${name}: a whole number from 576 to 65535.` });
+    }
+  }
 
   const changes: PlannedChange[] = [];
   if (typeof disabled === 'boolean') changes.push({ kind: 'interface.disable', name, disabled });
@@ -999,7 +1012,7 @@ router.put('/:id/interfaces/:name', requireWrite, async (req, res) => {
     if (comment !== undefined) {
       await collector.setInterfaceComment(req.params.name, comment);
     }
-    if (typeof mtu === 'number' && mtu >= 576 && mtu <= 9216) {
+    if (typeof mtu === 'number') {
       await collector.setInterfaceMtu(req.params.name, mtu);
     }
     if (poe_out && ['auto-on', 'forced-on', 'off'].includes(poe_out)) {

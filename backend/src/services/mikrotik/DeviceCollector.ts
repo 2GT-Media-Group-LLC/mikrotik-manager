@@ -5044,17 +5044,32 @@ export class DeviceCollector {
 
   // ─── MTU ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Set a port's MTU. RouterOS doesn't refuse an MTU above the port's L2 MTU,
+   * or an L2 MTU above the hardware's max-l2mtu: it quietly keeps the most it
+   * can (checked on a CRS3xx, 7.25), and the save looked successful. So the L2
+   * MTU is raised first when it's too small (never lowered: a raised one can
+   * be there for VLAN tags or jumbo frames switched through), and the MTU is
+   * read back.
+   */
   async setInterfaceMtu(name: string, mtu: number): Promise<void> {
-    // Step 1: raise l2mtu so RouterOS doesn't cap the L3 mtu below the requested value.
-    // This silently fails on logical interfaces (bridge, vlan) where l2mtu is derived —
-    // that is safe because RouterOSClient now properly drains !done after !trap.
-    await this.client.execute('/interface/set', {
-      numbers: name,
-      'l2mtu': String(mtu + 8),
-    }).catch(() => {});
-
-    // Step 2: set the L3 mtu — always runs regardless of l2mtu outcome above.
+    const row = (await this.client.execute('/interface/print', { '.proplist': 'name,mtu,l2mtu,max-l2mtu' }, [`?name=${name}`]))[0];
+    const l2 = Number(row?.['l2mtu']);
+    const max = Number(row?.['max-l2mtu']);
+    if (Number.isFinite(max) && max > 0 && mtu > max) {
+      throw new Error(`${name} can't take an MTU of ${mtu}: its hardware goes up to ${max}.`);
+    }
+    if (Number.isFinite(l2) && l2 > 0 && l2 < mtu) {
+      const want = Number.isFinite(max) && max > 0 ? Math.min(mtu + 8, max) : mtu + 8;
+      // Logical interfaces (bridge, VLAN) derive their L2 MTU and refuse this; the MTU below still runs.
+      await this.client.execute('/interface/set', { numbers: name, l2mtu: String(want) }).catch(() => {});
+    }
     await this.client.execute('/interface/set', { numbers: name, mtu: String(mtu) });
+    const after = (await this.client.execute('/interface/print', { '.proplist': 'name,mtu,l2mtu' }, [`?name=${name}`]))[0];
+    if (after?.['mtu'] && after['mtu'] !== String(mtu)) {
+      throw new Error(`RouterOS kept ${name} at MTU ${after['mtu']} rather than ${mtu}` +
+        (after['l2mtu'] ? ` (its L2 MTU is ${after['l2mtu']}).` : '.'));
+    }
   }
 
   // ─── PoE ──────────────────────────────────────────────────────────────────
@@ -5814,7 +5829,7 @@ export class DeviceCollector {
       this.client.execute('/interface/bridge/vlan/print', { detail: '' }).catch(none),
       this.client.execute('/ip/address/print', { detail: '' }).catch(none),
       // Each port's L2 MTU, the ceiling for the bridge's MTU.
-      this.client.execute('/interface/print', { '.proplist': 'name,l2mtu' }).catch(none),
+      this.client.execute('/interface/print', { '.proplist': 'name,l2mtu,max-l2mtu' }).catch(none),
     ]);
     return { bridges, ports, vlans, addresses, interfaces };
   }

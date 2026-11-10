@@ -80,20 +80,37 @@ export function parseBridgeMtu(v: unknown): string | null {
   return n >= 576 && n <= 65535 ? String(n) : null;
 }
 
+const portList = (ps: { name: string; l2mtu: number | null }[], n: (p: { l2mtu: number | null; maxL2mtu?: number | null }) => number | null) =>
+  ps.slice(0, 4).map((p) => `${p.name} (${n(p)})`).join(', ') + (ps.length > 4 ? ` and ${ps.length - 4} more` : '');
+
 /**
  * Why a bridge can't take `mtu`, or null. RouterOS refuses an MTU above the
  * lowest L2 MTU of the bridge's ports with only "could not set mtu" (checked
- * on a CRS3xx running 7.25), so the ports that are too small are named here.
+ * on a CRS3xx running 7.25), so the ports that are too small are named here:
+ * those that can be raised, and those whose hardware can't (a CRS510's
+ * management port stops at 2028), which have to leave the bridge instead.
+ * The bridge's MTU is only its own traffic; ports switch jumbo frames between
+ * themselves on their own MTUs whatever it is.
  */
-export function bridgeMtuProblem(mtu: string, ports: { name: string; l2mtu: number | null }[]): string | null {
+export function bridgeMtuProblem(mtu: string, ports: { name: string; l2mtu: number | null; maxL2mtu?: number | null }[]): string | null {
   if (mtu === 'auto') return null;
   const n = Number(mtu);
   const small = ports.filter((p) => p.l2mtu !== null && p.l2mtu < n).sort((a, b) => (a.l2mtu ?? 0) - (b.l2mtu ?? 0));
   if (!small.length) return null;
-  const listed = small.slice(0, 4).map((p) => `${p.name} (${p.l2mtu})`).join(', ') + (small.length > 4 ? ` and ${small.length - 4} more` : '');
-  const ceiling = small[0].l2mtu;
-  return `An MTU of ${n} is more than the L2 MTU of ${small.length === 1 ? 'its port' : 'these ports'}: ${listed}. `
-    + `Raise ${small.length === 1 ? 'that port\u2019s' : 'their'} MTU on the Ports tab first (MTM raises the L2 MTU with it), or keep the bridge at ${ceiling} or less.`;
+  const capped = small.filter((p) => typeof p.maxL2mtu === 'number' && p.maxL2mtu < n);
+  const raisable = small.filter((p) => !capped.includes(p));
+  const parts = [`An MTU of ${n} is more than the bridge's ports can carry.`];
+  if (raisable.length) {
+    parts.push(`Raise the MTU of ${portList(raisable, (p) => p.l2mtu)} on the Ports tab first (MTM raises the L2 MTU with it).`);
+  }
+  if (capped.length) {
+    parts.push(`${portList(capped, (p) => p.maxL2mtu ?? null)} can't go that high (the most ${capped.length === 1 ? 'its' : 'their'} hardware takes), `
+      + `so take ${capped.length === 1 ? 'it' : 'them'} out of the bridge, or keep the bridge at ${Math.min(...capped.map((p) => p.maxL2mtu as number))} or less.`);
+  } else {
+    parts.push(`Or keep the bridge at ${small[0].l2mtu} or less.`);
+  }
+  parts.push('Ports switch jumbo frames between themselves on their own MTUs; the bridge\u2019s is only for the router\u2019s own traffic on it.');
+  return parts.join(' ');
 }
 
 export function validBridgeName(name: string): boolean {

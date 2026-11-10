@@ -671,6 +671,21 @@ a small chart of them when there were any, or "0 errors · 0 drops in this range
 none (#402). They're kept apart from the throughput so a few
 aren't flattened by gigabit traffic. Drops are counted from 1.1.0-beta.26 on.
 
+### A port's MTU
+
+A port's edit form takes its MTU, from 576 up to what the port's hardware takes. RouterOS calls
+that `max-l2mtu`, and the field shows it ("up to 10218 on this port"). It varies by port: most
+SFP+ and QSFP28 ports on CRS3xx and CRS5xx switches take 10218, while a CRS510's management port
+(ether1) stops at 2028. RouterOS doesn't refuse a higher MTU; it keeps the most it can without
+saying so. So the manager refuses one the port can't take, and reports it if the device keeps a
+different value than asked.
+
+The port's L2 MTU is raised with the MTU when it's too small, and is never lowered, so a port
+raised for VLAN tags or jumbo frames keeps it. The MTU is only sent when you change it.
+
+Jumbo frames switched between ports only need those ports' MTU raised. The bridge's own MTU
+(see [Bridges](#bridges)) is only for the router's own traffic on the bridge.
+
 ### Power-cycling a PoE port
 
 On a port that supplies PoE, **Power-cycle PoE** turns its power off for 5 seconds and back on,
@@ -826,10 +841,16 @@ has a small chip icon; hover a port for its PVID and spanning tree role.
   4096; the lowest wins the root election), changes its comment or MTU, or turns it off.
   Renaming keeps its ports, VLANs and addresses.
 - **MTU** is `auto` by default: RouterOS uses the lowest MTU of the bridge's ports. Set a
-  number for jumbo frames, or `auto` to go back. A bridge's MTU can't be more than the
-  smallest L2 MTU of its ports, and the field says what that is. Asked for more, the manager
-  names the ports that are too small, because RouterOS's own answer is only "could not set mtu".
-  Raise those ports' MTU on the **Ports** tab first; the manager raises their L2 MTU with it.
+  number, or `auto` to go back. The bridge's MTU is for the router's own traffic on the bridge:
+  its address, routing in and out, and VLAN interfaces on it. Jumbo frames switched between
+  ports don't use it; they only need those ports' MTU raised (see
+  [A port's MTU](#a-ports-mtu)).
+
+  A bridge's MTU can't be more than the smallest L2 MTU of its ports, and the field says what
+  that is. Asked for more, the manager names the ports that are too small, because RouterOS's
+  own answer is only "could not set mtu". Raise those ports' MTU on the **Ports** tab first. A
+  port whose hardware can't go that high, such as a CRS510's 2028-byte management port, has to
+  leave the bridge instead.
 - **turn on / turn off** next to VLAN filtering works as it does from the faceplate.
 - The bin deletes a bridge with no ports, addresses or VLAN entries.
 

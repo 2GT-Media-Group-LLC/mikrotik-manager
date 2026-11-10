@@ -48,11 +48,17 @@ describe('bridge MTU', () => {
     expect(bridgeMtuProblem('auto', ports)).toBeNull();
     expect(bridgeMtuProblem('9000', [])).toBeNull();
   });
-  it('names the ports that are too small, and the most that fits', () => {
+  it('names the ports to raise, and the most that fits', () => {
     const p = bridgeMtuProblem('1600', ports)!;
-    expect(p).toMatch(/L2 MTU of these ports: sfp-sfpplus1 \(1508\), ether1 \(1508\), sfp-sfpplus3 \(1584\)/);
-    expect(p).toMatch(/keep the bridge at 1508 or less/);
-    expect(bridgeMtuProblem('1550', ports)).toMatch(/these ports: sfp-sfpplus1 \(1508\), ether1 \(1508\)\./);
-    expect(bridgeMtuProblem('1550', [{ name: 'ether1', l2mtu: 1508 }])).toMatch(/its port: ether1 \(1508\).*that port\u2019s MTU/);
+    expect(p).toMatch(/Raise the MTU of sfp-sfpplus1 \(1508\), ether1 \(1508\), sfp-sfpplus3 \(1584\) on the Ports tab/);
+    expect(p).toMatch(/Or keep the bridge at 1508 or less/);
+    expect(p).toMatch(/Ports switch jumbo frames between themselves/);
+  });
+  it('says a port whose hardware stops short has to leave the bridge (CRS510 management port)', () => {
+    const crs510 = [{ name: 'ether1', l2mtu: 2028, maxL2mtu: 2028 }, { name: 'qsfp28-1-1', l2mtu: 1584, maxL2mtu: 10218 }];
+    const p = bridgeMtuProblem('9000', crs510)!;
+    expect(p).toMatch(/Raise the MTU of qsfp28-1-1 \(1584\)/);
+    expect(p).toMatch(/ether1 \(2028\) can't go that high .* take it out of the bridge, or keep the bridge at 2028 or less/);
+    expect(bridgeMtuProblem('2028', [{ name: 'ether1', l2mtu: 2028, maxL2mtu: 2028 }])).toBeNull();
   });
 });

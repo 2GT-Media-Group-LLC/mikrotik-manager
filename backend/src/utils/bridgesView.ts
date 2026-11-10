@@ -10,6 +10,8 @@ export interface BridgePortView {
   name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null;
   /** The port's L2 MTU: the most a bridge MTU can be. Null when the device didn't say. */
   l2mtu: number | null;
+  /** The most the port's hardware takes (max-l2mtu). Null when the device didn't say. */
+  maxL2mtu: number | null;
 }
 export interface BridgeView {
   id: string; name: string; protocolMode: string; priority: string | null; vlanFiltering: boolean;
@@ -35,6 +37,7 @@ const num = (v: string | undefined): number | null => (v && /^\d+$/.test(v) ? Nu
 
 export function bridgesView(input: { bridges: Row[]; ports: Row[]; vlans: Row[]; addresses: Row[]; interfaces?: Row[] }): BridgeView[] {
   const l2mtu = new Map((input.interfaces ?? []).map((i) => [i['name'] ?? '', num(i['l2mtu'])]));
+  const maxL2mtu = new Map((input.interfaces ?? []).map((i) => [i['name'] ?? '', num(i['max-l2mtu'])]));
   return input.bridges.map((b) => {
     const name = b['name'] ?? '';
     return {
@@ -56,6 +59,7 @@ export function bridgesView(input: { bridges: Row[]; ports: Row[]; vlans: Row[];
           name: p['interface'] ?? '', hw: isTrue(p['hw']), pvid: p['pvid'] || null,
           disabled: isTrue(p['disabled']), inactive: isTrue(p['inactive']), dynamic: isTrue(p['dynamic']), role: p['role'] || null,
           l2mtu: l2mtu.get(p['interface'] ?? '') ?? null,
+          maxL2mtu: maxL2mtu.get(p['interface'] ?? '') ?? null,
         }))
         .sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true })),
       // RouterOS adds a dynamic entry per PVID and per wifi interface, so the

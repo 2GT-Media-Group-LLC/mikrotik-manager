@@ -22,9 +22,9 @@ const addresses: Row[] = [
 describe('bridgesView', () => {
   it('reads the MTU setting and each port\'s L2 MTU', () => {
     const [main] = bridgesView({ bridges: [bridge], ports, vlans, addresses,
-      interfaces: [{ name: 'ether1', l2mtu: '1508' }, { name: 'sfp-sfpplus10', l2mtu: '10218' }] });
+      interfaces: [{ name: 'ether1', l2mtu: '1508', 'max-l2mtu': '2028' }, { name: 'sfp-sfpplus10', l2mtu: '10218' }] });
     expect(main.mtuSetting).toBe('auto');
-    expect(main.ports.map((p) => [p.name, p.l2mtu])).toEqual([['ether1', 1508], ['sfp-sfpplus2', null], ['sfp-sfpplus10', 10218]]);
+    expect(main.ports.map((p) => [p.name, p.l2mtu, p.maxL2mtu])).toEqual([['ether1', 1508, 2028], ['sfp-sfpplus2', null, null], ['sfp-sfpplus10', 10218, null]]);
     expect(bridgesView({ bridges: [{ ...bridge, mtu: '9000' }], ports: [], vlans: [], addresses: [] })[0].mtuSetting).toBe('9000');
   });
 
@@ -38,7 +38,7 @@ describe('bridgesView', () => {
     expect(main.ports.map((p) => p.name)).toEqual(['ether1', 'sfp-sfpplus2', 'sfp-sfpplus10']);
     expect(main.ports[1]).toMatchObject({ inactive: true, pvid: '10' });
     expect(guest).toMatchObject({ name: 'guest', protocolMode: 'none', running: false, vlanFiltering: false, addresses: ['10.9.9.1/24'] });
-    expect(guest.ports).toEqual([{ name: 'ether9', hw: false, pvid: '1', disabled: false, inactive: false, dynamic: false, role: null, l2mtu: null }]);
+    expect(guest.ports).toEqual([{ name: 'ether9', hw: false, pvid: '1', disabled: false, inactive: false, dynamic: false, role: null, l2mtu: null, maxL2mtu: null }]);
   });
 
   it('lists each VLAN once, keeping dynamic-only ones apart (#284)', () => {

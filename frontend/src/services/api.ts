@@ -3073,7 +3073,7 @@ export interface BridgeView {
   running: boolean; disabled: boolean; dynamic: boolean; comment: string | null; mtu: string | null; macAddress: string | null;
   /** The MTU as set: "auto" or a number. `mtu` is what it is in effect. */
   mtuSetting?: string;
-  ports: { name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null; l2mtu?: number | null }[];
+  ports: { name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null; l2mtu?: number | null; maxL2mtu?: number | null }[];
   vlans: string[];
   dynamicVlans?: string[];
   addresses: string[];

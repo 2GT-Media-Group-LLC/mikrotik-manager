@@ -4,7 +4,7 @@ import { Network, Plus, Pencil, Trash2, Check, X, RefreshCw, AlertCircle, Cpu } 
 import clsx from 'clsx';
 import { devicesApi, type BridgeView } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
-import { bridgeMtuCeiling, bridgeMtuError } from '../../utils/bridgeMtu';
+import { bridgeMtuCeiling, bridgeMtuError } from '../../utils/mtu';
 import { LockoutVerdictDialog, lockoutVerdictOf, guardOutcomeMessage, type LockoutVerdict, type GuardResult } from '../ChangeGuardDialog';
 
 const MODES = [
@@ -213,7 +213,7 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                       title="auto follows the lowest MTU of the bridge's ports"
                       onChange={(ev) => setEditing({ ...e, form: { ...e.form, mtu: ev.target.value } })} />
                     <p className={clsx('text-[11px] mt-1', mtuErr ? 'text-red-600 dark:text-red-400' : 'text-gray-400')}>
-                      {mtuErr ?? `auto, or up to ${ceiling ?? 'the ports\u2019 L2 MTU'}${b.mtu ? ` · now ${b.mtu}` : ''}`}
+                      {mtuErr ?? `auto, or up to ${ceiling ?? 'the ports\u2019 L2 MTU'}${b.mtu ? ` · now ${b.mtu}` : ''}. Only the router\u2019s own traffic on the bridge; ports switch jumbo frames on their own MTUs.`}
                     </p></div>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
@@ -223,8 +223,9 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                 <p className="text-xs text-gray-400">
                   Renaming keeps the bridge&apos;s ports, VLANs and addresses. Changing spanning tree reconverges the bridge;
                   on the bridge the manager connects through, both run with auto-revert. Disabling that bridge is predicted
-                  as a lockout and asks first. An MTU change on that bridge also runs with auto-revert; for jumbo frames,
-                  raise the ports&apos; MTU on the Ports tab first.
+                  as a lockout and asks first. An MTU change on that bridge also runs with auto-revert. The bridge&apos;s MTU is
+                  for the router&apos;s own address, routing and VLAN interfaces on it; jumbo frames switched between ports
+                  only need those ports&apos; MTU raised on the Ports tab.
                 </p>
                 <div className="flex gap-2">
                   <button onClick={() => update.mutate({ b, d: changesOf(b, e.form) })} disabled={busy || pending === 0 || !e.form.name.trim() || !!mtuErr}

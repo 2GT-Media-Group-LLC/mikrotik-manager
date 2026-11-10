@@ -28,6 +28,7 @@ import {
 } from 'recharts';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
+import { portMtuError, portMtuMax } from '../../utils/mtu';
 
 /** Move-dialog targets that aren't bridge names (#258). */
 const NEW_BRIDGE = '\u0000new';
@@ -46,7 +47,8 @@ interface Props {
 interface PortEditForm {
   disabled: boolean;
   comment: string;
-  mtu: number;
+  /** As typed; sent only when it differs from the port's MTU. */
+  mtu: string;
   poe_out: 'auto-on' | 'forced-on' | 'off' | '';
   fec_mode: 'clause-74' | 'clause-91' | 'off' | '';
   tx_flow_control: 'on' | 'off' | 'auto' | '';
@@ -875,7 +877,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
   const [editForm, setEditForm] = useState<PortEditForm>({
     disabled: false,
     comment: '',
-    mtu: 1500,
+    mtu: '1500',
     poe_out: '',
     fec_mode: '',
     tx_flow_control: '',
@@ -1257,7 +1259,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
     setEditForm({
       disabled: port.disabled,
       comment: port.comment || '',
-      mtu: port.mtu || 1500,
+      mtu: String(port.mtu || 1500),
       poe_out: '',
       fec_mode: '',
       tx_flow_control: '',
@@ -1281,8 +1283,10 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
     const ifaceUpdates: Record<string, unknown> = {
       disabled: editForm.disabled,
       comment: editForm.comment,
-      mtu: editForm.mtu,
     };
+    // Only a changed MTU is sent. Sending it on every save also reset the L2
+    // MTU each time, lowering one raised for VLAN tags or jumbo frames.
+    if (editingPort && Number(editForm.mtu) !== (editingPort.mtu || 1500)) ifaceUpdates.mtu = Number(editForm.mtu);
     if (editForm.poe_out) ifaceUpdates.poe_out = editForm.poe_out;
     if (editForm.fec_mode) ifaceUpdates.fec_mode = editForm.fec_mode;
     // Each direction only when chosen. Filling the other with 'off' turned off
@@ -1323,6 +1327,11 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
     }
     return { ifaceUpdates, vlanData };
   };
+
+  // The most this port's hardware takes: RouterOS quietly keeps a lower MTU
+  // than asked when it's more.
+  const mtuMax = editingPort ? portMtuMax(editingPort.config_json) : null;
+  const mtuError = editingPort ? portMtuError(editForm.mtu, mtuMax) : null;
 
   const handleSave = async (confirmLockout = false) => {
     if (!editingPort) return;
@@ -1971,14 +1980,16 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                     <label className="label">MTU</label>
                     <input
                       type="number"
-                      className="input"
+                      className={clsx('input', mtuError && 'border-red-400')}
                       value={editForm.mtu}
-                      onChange={(e) => setEditForm((f) => ({ ...f, mtu: parseInt(e.target.value) || 1500 }))}
+                      onChange={(e) => setEditForm((f) => ({ ...f, mtu: e.target.value }))}
                       min={576}
-                      max={9216}
+                      max={mtuMax ?? 65535}
                       placeholder="1500"
                     />
-                    <p className="text-xs text-gray-400 mt-1">Standard: 1500 · Jumbo frames: 9000</p>
+                    <p className={clsx('text-xs mt-1', mtuError ? 'text-red-600 dark:text-red-400' : 'text-gray-400')}>
+                      {mtuError ?? `Standard: 1500 · Jumbo frames: 9000${mtuMax ? ` · up to ${mtuMax} on this port` : ''}`}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -2256,7 +2267,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button onClick={() => setEditingPort(null)} className="btn-secondary">Cancel</button>
                 <ReviewChangesButton
-                  deviceName={deviceName} disabled={isPending} applyLabel="Apply"
+                  deviceName={deviceName} disabled={isPending || !!mtuError} applyLabel="Apply"
                   onApply={() => { void handleSave(); }}
                   requests={() => {
                     const name = editingPort.name;
@@ -2269,7 +2280,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                 />
                 <button
                   onClick={() => { void handleSave(); }}
-                  disabled={isPending}
+                  disabled={isPending || !!mtuError}
                   className="btn-primary flex items-center gap-2"
                 >
                   {isPending ? (

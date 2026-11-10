@@ -1054,3 +1054,55 @@ describe('collecting the reverse proxy (#358)', () => {
       'DELETE FROM reverse_proxy_rules WHERE device_id = $1', 'DELETE FROM reverse_proxy_service WHERE device_id = $1']);
   });
 });
+
+// ── setInterfaceMtu ──────────────────────────────────────────────────────────
+// RouterOS clamps an MTU above the L2 MTU, and an L2 MTU above max-l2mtu,
+// instead of refusing (TEST, CRS309 on 7.25), so a fake port does the same.
+describe('setInterfaceMtu', () => {
+  function port(state: { mtu: number; l2mtu: number; max: number }) {
+    const sets: Record<string, string>[] = [];
+    const execute = jest.fn(async (cmd: string, params: Record<string, string> = {}) => {
+      if (cmd === '/interface/print') return [{ name: 'p1', mtu: String(state.mtu), l2mtu: String(state.l2mtu), 'max-l2mtu': String(state.max) }];
+      if (cmd === '/interface/set') {
+        sets.push(params);
+        if (params.l2mtu) state.l2mtu = Math.min(Number(params.l2mtu), state.max);
+        if (params.mtu) state.mtu = Math.min(Number(params.mtu), state.l2mtu);
+      }
+      return [];
+    });
+    const collector = new DeviceCollector(testDevice);
+    (collector as unknown as { client: { execute: jest.Mock } }).client.execute = execute;
+    return { collector, sets, state };
+  }
+
+  it('raises the L2 MTU first when it is too small, up to the hardware', async () => {
+    const { collector, sets, state } = port({ mtu: 1500, l2mtu: 1584, max: 10218 });
+    await collector.setInterfaceMtu('p1', 9000);
+    expect(sets).toEqual([{ numbers: 'p1', l2mtu: '9008' }, { numbers: 'p1', mtu: '9000' }]);
+    expect(state).toMatchObject({ mtu: 9000, l2mtu: 9008 });
+    const top = port({ mtu: 1500, l2mtu: 1584, max: 10218 });
+    await top.collector.setInterfaceMtu('p1', 10218);
+    expect(top.state).toMatchObject({ mtu: 10218, l2mtu: 10218 });
+  });
+
+  it('never lowers a raised L2 MTU', async () => {
+    const { collector, sets, state } = port({ mtu: 1500, l2mtu: 1584, max: 10218 });
+    await collector.setInterfaceMtu('p1', 1400);
+    expect(sets).toEqual([{ numbers: 'p1', mtu: '1400' }]);
+    expect(state.l2mtu).toBe(1584);
+  });
+
+  it('refuses more than the hardware takes instead of saving a clamped value', async () => {
+    const { collector, sets } = port({ mtu: 1500, l2mtu: 2028, max: 2028 });
+    await expect(collector.setInterfaceMtu('p1', 9000)).rejects.toThrow(/hardware goes up to 2028/);
+    expect(sets).toEqual([]);
+  });
+
+  it('says so when RouterOS keeps a different MTU', async () => {
+    const { collector } = port({ mtu: 1500, l2mtu: 1584, max: 0 });
+    // No max-l2mtu, and an L2 MTU the device won't raise: the read-back catches it.
+    (collector as unknown as { client: { execute: jest.Mock } }).client.execute.mockImplementation(async (cmd: string) =>
+      cmd === '/interface/print' ? [{ name: 'p1', mtu: '1584', l2mtu: '1584' }] : []);
+    await expect(collector.setInterfaceMtu('p1', 1600)).rejects.toThrow(/kept p1 at MTU 1584 rather than 1600/);
+  });
+});
