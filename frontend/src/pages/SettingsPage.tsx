@@ -1591,8 +1591,8 @@ export default function SettingsPage() {
                 <form onSubmit={(e) => {
                   e.preventDefault();
                   if (acmeSettings?.readOnly) return;
-                  if (!acmeForm.domain.trim() || !acmeForm.email.trim()) {
-                    setAcmeError('Both domain and contact email are required.');
+                  if (!acmeForm.domain.trim()) {
+                    setAcmeError('A domain is required.');
                     return;
                   }
                   setAcmeError('');
@@ -1612,8 +1612,9 @@ export default function SettingsPage() {
                       <input id="acme-domain" required className="input w-full" value={acmeForm.domain} onChange={(e) => setAcmeForm((s) => ({ ...s, domain: e.target.value }))} placeholder="manager.example.com" />
                     </div>
                     <div>
-                      <label className="label" htmlFor="acme-email">Contact email (required)</label>
-                      <input id="acme-email" required className="input w-full" type="email" value={acmeForm.email} onChange={(e) => setAcmeForm((s) => ({ ...s, email: e.target.value }))} placeholder="admin@example.com" />
+                      <label className="label" htmlFor="acme-email">Contact email (optional)</label>
+                      <input id="acme-email" className="input w-full" type="email" value={acmeForm.email} onChange={(e) => setAcmeForm((s) => ({ ...s, email: e.target.value }))} placeholder="admin@example.com" />
+                      <p className="mt-1 text-xs text-gray-400">Without an email, you may not receive certificate expiry or account notices.</p>
                     </div>
                     <div className="sm:col-span-2">
                       <label className="label" htmlFor="acme-server">ACME directory URL</label>

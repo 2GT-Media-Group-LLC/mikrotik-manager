@@ -53,15 +53,36 @@ describe('manager ACME settings', () => {
   it.each([
     { domain: '', email: '' },
     { domain: '', email: 'admin@example.com' },
-    { domain: 'manager.example.com', email: '' },
     { domain: '  ', email: 'admin@example.com' },
-    { domain: 'manager.example.com', email: '  ' },
-  ])('requires both domain and email: %p', async (values) => {
+  ])('requires a domain: %p', async (values) => {
     const res = await request(app()).put('/api/cert/acme').set('x-test-role', 'admin')
       .send({ ...valid, ...values });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/both domain and contact email are required/i);
+    expect(res.body.error).toMatch(/a domain is required/i);
     expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it.each(['', '  ', undefined])('accepts an optional email: %p', async (email) => {
+    const res = await request(app()).put('/api/cert/acme').set('x-test-role', 'admin')
+      .send({ ...valid, email });
+    expect(res.status).toBe(200);
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.any(String),
+      `ACME_DOMAIN=${valid.domain}\nACME_EMAIL=\nACME_SERVER=${valid.server}\n`,
+      { mode: 0o600 },
+    );
+  });
+
+  it.each(['invalid', 'a@', 'a@b', null, 123])('rejects invalid supplied email: %p', async (email) => {
+    const res = await request(app()).put('/api/cert/acme').set('x-test-role', 'admin').send({ ...valid, email });
+    expect(res.status).toBe(400);
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it('reads web settings without an email', async () => {
+    jest.mocked(readFile).mockResolvedValue(`ACME_DOMAIN=${valid.domain}\nACME_EMAIL=\nACME_SERVER=${valid.server}\n` as never);
+    const res = await request(app()).get('/api/cert/acme').set('x-test-role', 'admin');
+    expect(res.body).toEqual({ ...valid, email: '', source: 'web', readOnly: false });
   });
 
   it('saves valid web settings when the environment is incomplete', async () => {

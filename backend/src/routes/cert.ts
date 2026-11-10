@@ -63,14 +63,14 @@ async function readAcmeSettings(): Promise<AcmeSettings & { source: 'web' | 'env
 function parseAcmeSettings(raw: unknown): AcmeSettings | string {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'ACME settings must be an object.';
   const input = raw as Record<string, unknown>;
-  if (typeof input.domain !== 'string' || typeof input.email !== 'string' || typeof input.server !== 'string') {
-    return 'Domain, email and ACME directory URL must be strings.';
+  if (typeof input.domain !== 'string' || (input.email !== undefined && typeof input.email !== 'string') || typeof input.server !== 'string') {
+    return 'Domain and ACME directory URL must be strings; email must be a string if provided.';
   }
   const domain = input.domain.trim().toLowerCase();
-  const email = input.email.trim();
+  const email = typeof input.email === 'string' ? input.email.trim() : '';
   const server = input.server.trim() || DEFAULT_ACME_SERVER;
 
-  if (!domain || !email) return 'Both domain and contact email are required.';
+  if (!domain) return 'A domain is required.';
   if ([...server].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
     return 'The ACME directory URL cannot contain control characters.';
   }
@@ -80,7 +80,7 @@ function parseAcmeSettings(raw: unknown): AcmeSettings | string {
       label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) {
       return 'Enter a valid DNS name, such as manager.example.com.';
     }
-    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
       return 'Enter a valid contact email address.';
     }
   }

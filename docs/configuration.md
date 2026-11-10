@@ -20,8 +20,8 @@ Set in `.env` at the project root. Changing any of these requires a container re
 | `PASSWORD_LOGIN` | `true` | `false` makes sign-in SSO-only. See [SSO-only sign-in](sso-oidc.md#behaviour-and-safety) |
 | `HTTP_PORT` | `80` | Host port for HTTP (redirects to HTTPS, or serves the app with `TLS_MODE=proxy`) |
 | `HTTPS_PORT` | `443` | Host port for HTTPS |
-| `ACME_DOMAIN` | *unset* | Optional default DNS name for the manager's ACME HTTP-01 certificate; requires `ACME_EMAIL` and public access to port 80. Can also be set in **Settings → Certificate** |
-| `ACME_EMAIL` | *unset* | Contact email for the manager's ACME certificate; can also be set in **Settings → Certificate** |
+| `ACME_DOMAIN` | *unset* | Optional default DNS name for the manager's ACME HTTP-01 certificate; requires public access to port 80. Can also be set in **Settings → Certificate** |
+| `ACME_EMAIL` | *unset* | Optional contact email for the manager's ACME account; can also be set in **Settings → Certificate** |
 | `ACME_SERVER` | Let's Encrypt production | ACME directory URL; can also be set in **Settings → Certificate** for staging or a private ACME server |
 | `BIND_ADDRESS` | *every interface* | Host address the web UI is published on. See [Network exposure](#network-exposure). |
 | `NETFLOW_BIND_ADDRESS` | *every interface* | Host address the NetFlow collector (UDP 2055) is published on. |
@@ -310,22 +310,23 @@ self-signed one; nginx terminates TLS, picks up the new certificate within a few
 redirects HTTP to HTTPS.
 
 For a public DNS name, configure the manager to obtain and renew a Let's Encrypt certificate
-using **Settings → Certificate → Automatic HTTPS Certificate**. Enter the domain and contact
-email, point the domain's DNS at this host, and make sure port 80 is reachable from the
+using **Settings → Certificate → Automatic HTTPS Certificate**. Enter the domain and, optionally,
+a contact email, point the domain's DNS at this host, and make sure port 80 is reachable from the
 internet. Keep `TLS_MODE=https`. Nginx checks web settings every few seconds, serves the ACME
 challenge over HTTP, and redirects other HTTP requests as usual. Once issued, the certificate
 replaces the current certificate and nginx reloads automatically; renewal is checked every
 12 hours. Check `docker compose logs nginx` if issuance fails.
 
-Alternatively, set `ACME_DOMAIN` and `ACME_EMAIL` in `.env` and restart the containers. The
+Alternatively, set `ACME_DOMAIN` and optionally `ACME_EMAIL` in `.env` and restart the containers. The
 directory defaults to Let's Encrypt production when `ACME_SERVER` is unset. If all three
 variables are set, the environment values take precedence and ACME settings in the web
 interface are read-only. Change `.env` and restart the containers to change them.
 
 Otherwise, environment values are used until ACME settings are saved in the web interface.
-Saving requires both a domain and contact email. Web settings are stored in the certificate
+Saving requires a domain; the contact email is optional. Without an email, you may not receive
+account or certificate expiry notices, and some ACME providers may require one. Web settings are stored in the certificate
 volume and override an incomplete environment configuration; choose **Use .env Values** to
-remove that override. To disable ACME, unset at least one of `ACME_DOMAIN` and `ACME_EMAIL`
+remove that override. To disable ACME, unset `ACME_DOMAIN`
 in `.env`, restart the containers, and choose **Use .env Values** if a web override exists.
 The web settings file uses `ACME_DOMAIN=`, `ACME_EMAIL=`, and `ACME_SERVER=` entries.
 HTTP-01 requires public access to port 80 and does not work when `TLS_MODE=proxy`; in that setup, use

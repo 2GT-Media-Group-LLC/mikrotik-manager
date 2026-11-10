@@ -121,12 +121,9 @@ fi
 # shared certificate volume and checked here every few seconds. A complete
 # environment configuration takes precedence over the web settings.
 ACME_SETTINGS_FILE=/certs/acme-settings.conf
-ACME_DOMAIN="${ACME_DOMAIN:-}"
-ACME_EMAIL="${ACME_EMAIL:-}"
-ACME_SERVER="${ACME_SERVER:-}"
-ACME_ENV_DOMAIN=$ACME_DOMAIN
-ACME_ENV_EMAIL=$ACME_EMAIL
-ACME_ENV_SERVER=$ACME_SERVER
+ACME_ENV_DOMAIN="${ACME_DOMAIN:-}"
+ACME_ENV_EMAIL="${ACME_EMAIL:-}"
+ACME_ENV_SERVER="${ACME_SERVER:-}"
 has_non_space() {
     case "$1" in
         *[![:space:]]*) return 0 ;;
@@ -156,7 +153,7 @@ read_acme_settings() {
         }; then
             acme_invalid=1
         fi
-        if [ "$acme_invalid" -ne 0 ] || [ "$acme_domain_seen" -ne 1 ] || [ "$acme_email_seen" -ne 1 ] || [ "$acme_server_seen" -ne 1 ]; then
+        if [ "$acme_invalid" -ne 0 ] || [ "$acme_domain_seen" -ne 1 ] || [ "$acme_server_seen" -ne 1 ]; then
             echo "[entrypoint] error: invalid ACME settings file; ACME is disabled."
             ACME_DOMAIN=
             ACME_EMAIL=
@@ -182,22 +179,23 @@ if [ "$TLS_MODE" = "https" ]; then
         NEXT_RUN=0
         while true; do
             read_acme_settings
-            if [ "$FIRST_CHECK" = 1 ] || [ "$ACME_DOMAIN" != "$LAST_DOMAIN" ] || [ "$ACME_EMAIL" != "$LAST_EMAIL" ] || [ "$ACME_SERVER" != "$LAST_SERVER" ]; then
+            if [ $FIRST_CHECK -eq 1 ] || [ "$ACME_DOMAIN" != "$LAST_DOMAIN" ] || [ "$ACME_EMAIL" != "$LAST_EMAIL" ] || [ "$ACME_SERVER" != "$LAST_SERVER" ]; then
                 LAST_DOMAIN="$ACME_DOMAIN"
                 LAST_EMAIL="$ACME_EMAIL"
                 LAST_SERVER="$ACME_SERVER"
                 FIRST_CHECK=0
                 NEXT_RUN=0
-                if [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
-                    if [ -z "$ACME_DOMAIN" ] || [ -z "$ACME_EMAIL" ]; then
-                        echo "[entrypoint] warning: ACME requires both a domain and email; ACME is disabled."
-                    else
-                        echo "[entrypoint] ACME enabled for $ACME_DOMAIN via $ACME_SERVER."
+                if [ -z "$ACME_DOMAIN" ]; then
+                    echo "[entrypoint] warning: ACME requires a domain; ACME is disabled."
+                else
+                    echo "[entrypoint] ACME enabled for $ACME_DOMAIN via $ACME_SERVER."
+                    if [ -z "$ACME_EMAIL" ]; then
+                        echo "[entrypoint] warning: ACME is configured without an email; account or expiry notices may not be received."
                     fi
                 fi
             fi
 
-            if [ -n "$ACME_DOMAIN" ] && [ -n "$ACME_EMAIL" ]; then
+            if [ -n "$ACME_DOMAIN" ]; then
                 NOW=$(date +%s)
                 if [ "$NEXT_RUN" -eq 0 ] || [ "$NOW" -ge "$NEXT_RUN" ]; then
                     if [ -f /certs/acme-ca-bundle.crt ]; then
@@ -215,19 +213,24 @@ if [ "$TLS_MODE" = "https" ]; then
                         fi
                         test "$CERTBOT_RET" -eq 0 || echo "[entrypoint] ACME renewal failed; it will be retried."
                     else
+                        if [ -n "$ACME_EMAIL" ]; then
+                            set -- --email "$ACME_EMAIL"
+                        else
+                            set -- --register-unsafely-without-email
+                        fi
                         if su-exec "$BACKEND_UID:$BACKEND_GID" certbot \
                             --config-dir "$ACME_CONFIG" --work-dir "$ACME_WORK" --logs-dir "$ACME_LOGS" \
                             --server "$ACME_SERVER" certonly --webroot -w "$ACME_WEBROOT" --non-interactive --agree-tos \
-                            --email "$ACME_EMAIL" --cert-name "$ACME_DOMAIN" -d "$ACME_DOMAIN" \
+                            "$@" --cert-name "$ACME_DOMAIN" -d "$ACME_DOMAIN" \
                             --deploy-hook "$ACME_DEPLOY_HOOK"; then
                             CERTBOT_RET=0
                         else
                             CERTBOT_RET=$?
                         fi
-                        test "$CERTBOT_RET" -eq 0 || echo "[entrypoint] ACME certificate request failed; it will be retried."
+                        test $CERTBOT_RET -eq 0 || echo "[entrypoint] ACME certificate request failed; it will be retried."
                     fi
                     NOW=$(date +%s)
-                    if [ "$CERTBOT_RET" -eq 0 ]; then
+                    if [ $CERTBOT_RET -eq 0 ]; then
                         NEXT_RUN=$((NOW + 43200))
                     else
                         NEXT_RUN=$((NOW + 3600))
@@ -238,7 +241,7 @@ if [ "$TLS_MODE" = "https" ]; then
         done
     ) &
 elif [ -n "$ACME_DOMAIN" ] || [ -n "$ACME_EMAIL" ]; then
-    echo "[entrypoint] warning: ACME requires both a domain and email, and TLS_MODE=https; ACME is disabled."
+    echo "[entrypoint] warning: ACME requires a domain and TLS_MODE=https; ACME is disabled."
 fi
 
 # Background watcher: reload nginx when backend writes a .reload signal file
