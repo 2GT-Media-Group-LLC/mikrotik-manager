@@ -34,12 +34,14 @@ describe('ACME CA bundle input', () => {
     expect(markup).toContain('Remove CA Bundle');
   });
 
-  it('hides editing controls when environment settings are locked', () => {
+  it('shows editing controls even if the status reports read-only', () => {
     state.installed = true;
     state.readOnly = true;
     const markup = renderToStaticMarkup(createElement(AcmeCaBundleCard));
-    expect(markup).toContain('read-only');
-    expect(markup).not.toContain('<textarea');
-    expect(markup).not.toContain('Remove CA Bundle');
+    expect(markup).toContain('<textarea');
+    expect(markup).toContain('Load from file...');
+    expect(markup).toContain('Replace CA Bundle');
+    expect(markup).toContain('Remove CA Bundle');
+    expect(markup).not.toContain('read-only');
   });
 });

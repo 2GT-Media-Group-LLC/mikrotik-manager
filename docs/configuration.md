@@ -337,8 +337,8 @@ To use a staging or local ACME service, set its directory URL in the web interfa
 `ACME_SERVER`. If its HTTPS certificate uses a private CA, paste a PEM certificate bundle or
 load it from a file under **Settings → Certificate → ACME Server CA Bundle**. The bundle replaces Certbot's
 default trust store, so include all CAs needed by the ACME server. It can be replaced or
-removed there; removing it restores the default trust store. When all three ACME environment
-variables are set, the bundle controls are read-only like the other ACME settings.
+removed there; removing it restores the default trust store. Administrators can edit the bundle
+even when all three ACME environment variables are set.
 
 Alternatively, place the PEM bundle at `acme-ca-bundle.crt` in the `certs_data` Docker volume.
 Nginx checks for bundle changes and retries ACME when the bundle changes.

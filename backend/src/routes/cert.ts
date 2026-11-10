@@ -151,10 +151,10 @@ router.delete('/acme', requireAdmin, async (_req, res) => {
 router.get('/acme/ca-bundle', requireAdmin, async (_req, res) => {
   try {
     await readFile(ACME_CA_BUNDLE_PATH);
-    return res.json({ installed: true, readOnly: acmeEnvironmentLocked() });
+    return res.json({ installed: true, readOnly: false });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return res.json({ installed: false, readOnly: acmeEnvironmentLocked() });
+      return res.json({ installed: false, readOnly: false });
     }
     throw err;
   }
@@ -162,9 +162,6 @@ router.get('/acme/ca-bundle', requireAdmin, async (_req, res) => {
 
 // PUT /api/cert/acme/ca-bundle — install only validated PEM certificates
 router.put('/acme/ca-bundle', requireAdmin, async (req, res) => {
-  if (acmeEnvironmentLocked()) {
-    return res.status(409).json({ error: 'ACME settings are read-only while all three ACME environment variables are set.' });
-  }
   const certificate = (req.body as { certificate?: unknown } | null)?.certificate;
   if (typeof certificate !== 'string' || Buffer.byteLength(certificate, 'utf8') > 1024 * 1024) {
     return res.status(400).json({ error: 'Provide a PEM certificate bundle no larger than 1 MB.' });
@@ -190,9 +187,6 @@ router.put('/acme/ca-bundle', requireAdmin, async (req, res) => {
 
 // DELETE /api/cert/acme/ca-bundle — return to Certbot's default trust store
 router.delete('/acme/ca-bundle', requireAdmin, async (_req, res) => {
-  if (acmeEnvironmentLocked()) {
-    return res.status(409).json({ error: 'ACME settings are read-only while all three ACME environment variables are set.' });
-  }
   try {
     await unlink(ACME_CA_BUNDLE_PATH);
   } catch (err) {

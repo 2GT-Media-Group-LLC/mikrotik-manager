@@ -189,16 +189,16 @@ describe('manager ACME settings', () => {
     expect(rename).not.toHaveBeenCalled();
   });
 
-  it('prevents CA bundle changes while environment settings are locked', async () => {
+  it('allows CA bundle changes while environment settings are locked', async () => {
     process.env.ACME_DOMAIN = 'env.example.com';
     process.env.ACME_EMAIL = 'admin@example.com';
     process.env.ACME_SERVER = 'https://ca.example.com/';
     expect((await request(app()).get('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).body)
-      .toEqual({ installed: false, readOnly: true });
-    expect((await request(app()).put('/api/cert/acme/ca-bundle').set('x-test-role', 'admin').send({ certificate: ca.certPem })).status).toBe(409);
-    expect((await request(app()).delete('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).status).toBe(409);
-    expect(writeFile).not.toHaveBeenCalled();
-    expect(unlink).not.toHaveBeenCalled();
+      .toEqual({ installed: false, readOnly: false });
+    expect((await request(app()).put('/api/cert/acme/ca-bundle').set('x-test-role', 'admin').send({ certificate: ca.certPem })).status).toBe(200);
+    expect(rename).toHaveBeenCalledWith(expect.stringMatching(/^\/certs\/acme-ca-bundle\.crt\..*\.tmp$/), '/certs/acme-ca-bundle.crt');
+    expect((await request(app()).delete('/api/cert/acme/ca-bundle').set('x-test-role', 'admin')).status).toBe(200);
+    expect(unlink).toHaveBeenCalledWith('/certs/acme-ca-bundle.crt');
   });
 
   it('removes the CA bundle without touching the HTTPS certificate', async () => {

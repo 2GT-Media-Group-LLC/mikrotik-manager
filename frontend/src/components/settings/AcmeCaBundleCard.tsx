@@ -49,73 +49,67 @@ export default function AcmeCaBundleCard() {
           <p className="text-sm text-gray-600 dark:text-slate-300">
             {data.installed ? 'A custom ACME CA bundle is installed.' : 'No custom ACME CA bundle is installed.'}
           </p>
-          {data.readOnly ? (
-            <p className="text-xs text-gray-500 dark:text-slate-400">
-              ACME settings are read-only while all three ACME environment variables are set.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="acme-ca-bundle" className="label mb-0">CA bundle (PEM)</label>
-                  <button type="button" className="text-xs text-blue-500 hover:text-blue-600 disabled:opacity-50"
-                    disabled={change.isPending || reading} onClick={() => fileRef.current?.click()}>
-                    Load from file...
-                  </button>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept=".pem,.crt,.cer"
-                    className="hidden"
-                    disabled={change.isPending || reading}
-                    onChange={async (e) => {
-                      const selected = e.target.files?.[0];
-                      e.target.value = '';
-                      if (!selected) return;
-                      setCertificate('');
-                      setMessage(null);
-                      setReading(true);
-                      try {
-                        if (selected.size > 1024 * 1024) throw new Error('The CA bundle must be no larger than 1 MB.');
-                        setCertificate(await selected.text());
-                      } catch (err) {
-                        setMessage({ error: true, text: apiErrorMessage(err, 'Could not read the CA bundle.') });
-                      } finally {
-                        setReading(false);
-                      }
-                    }}
-                  />
-                </div>
-                <textarea
-                  id="acme-ca-bundle"
-                  className="input font-mono text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                  rows={6}
-                  value={certificate}
-                  onChange={(e) => { setCertificate(e.target.value); setMessage(null); }}
-                  placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                  spellCheck={false}
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="acme-ca-bundle" className="label mb-0">CA bundle (PEM)</label>
+                <button type="button" className="text-xs text-blue-500 hover:text-blue-600 disabled:opacity-50"
+                  disabled={change.isPending || reading} onClick={() => fileRef.current?.click()}>
+                  Load from file...
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pem,.crt,.cer"
+                  className="hidden"
                   disabled={change.isPending || reading}
+                  onChange={async (e) => {
+                    const selected = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!selected) return;
+                    setCertificate('');
+                    setMessage(null);
+                    setReading(true);
+                    try {
+                      if (selected.size > 1024 * 1024) throw new Error('The CA bundle must be no larger than 1 MB.');
+                      setCertificate(await selected.text());
+                    } catch (err) {
+                      setMessage({ error: true, text: apiErrorMessage(err, 'Could not read the CA bundle.') });
+                    } finally {
+                      setReading(false);
+                    }
+                  }}
                 />
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className="btn-primary disabled:opacity-50" disabled={!certificate.trim() || change.isPending || reading}
-                  onClick={() => { setMessage(null); change.mutate(certificate); }}>
-                  {data.installed ? 'Replace CA Bundle' : 'Upload CA Bundle'}
-                </button>
-                {data.installed && (
-                  <button type="button" className="btn-secondary disabled:opacity-50" disabled={change.isPending || reading}
-                    onClick={() => {
-                      if (confirm('Remove the ACME CA bundle and restore Certbot’s default trust store?')) {
-                        setMessage(null);
-                        change.mutate(null);
-                      }
-                    }}>
-                    Remove CA Bundle
-                  </button>
-                )}
-              </div>
+              <textarea
+                id="acme-ca-bundle"
+                className="input font-mono text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                rows={6}
+                value={certificate}
+                onChange={(e) => { setCertificate(e.target.value); setMessage(null); }}
+                placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                spellCheck={false}
+                disabled={change.isPending || reading}
+              />
             </div>
-          )}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn-primary disabled:opacity-50" disabled={!certificate.trim() || change.isPending || reading}
+                onClick={() => { setMessage(null); change.mutate(certificate); }}>
+                {data.installed ? 'Replace CA Bundle' : 'Upload CA Bundle'}
+              </button>
+              {data.installed && (
+                <button type="button" className="btn-secondary disabled:opacity-50" disabled={change.isPending || reading}
+                  onClick={() => {
+                    if (confirm('Remove the ACME CA bundle and restore Certbot’s default trust store?')) {
+                      setMessage(null);
+                      change.mutate(null);
+                    }
+                  }}>
+                  Remove CA Bundle
+                </button>
+              )}
+            </div>
+          </div>
           {message && (
             <p role={message.error ? 'alert' : 'status'} className={`text-sm ${message.error ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'}`}>
               {message.text}
