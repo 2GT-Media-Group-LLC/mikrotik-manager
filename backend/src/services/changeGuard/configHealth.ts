@@ -17,7 +17,7 @@
  * persistence lives in `runConfigHealth`.
  */
 import { query, queryOne } from '../../config/database';
-import { zoneDrift, type CompiledRule, type ZoneDrift } from '../../utils/zoneFirewall';
+import { zoneDrift, interfaceZones, type CompiledRule, type ZoneConfig, type ZoneDrift } from '../../utils/zoneFirewall';
 import { expandVlanIds, rosList } from '../../utils/vlan';
 import {
   captureSnapshot,
@@ -923,10 +923,15 @@ export async function runConfigHealth(device: GuardDevice): Promise<ConfigHealth
   let findings = auditConfig(snap, device);
   // Zones (#369): the filter table should still be what the last apply wrote.
   try {
-    const zone = await queryOne<{ desired: CompiledRule[] }>(
-      `SELECT desired FROM firewall_zone_configs WHERE device_id = $1 AND enabled`, [device.id]);
+    const zone = await queryOne<{ desired: CompiledRule[]; config: ZoneConfig }>(
+      `SELECT desired, config FROM firewall_zone_configs WHERE device_id = $1 AND enabled`, [device.id]);
     const drift = zone && snap.firewallFilter.length ? zoneDrift(snap.firewallFilter, zone.desired) : null;
     if (drift) findings.push(zoneDriftFinding(drift));
+    // Firewall Logs' zone columns (#415) follow membership changes made on the device.
+    if (zone?.config?.zones && snap.interfaceListMembers) {
+      await query(`UPDATE firewall_zone_configs SET interface_zones = $2 WHERE device_id = $1`,
+        [device.id, JSON.stringify(interfaceZones(zone.config.zones, snap.interfaceListMembers))]);
+    }
   } catch (e) {
     console.warn(`[config-health] zone drift check skipped for ${device.name}: ${(e as Error).message}`);
   }

@@ -1019,6 +1019,10 @@ CREATE TABLE IF NOT EXISTS firewall_zone_configs (
   applied_by   VARCHAR(50),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Interface -> zone, as last read from the device (#415): Firewall Logs shows
+-- zones instead of interfaces. Refreshed on apply, on opening the Zones tab
+-- and by the hourly config-health read.
+ALTER TABLE firewall_zone_configs ADD COLUMN IF NOT EXISTS interface_zones JSONB;
 
 CREATE TABLE IF NOT EXISTS device_ssh_keys (
   device_id        INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,

@@ -1404,6 +1404,15 @@ export interface FirewallEvent {
   dstPort?: number;
 
   length?: number;
+
+  /** The device runs zones (#415): the line reads from zone to zone. */
+  zoned?: boolean;
+  /** "Router" for the router's own traffic; missing for an interface in no zone. */
+  fromZone?: string;
+  toZone?: string;
+  /** With names=1: the client's hostname or reverse DNS. */
+  srcName?: string;
+  dstName?: string;
 }
 
 /** Firewall log lines folded by rule, source, destination and port (#415). */
@@ -1463,6 +1472,7 @@ export const eventsApi = {
     protocol?: string;
     limit?: number;
     offset?: number;
+    names?: 1;
   }) =>
     api.get<{
       events: FirewallEvent[];
@@ -1477,6 +1487,7 @@ export const eventsApi = {
     protocol?: string;
     limit?: number;
     offset?: number;
+    names?: 1;
   }) =>
     api.get<{ groups: FirewallGroup[]; total: number; scanLimit: number }>('/events/firewall', { params: { ...params, view: 'grouped' } }),
   clearFirewall: (deviceId?: number) =>

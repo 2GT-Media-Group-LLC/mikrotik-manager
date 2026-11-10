@@ -7,6 +7,7 @@ import { activeSite, writableScope } from '../middleware/site';
 import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
 import { parseFirewallLog } from '../utils/firewallLogParser';
 import { firewallPacketLogSql } from '../utils/firewallEventSql';
+import { withNames, withZones } from '../services/firewallLogEnrich';
 
 /** Most events the list's total counts; past it the page shows "N+". */
 export const EVENTS_COUNT_CAP = 100_000;
@@ -115,7 +116,7 @@ type FirewallGroupRow = {
  * scan, is one line instead of hundreds.
  */
 async function groupedFirewall(
-  where: string, baseParams: unknown[], firstIdx: number, joinDevices: boolean, limit: number, offset: number,
+  where: string, baseParams: unknown[], firstIdx: number, joinDevices: boolean, limit: number, offset: number, names: boolean,
 ) {
   const params = [...baseParams];
   let idx = firstIdx;
@@ -173,7 +174,11 @@ async function groupedFirewall(
       dstPort: r.dst_port != null ? Number(r.dst_port) : undefined,
     }];
   });
-  return { groups, total: Number(rows[0]?.total_groups ?? 0), scanLimit: FIREWALL_GROUP_SCAN };
+  const zoned = await withZones(groups);
+  return {
+    groups: names ? await withNames(zoned) : zoned,
+    total: Number(rows[0]?.total_groups ?? 0), scanLimit: FIREWALL_GROUP_SCAN,
+  };
 }
 
 // GET /api/events/firewall[?view=grouped]
@@ -345,9 +350,11 @@ router.get('/firewall', async (req, res) => {
   }
 
   const where = filters.join(' AND ');
+  // ?names=1 (#415): hostnames and reverse DNS in place of addresses.
+  const names = singleQueryValue(req.query.names) === '1';
 
   if (req.query.view === 'grouped') {
-    return res.json(await groupedFirewall(where, params, idx, !!searchTerm, requestedLimit, requestedOffset));
+    return res.json(await groupedFirewall(where, params, idx, !!searchTerm, requestedLimit, requestedOffset, names));
   }
 
   const rowsQuery = query<FirewallEventRow>(
@@ -401,8 +408,9 @@ router.get('/firewall', async (req, res) => {
     }];
   });
 
+  const zoned = await withZones(events);
   res.json({
-    events,
+    events: names ? await withNames(zoned) : zoned,
     total: Number(totalRows[0]?.total ?? 0),
   });
 });

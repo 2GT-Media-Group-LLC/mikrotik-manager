@@ -103,3 +103,22 @@ describe('GET /api/events', () => {
     expect(res.body.totalCapped).toBe(false);
   });
 });
+
+describe('GET /api/events/firewall zones (#415)', () => {
+  const line = 'zone drop in mtm#u53n input: in:bridge out:(unknown 0), connection-state:new src-mac 00:11:22:33:44:55, proto UDP, 192.168.62.15:39148->192.168.62.1:53, len 60';
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    mockedQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('firewall_zone_configs')) return [{ device_id: 3, interface_zones: { bridge: 'LAN' } }] as never;
+      if (sql.includes('COUNT(*)')) return [{ total: '1' }] as never;
+      return [{ id: 9, device_id: 3, severity: 'info', topic: 'firewall,info', message: line, event_time: '2026-11-10T22:00:00Z', device_name: 'C & C' }] as never;
+    });
+  });
+
+  it('adds the from and to zone for a zone-managed device', async () => {
+    const res = await request(makeApp()).get('/api/events/firewall');
+    expect(res.status).toBe(200);
+    expect(res.body.events[0]).toMatchObject({ chain: 'input', inInterface: 'bridge', zoned: true, fromZone: 'LAN', toZone: 'Router' });
+    expect(res.body.events[0]).not.toHaveProperty('srcName');
+  });
+});

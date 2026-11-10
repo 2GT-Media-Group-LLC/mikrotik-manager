@@ -39,7 +39,7 @@ import { messagesFrom, SMS_ID } from '../utils/lteSms';
 import { readRules, analyseRules, routesByTable, parseRuleInput } from '../utils/routingRules';
 import { tagOf, withTag, tagsIn, tagParams, planTags } from '../utils/ruleTags';
 import {
-  parseZoneInput, compileZones, planApply, planMembers, zoneEligibility, zoneDrift, unzoned, pairKey, zoneHosts, planHostLists,
+  parseZoneInput, compileZones, planApply, planMembers, zoneEligibility, zoneDrift, unzoned, pairKey, zoneHosts, planHostLists, interfaceZones,
   ROUTER, BUILTIN_LISTS, FORWARD_SERVICES, ROUTER_SERVICES, type ZoneConfig, type CompiledRule,
 } from '../utils/zoneFirewall';
 import { previewContext } from '../utils/previewContext';
@@ -1421,6 +1421,11 @@ router.get('/:id/firewall/zones', async (req, res) => {
     const live = await c.getZoneContext();
     const managerIp = await managerAddressOf(c, deviceRow);
     const elig = zoneEligibility(live.filter);
+    // Firewall Logs' zone columns (#415) follow what the device has now.
+    if (row?.enabled && row.config?.zones) {
+      await query(`UPDATE firewall_zone_configs SET interface_zones = $2 WHERE device_id = $1`,
+        [req.params.id, JSON.stringify(interfaceZones(row.config.zones, live.members))]);
+    }
     return res.json({
       enabled: !!row?.enabled,
       config: row?.config ?? null,
@@ -1541,10 +1546,16 @@ router.put('/:id/firewall/zones', requireWrite, async (req, res) => {
     }
     if (!previewContext()) {
       await query(
-        `INSERT INTO firewall_zone_configs (device_id, config, desired, enabled, applied_at, applied_by, updated_at)
-         VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW())
-         ON CONFLICT (device_id) DO UPDATE SET config = $2, desired = $3, enabled = TRUE, applied_at = NOW(), applied_by = $4, updated_at = NOW()`,
-        [req.params.id, JSON.stringify(config), JSON.stringify(desired), req.user?.username ?? null]);
+        `INSERT INTO firewall_zone_configs (device_id, config, desired, enabled, applied_at, applied_by, updated_at, interface_zones)
+         VALUES ($1, $2, $3, TRUE, NOW(), $4, NOW(), $5)
+         ON CONFLICT (device_id) DO UPDATE SET config = $2, desired = $3, enabled = TRUE, applied_at = NOW(), applied_by = $4, updated_at = NOW(),
+           interface_zones = $5`,
+        [req.params.id, JSON.stringify(config), JSON.stringify(desired), req.user?.username ?? null,
+          // The members as this apply leaves them: its static ones, plus the dynamic ones it doesn't touch.
+          JSON.stringify(interfaceZones(config.zones, [
+            ...live.members.filter((m) => isYes(m.dynamic)),
+            ...Object.entries(p.input.members).flatMap(([list, ifaces]) => ifaces.map((i) => ({ list, interface: i }))),
+          ]))]);
     }
     const nothing = !rules.add.length && !rules.remove.length && !changes.length;
     return {

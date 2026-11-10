@@ -47,6 +47,30 @@ function endpoint(ip: string, port?: number): string {
 
 type LogView = 'grouped' | 'raw';
 const VIEW_KEY = 'firewall-logs:view';
+const NAMES_KEY = 'firewall-logs:names';
+
+function readPref(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function writePref(key: string, value: string) {
+  try { localStorage.setItem(key, value); } catch { /* private window: the choice lasts this visit */ }
+}
+
+/** An address, or its name when "Resolve names" found one (the address is then the tooltip). */
+function Address({ ip, port, name }: { ip: string; port?: number; name?: string }) {
+  if (!name) return <>{endpoint(ip, port)}</>;
+  return <span title={endpoint(ip, port)}>{name}{port != null ? <span className="text-gray-400 dark:text-slate-500">:{port}</span> : null}</span>;
+}
+
+/**
+ * A from or to column (#415): the zone on a zone-managed device, else the
+ * interface. An interface in no zone shows as itself, marked.
+ */
+function ZoneCell({ zoned, zone, iface }: { zoned?: boolean; zone?: string; iface?: string }) {
+  if (zoned && zone) return <span className="font-sans font-medium text-gray-700 dark:text-slate-200">{zone}</span>;
+  if (zoned && iface) return <span title="This interface isn't in any zone" className="italic">{iface}</span>;
+  return <>{iface || '—'}</>;
+}
 
 function RuleChip({ prefix, deviceId }: { prefix: string; deviceId: number | null }) {
   const tag = tagOf(prefix);
@@ -80,8 +104,12 @@ export default function FirewallEventsPage() {
   });
   const [page, setPage] = useState(0);
   // Grouped by default (#415): one line per rule, source, destination and port.
-  const [view, setViewState] = useState<LogView>(() => (localStorage.getItem(VIEW_KEY) === 'raw' ? 'raw' : 'grouped'));
-  const setView = (v: LogView) => { setViewState(v); setPage(0); localStorage.setItem(VIEW_KEY, v); };
+  const [view, setViewState] = useState<LogView>(() => (readPref(VIEW_KEY) === 'raw' ? 'raw' : 'grouped'));
+  const setView = (v: LogView) => { setViewState(v); setPage(0); writePref(VIEW_KEY, v); };
+  // Hostnames and reverse DNS instead of addresses (#415). Off by default:
+  // reverse DNS sends the addresses to the manager's resolver.
+  const [names, setNamesState] = useState(() => readPref(NAMES_KEY) === '1');
+  const setNames = (v: boolean) => { setNamesState(v); writePref(NAMES_KEY, v ? '1' : '0'); };
   const debouncedSearch = useDebouncedValue(search);
 
   const { data: devices = [] } = useQuery({
@@ -92,7 +120,7 @@ export default function FirewallEventsPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: [
       'firewall-events',
-      { search: debouncedSearch, deviceId, action, protocol, range, page, view },
+      { search: debouncedSearch, deviceId, action, protocol, range, page, view, names },
     ],
     queryFn: async (): Promise<{ events: FirewallEvent[]; groups: FirewallGroup[]; total: number; scanLimit?: number }> => {
       const params = {
@@ -105,6 +133,7 @@ export default function FirewallEventsPage() {
         protocol: protocol || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
+        names: names ? (1 as const) : undefined,
       };
       if (view === 'grouped') {
         const r = (await eventsApi.firewallGrouped(params)).data;
@@ -143,6 +172,13 @@ export default function FirewallEventsPage() {
   const total = data?.total ?? 0;
   const totalLabel = total.toLocaleString();
   const groupedLines = groups.reduce((a, g) => a + g.count, 0);
+  // Zone columns (#415): "From zone / To zone" when every line on the page is
+  // from a zone-managed device, "From / To" when some are, else In / Out.
+  const lines: { zoned?: boolean }[] = view === 'grouped' ? groups : events;
+  const allZoned = lines.length > 0 && lines.every((l) => l.zoned);
+  const anyZoned = lines.some((l) => l.zoned);
+  const fromLabel = allZoned ? 'From zone' : anyZoned ? 'From' : 'In';
+  const toLabel = allZoned ? 'To zone' : anyZoned ? 'To' : 'Out';
 
   // A group's own lines: the raw view, narrowed to its source on its device.
   const openLines = (g: FirewallGroup) => {
@@ -231,6 +267,12 @@ export default function FirewallEventsPage() {
             </button>
           ))}
         </div>
+        <button onClick={() => setNames(!names)} aria-pressed={names}
+          title="Show client hostnames and reverse DNS instead of addresses. Hover a name for its address."
+          className={clsx('px-3 py-1.5 rounded-lg border text-sm whitespace-nowrap',
+            names ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/40')}>
+          Resolve names
+        </button>
         <div className="relative w-full sm:flex-1 sm:min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -330,8 +372,8 @@ export default function FirewallEventsPage() {
                   <th className="table-header px-4 py-2.5 text-left">Destination</th>
                   <th className="table-header px-4 py-2.5 text-left">Proto</th>
                   <th className="table-header px-4 py-2.5 text-left">Rule</th>
-                  <th className="table-header px-4 py-2.5 text-left">In</th>
-                  <th className="table-header px-4 py-2.5 text-left">Out</th>
+                  <th className="table-header px-4 py-2.5 text-left">{fromLabel}</th>
+                  <th className="table-header px-4 py-2.5 text-left">{toLabel}</th>
                   <th className="table-header px-4 py-2.5 text-left">First seen</th>
                 </tr>
               </thead>
@@ -355,15 +397,16 @@ export default function FirewallEventsPage() {
                       </button>
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{g.deviceName || '—'}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">{g.srcIp}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">{endpoint(g.dstIp, g.dstPort)}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap"><Address ip={g.srcIp} name={g.srcName} /></td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap"><Address ip={g.dstIp} port={g.dstPort} name={g.dstName} /></td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 uppercase whitespace-nowrap">{g.protocol}</td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
-                      {g.chain}
+                      {/* Zones say where traffic went; the chain only repeats it (#415). */}
+                      {(!g.zoned || !tagOf(g.prefix)) && g.chain}
                       <RuleChip prefix={g.prefix} deviceId={g.deviceId} />
                     </td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">{g.inInterface || '—'}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">{g.outInterface || '—'}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap"><ZoneCell zoned={g.zoned} zone={g.fromZone} iface={g.inInterface} /></td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap"><ZoneCell zoned={g.zoned} zone={g.toZone} iface={g.outInterface} /></td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
                       {formatDateTime(g.firstSeen, { year: undefined, second: '2-digit' })}
                     </td>
@@ -390,9 +433,9 @@ export default function FirewallEventsPage() {
                   <th className="table-header px-4 py-2.5 text-left">Source</th>
                   <th className="table-header px-4 py-2.5 text-left">Destination</th>
                   <th className="table-header px-4 py-2.5 text-left">Proto</th>
-                  <th className="table-header px-4 py-2.5 text-left">Chain</th>
-                  <th className="table-header px-4 py-2.5 text-left">In</th>
-                  <th className="table-header px-4 py-2.5 text-left">Out</th>
+                  <th className="table-header px-4 py-2.5 text-left">{allZoned ? 'Rule' : 'Chain'}</th>
+                  <th className="table-header px-4 py-2.5 text-left">{fromLabel}</th>
+                  <th className="table-header px-4 py-2.5 text-left">{toLabel}</th>
                 </tr>
               </thead>
 
@@ -427,11 +470,11 @@ export default function FirewallEventsPage() {
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">
-                      {endpoint(event.srcIp, event.srcPort)}
+                      <Address ip={event.srcIp} port={event.srcPort} name={event.srcName} />
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">
-                      {endpoint(event.dstIp, event.dstPort)}
+                      <Address ip={event.dstIp} port={event.dstPort} name={event.dstName} />
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 uppercase whitespace-nowrap">
@@ -440,16 +483,16 @@ export default function FirewallEventsPage() {
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
-                      {event.chain}
+                      {(!event.zoned || !tagOf(event.prefix)) && event.chain}
                       <RuleChip prefix={event.prefix} deviceId={event.deviceId} />
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                      {event.inInterface || '—'}
+                      <ZoneCell zoned={event.zoned} zone={event.fromZone} iface={event.inInterface} />
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                      {event.outInterface || '—'}
+                      <ZoneCell zoned={event.zoned} zone={event.toZone} iface={event.outInterface} />
                     </td>
                   </tr>
                 ))}

@@ -3,6 +3,17 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.44
+
+- **Firewall Logs reads in zones**, from Ron's request in
+  [#415](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415). On a device running
+  [zones](devices.md#zones), In and Out become **From zone** and **To zone**, with "Router" for
+  traffic to or from the router itself, and the chain is left out. A device already on zones
+  shows them within the hour, or as soon as its Zones tab is opened.
+- **Resolve names** on Firewall Logs shows client hostnames and reverse DNS in place of
+  addresses, with the address on hover (#415). Off by default. See
+  [Resolve names](firewall-events.md#resolve-names).
+
 ## 1.1.0-beta.43
 
 - **nginx kept restarting after updating to beta.42** with an existing compose file

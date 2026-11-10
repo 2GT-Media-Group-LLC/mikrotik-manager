@@ -7,10 +7,10 @@ Each row can show:
 
 - time and device
 - inferred firewall action
-- source and destination address and port
+- source and destination address (or name) and port
 - protocol
 - firewall chain
-- input and output interface
+- input and output interface, or from and to zone on a zone-managed device
 
 IPv4 and IPv6 packet logs are supported.
 
@@ -29,6 +29,32 @@ look further back.
 
 For whole connections rather than logged packets, with bytes each way and how each one ended,
 see [Sessions](sessions.md), built from NetFlow.
+
+## Zones
+
+On a device whose firewall is managed with [zones](devices.md#zones), the In and Out columns
+become **From zone** and **To zone** and show zone names instead of interfaces. Traffic to or
+from the router itself shows **Router** as its zone. The chain is left out on those lines,
+since the zones already say where the traffic went.
+
+- An interface in no zone shows as the interface name, in italics.
+- When the page mixes zone and non-zone devices, the columns are labelled **From** and **To**.
+- The manager reads zone membership when you apply zones, when you open the Zones tab, and
+  with the hourly config check. A membership change made on the device shows here within the
+  hour.
+
+## Resolve names
+
+**Resolve names** shows names in place of addresses. Hover a name to see its address. A name
+comes from one of two places:
+
+- the hostname of a [client](clients.md) the manager knows at the same site;
+- otherwise, a reverse DNS (PTR) lookup from the manager's own resolver.
+
+Reverse DNS answers are kept for an hour and misses for ten minutes. A page waits at most
+1.5 seconds for them, and slower answers show on the next refresh. The setting is off by
+default, because reverse DNS sends the addresses on the page to the manager's DNS server.
+Search still matches addresses, not names.
 
 ## Where the events come from
 

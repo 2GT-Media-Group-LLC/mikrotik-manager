@@ -583,6 +583,21 @@ export function planMembers(lists: string[], members: Ros[], want: Record<string
   return plan;
 }
 
+/**
+ * Which zone each interface is in (#415), so Firewall Logs can show zones
+ * instead of interfaces. Dynamic members count (a PPP profile's list, say);
+ * disabled ones don't. An interface in two zones keeps the first.
+ */
+export function interfaceZones(zones: string[], members: { list?: string; interface?: string; disabled?: string }[]): Record<string, string> {
+  const out = new Map<string, string>();
+  for (const z of zones) {
+    for (const m of members) {
+      if (m.list === z && m.interface && !yes(m.disabled) && !out.has(m.interface)) out.set(m.interface, z);
+    }
+  }
+  return Object.fromEntries(out);
+}
+
 /** Interfaces with an address that no zone has: nothing reaches the router or another zone through them. */
 export function unzoned(addresses: Ros[], members: Record<string, string[]>): string[] {
   const zoned = new Set(Object.values(members).flat());
