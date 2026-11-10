@@ -563,8 +563,15 @@ Any pair can also have up to 10 rules of your own, under **+ Custom rule**: TCP 
 address can be one address, a subnet (`10.0.0.0/24`) or a range (`10.0.0.10-10.0.0.20`). With an
 address the ports are optional, and the protocol can be **Any**. So WAN to DMZ can let one partner's
 address reach one server on 443 and nothing else, and LAN to the router can take SSH from the admin
-subnet only. Traffic between interfaces of the same zone is allowed unless you turn it off for that
-zone.
+subnet only.
+
+A custom rule can also be **ICMP**, with an optional type (`8` for echo request) or type and code
+(`3:4`); left empty it allows every ICMP type. Or it can be any other IP protocol by number under
+**Protocol #**: `89` for OSPF, `47` for GRE, `112` for VRRP. RouterOS shows a protocol it has a name
+for by that name, so the rule appears on the device as `protocol=ospf`. Neither takes ports, and
+both can take addresses.
+
+Traffic between interfaces of the same zone is allowed unless you turn it off for that zone.
 
 ### Turning zones on
 

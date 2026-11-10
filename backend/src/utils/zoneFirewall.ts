@@ -30,9 +30,45 @@ export type PolicyAction = 'deny' | 'allow' | 'services';
  * A rule of your own inside a pair's "only these": a protocol and ports, and
  * from #369's follow-up, optionally a source and destination address (an
  * address, a subnet or a range). With an address, ports are optional, and the
- * protocol can be any.
+ * protocol can be any. ICMP takes an optional type (`8`) or type and code
+ * (`3:4`) in `icmp`; any other IP protocol is given by number in `number`
+ * (89 for OSPF), both from #369's next follow-up.
  */
-export interface CustomService { protocol: 'tcp' | 'udp' | 'any'; ports: string; src?: string; dst?: string }
+export interface CustomService {
+  protocol: 'tcp' | 'udp' | 'any' | 'icmp' | 'other';
+  ports: string;
+  icmp?: string;
+  number?: string;
+  src?: string;
+  dst?: string;
+}
+
+/**
+ * RouterOS's names for IP protocols, by number, as RouterOS 7.25 prints them
+ * (checked on a CRS3xx). A rule set with protocol=89 is printed back as "ospf", so the compiler writes the name and the diff
+ * reads either as the number, or a rule just applied would show as drifted.
+ */
+export const PROTOCOL_NAMES: Record<number, string> = {
+  1: 'icmp', 2: 'igmp', 3: 'ggp', 4: 'ipencap', 5: 'st', 6: 'tcp', 8: 'egp', 12: 'pup', 17: 'udp',
+  20: 'hmp', 22: 'xns-idp', 27: 'rdp', 29: 'iso-tp4', 33: 'dccp', 36: 'xtp', 37: 'ddp', 38: 'idpr-cmtp',
+  41: 'ipv6-encap', 43: 'ipv6-route', 44: 'ipv6-frag', 46: 'rsvp', 47: 'gre', 50: 'ipsec-esp', 51: 'ipsec-ah',
+  58: 'icmpv6', 59: 'ipv6-nonxt', 60: 'ipv6-opts', 73: 'rspf', 81: 'vmtp', 89: 'ospf', 94: 'ipip', 97: 'etherip',
+  98: 'encap', 103: 'pim', 112: 'vrrp', 115: 'l2tp', 132: 'sctp', 136: 'udp-lite',
+};
+const PROTOCOL_NUMBERS = new Map(Object.entries(PROTOCOL_NAMES).map(([n, name]) => [name, n]));
+/** A protocol as a number when RouterOS knows its name, so "ospf" and "89" compare equal. */
+const protocolKey = (v: string) => PROTOCOL_NUMBERS.get(v.toLowerCase()) ?? v;
+/** What a custom rule writes in protocol=. */
+export function customProtocol(cs: CustomService): string | null {
+  if (cs.protocol === 'any') return null;
+  if (cs.protocol === 'other') return PROTOCOL_NAMES[Number(cs.number)] ?? String(Number(cs.number));
+  return cs.protocol;
+}
+/**
+ * icmp-options for the diff. RouterOS prints it as it was set (8 stays 8), but
+ * a type alone and the same type with every code match the same packets.
+ */
+const icmpKey = (v: string) => (v && !v.includes(':') ? `${v}:0-255` : v);
 export interface ZonePolicy { action: PolicyAction; services: string[]; custom: CustomService[] }
 
 export interface ZoneConfig {
@@ -143,9 +179,21 @@ export function addressError(value: string): string | null {
   return null;
 }
 
+const BYTE = (v: string) => /^\d{1,3}$/.test(v) && Number(v) <= 255;
+/** An ICMP type, or type:code, or type:code-code, as RouterOS takes in icmp-options. */
+export function icmpError(value: string): string | null {
+  const [type, codes, extra] = value.split(':');
+  const range = (codes ?? '').split('-');
+  const ok = extra === undefined && BYTE(type) && (codes === undefined
+    || (range.length <= 2 && range.every(BYTE) && (range.length === 1 || Number(range[0]) <= Number(range[1]))));
+  return ok ? null : `"${value}" isn't an ICMP type. Use a type such as 8, or a type and code such as 3:4.`;
+}
+
 /** A custom rule's parts in a few words, for the comment and the plan. */
 export function customText(cs: CustomService): string {
-  const parts = [cs.protocol === 'any' ? 'any' : cs.protocol, cs.ports || '', cs.src ? `from ${cs.src}` : '', cs.dst ? `to ${cs.dst}` : ''];
+  const proto = cs.protocol === 'other' ? (PROTOCOL_NAMES[Number(cs.number)] ?? `protocol ${cs.number}`) : cs.protocol;
+  const parts = [proto, cs.protocol === 'icmp' ? (cs.icmp ? `type ${cs.icmp}` : '') : cs.ports || '',
+    cs.src ? `from ${cs.src}` : '', cs.dst ? `to ${cs.dst}` : ''];
   return parts.filter(Boolean).join(' ');
 }
 
@@ -204,18 +252,32 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
       const custom: CustomService[] = [];
       for (const raw of Array.isArray(p.custom) ? p.custom : []) {
         const r = raw as Record<string, unknown>;
-        const protocol = r.protocol === 'udp' ? 'udp' : r.protocol === 'any' ? 'any' : 'tcp';
-        const ports = String(r.ports ?? '').replace(/\s+/g, '');
-        const src = String(r.src ?? '').replace(/\s+/g, '');
-        const dst = String(r.dst ?? '').replace(/\s+/g, '');
-        // An empty row is left out, as before.
-        if (!ports && !src && !dst) continue;
-        const e = (ports && protocol === 'any' ? 'Ports need TCP or UDP.' : null)
+        const clean = (v: unknown) => String(v ?? '').replace(/\s+/g, '');
+        let protocol: CustomService['protocol'] = r.protocol === 'udp' || r.protocol === 'any' || r.protocol === 'icmp'
+          || r.protocol === 'other' ? r.protocol : 'tcp';
+        let number = protocol === 'other' ? clean(r.number) : '';
+        // A number RouterOS has its own choice for is that choice.
+        const asNamed = ({ '1': 'icmp', '6': 'tcp', '17': 'udp' } as const)[String(Number(number)) as '1' | '6' | '17'];
+        if (number && asNamed) { protocol = asNamed; number = ''; }
+        const ports = protocol === 'tcp' || protocol === 'udp' ? clean(r.ports) : '';
+        const icmp = protocol === 'icmp' ? clean(r.icmp) : '';
+        const src = clean(r.src);
+        const dst = clean(r.dst);
+        // An empty row is left out, as before. ICMP and a protocol number say
+        // enough on their own.
+        if (!clean(r.ports) && !src && !dst && protocol !== 'icmp' && protocol !== 'other') continue;
+        const e = (clean(r.ports) && (protocol === 'any' || (protocol === 'other' && !asNamed)) ? 'Ports need TCP or UDP.' : null)
+          ?? (protocol === 'other' && !(/^\d{1,3}$/.test(number) && Number(number) >= 1 && Number(number) <= 255)
+            ? `${number ? `"${number}" isn't` : 'Enter'} an IP protocol number, 1 to 255 (89 is OSPF).` : null)
           ?? (ports ? portsError(ports) : null)
+          ?? (icmp ? icmpError(icmp) : null)
           ?? (src ? addressError(src) : null)
           ?? (dst ? addressError(dst) : null);
         if (e) { errors[`pair:${key}`] = e; continue; }
-        custom.push({ protocol, ports, ...(src ? { src } : {}), ...(dst ? { dst } : {}) });
+        custom.push({
+          protocol, ports, ...(icmp ? { icmp } : {}), ...(number ? { number: String(Number(number)) } : {}),
+          ...(src ? { src } : {}), ...(dst ? { dst } : {}),
+        });
       }
       if (custom.length > 10) errors[`pair:${key}`] = 'Up to 10 custom rules per pair.';
       if (action === 'services' && !services.length && !custom.length && !errors[`pair:${key}`]) {
@@ -273,16 +335,18 @@ function serviceRules(key: string, p: ZonePolicy, to: string, ctx: ZoneContext):
     // A protocol and ports alone write the same rule and comment as before
     // addresses existed, so a saved setup doesn't show as drifted.
     const text = customText(cs);
+    const protocol = customProtocol(cs);
     out.push({
       params: {
         chain, action: 'accept',
-        ...(cs.protocol !== 'any' ? { protocol: cs.protocol } : {}),
+        ...(protocol ? { protocol } : {}),
         ...(cs.ports ? { 'dst-port': cs.ports } : {}),
+        ...(cs.icmp ? { 'icmp-options': cs.icmp } : {}),
         ...(cs.src ? { 'src-address': cs.src } : {}),
         ...(cs.dst ? { 'dst-address': cs.dst } : {}),
         comment: COMMENT(`${label}: ${text}`),
       },
-      hidden: false, description: `${label}: ${text.replace(/^(tcp|udp|any)\b/, (m) => m.toUpperCase())}`,
+      hidden: false, description: `${label}: ${text.replace(/^(tcp|udp|any|icmp|ospf|gre|vrrp)\b/, (m) => m.toUpperCase())}`,
     });
   }
   return out;
@@ -343,7 +407,7 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
 const yes = (v: string | undefined) => v === 'true' || v === 'yes';
 const SET_FIELDS = new Set(['connection-state', 'dst-port']);
 /** What decides what a rule matches and does, plus its comment and log prefix (without the tag). */
-const SIGNATURE_FIELDS = ['chain', 'action', 'connection-state', 'protocol', 'dst-port', 'src-address', 'dst-address',
+const SIGNATURE_FIELDS = ['chain', 'action', 'connection-state', 'protocol', 'dst-port', 'icmp-options', 'src-address', 'dst-address',
   'in-interface-list', 'out-interface-list', 'jump-target', 'comment', 'log-prefix'];
 const FLAG_FIELDS = ['log', 'disabled', 'hw-offload'];
 
@@ -352,6 +416,8 @@ export function signature(r: Ros): string {
   const parts = SIGNATURE_FIELDS.map((f) => {
     let v = (r[f] ?? '').trim();
     if (f === 'log-prefix') v = withoutTag(v);
+    if (f === 'protocol') v = protocolKey(v);
+    if (f === 'icmp-options') v = icmpKey(v);
     if (SET_FIELDS.has(f)) v = v.split(',').map((x) => x.trim()).filter(Boolean).sort().join(',');
     return v;
   });

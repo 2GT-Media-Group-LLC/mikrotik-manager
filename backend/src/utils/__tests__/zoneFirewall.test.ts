@@ -92,6 +92,60 @@ describe('custom rules with addresses (#369 follow-up)', () => {
   });
 });
 
+describe('ICMP and protocol numbers in custom rules (#369)', () => {
+  const pair = (custom: unknown[]) => body({ policies: { 'WAN>@router': { action: 'services', services: [], custom } as ZonePolicy } });
+  const compiled = (custom: unknown[]) => {
+    const { input, errors } = parseZoneInput(pair(custom), live);
+    expect(errors).toEqual({});
+    return compileZones(input!.config, ctx).filter((r) => r.params.chain === pairChain('WAN', ROUTER) && r.params.action === 'accept');
+  };
+
+  it('writes ICMP with or without a type, and OSPF by RouterOS\'s name', () => {
+    const rules = compiled([
+      { protocol: 'icmp', ports: '', icmp: '8' },
+      { protocol: 'icmp', ports: '', icmp: '3:4', src: '203.0.113.0/24' },
+      { protocol: 'icmp', ports: '' },
+      { protocol: 'other', ports: '', number: '89' },
+      { protocol: 'other', ports: '', number: '200', dst: '10.0.0.1' },
+    ]);
+    expect(rules.map((r) => r.params)).toEqual([
+      expect.objectContaining({ protocol: 'icmp', 'icmp-options': '8', comment: 'mtm zone: WAN to router: icmp type 8' }),
+      expect.objectContaining({ protocol: 'icmp', 'icmp-options': '3:4', 'src-address': '203.0.113.0/24' }),
+      expect.not.objectContaining({ 'icmp-options': expect.anything() }),
+      expect.objectContaining({ protocol: 'ospf', comment: 'mtm zone: WAN to router: ospf' }),
+      expect.objectContaining({ protocol: '200', 'dst-address': '10.0.0.1', comment: 'mtm zone: WAN to router: protocol 200 to 10.0.0.1' }),
+    ]);
+    expect(rules[3].description).toBe('WAN to router: OSPF');
+    expect(rules.every((r) => r.params['dst-port'] === undefined)).toBe(true);
+  });
+
+  it('takes 1, 6 and 17 as ICMP, TCP and UDP', () => {
+    const rules = compiled([{ protocol: 'other', ports: '', number: '6', dst: '10.0.0.1' }, { protocol: 'other', ports: '53', number: '17' }]);
+    expect(rules[0].params).toEqual(expect.objectContaining({ protocol: 'tcp', comment: 'mtm zone: WAN to router: tcp to 10.0.0.1' }));
+    expect(rules[1].params).toEqual(expect.objectContaining({ protocol: 'udp', 'dst-port': '53' }));
+  });
+
+  it('refuses what RouterOS would', () => {
+    const err = (c: unknown) => parseZoneInput(pair([c]), live).errors['pair:WAN>@router'];
+    expect(err({ protocol: 'other', ports: '' })).toMatch(/Enter an IP protocol number/);
+    expect(err({ protocol: 'other', ports: '', number: '300' })).toMatch(/"300" isn't an IP protocol number/);
+    expect(err({ protocol: 'other', ports: '80', number: '89' })).toMatch(/TCP or UDP/);
+    expect(err({ protocol: 'icmp', ports: '', icmp: '256' })).toMatch(/isn't an ICMP type/);
+    expect(err({ protocol: 'icmp', ports: '', icmp: '3:9-4' })).toMatch(/isn't an ICMP type/);
+    expect(err({ protocol: 'icmp', ports: '', icmp: '3:0-15' })).toBeUndefined();
+  });
+
+  it('sees no drift in how RouterOS prints them back', () => {
+    // RouterOS 7.25 prints protocol=89 as ospf and keeps icmp-options as set.
+    const want = { chain: 'x', action: 'accept', protocol: 'ospf', comment: 'c' };
+    expect(signature({ ...want, protocol: '89' })).toBe(signature(want));
+    expect(signature({ ...want, protocol: 'tcp' })).toBe(signature({ ...want, protocol: '6' }));
+    const icmp = { chain: 'x', action: 'accept', protocol: 'icmp', 'icmp-options': '8', comment: 'c' };
+    expect(signature({ ...icmp, 'icmp-options': '8:0-255' })).toBe(signature(icmp));
+    expect(signature({ ...icmp, 'icmp-options': '8:0' })).not.toBe(signature(icmp));
+  });
+});
+
 describe('compiling zones', () => {
   const { input } = parseZoneInput(body(), live);
   const rules = compileZones(input!.config, ctx);

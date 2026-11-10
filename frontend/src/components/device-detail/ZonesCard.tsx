@@ -9,7 +9,7 @@ import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import {
-  ROUTER, pairKey, draftErrors, policySummary, initialDraft, addZone, removeZone, setPolicy, zoneNameError, customError,
+  ROUTER, pairKey, draftErrors, policySummary, initialDraft, addZone, removeZone, setPolicy, zoneNameError, customError, protocolName,
 } from '../../utils/zones';
 
 const errMsg = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error || (e as Error)?.message || 'That didn’t work';
@@ -365,16 +365,31 @@ function PolicyEditor({ from, to, policy, options, editable, error, onChange, on
               return (
                 <div key={i} className="space-y-0.5">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <select className="input text-xs py-1 w-20" disabled={!editable} value={c.protocol} aria-label="Protocol"
+                    <select className="input text-xs py-1 w-24" disabled={!editable} value={c.protocol} aria-label="Protocol"
                       onChange={(e) => {
-                        const protocol = e.target.value as 'tcp' | 'udp' | 'any';
-                        edit(protocol === 'any' ? { protocol, ports: '' } : { protocol });
+                        const protocol = e.target.value as typeof c.protocol;
+                        // Only TCP and UDP have ports; each other choice keeps its own field.
+                        edit(protocol === 'tcp' || protocol === 'udp' ? { protocol } : { protocol, ports: '' });
                       }}>
-                      <option value="tcp">TCP</option><option value="udp">UDP</option><option value="any">Any</option>
+                      <option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option>
+                      <option value="other">Protocol #</option><option value="any">Any</option>
                     </select>
-                    <input className="input text-xs py-1 w-32 font-mono" disabled={!editable || c.protocol === 'any'} value={c.ports}
-                      placeholder={c.protocol === 'any' ? 'all ports' : '8080 or 5000-5010'} aria-label="Ports"
-                      onChange={(e) => edit({ ports: e.target.value })} />
+                    {c.protocol === 'icmp' ? (
+                      <input className="input text-xs py-1 w-32 font-mono" disabled={!editable} value={c.icmp ?? ''}
+                        placeholder="any type, or 8, 3:4" aria-label="ICMP type" title="ICMP type, or type:code. Empty allows every type."
+                        onChange={(e) => edit({ icmp: e.target.value })} />
+                    ) : c.protocol === 'other' ? (
+                      <span className="flex items-center gap-1">
+                        <input className="input text-xs py-1 w-16 font-mono" disabled={!editable} value={c.number ?? ''}
+                          placeholder="89" aria-label="IP protocol number" inputMode="numeric"
+                          onChange={(e) => edit({ number: e.target.value })} />
+                        {protocolName(c.number ?? '') && <span className="text-[11px] text-gray-500 dark:text-slate-400">{protocolName(c.number ?? '')}</span>}
+                      </span>
+                    ) : (
+                      <input className="input text-xs py-1 w-32 font-mono" disabled={!editable || c.protocol === 'any'} value={c.ports}
+                        placeholder={c.protocol === 'any' ? 'all ports' : '8080 or 5000-5010'} aria-label="Ports"
+                        onChange={(e) => edit({ ports: e.target.value })} />
+                    )}
                     <span className="text-[11px] text-gray-500 dark:text-slate-400">from</span>
                     <input className="input text-xs py-1 w-36 font-mono" disabled={!editable} value={c.src ?? ''}
                       placeholder="anywhere" aria-label="Source address" onChange={(e) => edit({ src: e.target.value })} />
@@ -388,7 +403,7 @@ function PolicyEditor({ from, to, policy, options, editable, error, onChange, on
               );
             })}
             {editable && p.custom.length < 10 && (
-              <button className="text-[11px] text-blue-600 hover:underline" onClick={() => set({ custom: [...p.custom, { protocol: 'tcp', ports: '' }] })}>+ Custom rule (ports, addresses)</button>
+              <button className="text-[11px] text-blue-600 hover:underline" onClick={() => set({ custom: [...p.custom, { protocol: 'tcp', ports: '' }] })}>+ Custom rule (ports, protocols, addresses)</button>
             )}
           </div>
         </>

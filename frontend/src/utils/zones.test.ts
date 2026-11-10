@@ -75,3 +75,21 @@ describe('custom rules with addresses (#369)', () => {
     expect(customLabel({ protocol: 'tcp', ports: '8080' })).toBe('TCP 8080');
   });
 });
+
+describe('ICMP and protocol numbers (#369)', () => {
+  it('checks them as the server does', () => {
+    expect(customError({ protocol: 'icmp', ports: '' })).toBeNull();
+    expect(customError({ protocol: 'icmp', ports: '', icmp: '3:4' })).toBeNull();
+    expect(customError({ protocol: 'icmp', ports: '', icmp: '300' })).toMatch(/type such as 8/);
+    expect(customError({ protocol: 'other', ports: '', number: '89' })).toBeNull();
+    expect(customError({ protocol: 'other', ports: '' })).toMatch(/89 for OSPF/);
+    expect(customError({ protocol: 'other', ports: '', number: '256' })).toMatch(/1 to 255/);
+    expect(customError({ protocol: 'other', ports: '', number: '47', src: '10.0.0.300' })).toMatch(/IPv4 address/);
+  });
+
+  it('names them in the matrix', () => {
+    expect(customLabel({ protocol: 'icmp', ports: '', icmp: '8' })).toBe('ICMP type 8');
+    expect(customLabel({ protocol: 'other', ports: '', number: '89', src: '10.0.0.0/24' })).toBe('OSPF from 10.0.0.0/24');
+    expect(customLabel({ protocol: 'other', ports: '', number: '200' })).toBe('Protocol 200');
+  });
+});

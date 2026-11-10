@@ -43,22 +43,52 @@ export function addressError(value: string): string | null {
   return null;
 }
 
+const BYTE = (v: string) => /^\d{1,3}$/.test(v) && Number(v) <= 255;
+
+/** An ICMP type (8), type and code (3:4), or type and codes (3:0-15), as the server checks it. */
+export function icmpError(value: string): string | null {
+  const [type, codes, extra] = value.split(':');
+  const range = (codes ?? '').split('-');
+  const ok = extra === undefined && BYTE(type) && (codes === undefined
+    || (range.length <= 2 && range.every(BYTE) && (range.length === 1 || Number(range[0]) <= Number(range[1]))));
+  return ok ? null : 'A type such as 8, or a type and code such as 3:4.';
+}
+
+/** RouterOS's names for the protocol numbers people usually mean. */
+const PROTOCOL_NAMES: Record<number, string> = { 2: 'IGMP', 4: 'IPIP (ipencap)', 41: 'IPv6 in IPv4', 47: 'GRE', 50: 'IPsec ESP', 51: 'IPsec AH', 89: 'OSPF', 94: 'IPIP', 103: 'PIM', 112: 'VRRP', 115: 'L2TP', 132: 'SCTP' };
+export const protocolName = (n: string): string | null => PROTOCOL_NAMES[Number(n)] ?? null;
+
 /**
  * A custom rule's problem, if any. Ports are needed only without an address;
- * with "any" protocol there are none.
+ * with "any" protocol there are none. ICMP and a protocol number stand alone.
  */
 export function customError(c: ZoneCustomService): string | null {
   const ports = c.ports.replace(/\s+/g, '');
   const src = (c.src ?? '').trim();
   const dst = (c.dst ?? '').trim();
+  const addresses = (src ? addressError(src) : null) ?? (dst ? addressError(dst) : null);
+  if (c.protocol === 'icmp') {
+    const icmp = (c.icmp ?? '').trim();
+    return (icmp ? icmpError(icmp) : null) ?? addresses;
+  }
+  if (c.protocol === 'other') {
+    const n = (c.number ?? '').trim();
+    if (!n) return 'Enter an IP protocol number, such as 89 for OSPF.';
+    if (!/^\d{1,3}$/.test(n) || Number(n) < 1 || Number(n) > 255) return 'An IP protocol number is 1 to 255.';
+    return addresses;
+  }
   if (c.protocol === 'any' && ports) return 'Ports need TCP or UDP.';
   if (!ports && !src && !dst) return c.protocol === 'any' ? 'Enter a source or destination address.' : 'Enter a port, or an address.';
-  return (ports ? portsError(ports) : null) ?? (src ? addressError(src) : null) ?? (dst ? addressError(dst) : null);
+  return (ports ? portsError(ports) : null) ?? addresses;
 }
 
 /** A custom rule in a few words. */
 export function customLabel(c: ZoneCustomService): string {
-  return [c.protocol.toUpperCase(), c.ports, c.src ? `from ${c.src}` : '', c.dst ? `to ${c.dst}` : ''].filter(Boolean).join(' ');
+  const what = c.protocol === 'other'
+    ? (protocolName(c.number ?? '') ?? `Protocol ${c.number ?? ''}`)
+    : c.protocol === 'icmp' ? ['ICMP', c.icmp ? `type ${c.icmp}` : ''].filter(Boolean).join(' ')
+      : [c.protocol.toUpperCase(), c.ports].filter(Boolean).join(' ');
+  return [what, c.src ? `from ${c.src}` : '', c.dst ? `to ${c.dst}` : ''].filter(Boolean).join(' ');
 }
 
 export function zoneNameError(name: string, existing: string[]): string | null {
