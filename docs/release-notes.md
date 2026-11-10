@@ -5,6 +5,19 @@
 
 ## 1.1.0-beta.41
 
+- **Zone rules can name a hostname**, from Ron's request in
+  [#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369): trust to untrust on
+  587 to `smtp.outlook.com`, say. The router keeps an address list of every address the name
+  resolves to, and the rule matches the list. See [Zones](devices.md#zones).
+- **Zones can limit what the manager reaches on the router** to the API, API-SSL and SSH ports,
+  the only ones it uses, instead of everything (#369).
+- **Each site can have a map zoom** (#362): 1 (the world) to 19 (a building), 12 being about
+  street level. The dashboard map opens at it when it shows only that site's devices. See
+  [Sites](sites.md).
+- **Switching to API-SSL or HTTPS explains "not enough permissions"**
+  ([#417](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417)): which step the
+  router refused, and that the user the manager logs in as needs the `full` group or the missing
+  policies.
 - **A bridge's MTU can be set**, from the bridge's **Edit** on the **Bridges** tab: a number, or
   `auto` for RouterOS's default. It's the MTU for the router's own traffic on the bridge; jumbo
   frames switched between ports only need the ports' MTU raised. A bridge can't carry more than

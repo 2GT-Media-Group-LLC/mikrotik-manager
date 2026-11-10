@@ -1,6 +1,7 @@
 import {
   parseZoneInput, compileZones, planApply, planMembers, zoneEligibility, zoneDrift, unzoned, signature, pairChain,
   addressError, ROUTER, type ZoneConfig, type ZonePolicy,
+  endpointError, isHostname, zoneHosts, planHostLists, hostList, ZONE_HOST_COMMENT,
 } from '../zoneFirewall';
 import { evaluateInputChain, type MgmtConnection } from '../../services/changeGuard/firewallPath';
 import { analyzeChange, type PlannedChange } from '../../services/changeGuard/analyzeChange';
@@ -143,6 +144,50 @@ describe('ICMP and protocol numbers in custom rules (#369)', () => {
     const icmp = { chain: 'x', action: 'accept', protocol: 'icmp', 'icmp-options': '8', comment: 'c' };
     expect(signature({ ...icmp, 'icmp-options': '8:0-255' })).toBe(signature(icmp));
     expect(signature({ ...icmp, 'icmp-options': '8:0' })).not.toBe(signature(icmp));
+  });
+});
+
+describe('hostnames in custom rules (#369)', () => {
+  const pair = (custom: unknown[]) => body({ policies: { 'LAN>WAN': { action: 'services', services: [], custom } as ZonePolicy } });
+
+  it('tells a hostname from an address', () => {
+    expect(isHostname('smtp.office365.com')).toBe(true);
+    expect(isHostname('SMTP.Outlook.com')).toBe(true);
+    for (const v of ['10.0.0.1', '10.0.0.0/24', '10.0.0.1-10.0.0.9', 'localhost', 'bad_name.com', '-a.com', 'a.123']) expect(isHostname(v)).toBe(false);
+    expect(endpointError('smtp.outlook.com')).toBeNull();
+    expect(endpointError('10.0.0.300')).toMatch(/isn't an IPv4 address/);
+    expect(endpointError('not a host')).toMatch(/or a hostname/);
+  });
+
+  it('matches a hostname through an address list named after it (Ron: trust to untrust, SMTP to smtp.outlook.com)', () => {
+    const { input, errors } = parseZoneInput(pair([{ protocol: 'tcp', ports: '587', dst: 'SMTP.Outlook.com' }]), live);
+    expect(errors).toEqual({});
+    expect(input!.config.policies['LAN>WAN'].custom[0].dst).toBe('smtp.outlook.com');
+    const rule = compileZones(input!.config, ctx).find((r) => r.params['dst-port'] === '587')!;
+    expect(rule.params).toEqual(expect.objectContaining({
+      protocol: 'tcp', 'dst-address-list': 'mtm-zone-smtp.outlook.com', comment: 'mtm zone: LAN to WAN: tcp 587 to smtp.outlook.com',
+    }));
+    expect(rule.params['dst-address']).toBeUndefined();
+    expect(zoneHosts(input!.config)).toEqual(['smtp.outlook.com']);
+  });
+
+  it('keeps one entry per hostname, and removes the ones no rule uses', () => {
+    const current = [
+      { '.id': '*1', list: hostList('smtp.outlook.com'), address: 'smtp.outlook.com', comment: ZONE_HOST_COMMENT },
+      { '.id': '*2', list: hostList('old.example.com'), address: 'old.example.com', comment: ZONE_HOST_COMMENT },
+      { '.id': '*3', list: hostList('smtp.outlook.com'), address: 'smtp.outlook.com', comment: ZONE_HOST_COMMENT },
+    ];
+    expect(planHostLists(current, ['smtp.outlook.com', 'api.example.org'])).toEqual({
+      add: [{ list: 'mtm-zone-api.example.org', address: 'api.example.org', comment: ZONE_HOST_COMMENT }],
+      remove: [{ id: '*2', list: 'mtm-zone-old.example.com' }, { id: '*3', list: 'mtm-zone-smtp.outlook.com' }],
+    });
+    expect(planHostLists([], [])).toEqual({ add: [], remove: [] });
+  });
+
+  it('sees a changed list on the device as a different rule', () => {
+    const want = { chain: 'x', action: 'accept', 'dst-address-list': 'mtm-zone-a.com', comment: 'c' };
+    expect(signature({ ...want, 'dst-address-list': 'mtm-zone-b.com' })).not.toBe(signature(want));
+    expect(signature({ '.id': '*9', ...want })).toBe(signature(want));
   });
 });
 

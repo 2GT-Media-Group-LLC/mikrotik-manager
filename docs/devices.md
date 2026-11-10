@@ -571,6 +571,13 @@ A custom rule can also be **ICMP**, with an optional type (`8` for echo request)
 for by that name, so the rule appears on the device as `protocol=ospf`. Neither takes ports, and
 both can take addresses.
 
+A source or destination can also be a **hostname**, such as `smtp.office365.com`. The router looks
+it up with its own DNS (**IP > DNS**) and keeps an address list of every address it resolves to,
+updated as the name's records change, so a service behind several changing addresses stays
+matched. The manager keeps one list per name, called `mtm-zone-<name>`, holding a single entry
+commented `mtm zone host`, and removes it once no rule uses the name. If the router can't
+resolve a name, rules using it match nothing.
+
 Traffic between interfaces of the same zone is allowed unless you turn it off for that zone.
 
 ### Turning zones on

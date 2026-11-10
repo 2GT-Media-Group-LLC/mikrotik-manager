@@ -39,7 +39,7 @@ import { messagesFrom, SMS_ID } from '../utils/lteSms';
 import { readRules, analyseRules, routesByTable, parseRuleInput } from '../utils/routingRules';
 import { tagOf, withTag, tagsIn, tagParams, planTags } from '../utils/ruleTags';
 import {
-  parseZoneInput, compileZones, planApply, planMembers, zoneEligibility, zoneDrift, unzoned, pairKey,
+  parseZoneInput, compileZones, planApply, planMembers, zoneEligibility, zoneDrift, unzoned, pairKey, zoneHosts, planHostLists,
   ROUTER, BUILTIN_LISTS, FORWARD_SERVICES, ROUTER_SERVICES, type ZoneConfig, type CompiledRule,
 } from '../utils/zoneFirewall';
 import { previewContext } from '../utils/previewContext';
@@ -1397,6 +1397,11 @@ function zonePlan(body: unknown, live: ZoneLiveContext, managerIp: string | null
   const empty = input.config.zones.filter((z) => !(input.members[z] ?? []).length && !live.members.some((m) => m.list === z && isYes(m.dynamic)));
   if (empty.length) warnings.push(`${empty.join(', ')} ${empty.length === 1 ? 'has' : 'have'} no interfaces yet.`);
   if (!managerIp) warnings.push("MTM couldn't see its own address on this device, so there's no rule that always lets it in. Change Guard still checks the change before it sticks.");
+  const hosts = zoneHosts(input.config);
+  if (hosts.length) {
+    warnings.push(`The router looks up ${hosts.join(', ')} with its own DNS (IP > DNS) and keeps ${hosts.length === 1 ? 'an address list' : 'address lists'} `
+      + `of what ${hosts.length === 1 ? 'it resolves' : 'they resolve'} to. If it can't resolve a name, rules using it match nothing.`);
+  }
   if (!input.config.zones.some((z) => input.config.policies[pairKey(z, ROUTER)])) {
     warnings.push('No zone can reach the router. Only the manager and replies to the router\'s own connections get in.');
   }
@@ -1455,11 +1460,13 @@ router.post('/:id/firewall/zones/plan', requireWrite, async (req, res) => {
     if (!p.input || !p.desired) return res.json({ errors: p.errors, warnings: p.warnings, rules: [], changes: null });
     const rules = planApply(live.filter, p.desired);
     const members = planMembers(zoneLists(live), live.members, p.input.members);
+    const hostLists = planHostLists(live.hostEntries, zoneHosts(p.input.config));
     return res.json({
       errors: p.errors, warnings: p.warnings,
       rules: p.desired.map((r) => ({ ...r.params, hidden: r.hidden, description: r.description })),
       changes: {
         add: rules.add.length, remove: rules.remove.length, keep: rules.keep,
+        host_lists_added: hostLists.add.map((e) => e.list), host_lists_removed: hostLists.remove.map((e) => e.list),
         lists: members.createLists, members_added: members.addMembers, members_removed: members.removeMembers.map(({ list, interface: i }) => ({ list, interface: i })),
       },
     });
@@ -1491,12 +1498,17 @@ router.put('/:id/firewall/zones', requireWrite, async (req, res) => {
   const desired = p.desired;
   const rules = planApply(live.filter, desired);
   const members = planMembers(zoneLists(live), live.members, p.input.members);
+  // Hostnames in rules (#369): their address lists go in before the rules
+  // that match them, and lists no rule uses any more go after.
+  const hostLists = planHostLists(live.hostEntries, zoneHosts(config));
   const changes: PlannedChange[] = [
     ...members.createLists.map((name): PlannedChange => ({ kind: 'interface-list.add', name })),
     ...members.addMembers.map((m): PlannedChange => ({ kind: 'interface-list.member.add', list: m.list, interface: m.interface })),
+    ...hostLists.add.map((fields): PlannedChange => ({ kind: 'address-list.add', fields })),
     ...rules.add.map((a): PlannedChange => ({ kind: 'firewall.add', fields: a.params, ...(a.placeBefore ? { placeBefore: a.placeBefore } : {}) })),
     ...rules.remove.map((r): PlannedChange => ({ kind: 'firewall.remove', ruleId: r.id })),
     ...members.removeMembers.map((m): PlannedChange => ({ kind: 'interface-list.member.remove', memberId: m.id })),
+    ...hostLists.remove.map((e): PlannedChange => ({ kind: 'address-list.remove', entryId: e.id })),
   ];
   const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
   const summary = `Zones: ${n(config.zones.length, 'zone')}; ${n(rules.add.length, 'rule')} added, ${rules.remove.length} removed`;
@@ -1505,6 +1517,7 @@ router.put('/:id/firewall/zones', requireWrite, async (req, res) => {
     try {
       for (const name of members.createLists) { await c.addInterfaceList(name); wrote = true; }
       for (const m of members.addMembers) { await c.addInterfaceListMember(m.list, m.interface); wrote = true; }
+      for (const e of hostLists.add) { await c.addAddressListEntry(e); wrote = true; }
       // New rules go in disabled, then are turned on with the drops last, so
       // no step in between drops more than before: a final drop added ahead
       // of the accepts in its zone's chain cut the manager's new connections.
@@ -1522,6 +1535,7 @@ router.put('/:id/firewall/zones', requireWrite, async (req, res) => {
       }
       for (const r of rules.remove) { await c.deleteFirewallRule(r.id); wrote = true; }
       for (const m of members.removeMembers) { await c.removeInterfaceListMember(m.id); wrote = true; }
+      for (const e of hostLists.remove) { await c.removeAddressListEntry(e.id); wrote = true; }
     } catch (err) {
       throw stepFailure(err, wrote);
     }

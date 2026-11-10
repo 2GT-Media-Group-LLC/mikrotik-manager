@@ -195,6 +195,61 @@ export function icmpError(value: string): string | null {
   return ok ? null : `"${value}" isn't an ICMP type. Use a type such as 8, or a type and code such as 3:4.`;
 }
 
+// ─── Hostnames (#369) ────────────────────────────────────────────────────────
+//
+// A rule's source or destination can be a hostname. RouterOS keeps an address
+// list from a static entry holding the name: it resolves it with its own DNS
+// and adds every A record as a dynamic entry, refreshed as the records change
+// (checked on 7.25: one.one.one.one gave 1.1.1.1 and 1.0.0.1, and removing
+// the static entry took them away). Zones keep one list per name, and the rule
+// matches the list.
+
+/** The comment on every address-list entry zones keep, so they can be found without reading the whole table. */
+export const ZONE_HOST_COMMENT = 'mtm zone host';
+const LABEL = /^[a-z0-9-]{1,63}$/;
+/** Labels of letters, digits and hyphens (not at either end), at least two, the last not all digits. */
+function hostShaped(v: string): boolean {
+  const labels = v.toLowerCase().split('.');
+  return v.length <= 253 && labels.length >= 2
+    && labels.every((l) => LABEL.test(l) && !l.startsWith('-') && !l.endsWith('-'))
+    && /[a-z]/.test(labels[labels.length - 1]);
+}
+/** A hostname such as smtp.office365.com, as opposed to an address, subnet or range. */
+export const isHostname = (v: string): boolean => !/^[\d./-]+$/.test(v) && hostShaped(v);
+/** The address list a hostname's rules match. */
+export const hostList = (host: string): string => `mtm-zone-${host.toLowerCase()}`;
+
+/** An address, subnet, range or hostname, as a custom rule takes it. */
+export function endpointError(value: string): string | null {
+  const v = value.trim();
+  if (/^[\d./-]+$/.test(v)) return addressError(v);
+  return isHostname(v) ? null
+    : `"${v}" isn't an IPv4 address or a hostname. Use an address, a subnet such as 10.0.0.0/24, a range, or a name such as smtp.office365.com.`;
+}
+
+/** Every hostname the config's custom rules use, each once. */
+export function zoneHosts(config: ZoneConfig): string[] {
+  const hosts = new Set<string>();
+  for (const p of Object.values(config.policies)) {
+    for (const c of p.custom ?? []) for (const v of [c.src, c.dst]) if (v && isHostname(v)) hosts.add(v.toLowerCase());
+  }
+  return [...hosts].sort();
+}
+
+/** The address-list entries to add and remove so the device holds exactly one per hostname in use. */
+export function planHostLists(current: Ros[], hosts: string[]): { add: Ros[]; remove: { id: string; list: string }[] } {
+  const want = new Map(hosts.map((h) => [hostList(h), h]));
+  const have = new Set<string>();
+  const remove: { id: string; list: string }[] = [];
+  for (const e of current) {
+    const key = e.list ?? '';
+    if (want.get(key) === (e.address ?? '').toLowerCase() && !have.has(key)) have.add(key);
+    else if (e['.id']) remove.push({ id: e['.id'], list: key });
+  }
+  const add = [...want].filter(([list]) => !have.has(list)).map(([list, address]) => ({ list, address, comment: ZONE_HOST_COMMENT }));
+  return { add, remove };
+}
+
 /** A custom rule's parts in a few words, for the comment and the plan. */
 export function customText(cs: CustomService): string {
   const proto = cs.protocol === 'other' ? (PROTOCOL_NAMES[Number(cs.number)] ?? `protocol ${cs.number}`) : cs.protocol;
@@ -267,8 +322,10 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
         if (number && asNamed) { protocol = asNamed; number = ''; }
         const ports = protocol === 'tcp' || protocol === 'udp' ? clean(r.ports) : '';
         const icmp = protocol === 'icmp' ? clean(r.icmp) : '';
-        const src = clean(r.src);
-        const dst = clean(r.dst);
+        // A hostname is kept in lower case: the list is named after it.
+        const endpoint = (v: unknown) => { const e = clean(v); return isHostname(e) ? e.toLowerCase() : e; };
+        const src = endpoint(r.src);
+        const dst = endpoint(r.dst);
         // An empty row is left out, as before. ICMP and a protocol number say
         // enough on their own.
         if (!clean(r.ports) && !src && !dst && protocol !== 'icmp' && protocol !== 'other') continue;
@@ -277,8 +334,8 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
             ? `${number ? `"${number}" isn't` : 'Enter'} an IP protocol number, 1 to 255 (89 is OSPF).` : null)
           ?? (ports ? portsError(ports) : null)
           ?? (icmp ? icmpError(icmp) : null)
-          ?? (src ? addressError(src) : null)
-          ?? (dst ? addressError(dst) : null);
+          ?? (src ? endpointError(src) : null)
+          ?? (dst ? endpointError(dst) : null);
         if (e) { errors[`pair:${key}`] = e; continue; }
         custom.push({
           protocol, ports, ...(icmp ? { icmp } : {}), ...(number ? { number: String(Number(number)) } : {}),
@@ -352,8 +409,8 @@ function serviceRules(key: string, p: ZonePolicy, to: string, ctx: ZoneContext):
         ...(protocol ? { protocol } : {}),
         ...(cs.ports ? { 'dst-port': cs.ports } : {}),
         ...(cs.icmp ? { 'icmp-options': cs.icmp } : {}),
-        ...(cs.src ? { 'src-address': cs.src } : {}),
-        ...(cs.dst ? { 'dst-address': cs.dst } : {}),
+        ...(cs.src ? (isHostname(cs.src) ? { 'src-address-list': hostList(cs.src) } : { 'src-address': cs.src }) : {}),
+        ...(cs.dst ? (isHostname(cs.dst) ? { 'dst-address-list': hostList(cs.dst) } : { 'dst-address': cs.dst }) : {}),
         comment: COMMENT(`${label}: ${text}`),
       },
       hidden: false, description: `${label}: ${text.replace(/^(tcp|udp|any|icmp|ospf|gre|vrrp)\b/, (m) => m.toUpperCase())}`,
@@ -425,6 +482,7 @@ const yes = (v: string | undefined) => v === 'true' || v === 'yes';
 const SET_FIELDS = new Set(['connection-state', 'dst-port']);
 /** What decides what a rule matches and does, plus its comment and log prefix (without the tag). */
 const SIGNATURE_FIELDS = ['chain', 'action', 'connection-state', 'protocol', 'dst-port', 'icmp-options', 'src-address', 'dst-address',
+  'src-address-list', 'dst-address-list',
   'in-interface-list', 'out-interface-list', 'jump-target', 'comment', 'log-prefix'];
 const FLAG_FIELDS = ['log', 'disabled', 'hw-offload'];
 

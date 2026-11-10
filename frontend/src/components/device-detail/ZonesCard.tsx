@@ -428,9 +428,11 @@ function PolicyEditor({ from, to, policy, options, editable, error, onChange, on
                     )}
                     <span className="text-[11px] text-gray-500 dark:text-slate-400">from</span>
                     <input className="input text-xs py-1 w-36 font-mono" disabled={!editable} value={c.src ?? ''}
+                      title="An address, a subnet, a range, or a hostname such as smtp.office365.com"
                       placeholder="anywhere" aria-label="Source address" onChange={(e) => edit({ src: e.target.value })} />
                     <span className="text-[11px] text-gray-500 dark:text-slate-400">to</span>
                     <input className="input text-xs py-1 w-36 font-mono" disabled={!editable} value={c.dst ?? ''}
+                      title="An address, a subnet, a range, or a hostname such as smtp.office365.com"
                       placeholder="anywhere" aria-label="Destination address" onChange={(e) => edit({ dst: e.target.value })} />
                     {editable && <button className="text-gray-400 hover:text-red-500" aria-label="Remove this rule" onClick={() => set({ custom: p.custom.filter((_, j) => j !== i) })}><X className="w-3.5 h-3.5" /></button>}
                   </div>
@@ -456,6 +458,8 @@ function PlanSummary({ plan, fetching }: { plan: ZonePlan; fetching: boolean }) 
     ...(c.lists.length ? [`create the list${c.lists.length === 1 ? '' : 's'} ${c.lists.join(', ')}`] : []),
     ...c.members_added.map((m) => `add ${m.interface} to ${m.list}`),
     ...c.members_removed.map((m) => `take ${m.interface} out of ${m.list}`),
+    ...(c.host_lists_added ?? []).map((l) => `create the address list ${l}`),
+    ...(c.host_lists_removed ?? []).map((l) => `remove the address list ${l}`),
     `add ${c.add} rule${c.add === 1 ? '' : 's'}`, `remove ${c.remove}`, `keep ${c.keep}`,
   ];
   return (

@@ -1,3 +1,4 @@
+import { ZONE_HOST_COMMENT } from '../../utils/zoneFirewall';
 import { compareRosVersions } from '../../utils/rosVersion';
 import type { BgpConnectionInput } from '../../utils/bgpConnection';
 import { routingPeersFrom } from '../../utils/routingPeers';
@@ -4352,6 +4353,8 @@ export class DeviceCollector {
     filter: Record<string, string>[]; lists: Record<string, string>[]; members: Record<string, string>[];
     interfaces: Record<string, string>[]; addresses: Record<string, string>[]; services: Record<string, string>[]; rosMajor: number;
     fasttrackHwOffload: boolean;
+    /** The address-list entries zones keep for hostnames in rules (#369), found by their comment. */
+    hostEntries: Record<string, string>[];
   }> {
     const res = await this.client.executeMany([
       { command: '/ip/firewall/filter/print' },
@@ -4362,6 +4365,9 @@ export class DeviceCollector {
       { command: '/ip/service/print', params: { '.proplist': 'name,port,disabled' } },
       { command: '/system/resource/print', params: { '.proplist': 'version' } },
       filterAddArgs('ip'),
+      // By the comment only zones write, so a device with a large blocklist
+      // isn't read whole.
+      { command: '/ip/firewall/address-list/print', params: { '.proplist': '.id,list,address,comment,dynamic' }, queries: [`?comment=${ZONE_HOST_COMMENT}`] },
     ]);
     for (const r of res.slice(0, 3)) if (r.error) throw r.error;
     const rows = (i: number) => res[i]?.rows ?? [];
@@ -4369,6 +4375,7 @@ export class DeviceCollector {
       filter: rows(0), lists: rows(1), members: rows(2), interfaces: rows(3), addresses: rows(4), services: rows(5),
       rosMajor: Number((rows(6)[0]?.version ?? '7').split('.')[0]) || 7,
       fasttrackHwOffload: hasArg(rows(7), 'hw-offload'),
+      hostEntries: rows(8).filter((r) => r['dynamic'] !== 'true'),
     };
   }
 

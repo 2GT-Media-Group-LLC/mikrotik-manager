@@ -2049,6 +2049,8 @@ export interface ZonePlan {
   changes: {
     add: number; remove: number; keep: number; lists: string[];
     members_added: { list: string; interface: string }[]; members_removed: { list: string; interface: string }[];
+    /** Address lists kept for hostnames in rules (#369). */
+    host_lists_added?: string[]; host_lists_removed?: string[];
   } | null;
 }
 

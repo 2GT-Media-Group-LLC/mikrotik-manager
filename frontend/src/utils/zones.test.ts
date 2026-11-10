@@ -93,3 +93,13 @@ describe('ICMP and protocol numbers (#369)', () => {
     expect(customLabel({ protocol: 'other', ports: '', number: '200' })).toBe('Protocol 200');
   });
 });
+
+describe('hostnames (#369)', () => {
+  it('takes a hostname as source or destination, as the server does', () => {
+    expect(customError({ protocol: 'tcp', ports: '587', dst: 'smtp.outlook.com' })).toBeNull();
+    expect(customError({ protocol: 'any', ports: '', src: 'vpn.example.org' })).toBeNull();
+    expect(customError({ protocol: 'tcp', ports: '587', dst: 'smtp outlook' })).toMatch(/or a hostname/);
+    expect(customError({ protocol: 'tcp', ports: '', dst: '10.0.0.300' })).toMatch(/IPv4 address/);
+    expect(customLabel({ protocol: 'tcp', ports: '587', dst: 'smtp.outlook.com' })).toBe('TCP 587 to smtp.outlook.com');
+  });
+});

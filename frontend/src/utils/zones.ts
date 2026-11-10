@@ -28,6 +28,24 @@ const OCTETS = (a: string) => {
 };
 const ipNum = (o: number[]) => ((o[0] << 24) >>> 0) + (o[1] << 16) + (o[2] << 8) + o[3];
 
+const LABEL = /^[a-z0-9-]{1,63}$/;
+/** Labels of letters, digits and hyphens (not at either end), at least two, the last not all digits. */
+function hostShaped(v: string): boolean {
+  const labels = v.toLowerCase().split('.');
+  return v.length <= 253 && labels.length >= 2
+    && labels.every((l) => LABEL.test(l) && !l.startsWith('-') && !l.endsWith('-'))
+    && /[a-z]/.test(labels[labels.length - 1]);
+}
+/** A hostname such as smtp.office365.com (#369): the router keeps an address list of what it resolves to. */
+export const isHostname = (v: string): boolean => !/^[\d./-]+$/.test(v) && hostShaped(v);
+
+/** An address, subnet, range or hostname, as the server checks a rule's source or destination. */
+export function endpointError(value: string): string | null {
+  const v = value.trim();
+  if (/^[\d./-]+$/.test(v)) return addressError(v);
+  return isHostname(v) ? null : 'An IPv4 address, a subnet such as 10.0.0.0/24, a range, or a hostname such as smtp.office365.com.';
+}
+
 /** An IPv4 address, subnet or range, as the server checks it. */
 export function addressError(value: string): string | null {
   const v = value.trim();
@@ -66,7 +84,7 @@ export function customError(c: ZoneCustomService): string | null {
   const ports = c.ports.replace(/\s+/g, '');
   const src = (c.src ?? '').trim();
   const dst = (c.dst ?? '').trim();
-  const addresses = (src ? addressError(src) : null) ?? (dst ? addressError(dst) : null);
+  const addresses = (src ? endpointError(src) : null) ?? (dst ? endpointError(dst) : null);
   if (c.protocol === 'icmp') {
     const icmp = (c.icmp ?? '').trim();
     return (icmp ? icmpError(icmp) : null) ?? addresses;
