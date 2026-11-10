@@ -224,13 +224,13 @@ export default function SecurityTab({ deviceId, deviceName }: { deviceId: number
           {apiSsl.isPending && (
             <div className="p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
               <RefreshCw className="w-4 h-4 animate-spin" />
-              Enabling API-SSL on the device. Creating a certificate can take up to a minute on small devices…
+              Enabling API-SSL on the device. Creating a certificate can take a few minutes on small or older devices…
             </div>
           )}
           {wwwSsl.isPending && (
             <div className="p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
               <RefreshCw className="w-4 h-4 animate-spin" />
-              Switching WebFig to HTTPS. Creating a certificate can take up to a minute on small devices…
+              Switching WebFig to HTTPS. Creating a certificate can take a few minutes on small or older devices…
             </div>
           )}
           {plainApiNote && (
