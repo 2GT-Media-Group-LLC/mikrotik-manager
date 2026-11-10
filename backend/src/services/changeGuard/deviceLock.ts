@@ -25,6 +25,8 @@ const WRITE_LOCK_TTL_SEC = 600;
 const REDIS_TIMEOUT_MS = 2_000;
 
 const held = new AsyncLocalStorage<Map<number, string>>();
+/** Locks handed to work that carries on after its request has been answered. */
+const detached = new Set<string>();
 
 /** The token this request holds for `deviceId`, if it holds that device's lock. */
 export function heldLockToken(deviceId: number): string | undefined {
@@ -87,7 +89,7 @@ export function deviceWriteLock(getDeviceId: (req: Request) => number | null) {
 
     let released = false;
     const release = (): void => {
-      if (released) return;
+      if (released || detached.has(token)) return;
       released = true;
       withTimeout(redis.eval(RELEASE_IF_OWNER, 1, key, token)).catch(() => {});
     };
@@ -97,6 +99,25 @@ export function deviceWriteLock(getDeviceId: (req: Request) => number | null) {
     const store = new Map(held.getStore() ?? []);
     store.set(deviceId, token);
     held.run(store, () => next());
+  };
+}
+
+/**
+ * Keep this request's lock on `deviceId` after the request is answered, for
+ * work that carries on in the background (#417). The returned function
+ * releases it and must be called when that work ends; the lock's TTL is the
+ * backstop. A request that holds no lock (Redis was unavailable) gets a no-op.
+ */
+export function detachHeldLock(deviceId: number): () => void {
+  const token = heldLockToken(deviceId);
+  if (!token) return () => {};
+  detached.add(token);
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    detached.delete(token);
+    withTimeout(redis.eval(RELEASE_IF_OWNER, 1, deviceLockKey(deviceId), token)).catch(() => {});
   };
 }
 

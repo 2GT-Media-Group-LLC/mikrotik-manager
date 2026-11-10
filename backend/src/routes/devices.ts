@@ -11,7 +11,8 @@ import { validateOverrides } from '../utils/pollOverrides';
 import { devicePins, pendingIdentityChanges, trustNewIdentity, IDENTITY_KINDS } from '../services/identityPins';
 import { enableApiSsl, type ApiSslDevice } from '../services/apiSsl';
 import { enableWwwSsl } from '../services/wwwSsl';
-import { deviceWriteLock, deviceIdFromPath } from '../services/changeGuard/deviceLock';
+import { deviceWriteLock, deviceIdFromPath, detachHeldLock } from '../services/changeGuard/deviceLock';
+import { answerWithTask, answerTaskStatus } from '../services/deviceTasks';
 import { randomUUID } from 'crypto';
 import { Client as SshClient } from 'ssh2';
 import { query, queryOne } from '../config/database';
@@ -115,13 +116,16 @@ router.use(deviceWriteLock(deviceIdFromPath));
 // (#302): its security checks, services and the rest. Dropped after any
 // successful write, so the Security page doesn't show a fixed finding for the
 // rest of the cache's 15 minutes.
+const dropLiveCache = (id: number): void => {
+  void query(`DELETE FROM device_live_cache WHERE device_id = $1`, [id]).catch(() => {});
+};
 router.use((req, res, next) => {
   if (req.method === 'GET') { next(); return; }
   const m = /^\/(\d+)(?:\/|$)/.exec(req.path);
   const id = m ? Number(m[1]) : null;
   if (id != null) {
     res.on('finish', () => {
-      if (res.statusCode < 400) void query(`DELETE FROM device_live_cache WHERE device_id = $1`, [id]).catch(() => {});
+      if (res.statusCode < 400) dropLiveCache(id);
     });
   }
   next();
@@ -2628,41 +2632,56 @@ router.post('/:id/plain-api/off', requireWrite, async (req, res) => {
 
 // POST /api/devices/:id/api-ssl — turn on API-SSL on the device and move the
 // manager's connection to it once a login over it works (outside review P1-4).
+// Signing a certificate can take minutes, longer than a proxy in front of the
+// manager will wait, so a switch still going after a short wait is answered
+// 202 and followed with GET .../api-ssl/status (#417).
 router.post('/:id/api-ssl', requireWrite, async (req, res) => {
   const device = await queryOne<ApiSslDevice>(
     `SELECT id, name, ip_address, api_port, api_tls, api_username, api_password_encrypted, jump_host_id FROM devices WHERE id = $1`, [req.params.id]);
   if (!device) return res.status(404).json({ error: 'Device not found' });
-  try {
-    const result = await enableApiSsl(device);
-    return res.json(result);
-  } catch (err) {
-    // Connection failures get the usual safe wording; anything the device
-    // itself said, or a step that explains itself, is shown as it is.
-    const msg = (err as Error).message ?? String(err);
-    const connectionProblem = !!(err as NodeJS.ErrnoException).code
-      || /timeout|connection|invalid user name or password/i.test(msg);
-    // In the log too, for when the reply never reaches the browser (#417).
-    if (!connectionProblem) console.warn(`[api-ssl] ${device.name}: ${msg}`);
-    return res.status(502).json({
-      error: `Could not enable API-SSL: ${connectionProblem ? safeConnectionError('api-ssl', err) : msg}`,
-    });
-  }
+  await answerWithTask(res, `api-ssl:${device.id}`, () => enableApiSsl(device), {
+    failure: (err) => {
+      // Connection failures get the usual safe wording; anything the device
+      // itself said, or a step that explains itself, is shown as it is.
+      const msg = (err as Error).message ?? String(err);
+      const connectionProblem = !!(err as NodeJS.ErrnoException).code
+        || /timeout|connection|invalid user name or password/i.test(msg);
+      // In the log too, for when the reply never reaches the browser (#417).
+      if (!connectionProblem) console.warn(`[api-ssl] ${device.name}: ${msg}`);
+      return { httpStatus: 502, error: `Could not enable API-SSL: ${connectionProblem ? safeConnectionError('api-ssl', err) : msg}` };
+    },
+    // Read by a page loaded before this change, which expects a result.
+    stillRunning: { switched: false, steps: [], message: `Still working on ${device.name.trim()} (signing a certificate can take a few minutes). Reload the page shortly to see the outcome.` },
+    detach: () => detachHeldLock(device.id),
+    onSettled: () => dropLiveCache(device.id),
+  });
+});
+
+router.get('/:id/api-ssl/status', (req, res) => {
+  answerTaskStatus(res, `api-ssl:${parseInt(req.params.id, 10)}`, 'a switch to API-SSL');
 });
 
 // POST /api/devices/:id/www-ssl — WebFig over HTTPS (#234): certificate, www-ssl
 // on, and plain www off only once HTTPS answers.
 router.post('/:id/www-ssl', requireWrite, async (req, res) => {
-  try {
-    return res.json(await enableWwwSsl(parseInt(req.params.id, 10)));
-  } catch (err) {
-    const msg = (err as Error).message ?? String(err);
-    if (msg === 'Device not found') return res.status(404).json({ error: msg });
-    const connectionProblem = !!(err as NodeJS.ErrnoException).code
-      || /timeout|connection|invalid user name or password/i.test(msg);
-    return res.status(502).json({
-      error: `Could not switch WebFig to HTTPS: ${connectionProblem ? safeConnectionError('api', err) : msg}`,
-    });
-  }
+  const id = parseInt(req.params.id, 10);
+  // Same as API-SSL above: it may sign a certificate, so it may answer 202 (#417).
+  await answerWithTask(res, `www-ssl:${id}`, () => enableWwwSsl(id), {
+    failure: (err) => {
+      const msg = (err as Error).message ?? String(err);
+      if (msg === 'Device not found') return { httpStatus: 404, error: msg };
+      const connectionProblem = !!(err as NodeJS.ErrnoException).code
+        || /timeout|connection|invalid user name or password/i.test(msg);
+      return { httpStatus: 502, error: `Could not switch WebFig to HTTPS: ${connectionProblem ? safeConnectionError('api', err) : msg}` };
+    },
+    stillRunning: { switched: false, steps: [], message: 'Still working on the device (signing a certificate can take a few minutes). Reload the page shortly to see the outcome.' },
+    detach: () => detachHeldLock(id),
+    onSettled: () => dropLiveCache(id),
+  });
+});
+
+router.get('/:id/www-ssl/status', (req, res) => {
+  answerTaskStatus(res, `www-ssl:${parseInt(req.params.id, 10)}`, 'a switch to HTTPS');
 });
 
 // POST /api/devices/:id/romon — apply the device's RoMON setting (#311): its

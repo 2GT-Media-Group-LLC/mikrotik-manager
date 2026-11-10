@@ -337,6 +337,13 @@ Give the proxy a read timeout of at least 300 seconds (the same as the manager's
 proxies default to 60, and a protected change on a slow device can take longer: on a CRS112 a
 bridge move took about a minute and a half end to end.
 
+Some proxies can't wait that long. Cloudflare gives up after 100 seconds and shows its own 502
+page. Switching a device to API-SSL or WebFig to HTTPS can take several minutes while an older
+router signs a certificate, so from 1.0.14 these switches carry on in the background when they
+take longer than about 25 seconds, and the page fetches the outcome when it's ready. Other long
+requests, such as a protected change on a slow device or a large backup, still need the proxy
+to wait; behind Cloudflare, make those from an address that reaches the manager directly.
+
 **Keep the plain HTTP port for the proxy only.** Anyone else who can reach it talks to the
 manager unencrypted. If the proxy runs on the same host, `BIND_ADDRESS=127.0.0.1` keeps both
 ports off the network; otherwise use one of the options in

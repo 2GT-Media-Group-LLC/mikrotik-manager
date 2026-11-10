@@ -354,6 +354,39 @@ export const identityApi = {
     api.post<{ message: string }>(`/devices/${deviceId}/identity/${kind}/trust`),
 };
 
+/**
+ * A device operation that may outlast a proxy's patience (#417): the manager
+ * answers within about 25s, either with the outcome or 202 "still running",
+ * and in the second case its outcome is fetched from `${path}/status` every
+ * few seconds. Resolves and rejects like a plain axios call, so callers read
+ * `res.data` and `err.response.data.error` as before.
+ */
+export async function runDeviceTask<T>(path: string): Promise<{ data: T }> {
+  const first = await api.post<T>(path, undefined, { timeout: 120_000 });
+  if (first.status !== 202) return first;
+  const deadline = Date.now() + 10 * 60_000;
+  let misses = 0;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3_000));
+    let view: { status: string; result?: T; http_status?: number; error?: string };
+    try {
+      view = (await api.get(`${path}/status`, { timeout: 20_000 })).data;
+      misses = 0;
+    } catch (err) {
+      // The manager's own answer (such as "no record of it") ends the wait;
+      // a blip on the way there doesn't, unless it keeps happening.
+      if ((err as AxiosError).response?.data || ++misses >= 5) throw err;
+      continue;
+    }
+    if (view.status === 'done') return { data: view.result as T };
+    if (view.status === 'failed') {
+      throw Object.assign(new Error(view.error || 'Request failed'),
+        { response: { status: view.http_status ?? 502, data: { error: view.error } } });
+    }
+  }
+  throw Object.assign(new Error('timeout'), { code: 'ECONNABORTED' });
+}
+
 export interface ApiSslResult {
   switched: boolean;
   steps: string[];
@@ -1068,8 +1101,7 @@ export const devicesApi = {
   unsuppressSecurityCheck: (id: number) =>
     api.delete(`/devices/security/suppressions/${id}`),
   /** Enable API-SSL on the device and move the manager's connection to it. Signing a certificate can take a minute. */
-  enableApiSsl: (id: number) =>
-    api.post<ApiSslResult>(`/devices/${id}/api-ssl`, undefined, { timeout: 240_000 }),
+  enableApiSsl: (id: number) => runDeviceTask<ApiSslResult>(`/devices/${id}/api-ssl`),
   /**
    * Turn off plain API once the manager is on API-SSL (#201). Refused while
    * anything else is connected to plain API (409 with in_use_by), and run
@@ -1080,8 +1112,7 @@ export const devicesApi = {
   /** WebFig over HTTPS (#234); plain www goes off only once HTTPS answers. Same result shape. */
   /** Apply the device's RoMON setting: its site's, group's or the fleet default (#311). */
   applyRomon: (id: number) => api.post<{ message: string }>(`/devices/${id}/romon`),
-  enableWwwSsl: (id: number) =>
-    api.post<ApiSslResult & { url?: string }>(`/devices/${id}/www-ssl`, undefined, { timeout: 240_000 }),
+  enableWwwSsl: (id: number) => runDeviceTask<ApiSslResult & { url?: string }>(`/devices/${id}/www-ssl`),
   getSecurityPosture: (id: number) =>
     api.get<{ score: number; checks: SecurityCheck[] }>(`/devices/${id}/security-posture`),
   // Config Health — cached findings load instantly; the scan re-reads the device.
