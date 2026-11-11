@@ -1779,8 +1779,19 @@ see <a href="../sessions/">Sessions</a>, built from NetFlow.</p>
 become <strong>From zone</strong> and <strong>To zone</strong> and show zone names instead of interfaces. Traffic to or
 from the router itself shows <strong>Router</strong> as its zone. The chain is left out on those lines,
 since the zones already say where the traffic went.</p>
+<p>Each zone shows as a coloured badge. The manager doesn't know which zone you trust, so the
+colour comes from the name:</p>
 <ul>
-<li>An interface in no zone shows as the interface name, in italics.</li>
+<li>names like untrust, WAN, outside or internet are red;</li>
+<li>trust, LAN, inside or internal are green;</li>
+<li>DMZ, guest or IoT are amber;</li>
+<li>Router is grey;</li>
+<li>
+<p>any other zone gets a colour of its own that stays the same from page to page.</p>
+</li>
+<li>
+<p>An interface in no zone shows as the interface name, in italics.</p>
+</li>
 <li>When the page mixes zone and non-zone devices, the columns are labelled <strong>From</strong> and <strong>To</strong>.</li>
 <li>The manager reads zone membership when you apply zones, when you open the Zones tab, and
   with the hourly config check. A membership change made on the device shows here within the
