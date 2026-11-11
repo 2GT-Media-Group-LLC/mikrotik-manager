@@ -7,6 +7,15 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.15
+
+Released on Wednesday 11 November 2026.
+
+- **Switching to API-SSL or HTTPS explains "not enough permissions"**
+  ([#417](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417)): which step the
+  router refused, and that the user the manager logs in as needs the `full` group or the missing
+  policies.
+
 ## 1.0.14
 
 Released on Monday 9 November 2026.
