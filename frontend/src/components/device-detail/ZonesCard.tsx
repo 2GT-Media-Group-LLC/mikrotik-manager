@@ -10,6 +10,7 @@ import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import {
   ROUTER, pairKey, draftErrors, policySummary, initialDraft, addZone, removeZone, setPolicy, zoneNameError, customError, protocolName,
+  logsDrops, setLogsDrops,
 } from '../../utils/zones';
 
 const errMsg = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error || (e as Error)?.message || 'That didn’t work';
@@ -131,7 +132,7 @@ export default function ZonesCard({ deviceId, deviceName, onApplied }: { deviceI
           </label>
           <label className="flex items-center gap-1.5">
             <input type="checkbox" disabled={!editing} checked={d.config.logDrops} onChange={(e) => update({ ...d, config: { ...d.config, logDrops: e.target.checked } })} />
-            Log what&rsquo;s dropped (shows on Firewall Events)
+            Log what&rsquo;s dropped (shows on Firewall Logs)
           </label>
           {data.manager_ip && (
             <label className="flex items-center gap-1.5">
@@ -246,6 +247,13 @@ function ZoneList({ data, draft, errors, editable, onChange }: {
                 </p>
               )}
             </div>
+            {draft.config.logDrops && (
+              <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-slate-400 shrink-0 pt-0.5"
+                title={`Log what's dropped coming from ${z}. Untick for a zone the internet knocks on all day, to keep Firewall Logs readable.`}>
+                <input type="checkbox" disabled={!editable} checked={logsDrops(draft, z)} onChange={(e) => onChange(setLogsDrops(draft, z, e.target.checked))} />
+                Log drops
+              </label>
+            )}
             {editable && (
               <button className="p-1 text-gray-400 hover:text-red-500" title={`Remove the ${z} zone. The interface list stays on the device.`} onClick={() => onChange(removeZone(draft, z))}>
                 <Trash2 className="w-3.5 h-3.5" />

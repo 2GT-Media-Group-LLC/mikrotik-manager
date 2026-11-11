@@ -615,8 +615,13 @@ set in **IP > Services**, so an SSH server moved to 2222 is the port allowed. Th
 appears when MTM can see its own address on the device.
 
 The two final drops log by default with the prefixes `zone drop in` and `zone drop fwd`, tagged so
-[Firewall Events](firewall-events.md#which-rule-logged-it) links each line to its rule. Untick **Log
+[Firewall Logs](firewall-events.md#which-rule-logged-it) links each line to its rule. Untick **Log
 what's dropped** to leave them quiet. The returns and the final drops aren't shown in the matrix.
+
+To quiet one zone, such as an untrusted zone the internet knocks on all day, untick **Log drops**
+on that zone. Its traffic is then dropped just before each final drop by an unlogged rule, `drop
+the rest from <zone>`, so the rest of what's dropped is still logged. Only traffic coming *from*
+the zone is affected; a drop on the way into it still logs.
 
 Replies always get back: a connection allowed one way is tracked, and the stateful accepts let its
 replies through. Port forwards (dstnat) are matched after the address is changed, so allow the

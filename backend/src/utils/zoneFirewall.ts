@@ -81,6 +81,11 @@ export interface ZoneConfig {
   fasttrack: boolean;
   logDrops: boolean;
   /**
+   * Zones whose drops aren't logged (#415), such as an untrusted zone the
+   * internet knocks on all day. Missing means every zone's drops are logged.
+   */
+  quietZones?: string[];
+  /**
    * What the manager's own address may reach on the router (#369): everything
    * (missing, as before), or only the ports the manager uses: the API, API-SSL
    * and SSH, on the ports /ip/service has.
@@ -363,8 +368,12 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
     members[z] = list;
   }
 
+  const logDrops = c.logDrops !== false;
+  const quiet = Array.isArray(c.quietZones) ? zones.filter((z) => (c.quietZones as unknown[]).map(String).includes(z)) : [];
   const config: ZoneConfig = {
-    zones, intra, policies, fasttrack: c.fasttrack !== false, logDrops: c.logDrops !== false,
+    zones, intra, policies, fasttrack: c.fasttrack !== false, logDrops,
+    // Only written when chosen, and only matters while drops are logged.
+    ...(logDrops && quiet.length ? { quietZones: quiet } : {}),
     // Only written when chosen, so a setup saved before the choice existed is unchanged.
     ...(c.managerAccess === 'management' ? { managerAccess: 'management' as const } : {}),
   };
@@ -428,6 +437,11 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
     return p && p.action !== 'deny' ? p : null;
   };
   const dropLog = (where: string): Ros => (config.logDrops ? { log: 'yes', 'log-prefix': `zone drop ${where}` } : {});
+  // A quiet zone's drops go before the logged drop, unlogged (#415).
+  const quiet = config.logDrops ? (config.quietZones ?? []).filter((z) => config.zones.includes(z)) : [];
+  const dropQuietly = (chain: 'input' | 'forward') => {
+    for (const z of quiet) add({ chain, action: 'drop', 'in-interface-list': z }, `drop the rest from ${z}${chain === 'input' ? ' to the router' : ''}, not logged`, true);
+  };
 
   // Input: the router itself.
   add({ chain: 'input', action: 'accept', 'connection-state': 'established,related,untracked' }, 'accept established, related, untracked to the router');
@@ -444,6 +458,7 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
   for (const z of config.zones) {
     if (open(z, ROUTER)) add({ chain: 'input', action: 'jump', 'jump-target': pairChain(z, ROUTER), 'in-interface-list': z }, `${z} to router`);
   }
+  dropQuietly('input');
   add({ chain: 'input', action: 'drop', ...dropLog('in') }, 'drop everything else to the router', true);
 
   // Forward: between zones.
@@ -462,6 +477,7 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
       }
     }
   }
+  dropQuietly('forward');
   add({ chain: 'forward', action: 'drop', ...dropLog('fwd') }, 'drop everything else between zones', true);
 
   // Each open pair's chain: its accepts, then back to where it came from.

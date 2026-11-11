@@ -234,6 +234,25 @@ describe('compiling zones', () => {
     const noFt = compileZones({ ...input!.config, fasttrack: false }, ctx);
     expect(noFt.some((r) => r.params.action === 'fasttrack-connection')).toBe(false);
   });
+
+  it('drops a quiet zone\'s traffic unlogged, before the logged drop (#415)', () => {
+    const { input: q } = parseZoneInput(body({ quietZones: ['WAN', 'nope'] }), live);
+    expect(q!.config.quietZones).toEqual(['WAN']);
+    const quiet = compileZones(q!.config, ctx);
+    const chain = (c: string) => quiet.filter((r) => r.params.chain === c);
+    for (const c of ['input', 'forward']) {
+      const [silent, last] = chain(c).slice(-2);
+      expect(silent.params).toMatchObject({ action: 'drop', 'in-interface-list': 'WAN' });
+      expect(silent.params.log).toBeUndefined();
+      expect(silent.hidden).toBe(true);
+      expect(last.params).toMatchObject({ action: 'drop', log: 'yes' });
+    }
+    // Nothing to keep quiet when nothing is logged, and an empty choice isn't saved.
+    const { input: off } = parseZoneInput(body({ quietZones: ['WAN'], logDrops: false }), live);
+    expect(off!.config).not.toHaveProperty('quietZones');
+    expect(compileZones(off!.config, ctx).filter((r) => r.params['in-interface-list'] === 'WAN' && r.params.action === 'drop')).toEqual([]);
+    expect(parseZoneInput(body({ quietZones: [] }), live).input!.config).not.toHaveProperty('quietZones');
+  });
 });
 
 describe('applying zones to the device', () => {

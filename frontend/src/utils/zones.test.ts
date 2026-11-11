@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ZonesData } from '../services/api';
-import { initialDraft, draftErrors, policySummary, addZone, removeZone, setPolicy, zoneNameError, portsError, customError, customLabel, pairKey, ROUTER } from './zones';
+import { initialDraft, draftErrors, policySummary, addZone, removeZone, setPolicy, zoneNameError, portsError, customError, customLabel, pairKey, ROUTER, logsDrops, setLogsDrops } from './zones';
 
 const data = (over: Partial<ZonesData> = {}): ZonesData => ({
   enabled: false, config: null, applied_at: null, applied_by: null, eligible: true, foreign_rules: 0,
@@ -101,5 +101,19 @@ describe('hostnames (#369)', () => {
     expect(customError({ protocol: 'tcp', ports: '587', dst: 'smtp outlook' })).toMatch(/or a hostname/);
     expect(customError({ protocol: 'tcp', ports: '', dst: '10.0.0.300' })).toMatch(/IPv4 address/);
     expect(customLabel({ protocol: 'tcp', ports: '587', dst: 'smtp.outlook.com' })).toBe('TCP 587 to smtp.outlook.com');
+  });
+});
+
+describe('quiet zones (#415)', () => {
+  it('turns a zone\'s drop logging off and on, and forgets a removed zone', () => {
+    const d = initialDraft(data());
+    expect(logsDrops(d, 'WAN')).toBe(true);
+    const quiet = setLogsDrops(d, 'WAN', false);
+    expect(quiet.config.quietZones).toEqual(['WAN']);
+    expect(logsDrops(quiet, 'WAN')).toBe(false);
+    expect(logsDrops(quiet, 'LAN')).toBe(true);
+    expect(setLogsDrops(quiet, 'WAN', true).config).not.toHaveProperty('quietZones');
+    expect(removeZone(quiet, 'WAN').config).not.toHaveProperty('quietZones');
+    expect(logsDrops({ ...d, config: { ...d.config, logDrops: false } }, 'LAN')).toBe(false);
   });
 });

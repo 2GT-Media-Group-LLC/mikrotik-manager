@@ -188,7 +188,26 @@ export function removeZone(d: ZoneRequest, name: string): ZoneRequest {
   delete intra[name];
   const members = { ...d.members };
   delete members[name];
-  return { config: { ...d.config, zones: d.config.zones.filter((z) => z !== name), intra, policies }, members };
+  const quietZones = d.config.quietZones?.filter((z) => z !== name);
+  return { config: withQuiet({ ...d.config, zones: d.config.zones.filter((z) => z !== name), intra, policies }, quietZones ?? []), members };
+}
+
+/** Whether a zone's drops are logged (#415). */
+export function logsDrops(d: ZoneRequest, zone: string): boolean {
+  return d.config.logDrops && !(d.config.quietZones ?? []).includes(zone);
+}
+
+/** Log a zone's drops, or leave them quiet (#415). */
+export function setLogsDrops(d: ZoneRequest, zone: string, log: boolean): ZoneRequest {
+  const rest = (d.config.quietZones ?? []).filter((z) => z !== zone);
+  return { ...d, config: withQuiet(d.config, log ? rest : [...rest, zone]) };
+}
+
+// An empty choice isn't kept, the way the server saves it.
+function withQuiet(config: ZoneRequest['config'], quiet: string[]): ZoneRequest['config'] {
+  const { quietZones: _drop, ...rest } = config;
+  void _drop;
+  return quiet.length ? { ...rest, quietZones: quiet } : rest;
 }
 
 export function setPolicy(d: ZoneRequest, key: string, p: ZonePolicy): ZoneRequest {

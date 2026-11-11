@@ -2036,6 +2036,8 @@ export interface ZoneConfig {
   policies: Record<string, ZonePolicy>;
   fasttrack: boolean;
   logDrops: boolean;
+  /** Zones whose drops aren't logged (#415); missing means all are. */
+  quietZones?: string[];
   /** The manager reaches only its API, API-SSL and SSH ports on the router; missing means everything (#369). */
   managerAccess?: 'management';
 }
