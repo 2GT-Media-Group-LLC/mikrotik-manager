@@ -2343,6 +2343,33 @@ export interface CapsmanController {
   ssids: CapsmanSsid[];
 }
 
+/** CAPsMAN quick set (#438): what a device offers, per CAPsMAN. */
+export type CapsmanFlavor = 'wifi' | 'legacy';
+export interface CapsmanFlavorState {
+  configured: boolean;
+  ssid: string | null;
+  bridge: string | null;
+  country: string | null;
+  enabled: boolean;
+  local_radios: boolean;
+  radios: string[];
+  other_rules: number;
+}
+export interface CapsmanSetupInfo {
+  flavors: CapsmanFlavor[];
+  default_flavor: CapsmanFlavor | null;
+  bridges: string[];
+  state: Partial<Record<CapsmanFlavor, CapsmanFlavorState>>;
+}
+export interface CapsmanSetupRequest {
+  flavor: CapsmanFlavor;
+  ssid: string;
+  passphrase: string;
+  bridge: string;
+  country: string;
+  localRadios: boolean;
+}
+
 export const wirelessApi = {
   alignment: (deviceId: number, signal?: AbortSignal) =>
     api.get<AlignmentSnapshot>(`/wireless/${deviceId}/alignment`, { signal, timeout: 20_000 }),
@@ -2350,6 +2377,11 @@ export const wirelessApi = {
   list: () => api.get('/wireless'),
   // CAPsMAN controllers with the APs they provision (read-only)
   capsman: () => api.get<{ controllers: CapsmanController[] }>('/wireless/capsman'),
+  // CAPsMAN quick set (#438)
+  capsmanSetup: (deviceId: number) => api.get<CapsmanSetupInfo>(`/wireless/${deviceId}/capsman/setup`, { timeout: 30_000 }),
+  applyCapsmanSetup: (deviceId: number, body: CapsmanSetupRequest, confirmLockout = false) =>
+    api.post<{ message: string; warnings?: string[]; steps?: string[] }>(`/wireless/${deviceId}/capsman/setup`,
+      { ...body, ...(confirmLockout ? { confirm_lockout: true } : {}) }, { timeout: 120_000 }),
 
   // Multi-AP SSID deployment
   bulkCreateInterfaces: (data: { apIds: number[] } & Record<string, unknown>) =>

@@ -1,0 +1,217 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, Loader2, X } from 'lucide-react';
+import clsx from 'clsx';
+import { devicesApi, wirelessApi, type CapsmanFlavor, type CapsmanSetupInfo, type CapsmanSetupRequest } from '../../services/api';
+import DevicePicker from '../common/DevicePicker';
+import ReviewChangesButton from '../common/ReviewChangesButton';
+import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
+import { capsmanCountryError, capsmanPassphraseError, capsmanSsidError } from '../../utils/capsmanSetup';
+
+const errMsg = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error || (e as Error)?.message || 'That didn’t work';
+
+const flavorLabel = (f: CapsmanFlavor) => (f === 'wifi'
+  ? 'wifi (RouterOS 7 wifi package: ax and ac wave2 APs)'
+  : 'legacy wireless (/caps-man: older APs on the wireless package)');
+const stateOf = (d: CapsmanSetupInfo | undefined, f: CapsmanFlavor | null) => (f === 'wifi' ? d?.state.wifi : f === 'legacy' ? d?.state.legacy : undefined);
+
+/**
+ * CAPsMAN quick set (#438, from Ron): an SSID and a password, and a device
+ * becomes a CAPsMAN controller, or a controller that serves its own radios too.
+ */
+export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClose: () => void; initialDeviceId?: number }) {
+  const qc = useQueryClient();
+  const guard = useGuardedWrite();
+  const { data: devices = [] } = useQuery({ queryKey: ['devices'], queryFn: () => devicesApi.list().then((r) => r.data), staleTime: 60_000 });
+  const [deviceId, setDeviceId] = useState<number | null>(initialDeviceId ?? null);
+  const device = devices.find((d) => d.id === deviceId);
+  const info = useQuery({
+    queryKey: ['capsman-setup', deviceId],
+    queryFn: () => wirelessApi.capsmanSetup(deviceId!).then((r) => r.data),
+    enabled: deviceId != null,
+    retry: false,
+  });
+
+  const [flavor, setFlavor] = useState<CapsmanFlavor | null>(null);
+  const [ssid, setSsid] = useState('');
+  const [passphrase, setPassphrase] = useState('');
+  const [bridge, setBridge] = useState('');
+  const [country, setCountry] = useState('');
+  const [localRadios, setLocalRadios] = useState(true);
+  const [touched, setTouched] = useState(false);
+  const [message, setMessage] = useState('');
+  const [failure, setFailure] = useState('');
+
+  // A device's answer fills the form: its earlier setup, or sensible defaults.
+  const [filledFrom, setFilledFrom] = useState<CapsmanSetupInfo | undefined>();
+  if (info.data && info.data !== filledFrom) {
+    const d = info.data;
+    setFilledFrom(d);
+    const s = stateOf(d, d.default_flavor);
+    setFlavor(d.default_flavor);
+    setSsid(s?.ssid ?? '');
+    setPassphrase('');
+    setBridge(s?.bridge ?? (d.bridges.includes('bridge') ? 'bridge' : d.bridges[0] ?? ''));
+    setCountry(s?.country ?? '');
+    setLocalRadios(s ? (s.configured ? s.local_radios : s.radios.length > 0) : false);
+    setTouched(false);
+  }
+
+  const st = stateOf(info.data, flavor);
+  const radios = st?.radios ?? [];
+  const errors = {
+    ssid: capsmanSsidError(ssid),
+    passphrase: capsmanPassphraseError(passphrase, !!st?.configured),
+    bridge: bridge ? null : 'Choose the bridge the Wi-Fi clients join.',
+    country: capsmanCountryError(country),
+  };
+  const valid = !!flavor && Object.values(errors).every((e) => !e);
+
+  const body = (): CapsmanSetupRequest => ({ flavor: flavor!, ssid, passphrase, bridge, country: country.trim(), localRadios: localRadios && radios.length > 0 });
+  const applyMut = useMutation({
+    mutationFn: (confirm: boolean) => wirelessApi.applyCapsmanSetup(deviceId!, body(), confirm),
+    onSuccess: (res) => {
+      guard.onSuccess(res);
+      setFailure('');
+      setMessage([res.data.message, ...(res.data.warnings ?? [])].join(' '));
+      qc.invalidateQueries({ queryKey: ['capsman-setup', deviceId] });
+      qc.invalidateQueries({ queryKey: ['capsman'] });
+    },
+  });
+  const fail = (e: unknown) => { setMessage(''); setFailure(errMsg(e)); };
+  const apply = () => {
+    setTouched(true);
+    if (!valid) return;
+    applyMut.mutate(false, { onError: guard.onError(() => applyMut.mutate(true, { onError: fail }), fail) });
+  };
+
+  // What the device will do differently, said before it's applied.
+  const notes: string[] = [];
+  if (st && localRadios && radios.length && !st.local_radios) {
+    notes.push(`Its own radios (${radios.join(', ')}) switch to ${ssid || 'this SSID'}. Clients on their current networks reconnect to it.`);
+  }
+  if (st && !localRadios && st.local_radios) notes.push('Its own radios stop taking the controller’s SSID and go back to their own settings.');
+  if (st?.other_rules) {
+    notes.push(`The device already has ${st.other_rules === 1 ? 'a provisioning rule' : `${st.other_rules} provisioning rules`} of its own. `
+      + 'RouterOS uses the first rule that matches a radio, so radios those match keep their configuration.');
+  }
+
+  const field = (error: string | null) => touched && error
+    ? <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{error}</p> : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="card w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Set up CAPsMAN</h2>
+          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300" aria-label="Close"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-gray-500 dark:text-slate-400">
+            Makes a device a CAPsMAN controller with one SSID on every band. Access points that join it get the SSID and password
+            from the controller. Running this again on the same device changes the same setup.
+          </p>
+
+          <div>
+            <label className="label">Controller</label>
+            <DevicePicker devices={devices} value={deviceId} onChange={(id) => { setDeviceId(id); setMessage(''); setFailure(''); }}
+              placeholder="Choose the device to be the controller" />
+          </div>
+
+          {deviceId != null && info.isLoading && (
+            <p className="text-xs text-gray-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading {device?.name ?? 'the device'}…</p>
+          )}
+          {info.error && <p className="text-xs text-red-600 dark:text-red-400">{errMsg(info.error)}</p>}
+          {info.data && !info.data.flavors.length && (
+            <p className="text-xs text-red-600 dark:text-red-400">
+              {device?.name ?? 'This device'} has no CAPsMAN: it needs RouterOS 7.13 or later, or the legacy wireless package.
+            </p>
+          )}
+
+          {info.data && flavor && <>
+            {info.data.flavors.length > 1 && (
+              <div>
+                <label className="label">CAPsMAN</label>
+                <select className="input" value={flavor} onChange={(e) => {
+                  const f = e.target.value as CapsmanFlavor;
+                  setFlavor(f);
+                  const s = stateOf(info.data, f);
+                  setLocalRadios(s ? (s.configured ? s.local_radios : s.radios.length > 0) : false);
+                }}>
+                  {info.data.flavors.map((f) => <option key={f} value={f}>{flavorLabel(f)}</option>)}
+                </select>
+                <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">A wifi controller can&rsquo;t manage legacy APs, and a legacy one can&rsquo;t manage wifi APs.</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">SSID</label>
+                <input className="input" value={ssid} onChange={(e) => setSsid(e.target.value)} maxLength={32} />
+                {field(errors.ssid)}
+              </div>
+              <div>
+                <label className="label">Password</label>
+                <input className="input" type="password" autoComplete="new-password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)}
+                  placeholder={st?.configured ? 'Leave empty to keep it' : '8 to 63 characters'} />
+                {field(errors.passphrase)}
+              </div>
+              <div>
+                <label className="label">Bridge</label>
+                <select className="input" value={bridge} onChange={(e) => setBridge(e.target.value)}>
+                  {!bridge && <option value="">Choose a bridge</option>}
+                  {info.data.bridges.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+                {field(errors.bridge)}
+                <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">Wi-Fi clients join it, on the controller and on every AP (each AP needs a bridge with this name).</p>
+              </div>
+              <div>
+                <label className="label">Country (optional)</label>
+                <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. united states" />
+                {field(errors.country)}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="label">Role</label>
+              <label className={clsx('flex items-start gap-2 text-sm', !radios.length && 'opacity-50')}>
+                <input type="radio" className="mt-1" checked={localRadios && radios.length > 0} disabled={!radios.length} onChange={() => setLocalRadios(true)} />
+                <span>Controller and AP
+                  <span className="block text-[11px] text-gray-500 dark:text-slate-400">
+                    {radios.length ? `Its own radios (${radios.join(', ')}) broadcast the SSID too.` : 'This device has no radios of its own for this CAPsMAN.'}
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="radio" className="mt-1" checked={!localRadios || !radios.length} onChange={() => setLocalRadios(false)} />
+                <span>Controller only
+                  <span className="block text-[11px] text-gray-500 dark:text-slate-400">It only manages the APs that join it.</span>
+                </span>
+              </label>
+            </div>
+
+            {notes.map((n) => (
+              <p key={n} className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{n}</p>
+            ))}
+            <p className="text-[11px] text-gray-500 dark:text-slate-400">
+              Other APs join by turning on their CAP (in Winbox: Wireless or WiFi → CAP) with discovery on the same network.
+            </p>
+
+            {message && <p className="text-xs text-green-600 dark:text-green-400">{message}</p>}
+            {failure && <p className="text-xs text-red-600 dark:text-red-400">{failure}</p>}
+            <GuardedWriteUi state={guard} deviceId={deviceId!} deviceName={device?.name} pending={applyMut.isPending} />
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button className="btn-primary text-sm" onClick={apply} disabled={applyMut.isPending}>
+                {applyMut.isPending ? 'Applying…' : st?.configured ? 'Apply' : 'Set up CAPsMAN'}
+              </button>
+              <ReviewChangesButton className="text-sm" deviceName={device?.name} applyLabel="Set up CAPsMAN" onApply={apply}
+                disabled={applyMut.isPending || !valid} request={() => wirelessApi.applyCapsmanSetup(deviceId!, body())} />
+              <button className="btn-secondary text-sm ml-auto" onClick={onClose}>Close</button>
+            </div>
+          </>}
+        </div>
+      </div>
+    </div>
+  );
+}

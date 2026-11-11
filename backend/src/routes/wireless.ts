@@ -17,6 +17,10 @@ import { BAND_RANGES } from '../utils/rfSpectrum';
 import { fluxString } from '@influxdata/influxdb-client';
 import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
 import antennaAlignmentRoutes from './antennaAlignment';
+import {
+  CAPSMAN_PATHS, capIsLocal, defaultFlavor, ownItems, parseCapsmanSetup, planCapsman,
+  type CapsmanFlavor, type CapsmanLive,
+} from '../utils/capsmanSetup';
 
 const router = Router();
 router.use(antennaAlignmentRoutes);
@@ -300,6 +304,115 @@ router.get('/capsman', async (req, res) => {
       };
     }),
   });
+});
+
+// ─── CAPsMAN quick set (#438) ─────────────────────────────────────────────────
+
+/** Which CAPsMANs the device has, and what each looks like now. */
+async function readCapsman(c: DeviceCollector): Promise<{ bridges: string[]; live: Partial<Record<CapsmanFlavor, CapsmanLive>> }> {
+  const bridges = (await c.getBridges()).map((b) => b.name).filter(Boolean);
+  const live: Partial<Record<CapsmanFlavor, CapsmanLive>> = {};
+  for (const flavor of ['wifi', 'legacy'] as const) {
+    const p = CAPSMAN_PATHS[flavor];
+    const manager = await c.readCapsmanMenu(p.manager);
+    if (!manager) continue;
+    const [configurations, provisioning, cap, radioRows] = await Promise.all([
+      c.readCapsmanMenu(p.configuration), c.readCapsmanMenu(p.provisioning), c.readCapsmanMenu(p.cap),
+      c.readCapsmanMenu(flavor === 'wifi' ? '/interface/wifi/radio' : '/interface/wireless'),
+    ]);
+    // Its own radios: wifi lists a controller's remote radios too, marked not
+    // local; legacy lists virtual APs, which have a master interface.
+    const radios = (radioRows ?? [])
+      .filter((r) => (flavor === 'wifi' ? r.local === 'true' : !r['master-interface']))
+      .map((r) => (flavor === 'wifi' ? r.interface || r['radio-mac'] : r.name))
+      .filter(Boolean);
+    live[flavor] = {
+      flavor, bridges, configurations: configurations ?? [], provisioning: provisioning ?? [],
+      manager: manager[0] ?? null, cap: cap?.[0] ?? null, radios,
+    };
+  }
+  return { bridges, live };
+}
+
+async function capsmanDevice(id: number): Promise<DeviceRow | null> {
+  return (await query<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [id]))[0] ?? null;
+}
+
+// GET /api/wireless/:id/capsman/setup — what the quick set can do on this
+// device, and what an earlier run set up (never the password).
+router.get('/:id/capsman/setup', async (req, res) => {
+  const device = await capsmanDevice(parseInt(req.params.id, 10));
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const c = new DeviceCollector(device);
+  try {
+    await c.connect();
+    const { bridges, live } = await readCapsman(c);
+    const flavors = (Object.keys(live) as CapsmanFlavor[]);
+    const state = Object.fromEntries(flavors.map((f) => {
+      const l = live[f]!;
+      const { configuration, rule } = ownItems(l);
+      return [f, {
+        configured: !!configuration,
+        ssid: configuration?.ssid ?? null,
+        bridge: configuration?.['datapath.bridge'] ?? null,
+        country: configuration?.country ?? null,
+        enabled: l.manager?.enabled === 'true' || l.manager?.enabled === 'yes',
+        local_radios: capIsLocal(l.cap),
+        radios: l.radios,
+        other_rules: l.provisioning.filter((r) => r !== rule && r.disabled !== 'true').length,
+      }];
+    }));
+    return res.json({
+      flavors,
+      default_flavor: defaultFlavor(flavors, (device as unknown as { wifi_package?: string | null }).wifi_package),
+      bridges,
+      state,
+    });
+  } catch (err) {
+    return res.status(502).json({ error: (err as Error).message });
+  } finally {
+    c.disconnect();
+  }
+});
+
+// POST /api/wireless/:id/capsman/setup { flavor, ssid, passphrase, bridge, country?, localRadios }
+// — make the device a CAPsMAN controller with one SSID, optionally serving its
+// own radios too. Under Change Guard, and previewable.
+router.post('/:id/capsman/setup', requireWrite, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const device = await capsmanDevice(id);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  let live: CapsmanLive | undefined;
+  const flavor = req.body?.flavor === 'legacy' ? 'legacy' : 'wifi';
+  const reader = new DeviceCollector(device);
+  try {
+    await reader.connect();
+    live = (await readCapsman(reader)).live[flavor];
+  } catch (err) {
+    return res.status(502).json({ error: (err as Error).message });
+  } finally {
+    reader.disconnect();
+  }
+  if (!live) {
+    return res.status(400).json({
+      error: flavor === 'wifi'
+        ? `${device.name} has no wifi CAPsMAN (RouterOS 7.13 or later).`
+        : `${device.name} has no legacy CAPsMAN (it needs the wireless package).`,
+    });
+  }
+  const parsed = parseCapsmanSetup(req.body, live);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const { steps, warnings } = planCapsman(parsed.input, live);
+  if (!steps.length) return res.json({ message: `${device.name} is already set up that way`, warnings });
+  const role = parsed.input.localRadios ? 'controller and AP' : 'controller';
+  await withGuardedChange(id, req, res,
+    { kind: 'wireless.capsman', summary: `CAPsMAN ${role}: ${parsed.input.ssid} on ${parsed.input.bridge}` },
+    async (c) => {
+      for (const s of steps) await c.writeCapsman(s.command, s.params);
+      return { message: `${device.name} is a CAPsMAN ${role} for ${parsed.input.ssid}`, warnings, steps: steps.map((s) => s.description) };
+    },
+    // The Wireless page shows it as a controller from the next role check.
+    async (c) => { await c.collectWirelessInterfaces().catch(() => {}); });
 });
 
 // ─── Wireless interfaces (SSIDs) ──────────────────────────────────────────────

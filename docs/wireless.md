@@ -102,8 +102,9 @@ scanning a radio the manager reaches the device through.
 
 ## CAPsMAN
 
-Centrally provisioned access points are modelled separately — see [CAPsMAN](capsman.md),
-including the current read-only limitation.
+Centrally provisioned access points are modelled separately — see [CAPsMAN](capsman.md).
+**Set up CAPsMAN** makes a device a controller with one SSID; see
+[Set up CAPsMAN](capsman.md#set-up-capsman).
 
 ## Guest WiFi
 

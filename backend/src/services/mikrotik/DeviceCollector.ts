@@ -55,6 +55,8 @@ const legacyScanMode = new Map<number, 'script' | 'api'>();
 // 4: the package is the one whose menu lists radios; the wifi menu answers on
 // every RouterOS 7.13+ device, which hid a hAP ac²'s legacy radios.
 const WIFI_ROLE_PROBE = 4;
+/** The menus the CAPsMAN quick set reads and writes (#438). */
+const CAPSMAN_MENU = /^\/(interface\/wifi\/(configuration|provisioning|capsman|cap|radio)|caps-man\/(configuration|provisioning|manager)|interface\/wireless(\/cap)?)$/;
 
 /**
  * How often a device found to have no wireless role is checked again. CAPsMAN
@@ -5000,6 +5002,25 @@ export class DeviceCollector {
 
   async setPppoeServerDisabled(id: string, disabled: boolean): Promise<void> {
     await this.client.execute('/interface/pppoe-server/server/set', { '.id': id, disabled: disabled ? 'yes' : 'no' });
+  }
+
+  // ─── CAPsMAN quick set (#438) ────────────────────────────────────────────────
+
+  /** Reads a CAPsMAN menu; null when the device doesn't have it. */
+  async readCapsmanMenu(path: string): Promise<Record<string, string>[] | null> {
+    if (!CAPSMAN_MENU.test(path)) throw new Error(`Not a CAPsMAN menu: ${path}`);
+    try {
+      return await this.client.execute(`${path}/print`);
+    } catch {
+      return null;
+    }
+  }
+
+  /** One CAPsMAN setup write, from utils/capsmanSetup's plan. */
+  async writeCapsman(command: string, params: Record<string, string>): Promise<void> {
+    const path = command.replace(/\/(add|set)$/, '');
+    if (path === command || !CAPSMAN_MENU.test(path)) throw new Error(`Not a CAPsMAN write: ${command}`);
+    await this.client.execute(command, params);
   }
 
   /** End an active PPP session; the client usually dials straight back in. */

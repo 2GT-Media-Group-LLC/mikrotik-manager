@@ -225,8 +225,8 @@ export default function CapsmanPanel() {
       </div>
       <p className="text-xs text-gray-500 dark:text-slate-400">
         These access points are provisioned centrally, so their configuration lives on the controller
-        rather than on the AP itself. Editing is intentionally not offered here yet: a CAPsMAN change
-        applies to every bound AP at once.
+        rather than on the AP itself. A CAPsMAN change applies to every bound AP at once, so this list
+        is read-only; <strong>Set up CAPsMAN</strong> at the top changes the SSID it set up.
       </p>
       {controllers.map((c) => <Controller key={c.id} c={c} />)}
     </div>

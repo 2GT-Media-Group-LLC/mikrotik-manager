@@ -216,6 +216,8 @@ const PREVIEWABLE: [string, RegExp][] = [
   ['PUT', /^\/api\/reverse-proxy\/service$/],
   // Wireless
   ['POST|PUT|DELETE', /^\/api\/wireless\/\d+\/(interfaces|security-profiles)(\/[^/]+)?$/],
+  // CAPsMAN quick set (#438)
+  ['POST', /^\/api\/wireless\/\d+\/capsman\/setup$/],
 ];
 
 /** Paths under a previewable prefix that act rather than configure. */

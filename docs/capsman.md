@@ -103,13 +103,46 @@ Five paths refuse or skip provisioned radios, naming the controller in the error
 SSID deployment, interface create, interface edit, interface delete, and guest network
 setup.
 
+## Set up CAPsMAN
+
+**Set up CAPsMAN** on the Wireless page makes a device a controller with one SSID on every band,
+from Ron's request in #438. Choose the device, then enter:
+
+- the **SSID** and **password** (WPA2, plus WPA3 on wifi);
+- the **bridge** Wi-Fi clients join, on the controller and on every AP, so each AP needs a
+  bridge with this name;
+- the **country**, optional, as RouterOS names it (`united states`);
+- the **role**: **Controller and AP**, where its own radios broadcast the SSID too, or
+  **Controller only**.
+
+It works on either CAPsMAN, and asks which when the device has both. A wifi controller only
+manages wifi-package APs, and a legacy one only legacy wireless APs.
+
+What it does on the device:
+
+| Step | wifi | legacy |
+|---|---|---|
+| A configuration named `mtm-capsman` with the SSID, password and bridge | `/interface wifi configuration` | `/caps-man configuration`, with local forwarding |
+| A provisioning rule, commented `mtm capsman`, that gives it to every radio | `/interface wifi provisioning` | `/caps-man provisioning` |
+| CAPsMAN on | `/interface wifi capsman` | `/caps-man manager` |
+| Controller and AP only: its own CAP, pointed at `127.0.0.1` | `/interface wifi cap` | `/interface wireless cap`, with its wlans |
+
+Running it again on the same device changes the same items. Leave the password empty to keep
+the one set. Switching to **Controller only** turns its own CAP off, and its radios go back to
+their own settings. The change runs under [Change Guard](change-guard.md), and **Review
+changes** shows the writes first.
+
+- Other APs join by turning on their CAP, with discovery on the same network. The wizard doesn't
+  change them.
+- RouterOS uses the first provisioning rule that matches a radio. Rules the device already has
+  come before the new one, and the form says so.
+
 ## Current limits
 
-**Provisioning, configuration edits and interface enable/disable are deliberately not
-exposed.** A CAPsMAN configuration applies to every access point bound to it
+**Editing an existing controller's provisioning, configurations and interfaces isn't offered**,
+apart from the setup above. A CAPsMAN configuration applies to every access point bound to it
 simultaneously — the fleet-wide version of the failure [Change Guard](change-guard.md)
-exists to prevent. Those operations are held back until they carry the same
-prediction-and-revert protection that per-device changes do.
+exists to prevent.
 
 ## Legacy CAPsMAN
 

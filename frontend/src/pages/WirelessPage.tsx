@@ -1,14 +1,17 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import {
-  Wifi, CheckCircle, XCircle, HelpCircle, Users, RefreshCw, ExternalLink,
+  Wifi, CheckCircle, XCircle, HelpCircle, Users, RefreshCw, ExternalLink, Server,
 } from 'lucide-react';
 import { wirelessApi } from '../services/api';
 import type { WirelessAP } from '../types';
 import RfHealth from '../components/wireless/RfHealth';
 import RogueApsCard from '../components/wireless/RogueApsCard';
 import CapsmanPanel from '../components/wireless/CapsmanPanel';
+import CapsmanSetupModal from '../components/wireless/CapsmanSetupModal';
+import { useCanWrite } from '../hooks/useCanWrite';
 import clsx from 'clsx';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 
@@ -38,6 +41,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function WirelessPage() {
+  const canWrite = useCanWrite();
+  // CAPsMAN quick set (#438).
+  const [capsmanSetup, setCapsmanSetup] = useState(false);
   const { data: devices = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['wireless-aps'],
     queryFn: () => wirelessApi.list().then(r => r.data as WirelessAP[]),
@@ -73,22 +79,31 @@ export default function WirelessPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Wireless</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
             Overview of managed access points, wireless systems and CAPsMAN controllers
           </p>
         </div>
-        <button
-          onClick={() => void refresh()}
-          disabled={isFetching || refreshing}
-          className="btn-secondary flex items-center gap-2 text-sm"
-        >
-          <RefreshCw className={clsx('w-4 h-4', (isFetching || refreshing) && 'animate-spin')} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {canWrite && (
+            <button onClick={() => setCapsmanSetup(true)} className="btn-secondary flex items-center gap-2 text-sm">
+              <Server className="w-4 h-4" />
+              Set up CAPsMAN
+            </button>
+          )}
+          <button
+            onClick={() => void refresh()}
+            disabled={isFetching || refreshing}
+            className="btn-secondary flex items-center gap-2 text-sm"
+          >
+            <RefreshCw className={clsx('w-4 h-4', (isFetching || refreshing) && 'animate-spin')} />
+            Refresh
+          </button>
+        </div>
       </div>
+      {capsmanSetup && <CapsmanSetupModal onClose={() => setCapsmanSetup(false)} />}
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
