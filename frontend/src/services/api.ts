@@ -873,6 +873,8 @@ export const devicesApi = {
       credential_preset_id?: number;
       force_replace_existing_by_serial?: boolean;
       combine_with_device_id?: number;
+      /** Add the device without testing API or SSH connectivity. */
+      force_add?: boolean;
       /** Existing tags to apply once added (#161). */
       tag_ids?: number[];
     })

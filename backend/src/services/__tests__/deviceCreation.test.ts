@@ -187,6 +187,46 @@ describe('createDeviceFromBody (API-SSL on any port)', () => {
   });
 });
 
+describe('createDeviceFromBody (force add)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('adds without API or SSH checks and leaves the device unverified', async () => {
+    const readSshInfo = jest.spyOn(sshOnly, 'readSshInfo');
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null });
+    (query as jest.Mock).mockResolvedValue([{ id: 45 }]);
+    (queryOne as jest.Mock).mockResolvedValueOnce({ id: 45, name: 'offline' });
+
+    const result = await createDeviceFromBody(
+      {
+        name: 'offline',
+        ip_address: '192.168.88.2',
+        api_username: 'admin',
+        api_password: 'secret',
+        force_add: true,
+        ssh_only: true,
+      },
+      null
+    );
+
+    expect(result.ok).toBe(true);
+    expect(RouterOSClient).not.toHaveBeenCalled();
+    expect(readSshInfo).not.toHaveBeenCalled();
+    const insert = (query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => /INSERT INTO devices/.test(sql)
+    );
+    expect(insert).toBeDefined();
+    expect(insert[1][12]).toBeNull();
+    expect(insert[1][13]).toBe(false);
+    expect(result).toMatchObject({
+      ok: true,
+      body: { connection: { connectivity_checked: false } },
+    });
+    readSshInfo.mockRestore();
+  });
+});
+
 /**
  * Admin-only credential presets. The bulk-add worker used to pass no role, and
  * the check only stopped callers whose role was exactly "operator", so a bulk

@@ -99,6 +99,8 @@ export interface CreateDeviceInput {
   ssh_port?: unknown;
   combine_with_device_id?: number;
   force_replace_existing_by_serial?: boolean;
+  /** Skip API/SSH connectivity checks and add the device with unknown status. */
+  force_add?: boolean;
   /** Existing tag ids to put on the device once it is added (#161). Unknown ids are ignored. */
   tag_ids?: unknown;
   /**
@@ -221,6 +223,7 @@ async function createDevice(
   const combineWithDeviceId =
     typeof input.combine_with_device_id === 'number' ? input.combine_with_device_id : null;
   const forceReplaceBySerial = input.force_replace_existing_by_serial === true;
+  const forceAdd = input.force_add === true;
 
   if (!name || !ip_address || !api_username || !api_password) {
     return {
@@ -263,71 +266,75 @@ async function createDevice(
   }
   let testClient: RouterOSClient | undefined;
   let sslFallbackReason: string | undefined;
-  let detectedSerial: string | null;
-  let deviceIdentity: string | null;
+  let detectedSerial: string | null = null;
+  let deviceIdentity: string | null = null;
   // Set when the API didn't answer and the device was reached over SSH (#174).
   let sshInfo: SshInfo | null = null;
   let sshHostKey: string | null = null;
   let apiUnavailable: string | undefined;
-  try {
-    if (portChosen) {
-      testClient = new RouterOSClient(address, api_port, api_username, api_password, sshOnlyRequested ? 6_000 : 10_000,
-        30_000, usesApiTls({ api_port, api_tls: apiTls }), jumpHostId);
-      await testClient.connect();
-    } else {
-      const chosen = await connectPreferringSsl(address, api_username, api_password,
-        { ...(sshOnlyRequested ? { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000 } : {}), jumpHostId });
-      testClient = chosen.client;
-      api_port = chosen.port;
-      sslFallbackReason = chosen.sslError;
-    }
-    const rb = await testClient.execute('/system/routerboard/print').catch(() => [] as Record<string, string>[]);
-    detectedSerial = (rb[0]?.['serial-number'] || '').trim() || null;
-    const identity = await testClient.execute('/system/identity/print').catch((e) => {
-      console.warn(`[deviceCreation] /system/identity/print failed for ${logSafe(address)}: ${logSafe((e as Error)?.message)}`);
-      return [] as Record<string, string>[];
-    });
-    deviceIdentity = (identity[0]?.['name'] || '').trim() || null;
-  } catch (err) {
-    if (!sshOnlyRequested) {
-      return {
-        ok: false,
-        status: 422,
-        body: { error: safeConnectionError('createDeviceFromBody', err) },
-      };
-    }
-    // The API is off, as expected: reach the device over SSH instead.
-    apiUnavailable = classifyApiFailure(err).message;
-    testClient?.disconnect();
-    testClient = undefined;
+  if (!forceAdd) {
     try {
-      sshInfo = await readSshInfo({
-        id: 0, name, ip_address: address, ssh_port,
-        ssh_username: ssh_username || api_username,
-        ssh_password_encrypted: encrypt(ssh_password || api_password),
-        jump_host_id: jumpHostId,
-      }, { onHostKey: (fp) => { sshHostKey = fp; } });
-    } catch (sshErr) {
-      console.warn(`[deviceCreation] SSH-only add of ${logSafe(address)} failed: ${logSafe((sshErr as Error).message)}`);
-      // The jump host failing both is one reason, given once in its own words.
-      const error = err instanceof JumpHostError && sshErr instanceof JumpHostError
-        ? sshErr.message
-        : `The API didn't answer (${apiUnavailable.replace(/\.$/, '')}), and SSH failed too: ${describeSshFailure(sshErr, ssh_port)}`;
-      return { ok: false, status: 422, body: { error } };
+      if (portChosen) {
+        testClient = new RouterOSClient(address, api_port, api_username, api_password, sshOnlyRequested ? 6_000 : 10_000,
+          30_000, usesApiTls({ api_port, api_tls: apiTls }), jumpHostId);
+        await testClient.connect();
+      } else {
+        const chosen = await connectPreferringSsl(address, api_username, api_password,
+          { ...(sshOnlyRequested ? { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000 } : {}), jumpHostId });
+        testClient = chosen.client;
+        api_port = chosen.port;
+        sslFallbackReason = chosen.sslError;
+      }
+      const rb = await testClient.execute('/system/routerboard/print').catch(() => [] as Record<string, string>[]);
+      detectedSerial = (rb[0]?.['serial-number'] || '').trim() || null;
+      const identity = await testClient.execute('/system/identity/print').catch((e) => {
+        console.warn(`[deviceCreation] /system/identity/print failed for ${logSafe(address)}: ${logSafe((e as Error)?.message)}`);
+        return [] as Record<string, string>[];
+      });
+      deviceIdentity = (identity[0]?.['name'] || '').trim() || null;
+    } catch (err) {
+      if (!sshOnlyRequested) {
+        return {
+          ok: false,
+          status: 422,
+          body: { error: safeConnectionError('createDeviceFromBody', err) },
+        };
+      }
+      // The API is off, as expected: reach the device over SSH instead.
+      apiUnavailable = classifyApiFailure(err).message;
+      testClient?.disconnect();
+      testClient = undefined;
+      try {
+        sshInfo = await readSshInfo({
+          id: 0, name, ip_address: address, ssh_port,
+          ssh_username: ssh_username || api_username,
+          ssh_password_encrypted: encrypt(ssh_password || api_password),
+          jump_host_id: jumpHostId,
+        }, { onHostKey: (fp) => { sshHostKey = fp; } });
+      } catch (sshErr) {
+        console.warn(`[deviceCreation] SSH-only add of ${logSafe(address)} failed: ${logSafe((sshErr as Error).message)}`);
+        // The jump host failing both is one reason, given once in its own words.
+        const error = err instanceof JumpHostError && sshErr instanceof JumpHostError
+          ? sshErr.message
+          : `The API didn't answer (${apiUnavailable.replace(/\.$/, '')}), and SSH failed too: ${describeSshFailure(sshErr, ssh_port)}`;
+        return { ok: false, status: 422, body: { error } };
+      }
+      detectedSerial = sshInfo.serial;
+      deviceIdentity = sshInfo.identity?.trim() || null;
+    } finally {
+      // Unassigned only when connecting threw, and then there is nothing to close.
+      testClient?.disconnect();
     }
-    detectedSerial = sshInfo.serial;
-    deviceIdentity = sshInfo.identity?.trim() || null;
-  } finally {
-    // Unassigned only when connecting threw, and then there is nothing to close.
-    testClient?.disconnect();
   }
   const nameLocked = computeNameLocked(name, address, deviceIdentity);
   // Reported with the new device so the UI can say which connection it got.
   const addedOverSsh = sshInfo !== null;
-  const connection = addedOverSsh
-    ? { ssh_only: true, api_unavailable: apiUnavailable }
-    : { api_ssl: usesApiTls({ api_port, api_tls: apiTls }), port: api_port, ...(sslFallbackReason ? { ssl_unavailable: sslFallbackReason } : {}),
-        ...(sshOnlyRequested ? { api_answered: true } : {}) };
+  const connection = forceAdd
+    ? { connectivity_checked: false }
+    : addedOverSsh
+      ? { ssh_only: true, api_unavailable: apiUnavailable }
+      : { api_ssl: usesApiTls({ api_port, api_tls: apiTls }), port: api_port, ...(sslFallbackReason ? { ssl_unavailable: sslFallbackReason } : {}),
+          ...(sshOnlyRequested ? { api_answered: true } : {}) };
   // An SSH-only device keeps its SSH login explicitly (config history needs it).
   const sshUserToStore = addedOverSsh ? (ssh_username || api_username) : ssh_username;
   const sshPassToStore = addedOverSsh ? (ssh_password || api_password) : ssh_password;
