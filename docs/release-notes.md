@@ -3,6 +3,18 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.45
+
+- **Firewall Logs looks more like Ron's mockup** in
+  [#415](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415): zones show as
+  coloured badges (untrust/WAN red, trust/LAN green, DMZ/guest amber, Router grey, any other zone
+  its own colour), each action has an icon, and the pager has page numbers with "Showing 1–100 of
+  N". See [Zones](firewall-events.md#zones).
+- **NAT rules can name the WAN interface**, from Ron's request in
+  [#440](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/440). The Custom pattern
+  has In. Interface and Out. Interface, so a netmap can say which uplink it uses, and 1:1 NAT has
+  an optional WAN in-interface. The rule summary names the interface.
+
 ## 1.1.0-beta.44
 
 - **Firewall Logs reads in zones**, from Ron's request in

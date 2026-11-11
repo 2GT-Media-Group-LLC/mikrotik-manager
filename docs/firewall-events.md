@@ -37,6 +37,15 @@ become **From zone** and **To zone** and show zone names instead of interfaces. 
 from the router itself shows **Router** as its zone. The chain is left out on those lines,
 since the zones already say where the traffic went.
 
+Each zone shows as a coloured badge. The manager doesn't know which zone you trust, so the
+colour comes from the name:
+
+- names like untrust, WAN, outside or internet are red;
+- trust, LAN, inside or internal are green;
+- DMZ, guest or IoT are amber;
+- Router is grey;
+- any other zone gets a colour of its own that stays the same from page to page.
+
 - An interface in no zone shows as the interface name, in italics.
 - When the page mixes zone and non-zone devices, the columns are labelled **From** and **To**.
 - The manager reads zone membership when you apply zones, when you open the Zones tab, and

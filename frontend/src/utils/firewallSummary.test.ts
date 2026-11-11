@@ -35,6 +35,14 @@ describe('natSummary', () => {
       'to-addresses': '192.168.1.10', 'to-ports': '443',
     })).toBe('Forward TCP any:443 → 192.168.1.10:443');
   });
+  it('names the WAN of a netmap or src-nat (#440)', () => {
+    expect(natSummary({ action: 'netmap', chain: 'srcnat', 'src-address': '192.168.62.0/24', 'to-addresses': '203.0.113.0/24', 'out-interface': 'ether2' }))
+      .toBe('Netmap 192.168.62.0/24 → 203.0.113.0/24 out ether2');
+    expect(natSummary({ action: 'netmap', chain: 'dstnat', 'dst-address': '203.0.113.10', 'to-addresses': '192.168.1.10', 'in-interface': 'ether1' }))
+      .toBe('1:1 NAT 203.0.113.10 ↔ 192.168.1.10 in ether1');
+    expect(natSummary({ action: 'src-nat', chain: 'srcnat', 'to-addresses': '198.51.100.1', 'out-interface': 'ether1' }))
+      .toBe('Source-NAT any → 198.51.100.1 out ether1');
+  });
 });
 
 describe('formatBytes / formatCount', () => {

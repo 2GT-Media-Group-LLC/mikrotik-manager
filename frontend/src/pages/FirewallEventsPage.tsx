@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { tagOf, ruleUrl } from '../utils/ruleTags';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { RefreshCw, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
+import { Ban, ChevronLeft, ChevronRight, CircleCheck, CircleHelp, CircleX, RefreshCw, Search, Settings2, ShieldCheck, Trash2, Zap } from 'lucide-react';
+import { pageItems, zoneColor } from '../utils/firewallLogView';
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
@@ -66,10 +67,36 @@ function Address({ ip, port, name }: { ip: string; port?: number; name?: string 
  * A from or to column (#415): the zone on a zone-managed device, else the
  * interface. An interface in no zone shows as itself, marked.
  */
-function ZoneCell({ zoned, zone, iface }: { zoned?: boolean; zone?: string; iface?: string }) {
-  if (zoned && zone) return <span className="font-sans font-medium text-gray-700 dark:text-slate-200">{zone}</span>;
+function ZoneCell({ zoned, zone, iface, router }: { zoned?: boolean; zone?: string; iface?: string; router?: boolean }) {
+  if (zoned && zone) {
+    return (
+      <span className={clsx('inline-flex px-2 py-0.5 rounded font-sans text-[11px] font-semibold uppercase tracking-wide', zoneColor(zone, !!router))}>
+        {zone}
+      </span>
+    );
+  }
   if (zoned && iface) return <span title="This interface isn't in any zone" className="italic">{iface}</span>;
   return <>{iface || '—'}</>;
+}
+
+function ActionIcon({ action }: { action: FirewallEvent['action'] }) {
+  const cls = 'w-3.5 h-3.5';
+  switch (action) {
+    case 'drop': return <Ban className={cls} aria-hidden />;
+    case 'reject': return <CircleX className={cls} aria-hidden />;
+    case 'accept': return <CircleCheck className={cls} aria-hidden />;
+    case 'fasttrack': return <Zap className={cls} aria-hidden />;
+    default: return <CircleHelp className={cls} aria-hidden />;
+  }
+}
+
+function ActionBadge({ action }: { action: FirewallEvent['action'] }) {
+  return (
+    <span className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium uppercase', actionClass(action))}>
+      <ActionIcon action={action} />
+      {action}
+    </span>
+  );
 }
 
 function RuleChip({ prefix, deviceId }: { prefix: string; deviceId: number | null }) {
@@ -171,6 +198,7 @@ export default function FirewallEventsPage() {
   const shown = view === 'grouped' ? groups.length : events.length;
   const total = data?.total ?? 0;
   const totalLabel = total.toLocaleString();
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const groupedLines = groups.reduce((a, g) => a + g.count, 0);
   // Zone columns (#415): "From zone / To zone" when every line on the page is
   // from a zone-managed device, "From / To" when some are, else In / Out.
@@ -386,9 +414,7 @@ export default function FirewallEventsPage() {
                       {formatDateTime(g.lastSeen, { year: undefined, second: '2-digit' })}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={clsx('inline-flex px-2 py-0.5 rounded-full text-xs font-medium uppercase', actionClass(g.action))}>
-                        {g.action}
-                      </span>
+                      <ActionBadge action={g.action} />
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <button onClick={() => openLines(g)} title="Show these lines"
@@ -405,8 +431,8 @@ export default function FirewallEventsPage() {
                       {(!g.zoned || !tagOf(g.prefix)) && g.chain}
                       <RuleChip prefix={g.prefix} deviceId={g.deviceId} />
                     </td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap"><ZoneCell zoned={g.zoned} zone={g.fromZone} iface={g.inInterface} /></td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap"><ZoneCell zoned={g.zoned} zone={g.toZone} iface={g.outInterface} /></td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap"><ZoneCell zoned={g.zoned} zone={g.fromZone} iface={g.inInterface} router={g.chain === 'output'} /></td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap"><ZoneCell zoned={g.zoned} zone={g.toZone} iface={g.outInterface} router={g.chain === 'input'} /></td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
                       {formatDateTime(g.firstSeen, { year: undefined, second: '2-digit' })}
                     </td>
@@ -455,14 +481,7 @@ export default function FirewallEventsPage() {
                     </td>
 
                     <td className="px-4 py-2.5">
-                      <span
-                        className={clsx(
-                          'inline-flex px-2 py-0.5 rounded-full text-xs font-medium uppercase',
-                          actionClass(event.action)
-                        )}
-                      >
-                        {event.action}
-                      </span>
+                      <ActionBadge action={event.action} />
                     </td>
 
                     <td className="px-4 py-2.5 text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">
@@ -488,11 +507,11 @@ export default function FirewallEventsPage() {
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                      <ZoneCell zoned={event.zoned} zone={event.fromZone} iface={event.inInterface} />
+                      <ZoneCell zoned={event.zoned} zone={event.fromZone} iface={event.inInterface} router={event.chain === 'output'} />
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                      <ZoneCell zoned={event.zoned} zone={event.toZone} iface={event.outInterface} />
+                      <ZoneCell zoned={event.zoned} zone={event.toZone} iface={event.outInterface} router={event.chain === 'input'} />
                     </td>
                   </tr>
                 ))}
@@ -503,29 +522,31 @@ export default function FirewallEventsPage() {
       )}
 
       {total > PAGE_SIZE && (
-        <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
           <span className="text-gray-500 dark:text-slate-400">
             Showing {(page * PAGE_SIZE + 1).toLocaleString()}–
-            {(page * PAGE_SIZE + shown).toLocaleString()} of {totalLabel}
+            {(page * PAGE_SIZE + shown).toLocaleString()} of {totalLabel} {view === 'grouped' ? 'groups' : 'lines'}
           </span>
 
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="btn-secondary py-1 text-xs"
-            >
-              ← Previous
+          <nav className="flex items-center gap-1" aria-label="Pages">
+            <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+              className="btn-secondary px-2 py-1 text-xs" aria-label="Previous page">
+              <ChevronLeft className="w-4 h-4" />
             </button>
-
-            <button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={(page + 1) * PAGE_SIZE >= total}
-              className="btn-secondary py-1 text-xs"
-            >
-              Next →
+            {pageItems(page, pageCount).map((item, i) => item === 'gap' ? (
+              <span key={`gap${i}`} className="px-1.5 text-gray-400 dark:text-slate-500">…</span>
+            ) : (
+              <button key={item} onClick={() => setPage(item)} aria-current={item === page ? 'page' : undefined}
+                className={clsx('min-w-8 px-2 py-1 rounded-lg text-xs font-medium',
+                  item === page ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700/50')}>
+                {(item + 1).toLocaleString()}
+              </button>
+            ))}
+            <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1}
+              className="btn-secondary px-2 py-1 text-xs" aria-label="Next page">
+              <ChevronRight className="w-4 h-4" />
             </button>
-          </div>
+          </nav>
         </div>
       )}
       {monitoringOpen && (

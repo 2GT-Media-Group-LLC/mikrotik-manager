@@ -715,6 +715,8 @@ function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, 
                 <input className="input font-mono" value={form.dst_address} onChange={e => set('dst_address', e.target.value)} placeholder={v6 ? '2001:db8::10' : '203.0.113.10'} /></div>
               <div><label className="label">Internal Address</label>
                 <input className="input font-mono" value={form.to_addresses} onChange={e => set('to_addresses', e.target.value)} placeholder={v6 ? 'fd00::10' : '192.168.1.10'} /></div>
+              <div><label className="label">WAN In-Interface (optional)</label>
+                <input className="input font-mono" value={form.in_interface} onChange={e => set('in_interface', e.target.value)} placeholder="ether1" /></div>
             </div>
           )}
           {form.pattern === 'custom' && (
@@ -732,6 +734,13 @@ function NatModal({ title, form, setForm, onSave, onReview, onClose, isPending, 
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">To Addresses</label><input className="input font-mono" value={form.to_addresses} onChange={e => set('to_addresses', e.target.value)} /></div>
                 <div><label className="label">To Ports</label><input className="input font-mono" value={form.to_ports} onChange={e => set('to_ports', e.target.value)} /></div>
+              </div>
+              {/* With several uplinks, a netmap or src-nat must name its WAN, as masquerade does (#440). */}
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label">In. Interface</label>
+                  <input className="input font-mono" value={form.in_interface} onChange={e => set('in_interface', e.target.value)} placeholder={form.chain === 'dstnat' ? 'ether1' : ''} /></div>
+                <div><label className="label">Out. Interface</label>
+                  <input className="input font-mono" value={form.out_interface} onChange={e => set('out_interface', e.target.value)} placeholder={form.chain === 'srcnat' ? 'ether1' : ''} /></div>
               </div>
             </div>
           )}

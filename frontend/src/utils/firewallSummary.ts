@@ -61,11 +61,17 @@ export function natSummary(r: Ruleish): string {
     const to = [r['to-addresses'], r['to-ports'] && `:${r['to-ports']}`].filter(Boolean).join('');
     return `Forward ${proto} ${endpoint(r['dst-address'], undefined, r['in-interface'])}${ext} → ${to || 'target'}`;
   }
+  // The WAN a source translation leaves by, or a destination one arrives on (#440).
+  const out = r['out-interface'] ? ` out ${r['out-interface']}` : '';
+  const via = r['in-interface'] ? ` in ${r['in-interface']}` : '';
   if (action === 'src-nat') {
-    return `Source-NAT ${endpoint(r['src-address'])} → ${r['to-addresses'] || 'target'}`;
+    return `Source-NAT ${endpoint(r['src-address'])} → ${r['to-addresses'] || 'target'}${out}`;
   }
   if (action === 'netmap') {
-    return `1:1 NAT ${endpoint(r['dst-address'])} ↔ ${r['to-addresses'] || 'target'}`;
+    if ((r.chain ?? '').toLowerCase() === 'srcnat') {
+      return `Netmap ${endpoint(r['src-address'])} → ${r['to-addresses'] || 'target'}${out}`;
+    }
+    return `1:1 NAT ${endpoint(r['dst-address'])} ↔ ${r['to-addresses'] || 'target'}${via}`;
   }
   if (action === 'redirect') {
     return `Redirect ${r.protocol?.toUpperCase() || ''} ${r['dst-port'] || ''} → router:${r['to-ports'] || ''}`;
