@@ -29,6 +29,17 @@ describe('classifyWifiRole', () => {
     expect(classifyWifiRole(on, off, false)).toBe('controller');
   });
 
+  // #438: "controller only" on an access point. Its radios keep their own
+  // settings, and a wifi controller's interface list (every CAP's) can't tell,
+  // so the radios it marks local say.
+  it('keeps the radios of a controller that runs its own locally', () => {
+    expect(classifyWifiRole(on, off, true, true)).toBe('controller_cap');
+    expect(classifyWifiRole(on, off, true, false)).toBe('controller');
+    // Unknown: as before.
+    expect(classifyWifiRole(on, off, true, undefined)).toBe('controller');
+    expect(classifyWifiRole(off, off, true, false)).toBe('standalone');
+  });
+
   it('accepts "true" as well as "yes"', () => {
     expect(classifyWifiRole([{ enabled: 'true' }], off, true)).toBe('controller');
   });

@@ -3066,10 +3066,22 @@ export class DeviceCollector {
     this.capsmanFlavor = newController && legacyController ? 'both'
       : newController ? 'wifi' : legacyController ? 'legacy' : null;
     this.legacyCapIfaces = legacyCapInterfaces(legacyCap);
+    // A controller's own radios (#438). The wifi interface list includes every
+    // CAP's, so the radios marked local say; the legacy wireless list is only
+    // the device's own. Unknown (an older build without the radio menu) keeps
+    // the controller as it was classified before.
+    let ownRadios: boolean | undefined;
+    if (newController && pkg === 'wifi') {
+      const radios = await this.client.execute('/interface/wifi/radio/print').catch(() => null);
+      if (radios) ownRadios = radios.some((r) => r['local'] === 'true' || r['local'] === 'yes');
+    } else if (legacyController && pkg === 'wireless') {
+      ownRadios = (ifaces ?? []).length > 0;
+    }
     const role = classifyWifiRole(
       newController || legacyController ? [{ enabled: 'yes' }] : capsman,
       this.legacyCapIfaces.length > 0 ? [{ enabled: 'yes' }] : cap,
       (ifaces ?? []).length > 0,
+      ownRadios,
     );
     return role;
   }

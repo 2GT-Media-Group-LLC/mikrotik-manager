@@ -19,7 +19,7 @@ for legacy CAPsMAN from `/caps-man/manager` and `/interface/wireless/cap`
 | `standalone` | Has radios, manages them itself |
 | `cap` | Radios are provisioned by a controller |
 | `controller` | Runs CAPsMAN; has no radios of its own |
-| `controller_cap` | Runs CAPsMAN **and** its own radios under it — a supported MikroTik arrangement |
+| `controller_cap` | Runs CAPsMAN **and** has radios of its own: under itself (a supported MikroTik arrangement), or set locally on an access point that is also a controller |
 | `none` | No wireless hardware |
 
 The role is detected, not inferred from `device_type`. That matters because a dedicated
