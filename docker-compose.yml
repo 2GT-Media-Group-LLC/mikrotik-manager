@@ -159,6 +159,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        https_proxy: ${HTTPS_PROXY:-}
     profiles: ["workers"]
     environment:
       <<: *backend-environment
