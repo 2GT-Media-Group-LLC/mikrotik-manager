@@ -20,6 +20,8 @@
  */
 
 export type CapsmanFlavor = 'wifi' | 'legacy';
+/** Which radios the setup takes: all of them, or one band's (Ron, #438). */
+export type CapsmanBand = 'both' | '2ghz' | '5ghz';
 type Row = Record<string, string>;
 
 export const MTM_CAPSMAN = 'mtm-capsman';
@@ -62,6 +64,7 @@ export interface CapsmanSetupInput {
   country: string | null;
   /** The controller's own radios join it too ("controller and AP"). */
   localRadios: boolean;
+  band: CapsmanBand;
 }
 
 export interface CapsmanStep {
@@ -72,6 +75,29 @@ export interface CapsmanStep {
 }
 
 const yes = (v: string | undefined) => v === 'true' || v === 'yes';
+
+/**
+ * The provisioning rule's radio match for a band: wifi matches the bands a
+ * radio supports, legacy its hardware modes. A radio matches when it supports
+ * any of them, so a 2.4 GHz radio never matches the 5 GHz list. Empty matches
+ * every radio. No 2ghz-b: RouterOS 7.20+ has none, and takes it as short for
+ * 2ghz-be (Wi-Fi 7).
+ */
+export const BAND_MATCH: Record<CapsmanFlavor, { key: string; values: Record<Exclude<CapsmanBand, 'both'>, string> }> = {
+  wifi: { key: 'supported-bands', values: { '2ghz': '2ghz-ax,2ghz-g,2ghz-n', '5ghz': '5ghz-a,5ghz-ac,5ghz-ax,5ghz-n' } },
+  legacy: { key: 'hw-supported-modes', values: { '2ghz': 'b,g,gn', '5ghz': 'a,an,ac' } },
+};
+
+const bandMatch = (flavor: CapsmanFlavor, band: CapsmanBand) => (band === 'both' ? '' : BAND_MATCH[flavor].values[band]);
+
+/** The band a rule takes, from its match: 'both' when it matches every radio. */
+export function ruleBand(flavor: CapsmanFlavor, rule: Row | null): CapsmanBand {
+  const v = (rule?.[BAND_MATCH[flavor].key] ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (!v.length) return 'both';
+  const two = v.every((x) => x.startsWith('2ghz') || ['b', 'g', 'gn', 'g-turbo'].includes(x));
+  const five = v.every((x) => x.startsWith('5ghz') || ['a', 'an', 'ac', 'a-turbo'].includes(x));
+  return two ? '2ghz' : five ? '5ghz' : 'both';
+}
 
 /** The configuration and provisioning rule a previous run left. */
 export function ownItems(live: Pick<CapsmanLive, 'configurations' | 'provisioning'>): { configuration: Row | null; rule: Row | null } {
@@ -94,6 +120,7 @@ export function parseCapsmanSetup(body: unknown, live: CapsmanLive): { input: Ca
   const bridge = typeof b.bridge === 'string' ? b.bridge : '';
   const country = typeof b.country === 'string' && b.country.trim() ? b.country.trim().toLowerCase() : null;
   const localRadios = b.localRadios === true;
+  const band: CapsmanBand = b.band === '2ghz' || b.band === '5ghz' ? b.band : 'both';
   const existing = ownItems(live).configuration;
 
   const ssidError = capsmanSsidError(ssid);
@@ -106,7 +133,7 @@ export function parseCapsmanSetup(body: unknown, live: CapsmanLive): { input: Ca
   if (localRadios && live.radios.length === 0) {
     return { error: `This device has no ${live.flavor === 'wifi' ? 'wifi' : 'legacy wireless'} radios of its own. Choose controller only.` };
   }
-  return { input: { flavor: live.flavor, ssid, passphrase, bridge, country, localRadios } };
+  return { input: { flavor: live.flavor, ssid, passphrase, bridge, country, localRadios, band } };
 }
 
 export function capsmanSsidError(ssid: string): string | null {
@@ -162,23 +189,58 @@ export function planCapsman(input: CapsmanSetupInput, live: CapsmanLive): { step
     steps.push({ command: `${p.configuration}/add`, params: { name: MTM_CAPSMAN, ...settings }, description: `Add the ${MTM_CAPSMAN} configuration (SSID ${input.ssid})` });
   }
 
+  // One band only: the rule goes first, so radios of that band take this
+  // SSID and the other band's radios go on matching the rules already there.
+  const match = { key: BAND_MATCH[input.flavor].key, value: bandMatch(input.flavor, input.band) };
+  const bandName = input.band === '2ghz' ? '2.4 GHz' : '5 GHz';
+  const others = live.provisioning.filter((r) => r !== rule && !yes(r.disabled));
+  const firstOther = live.provisioning.find((r) => r !== rule);
+  const goFirst = input.band !== 'both' && !!firstOther;
   if (!rule) {
     steps.push({
       command: `${p.provisioning}/add`,
-      params: { action: 'create-dynamic-enabled', 'master-configuration': MTM_CAPSMAN, comment: MTM_CAPSMAN_COMMENT },
-      description: 'Provision every radio that connects with it',
+      params: {
+        action: 'create-dynamic-enabled', 'master-configuration': MTM_CAPSMAN, comment: MTM_CAPSMAN_COMMENT,
+        ...(match.value ? { [match.key]: match.value } : {}),
+        ...(goFirst ? { 'place-before': firstOther['.id'] } : {}),
+      },
+      description: input.band === 'both' ? 'Provision every radio that connects with it' : `Provision ${bandName} radios with it`,
     });
-  } else if (rule['master-configuration'] !== MTM_CAPSMAN || rule.action !== 'create-dynamic-enabled' || yes(rule.disabled)) {
-    steps.push({
-      command: `${p.provisioning}/set`,
-      params: { '.id': rule['.id'], action: 'create-dynamic-enabled', 'master-configuration': MTM_CAPSMAN, disabled: 'no' },
-      description: 'Point the provisioning rule at it',
-    });
+  } else {
+    const bandChanged = ruleBand(input.flavor, rule) !== input.band;
+    if (rule['master-configuration'] !== MTM_CAPSMAN || rule.action !== 'create-dynamic-enabled' || yes(rule.disabled)
+      || (bandChanged && match.value)) {
+      steps.push({
+        command: `${p.provisioning}/set`,
+        params: {
+          '.id': rule['.id'], action: 'create-dynamic-enabled', 'master-configuration': MTM_CAPSMAN, disabled: 'no',
+          ...(match.value ? { [match.key]: match.value } : {}),
+        },
+        description: input.band === 'both' ? 'Point the provisioning rule at it' : `Point the provisioning rule at it, for ${bandName} radios`,
+      });
+    }
+    // Back to every radio: the match is taken off rather than set empty.
+    if (bandChanged && !match.value) {
+      steps.push({
+        command: `${p.provisioning}/unset`,
+        params: { numbers: rule['.id'], 'value-name': match.key },
+        description: 'Provision every radio with it, not one band',
+      });
+    }
+    if (goFirst && live.provisioning.indexOf(rule) > live.provisioning.indexOf(firstOther)) {
+      steps.push({
+        command: `${p.provisioning}/move`,
+        params: { numbers: rule['.id'], destination: firstOther['.id'] },
+        description: 'Move the provisioning rule first',
+      });
+    }
   }
-  const others = live.provisioning.filter((r) => r !== rule && !yes(r.disabled));
-  if (others.length) {
+  if (others.length && input.band === 'both') {
     warnings.push(`The device already has ${others.length === 1 ? 'a provisioning rule' : `${others.length} provisioning rules`} of its own. `
       + 'RouterOS uses the first rule that matches a radio, so radios those match keep their configuration.');
+  } else if (others.length) {
+    warnings.push(`The rule goes before the device's own provisioning ${others.length === 1 ? 'rule' : 'rules'}: `
+      + `${bandName} radios take ${input.ssid}, and the other band's radios keep matching ${others.length === 1 ? 'it' : 'them'}.`);
   }
 
   if (!yes(live.manager?.enabled)) {
@@ -199,7 +261,9 @@ export function planCapsman(input: CapsmanSetupInput, live: CapsmanLive): { step
       if (yes(cap?.enabled) && !capIsLocal(cap)) {
         warnings.push('This device is a CAP of another controller now. Its radios will be managed by itself instead.');
       }
-      warnings.push(`Its own radios (${live.radios.join(', ')}) switch to ${input.ssid}. Clients on their current networks reconnect to it.`);
+      warnings.push(input.band === 'both'
+        ? `Its own radios (${live.radios.join(', ')}) switch to ${input.ssid}. Clients on their current networks reconnect to it.`
+        : `Its own ${bandName} radios switch to ${input.ssid}. Clients on their current networks reconnect to it.`);
     }
   } else if (capIsLocal(cap)) {
     // Controller only, after "controller and AP": its radios go back to their own settings.

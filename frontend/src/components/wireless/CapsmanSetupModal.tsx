@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, X } from 'lucide-react';
 import clsx from 'clsx';
-import { devicesApi, wirelessApi, type CapsmanFlavor, type CapsmanSetupInfo, type CapsmanSetupRequest } from '../../services/api';
+import { devicesApi, wirelessApi, type CapsmanBand, type CapsmanFlavor, type CapsmanSetupInfo, type CapsmanSetupRequest } from '../../services/api';
 import DevicePicker from '../common/DevicePicker';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import { useGuardedWrite, GuardedWriteUi } from '../ChangeGuardDialog';
@@ -13,6 +13,7 @@ const errMsg = (e: unknown) => (e as { response?: { data?: { error?: string } } 
 const flavorLabel = (f: CapsmanFlavor) => (f === 'wifi'
   ? 'wifi (RouterOS 7 wifi package: ax and ac wave2 APs)'
   : 'legacy wireless (/caps-man: older APs on the wireless package)');
+const bandLabel = (b: CapsmanBand) => (b === '2ghz' ? '2.4 GHz' : '5 GHz');
 const stateOf = (d: CapsmanSetupInfo | undefined, f: CapsmanFlavor | null) => (f === 'wifi' ? d?.state.wifi : f === 'legacy' ? d?.state.legacy : undefined);
 
 /**
@@ -38,6 +39,7 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
   const [bridge, setBridge] = useState('');
   const [country, setCountry] = useState('');
   const [localRadios, setLocalRadios] = useState(true);
+  const [band, setBand] = useState<CapsmanBand>('both');
   const [touched, setTouched] = useState(false);
   const [message, setMessage] = useState('');
   const [failure, setFailure] = useState('');
@@ -53,6 +55,7 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
     setPassphrase('');
     setBridge(s?.bridge ?? (d.bridges.includes('bridge') ? 'bridge' : d.bridges[0] ?? ''));
     setCountry(s?.country ?? '');
+    setBand(s?.band ?? 'both');
     setLocalRadios(s ? (s.configured ? s.local_radios : s.radios.length > 0) : false);
     setTouched(false);
   }
@@ -67,7 +70,7 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
   };
   const valid = !!flavor && Object.values(errors).every((e) => !e);
 
-  const body = (): CapsmanSetupRequest => ({ flavor: flavor!, ssid, passphrase, bridge, country: country.trim(), localRadios: localRadios && radios.length > 0 });
+  const body = (): CapsmanSetupRequest => ({ flavor: flavor!, ssid, passphrase, bridge, country: country.trim(), localRadios: localRadios && radios.length > 0, band });
   const applyMut = useMutation({
     mutationFn: (confirm: boolean) => wirelessApi.applyCapsmanSetup(deviceId!, body(), confirm),
     onSuccess: (res) => {
@@ -88,12 +91,17 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
   // What the device will do differently, said before it's applied.
   const notes: string[] = [];
   if (st && localRadios && radios.length && !st.local_radios) {
-    notes.push(`Its own radios (${radios.join(', ')}) switch to ${ssid || 'this SSID'}. Clients on their current networks reconnect to it.`);
+    notes.push(band === 'both'
+      ? `Its own radios (${radios.join(', ')}) switch to ${ssid || 'this SSID'}. Clients on their current networks reconnect to it.`
+      : `Its own ${bandLabel(band)} radios switch to ${ssid || 'this SSID'}. Clients on their current networks reconnect to it.`);
   }
   if (st && !localRadios && st.local_radios) notes.push('Its own radios stop taking the controller’s SSID and go back to their own settings.');
-  if (st?.other_rules) {
+  if (st?.other_rules && band === 'both') {
     notes.push(`The device already has ${st.other_rules === 1 ? 'a provisioning rule' : `${st.other_rules} provisioning rules`} of its own. `
       + 'RouterOS uses the first rule that matches a radio, so radios those match keep their configuration.');
+  } else if (st?.other_rules) {
+    notes.push(`This rule goes before the device’s own ${st.other_rules === 1 ? 'rule' : 'rules'}: ${bandLabel(band)} radios take ${ssid || 'this SSID'}, `
+      + `and the other band’s radios keep matching ${st.other_rules === 1 ? 'it' : 'them'}.`);
   }
 
   const field = (error: string | null) => touched && error
@@ -108,7 +116,7 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
         </div>
         <div className="p-5 space-y-4">
           <p className="text-xs text-gray-500 dark:text-slate-400">
-            Makes a device a CAPsMAN controller with one SSID on every band. Access points that join it get the SSID and password
+            Makes a device a CAPsMAN controller with one SSID, on both bands or one. Access points that join it get the SSID and password
             from the controller. Running this again on the same device changes the same setup.
           </p>
 
@@ -137,6 +145,7 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
                   setFlavor(f);
                   const s = stateOf(info.data, f);
                   setLocalRadios(s ? (s.configured ? s.local_radios : s.radios.length > 0) : false);
+                  setBand(s?.band ?? 'both');
                 }}>
                   {info.data.flavors.map((f) => <option key={f} value={f}>{flavorLabel(f)}</option>)}
                 </select>
@@ -169,6 +178,17 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
                 <label className="label">Country (optional)</label>
                 <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. united states" />
                 {field(errors.country)}
+              </div>
+              <div>
+                <label className="label">Radios</label>
+                <select className="input" value={band} onChange={(e) => setBand(e.target.value as CapsmanBand)}>
+                  <option value="both">2.4 GHz and 5 GHz</option>
+                  <option value="2ghz">2.4 GHz only</option>
+                  <option value="5ghz">5 GHz only</option>
+                </select>
+                <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">
+                  {band === 'both' ? 'Every radio that joins gets this SSID.' : `Only ${bandLabel(band)} radios get this SSID; the other band’s are left as they are.`}
+                </p>
               </div>
             </div>
 

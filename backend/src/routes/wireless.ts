@@ -19,7 +19,7 @@ import { CLIENT_SIGHTINGS } from '../utils/clientPorts';
 import antennaAlignmentRoutes from './antennaAlignment';
 import {
   CAPSMAN_PATHS, capIsLocal, defaultFlavor, ownItems, parseCapsmanSetup, planCapsman,
-  type CapsmanFlavor, type CapsmanLive,
+  ruleBand, type CapsmanFlavor, type CapsmanLive,
 } from '../utils/capsmanSetup';
 
 const router = Router();
@@ -358,6 +358,7 @@ router.get('/:id/capsman/setup', async (req, res) => {
         country: configuration?.country ?? null,
         enabled: l.manager?.enabled === 'true' || l.manager?.enabled === 'yes',
         local_radios: capIsLocal(l.cap),
+        band: rule ? ruleBand(f, rule) : 'both',
         radios: l.radios,
         other_rules: l.provisioning.filter((r) => r !== rule && r.disabled !== 'true').length,
       }];
@@ -375,7 +376,7 @@ router.get('/:id/capsman/setup', async (req, res) => {
   }
 });
 
-// POST /api/wireless/:id/capsman/setup { flavor, ssid, passphrase, bridge, country?, localRadios }
+// POST /api/wireless/:id/capsman/setup { flavor, ssid, passphrase, bridge, country?, localRadios, band? }
 // — make the device a CAPsMAN controller with one SSID, optionally serving its
 // own radios too. Under Change Guard, and previewable.
 router.post('/:id/capsman/setup', requireWrite, async (req, res) => {

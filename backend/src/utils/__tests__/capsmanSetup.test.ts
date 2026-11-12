@@ -1,5 +1,5 @@
 import {
-  parseCapsmanSetup, planCapsman, defaultFlavor, capIsLocal, MTM_CAPSMAN, MTM_CAPSMAN_COMMENT, type CapsmanLive,
+  parseCapsmanSetup, planCapsman, defaultFlavor, capIsLocal, ruleBand, MTM_CAPSMAN, MTM_CAPSMAN_COMMENT, type CapsmanLive,
 } from '../capsmanSetup';
 
 const live = (over: Partial<CapsmanLive> = {}): CapsmanLive => ({
@@ -107,5 +107,53 @@ describe('CAPsMAN quick set (#438)', () => {
     expect(defaultFlavor([], 'wifi')).toBeNull();
     expect(capIsLocal({ enabled: 'true', 'caps-man-addresses': '10.0.0.1,127.0.0.1' })).toBe(true);
     expect(capIsLocal({ enabled: 'false', 'caps-man-addresses': '127.0.0.1' })).toBe(false);
+  });
+});
+
+describe('one band only (Ron, #438)', () => {
+  const theirs = { '.id': '*1', action: 'create-dynamic-enabled', 'master-configuration': 'home', disabled: 'false' };
+
+  it('provisions only 5 GHz radios, ahead of the rules already there', () => {
+    const l = live({ provisioning: [theirs] });
+    const { steps, warnings } = planCapsman(input(l, { ...body, band: '5ghz' }), l);
+    expect(steps[1]).toMatchObject({
+      command: '/interface/wifi/provisioning/add',
+      params: { 'supported-bands': '5ghz-a,5ghz-ac,5ghz-ax,5ghz-n', 'place-before': '*1' },
+    });
+    expect(warnings.join(' ')).toMatch(/5 GHz radios take Office, and the other band's radios keep matching it/);
+    expect(warnings.join(' ')).toMatch(/Its own 5 GHz radios switch to Office/);
+  });
+
+  it('matches legacy radios by their hardware modes', () => {
+    const l = live({ flavor: 'legacy', radios: ['wlan1'] });
+    const { steps } = planCapsman(input(l, { ...body, band: '2ghz' }), l);
+    expect(steps[1].params).toMatchObject({ 'hw-supported-modes': 'b,g,gn' });
+    expect(steps[1].params).not.toHaveProperty('place-before');   // nothing to go before
+  });
+
+  it('changes an earlier rule\'s band, moves it first, and takes the band off again', () => {
+    const ours = { '.id': '*2', action: 'create-dynamic-enabled', 'master-configuration': MTM_CAPSMAN, comment: MTM_CAPSMAN_COMMENT, disabled: 'false' };
+    const configured = { configurations: [{ '.id': '*9', name: MTM_CAPSMAN, ssid: 'Office', 'security.authentication-types': 'wpa2-psk,wpa3-psk', 'datapath.bridge': 'bridge' }],
+      manager: { enabled: 'true' }, cap: { enabled: 'true', 'caps-man-addresses': '127.0.0.1' } };
+    let l = live({ ...configured, provisioning: [theirs, ours] });
+    let steps = planCapsman(input(l, { ...body, passphrase: '', band: '5ghz' }), l).steps;
+    expect(steps.map((s) => s.command)).toEqual(['/interface/wifi/provisioning/set', '/interface/wifi/provisioning/move']);
+    expect(steps[1].params).toEqual({ numbers: '*2', destination: '*1' });
+
+    // Already 5 GHz and first (RouterOS may list the bands its own way): nothing to do.
+    l = live({ ...configured, provisioning: [{ ...ours, 'supported-bands': '5ghz-ax,5ghz-ac,5ghz-n,5ghz-a' }, theirs] });
+    expect(planCapsman(input(l, { ...body, passphrase: '', band: '5ghz' }), l).steps).toEqual([]);
+
+    // Both bands again: the match is unset, not set empty.
+    steps = planCapsman(input(l, { ...body, passphrase: '', band: 'both' }), l).steps;
+    expect(steps).toEqual([expect.objectContaining({ command: '/interface/wifi/provisioning/unset', params: { numbers: '*2', 'value-name': 'supported-bands' } })]);
+  });
+
+  it('reads the band back from a rule', () => {
+    expect(ruleBand('wifi', { 'supported-bands': '2ghz-ax,2ghz-be,2ghz-g,2ghz-n' })).toBe('2ghz');
+    expect(ruleBand('wifi', { 'supported-bands': '5ghz-ax' })).toBe('5ghz');
+    expect(ruleBand('wifi', {})).toBe('both');
+    expect(ruleBand('legacy', { 'hw-supported-modes': 'a,an,ac' })).toBe('5ghz');
+    expect(ruleBand('legacy', { 'hw-supported-modes': 'gn,ac' })).toBe('both');
   });
 });

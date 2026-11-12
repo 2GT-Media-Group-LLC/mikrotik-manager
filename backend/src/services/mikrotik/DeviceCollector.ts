@@ -5070,7 +5070,7 @@ export class DeviceCollector {
 
   /** One CAPsMAN setup write, from utils/capsmanSetup's plan. */
   async writeCapsman(command: string, params: Record<string, string>): Promise<void> {
-    const path = command.replace(/\/(add|set)$/, '');
+    const path = command.replace(/\/(add|set|unset|move)$/, '');
     if (path === command || !CAPSMAN_MENU.test(path)) throw new Error(`Not a CAPsMAN write: ${command}`);
     await this.client.execute(command, params);
   }

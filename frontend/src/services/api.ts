@@ -2360,7 +2360,11 @@ export interface CapsmanFlavorState {
   local_radios: boolean;
   radios: string[];
   other_rules: number;
+  /** The radios its provisioning rule takes (#438). */
+  band: CapsmanBand;
 }
+/** All radios, or one band's: 2.4 GHz or 5 GHz (#438). */
+export type CapsmanBand = 'both' | '2ghz' | '5ghz';
 export interface CapsmanSetupInfo {
   flavors: CapsmanFlavor[];
   default_flavor: CapsmanFlavor | null;
@@ -2374,6 +2378,7 @@ export interface CapsmanSetupRequest {
   bridge: string;
   country: string;
   localRadios: boolean;
+  band: CapsmanBand;
 }
 
 export const wirelessApi = {

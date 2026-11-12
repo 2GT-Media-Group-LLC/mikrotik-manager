@@ -105,13 +105,14 @@ setup.
 
 ## Set up CAPsMAN
 
-**Set up CAPsMAN** on the Wireless page makes a device a controller with one SSID on every band,
-from Ron's request in #438. Choose the device, then enter:
+**Set up CAPsMAN** on the Wireless page makes a device a controller with one SSID, on both bands
+or one, from Ron's request in #438. Choose the device, then enter:
 
 - the **SSID** and **password** (WPA2, plus WPA3 on wifi);
 - the **bridge** Wi-Fi clients join, on the controller and on every AP, so each AP needs a
   bridge with this name;
 - the **country**, optional, as RouterOS names it (`united states`);
+- the **radios**: **2.4 GHz and 5 GHz**, **2.4 GHz only** or **5 GHz only**;
 - the **role**: **Controller and AP**, where its own radios broadcast the SSID too, or
   **Controller only**.
 
@@ -123,7 +124,7 @@ What it does on the device:
 | Step | wifi | legacy |
 |---|---|---|
 | A configuration named `mtm-capsman` with the SSID, password and bridge | `/interface wifi configuration` | `/caps-man configuration`, with local forwarding |
-| A provisioning rule, commented `mtm capsman`, that gives it to every radio | `/interface wifi provisioning` | `/caps-man provisioning` |
+| A provisioning rule, commented `mtm capsman`, that gives it to every radio, or one band's | `/interface wifi provisioning`, matching `supported-bands` | `/caps-man provisioning`, matching `hw-supported-modes` |
 | CAPsMAN on | `/interface wifi capsman` | `/caps-man manager` |
 | Controller and AP only: its own CAP, pointed at `127.0.0.1` | `/interface wifi cap` | `/interface wireless cap`, with its wlans |
 
@@ -134,8 +135,10 @@ changes** shows the writes first.
 
 - Other APs join by turning on their CAP, with discovery on the same network. The wizard doesn't
   change them.
-- RouterOS uses the first provisioning rule that matches a radio. Rules the device already has
-  come before the new one, and the form says so.
+- RouterOS uses the first provisioning rule that matches a radio. With both bands, rules the
+  device already has come before the new one, and the form says so. With one band, the new rule
+  goes first, so that band's radios take the SSID and the other band's go on matching the rules
+  already there. That way you can try a 5 GHz network without touching the 2.4 GHz one.
 
 ## Current limits
 
