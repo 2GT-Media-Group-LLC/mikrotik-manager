@@ -1,6 +1,6 @@
 import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 import { portVlanMode } from '../../utils/portVlanMode';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRememberedRange } from '../../hooks/useRememberedRange';
 import ReviewChangesButton from '../common/ReviewChangesButton';
 import { Link } from 'react-router-dom';
@@ -831,6 +831,8 @@ function PortClientsCard({ deviceId, portName }: { deviceId: number; portName: s
   );
 }
 
+/** The faceplate card's and rack unit's side padding (26px each side) and borders. */
+const FACEPLATE_CHROME_PX = 2 * 26 + 2 * 26 + 4;
 export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, autoOpenBridge, onBridgeOpened }: Props) {
   const portStyle = useThemeStore((s) => s.portStyle);
   const { formatTime } = useDateTimeFormat();
@@ -1387,18 +1389,23 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
   };
 
   // Measured rather than assumed, so "fit to width" actually fits.
-  const rackRef = useRef<HTMLDivElement | null>(null);
+  // A callback ref: the faceplate isn't rendered while the ports load, so an
+  // effect that ran once on mount found nothing to observe and "fit to width"
+  // stayed at the 1200px default on every screen.
+  const [rackEl, rackRef] = useState<HTMLDivElement | null>(null);
   const [rackWidth, setRackWidth] = useState(1200);
   useEffect(() => {
-    const el = rackRef.current;
+    const el = rackEl;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(([entry]) => {
+      // The room the rack unit's ports get: the page width less the card's
+      // and the rack's padding (26px a side each) and borders.
       const w = entry?.contentRect?.width;
-      if (w) setRackWidth(w);
+      if (w) setRackWidth(Math.max(0, w - FACEPLATE_CHROME_PX));
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [rackEl]);
 
   const columns = resolveColumns(density, rackWidth, portStyle === 'ports' ? PORTS_TILE_PX : TILE_PX);
   // Odd ports on the top row, or even (2 4 6 8 over 1 3 5 7) for models wired
@@ -1537,12 +1544,18 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
         </div>
       )}
 
-      {/* Faceplate card */}
+      {/* Faceplate card. The card spans the page like the port table; the
+          faceplate inside is sized to the device's ports and centred, like the
+          front of the real unit. The full-width wrapper is what "fit to width"
+          measures, since the faceplate itself shrinks to its contents. */}
+      <div ref={rackRef}>
       <div className="card" style={{ padding: '22px 26px', position: 'relative', overflow: 'hidden' }}>
         {/* Pinstripe overlay */}
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 9px, rgba(255,255,255,0.015) 9px, rgba(255,255,255,0.015) 10px)' }} />
-        <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
+        <div style={{ position: 'relative', width: 'fit-content', minWidth: 'min(460px, 100%)', maxWidth: '100%', margin: '0 auto' }}>
+          {/* Zero width so the header wraps to the ports, not the other way round. */}
+          <div style={{ width: 0, minWidth: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18, flexWrap: 'wrap', gap: '8px 16px' }}>
             <div>
               <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>
                 Switch faceplate · {physicalPorts.length} physical{bridgePorts.length + bondPorts.length > 0 ? ` · ${bridgePorts.length + bondPorts.length} virtual` : ''}
@@ -1551,7 +1564,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
                 click to select · shift for multi · double-click to configure
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '6px 14px', alignItems: 'center', flexWrap: 'wrap' }}>
               {([['up', 'var(--accent)', ports.filter(p => !p.disabled && p.running).length], ['down', 'var(--bad)', ports.filter(p => !p.disabled && !p.running).length], ['disabled', 'var(--ink-4)', ports.filter(p => p.disabled).length], ['selected', 'var(--accent)', selectedPorts.size]] as [string,string,number][]).map(([l, c, n]) => (
                 <span key={l} className="mono text-[11px]" style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink-3)' }}>
                   {portStyle === 'ports' ? (
@@ -1605,14 +1618,23 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
               </label>}
             </div>
           </div>
+          </div>
 
-          {/* Rack unit */}
-          <div ref={rackRef} style={{
+          {/* Rack unit, with the model printed top right as on the real front
+              panel, and the virtual interfaces beside it (below when narrow). */}
+          <div style={{ display: 'flex', alignItems: 'stretch', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{
             background: 'linear-gradient(180deg, var(--faceplate-from), var(--faceplate-to))',
             border: '1px solid var(--faceplate-border)', borderRadius: 8, padding: '22px 26px',
-            display: 'flex', gap: 30, alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 22,
+            display: 'flex', gap: 30, alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 22, justifyContent: 'center',
             boxShadow: 'inset 0 0 0 2px var(--faceplate-inset), inset 0 1px 0 rgba(255,255,255,0.02)',
+            position: 'relative', flex: '1 1 auto', minWidth: 0,
           }}>
+            {deviceModel && (
+              <div className="mono" aria-hidden style={{ position: 'absolute', top: 6, right: 10, fontSize: 9, letterSpacing: '.08em', color: 'var(--ink-4)', opacity: 0.85, whiteSpace: 'nowrap' }}>
+                {deviceModel}
+              </div>
+            )}
             {/* ETH group — staggered banks, odd above even (or the reverse, #277), wrapping by density */}
             {etherPorts.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
@@ -1714,14 +1736,14 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
             </div>
             ))}
           </div>
-
           {/* Virtual interfaces (bridges, bonds) are not on the front panel, so
-              they get their own strip beneath it instead of flowing in beside
-              the physical ports. */}
+              they sit in their own box beside it rather than among the physical
+              ports: only as wide as they need, and drawn lighter, so they don't
+              read as part of the hardware. */}
           {(bridgePorts.length > 0 || bondPorts.length > 0) && (
             <div style={{
-              marginTop: 10, padding: '14px 26px', display: 'flex', gap: 30, alignItems: 'flex-start', flexWrap: 'wrap', rowGap: 18,
-              border: '1px dashed var(--faceplate-border)', borderRadius: 8,
+              padding: '10px 18px', display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap', rowGap: 18,
+              border: '1px dashed var(--line)', borderRadius: 8, width: 'fit-content', maxWidth: '100%',
             }}>
               <div className="mono" style={{ fontSize: 10, color: 'var(--ink-4)', letterSpacing: '.1em', alignSelf: 'center' }}>VIRTUAL</div>
               {/* Bridge group. marginLeft:auto was removed here — it shoved the
@@ -1759,8 +1781,10 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
               )}
             </div>
           )}
+          </div>
         </div>
 
+      </div>
       </div>
 
       {/* Port throughput + info — shown when exactly one port is selected */}
