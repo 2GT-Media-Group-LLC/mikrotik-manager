@@ -3,6 +3,26 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.46
+
+- **Set up CAPsMAN**, from Ron's request in
+  [#438](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438). The Wireless page
+  has a **Set up CAPsMAN** button: pick a device, an SSID, a password and a bridge, and it becomes
+  a CAPsMAN controller (wifi or legacy), either controller only or serving its own radios too.
+  Running it again on the same device changes the same setup. It goes through Change Guard and
+  Review changes. See [Set up CAPsMAN](capsman.md#set-up-capsman).
+- **A controller with radios of its own shows as Controller and AP.** A wifi controller whose own
+  radios are managed by it was shown as Controller only.
+- **Log drops per zone**, from Ron in
+  [#415](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415). Each zone has a
+  **Log drops** checkbox, so a noisy zone such as WAN can stay out of Firewall Logs while the
+  rest still logs. See [Zones](devices.md#zones).
+- **Logged drops are capped at 5 a second**
+  ([#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369)). Logging every
+  dropped packet kept rebooting Ron's hAP ac². The final drops now log at most 5 packets a second
+  and drop the rest unlogged. Zones applied before this keep logging every drop until they're
+  applied again; the Zones card says so and **Apply** updates them.
+
 ## 1.1.0-beta.45
 
 - **Firewall Logs looks more like Ron's mockup** in
