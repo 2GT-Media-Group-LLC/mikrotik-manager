@@ -2145,6 +2145,11 @@
 <td>Host port for HTTPS</td>
 </tr>
 <tr>
+<td><code>HTTPS_PROXY</code></td>
+<td><em>unset</em></td>
+<td>Optional proxy URL passed to <code>npm</code> and <code>apk</code> while building source images</td>
+</tr>
+<tr>
 <td><code>ACME_DOMAIN</code></td>
 <td><em>unset</em></td>
 <td>DNS name for a Let's Encrypt certificate. See <a href="#lets-encrypt-acme">Let's Encrypt</a></td>
@@ -2186,6 +2191,10 @@
 </blockquote>
 <p>For a production deployment the only variable you genuinely must set is <code>CORS_ORIGIN</code>.
 Both secrets generate themselves safely — see below.</p>
+<p>For source builds behind a network proxy, set <code>HTTPS_PROXY</code> in <code>.env</code> (for example,
+<code>HTTPS_PROXY=http://proxy.example.com:3128</code>) and build with <code>docker compose build</code>. It is
+passed as Docker's proxy build argument in both cases accepted by <code>npm</code> and <code>apk</code>; it is not
+set in the running containers. The prebuilt GHCR images do not need this setting.</p>
 <h2 id="internal-service-passwords">Internal service passwords<a class="headerlink" href="#internal-service-passwords" title="Permanent link">&para;</a></h2>
 <p><code>DB_PASSWORD</code>, <code>INFLUXDB_TOKEN</code>, <code>INFLUXDB_ADMIN_PASSWORD</code> and <code>REDIS_PASSWORD</code> protect the
 databases. Their defaults are public, so set your own. Postgres, InfluxDB and Redis sit on a
