@@ -329,6 +329,7 @@ export async function upsertClients(deviceId: number, deviceName: string, rows: 
 
 export class DeviceCollector {
   private client: RouterOSClient;
+  reportedSerial: string | null = null;
 
   constructor(private device: DeviceRow, timeouts: { connectTimeoutMs?: number; readTimeoutMs?: number } = {}) {
     this.client = new RouterOSClient(
@@ -433,6 +434,7 @@ export class DeviceCollector {
     try {
       const rb = await this.client.execute('/system/routerboard/print');
       serial = rb[0]?.['serial-number'];
+      this.reportedSerial = serial?.trim() || null;
     } catch {
       return;
     }

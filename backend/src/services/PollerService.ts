@@ -1,13 +1,14 @@
 import { logSafe } from '../utils/logSafe';
 import { Queue, Worker, Job } from 'bullmq';
 import { hasRadios } from './mikrotik/capsman';
-import { promoteToApi, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
+import { promoteToApi, readSshInfo, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
 import { checkApi, recordApiCheck, resolveUnspecifiedApiPort } from './apiCheck';
+import { resolveUnknownDeviceSerial } from './unknownDeviceSerial';
 import { apiCheckIntervalMs } from '../utils/sshOnly';
 import { cleanOverrides, effectiveValues } from '../utils/pollOverrides';
 import { createRedisConnection, redis } from '../config/redis';
 import { query, queryOne } from '../config/database';
-import { pooledSessionCount } from './mikrotik/sessionPool';
+import { dropSessions, pooledSessionCount } from './mikrotik/sessionPool';
 import { readLoad, type LoadReading } from './processLoad';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
 import { Server as SocketServer } from 'socket.io';
@@ -463,6 +464,16 @@ export class PollerService {
         const configSnapEnabled = eff.configSnapEnabled;
         const configSnapIntervalMin = eff.configSnapMin;
         slowWindows.set(device.id, eff.slowSec);
+        if (device.status === 'unknown') {
+          const type = device.ssh_only ? 'sshcheck' : 'fast';
+          const interval = device.ssh_only ? 60_000 : eff.fastSec * 1000;
+          const key = `poll:${type}:${device.id}`;
+          if (now - (await this.getTimestamp(key)) > interval - POLL_INTERVAL_MS / 2) {
+            await this.scheduleDeviceSync(device.id, type);
+            await this.setTimestamp(key, now, interval);
+          }
+          continue;
+        }
         // Added over SSH only (#174): no API polling. A check every minute reads
         // the basics over SSH and retries the API; config history still works,
         // since it is an SSH export.
@@ -1365,7 +1376,7 @@ export class PollerService {
 
   private async processPollJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
-    if (!device) return;
+    if (!device || device.status === 'disabled') return;
     // Whatever was asked for (a full sync after adding, say), a device without
     // its API yet gets the SSH check (#174).
     if (device.ssh_only) {
@@ -1385,10 +1396,11 @@ export class PollerService {
     collector.pipelineReads = appSettings['poller_pipelined_reads'] !== false;
     // Sessions kept open between polls (#301): fast polls on the fast lane, a
     // full sync on the slow one; a MAC scan keeps its own connection.
-    const pooling = persistentSessions(appSettings) && data.type !== 'macscan';
+    const pooling = persistentSessions(appSettings) && data.type !== 'macscan' && device.status !== 'unknown';
     let ok = false;
     try {
       await collector.connectPooled(data.type === 'full' ? 'slow' : 'fast', pooling);
+      if (device.status === 'unknown' && await this.reconcileUnknownDevice(device, collector.reportedSerial)) return;
       const collectStarted = Date.now();
 
       if (data.type === 'full') {
@@ -1479,7 +1491,9 @@ export class PollerService {
     const prevStatus = device.status;
     const now = Date.now();
     const gate = `poll:apicheck:${device.id}`;
-    if (device.status !== 'unknown' && now >= (await this.getTimestamp(gate))) {
+    const checkedInfo = device.status === 'unknown' ? await readSshInfo(dev) : undefined;
+    if (checkedInfo && await this.reconcileUnknownDevice(device, checkedInfo.serial)) return;
+    if (!checkedInfo && device.status !== 'unknown' && now >= (await this.getTimestamp(gate))) {
       const check = await checkApi(dev);
       if (check.ok) {
         await promoteToApi(dev, check);
@@ -1491,9 +1505,23 @@ export class PollerService {
       const wait = apiCheckIntervalMs(check.kind);
       await this.setTimestamp(gate, now + wait, wait);
     }
-    await refreshOverSsh(dev);
+    if (checkedInfo) await refreshOverSsh(dev, checkedInfo);
+    else await refreshOverSsh(dev);
     this.recordPollSuccess(device, prevStatus);
     void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
+  }
+
+  private async reconcileUnknownDevice(device: DeviceRow, serial: string | null): Promise<boolean> {
+    const result = await resolveUnknownDeviceSerial(device, serial);
+    if (result.action === 'continue') return false;
+    if (result.action === 'flagged') {
+      void this.emitForDevice('device:updated', { deviceId: device.id }, device.id);
+    } else if (result.action === 'merged' || result.action === 'removed') {
+      dropSessions(result.deviceId);
+      void this.emitForDevice('device:updated', { deviceId: result.deviceId }, result.deviceId);
+      if (result.action === 'merged' && !result.disabled) await this.scheduleDeviceSync(result.deviceId, 'full');
+    }
+    return true;
   }
 
   private static aggregateSpectralRows(
@@ -1718,7 +1746,7 @@ export class PollerService {
     if (!device) return;
 
     // The fast poll resolves an unspecified API port before other lanes use it.
-    if (device.api_port === 0) return;
+    if (device.api_port === 0 || device.status === 'unknown' || device.status === 'disabled') return;
     const modules = resolveModules(await this.getAppSettings());
     const collector = new DeviceCollector(device);
     collector.modules = modules;
@@ -1774,7 +1802,7 @@ export class PollerService {
   private async processLogsJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
-    if (device.api_port === 0) return;
+    if (device.api_port === 0 || device.status === 'unknown' || device.status === 'disabled') return;
     // Skipped before connecting: with logs off there is nothing to fetch, so
     // the session itself is the waste.
     const appSettings = await this.getAppSettings();
@@ -1833,7 +1861,15 @@ export class PollerService {
 
   private async recordDeviceFailure(deviceId: number, message: string): Promise<void> {
     const device = await this.getDevice(deviceId);
-    const prevStatus = device?.status;
+    // Keep an unverified device eligible for first-poll serial reconciliation.
+    // The failed attempt and its error are already recorded in device_poll_stats.
+    if (!device || device.status === 'unknown' || device.status === 'disabled') return;
+    const prevStatus = device.status;
+    const updated = await query(
+      `UPDATE devices SET status = 'offline', updated_at = NOW()
+       WHERE id = $1 AND status NOT IN ('unknown', 'disabled') RETURNING id`, [deviceId],
+    );
+    if (!updated.length) return;
 
     // Count the failure, then decide. An online device stays online until
     // offline_after_failed_polls polls in a row have failed: one failure is

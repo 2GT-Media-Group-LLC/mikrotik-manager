@@ -61,8 +61,8 @@ export async function promoteToApi(device: SshOnlyDevice, check: Extract<ApiChec
  * serial, as the API poll would. Marks it online; throws if SSH fails, which
  * the poller records as offline in the usual way.
  */
-export async function refreshOverSsh(device: SshOnlyDevice): Promise<SshInfo> {
-  const info = await readSshInfo(device);
+export async function refreshOverSsh(device: SshOnlyDevice, checkedInfo?: SshInfo): Promise<SshInfo> {
+  const info = checkedInfo ?? await readSshInfo(device);
   const name = !device.name_locked && info.identity ? info.identity : null;
   await query(
     `UPDATE devices SET

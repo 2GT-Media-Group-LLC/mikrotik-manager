@@ -486,6 +486,8 @@ export default function AddDeviceModal({
               Force add without checking connectivity
               <span className="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">
                 Adds the device with an unknown status. Its first poll will check {sshOnly ? 'SSH' : 'the API'}.
+                If its serial matches a device in this site, the new record is removed when that device is online,
+                or merged into it when it is not online.
               </span>
             </span>
           </label>
