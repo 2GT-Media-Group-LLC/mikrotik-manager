@@ -485,7 +485,7 @@ export default function AddDeviceModal({
             <span className="text-sm text-gray-700 dark:text-slate-200">
               Force add without checking connectivity
               <span className="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                Adds the device with an unknown status. It will be checked during its first poll.
+                Adds the device with an unknown status. Its first poll will check {sshOnly ? 'SSH' : 'the API'}.
               </span>
             </span>
           </label>

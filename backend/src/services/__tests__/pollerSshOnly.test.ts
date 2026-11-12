@@ -46,7 +46,9 @@ describe('SSH-only polling', () => {
       scheduleDeviceSync: jest.fn().mockResolvedValue(undefined),
       emitForDevice: jest.fn().mockResolvedValue(undefined),
     });
-    jest.mocked(refreshOverSsh).mockResolvedValue({} as Awaited<ReturnType<typeof refreshOverSsh>>);
+    jest.mocked(refreshOverSsh).mockResolvedValue({
+      identity: null, rosVersion: null, model: null, serial: null, firmware: null, architecture: null,
+    });
   });
 
   it('uses SSH first for an unverified SSH-only device, without probing the API', async () => {
