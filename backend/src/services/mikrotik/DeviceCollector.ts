@@ -16,6 +16,7 @@ import { lease, dropSessions, type Lease, type SessionLane } from './sessionPool
 import { RouterOSClient, RouterOSTrapError, isNoSuchCommand, type ReadSpec } from './RouterOSClient';
 import { usesApiTls } from '../../utils/apiTls';
 import { query, queryOne } from '../../config/database';
+import { expectReboot } from '../offlineAlerts';
 import { bootChange } from '../../utils/bootTime';
 import { logSafe } from '../../utils/logSafe';
 import { legacyScanScript, parseLegacyScanOutput } from '../../utils/apScan';
@@ -254,6 +255,77 @@ export interface NewLogEvent { id: number; event_time: Date; severity: string; m
 
 /** Longest log message kept; RouterOS's own are a few hundred characters at most. */
 const MAX_LOG_MESSAGE = 4096;
+
+/**
+ * One client sighting: mac, hostname, ip, interface, vlan, tx, rx, signal,
+ * type, tx rate, rx rate.
+ */
+type ClientRow = [string, string | null, string | null, string | null, number | null,
+  number, number, number | null, string, number | null, number | null];
+const CLIENT_BATCH = 500;
+
+const CLIENT_UPSERT_SET = `
+  ON CONFLICT (device_id, mac_address) DO UPDATE SET
+    hostname=COALESCE(EXCLUDED.hostname, clients.hostname),
+    ip_address=COALESCE(NULLIF(EXCLUDED.ip_address,''), clients.ip_address),
+    interface_name=COALESCE(EXCLUDED.interface_name, clients.interface_name),
+    -- The VLAN of this sighting, not one kept from an earlier sighting on
+    -- another port: a client seen by ARP on vrrp20 kept VLAN 98 from the
+    -- bridge (#363). Kept only when the port isn't known either.
+    vlan_id=CASE WHEN EXCLUDED.interface_name IS NULL THEN clients.vlan_id ELSE EXCLUDED.vlan_id END,
+    tx_bytes=EXCLUDED.tx_bytes,
+    rx_bytes=EXCLUDED.rx_bytes,
+    signal_strength=EXCLUDED.signal_strength,
+    client_type=EXCLUDED.client_type,
+    tx_rate_bps=EXCLUDED.tx_rate_bps,
+    rx_rate_bps=EXCLUDED.rx_rate_bps,
+    active=TRUE,
+    last_seen=NOW(),
+    first_seen=COALESCE(clients.first_seen, NOW())`;
+
+/**
+ * Store a device's clients, 500 to a statement (#442). One statement per
+ * client was thousands of round trips a fast poll on a campus switch, whose
+ * bridge sees every MAC on the network, and the polls queued for the database
+ * pool behind each other until some ran past their time limit. A batch that
+ * fails is retried one row at a time, so one bad row still costs only itself
+ * (P2-20). Returns the MACs stored.
+ */
+export async function upsertClients(deviceId: number, deviceName: string, rows: ClientRow[]): Promise<string[]> {
+  const stored: string[] = [];
+  for (let i = 0; i < rows.length; i += CLIENT_BATCH) {
+    const batch = rows.slice(i, i + CLIENT_BATCH);
+    const col = (n: number) => batch.map((r) => r[n]);
+    try {
+      await query(
+        `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes,
+                              signal_strength, client_type, tx_rate_bps, rx_rate_bps, active, last_seen, first_seen)
+         SELECT $1, u.*, TRUE, NOW(), NOW()
+           FROM unnest($2::varchar[], $3::varchar[], $4::varchar[], $5::varchar[], $6::int[], $7::bigint[], $8::bigint[],
+                       $9::int[], $10::varchar[], $11::bigint[], $12::bigint[])
+        ${CLIENT_UPSERT_SET}`,
+        [deviceId, col(0), col(1), col(2), col(3), col(4), col(5), col(6), col(7), col(8), col(9), col(10)],
+      );
+      stored.push(...batch.map((r) => r[0]));
+    } catch {
+      for (const row of batch) {
+        try {
+          await query(
+            `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes,
+                                  signal_strength, client_type, tx_rate_bps, rx_rate_bps, active, last_seen, first_seen)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,NOW(),NOW())
+            ${CLIENT_UPSERT_SET}`,
+            [deviceId, ...row],
+          );
+          stored.push(row[0]);
+        } catch (err) {
+          console.error(`[${deviceName}] Skipped client ${row[0]}:`, (err as Error).message);
+        }
+      }
+    }
+  }
+  return stored;
+}
 
 export class DeviceCollector {
   private client: RouterOSClient;
@@ -1693,8 +1765,7 @@ export class DeviceCollector {
         ...Object.keys(bridgeHostMap),
       ]);
 
-      let totalClients = 0;
-      const seenMacs: string[] = [];
+      const rows: ClientRow[] = [];
       for (const mac of allMacs) {
         if (!normalizeMac(mac)) continue; // not a MAC address; nothing to key a client on
         const isWireless = mac in wifiSignal;
@@ -1702,53 +1773,22 @@ export class DeviceCollector {
         const interfaceName = isWireless
           ? (wifiInterface[mac] || entry?.port || null)
           : (entry?.port || arpInterfaces[mac] || null);
-        const vlanId = entry?.vid ?? null;
-
-        // One bad row costs only itself (P2-20): it used to end the loop and
-        // leave every client after it stale.
-        try {
-          await query(
-            `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes, signal_strength, client_type, tx_rate_bps, rx_rate_bps, active, last_seen, first_seen)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,NOW(),NOW())
-             ON CONFLICT (device_id, mac_address) DO UPDATE SET
-               hostname=COALESCE($3, clients.hostname),
-               ip_address=COALESCE(NULLIF($4,''), clients.ip_address),
-               interface_name=COALESCE($5, clients.interface_name),
-               -- The VLAN of this sighting, not one kept from an earlier
-               -- sighting on another port: a client seen by ARP on vrrp20
-               -- kept VLAN 98 from the bridge (#363). Kept only when the
-               -- port isn't known either.
-               vlan_id=CASE WHEN $5::varchar IS NULL THEN clients.vlan_id ELSE $6::integer END,
-               tx_bytes=$7,
-               rx_bytes=$8,
-               signal_strength=$9,
-               client_type=$10,
-               tx_rate_bps=$11,
-               rx_rate_bps=$12,
-               active=TRUE,
-               last_seen=NOW(),
-               first_seen=COALESCE(clients.first_seen, NOW())`,
-            [
-              this.device.id,
-              mac,
-              fit(dhcpHostnames[mac] || regComments[mac] || null, 255),
-              fit(dhcpIPs[mac] || arpIPs[mac] || wifiLastIp[mac] || null, 45),
-              fit(interfaceName, 50),
-              vlanId,
-              wifiTx[mac] || 0,
-              wifiRx[mac] || 0,
-              isWireless && !noSignal.has(mac) ? wifiSignal[mac] : null,
-              isWireless ? 'wireless' : 'wired',
-              isWireless ? wifiTxRate[mac] ?? null : null,
-              isWireless ? wifiRxRate[mac] ?? null : null,
-            ]
-          );
-          seenMacs.push(mac);
-          totalClients++;
-        } catch (err) {
-          console.error(`[${this.device.name}] Skipped client ${mac}:`, (err as Error).message);
-        }
+        rows.push([
+          mac,
+          fit(dhcpHostnames[mac] || regComments[mac] || null, 255),
+          fit(dhcpIPs[mac] || arpIPs[mac] || wifiLastIp[mac] || null, 45),
+          fit(interfaceName, 50),
+          entry?.vid ?? null,
+          wifiTx[mac] || 0,
+          wifiRx[mac] || 0,
+          isWireless && !noSignal.has(mac) ? wifiSignal[mac] : null,
+          isWireless ? 'wireless' : 'wired',
+          isWireless ? wifiTxRate[mac] ?? null : null,
+          isWireless ? wifiRxRate[mac] ?? null : null,
+        ]);
       }
+      const seenMacs = await upsertClients(this.device.id, this.device.name, rows);
+      const totalClients = seenMacs.length;
 
       // Clients this device no longer sees go inactive, but only when every
       // read succeeded; after a failed read their absence means nothing (P2-21).
@@ -6649,6 +6689,8 @@ export class DeviceCollector {
    * a device that had in fact rebooted and upgraded correctly.
    */
   async reboot(): Promise<void> {
+    // Said first, so the poll that finds it gone doesn't alert (#442).
+    await expectReboot(this.device.id);
     try {
       await this.client.execute('/system/reboot');
     } catch (e) {

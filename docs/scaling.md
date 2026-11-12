@@ -56,6 +56,13 @@ own split and a bar, so a slow site can be pinned on its link (connecting and wa
 long), its router (waiting long on a fast link) or this server (the grey part). Hover a failed
 poll for its error.
 
+Under them, **This server, last 15 seconds** says how long the event loop was blocked at most,
+and how many queries were kept waiting for a database connection at once (#442). It turns amber
+from 2 seconds blocked or 10 queries waiting: every poll running then is slower than its device,
+and a long enough stall pushes polls past their time limit. The same reading is logged as a
+`[Load]` line in the backend log when it crosses those marks, so a stall at a given moment can be
+matched to what else was running.
+
 ## Sessions kept open between polls
 
 Measured on the reference fleet, connecting took 150 to 300 ms per poll on a LAN, against 3 to

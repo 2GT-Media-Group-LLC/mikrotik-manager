@@ -172,6 +172,7 @@ export default function PollerHealthCard() {
       </div>
 
       {data.phases && <PhasesPanel phases={data.phases} onSaved={() => queryClient.invalidateQueries({ queryKey: ['poller-health'] })} />}
+      <ServerLoad processes={workers.processes ?? []} />
 
       {cap.headroom != null && cap.headroom < 1.5 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-700/60 dark:bg-amber-900/20">
@@ -379,5 +380,25 @@ function PhasesPanel({ phases, onSaved }: { phases: PollerPhases; onSaved: () =>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Whether this server held polls up in the last 15 seconds (#442): the event
+ * loop blocked, or queries queued for a database connection. Either one shows
+ * as "database and processing" time on every poll running then.
+ */
+function ServerLoad({ processes }: { processes: NonNullable<PollerHealth['workers']['processes']> }) {
+  const loads = processes.flatMap((p) => (p.load ? [p.load] : []));
+  if (!loads.length) return null;
+  const loop = Math.max(...loads.map((l) => l.loop_max_ms));
+  const waiting = Math.max(...loads.map((l) => l.db_waiting_max));
+  const busy = loop >= 2000 || waiting >= 10;
+  return (
+    <p className={busy ? 'text-xs text-amber-700 dark:text-amber-400' : 'text-xs text-gray-500 dark:text-slate-400'}>
+      This server, last 15 seconds: event loop blocked up to {loop.toLocaleString()} ms
+      {' · '}{waiting === 0 ? 'no queries waiting for the database' : `up to ${waiting} ${waiting === 1 ? 'query' : 'queries'} waiting for the database`}
+      {busy && '. Polls running then take longer than the device does.'}
+    </p>
   );
 }

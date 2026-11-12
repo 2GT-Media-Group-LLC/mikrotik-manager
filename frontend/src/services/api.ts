@@ -585,7 +585,11 @@ export interface PollerHealth {
   workers: {
     concurrency: number; job_timeout_ms: number; poll_interval_ms: number; fast_interval_sec?: number;
     /** Each process running poll workers, when there are worker containers (#301). */
-    processes?: { role: string; concurrency: number; sessions: number }[];
+    processes?: {
+      role: string; concurrency: number; sessions: number;
+      /** The last 15 s (#442): the longest event-loop block, and the most queries waiting for a database connection. */
+      load?: { loop_max_ms: number; loop_p99_ms: number; db_waiting_max: number; db_connections: number } | null;
+    }[];
   };
   capacity: {
     devices: number;

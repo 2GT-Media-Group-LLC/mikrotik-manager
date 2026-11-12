@@ -2028,6 +2028,13 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS map_zoom SMALLINT;
 -- offline only after offline_after_failed_polls of them (utils/pollFailures).
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS poll_failures INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS last_poll_failure_at TIMESTAMPTZ;
+-- Until when a reboot the manager sent may keep the device away, without
+-- alerting (#442: the Reboot button, RouterBOOT upgrades, firmware rollouts).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS reboot_expected_until TIMESTAMPTZ;
+-- How the device's going offline was announced, so its recovery matches:
+-- 'device', 'site' (one alert for the site), or 'deferred' (down on purpose,
+-- not alerted unless it stays down after the reason has passed).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS offline_alert VARCHAR(10);
 `;
 
 const DEFAULT_SETTINGS = [

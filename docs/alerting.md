@@ -40,10 +40,22 @@ offline, or was never online, has no grace.
 When most of a site (three quarters, at sites with 3 devices or more) stops answering within
 two minutes, **Device offline** sends one alert naming the site and how many devices went quiet,
 instead of one per device. That is usually the path from the manager to the site, the site's
-uplink, or the manager itself. Devices that were already down before then are left out of the
-count.
+uplink, or the manager itself. When they come back, **Device online** sends one alert for the
+site too. Devices that were already down before then, disabled devices and devices that have
+never answered are left out of the count.
 
-Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
+A device that is down on purpose doesn't alert when it goes offline, and isn't counted towards a
+site going quiet:
+
+- **A reboot the manager sent:** the Reboot button, a RouterBOOT upgrade, or a
+  [firmware rollout](firmware.md). It has 10 minutes to come back.
+- **A firmware rollout** that is upgrading, rebooting or checking the device.
+- **A [maintenance window](#maintenance-windows)** that covers the device.
+
+If it is still offline once that has passed, **Device offline** alerts then, saying it didn't come
+back. A device that comes back in time sends no **Device online** either, since nothing said it
+had gone.
+
 Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
 only send an offline alert once they have been gone longer than their limit.
 
@@ -279,6 +291,7 @@ globally and forgotten. Managed under **Settings → Maintenance**.
   on the date you give and lasts as long as the first occurrence (end minus start); the time
   of day follows the manager's time zone (**Settings → General**).
 - Windows can be disabled early and deleted.
+- A device that went offline during a window and is still offline when it ends alerts then.
 
 Through the API a window can repeat on any cron expression (`recurring_cron`, five fields).
 

@@ -12,6 +12,8 @@
  */
 
 export const DEFAULT_FAILED_POLLS_BEFORE_OFFLINE = 2;
+/** Failures this close together (the fast and slow polls, say) are one missed poll. */
+export const SAME_MISS_SEC = 10;
 const MAX_FAILED_POLLS_BEFORE_OFFLINE = 10;
 
 /** The `offline_after_failed_polls` setting as a usable count: 1 to 10. */
@@ -51,4 +53,23 @@ export function siteOutageMessage(siteName: string | null, failing: number, tota
   const where = siteName ? `Site ${siteName}` : 'Devices without a site';
   return `${where}: ${failing} of ${total} devices stopped answering within ${SITE_OUTAGE_WINDOW_SEC / 60} minutes. ` +
     'More likely the path from the manager to the site, the site uplink, or the manager itself than every device at once.';
+}
+
+/** How a device's going offline was announced (devices.offline_alert). */
+export type OfflineAlert = 'device' | 'site' | 'deferred';
+
+/**
+ * The recovery to announce, matching how the outage was announced: none for
+ * one that was never alerted (down on purpose and back in time), one for the
+ * site when the site was alerted, else the device's own. Devices that went
+ * offline before this existed have no record and recover as they always did.
+ */
+export function recoveryKind(offlineAlert: string | null | undefined): 'device' | 'site' | 'none' {
+  if (offlineAlert === 'deferred') return 'none';
+  if (offlineAlert === 'site') return 'site';
+  return 'device';
+}
+
+export function siteRecoveryMessage(siteName: string | null): string {
+  return `${siteName ? `Site ${siteName}` : 'Devices without a site'}: devices are answering again after going quiet together.`;
 }

@@ -16,7 +16,7 @@ jest.mock('../../../config/influxdb');
 jest.mock('../../../utils/oui');
 jest.mock('../../../utils/serverArp');
 
-import { DeviceCollector, DeviceRow } from '../DeviceCollector';
+import { DeviceCollector, DeviceRow, upsertClients } from '../DeviceCollector';
 import { query } from '../../../config/database';
 import { isPartialApply } from '../../changeGuard/partialApply';
 
@@ -33,6 +33,22 @@ const testDevice: DeviceRow = {
 };
 
 // ── parseUptime ───────────────────────────────────────────────────────────────
+
+
+/**
+ * The client rows written, one per client, as [device_id, mac, hostname, ip,
+ * interface, vlan, tx, rx, signal, type, tx rate, rx rate], from the batched
+ * statements (#442).
+ */
+function clientRows(): [unknown, unknown[]][] {
+  return (query as jest.Mock).mock.calls
+    .filter(([sql]) => String(sql).includes('INSERT INTO clients'))
+    .flatMap(([sql, params]: [string, unknown[]]) => {
+      if (!String(sql).includes('unnest(')) return [[sql, params] as [unknown, unknown[]]];
+      const cols = params.slice(1) as unknown[][];
+      return cols[0].map((_, r) => [sql, [params[0], ...cols.map((c) => c[r])]] as [unknown, unknown[]]);
+    });
+}
 
 describe('parseUptime', () => {
   let collector: DeviceCollector;
@@ -502,7 +518,7 @@ describe('legacy CAPsMAN (#250)', () => {
     }, { capsman_flavor: 'legacy' } as Partial<DeviceRow>);
     await collector.updateClients();
     expect(calls.find((c) => c.cmd === '/caps-man/registration-table/print')?.params).toEqual({ stats: '' });
-    const inserts = (query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO clients'));
+    const inserts = clientRows();
     const iphone = inserts.find(([, params]) => params[1] === '38:9c:b2:3d:9b:19');
     expect(iphone).toBeDefined();
     expect(iphone![1][2]).toBe("Matt's iPhone 15");      // hostname
@@ -515,7 +531,7 @@ describe('legacy CAPsMAN (#250)', () => {
       '/interface/wifi/print': [], '/caps-man/registration-table/print': legacyFixture.registrationsStats,
     }, { capsman_flavor: 'legacy' } as Partial<DeviceRow>);
     await collector.updateClients();
-    const inserts = (query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO clients'));
+    const inserts = clientRows();
     const fireTv = inserts.find(([, params]) => params[1] === '9c:c8:e9:53:ba:f0')![1];
     expect(fireTv[2]).toBe('BonusRoom FireTV Stick 4k Max');
     expect(fireTv[3]).toBe('110.87.22.10');               // last-ip: the CHR isn't the DHCP server
@@ -1104,5 +1120,36 @@ describe('setInterfaceMtu', () => {
     (collector as unknown as { client: { execute: jest.Mock } }).client.execute.mockImplementation(async (cmd: string) =>
       cmd === '/interface/print' ? [{ name: 'p1', mtu: '1584', l2mtu: '1584' }] : []);
     await expect(collector.setInterfaceMtu('p1', 1600)).rejects.toThrow(/kept p1 at MTU 1584 rather than 1600/);
+  });
+});
+
+// ── Clients stored in batches (#442) ─────────────────────────────────────────
+
+describe('upsertClients', () => {
+  const row = (n: number) => [`aa:bb:cc:00:${String(Math.floor(n / 256)).padStart(2, '0')}:${(n % 256).toString(16).padStart(2, '0')}`,
+    null, null, 'ether1', null, 0, 0, null, 'wired', null, null] as Parameters<typeof upsertClients>[2][number];
+
+  beforeEach(() => (query as jest.Mock).mockReset().mockResolvedValue([]));
+
+  it('writes 500 clients to a statement, not one each', async () => {
+    const rows = Array.from({ length: 1200 }, (_, i) => row(i));
+    const stored = await upsertClients(7, 'core', rows);
+    const calls = (query as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(3);
+    expect(calls.map(([, p]) => (p[1] as unknown[]).length)).toEqual([500, 500, 200]);
+    expect(calls.every(([sql, p]) => String(sql).includes('unnest(') && p[0] === 7)).toBe(true);
+    expect(stored).toHaveLength(1200);
+  });
+
+  it('retries a failed batch one row at a time, so one bad row costs only itself', async () => {
+    const rows = Array.from({ length: 3 }, (_, i) => row(i));
+    (query as jest.Mock)
+      .mockRejectedValueOnce(new Error('value too long'))   // the batch
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('value too long'))   // row 2
+      .mockResolvedValueOnce([]);
+    const stored = await upsertClients(7, 'core', rows);
+    expect(stored).toEqual([rows[0][0], rows[2][0]]);
+    expect((query as jest.Mock).mock.calls).toHaveLength(4);
   });
 });

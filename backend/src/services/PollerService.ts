@@ -7,6 +7,7 @@ import { cleanOverrides, effectiveValues } from '../utils/pollOverrides';
 import { createRedisConnection, redis } from '../config/redis';
 import { query, queryOne } from '../config/database';
 import { pooledSessionCount } from './mikrotik/sessionPool';
+import { readLoad, type LoadReading } from './processLoad';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
 import { Server as SocketServer } from 'socket.io';
 import { getWriteApi } from '../config/influxdb';
@@ -32,8 +33,10 @@ import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
 import { offlineAction, recoveryAlert, describeDuration } from '../utils/intermittent';
 import {
-  failedPollsBeforeOffline, shouldMarkOffline, isSiteOutage, siteOutageMessage, SITE_OUTAGE_WINDOW_SEC,
+  failedPollsBeforeOffline, shouldMarkOffline, siteOutageMessage, SAME_MISS_SEC,
+  recoveryKind, siteRecoveryMessage, type OfflineAlert,
 } from '../utils/pollFailures';
+import { plannedOutages, siteGoingQuiet } from './offlineAlerts';
 import { runHealthCheck } from './healthCheck';
 import { gateTtlSeconds } from '../utils/schedulerGate';
 import { runPollJob, pollJobAborted } from '../utils/pollJobContext';
@@ -249,6 +252,7 @@ export class PollerService {
     const beat = () => {
       void redis.set(`${HEARTBEAT_PREFIX}${PROCESS_ID}`, JSON.stringify({
         role: POLLER_ROLE, concurrency: POLL_CONCURRENCY, sessions: pooledSessionCount(), at: Date.now(),
+        load: readLoad(),
       }), 'EX', 45).catch(() => { /* health just won't count it this time */ });
     };
     beat();
@@ -302,15 +306,15 @@ export class PollerService {
   }
 
   /** Every process running poll workers, from their heartbeats. */
-  private async pollerProcesses(): Promise<{ id: string; role: string; concurrency: number; sessions: number }[]> {
+  private async pollerProcesses(): Promise<{ id: string; role: string; concurrency: number; sessions: number; load: LoadReading | null }[]> {
     try {
       const keys = await redis.keys(`${HEARTBEAT_PREFIX}*`);
       if (!keys.length) return [];
       const vals = await redis.mget(...keys);
       return keys.flatMap((k, i) => {
         try {
-          const v = JSON.parse(vals[i] ?? '') as { role: string; concurrency: number; sessions: number };
-          return [{ id: k.slice(HEARTBEAT_PREFIX.length), role: v.role, concurrency: Number(v.concurrency) || 0, sessions: Number(v.sessions) || 0 }];
+          const v = JSON.parse(vals[i] ?? '') as { role: string; concurrency: number; sessions: number; load?: LoadReading };
+          return [{ id: k.slice(HEARTBEAT_PREFIX.length), role: v.role, concurrency: Number(v.concurrency) || 0, sessions: Number(v.sessions) || 0, load: v.load ?? null }];
         } catch { return []; }
       });
     } catch { return []; }
@@ -1258,7 +1262,8 @@ export class PollerService {
       workers: {
         // Every process's workers (#301); `processes` lists them when there are worker containers.
         concurrency: totalConcurrency,
-        processes: procs.map((p) => ({ role: p.role, concurrency: p.concurrency, sessions: p.sessions })),
+        // The last 15 s of each (#442): event-loop blocks and queries waiting for the database.
+        processes: procs.map((p) => ({ role: p.role, concurrency: p.concurrency, sessions: p.sessions, load: p.load })),
         job_timeout_ms: JOB_TIMEOUT_MS,
         poll_interval_ms: POLL_INTERVAL_MS,
         /** The global fast-poll interval; sites and devices may override it (#261). */
@@ -1434,15 +1439,27 @@ export class PollerService {
     if (prevStatus !== 'online') {
       // Intermittent devices (#168) only announce recovery if their
       // long-offline alert went out; otherwise they came and went quietly.
-      const d = device as DeviceRow & { intermittent?: boolean; intermittent_alerted_at?: string | null };
-      if (recoveryAlert(!!d.intermittent, !!d.intermittent_alerted_at)) {
+      // Others announce it the way their going offline was (#442): not at
+      // all when it wasn't, once for the site when the site was.
+      const d = device as DeviceRow & {
+        intermittent?: boolean; intermittent_alerted_at?: string | null; offline_alert?: string | null; site_id?: number | null;
+      };
+      const kind = d.intermittent ? (recoveryAlert(true, !!d.intermittent_alerted_at) ? 'device' : 'none') : recoveryKind(d.offline_alert);
+      if (kind === 'device') {
         alertService.dispatch('device_online', `${device.name} is back online`, {
           deviceId: device.id,
           deviceName: device.name,
         }).catch(() => {});
+      } else if (kind === 'site') {
+        queryOne<{ name: string }>(`SELECT name FROM sites WHERE id = $1`, [d.site_id ?? null])
+          .catch(() => null)
+          .then((site) => alertService.dispatch('device_online', siteRecoveryMessage(site?.name ?? null), {
+            cooldownKey: `device_online:site:${d.site_id ?? 'none'}`,
+          }))
+          .catch(() => {});
       }
-      if (d.intermittent_alerted_at) {
-        query(`UPDATE devices SET intermittent_alerted_at = NULL WHERE id = $1`, [device.id]).catch(() => {});
+      if (d.intermittent_alerted_at || d.offline_alert) {
+        query(`UPDATE devices SET intermittent_alerted_at = NULL, offline_alert = NULL WHERE id = $1`, [device.id]).catch(() => {});
       }
     }
   }
@@ -1814,9 +1831,13 @@ export class PollerService {
     // Count the failure, then decide. An online device stays online until
     // offline_after_failed_polls polls in a row have failed: one failure is
     // too often the manager or the path, not the device (utils/pollFailures).
+    // The fast and slow polls failing in the same few seconds are one missed
+    // poll, not two: counted twice, a device went offline on its first.
     const [counted] = await query<{ poll_failures: number }>(
-      `UPDATE devices SET poll_failures = poll_failures + 1, last_poll_failure_at = NOW()
-        WHERE id = $1 RETURNING poll_failures`, [deviceId]);
+      `UPDATE devices SET poll_failures = poll_failures + CASE
+           WHEN poll_failures > 0 AND last_poll_failure_at > NOW() - make_interval(secs => $2) THEN 0 ELSE 1 END,
+         last_poll_failure_at = NOW()
+        WHERE id = $1 RETURNING poll_failures`, [deviceId, SAME_MISS_SEC]);
     const needed = failedPollsBeforeOffline((await queryOne<{ value: unknown }>(
       `SELECT value FROM app_settings WHERE key = 'offline_after_failed_polls'`).catch(() => null))?.value);
     if (!shouldMarkOffline(prevStatus, counted?.poll_failures ?? needed, needed)) {
@@ -1826,14 +1847,102 @@ export class PollerService {
     }
 
     await query(`UPDATE devices SET status = 'offline', updated_at = NOW() WHERE id = $1`, [deviceId]);
+    await this.announceOffline(deviceId, device, prevStatus, message);
 
-    // Normal devices alert when they go offline. Intermittent ones (#168) alert
-    // only once they have been gone longer than their limit.
+    // Once, when it goes offline. Clearing its clients and links (and
+    // recounting every active client) on each failed poll after that was
+    // database load for as long as a device stayed down (#442).
+    if (prevStatus !== 'offline') {
+      // Open a new availability outage row
+      query(
+        `INSERT INTO device_availability (device_id, went_offline_at) VALUES ($1, NOW())`,
+        [deviceId]
+      ).catch(() => {});
+      // Mark all clients for this device inactive — updateClients() never ran because connect() failed.
+      await query(`UPDATE clients SET active = FALSE WHERE device_id = $1`, [deviceId]);
+      // Clear stale neighbor links — the device can't re-sync to clean them up itself.
+      await query(`DELETE FROM topology_links WHERE from_device_id = $1`, [deviceId]);
+      // Write updated global deduped count and a per-device zero so history is continuous.
+      if (device) {
+        const writeApi = getWriteApi();
+        writeApi.writePoint(
+          new Point('client_counts')
+            .tag('device_id', String(deviceId))
+            .tag('device_name', device.name)
+            .intField('total_clients', 0)
+            .intField('wireless_clients', 0)
+            .intField('wired_clients', 0)
+            .timestamp(new Date())
+        );
+        // Recompute global deduplicated count after marking this device's clients inactive.
+        const dedupedRows = await query<{ count: string }>(
+          `SELECT COUNT(DISTINCT mac_address) AS count FROM clients WHERE active = TRUE`
+        );
+        const globalTotal = parseInt(dedupedRows[0]?.count || '0', 10);
+        writeApi.writePoint(
+          new Point('client_counts')
+            .tag('device_id', '_global')
+            .tag('device_name', '_global')
+            .intField('total_clients', globalTotal)
+            .timestamp(new Date())
+        );
+        await writeApi.flush().catch(() => {});
+      }
+    }
+    void this.emitForDevice('device:status', { deviceId, status: 'offline', message }, deviceId);
+    void this.emitForDevice('clients:updated', { deviceId }, deviceId);
+  }
+
+  /**
+   * Who hears about a device going offline (#442). A device down on purpose
+   * (a reboot the manager sent, a firmware rollout, a maintenance window)
+   * isn't announced, and is announced later if it is still down once that
+   * has passed. Most of a site going quiet together is one alert for the
+   * site. Intermittent devices (#168) alert only once they have been gone
+   * longer than their limit.
+   */
+  private async announceOffline(deviceId: number, device: DeviceRow | null, prevStatus: string | undefined, message: string): Promise<void> {
     const d = device as (DeviceRow & {
       intermittent?: boolean; intermittent_alert_after_min?: number; intermittent_alerted_at?: string | null;
+      site_id?: number | null; offline_alert?: string | null;
     }) | null;
+    const name = device?.name ?? `Device #${deviceId}`;
+    const setAlert = (v: OfflineAlert | null) =>
+      query(`UPDATE devices SET offline_alert = $2 WHERE id = $1`, [deviceId, v]).catch(() => {});
+
+    if (!d?.intermittent) {
+      const plannedNow = async () => (await plannedOutages([deviceId])).get(deviceId);
+      if (prevStatus !== 'offline') {
+        const planned = await plannedNow();
+        if (planned) {
+          console.log(`[Poller] ${name} is offline during ${planned}; not alerting unless it stays down`);
+          await setAlert('deferred');
+          return;
+        }
+        const site = await siteGoingQuiet(d?.site_id ?? null);
+        if (site) {
+          await setAlert('site');
+          alertService.dispatch('device_offline', siteOutageMessage(site.name, site.failing, site.total), {
+            cooldownKey: `device_offline:site:${d?.site_id ?? 'none'}`,
+          }).catch(() => {});
+          return;
+        }
+        await setAlert('device');
+        alertService.dispatch('device_offline', `${name} is offline: ${message}`, { deviceId, deviceName: device?.name }).catch(() => {});
+        return;
+      }
+      // Still down once the reboot, rollout or maintenance window is over.
+      if (d?.offline_alert === 'deferred' && !(await plannedNow())) {
+        await setAlert('device');
+        alertService.dispatch('device_offline',
+          `${name} is still offline after a reboot, firmware upgrade or maintenance window: ${message}`,
+          { deviceId, deviceName: device?.name }).catch(() => {});
+      }
+      return;
+    }
+
     let offlineSince: Date | null = null;
-    if (d?.intermittent && prevStatus === 'offline') {
+    if (prevStatus === 'offline') {
       const [open] = await query<{ went_offline_at: string }>(
         `SELECT went_offline_at FROM device_availability
           WHERE device_id = $1 AND came_back_online_at IS NULL
@@ -1842,91 +1951,23 @@ export class PollerService {
       offlineSince = open ? new Date(open.went_offline_at) : null;
     }
     const action = offlineAction({
-      intermittent: !!d?.intermittent,
-      alertAfterMin: d?.intermittent_alert_after_min,
+      intermittent: true,
+      alertAfterMin: d.intermittent_alert_after_min,
       wasOffline: prevStatus === 'offline',
       offlineSince,
-      alreadyAlerted: !!d?.intermittent_alerted_at,
+      alreadyAlerted: !!d.intermittent_alerted_at,
       now: new Date(),
     });
-    if (action === 'alert') {
-      // Most of the site going quiet together is one alert for the site, not
-      // one per device: the shared cooldown key lets only the first through.
-      const siteId = (device as (DeviceRow & { site_id?: number | null }) | null)?.site_id ?? null;
-      const site = await queryOne<{ failing: number; total: number; name: string | null }>(
-        `SELECT COUNT(*) FILTER (
-                  WHERE d.poll_failures > 0
-                    AND d.last_poll_failure_at > NOW() - make_interval(secs => $2))::int AS failing,
-                COUNT(*)::int AS total,
-                MAX(s.name) AS name
-           FROM devices d LEFT JOIN sites s ON s.id = d.site_id
-          WHERE d.site_id IS NOT DISTINCT FROM $1 AND NOT d.intermittent
-            -- Devices already down before the window are neither part of
-            -- this event nor answering; leave them out of both counts.
-            AND NOT EXISTS (
-              SELECT 1 FROM device_availability a
-               WHERE a.device_id = d.id AND a.came_back_online_at IS NULL
-                 AND a.went_offline_at < NOW() - make_interval(secs => $2))`,
-        [siteId, SITE_OUTAGE_WINDOW_SEC]).catch(() => null);
-      if (site && isSiteOutage(site.failing, site.total)) {
-        alertService.dispatch('device_offline', siteOutageMessage(site.name, site.failing, site.total), {
-          cooldownKey: `device_offline:site:${siteId ?? 'none'}`,
-        }).catch(() => {});
-      } else {
-        alertService.dispatch('device_offline', `${device?.name ?? `Device #${deviceId}`} is offline: ${message}`, {
-          deviceId,
-          deviceName: device?.name,
-        }).catch(() => {});
-      }
-    } else if (action === 'alert-long-offline' && offlineSince) {
+    if (action === 'alert-long-offline' && offlineSince) {
       const mins = (Date.now() - offlineSince.getTime()) / 60000;
       alertService.dispatch('device_offline',
-        `${device?.name ?? `Device #${deviceId}`} has been offline for ${describeDuration(mins)}. ` +
+        `${name} has been offline for ${describeDuration(mins)}. ` +
         'It is marked as expected to drop out, but not for this long.', {
           deviceId,
           deviceName: device?.name,
         }).catch(() => {});
       await query(`UPDATE devices SET intermittent_alerted_at = NOW() WHERE id = $1`, [deviceId]).catch(() => {});
     }
-    if (prevStatus !== 'offline') {
-      // Open a new availability outage row
-      query(
-        `INSERT INTO device_availability (device_id, went_offline_at) VALUES ($1, NOW())`,
-        [deviceId]
-      ).catch(() => {});
-    }
-    // Mark all clients for this device inactive — updateClients() never ran because connect() failed.
-    await query(`UPDATE clients SET active = FALSE WHERE device_id = $1`, [deviceId]);
-    // Clear stale neighbor links — the device can't re-sync to clean them up itself.
-    await query(`DELETE FROM topology_links WHERE from_device_id = $1`, [deviceId]);
-    // Write updated global deduped count and a per-device zero so history is continuous.
-    if (device) {
-      const writeApi = getWriteApi();
-      writeApi.writePoint(
-        new Point('client_counts')
-          .tag('device_id', String(deviceId))
-          .tag('device_name', device.name)
-          .intField('total_clients', 0)
-          .intField('wireless_clients', 0)
-          .intField('wired_clients', 0)
-          .timestamp(new Date())
-      );
-      // Recompute global deduplicated count after marking this device's clients inactive.
-      const dedupedRows = await query<{ count: string }>(
-        `SELECT COUNT(DISTINCT mac_address) AS count FROM clients WHERE active = TRUE`
-      );
-      const globalTotal = parseInt(dedupedRows[0]?.count || '0', 10);
-      writeApi.writePoint(
-        new Point('client_counts')
-          .tag('device_id', '_global')
-          .tag('device_name', '_global')
-          .intField('total_clients', globalTotal)
-          .timestamp(new Date())
-      );
-      await writeApi.flush().catch(() => {});
-    }
-    void this.emitForDevice('device:status', { deviceId, status: 'offline', message }, deviceId);
-    void this.emitForDevice('clients:updated', { deviceId }, deviceId);
   }
 
   private async checkAllDevicesFirmware(devices: DeviceRow[]): Promise<void> {

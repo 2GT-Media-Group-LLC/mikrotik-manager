@@ -4,6 +4,7 @@ import {
   isSiteOutage,
   shouldMarkOffline,
   siteOutageMessage,
+  recoveryKind,
 } from '../pollFailures';
 
 describe('failedPollsBeforeOffline', () => {
@@ -59,5 +60,16 @@ describe('siteOutageMessage', () => {
   it('names the site and the count', () => {
     expect(siteOutageMessage('HQ', 15, 17)).toMatch(/^Site HQ: 15 of 17 devices stopped answering within 2 minutes\./);
     expect(siteOutageMessage(null, 4, 4)).toMatch(/^Devices without a site: 4 of 4/);
+  });
+});
+
+describe('recoveryKind (#442)', () => {
+  it('announces a recovery the way the outage was announced', () => {
+    expect(recoveryKind('device')).toBe('device');
+    expect(recoveryKind('site')).toBe('site');
+    expect(recoveryKind('deferred')).toBe('none');
+    // Offline before this existed: recovers as it always did.
+    expect(recoveryKind(null)).toBe('device');
+    expect(recoveryKind(undefined)).toBe('device');
   });
 });
