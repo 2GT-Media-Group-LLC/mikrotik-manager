@@ -218,8 +218,12 @@ describe('createDeviceFromBody (force add)', () => {
     );
     expect(insert).toBeDefined();
     expect(insert[1][3]).toBe(0);
+    expect(insert[1][7]).toBe('admin');
+    expect(insert[1][8]).toBe('enc:secret');
     expect(insert[1][12]).toBeNull();
-    expect(insert[1][13]).toBe(false);
+    expect(insert[1][13]).toBe(true);
+    expect(insert[1][22]).toBe(false);
+    expect(insert[0]).toContain("CASE WHEN $23::boolean THEN 'online' ELSE 'unknown' END");
     expect(result).toMatchObject({
       ok: true,
       body: { connection: { connectivity_checked: false } },
@@ -243,6 +247,8 @@ describe('createDeviceFromBody (force add)', () => {
     expect(result.ok).toBe(true);
     const insert = (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql));
     expect(insert[1][3]).toBe(expectedPort);
+    expect(insert[1][13]).toBe(false);
+    expect(insert[1][22]).toBe(false);
   });
 
   it.each([[18729, 18729], [null, 0]])('respects a preset port of %s', async (presetPort, expectedPort) => {

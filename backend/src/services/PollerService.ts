@@ -1471,15 +1471,15 @@ export class PollerService {
   /**
    * A device added over SSH only (#174). Tries the API when it is due (every
    * minute, every 15 after a refused login) and, when it answers, makes the
-   * device an ordinary one and starts a full sync. Otherwise reads the basics
-   * over SSH; a failure there throws, and is recorded as offline as usual.
+   * device an ordinary one and starts a full sync. An unverified device gets
+   * its first check over SSH before API retries begin.
    */
   private async processSshOnlyJob(device: DeviceRow): Promise<void> {
     const dev = device as unknown as SshOnlyDevice;
     const prevStatus = device.status;
     const now = Date.now();
     const gate = `poll:apicheck:${device.id}`;
-    if (now >= (await this.getTimestamp(gate))) {
+    if (device.status !== 'unknown' && now >= (await this.getTimestamp(gate))) {
       const check = await checkApi(dev);
       if (check.ok) {
         await promoteToApi(dev, check);
