@@ -33,12 +33,12 @@ const REGISTRY = 'ghcr.io/2gt-media-group-llc';
 const IMAGE_SWAPS = [
   {
     service: 'nginx',
-    build: '    build:\n      context: .\n      dockerfile: nginx/Dockerfile\n',
+    buildPattern: /    build:\n      context: \.\n      dockerfile: nginx\/Dockerfile[\s\S]*?\n(?=    [a-z][\w-]*:)/g,
     image: `    image: ${REGISTRY}/mikrotik-manager-nginx:\${MTM_TAG:-latest}\n`,
   },
   {
     service: 'backend',
-    build: '    build:\n      context: ./backend\n      dockerfile: Dockerfile\n',
+    buildPattern: /    build:\n      context: \.\/backend\n      dockerfile: Dockerfile[\s\S]*?\n(?=    [a-z][\w-]*:)/g,
     image: `    image: ${REGISTRY}/mikrotik-manager-backend:\${MTM_TAG:-latest}\n`,
   },
 ];
@@ -60,14 +60,15 @@ function generate(source) {
   let out = source;
 
   for (const swap of IMAGE_SWAPS) {
-    if (!out.includes(swap.build)) {
+    const matches = out.match(swap.buildPattern);
+    if (!matches?.length) {
       throw new Error(
         `Could not find the build block for "${swap.service}" in docker-compose.yml. ` +
         `The generator needs updating to match how that service is now defined.`
       );
     }
     // Every service built from it: the backend and its poll workers (#301).
-    out = out.split(swap.build).join(swap.image);
+    out = out.replace(swap.buildPattern, swap.image);
   }
 
   // Compose v2 ignores the top-level `version:` key and warns on every command
