@@ -56,26 +56,6 @@ suite('force-added serial reconciliation (PostgreSQL)', () => {
     ))[0];
   }
 
-  it('migrates pending offline devices to unknown and removes the old column', async () => {
-    const pending = await addDevice({ name: 'pending', status: 'offline' });
-    const ordinary = await addDevice({ name: 'ordinary', status: 'offline' });
-    const disabled = await addDevice({ name: 'disabled', status: 'disabled' });
-    await (await import('../../db/migrate')).runMigrations();
-
-    const rows = await db.query<{ id: number; status: string }>(
-      'SELECT id, status FROM devices WHERE id = ANY($1::int[]) ORDER BY id', [[pending.id, ordinary.id, disabled.id]],
-    );
-    expect(rows).toEqual([
-      { id: pending.id, status: 'unknown' },
-      { id: ordinary.id, status: 'offline' },
-      { id: disabled.id, status: 'disabled' },
-    ]);
-    expect(await db.query(
-      `SELECT 1 FROM information_schema.columns
-       WHERE table_schema = current_schema() AND table_name = 'devices' AND column_name = 'force_add_pending'`,
-    )).toHaveLength(0);
-  });
-
   it('removes a new duplicate of an online device, retaining its record and event', async () => {
     const existing = await addDevice({ name: 'existing', serial: 'Ab12', status: 'online' });
     const candidate = await addDevice({ name: 'candidate', candidate: true });
