@@ -2053,6 +2053,8 @@ export interface ZonesData {
   interfaces: { name: string; type: string; running: boolean; disabled: boolean; bridge_port: boolean; addresses: string[] }[];
   manager_ip: string | null;
   drift: { missing: string[]; extra: string[] } | null;
+  /** MTM writes these rules differently now; Apply updates them (#369 log limit). */
+  outdated?: string[];
   services: { forward: { key: string; label: string }[]; router: { key: string; label: string }[] };
 }
 export interface ZonePlan {

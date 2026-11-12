@@ -35,6 +35,8 @@ export default function ZonesCard({ deviceId, deviceName, onApplied }: { deviceI
   const current = draft ?? base;
   const editing = !!data && !!current && canWrite && (data.enabled || setup);
   const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(base);
+  const outdated = data?.outdated ?? [];
+  const pending = dirty || setup || !!data?.drift || outdated.length > 0;
 
   const localErrors = current ? draftErrors(current) : {};
   const clean = Object.keys(localErrors).length === 0;
@@ -42,7 +44,7 @@ export default function ZonesCard({ deviceId, deviceName, onApplied }: { deviceI
   const plan = useQuery({
     queryKey: ['zone-plan', deviceId, JSON.stringify(planBody)],
     queryFn: () => zonesApi.plan(deviceId, planBody!).then((r) => r.data),
-    enabled: editing && !!planBody && clean && (dirty || setup || !!data?.drift),
+    enabled: editing && !!planBody && clean && pending,
     placeholderData: keepPreviousData,
     retry: false,
   });
@@ -150,7 +152,11 @@ export default function ZonesCard({ deviceId, deviceName, onApplied }: { deviceI
           )}
         </div>
 
-        {editing && (dirty || setup || data.drift) && (
+        {!dirty && !data.drift && outdated.map((n) => (
+          <p key={n} className="text-xs text-blue-700 dark:text-blue-300 p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">{n}</p>
+        ))}
+
+        {editing && pending && (
           <div className="space-y-2">
             {errors.eligibility && <p className="text-xs text-red-600 dark:text-red-400">{errors.eligibility}</p>}
             {errors.zones && <p className="text-xs text-red-600 dark:text-red-400">{errors.zones}</p>}
@@ -169,7 +175,7 @@ export default function ZonesCard({ deviceId, deviceName, onApplied }: { deviceI
         {editing && (
           <div className="flex items-center gap-2 flex-wrap">
             <button className="btn-primary text-xs py-1.5" onClick={apply}
-              disabled={applyMut.isPending || !clean || Object.keys(errors).length > 0 || (!dirty && !setup && !data.drift)}>
+              disabled={applyMut.isPending || !clean || Object.keys(errors).length > 0 || !pending}>
               {applyMut.isPending ? 'Applying…' : setup ? 'Turn on zones' : 'Apply'}
             </button>
             <ReviewChangesButton className="text-xs py-1.5" deviceName={deviceName} applyLabel={setup ? 'Turn on zones' : 'Apply'} onApply={apply}

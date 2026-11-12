@@ -618,6 +618,11 @@ The two final drops log by default with the prefixes `zone drop in` and `zone dr
 [Firewall Logs](firewall-events.md#which-rule-logged-it) links each line to its rule. Untick **Log
 what's dropped** to leave them quiet. The returns and the final drops aren't shown in the matrix.
 
+A logged drop logs at most 5 packets a second (bursts of 10, `limit=5,10`). What goes past that
+is dropped by an unlogged rule right after it, `… past the log limit`, so a scan or a flood
+can't overload a small router with logging. Zones applied before 1.1.0-beta.46 log every drop;
+the Zones card says so, and **Apply** updates them.
+
 To quiet one zone, such as an untrusted zone the internet knocks on all day, untick **Log drops**
 on that zone. Its traffic is then dropped just before each final drop by an unlogged rule, `drop
 the rest from <zone>`, so the rest of what's dropped is still logged. Only traffic coming *from*

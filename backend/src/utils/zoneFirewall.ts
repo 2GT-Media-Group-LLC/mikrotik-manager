@@ -428,6 +428,12 @@ function serviceRules(key: string, p: ZonePolicy, to: string, ctx: ZoneContext):
   return out;
 }
 
+/**
+ * Logged drops per second, then a burst (#369): 5 a second, bursts of 10.
+ * Written the way RouterOS prints it back, so the rule compares equal.
+ */
+export const DROP_LOG_LIMIT = '5,10';
+
 /** The whole IPv4 filter table for a zone config, in order. */
 export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule[] {
   const rules: CompiledRule[] = [];
@@ -436,11 +442,19 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
     const p = config.policies[pairKey(from, to)];
     return p && p.action !== 'deny' ? p : null;
   };
-  const dropLog = (where: string): Ros => (config.logDrops ? { log: 'yes', 'log-prefix': `zone drop ${where}` } : {});
   // A quiet zone's drops go before the logged drop, unlogged (#415).
   const quiet = config.logDrops ? (config.quietZones ?? []).filter((z) => config.zones.includes(z)) : [];
-  const dropQuietly = (chain: 'input' | 'forward') => {
+  // The end of a chain. A logged drop logs at most DROP_LOG_LIMIT and lets
+  // the rest fall through to an unlogged drop: logging every packet of a scan
+  // or a flood rebooted a hAP ac2 (#369).
+  const finalDrop = (chain: 'input' | 'forward', where: string, description: string) => {
     for (const z of quiet) add({ chain, action: 'drop', 'in-interface-list': z }, `drop the rest from ${z}${chain === 'input' ? ' to the router' : ''}, not logged`, true);
+    if (!config.logDrops) {
+      add({ chain, action: 'drop' }, description, true);
+      return;
+    }
+    add({ chain, action: 'drop', limit: DROP_LOG_LIMIT, log: 'yes', 'log-prefix': `zone drop ${where}` }, `${description}, logging ${DROP_LOG_LIMIT.split(',')[0]} a second`, true);
+    add({ chain, action: 'drop' }, `${description}, past the log limit`, true);
   };
 
   // Input: the router itself.
@@ -458,8 +472,7 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
   for (const z of config.zones) {
     if (open(z, ROUTER)) add({ chain: 'input', action: 'jump', 'jump-target': pairChain(z, ROUTER), 'in-interface-list': z }, `${z} to router`);
   }
-  dropQuietly('input');
-  add({ chain: 'input', action: 'drop', ...dropLog('in') }, 'drop everything else to the router', true);
+  finalDrop('input', 'in', 'drop everything else to the router');
 
   // Forward: between zones.
   if (config.fasttrack) {
@@ -477,8 +490,7 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
       }
     }
   }
-  dropQuietly('forward');
-  add({ chain: 'forward', action: 'drop', ...dropLog('fwd') }, 'drop everything else between zones', true);
+  finalDrop('forward', 'fwd', 'drop everything else between zones');
 
   // Each open pair's chain: its accepts, then back to where it came from.
   for (const from of config.zones) {
@@ -624,6 +636,17 @@ export function unzoned(addresses: Ros[], members: Record<string, string[]>): st
 // ─── Drift ───────────────────────────────────────────────────────────────────
 
 export interface ZoneDrift { missing: string[]; extra: string[] }
+
+/**
+ * Rules applied before MTM changed how it writes them, so an Apply with
+ * nothing edited still brings them up to date. Today: logged final drops
+ * from before the log limit (#369).
+ */
+export function zoneRulesOutdated(desired: CompiledRule[] | null | undefined): string[] {
+  const unlimited = (desired ?? []).some((r) => r.params.action === 'drop' && r.params.log === 'yes'
+    && (r.params['log-prefix'] ?? '').startsWith('zone drop') && !r.params.limit);
+  return unlimited ? [`Dropped traffic is now logged at most ${DROP_LOG_LIMIT.split(',')[0]} times a second, so a flood or a scan can't overload the router. Apply to update the final drops.`] : [];
+}
 
 /** What differs between the device and the last apply. Null when they match. */
 export function zoneDrift(current: Ros[], desired: CompiledRule[]): ZoneDrift | null {

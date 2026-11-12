@@ -2,6 +2,7 @@ import {
   parseZoneInput, compileZones, planApply, planMembers, zoneEligibility, zoneDrift, unzoned, signature, pairChain,
   addressError, ROUTER, type ZoneConfig, type ZonePolicy,
   endpointError, isHostname, zoneHosts, planHostLists, hostList, ZONE_HOST_COMMENT,
+  DROP_LOG_LIMIT, zoneRulesOutdated,
 } from '../zoneFirewall';
 import { evaluateInputChain, type MgmtConnection } from '../../services/changeGuard/firewallPath';
 import { analyzeChange, type PlannedChange } from '../../services/changeGuard/analyzeChange';
@@ -197,14 +198,28 @@ describe('compiling zones', () => {
   const by = (chain: string) => rules.filter((r) => r.params.chain === chain).map((r) => r.params);
 
   it('builds Ron\'s layout: stateful rules, same-zone accepts, a jump per open pair, drops at the end', () => {
-    expect(by('input').map((r) => r.action)).toEqual(['accept', 'drop', 'accept', 'accept', 'jump', 'jump', 'drop']);
+    expect(by('input').map((r) => r.action)).toEqual(['accept', 'drop', 'accept', 'accept', 'jump', 'jump', 'drop', 'drop']);
     expect(by('input')[3]['src-address']).toBe('10.9.0.5');
     expect(by('input')[4]).toMatchObject({ 'jump-target': 'LAN-to-router', 'in-interface-list': 'LAN' });
-    expect(by('forward').map((r) => r.action)).toEqual(['fasttrack-connection', 'accept', 'drop', 'accept', 'jump', 'drop']);
+    expect(by('forward').map((r) => r.action)).toEqual(['fasttrack-connection', 'accept', 'drop', 'accept', 'jump', 'drop', 'drop']);
     expect(by('forward')[0]['hw-offload']).toBe('yes');
     expect(by('forward')[3]).toMatchObject({ 'in-interface-list': 'LAN', 'out-interface-list': 'LAN' });
     expect(by('forward')[4]).toMatchObject({ 'jump-target': 'LAN-to-WAN', 'in-interface-list': 'LAN', 'out-interface-list': 'WAN' });
-    expect(by('forward').at(-1)).toMatchObject({ action: 'drop', log: 'yes', 'log-prefix': 'zone drop fwd' });
+    expect(by('forward').at(-2)).toMatchObject({ action: 'drop', log: 'yes', 'log-prefix': 'zone drop fwd', limit: DROP_LOG_LIMIT });
+  });
+
+  it('logs drops at most DROP_LOG_LIMIT, dropping the rest unlogged, and only one drop when nothing logs (#369)', () => {
+    for (const c of ['input', 'forward']) {
+      const [logged, rest] = by(c).slice(-2);
+      expect(logged).toMatchObject({ action: 'drop', log: 'yes', limit: '5,10' });
+      expect(rest).toEqual({ chain: c, action: 'drop', comment: expect.stringMatching(/past the log limit$/) });
+    }
+    const { input: off } = parseZoneInput(body({ logDrops: false }), live);
+    const quietRules = compileZones(off!.config, ctx);
+    for (const c of ['input', 'forward']) {
+      const drops = quietRules.filter((r) => r.params.chain === c && r.params.action === 'drop' && !r.params['connection-state']);
+      expect(drops.map((r) => r.params)).toEqual([{ chain: c, action: 'drop', comment: expect.not.stringMatching(/log limit/) }]);
+    }
   });
 
   it('puts each pair\'s services in its own chain, on the device\'s ports, ending in a hidden return', () => {
@@ -214,7 +229,7 @@ describe('compiling zones', () => {
     ]);
     expect(chain.at(-1)!.hidden).toBe(true);
     expect(rules.filter((r) => r.params.chain === 'LAN-to-WAN').map((r) => r.params.action)).toEqual(['accept', 'return']);
-    expect(rules.filter((r) => r.hidden).map((r) => r.params.action).sort()).toEqual(['drop', 'drop', 'return', 'return', 'return']);
+    expect(rules.filter((r) => r.hidden).map((r) => r.params.action).sort()).toEqual(['drop', 'drop', 'drop', 'drop', 'return', 'return', 'return']);
     expect(rules.every((r) => r.params.comment.startsWith('mtm zone: '))).toBe(true);
   });
 
@@ -235,13 +250,25 @@ describe('compiling zones', () => {
     expect(noFt.some((r) => r.params.action === 'fasttrack-connection')).toBe(false);
   });
 
+  it('says when rules applied before the log limit need an Apply (#369)', () => {
+    expect(zoneRulesOutdated(rules)).toEqual([]);
+    const before = rules.filter((r) => !r.description.endsWith('past the log limit')).map((r) => {
+      const { limit: _l, ...params } = r.params; void _l;
+      return { ...r, params };
+    });
+    expect(zoneRulesOutdated(before)[0]).toMatch(/at most 5 times a second/);
+    const { input: off } = parseZoneInput(body({ logDrops: false }), live);
+    expect(zoneRulesOutdated(compileZones(off!.config, ctx))).toEqual([]);
+    expect(zoneRulesOutdated(null)).toEqual([]);
+  });
+
   it('drops a quiet zone\'s traffic unlogged, before the logged drop (#415)', () => {
     const { input: q } = parseZoneInput(body({ quietZones: ['WAN', 'nope'] }), live);
     expect(q!.config.quietZones).toEqual(['WAN']);
     const quiet = compileZones(q!.config, ctx);
     const chain = (c: string) => quiet.filter((r) => r.params.chain === c);
     for (const c of ['input', 'forward']) {
-      const [silent, last] = chain(c).slice(-2);
+      const [silent, last] = chain(c).slice(-3);
       expect(silent.params).toMatchObject({ action: 'drop', 'in-interface-list': 'WAN' });
       expect(silent.params.log).toBeUndefined();
       expect(silent.hidden).toBe(true);
