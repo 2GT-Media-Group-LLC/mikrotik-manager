@@ -31,6 +31,9 @@ import { resolveModules, describeDisabled } from '../utils/pollModules';
 import { updateAvailable } from '../utils/rosVersion';
 import { certExpiryState, needsAttention, describeCert } from '../utils/certExpiry';
 import { offlineAction, recoveryAlert, describeDuration } from '../utils/intermittent';
+import {
+  failedPollsBeforeOffline, shouldMarkOffline, isSiteOutage, siteOutageMessage, SITE_OUTAGE_WINDOW_SEC,
+} from '../utils/pollFailures';
 import { runHealthCheck } from './healthCheck';
 import { gateTtlSeconds } from '../utils/schedulerGate';
 import { runPollJob, pollJobAborted } from '../utils/pollJobContext';
@@ -1413,6 +1416,8 @@ export class PollerService {
 
   /** A poll reached the device: close any open outage, and announce a recovery. */
   private recordPollSuccess(device: DeviceRow, prevStatus: string): void {
+    // A poll that reaches the device ends any run of failures.
+    query(`UPDATE devices SET poll_failures = 0 WHERE id = $1 AND poll_failures <> 0`, [device.id]).catch(() => {});
     // Any open outage ends with a successful poll, whatever the status said
     // before it. Keyed on the pre-poll status, an outage opened while this
     // poll was running (a timeout) was never closed, and the device's uptime
@@ -1805,6 +1810,21 @@ export class PollerService {
   private async recordDeviceFailure(deviceId: number, message: string): Promise<void> {
     const device = await this.getDevice(deviceId);
     const prevStatus = device?.status;
+
+    // Count the failure, then decide. An online device stays online until
+    // offline_after_failed_polls polls in a row have failed: one failure is
+    // too often the manager or the path, not the device (utils/pollFailures).
+    const [counted] = await query<{ poll_failures: number }>(
+      `UPDATE devices SET poll_failures = poll_failures + 1, last_poll_failure_at = NOW()
+        WHERE id = $1 RETURNING poll_failures`, [deviceId]);
+    const needed = failedPollsBeforeOffline((await queryOne<{ value: unknown }>(
+      `SELECT value FROM app_settings WHERE key = 'offline_after_failed_polls'`).catch(() => null))?.value);
+    if (!shouldMarkOffline(prevStatus, counted?.poll_failures ?? needed, needed)) {
+      console.log(`[Poller] ${device?.name ?? `Device #${deviceId}`} missed a poll ` +
+        `(${counted?.poll_failures}/${needed} before offline): ${message}`);
+      return;
+    }
+
     await query(`UPDATE devices SET status = 'offline', updated_at = NOW() WHERE id = $1`, [deviceId]);
 
     // Normal devices alert when they go offline. Intermittent ones (#168) alert
@@ -1830,10 +1850,34 @@ export class PollerService {
       now: new Date(),
     });
     if (action === 'alert') {
-      alertService.dispatch('device_offline', `${device?.name ?? `Device #${deviceId}`} is offline: ${message}`, {
-        deviceId,
-        deviceName: device?.name,
-      }).catch(() => {});
+      // Most of the site going quiet together is one alert for the site, not
+      // one per device: the shared cooldown key lets only the first through.
+      const siteId = (device as (DeviceRow & { site_id?: number | null }) | null)?.site_id ?? null;
+      const site = await queryOne<{ failing: number; total: number; name: string | null }>(
+        `SELECT COUNT(*) FILTER (
+                  WHERE d.poll_failures > 0
+                    AND d.last_poll_failure_at > NOW() - make_interval(secs => $2))::int AS failing,
+                COUNT(*)::int AS total,
+                MAX(s.name) AS name
+           FROM devices d LEFT JOIN sites s ON s.id = d.site_id
+          WHERE d.site_id IS NOT DISTINCT FROM $1 AND NOT d.intermittent
+            -- Devices already down before the window are neither part of
+            -- this event nor answering; leave them out of both counts.
+            AND NOT EXISTS (
+              SELECT 1 FROM device_availability a
+               WHERE a.device_id = d.id AND a.came_back_online_at IS NULL
+                 AND a.went_offline_at < NOW() - make_interval(secs => $2))`,
+        [siteId, SITE_OUTAGE_WINDOW_SEC]).catch(() => null);
+      if (site && isSiteOutage(site.failing, site.total)) {
+        alertService.dispatch('device_offline', siteOutageMessage(site.name, site.failing, site.total), {
+          cooldownKey: `device_offline:site:${siteId ?? 'none'}`,
+        }).catch(() => {});
+      } else {
+        alertService.dispatch('device_offline', `${device?.name ?? `Device #${deviceId}`} is offline: ${message}`, {
+          deviceId,
+          deviceName: device?.name,
+        }).catch(() => {});
+      }
     } else if (action === 'alert-long-offline' && offlineSince) {
       const mins = (Date.now() - offlineSince.getTime()) / 60000;
       alertService.dispatch('device_offline',

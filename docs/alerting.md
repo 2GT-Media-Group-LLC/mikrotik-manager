@@ -28,6 +28,21 @@ cooldown that prevents a flapping device from flooding your channels.
 | `optic_degraded` | An optic's receive or transmit light is at least the threshold in dB away from the port's usual level, either way (default 3 dB; off by default), its receive light crosses an optional fixed limit, or the module is at 70 °C or more. See [Optic light levels](#optic-light-levels); the cooldown applies to each port separately |
 | `scheduled_command_failed` | A [scheduled bulk command](commands.md#schedules) failed on a device, halted, or didn't run: missed while the manager was down, its account removed, or no device in a maintenance window (#359). On by default; each schedule can turn its own off |
 
+### When a device counts as offline
+
+A device is marked offline only after **2 fast polls in a row** have failed (**Settings →
+Alerting → Missed polls before offline**, 1 to 10; 1 is the old behaviour). One failed poll is
+often the manager or the path, not the device: a poll that ran over its time limit, a lost
+packet, a few seconds' stall. Until then the device stays online, its clients and links stay as
+they were, and nothing alerts; the poller log notes the missed poll. A device that is already
+offline, or was never online, has no grace.
+
+When most of a site (three quarters, at sites with 3 devices or more) stops answering within
+two minutes, **Device offline** sends one alert naming the site and how many devices went quiet,
+instead of one per device. That is usually the path from the manager to the site, the site's
+uplink, or the manager itself. Devices that were already down before then are left out of the
+count.
+
 Alerts are suppressed for devices inside an active [maintenance window](#maintenance-windows).
 Devices marked as [expected to go offline](devices.md#devices-that-go-offline-on-purpose)
 only send an offline alert once they have been gone longer than their limit.

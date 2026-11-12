@@ -1998,6 +1998,27 @@ export default function SettingsPage() {
                   onCommit={(v) => updateSettingsMutation.mutate({ optic_rx_high_dbm: v })} />
               </div>
             </div>
+
+            {/* Offline only after several missed polls; one alert when a site goes quiet. */}
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-700 text-sm">
+              <p className="font-medium text-gray-900 dark:text-white">Missed polls before offline</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 mb-2">
+                A device is marked offline, and &quot;Device offline&quot; alerts, only after this many fast polls in a row
+                have failed. 1 marks it offline on the first failure, as before. When most of a site stops answering within
+                two minutes, one alert names the site instead of one alert per device.
+              </p>
+              <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
+                <NumberSetting
+                  className="input w-20 text-center py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={(settings['offline_after_failed_polls'] as number | undefined) ?? 2}
+                  onCommit={(v) => updateSettingsMutation.mutate({ offline_after_failed_polls: v })}
+                  min="1"
+                  max="10"
+                  disabled={!isAdmin}
+                />
+                failed polls in a row
+              </label>
+            </div>
           </div>
 
           {/* Alert Channels */}

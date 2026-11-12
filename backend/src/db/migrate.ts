@@ -2024,6 +2024,10 @@ CREATE INDEX IF NOT EXISTS idx_netflow_sessions_server ON netflow_sessions(serve
 -- The zoom a site's map opens at (#362): 1 (world) to 19 (a building). NULL
 -- fits the map to what's on it, as before.
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS map_zoom SMALLINT;
+-- Fast polls failed in a row, and when the last one failed: a device goes
+-- offline only after offline_after_failed_polls of them (utils/pollFailures).
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS poll_failures INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS last_poll_failure_at TIMESTAMPTZ;
 `;
 
 const DEFAULT_SETTINGS = [
@@ -2075,6 +2079,8 @@ const DEFAULT_SETTINGS = [
   // are kept only when this is on, and sessions are kept this many days.
   { key: 'netflow_sessions_unidentified', value: false },
   { key: 'retention_sessions_days', value: 3 },
+  // A device is marked offline after this many failed fast polls in a row.
+  { key: 'offline_after_failed_polls', value: 2 },
   { key: 'change_guard_enabled', value: true },
   { key: 'change_guard_mode', value: 'binary' },
   { key: 'change_guard_timeout_sec', value: 120 },
