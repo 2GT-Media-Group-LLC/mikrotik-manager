@@ -1,7 +1,8 @@
 import { logSafe } from '../utils/logSafe';
 import { Queue, Worker, Job } from 'bullmq';
 import { hasRadios } from './mikrotik/capsman';
-import { checkApi, promoteToApi, recordApiCheck, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
+import { promoteToApi, refreshOverSsh, type SshOnlyDevice } from './sshOnly';
+import { checkApi, recordApiCheck, resolveUnspecifiedApiPort } from './apiCheck';
 import { apiCheckIntervalMs } from '../utils/sshOnly';
 import { cleanOverrides, effectiveValues } from '../utils/pollOverrides';
 import { createRedisConnection, redis } from '../config/redis';
@@ -1371,6 +1372,9 @@ export class PollerService {
       await this.processSshOnlyJob(device);
       return;
     }
+    if (device.api_port === 0) {
+      device.api_port = await resolveUnspecifiedApiPort(device);
+    }
     const appSettings = await this.getAppSettings();
     const pollModules = resolveModules(appSettings);
 
@@ -1713,6 +1717,8 @@ export class PollerService {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
 
+    // The fast poll resolves an unspecified API port before other lanes use it.
+    if (device.api_port === 0) return;
     const modules = resolveModules(await this.getAppSettings());
     const collector = new DeviceCollector(device);
     collector.modules = modules;
@@ -1768,6 +1774,7 @@ export class PollerService {
   private async processLogsJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
+    if (device.api_port === 0) return;
     // Skipped before connecting: with logs off there is nothing to fetch, so
     // the session itself is the waste.
     const appSettings = await this.getAppSettings();

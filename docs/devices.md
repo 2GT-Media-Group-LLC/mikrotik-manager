@@ -40,6 +40,12 @@ given. The plain API sends the login unencrypted on every poll, so a device that
 8728 is listed on the [Security page](security.md#encrypted-management-api-ssl), where it
 can be switched over. Choosing 8728 for a public address still shows a warning.
 
+**Force add without checking connectivity** saves the device with unknown status without
+connecting. If no API port was specified in the form, address, or credential preset, it
+stores port `0` until a poll can connect: the poll tries API-SSL first, then the plain API
+when API-SSL is unavailable, and saves the working port. An explicit API-SSL choice uses
+its corresponding standard port instead. A specified port is kept as given.
+
 When you enter a port, an **API-SSL (encrypted)** box appears under it. It is ticked for 8729
 and clear for any other port. Tick it when api-ssl runs on another port: a port forwarded
 through NAT to reach several devices behind one address, say, or a network where 8729 is

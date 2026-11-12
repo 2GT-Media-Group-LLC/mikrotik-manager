@@ -264,6 +264,9 @@ async function createDevice(
   if (apiTls !== null && preset?.api_port == null && (input.api_port == null || input.api_port === '') && !portCheck.port) {
     api_port = apiTls ? API_SSL_PORT : 8728;
   }
+  if (forceAdd && preset?.api_port == null && (input.api_port == null || input.api_port === '') && !portCheck.port) {
+    api_port = 0;
+  }
   let testClient: RouterOSClient | undefined;
   let sslFallbackReason: string | undefined;
   let detectedSerial: string | null = null;

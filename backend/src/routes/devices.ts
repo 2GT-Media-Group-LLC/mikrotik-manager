@@ -1,6 +1,7 @@
 import { PartialApplyError, isPartialApply, stepFailure } from '../services/changeGuard/partialApply';
 import { resolveAuth } from '../services/sshExec';
-import { readSshInfo, refreshOverSsh, checkApi, promoteToApi, recordApiCheck, type SshOnlyDevice } from '../services/sshOnly';
+import { readSshInfo, refreshOverSsh, promoteToApi, type SshOnlyDevice } from '../services/sshOnly';
+import { checkApi, recordApiCheck } from '../services/apiCheck';
 import { describeSshFailure } from '../utils/sshOnly';
 import net from 'net';
 import { Router, Request, Response } from 'express';
@@ -796,6 +797,9 @@ router.put('/:id', requireWrite, async (req, res) => {
       return res.status(422).json({ error: describeSshFailure(err, ssh_port) });
     }
   } else if (!existing.ssh_only && (ipChanged || routeChanged || portChanged || tlsChanged || userChanged || api_password || presetReplacesApiCreds)) {
+    if (api_port === 0) {
+      return res.status(400).json({ error: 'Specify an API port to change the connection settings before the first successful poll.' });
+    }
     const testIp = ip_address ?? existing.ip_address;
     const testPort = api_port;
     const testUser = api_username ?? existing.api_username;

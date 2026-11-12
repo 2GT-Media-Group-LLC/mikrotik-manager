@@ -7,19 +7,14 @@
  * device into an ordinary one and a full sync starts.
  */
 import { query } from '../config/database';
-import { decrypt } from '../utils/crypto';
 import { fit } from '../utils/fit';
 import { logSafe } from '../utils/logSafe';
 import { runSshCommand, type SshExecDevice } from './sshExec';
-import { RouterOSClient } from './mikrotik/RouterOSClient';
-import { usesApiTls } from '../utils/apiTls';
-import { connectPreferringSsl, API_PORT, API_SSL_PORT } from './mikrotik/apiConnect';
-import { pinIdentity, hasPin } from './identityPins';
+import { pinIdentity } from './identityPins';
+import type { ApiCheck } from './apiCheck';
 import {
-  SSH_INFO_COMMAND, parseSshInfo, looksLikeRouterOs, classifyApiFailure,
-  type SshInfo, type ApiFailureKind,
+  SSH_INFO_COMMAND, parseSshInfo, looksLikeRouterOs, type SshInfo,
 } from '../utils/sshOnly';
-import { routeOf } from './jumpHosts';
 
 export interface SshOnlyDevice extends SshExecDevice {
   api_port: number;
@@ -40,51 +35,6 @@ export async function readSshInfo(
     throw new Error('Logged in over SSH, but the device did not answer like RouterOS.');
   }
   return info;
-}
-
-export type ApiCheck =
-  | { ok: true; port: number; tlsFingerprint: string | null }
-  | { ok: false; kind: ApiFailureKind; message: string };
-
-/**
- * Can the manager log in to the API now? Tries API-SSL then the plain API,
- * unless the device was given another port or an explicit API-SSL choice. Short timeouts: on a fleet where
- * the API is firewalled every attempt waits the full time.
- */
-export async function checkApi(device: SshOnlyDevice): Promise<ApiCheck> {
-  const password = decrypt(device.api_password_encrypted);
-  let client: RouterOSClient | undefined;
-  try {
-    let port: number;
-    // A port of its own, or an explicit API-SSL choice (#257), is used as given.
-    if (device.api_port && (typeof device.api_tls === 'boolean' || (device.api_port !== API_PORT && device.api_port !== API_SSL_PORT))) {
-      client = new RouterOSClient(device.ip_address, device.api_port, device.api_username, password, 6_000, 30_000, usesApiTls(device),
-        routeOf(device));
-      await client.connect();
-      port = device.api_port;
-    } else {
-      // A device that has presented an API-SSL certificate before stays on
-      // API-SSL: blocking 8729 must not move it to the plain API (GHSA-63v6-w7qf-349f).
-      const usedSsl = await hasPin(device.id, 'api-tls');
-      const chosen = await connectPreferringSsl(device.ip_address, device.api_username, password,
-        { sslTimeoutMs: 5_000, plainTimeoutMs: 6_000, sslOnly: usedSsl, jumpHostId: routeOf(device) });
-      client = chosen.client;
-      port = chosen.port;
-    }
-    return { ok: true, port, tlsFingerprint: client.tlsFingerprint ?? null };
-  } catch (err) {
-    return { ok: false, ...classifyApiFailure(err) };
-  } finally {
-    client?.disconnect();
-  }
-}
-
-/** Store the outcome of an API check that failed, for the device page. */
-export async function recordApiCheck(deviceId: number, message: string | null): Promise<void> {
-  await query(
-    `UPDATE devices SET api_checked_at = NOW(), api_check_error = $2 WHERE id = $1`,
-    [deviceId, message],
-  );
 }
 
 /**

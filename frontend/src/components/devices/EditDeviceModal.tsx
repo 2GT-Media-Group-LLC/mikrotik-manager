@@ -41,7 +41,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   const [form, setForm] = useState({
     name: device.name,
     ip_address: device.ip_address,
-    api_port: String(device.api_port ?? 8728),
+    api_port: device.api_port === 0 ? '' : String(device.api_port ?? 8728),
     api_username: device.api_username ?? 'admin',
     api_password: '',
     ssh_port: String(device.ssh_port ?? 22),
@@ -105,7 +105,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
   const addressInvalid = addressTrimmed.length > 0 && !isValidDeviceAddress(addressTrimmed);
   const showPlaintextWarning =
     addressTrimmed.length > 0 && !addressInvalid &&
-    classifyAddress(addressTrimmed) !== 'private' &&
+    classifyAddress(addressTrimmed) !== 'private' && form.api_port.trim() !== '' &&
     !apiSsl;
 
   // Live IPs from the router itself — useful so you can change the
@@ -160,7 +160,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
       const payload: Record<string, unknown> = {
         name: form.name,
         ip_address: form.ip_address,
-        api_port: parsePort(form.api_port, 8728),
+        ...(device.api_port === 0 && !form.api_port.trim() ? {} : { api_port: parsePort(form.api_port, 8728) }),
         api_username: form.api_username,
         ssh_port: parsePort(form.ssh_port, 22),
         ssh_username: form.ssh_username || null,
@@ -388,6 +388,11 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
                   value={form.api_port}
                   onChange={(e) => set('api_port', e.target.value)}
                 />
+                {device.api_port === 0 && (
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                    Awaiting port detection. Specify a port to change connection settings before the first successful poll.
+                  </p>
+                )}
                 <label className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-slate-200 mt-1.5 cursor-pointer"
                   title="Tick when this port runs api-ssl, for example a forwarded port behind NAT">
                   <input type="checkbox" className="w-3.5 h-3.5 rounded" checked={apiSsl} onChange={(e) => setApiSslChoice(e.target.checked)} />

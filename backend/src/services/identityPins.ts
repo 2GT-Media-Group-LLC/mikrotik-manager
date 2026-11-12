@@ -140,7 +140,7 @@ export async function verifyDeviceIdentity(
   // 8728 too: probing 8729 for such a device used to match no pin at all
   // (GHSA-63v6-w7qf-349f).
   const portMatch = kind === 'api-tls'
-    ? `(d.api_port = $3 OR ($3 = 8729 AND COALESCE(d.api_port, 8728) = 8728))`
+    ? `(d.api_port = $3 OR ($3 = 8729 AND COALESCE(d.api_port, 8728) IN (0, 8728)))`
     : 'COALESCE(d.ssh_port, 22) = $3';
   const rows = await query<PinRow>(
     `SELECT d.id AS device_id, d.name, p.fingerprint, p.seen_fingerprint
