@@ -1292,6 +1292,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#set-up-capsman" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set up CAPsMAN
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#current-limits" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1641,6 +1652,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#set-up-capsman" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set up CAPsMAN
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#current-limits" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1725,7 +1747,7 @@ for legacy CAPsMAN from <code>/caps-man/manager</code> and <code>/interface/wire
 </tr>
 <tr>
 <td><code>controller_cap</code></td>
-<td>Runs CAPsMAN <strong>and</strong> its own radios under it — a supported MikroTik arrangement</td>
+<td>Runs CAPsMAN <strong>and</strong> has radios of its own: under itself (a supported MikroTik arrangement), or set locally on an access point that is also a controller</td>
 </tr>
 <tr>
 <td><code>none</code></td>
@@ -1799,12 +1821,66 @@ outright or silently replaced at the next provision — while the API reports su
 <p>Five paths refuse or skip provisioned radios, naming the controller in the error: bulk
 SSID deployment, interface create, interface edit, interface delete, and guest network
 setup.</p>
+<h2 id="set-up-capsman">Set up CAPsMAN<a class="headerlink" href="#set-up-capsman" title="Permanent link">&para;</a></h2>
+<p><strong>Set up CAPsMAN</strong> on the Wireless page makes a device a controller with one SSID on every band,
+from Ron's request in #438. Choose the device, then enter:</p>
+<ul>
+<li>the <strong>SSID</strong> and <strong>password</strong> (WPA2, plus WPA3 on wifi);</li>
+<li>the <strong>bridge</strong> Wi-Fi clients join, on the controller and on every AP, so each AP needs a
+  bridge with this name;</li>
+<li>the <strong>country</strong>, optional, as RouterOS names it (<code>united states</code>);</li>
+<li>the <strong>role</strong>: <strong>Controller and AP</strong>, where its own radios broadcast the SSID too, or
+  <strong>Controller only</strong>.</li>
+</ul>
+<p>It works on either CAPsMAN, and asks which when the device has both. A wifi controller only
+manages wifi-package APs, and a legacy one only legacy wireless APs.</p>
+<p>What it does on the device:</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>wifi</th>
+<th>legacy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A configuration named <code>mtm-capsman</code> with the SSID, password and bridge</td>
+<td><code>/interface wifi configuration</code></td>
+<td><code>/caps-man configuration</code>, with local forwarding</td>
+</tr>
+<tr>
+<td>A provisioning rule, commented <code>mtm capsman</code>, that gives it to every radio</td>
+<td><code>/interface wifi provisioning</code></td>
+<td><code>/caps-man provisioning</code></td>
+</tr>
+<tr>
+<td>CAPsMAN on</td>
+<td><code>/interface wifi capsman</code></td>
+<td><code>/caps-man manager</code></td>
+</tr>
+<tr>
+<td>Controller and AP only: its own CAP, pointed at <code>127.0.0.1</code></td>
+<td><code>/interface wifi cap</code></td>
+<td><code>/interface wireless cap</code>, with its wlans</td>
+</tr>
+</tbody>
+</table>
+<p>Running it again on the same device changes the same items. Leave the password empty to keep
+the one set. Switching to <strong>Controller only</strong> turns its own CAP off, and its radios go back to
+their own settings. The change runs under <a href="../change-guard/">Change Guard</a>, and <strong>Review
+changes</strong> shows the writes first.</p>
+<ul>
+<li>Other APs join by turning on their CAP, with discovery on the same network. The wizard doesn't
+  change them.</li>
+<li>RouterOS uses the first provisioning rule that matches a radio. Rules the device already has
+  come before the new one, and the form says so.</li>
+</ul>
 <h2 id="current-limits">Current limits<a class="headerlink" href="#current-limits" title="Permanent link">&para;</a></h2>
-<p><strong>Provisioning, configuration edits and interface enable/disable are deliberately not
-exposed.</strong> A CAPsMAN configuration applies to every access point bound to it
+<p><strong>Editing an existing controller's provisioning, configurations and interfaces isn't offered</strong>,
+apart from the setup above. A CAPsMAN configuration applies to every access point bound to it
 simultaneously — the fleet-wide version of the failure <a href="../change-guard/">Change Guard</a>
-exists to prevent. Those operations are held back until they carry the same
-prediction-and-revert protection that per-device changes do.</p>
+exists to prevent.</p>
 <h2 id="legacy-capsman">Legacy CAPsMAN<a class="headerlink" href="#legacy-capsman" title="Permanent link">&para;</a></h2>
 <p>The original CAPsMAN (<code>/caps-man</code>, from the <code>wireless</code> package) is supported too (#250).
 Older 802.11n and 802.11ac wave 1 access points (RB951, hAP ac lite, cAP ac and similar)

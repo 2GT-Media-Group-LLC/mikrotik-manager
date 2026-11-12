@@ -3299,8 +3299,16 @@ SSH-only devices and keys. It doesn't ping devices or poll them over SNMP. The p
 set in <strong>IP &gt; Services</strong>, so an SSH server moved to 2222 is the port allowed. The choice only
 appears when MTM can see its own address on the device.</p>
 <p>The two final drops log by default with the prefixes <code>zone drop in</code> and <code>zone drop fwd</code>, tagged so
-<a href="../firewall-events/#which-rule-logged-it">Firewall Events</a> links each line to its rule. Untick <strong>Log
+<a href="../firewall-events/#which-rule-logged-it">Firewall Logs</a> links each line to its rule. Untick <strong>Log
 what's dropped</strong> to leave them quiet. The returns and the final drops aren't shown in the matrix.</p>
+<p>A logged drop logs at most 5 packets a second (bursts of 10, <code>limit=5,10</code>). What goes past that
+is dropped by an unlogged rule right after it, <code>… past the log limit</code>, so a scan or a flood
+can't overload a small router with logging. Zones applied before 1.1.0-beta.46 log every drop;
+the Zones card says so, and <strong>Apply</strong> updates them.</p>
+<p>To quiet one zone, such as an untrusted zone the internet knocks on all day, untick <strong>Log drops</strong>
+on that zone. Its traffic is then dropped just before each final drop by an unlogged rule, <code>drop
+the rest from &lt;zone&gt;</code>, so the rest of what's dropped is still logged. Only traffic coming <em>from</em>
+the zone is affected; a drop on the way into it still logs.</p>
 <p>Replies always get back: a connection allowed one way is tracked, and the stateful accepts let its
 replies through. Port forwards (dstnat) are matched after the address is changed, so allow the
 service from the outside zone to the zone the server is in.</p>

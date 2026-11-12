@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta46" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.46
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta45" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2002,6 +2013,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta46" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.46
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta45" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2508,6 +2530,26 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta46">1.1.0-beta.46<a class="headerlink" href="#110-beta46" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Set up CAPsMAN</strong>, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438">#438</a>. The Wireless page
+  has a <strong>Set up CAPsMAN</strong> button: pick a device, an SSID, a password and a bridge, and it becomes
+  a CAPsMAN controller (wifi or legacy), either controller only or serving its own radios too.
+  Running it again on the same device changes the same setup. It goes through Change Guard and
+  Review changes. See <a href="../capsman/#set-up-capsman">Set up CAPsMAN</a>.</li>
+<li><strong>A controller with radios of its own shows as Controller and AP.</strong> A wifi controller whose own
+  radios are managed by it was shown as Controller only.</li>
+<li><strong>Log drops per zone</strong>, from Ron in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415">#415</a>. Each zone has a
+  <strong>Log drops</strong> checkbox, so a noisy zone such as WAN can stay out of Firewall Logs while the
+  rest still logs. See <a href="../devices/#zones">Zones</a>.</li>
+<li><strong>Logged drops are capped at 5 a second</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369">#369</a>). Logging every
+  dropped packet kept rebooting Ron's hAP ac². The final drops now log at most 5 packets a second
+  and drop the rest unlogged. Zones applied before this keep logging every drop until they're
+  applied again; the Zones card says so and <strong>Apply</strong> updates them.</li>
+</ul>
 <h2 id="110-beta45">1.1.0-beta.45<a class="headerlink" href="#110-beta45" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Firewall Logs looks more like Ron's mockup</strong> in
