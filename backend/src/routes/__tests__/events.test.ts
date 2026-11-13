@@ -169,6 +169,8 @@ describe('GET /api/events/firewall?hide= (hide rules)', () => {
   });
 
   it('works in the grouped view too', async () => {
+    // The grouped query counts too: no rows, not a count row standing in for a group.
+    mockedQuery.mockImplementation(async () => [] as never);
     const res = await request(makeApp()).get('/api/events/firewall?view=grouped&hide=4%7CPERMIT-ZT');
     expect(res.status).toBe(200);
     const sqls = mockedQuery.mock.calls.map((c) => c[0] as string);
