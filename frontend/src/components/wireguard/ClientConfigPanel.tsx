@@ -1,7 +1,6 @@
-import { useEffect, useRef } from 'react';
-import QRCode from 'qrcode';
+import { useMemo, useState } from 'react';
+import qrcode from 'qrcode-generator';
 import { Download, Copy, Check } from 'lucide-react';
-import { useState } from 'react';
 
 interface Props {
   conf: string;
@@ -12,11 +11,16 @@ interface Props {
  * a peer is created, or from its "View" action when the router still has
  * the private key it was created with. */
 export default function ClientConfigPanel({ conf, fileName }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (canvasRef.current) QRCode.toCanvas(canvasRef.current, conf, { width: 220, margin: 1 }).catch(() => {});
+  // Dependency-free QR generation: 0 = let the library pick the smallest type
+  // that fits, 'M' balances scan reliability against QR size for a config
+  // this long. scalable: true gives a viewBox so it fills its CSS box.
+  const qrSvg = useMemo(() => {
+    const qr = qrcode(0, 'M');
+    qr.addData(conf);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
   }, [conf]);
 
   const copy = () => {
@@ -47,7 +51,10 @@ export default function ClientConfigPanel({ conf, fileName }: Props) {
       </div>
       <div className="flex flex-col items-center shrink-0">
         <span className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Client QR</span>
-        <canvas ref={canvasRef} className="rounded-lg border border-gray-200 dark:border-slate-700" />
+        <div
+          className="w-[180px] h-[180px] rounded-lg border border-gray-200 dark:border-slate-700 bg-white p-1 [&_svg]:w-full [&_svg]:h-full"
+          dangerouslySetInnerHTML={{ __html: qrSvg }}
+        />
       </div>
     </div>
   );
