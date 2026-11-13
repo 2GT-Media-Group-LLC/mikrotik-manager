@@ -72,6 +72,11 @@ and report what they found.
   that two-factor codes were limited per address only
   ([GHSA-63v6-w7qf-349f](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-63v6-w7qf-349f)).
   Fixed in 1.0.1.
+- **[@orshih6](https://github.com/orshih6)** found that a pull request from a fork whose branch
+  was named `main` or `dev` could get its own code built, pushed to our image registry under a
+  version of its choosing, including `latest`, and signed as ours
+  ([GHSA-pqxc-8r9j-p5pg](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-pqxc-8r9j-p5pg)).
+  Fixed in the publishing workflow on 2026-11-13; no published image was affected.
 
 ## Security Considerations for Self-Hosted Deployments
 
