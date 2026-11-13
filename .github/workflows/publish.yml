@@ -28,7 +28,15 @@ jobs:
   publish-backend:
     name: Build & Push Backend
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Only a push to this repository publishes. CI also runs for pull requests,
+    # and workflow_run's branch filter matches the PR's own branch name, so a
+    # fork's branch called main or dev passed it and its code was built, pushed
+    # and signed here (GHSA-pqxc-8r9j-p5pg).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     permissions:
       contents: read
       packages: write
@@ -50,7 +58,13 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
-          echo "version=$(node -p "require('./backend/package.json').version")" >> "$GITHUB_OUTPUT"
+          # The version becomes an image tag: a plain release or prerelease
+          # number only, never latest, beta or anything else.
+          VERSION=$(node -p "require('./backend/package.json').version")
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+(\.[0-9]+)?)?$ ]]; then
+            echo "::error::backend/package.json version '$VERSION' is not a release number"; exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "short=${SHA:0:7}" >> "$GITHUB_OUTPUT"
           # The moving tag follows the branch: main -> :latest, dev -> :beta.
           # Only the tip of that branch moves it, so a slow run can't go back.
@@ -66,7 +80,7 @@ jobs:
           # build would take the tag over.
           VERSION_TAG=false
           case "$BRANCH" in main) VERSION_TAG=true ;; esac
-          case "$(node -p "require('./backend/package.json').version")" in *beta*) VERSION_TAG=true ;; esac
+          case "$VERSION" in *beta*) VERSION_TAG=true ;; esac
           echo "version_tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
@@ -125,7 +139,15 @@ jobs:
   publish-nginx:
     name: Build & Push Nginx (Frontend)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Only a push to this repository publishes. CI also runs for pull requests,
+    # and workflow_run's branch filter matches the PR's own branch name, so a
+    # fork's branch called main or dev passed it and its code was built, pushed
+    # and signed here (GHSA-pqxc-8r9j-p5pg).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     permissions:
       contents: read
       packages: write
@@ -147,7 +169,13 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
-          echo "version=$(node -p "require('./backend/package.json').version")" >> "$GITHUB_OUTPUT"
+          # The version becomes an image tag: a plain release or prerelease
+          # number only, never latest, beta or anything else.
+          VERSION=$(node -p "require('./backend/package.json').version")
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+(\.[0-9]+)?)?$ ]]; then
+            echo "::error::backend/package.json version '$VERSION' is not a release number"; exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "short=${SHA:0:7}" >> "$GITHUB_OUTPUT"
           # The moving tag follows the branch: main -> :latest, dev -> :beta.
           # Only the tip of that branch moves it, so a slow run can't go back.
@@ -163,7 +191,7 @@ jobs:
           # build would take the tag over.
           VERSION_TAG=false
           case "$BRANCH" in main) VERSION_TAG=true ;; esac
-          case "$(node -p "require('./backend/package.json').version")" in *beta*) VERSION_TAG=true ;; esac
+          case "$VERSION" in *beta*) VERSION_TAG=true ;; esac
           echo "version_tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
