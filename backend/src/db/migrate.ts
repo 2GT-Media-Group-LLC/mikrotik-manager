@@ -1990,18 +1990,7 @@ CREATE TABLE IF NOT EXISTS proxy_certs (
 -- Session log from NetFlow (#415 step 2): one row per connection, both
 -- directions paired, client to server. Off until turned on per device.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS netflow_sessions BOOLEAN NOT NULL DEFAULT FALSE;
--- Preserve the previous first-poll behavior for existing unknown devices when
--- introducing the explicit pending marker. Do not re-mark devices on restart.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema = current_schema() AND table_name = 'devices' AND column_name = 'force_add_pending'
-  ) THEN
-    ALTER TABLE devices ADD COLUMN force_add_pending BOOLEAN NOT NULL DEFAULT FALSE;
-    UPDATE devices SET force_add_pending = TRUE WHERE status = 'unknown';
-  END IF;
-END $$;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS force_add_pending BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE TABLE IF NOT EXISTS netflow_sessions (
   id              BIGSERIAL PRIMARY KEY,
   device_id       INTEGER REFERENCES devices(id) ON DELETE CASCADE,
