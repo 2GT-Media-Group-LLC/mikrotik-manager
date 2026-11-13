@@ -17,7 +17,7 @@ import { isIpOrPrefix, splitList } from '../utils/ipPrefix';
 import { Link } from 'react-router-dom';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import TagChips, { type TagLike } from '../components/devices/TagChips';
-import { generateWgKeyPair } from '../utils/wireguardKeys';
+import { generateWgKeyPair, type WgKeyPair } from '../utils/wireguardKeys';
 import { buildClientConf } from '../utils/wireguardClientConf';
 import ClientConfigPanel from '../components/wireguard/ClientConfigPanel';
 
@@ -150,11 +150,13 @@ function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, lis
   const [keepalive, setKeepalive]   = useState(String(rosDurationSeconds(existing?.['persistent-keepalive']) ?? ''));
   const [presharedKey, setPresharedKey] = useState('');
 
-  // A client key pair generated in the browser for a brand-new peer, so the
-  // resulting .conf/QR can be shown once it's saved — never sent anywhere but
-  // into this peer and this screen.
-  const [generateClient, setGenerateClient] = useState(!existing);
-  const [genKeys, setGenKeys] = useState(() => (existing ? null : generateWgKeyPair()));
+  // A client key pair generated in the browser, so the resulting .conf/QR can
+  // be shown once it's saved — never sent anywhere but into this peer and
+  // this screen. Opt-in and off by default (review #445): the private key
+  // ends up stored on the router itself, readable by anyone with read access
+  // to it, and responder/client-* aren't on every RouterOS 7 build.
+  const [generateClient, setGenerateClient] = useState(false);
+  const [genKeys, setGenKeys] = useState<WgKeyPair | null>(null);
   const [clientDns, setClientDns] = useState('');
   const [clientEndpointHost, setClientEndpointHost] = useState(endpointAddr || deviceAddress || '');
   const [clientAllowedIps, setClientAllowedIps] = useState('0.0.0.0/0, ::/0');
@@ -233,7 +235,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, lis
           </div>
           <div className="p-5 space-y-3">
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              Save this now — the private key won&apos;t be shown like this again. (You can still open it from &quot;View&quot; on this peer later.)
+              Save this now. You can open it again anytime from this peer&apos;s &quot;View&quot; action.
             </p>
             <ClientConfigPanel conf={resultConf} fileName={`${ifaceName}-peer.conf`} />
           </div>
@@ -255,12 +257,18 @@ function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, lis
           <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-4">
-          {!existing && (
+          <div>
             <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
               <input type="checkbox" checked={generateClient} onChange={e => { setGenerateClient(e.target.checked); if (e.target.checked && !genKeys) setGenKeys(generateWgKeyPair()); }} />
               Generate a client key pair now (shows a ready .conf / QR once saved)
             </label>
-          )}
+            <p className="mt-0.5 ml-5 text-xs text-gray-400">
+              The private key is generated here and then stored on the router itself (not sent anywhere else) — anyone with
+              read access to the router can see it. Needs RouterOS 7 with the WireGuard responder fields; older builds will
+              refuse the save.
+              {existing && ' Turning this on for an existing peer replaces its key — the device using the old one will need the new config.'}
+            </p>
+          </div>
           {generateClient && genKeys ? (
             <div>
               <div className="flex items-center justify-between mb-1">
