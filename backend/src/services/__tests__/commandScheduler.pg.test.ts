@@ -110,6 +110,15 @@ suite('scheduled bulk commands (#359)', () => {
     return runsOf(sid);
   };
   const lastStatus = async (sid: number) => (await db.query<{ last_status: string; next_run_at: string }>(`SELECT last_status, next_run_at FROM command_schedules WHERE id = $1`, [sid]))[0];
+  // The schedule's last status is written just after the run's, so wait for it too.
+  const finished = async (sid: number, done: () => boolean = () => true) => {
+    for (let i = 0; i < 100; i++) {
+      const s = await lastStatus(sid);
+      if (!['pending', 'running'].includes(s.last_status) && done()) return s;
+      await new Promise((ok) => setTimeout(ok, 50));
+    }
+    return lastStatus(sid);
+  };
 
   it('runs a due schedule on its devices, tags and sites, and moves to the next time', async () => {
     const sid = await schedule({ device_ids: [id.a1], tag_ids: [id.tag] });
@@ -117,7 +126,7 @@ suite('scheduled bulk commands (#359)', () => {
     const [run] = await settled(sid);
     expect(run.status).toBe('completed');
     expect(ran.sort()).toEqual(['a1', 'b1']);
-    const s = await lastStatus(sid);
+    const s = await finished(sid);
     expect(s.last_status).toBe('completed');
     expect(new Date(s.next_run_at).getTime()).toBeGreaterThan(Date.now());
   });
@@ -126,8 +135,7 @@ suite('scheduled bulk commands (#359)', () => {
     const sid = await schedule({ site_ids: [id.A] });
     await scheduler.tick();
     await settled(sid);
-    await new Promise((ok) => setTimeout(ok, 100));
-    expect((await lastStatus(sid)).last_status).toBe('failed');
+    expect((await finished(sid, () => alerts.length > 0)).last_status).toBe('failed');
     expect(alerts.join(' ')).toMatch(/1 of 2 devices failed/);
   });
 
