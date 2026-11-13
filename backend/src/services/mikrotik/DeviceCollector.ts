@@ -6280,7 +6280,10 @@ export class DeviceCollector {
   }
 
   async getWireGuardPeers(): Promise<Record<string, string>[]> {
-    return this.client.execute('/interface/wireguard/peers/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
+    // show-sensitive: RouterOS stores a per-peer private-key when it was
+    // created as a responder (the client config it can hand back later);
+    // without this flag the field is withheld from the reply.
+    return this.client.execute('/interface/wireguard/peers/print', { detail: '', 'show-sensitive': '' }).catch(() => [] as Record<string, string>[]);
   }
 
   async addWireGuardPeer(params: Record<string, string>): Promise<void> {
