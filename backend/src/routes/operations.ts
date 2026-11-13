@@ -895,7 +895,7 @@ router.post('/sync-all', requireWrite, async (req, res) => {
   // exactly the blast radius the bulk-command guards exist to contain (#130).
   const siteFilter = siteScopeDevices(writableScope(req));
   const devices = await query<DeviceRow>(
-    `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only
+    `SELECT * FROM devices WHERE status = 'online' AND NOT ssh_only AND NOT force_add_pending
        ${siteFilter ? `AND ${siteFilter}` : ''}`
   );
   // Bounded like backup-all (J10): sync-all used to open a session to every

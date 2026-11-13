@@ -160,8 +160,8 @@ describe('createDeviceFromBody (API-SSL on any port)', () => {
   /** RouterOSClient(host, port, user, pass, connectMs, readMs, useTls, jumpHostId). */
   const ctorArgs = () => (RouterOSClient as unknown as jest.Mock).mock.calls[0];
   const insertParams = () => (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql))![1];
-  /** The INSERT ends (..., api_tls, jump_host_id). */
-  const insertedTls = () => insertParams()[insertParams().length - 2];
+  /** The API TLS choice is the 21st INSERT parameter. */
+  const insertedTls = () => insertParams()[20];
 
   it('connects with TLS on a custom port when asked, and stores the choice', async () => {
     const result = await createDeviceFromBody({ ...base, api_port: '18729', api_tls: true }, null);
@@ -184,6 +184,140 @@ describe('createDeviceFromBody (API-SSL on any port)', () => {
       expect(result).toMatchObject({ ok: false, status: 400 });
     }
     expect(RouterOSClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('createDeviceFromBody (force add)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('adds without API or SSH checks and leaves the device unverified', async () => {
+    const readSshInfo = jest.spyOn(sshOnly, 'readSshInfo');
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null });
+    (query as jest.Mock).mockResolvedValue([{ id: 45 }]);
+    (queryOne as jest.Mock).mockResolvedValueOnce({ id: 45, name: 'offline' });
+
+    const result = await createDeviceFromBody(
+      {
+        name: 'offline',
+        ip_address: '192.168.88.2',
+        api_username: 'admin',
+        api_password: 'secret',
+        force_add: true,
+        ssh_only: true,
+      },
+      null
+    );
+
+    expect(result.ok).toBe(true);
+    expect(RouterOSClient).not.toHaveBeenCalled();
+    expect(readSshInfo).not.toHaveBeenCalled();
+    const insert = (query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => /INSERT INTO devices/.test(sql)
+    );
+    expect(insert).toBeDefined();
+    expect(insert[1][3]).toBe(0);
+    expect(insert[1][7]).toBe('admin');
+    expect(insert[1][8]).toBe('enc:secret');
+    expect(insert[1][12]).toBeNull();
+    expect(insert[1][13]).toBe(true);
+    expect(insert[1][22]).toBe(false);
+    expect(insert[1][23]).toBe(true);
+    expect(insert[0]).toContain('force_add_pending');
+    expect(insert[0]).toContain("CASE WHEN $23::boolean THEN 'online' ELSE 'unknown' END");
+    expect(result).toMatchObject({
+      ok: true,
+      body: { connection: { connectivity_checked: false } },
+    });
+    readSshInfo.mockRestore();
+  });
+
+  it.each([
+    [{ api_port: 18728 }, 18728],
+    [{ ip_address: '192.168.88.2:18729' }, 18729],
+    [{ api_tls: true }, 0],
+    [{ api_port: '' }, 0],
+  ])('stores the specified port, or zero when absent: %j', async (overrides, expectedPort) => {
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null });
+    (query as jest.Mock).mockResolvedValue([{ id: 45 }]);
+    (queryOne as jest.Mock).mockResolvedValueOnce({ id: 45, name: 'offline' });
+    const result = await createDeviceFromBody({
+      name: 'offline', ip_address: '192.168.88.2', api_username: 'admin',
+      api_password: 'secret', force_add: true, ...overrides,
+    }, null);
+    expect(result.ok).toBe(true);
+    const insert = (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql));
+    expect(insert[1][3]).toBe(expectedPort);
+    expect(insert[1][13]).toBe(false);
+    expect(insert[1][22]).toBe(false);
+  });
+
+  it.each([[18729, 18729], [null, 0]])('respects a preset port of %s', async (presetPort, expectedPort) => {
+    (queryOne as jest.Mock).mockResolvedValueOnce({
+      id: 5, api_username: 'admin', api_password_encrypted: 'secret', api_port: presetPort,
+      ssh_username: null, ssh_password_encrypted: null, ssh_port: null, allow_operator_use: true,
+    });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null });
+    (query as jest.Mock).mockResolvedValue([{ id: 45 }]);
+    (queryOne as jest.Mock).mockResolvedValueOnce({ id: 45, name: 'offline' });
+    const result = await createDeviceFromBody({
+      name: 'offline', ip_address: '192.168.88.2', credential_preset_id: 5, force_add: true,
+    }, null);
+    expect(result.ok).toBe(true);
+    const insert = (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql));
+    expect(insert[1][3]).toBe(expectedPort);
+  });
+
+  it('keeps the preset SSH credentials for a force-added SSH-only device', async () => {
+    (queryOne as jest.Mock).mockResolvedValueOnce({
+      id: 5, api_username: 'api-user', api_password_encrypted: 'api-secret', api_port: null,
+      ssh_username: 'ssh-user', ssh_password_encrypted: 'ssh-secret', ssh_port: 2222, allow_operator_use: true,
+    });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null });
+    (query as jest.Mock).mockResolvedValue([{ id: 45 }]);
+    (queryOne as jest.Mock).mockResolvedValueOnce({ id: 45, name: 'offline' });
+    const result = await createDeviceFromBody({
+      name: 'offline', ip_address: '192.168.88.2', credential_preset_id: 5, force_add: true, ssh_only: true,
+    }, null);
+    expect(result.ok).toBe(true);
+    const insert = (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql));
+    expect(insert[1].slice(6, 9)).toEqual([2222, 'ssh-user', 'enc:ssh-secret']);
+    expect(insert[1][13]).toBe(true);
+    expect(insert[1][22]).toBe(false);
+  });
+
+  it('still marks a normally added SSH-only device online after a successful SSH check', async () => {
+    (RouterOSClient as unknown as jest.Mock).mockImplementation(() => ({
+      connect: jest.fn().mockRejectedValue(new Error('API unavailable')),
+      disconnect: jest.fn(),
+    }));
+    const readSshInfo = jest.spyOn(sshOnly, 'readSshInfo').mockResolvedValue({
+      identity: 'router', rosVersion: '7.1', model: 'test', serial: null, firmware: null, architecture: null,
+    });
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null });
+    (query as jest.Mock).mockResolvedValue([{ id: 45 }]);
+    (queryOne as jest.Mock).mockResolvedValueOnce({ id: 45, name: 'router' });
+    const result = await createDeviceFromBody({
+      name: 'router', ip_address: '192.168.88.2', api_username: 'admin',
+      api_password: 'secret', api_port: 8728, ssh_only: true,
+    }, null);
+    expect(result.ok).toBe(true);
+    const insert = (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql));
+    expect(insert[1][13]).toBe(true);
+    expect(insert[1][22]).toBe(true);
+    expect(insert[1][23]).toBe(false);
+    expect(result).toMatchObject({ body: { connection: { ssh_only: true } } });
+    readSshInfo.mockRestore();
+  });
+
+  it('still rejects an explicitly supplied zero port', async () => {
+    (queryOne as jest.Mock).mockResolvedValueOnce({ default_jump_host_id: null });
+    const result = await createDeviceFromBody({
+      name: 'offline', ip_address: '192.168.88.2', api_username: 'admin',
+      api_password: 'secret', force_add: true, api_port: 0,
+    }, null);
+    expect(result).toMatchObject({ ok: false, status: 400 });
   });
 });
 
@@ -262,7 +396,7 @@ describe('createDeviceFromBody (jump hosts)', () => {
     expect(result.ok).toBe(true);
     expect(routeTested()).toBe(4);
     const insert = sqlRan(/INSERT INTO devices/)![1] as unknown[];
-    expect(insert[insert.length - 1]).toBe(4);
+    expect(insert[21]).toBe(4);
   });
 
   it('connects directly when the form says so, whatever the site default', async () => {

@@ -62,6 +62,7 @@ export default function AddDeviceModal({
   const [presetId, setPresetId] = useState<number | null>(prefill?.credential_preset_id ?? null);
   // The API isn't enabled on the device yet (#174): add it over SSH.
   const [sshOnly, setSshOnly] = useState(false);
+  const [forceAdd, setForceAdd] = useState(false);
   // api-ssl on a port of the user's choosing (#257). Null follows the port:
   // ticked for 8729, unticked otherwise, until the user changes it.
   const [apiSslChoice, setApiSslChoice] = useState<boolean | null>(null);
@@ -112,11 +113,12 @@ export default function AddDeviceModal({
     portGiven && !apiSsl;
 
   const createPayload = (
-    opts: { combineWithDeviceId?: number; forceReplace?: boolean } = {}
+    opts: { combineWithDeviceId?: number; forceReplace?: boolean; forceAdd?: boolean } = {}
   ) => {
     const extra = {
       combine_with_device_id: opts.combineWithDeviceId,
       force_replace_existing_by_serial: opts.forceReplace,
+      force_add: opts.forceAdd,
       ...(tagIds.length ? { tag_ids: tagIds } : {}),
       ...(sshOnly ? { ssh_only: true } : {}),
       ...siteFieldPayload(site),
@@ -178,7 +180,7 @@ export default function AddDeviceModal({
     setError('');
     setDuplicateSerial(null);
     try {
-      await devicesApi.create(createPayload());
+      await devicesApi.create(createPayload({ forceAdd }));
       onSuccess();
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -473,6 +475,23 @@ export default function AddDeviceModal({
             </div>
           )}
 
+          <label className="flex items-start gap-2 p-2.5 rounded-lg border border-gray-200 dark:border-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 w-4 h-4 rounded"
+              checked={forceAdd}
+              onChange={(e) => setForceAdd(e.target.checked)}
+            />
+            <span className="text-sm text-gray-700 dark:text-slate-200">
+              Force add without checking connectivity
+              <span className="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                Adds the device with an unknown status. Its first poll will check {sshOnly ? 'SSH' : 'the API'}.
+                If its serial matches a device in this site, the new record is removed when that device is online,
+                or merged into it when it is not online.
+              </span>
+            </span>
+          </label>
+
           <div>
             <label className="label">Notes (optional)</label>
             <textarea
@@ -495,7 +514,9 @@ export default function AddDeviceModal({
             <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
               <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
               <p className="text-sm text-blue-600 dark:text-blue-400">
-                {sshOnly ? 'Trying the API, then logging in over SSH...' : 'Testing connection and collecting device data...'}
+                {forceAdd
+                  ? 'Adding device without checking connectivity...'
+                  : sshOnly ? 'Trying the API, then logging in over SSH...' : 'Testing connection and collecting device data...'}
               </p>
             </div>
           )}

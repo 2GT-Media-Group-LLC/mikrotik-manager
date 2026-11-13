@@ -1,6 +1,7 @@
 import { PartialApplyError, isPartialApply, stepFailure } from '../services/changeGuard/partialApply';
 import { resolveAuth } from '../services/sshExec';
-import { readSshInfo, refreshOverSsh, checkApi, promoteToApi, recordApiCheck, type SshOnlyDevice } from '../services/sshOnly';
+import { readSshInfo, refreshOverSsh, promoteToApi, type SshOnlyDevice } from '../services/sshOnly';
+import { checkApi, recordApiCheck } from '../services/apiCheck';
 import { describeSshFailure } from '../utils/sshOnly';
 import net from 'net';
 import { Router, Request, Response } from 'express';
@@ -796,6 +797,9 @@ router.put('/:id', requireWrite, async (req, res) => {
       return res.status(422).json({ error: describeSshFailure(err, ssh_port) });
     }
   } else if (!existing.ssh_only && (ipChanged || routeChanged || portChanged || tlsChanged || userChanged || api_password || presetReplacesApiCreds)) {
+    if (api_port === 0) {
+      return res.status(400).json({ error: 'Specify an API port to change the connection settings before the first successful poll.' });
+    }
     const testIp = ip_address ?? existing.ip_address;
     const testPort = api_port;
     const testUser = api_username ?? existing.api_username;
@@ -877,6 +881,9 @@ router.post('/:id/sync', requireWrite, async (req, res) => {
     [req.params.id]
   );
   if (!deviceRow) return res.status(404).json({ error: 'Device not found' });
+  if (deviceRow.force_add_pending) {
+    return res.status(409).json({ error: 'This force-added device is awaiting its first successful poll. Retry sync after it connects.' });
+  }
 
   // Without its API yet (#174), a sync is the SSH read the poller does.
   if (deviceRow.ssh_only) {
@@ -914,9 +921,12 @@ router.post('/:id/sync', requireWrite, async (req, res) => {
 // does the API answer now? If it does, the device is managed over the API from
 // now on and a full sync starts. The poller checks too, every minute.
 router.post('/:id/check-api', requireWrite, async (req, res) => {
-  const device = await queryOne<SshOnlyDevice & { ssh_only: boolean }>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  const device = await queryOne<SshOnlyDevice & { ssh_only: boolean; force_add_pending: boolean }>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (!device) return res.status(404).json({ error: 'Device not found' });
   if (!device.ssh_only) return res.json({ api: true, message: 'This device is already managed over the API.' });
+  if (device.force_add_pending) {
+    return res.status(409).json({ error: 'This force-added device must complete its first SSH poll before checking the API.' });
+  }
   const check = await checkApi(device);
   if (!check.ok) {
     await recordApiCheck(device.id, check.message);
