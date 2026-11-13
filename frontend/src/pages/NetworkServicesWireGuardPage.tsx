@@ -372,6 +372,11 @@ function PeerConfigModal({ peer, serverPublicKey, listenPort, onClose }: PeerCon
               })}
               fileName={`${label.replace(/[^a-z0-9_-]+/gi, '-')}.conf`}
             />
+          ) : peer['dynamic'] === 'true' ? (
+            <p className="text-sm text-gray-600 dark:text-slate-300">
+              This peer is a dynamic entry — created and managed by the router&apos;s own Cloud/back-to-home-vpn service, not by a
+              config you set. It can&apos;t be edited or given a replacement key here; it has no client `.conf` of its own to show.
+            </p>
           ) : (
             <p className="text-sm text-gray-600 dark:text-slate-300">
               This peer has no private key stored on the router, so its client config can&apos;t be shown — only the public key it was
