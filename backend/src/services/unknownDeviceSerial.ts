@@ -20,7 +20,7 @@ interface Pin {
   seen_fingerprint: string | null;
 }
 
-/** Reconcile an unknown device before its first collection writes device data. */
+/** Reconcile a force-added device before its first collection writes device data. */
 export async function resolveUnknownDeviceSerial(device: DeviceRow, reported: string | null): Promise<Resolution> {
   const serial = reported?.trim() || null;
   return transaction(async (client) => {
@@ -31,7 +31,7 @@ export async function resolveUnknownDeviceSerial(device: DeviceRow, reported: st
     const candidate = candidateResult.rows[0];
     if (!candidate) return { action: 'gone' };
     if (candidate.status === 'disabled') return { action: 'gone' };
-    if (candidate.status !== 'unknown') return { action: 'gone' };
+    if (!candidate.force_add_pending) return { action: 'gone' };
     if (pollJobAborted()) throw new Error('Poll cancelled: it ran past its time limit');
     if (candidate.ip_address !== device.ip_address || candidate.api_port !== device.api_port ||
         candidate.api_username !== device.api_username || candidate.api_password_encrypted !== device.api_password_encrypted ||
@@ -81,7 +81,7 @@ export async function resolveUnknownDeviceSerial(device: DeviceRow, reported: st
       await client.query(
         `INSERT INTO events (device_id, event_time, severity, topic, message)
          VALUES ($1, NOW(), 'info', 'manager', $2)`,
-        [existing.id, `An unknown duplicate at ${candidate.ip_address} was removed because this device is online.`],
+        [existing.id, `A force-added duplicate at ${candidate.ip_address} was removed because this device is online.`],
       );
       if (pollJobAborted()) throw new Error('Poll cancelled: it ran past its time limit');
       await client.query('DELETE FROM devices WHERE id = $1', [candidate.id]);
@@ -137,7 +137,7 @@ export async function resolveUnknownDeviceSerial(device: DeviceRow, reported: st
     await client.query(
       `INSERT INTO events (device_id, event_time, severity, topic, message)
        VALUES ($1, NOW(), 'info', 'manager', $2)`,
-      [existing.id, `An unknown device at ${candidate.ip_address} was merged into this record while it was not online, after its serial matched.`],
+      [existing.id, `A force-added device at ${candidate.ip_address} was merged into this record while it was not online, after its serial matched.`],
     );
     if (pollJobAborted()) throw new Error('Poll cancelled: it ran past its time limit');
     await client.query('DELETE FROM devices WHERE id = $1', [candidate.id]);

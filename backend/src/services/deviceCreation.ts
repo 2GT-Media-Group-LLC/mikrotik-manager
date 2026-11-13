@@ -485,18 +485,19 @@ async function createDevice(
       `INSERT INTO devices (name, name_locked, ip_address, api_port, api_username, api_password_encrypted,
                             ssh_port, ssh_username, ssh_password_encrypted, device_type, notes, status,
                             site_id, serial_number, ssh_only, last_seen, model, ros_version, firmware_version,
-                            architecture, ros_identity, api_checked_at, api_check_error, api_tls, jump_host_id)
+                            architecture, ros_identity, api_checked_at, api_check_error, api_tls, jump_host_id,
+                            force_add_pending)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, CASE WHEN $23::boolean THEN 'online' ELSE 'unknown' END,
                COALESCE($12::int, (SELECT id FROM sites ORDER BY is_default DESC, id LIMIT 1)), $13,
                $14::boolean, CASE WHEN $23::boolean THEN NOW() END, $15, $16, $17, $18, $19,
-               CASE WHEN $23::boolean THEN NOW() END, $20, $21, $22)
+               CASE WHEN $23::boolean THEN NOW() END, $20, $21, $22, $24)
        RETURNING id`,
       [name, nameLocked, address, api_port, api_username, encryptedPass,
        ssh_port, sshUserToStore || null, encryptedSshPass, device_type, notes || null,
        ctx?.siteId ?? null, detectedSerial, sshOnly,
        fit(sshInfo?.model, 100), fit(sshInfo?.rosVersion, 20), fit(sshInfo?.firmware, 50),
        fit(sshInfo?.architecture, 32), fit(sshInfo?.identity, 255), addedOverSsh ? apiUnavailable ?? null : null, apiTls,
-       jumpHostId, addedOverSsh]
+       jumpHostId, addedOverSsh, forceAdd]
     );
   } catch (err) {
     if ((err as { code?: string }).code === '23505' && /serial/i.test(String((err as { constraint?: string }).constraint ?? ''))) {

@@ -464,7 +464,7 @@ export class PollerService {
         const configSnapEnabled = eff.configSnapEnabled;
         const configSnapIntervalMin = eff.configSnapMin;
         slowWindows.set(device.id, eff.slowSec);
-        if (device.status === 'unknown') {
+        if (device.force_add_pending) {
           const type = device.ssh_only ? 'sshcheck' : 'fast';
           const interval = device.ssh_only ? 60_000 : eff.fastSec * 1000;
           const key = `poll:${type}:${device.id}`;
@@ -1396,11 +1396,11 @@ export class PollerService {
     collector.pipelineReads = appSettings['poller_pipelined_reads'] !== false;
     // Sessions kept open between polls (#301): fast polls on the fast lane, a
     // full sync on the slow one; a MAC scan keeps its own connection.
-    const pooling = persistentSessions(appSettings) && data.type !== 'macscan' && device.status !== 'unknown';
+    const pooling = persistentSessions(appSettings) && data.type !== 'macscan' && !device.force_add_pending;
     let ok = false;
     try {
       await collector.connectPooled(data.type === 'full' ? 'slow' : 'fast', pooling);
-      if (device.status === 'unknown' && await this.reconcileUnknownDevice(device, collector.reportedSerial)) return;
+      if (device.force_add_pending && await this.reconcileUnknownDevice(device, collector.reportedSerial)) return;
       const collectStarted = Date.now();
 
       if (data.type === 'full') {
@@ -1491,9 +1491,9 @@ export class PollerService {
     const prevStatus = device.status;
     const now = Date.now();
     const gate = `poll:apicheck:${device.id}`;
-    const checkedInfo = device.status === 'unknown' ? await readSshInfo(dev) : undefined;
+    const checkedInfo = device.force_add_pending ? await readSshInfo(dev) : undefined;
     if (checkedInfo && await this.reconcileUnknownDevice(device, checkedInfo.serial)) return;
-    if (!checkedInfo && device.status !== 'unknown' && now >= (await this.getTimestamp(gate))) {
+    if (!checkedInfo && !device.force_add_pending && now >= (await this.getTimestamp(gate))) {
       const check = await checkApi(dev);
       if (check.ok) {
         await promoteToApi(dev, check);
@@ -1553,7 +1553,7 @@ export class PollerService {
 
   private async processSpectralJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
-    if (!device) return;
+    if (!device || device.force_add_pending || device.status === 'disabled') return;
 
     // Fetch wireless interfaces for this device so we know which radios to scan
     const ifaces = await query<{ name: string }>(
@@ -1585,7 +1585,7 @@ export class PollerService {
 
   private async processApScanJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
-    if (!device) return;
+    if (!device || device.force_add_pending || device.status === 'disabled') return;
 
     const ifaces = await query<{ name: string }>(
       `SELECT name FROM wireless_interfaces WHERE device_id = $1 AND disabled = FALSE`,
@@ -1624,7 +1624,7 @@ export class PollerService {
 
   private async processConfigSnapJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
-    if (!device) return;
+    if (!device || device.force_add_pending || device.status === 'disabled') return;
 
     // Config snapshots capture `/export` over SSH. Only attempt this automatically
     // when SSH credentials are actually configured — otherwise we'd repeatedly try
@@ -1651,7 +1651,7 @@ export class PollerService {
    */
   private async processConfigHealthJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
-    if (!device) return;
+    if (!device || device.force_add_pending || device.status === 'disabled') return;
     try {
       const { findings } = await runConfigHealth(device as unknown as GuardDevice);
       const critical = findings.filter((f) => f.severity === 'critical').length;
@@ -1746,7 +1746,7 @@ export class PollerService {
     if (!device) return;
 
     // The fast poll resolves an unspecified API port before other lanes use it.
-    if (device.api_port === 0 || device.status === 'unknown' || device.status === 'disabled') return;
+    if (device.api_port === 0 || device.force_add_pending || device.status === 'disabled') return;
     const modules = resolveModules(await this.getAppSettings());
     const collector = new DeviceCollector(device);
     collector.modules = modules;
@@ -1802,7 +1802,7 @@ export class PollerService {
   private async processLogsJob(data: PollJob): Promise<void> {
     const device = await this.getDevice(data.deviceId);
     if (!device) return;
-    if (device.api_port === 0 || device.status === 'unknown' || device.status === 'disabled') return;
+    if (device.api_port === 0 || device.force_add_pending || device.status === 'disabled') return;
     // Skipped before connecting: with logs off there is nothing to fetch, so
     // the session itself is the waste.
     const appSettings = await this.getAppSettings();
@@ -1863,11 +1863,11 @@ export class PollerService {
     const device = await this.getDevice(deviceId);
     // Keep an unverified device eligible for first-poll serial reconciliation.
     // The failed attempt and its error are already recorded in device_poll_stats.
-    if (!device || device.status === 'unknown' || device.status === 'disabled') return;
+    if (!device || device.force_add_pending || device.status === 'disabled') return;
     const prevStatus = device.status;
     const updated = await query(
       `UPDATE devices SET status = 'offline', updated_at = NOW()
-       WHERE id = $1 AND status NOT IN ('unknown', 'disabled') RETURNING id`, [deviceId],
+       WHERE id = $1 AND NOT force_add_pending AND status <> 'disabled' RETURNING id`, [deviceId],
     );
     if (!updated.length) return;
 

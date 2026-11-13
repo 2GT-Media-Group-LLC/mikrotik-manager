@@ -48,13 +48,41 @@ suite('force-added serial reconciliation (PostgreSQL)', () => {
     return (await db.query<DeviceRow>(
       `INSERT INTO devices (name, ip_address, api_port, api_username, api_password_encrypted,
                             ssh_port, ssh_username, ssh_password_encrypted, status, site_id,
-                            serial_number, jump_host_id)
-       VALUES ($1, $2, $3, 'admin', $4, 22, 'admin', $5, $6, $7, $8, NULL) RETURNING *`,
+                            serial_number, jump_host_id, force_add_pending)
+       VALUES ($1, $2, $3, 'admin', $4, 22, 'admin', $5, $6, $7, $8, NULL, $9) RETURNING *`,
       [opts.name, opts.candidate ? '192.0.2.2' : '192.0.2.1', opts.port ?? 8729,
         `${opts.name}-api`, `${opts.name}-ssh`, opts.status ?? 'unknown', opts.site ?? siteId,
-        opts.serial ?? null],
+        opts.serial ?? null, opts.candidate ?? false],
     ))[0];
   }
+
+  it('backfills unknown devices once and preserves pending flags on later migrations', async () => {
+    const unknown = await addDevice({ name: 'unknown' });
+    const offline = await addDevice({ name: 'offline', status: 'offline' });
+    await db.query('ALTER TABLE devices DROP COLUMN force_add_pending');
+    const { runMigrations } = await import('../../db/migrate');
+    await runMigrations();
+    expect(await db.query('SELECT id, force_add_pending FROM devices ORDER BY id')).toEqual([
+      { id: unknown.id, force_add_pending: true },
+      { id: offline.id, force_add_pending: false },
+    ]);
+    await db.query('UPDATE devices SET force_add_pending = (id = $1)', [offline.id]);
+    await runMigrations();
+    expect(await db.query('SELECT id, force_add_pending FROM devices ORDER BY id')).toEqual([
+      { id: unknown.id, force_add_pending: false },
+      { id: offline.id, force_add_pending: true },
+    ]);
+  });
+
+  it('clears the pending flag when a successful SSH refresh marks the device online', async () => {
+    const candidate = await addDevice({ name: 'candidate', candidate: true });
+    const { refreshOverSsh } = await import('../sshOnly');
+    await refreshOverSsh(candidate, {
+      identity: null, rosVersion: null, model: null, serial: null, firmware: null, architecture: null,
+    });
+    expect(await db.query('SELECT status, force_add_pending FROM devices WHERE id = $1', [candidate.id]))
+      .toEqual([{ status: 'online', force_add_pending: false }]);
+  });
 
   it('removes a new duplicate of an online device, retaining its record and event', async () => {
     const existing = await addDevice({ name: 'existing', serial: 'Ab12', status: 'online' });
@@ -80,8 +108,10 @@ suite('force-added serial reconciliation (PostgreSQL)', () => {
 
     await poller.recordPollOutcome(candidate.id, 'full', 100, 'connection failed');
     await poller.recordDeviceFailure(candidate.id, 'connection failed');
-    const [row] = await db.query<{ status: string }>('SELECT status FROM devices WHERE id = $1', [candidate.id]);
-    expect(row.status).toBe('unknown');
+    const [row] = await db.query<{ status: string; force_add_pending: boolean }>(
+      'SELECT status, force_add_pending FROM devices WHERE id = $1', [candidate.id],
+    );
+    expect(row).toEqual({ status: 'unknown', force_add_pending: true });
     const [stats] = await db.query<{ last_error: string }>(
       'SELECT last_error FROM device_poll_stats WHERE device_id = $1 AND kind = $2', [candidate.id, 'full'],
     );

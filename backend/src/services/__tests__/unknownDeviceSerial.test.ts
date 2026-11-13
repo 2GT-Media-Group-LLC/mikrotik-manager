@@ -13,10 +13,10 @@ const candidate: DeviceRow & { site_id: number } = {
   id: 2, name: 'new', ip_address: '10.0.0.2', api_port: 8729, api_tls: null,
   api_username: 'admin', api_password_encrypted: 'new-password', ssh_port: 22,
   ssh_username: 'admin', ssh_password_encrypted: 'new-ssh-password',
-  jump_host_id: null, device_type: 'router', status: 'unknown', ssh_only: false,
+  jump_host_id: null, device_type: 'router', status: 'unknown', ssh_only: false, force_add_pending: true,
   site_id: 1,
 };
-const existing = { ...candidate, id: 1, name: 'old', ip_address: '10.0.0.1', status: 'online' };
+const existing = { ...candidate, id: 1, name: 'old', ip_address: '10.0.0.1', status: 'online', force_add_pending: false };
 
 describe('resolveUnknownDeviceSerial', () => {
   let matches: Array<typeof existing>;
@@ -53,11 +53,17 @@ describe('resolveUnknownDeviceSerial', () => {
     expect(statements().some((sql) => sql.startsWith('UPDATE devices'))).toBe(false);
   });
 
-  it('does not reconcile a device whose status is no longer unknown', async () => {
-    current = { ...candidate, status: 'online' };
+  it('does not reconcile a device that is no longer pending, even if its status is unknown', async () => {
+    current = { ...candidate, force_add_pending: false };
     matches = [existing];
     await expect(resolveUnknownDeviceSerial(candidate, 'AB12')).resolves.toEqual({ action: 'gone' });
     expect(statements().some((sql) => sql.startsWith('DELETE FROM devices'))).toBe(false);
+  });
+
+  it('reconciles a pending device even when its status is offline', async () => {
+    current = { ...candidate, status: 'offline' };
+    matches = [existing];
+    await expect(resolveUnknownDeviceSerial(current, 'AB12')).resolves.toEqual({ action: 'removed', deviceId: 1, disabled: false });
   });
 
   it('removes the new record when the existing device is online', async () => {

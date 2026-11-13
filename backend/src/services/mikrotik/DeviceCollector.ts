@@ -232,6 +232,8 @@ export interface DeviceRow {
   ros_version?: string;
   device_type: string;
   status: string;
+  /** Force-added without a successful first poll. */
+  force_add_pending?: boolean;
   /** Added over SSH only; the API isn't enabled yet (#174). */
   ssh_only?: boolean;
   /** The jump host it's reached through; null for direct. */
@@ -2968,7 +2970,9 @@ export class DeviceCollector {
 
   async updateDeviceStatus(status: string): Promise<void> {
     await query(
-      `UPDATE devices SET status = $1, last_seen = NOW(), updated_at = NOW() WHERE id = $2`,
+      `UPDATE devices SET status = $1, last_seen = NOW(), updated_at = NOW(),
+         force_add_pending = CASE WHEN $1 = 'online' THEN FALSE ELSE force_add_pending END
+       WHERE id = $2`,
       [status, this.device.id]
     );
   }

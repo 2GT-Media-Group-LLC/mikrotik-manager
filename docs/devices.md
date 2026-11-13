@@ -48,8 +48,8 @@ its corresponding standard port instead. A specified port is kept as given. If *
 isn't enabled on this device yet** is also ticked, the first poll uses SSH instead; later
 polls retry the API as described below.
 
-On the first successful connection, an **unknown** device's serial is checked before it is
-collected. Failed polls leave it unknown until it connects; polling statistics retain the
+On the first successful connection, a **force-added** device's serial is checked before it is
+collected. Failed polls leave it unknown and pending until it connects; polling statistics retain the
 failure details. If it matches one device in the same site, the new record is removed when the
 existing device is online. Otherwise the new connection settings are merged into the existing
 record, preserving its history and combining tags; the new record is removed. A disabled

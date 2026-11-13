@@ -223,6 +223,8 @@ describe('createDeviceFromBody (force add)', () => {
     expect(insert[1][12]).toBeNull();
     expect(insert[1][13]).toBe(true);
     expect(insert[1][22]).toBe(false);
+    expect(insert[1][23]).toBe(true);
+    expect(insert[0]).toContain('force_add_pending');
     expect(insert[0]).toContain("CASE WHEN $23::boolean THEN 'online' ELSE 'unknown' END");
     expect(result).toMatchObject({
       ok: true,
@@ -304,6 +306,7 @@ describe('createDeviceFromBody (force add)', () => {
     const insert = (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql));
     expect(insert[1][13]).toBe(true);
     expect(insert[1][22]).toBe(true);
+    expect(insert[1][23]).toBe(false);
     expect(result).toMatchObject({ body: { connection: { ssh_only: true } } });
     readSshInfo.mockRestore();
   });

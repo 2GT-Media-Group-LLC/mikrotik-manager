@@ -66,7 +66,7 @@ export async function refreshOverSsh(device: SshOnlyDevice, checkedInfo?: SshInf
   const name = !device.name_locked && info.identity ? info.identity : null;
   await query(
     `UPDATE devices SET
-       status = 'online', last_seen = NOW(),
+       status = 'online', last_seen = NOW(), force_add_pending = FALSE,
        name = COALESCE($2, name),
        model = COALESCE($3, model),
        serial_number = COALESCE(

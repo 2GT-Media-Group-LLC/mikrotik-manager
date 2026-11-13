@@ -38,7 +38,7 @@ const device: DeviceRow = {
   id: 45, name: 'offline', ip_address: '192.168.88.2', api_port: 0,
   api_username: 'admin', api_password_encrypted: 'encrypted',
   ssh_port: 22, ssh_username: 'admin', ssh_password_encrypted: 'encrypted',
-  jump_host_id: null, device_type: 'router', status: 'unknown', ssh_only: true,
+  jump_host_id: null, device_type: 'router', status: 'unknown', ssh_only: true, force_add_pending: true,
 };
 
 describe('SSH-only polling', () => {
@@ -91,8 +91,17 @@ describe('SSH-only polling', () => {
     expect(jest.mocked(query).mock.calls.some(([sql]) => sql.includes("status = 'offline'"))).toBe(false);
   });
 
+  it('records failure for a non-pending unknown device', async () => {
+    poller.getDevice.mockResolvedValue({ ...device, force_add_pending: false });
+    await poller.recordDeviceFailure(45, 'SSH unavailable');
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("status = 'offline'"), [45],
+    );
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('NOT force_add_pending'), [45]);
+  });
+
   it('retries the API and promotes the device on a later poll', async () => {
-    const online = { ...device, status: 'online' };
+    const online = { ...device, status: 'online', force_add_pending: false };
     poller.getDevice.mockResolvedValue(online);
     jest.mocked(checkApi).mockResolvedValue({ ok: true, port: 8729, tlsFingerprint: null });
 
@@ -105,7 +114,7 @@ describe('SSH-only polling', () => {
   });
 
   it('continues over SSH when a later API check fails', async () => {
-    const online = { ...device, status: 'online' };
+    const online = { ...device, status: 'online', force_add_pending: false };
     poller.getDevice.mockResolvedValue(online);
     jest.mocked(checkApi).mockResolvedValue({ ok: false, kind: 'unreachable', message: 'API unavailable' });
     jest.mocked(recordApiCheck).mockResolvedValue(undefined);
@@ -115,6 +124,16 @@ describe('SSH-only polling', () => {
     expect(recordApiCheck).toHaveBeenCalledWith(45, 'API unavailable');
     expect(refreshOverSsh).toHaveBeenCalledWith(online);
     expect(poller.setTimestamp).toHaveBeenCalled();
+  });
+
+  it('retries the API for an unknown SSH-only device that is not pending', async () => {
+    const verified = { ...device, force_add_pending: false };
+    poller.getDevice.mockResolvedValue(verified);
+    jest.mocked(checkApi).mockResolvedValue({ ok: true, port: 8729, tlsFingerprint: null });
+    await poller.processPollJob({ deviceId: 45, type: 'sshcheck' });
+    expect(checkApi).toHaveBeenCalledWith(verified);
+    expect(readSshInfo).not.toHaveBeenCalled();
+    expect(resolveUnknownDeviceSerial).not.toHaveBeenCalled();
   });
 
   it('resolves a force-added SSH device before updating it', async () => {
