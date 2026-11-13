@@ -11,6 +11,7 @@ import clsx from 'clsx';
 
 import { devicesApi, eventsApi } from '../services/api';
 import type { FirewallEvent, FirewallGroup, FirewallRuleOption } from '../services/api';
+import HideRulesPicker, { HIDE_MAX, ruleKey } from '../components/firewall/HideRulesPicker';
 import DevicePicker from '../components/common/DevicePicker';
 import { useSocket } from '../hooks/useSocket';
 import { useCanWrite } from '../hooks/useCanWrite';
@@ -51,6 +52,15 @@ function endpoint(ip: string, port?: number): string {
 type LogView = 'grouped' | 'raw';
 const VIEW_KEY = 'firewall-logs:view';
 const NAMES_KEY = 'firewall-logs:names';
+const HIDE_KEY = 'firewall-logs:hidden-rules';
+
+/** The rules hidden in this browser, as `<deviceId>|<prefix>` keys. */
+function readHidden(): string[] {
+  try {
+    const v: unknown = JSON.parse(readPref(HIDE_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string' && /^\d+\|./.test(k)).slice(0, HIDE_MAX) : [];
+  } catch { return []; }
+}
 
 function readPref(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -126,6 +136,9 @@ export default function FirewallEventsPage() {
   const [protocol, setProtocol] = useState('');
   // One rule's lines, by its whole log prefix (on the selected device).
   const [rule, setRule] = useState(() => urlParams.get('rule') ?? '');
+  // Every rule but these (the internet scans, say); kept in this browser.
+  const [hidden, setHiddenState] = useState(readHidden);
+  const setHidden = (v: string[]) => { setHiddenState(v); setPage(0); writePref(HIDE_KEY, JSON.stringify(v)); };
   // ?range=7d lets a link open a longer window; anything else means the default.
   const [range, setRange] = useState(() => {
     const r = urlParams.get('range') ?? DEFAULT_RANGE;
@@ -151,7 +164,7 @@ export default function FirewallEventsPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: [
       'firewall-events',
-      { search: debouncedSearch, deviceId, action, protocol, rule, range, page, view, names },
+      { search: debouncedSearch, deviceId, action, protocol, rule, hidden, range, page, view, names },
     ],
     queryFn: async (): Promise<{ events: FirewallEvent[]; groups: FirewallGroup[]; total: number; scanLimit?: number }> => {
       const params = {
@@ -163,6 +176,7 @@ export default function FirewallEventsPage() {
           : undefined,
         protocol: protocol || undefined,
         prefix: rule || undefined,
+        hide: hidden.length ? hidden : undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
         names: names ? (1 as const) : undefined,
@@ -410,15 +424,24 @@ export default function FirewallEventsPage() {
           }}
         >
           <option value="">All rules</option>
-          {rule && !ruleChoices.some((o) => `${o.deviceId}|${o.prefix}` === ruleValue) && (
+          {rule && !ruleChoices.some((o) => ruleKey(o) === ruleValue) && (
             <option value={ruleValue}>{rule}</option>
           )}
           {ruleChoices.map((o) => (
-            <option key={`${o.deviceId}|${o.prefix}`} value={`${o.deviceId}|${o.prefix}`}>
+            <option key={ruleKey(o)} value={ruleKey(o)}>
               {ruleLabel(o)}
             </option>
           ))}
         </select>
+
+        <HideRulesPicker
+          choices={ruleChoices}
+          hidden={hidden}
+          onChange={setHidden}
+          label={ruleLabel}
+          deviceId={deviceId}
+          deviceName={(id) => devices.find((d) => d.id === id)?.name}
+        />
 
         <select
           className="input w-full sm:w-40"
@@ -459,6 +482,11 @@ export default function FirewallEventsPage() {
           <p className="text-gray-500 dark:text-slate-400">
             No firewall events found
           </p>
+          {hidden.length > 0 && (
+            <button type="button" className="text-sm" style={{ color: 'var(--accent)' }} onClick={() => setHidden([])}>
+              {hidden.length} rule{hidden.length === 1 ? ' is' : 's are'} hidden — show all rules
+            </button>
+          )}
         </div>
       ) : view === 'grouped' ? (
         <div className="card overflow-hidden">

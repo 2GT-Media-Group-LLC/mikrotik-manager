@@ -30,6 +30,9 @@ import type {
 /** Backups and restores of large configurations run for minutes, not seconds. */
 const LONG_DEVICE_OP_MS = 11 * 60_000;
 
+/** Arrays as `?hide=a&hide=b`, not axios's default `hide[]=a`. */
+const REPEAT_PARAMS = { indexes: null };
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
@@ -1485,6 +1488,8 @@ export const eventsApi = {
     protocol?: string;
     /** One rule's lines: its whole log prefix. */
     prefix?: string;
+    /** Every rule but these, each `<deviceId>|<prefix>`. */
+    hide?: string[];
     limit?: number;
     offset?: number;
     names?: 1;
@@ -1492,7 +1497,7 @@ export const eventsApi = {
     api.get<{
       events: FirewallEvent[];
       total: number;
-    }>('/events/firewall', { params }),
+    }>('/events/firewall', { params, paramsSerializer: REPEAT_PARAMS }),
   /** The same filters, folded into groups (#415). */
   firewallGrouped: (params?: {
     deviceId?: number;
@@ -1502,11 +1507,13 @@ export const eventsApi = {
     protocol?: string;
     /** One rule's lines: its whole log prefix. */
     prefix?: string;
+    /** Every rule but these, each `<deviceId>|<prefix>`. */
+    hide?: string[];
     limit?: number;
     offset?: number;
     names?: 1;
   }) =>
-    api.get<{ groups: FirewallGroup[]; total: number; scanLimit: number }>('/events/firewall', { params: { ...params, view: 'grouped' } }),
+    api.get<{ groups: FirewallGroup[]; total: number; scanLimit: number }>('/events/firewall', { params: { ...params, view: 'grouped' }, paramsSerializer: REPEAT_PARAMS }),
   /** The rules (log prefixes) that logged in the window, per device: the rule filter's choices. */
   firewallRules: (params: { deviceId?: number; since?: string }) =>
     api.get<{ rules: FirewallRuleOption[] }>('/events/firewall/rules', { params }),

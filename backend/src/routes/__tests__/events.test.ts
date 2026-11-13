@@ -148,6 +148,47 @@ describe('GET /api/events/firewall?prefix= (rule filter)', () => {
   });
 });
 
+describe('GET /api/events/firewall?hide= (hide rules)', () => {
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    mockedQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('COUNT(*)')) return [{ total: '0' }] as never;
+      return [] as never;
+    });
+  });
+
+  it('leaves out each hidden rule on its own device', async () => {
+    const res = await request(makeApp()).get(
+      '/api/events/firewall?hide=4%7CMTM-FW-DROP%20mtm%233ls6&hide=1%7C%20MTM-FW-DROP%20mtm%23b425%20'
+    );
+    expect(res.status).toBe(200);
+    const [sql, params] = mockedQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/NOT EXISTS \(\s*SELECT 1 FROM unnest\(\$\d+::int\[\], \$\d+::text\[\]\)/);
+    expect(params).toContainEqual([4, 1]);
+    expect(params).toContainEqual(['MTM-FW-DROP mtm#3ls6', 'MTM-FW-DROP mtm#b425']);
+  });
+
+  it('works in the grouped view too', async () => {
+    const res = await request(makeApp()).get('/api/events/firewall?view=grouped&hide=4%7CPERMIT-ZT');
+    expect(res.status).toBe(200);
+    const sqls = mockedQuery.mock.calls.map((c) => c[0] as string);
+    expect(sqls.some((s) => s.includes('NOT EXISTS'))).toBe(true);
+  });
+
+  it.each([
+    ['no device', 'hide=%7CPERMIT-ZT'],
+    ['no prefix', 'hide=4%7C'],
+    ['no separator', 'hide=PERMIT-ZT'],
+    ['a bad device id', 'hide=x%7CPERMIT-ZT'],
+    ['an over-long prefix', `hide=4%7C${'x'.repeat(129)}`],
+    ['too many rules', Array.from({ length: 21 }, (_, i) => `hide=${i + 1}%7CR`).join('&')],
+  ])('rejects %s', async (_what, qs) => {
+    const res = await request(makeApp()).get(`/api/events/firewall?${qs}`);
+    expect(res.status).toBe(400);
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+});
+
 describe('GET /api/events/firewall/rules', () => {
   beforeEach(() => {
     mockedQuery.mockReset();

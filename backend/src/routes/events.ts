@@ -7,7 +7,7 @@ import { activeSite, writableScope } from '../middleware/site';
 import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
 import { parseFirewallLog } from '../utils/firewallLogParser';
 import { tagOf } from '../utils/ruleTags';
-import { firewallPacketLogSql, firewallPrefixSql } from '../utils/firewallEventSql';
+import { firewallHideSql, firewallPacketLogSql, firewallPrefixSql, parseHiddenRules } from '../utils/firewallEventSql';
 import { withNames, withZones } from '../services/firewallLogEnrich';
 
 /** Most events the list's total counts; past it the page shows "N+". */
@@ -198,6 +198,11 @@ router.get('/firewall', async (req, res) => {
   if (prefixRaw === null || (prefixRaw !== undefined && prefixRaw.length > FIREWALL_PREFIX_MAX)) {
     return res.status(400).json({ error: 'Invalid prefix' });
   }
+  // ?hide=<deviceId>|<prefix>, repeated: every rule but these.
+  const hidden = parseHiddenRules(req.query.hide, FIREWALL_PREFIX_MAX);
+  if (hidden === null) {
+    return res.status(400).json({ error: 'Invalid hide; expected up to 20 values of <deviceId>|<prefix>' });
+  }
   if (deviceIdRaw === null) {
     return res.status(400).json({ error: 'Invalid deviceId' });
   }
@@ -319,6 +324,13 @@ router.get('/firewall', async (req, res) => {
   if (prefixFilter) {
     filters.push(`${prefixSql} = $${idx++}`);
     params.push(prefixFilter);
+  }
+
+  // The rules hidden on purpose (the internet scans, say), on their devices.
+  if (hidden) {
+    filters.push(firewallHideSql('e', idx, idx + 1));
+    params.push(hidden.deviceIds, hidden.prefixes);
+    idx += 2;
   }
 
   const addActionMatch = (

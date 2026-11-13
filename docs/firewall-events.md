@@ -84,6 +84,13 @@ picked, a tagged rule is named by its comment. The match is on the whole prefix,
 picks its device as well, and a link can open it with `?device=ID&rule=<prefix>`. Lines logged
 without a prefix aren't listed: nothing tells their rules apart.
 
+**Hide rules** does the opposite: it leaves the checked rules out and shows everything else,
+which is how to read the page without the internet scans a drop rule logs all day. Each hidden
+rule is one prefix on one device, matched whole like **All rules**, in both views; lines logged
+without a prefix are never hidden. Up to 20 rules can be hidden. The choice is kept in the
+browser, and a hidden rule that didn't log in the period stays in the list so it can be shown
+again. The API takes it as `?hide=<deviceId>|<prefix>`, repeated.
+
 ## Enabling firewall monitoring
 
 Users with write access can select **Configure monitoring** on the Firewall
