@@ -304,7 +304,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, lis
           </div>
           {generateClient && genKeys && (
             <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-slate-700">
-              <p className="text-xs font-medium text-gray-500 dark:text-slate-400">Client config (goes into its .conf, not the router's own settings)</p>
+              <p className="text-xs font-medium text-gray-500 dark:text-slate-400">Client config (goes into its .conf, not the router&apos;s own settings)</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Client Endpoint Host</label>
