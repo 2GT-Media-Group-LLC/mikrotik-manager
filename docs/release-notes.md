@@ -3,6 +3,35 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.47
+
+- **Fewer false "device offline" alerts**, from aziz's report and patch in
+  [#442](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/442). A device is marked
+  offline only after a number of missed polls in a row (**Missed polls before offline** in
+  Settings → Alerting, 2 by default), and when most of a site goes quiet at once you get one
+  alert for the site, and one "back online" for it, instead of one per device. See
+  [When a device counts as offline](alerting.md#when-a-device-counts-as-offline).
+- **Polls no longer stall on large networks** (#442). Clients were written to the database one
+  at a time, and a campus switch sees every MAC on the network, so polls queued behind each other
+  and some ran out of time, which made healthy devices look offline. They're now written in
+  batches. Poller health also shows how long the server was busy and how many database queries
+  were waiting in the last 15 seconds. See [Is it keeping up?](scaling.md#is-it-keeping-up).
+- **Down on purpose doesn't alert** (#442). A reboot sent from the manager (Reboot, RouterBOOT
+  upgrade, firmware rollout), a rollout step in progress, or a maintenance window holds the alert.
+  If the device is still down afterwards, it alerts then. Maintenance windows used to hide the
+  alert and never send one later.
+- **Set up CAPsMAN on one band**, from Ron's request in
+  [#438](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438). **Radios** picks
+  2.4 GHz and 5 GHz, 2.4 GHz only or 5 GHz only, so a 5 GHz network can be tried without touching
+  an existing 2.4 GHz one. See [Set up CAPsMAN](capsman.md#set-up-capsman).
+- **Source builds behind a proxy**, from eskyuu in
+  [#436](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/436): set `HTTPS_PROXY`
+  in `.env` and `docker compose build` uses it. The GHCR images don't need it. See
+  [Configuration](configuration.md).
+- **The faceplate fits the device**: it's sized to the ports and centred, with the model name top
+  right as on the real device, and virtual interfaces in their own box. See
+  [Ports and the faceplate](devices.md#ports-and-the-faceplate).
+
 ## 1.1.0-beta.46
 
 - **Set up CAPsMAN**, from Ron's request in
