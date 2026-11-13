@@ -837,6 +837,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#when-a-device-counts-as-offline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a device counts as offline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-managers-own-sessions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1676,6 +1687,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#when-a-device-counts-as-offline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a device counts as offline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#the-managers-own-sessions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1914,8 +1936,31 @@ cooldown that prevents a flapping device from flooding your channels.</p>
 </tr>
 </tbody>
 </table>
-<p>Alerts are suppressed for devices inside an active <a href="#maintenance-windows">maintenance window</a>.
-Devices marked as <a href="../devices/#devices-that-go-offline-on-purpose">expected to go offline</a>
+<h3 id="when-a-device-counts-as-offline">When a device counts as offline<a class="headerlink" href="#when-a-device-counts-as-offline" title="Permanent link">&para;</a></h3>
+<p>A device is marked offline only after <strong>2 fast polls in a row</strong> have failed (<strong>Settings →
+Alerting → Missed polls before offline</strong>, 1 to 10; 1 is the old behaviour). One failed poll is
+often the manager or the path, not the device: a poll that ran over its time limit, a lost
+packet, a few seconds' stall. Until then the device stays online, its clients and links stay as
+they were, and nothing alerts; the poller log notes the missed poll. A device that is already
+offline, or was never online, has no grace.</p>
+<p>When most of a site (three quarters, at sites with 3 devices or more) stops answering within
+two minutes, <strong>Device offline</strong> sends one alert naming the site and how many devices went quiet,
+instead of one per device. That is usually the path from the manager to the site, the site's
+uplink, or the manager itself. When they come back, <strong>Device online</strong> sends one alert for the
+site too. Devices that were already down before then, disabled devices and devices that have
+never answered are left out of the count.</p>
+<p>A device that is down on purpose doesn't alert when it goes offline, and isn't counted towards a
+site going quiet:</p>
+<ul>
+<li><strong>A reboot the manager sent:</strong> the Reboot button, a RouterBOOT upgrade, or a
+  <a href="../firmware/">firmware rollout</a>. It has 10 minutes to come back.</li>
+<li><strong>A firmware rollout</strong> that is upgrading, rebooting or checking the device.</li>
+<li><strong>A <a href="#maintenance-windows">maintenance window</a></strong> that covers the device.</li>
+</ul>
+<p>If it is still offline once that has passed, <strong>Device offline</strong> alerts then, saying it didn't come
+back. A device that comes back in time sends no <strong>Device online</strong> either, since nothing said it
+had gone.</p>
+<p>Devices marked as <a href="../devices/#devices-that-go-offline-on-purpose">expected to go offline</a>
 only send an offline alert once they have been gone longer than their limit.</p>
 <h3 id="the-managers-own-sessions">The manager's own sessions<a class="headerlink" href="#the-managers-own-sessions" title="Permanent link">&para;</a></h3>
 <p>Each poll signs in to the device, and backups, bulk commands and the terminal open SSH
@@ -2207,6 +2252,7 @@ globally and forgotten. Managed under <strong>Settings → Maintenance</strong>.
   on the date you give and lasts as long as the first occurrence (end minus start); the time
   of day follows the manager's time zone (<strong>Settings → General</strong>).</li>
 <li>Windows can be disabled early and deleted.</li>
+<li>A device that went offline during a window and is still offline when it ends alerts then.</li>
 </ul>
 <p>Through the API a window can repeat on any cron expression (<code>recurring_cron</code>, five fields).</p>
 <p>Before 0.24.37, windows made in the UI suppressed nothing: the form saved an empty device

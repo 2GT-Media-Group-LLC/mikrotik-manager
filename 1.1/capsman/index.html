@@ -1822,13 +1822,14 @@ outright or silently replaced at the next provision — while the API reports su
 SSID deployment, interface create, interface edit, interface delete, and guest network
 setup.</p>
 <h2 id="set-up-capsman">Set up CAPsMAN<a class="headerlink" href="#set-up-capsman" title="Permanent link">&para;</a></h2>
-<p><strong>Set up CAPsMAN</strong> on the Wireless page makes a device a controller with one SSID on every band,
-from Ron's request in #438. Choose the device, then enter:</p>
+<p><strong>Set up CAPsMAN</strong> on the Wireless page makes a device a controller with one SSID, on both bands
+or one, from Ron's request in #438. Choose the device, then enter:</p>
 <ul>
 <li>the <strong>SSID</strong> and <strong>password</strong> (WPA2, plus WPA3 on wifi);</li>
 <li>the <strong>bridge</strong> Wi-Fi clients join, on the controller and on every AP, so each AP needs a
   bridge with this name;</li>
 <li>the <strong>country</strong>, optional, as RouterOS names it (<code>united states</code>);</li>
+<li>the <strong>radios</strong>: <strong>2.4 GHz and 5 GHz</strong>, <strong>2.4 GHz only</strong> or <strong>5 GHz only</strong>;</li>
 <li>the <strong>role</strong>: <strong>Controller and AP</strong>, where its own radios broadcast the SSID too, or
   <strong>Controller only</strong>.</li>
 </ul>
@@ -1850,9 +1851,9 @@ manages wifi-package APs, and a legacy one only legacy wireless APs.</p>
 <td><code>/caps-man configuration</code>, with local forwarding</td>
 </tr>
 <tr>
-<td>A provisioning rule, commented <code>mtm capsman</code>, that gives it to every radio</td>
-<td><code>/interface wifi provisioning</code></td>
-<td><code>/caps-man provisioning</code></td>
+<td>A provisioning rule, commented <code>mtm capsman</code>, that gives it to every radio, or one band's</td>
+<td><code>/interface wifi provisioning</code>, matching <code>supported-bands</code></td>
+<td><code>/caps-man provisioning</code>, matching <code>hw-supported-modes</code></td>
 </tr>
 <tr>
 <td>CAPsMAN on</td>
@@ -1873,8 +1874,10 @@ changes</strong> shows the writes first.</p>
 <ul>
 <li>Other APs join by turning on their CAP, with discovery on the same network. The wizard doesn't
   change them.</li>
-<li>RouterOS uses the first provisioning rule that matches a radio. Rules the device already has
-  come before the new one, and the form says so.</li>
+<li>RouterOS uses the first provisioning rule that matches a radio. With both bands, rules the
+  device already has come before the new one, and the form says so. With one band, the new rule
+  goes first, so that band's radios take the SSID and the other band's go on matching the rules
+  already there. That way you can try a 5 GHz network without touching the 2.4 GHz one.</li>
 </ul>
 <h2 id="current-limits">Current limits<a class="headerlink" href="#current-limits" title="Permanent link">&para;</a></h2>
 <p><strong>Editing an existing controller's provisioning, configurations and interfaces isn't offered</strong>,

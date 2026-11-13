@@ -1937,6 +1937,12 @@ matters is whether they drain faster than the schedule fills.</p>
 own split and a bar, so a slow site can be pinned on its link (connecting and waiting both
 long), its router (waiting long on a fast link) or this server (the grey part). Hover a failed
 poll for its error.</p>
+<p>Under them, <strong>This server, last 15 seconds</strong> says how long the event loop was blocked at most,
+and how many queries were kept waiting for a database connection at once (#442). It turns amber
+from 2 seconds blocked or 10 queries waiting: every poll running then is slower than its device,
+and a long enough stall pushes polls past their time limit. The same reading is logged as a
+<code>[Load]</code> line in the backend log when it crosses those marks, so a stall at a given moment can be
+matched to what else was running.</p>
 <h2 id="sessions-kept-open-between-polls">Sessions kept open between polls<a class="headerlink" href="#sessions-kept-open-between-polls" title="Permanent link">&para;</a></h2>
 <p>Measured on the reference fleet, connecting took 150 to 300 ms per poll on a LAN, against 3 to
 25 ms for the commands, and over a WAN each of its round trips adds the link's latency. A device

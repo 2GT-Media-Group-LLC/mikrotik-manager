@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta47" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.47
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta46" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2013,6 +2024,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta47" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.47
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta46" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2530,6 +2552,35 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta47">1.1.0-beta.47<a class="headerlink" href="#110-beta47" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Fewer false "device offline" alerts</strong>, from aziz's report and patch in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/442">#442</a>. A device is marked
+  offline only after a number of missed polls in a row (<strong>Missed polls before offline</strong> in
+  Settings → Alerting, 2 by default), and when most of a site goes quiet at once you get one
+  alert for the site, and one "back online" for it, instead of one per device. See
+  <a href="../alerting/#when-a-device-counts-as-offline">When a device counts as offline</a>.</li>
+<li><strong>Polls no longer stall on large networks</strong> (#442). Clients were written to the database one
+  at a time, and a campus switch sees every MAC on the network, so polls queued behind each other
+  and some ran out of time, which made healthy devices look offline. They're now written in
+  batches. Poller health also shows how long the server was busy and how many database queries
+  were waiting in the last 15 seconds. See <a href="../scaling/#is-it-keeping-up">Is it keeping up?</a>.</li>
+<li><strong>Down on purpose doesn't alert</strong> (#442). A reboot sent from the manager (Reboot, RouterBOOT
+  upgrade, firmware rollout), a rollout step in progress, or a maintenance window holds the alert.
+  If the device is still down afterwards, it alerts then. Maintenance windows used to hide the
+  alert and never send one later.</li>
+<li><strong>Set up CAPsMAN on one band</strong>, from Ron's request in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438">#438</a>. <strong>Radios</strong> picks
+  2.4 GHz and 5 GHz, 2.4 GHz only or 5 GHz only, so a 5 GHz network can be tried without touching
+  an existing 2.4 GHz one. See <a href="../capsman/#set-up-capsman">Set up CAPsMAN</a>.</li>
+<li><strong>Source builds behind a proxy</strong>, from eskyuu in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/436">#436</a>: set <code>HTTPS_PROXY</code>
+  in <code>.env</code> and <code>docker compose build</code> uses it. The GHCR images don't need it. See
+  <a href="../configuration/">Configuration</a>.</li>
+<li><strong>The faceplate fits the device</strong>: it's sized to the ports and centred, with the model name top
+  right as on the real device, and virtual interfaces in their own box. See
+  <a href="../devices/#ports-and-the-faceplate">Ports and the faceplate</a>.</li>
+</ul>
 <h2 id="110-beta46">1.1.0-beta.46<a class="headerlink" href="#110-beta46" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Set up CAPsMAN</strong>, from Ron's request in
