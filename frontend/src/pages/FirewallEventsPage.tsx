@@ -26,6 +26,8 @@ const RANGES: Record<string, { label: string; ms: number }> = {
   '30d': { label: 'Last 30 days', ms: 30 * 24 * 60 * 60 * 1000 },
 };
 const DEFAULT_RANGE = '24h';
+/** How often the rule filter's choices are counted again. */
+const RULES_REFRESH_MS = 5 * 60_000;
 
 function actionClass(action: FirewallEvent['action']): string {
   switch (action) {
@@ -185,7 +187,10 @@ export default function FirewallEventsPage() {
           since: new Date(Date.now() - RANGES[range].ms).toISOString(),
         })
         .then((r) => r.data.rules),
-    refetchInterval: 60_000,
+    // Counted over the whole period, which on 30 days is every line kept:
+    // the list of rules changes slowly, so it's read every five minutes.
+    staleTime: RULES_REFRESH_MS,
+    refetchInterval: RULES_REFRESH_MS,
   });
   // With one device picked, its rules' comments name the choices.
   const { data: deviceRules = [] } = useQuery({
