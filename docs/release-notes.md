@@ -3,6 +3,15 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.48
+
+- **Firewall Logs can show one rule's lines**, from aziz's request and patch in
+  [#443](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/443). **All rules** sits
+  next to actions and protocols. It lists the log prefixes that logged in the period, busiest
+  first, named by the rule's comment when a device is picked. Unlike the search box, it matches
+  the whole prefix, so `PERMIT-ZT` doesn't bring in `PERMIT-ZT-ADMIN`. Picking a rule picks its
+  device too. See [Firewall Logs](firewall-events.md).
+
 ## 1.1.0-beta.47
 
 - **Fewer false "device offline" alerts**, from aziz's report and patch in
