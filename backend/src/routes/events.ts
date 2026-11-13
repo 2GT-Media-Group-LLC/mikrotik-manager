@@ -6,7 +6,8 @@ import { siteScopeByNullableDevice } from '../utils/siteScope';
 import { activeSite, writableScope } from '../middleware/site';
 import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
 import { parseFirewallLog } from '../utils/firewallLogParser';
-import { firewallPacketLogSql } from '../utils/firewallEventSql';
+import { tagOf } from '../utils/ruleTags';
+import { firewallPacketLogSql, firewallPrefixSql } from '../utils/firewallEventSql';
 import { withNames, withZones } from '../services/firewallLogEnrich';
 
 /** Most events the list's total counts; past it the page shows "N+". */
@@ -58,6 +59,8 @@ type FirewallEventRow = {
 
 const DEFAULT_FIREWALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 const FIREWALL_MAX_LIMIT = 200;
+/** Longest log prefix taken as a filter; RouterOS prefixes are short. */
+const FIREWALL_PREFIX_MAX = 128;
 
 const FIREWALL_ACTION_REGEX = {
   fasttrack: String.raw`\m(fasttrack|fast-track)\M`,
@@ -188,9 +191,13 @@ router.get('/firewall', async (req, res) => {
   const searchRaw = singleQueryValue(req.query.search);
   const actionRaw = singleQueryValue(req.query.action);
   const protocolRaw = singleQueryValue(req.query.protocol);
+  const prefixRaw = singleQueryValue(req.query.prefix);
   const limitRaw = singleQueryValue(req.query.limit);
   const offsetRaw = singleQueryValue(req.query.offset);
 
+  if (prefixRaw === null || (prefixRaw !== undefined && prefixRaw.length > FIREWALL_PREFIX_MAX)) {
+    return res.status(400).json({ error: 'Invalid prefix' });
+  }
   if (deviceIdRaw === null) {
     return res.status(400).json({ error: 'Invalid deviceId' });
   }
@@ -304,12 +311,15 @@ router.get('/firewall', async (req, res) => {
   // RouterOS packet logs place the configured log-prefix before the chain.
   // Restrict action matching to that prefix so words elsewhere in the packet
   // details do not change the inferred action.
-  const prefixSql = `COALESCE(
-    NULLIF(split_part(e.message, ' input:', 1), e.message),
-    NULLIF(split_part(e.message, ' forward:', 1), e.message),
-    NULLIF(split_part(e.message, ' output:', 1), e.message),
-    ''
-  )`;
+  const prefixSql = firewallPrefixSql('e');
+
+  // One rule's lines: its whole log prefix, so `PERMIT-ZT` doesn't also
+  // match `PERMIT-ZT-ADMIN` the way the search box does.
+  const prefixFilter = prefixRaw?.trim();
+  if (prefixFilter) {
+    filters.push(`${prefixSql} = $${idx++}`);
+    params.push(prefixFilter);
+  }
 
   const addActionMatch = (
     pattern: string,
@@ -412,6 +422,68 @@ router.get('/firewall', async (req, res) => {
   res.json({
     events: names ? await withNames(zoned) : zoned,
     total: Number(totalRows[0]?.total ?? 0),
+  });
+});
+
+type FirewallRuleRow = {
+  device_id: number | null;
+  device_name: string | null;
+  prefix: string;
+  n: string;
+  last_seen: Date | string;
+};
+
+// GET /api/events/firewall/rules
+// The rules (log prefixes) that logged in the window, per device, with how
+// many lines each: the choices for Firewall Logs' rule filter.
+router.get('/firewall/rules', async (req, res) => {
+  const deviceIdRaw = singleQueryValue(req.query.deviceId);
+  const sinceRaw = singleQueryValue(req.query.since);
+  if (deviceIdRaw === null) return res.status(400).json({ error: 'Invalid deviceId' });
+  if (sinceRaw === null) return res.status(400).json({ error: 'Invalid since' });
+
+  const deviceId = deviceIdRaw === undefined ? undefined : strictInteger(deviceIdRaw, 1);
+  if (deviceIdRaw !== undefined && deviceId === null) {
+    return res.status(400).json({ error: 'Invalid deviceId' });
+  }
+  const sinceDate = sinceRaw === undefined
+    ? new Date(Date.now() - DEFAULT_FIREWALL_WINDOW_MS)
+    : new Date(sinceRaw);
+  if (Number.isNaN(sinceDate.getTime())) {
+    return res.status(400).json({ error: 'Invalid since; expected a valid date/time' });
+  }
+
+  const filters: string[] = [firewallPacketLogSql('e'), 'e.event_time >= $1'];
+  const params: unknown[] = [sinceDate.toISOString()];
+  if (deviceId !== undefined) {
+    params.push(deviceId);
+    filters.push(`e.device_id = $${params.length}`);
+  }
+  const siteFilter = siteScopeByNullableDevice(activeSite(req), 'e.device_id');
+  if (siteFilter) filters.push(siteFilter);
+
+  // split_part, not a regex: one cheap pass even over a busy day's lines.
+  const rows = await query<FirewallRuleRow>(
+    `SELECT e.device_id, d.name AS device_name, ${firewallPrefixSql('e')} AS prefix,
+            COUNT(*)::text AS n, MAX(e.event_time) AS last_seen
+       FROM events e
+       LEFT JOIN devices d ON d.id = e.device_id
+      WHERE ${filters.join(' AND ')}
+      GROUP BY e.device_id, d.name, 3
+      ORDER BY COUNT(*) DESC
+      LIMIT 200`,
+    params,
+  );
+
+  res.json({
+    rules: rows.map((r) => ({
+      deviceId: r.device_id,
+      deviceName: r.device_name,
+      prefix: r.prefix,
+      tag: tagOf(r.prefix),
+      count: Number(r.n),
+      lastSeen: r.last_seen,
+    })),
   });
 });
 

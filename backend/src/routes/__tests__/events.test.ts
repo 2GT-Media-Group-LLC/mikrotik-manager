@@ -122,3 +122,57 @@ describe('GET /api/events/firewall zones (#415)', () => {
     expect(res.body.events[0]).not.toHaveProperty('srcName');
   });
 });
+
+describe('GET /api/events/firewall?prefix= (rule filter)', () => {
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    mockedQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('COUNT(*)')) return [{ total: '0' }] as never;
+      return [] as never;
+    });
+  });
+
+  it('matches the whole trimmed prefix, not a substring', async () => {
+    const res = await request(makeApp()).get('/api/events/firewall?deviceId=4&prefix=%20PERMIT-ZT%20mtm%231dos%20');
+    expect(res.status).toBe(200);
+    const [sql, params] = mockedQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/btrim\(COALESCE\([\s\S]*\)\) = \$\d+/);
+    expect(params).toContain('PERMIT-ZT mtm#1dos');
+    expect(sql).not.toContain('ILIKE');
+  });
+
+  it('rejects an over-long prefix', async () => {
+    const res = await request(makeApp()).get(`/api/events/firewall?prefix=${'x'.repeat(129)}`);
+    expect(res.status).toBe(400);
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/events/firewall/rules', () => {
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    mockedQuery.mockImplementation(async () => [
+      { device_id: 4, device_name: 'RTR01', prefix: 'MTM-FW-DROP mtm#3ls6', n: '2194', last_seen: '2026-11-13T12:00:00.000Z' },
+      { device_id: 4, device_name: 'RTR01', prefix: 'PERMIT-OOBM-ADMIN', n: '4', last_seen: '2026-11-13T11:00:00.000Z' },
+    ] as never);
+  });
+
+  it('lists the prefixes that logged, per device, with counts and tags', async () => {
+    const res = await request(makeApp()).get('/api/events/firewall/rules?deviceId=4');
+    expect(res.status).toBe(200);
+    expect(res.body.rules).toEqual([
+      { deviceId: 4, deviceName: 'RTR01', prefix: 'MTM-FW-DROP mtm#3ls6', tag: '3ls6', count: 2194, lastSeen: '2026-11-13T12:00:00.000Z' },
+      { deviceId: 4, deviceName: 'RTR01', prefix: 'PERMIT-OOBM-ADMIN', tag: null, count: 4, lastSeen: '2026-11-13T11:00:00.000Z' },
+    ]);
+    const [sql, params] = mockedQuery.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('GROUP BY e.device_id, d.name, 3');
+    expect(sql).toContain('e.device_id = $2');
+    expect(params).toEqual([expect.any(String), 4]);
+  });
+
+  it('rejects a bad since', async () => {
+    const res = await request(makeApp()).get('/api/events/firewall/rules?since=yesterday');
+    expect(res.status).toBe(400);
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+});

@@ -77,6 +77,13 @@ still within the firewall log retention are there to find), and a link can
 open it with `?range=1h|24h|7d|30d`. Results can be filtered by device, action,
 protocol, or text such as an address, port, interface, or log prefix.
 
+**All rules** narrows the page to one rule's lines. It lists the log prefixes that logged in
+the period, each with its device and how many lines it wrote, busiest first; with a device
+picked, a tagged rule is named by its comment. The match is on the whole prefix, so
+`PERMIT-ZT` doesn't also bring in `PERMIT-ZT-ADMIN` the way the search box does. Picking a rule
+picks its device as well, and a link can open it with `?device=ID&rule=<prefix>`. Lines logged
+without a prefix aren't listed: nothing tells their rules apart.
+
 ## Enabling firewall monitoring
 
 Users with write access can select **Configure monitoring** on the Firewall

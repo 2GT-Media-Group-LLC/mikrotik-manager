@@ -1381,6 +1381,15 @@ export const systemApi = {
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
+export interface FirewallRuleOption {
+  deviceId: number | null;
+  deviceName: string | null;
+  prefix: string;
+  tag: string | null;
+  count: number;
+  lastSeen: string;
+}
+
 export interface FirewallEvent {
   id: number;
   deviceId: number | null;
@@ -1474,6 +1483,8 @@ export const eventsApi = {
     since?: string;
     action?: FirewallEvent['action'];
     protocol?: string;
+    /** One rule's lines: its whole log prefix. */
+    prefix?: string;
     limit?: number;
     offset?: number;
     names?: 1;
@@ -1489,11 +1500,16 @@ export const eventsApi = {
     since?: string;
     action?: FirewallEvent['action'];
     protocol?: string;
+    /** One rule's lines: its whole log prefix. */
+    prefix?: string;
     limit?: number;
     offset?: number;
     names?: 1;
   }) =>
     api.get<{ groups: FirewallGroup[]; total: number; scanLimit: number }>('/events/firewall', { params: { ...params, view: 'grouped' } }),
+  /** The rules (log prefixes) that logged in the window, per device: the rule filter's choices. */
+  firewallRules: (params: { deviceId?: number; since?: string }) =>
+    api.get<{ rules: FirewallRuleOption[] }>('/events/firewall/rules', { params }),
   clearFirewall: (deviceId?: number) =>
     api.delete<{ message: string; deleted: number }>('/events/firewall', {
       params: deviceId ? { deviceId } : {},

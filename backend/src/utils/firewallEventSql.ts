@@ -18,3 +18,21 @@ export function firewallPacketLogSql(
     AND ${p}message LIKE '%->%'
   ), FALSE)`;
 }
+
+/**
+ * SQL expression for the log prefix of a firewall packet log line: the text
+ * before the chain, trimmed (empty when the rule logs without one). RouterOS
+ * writes `<prefix> <chain>: …`.
+ */
+export function firewallPrefixSql(
+  alias: FirewallSqlAlias = ''
+): string {
+  const p = alias ? `${alias}.` : '';
+
+  return `btrim(COALESCE(
+    NULLIF(split_part(${p}message, ' input:', 1), ${p}message),
+    NULLIF(split_part(${p}message, ' forward:', 1), ${p}message),
+    NULLIF(split_part(${p}message, ' output:', 1), ${p}message),
+    ''
+  ))`;
+}

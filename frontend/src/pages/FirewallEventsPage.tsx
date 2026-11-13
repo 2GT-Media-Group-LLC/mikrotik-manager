@@ -10,7 +10,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import clsx from 'clsx';
 
 import { devicesApi, eventsApi } from '../services/api';
-import type { FirewallEvent, FirewallGroup } from '../services/api';
+import type { FirewallEvent, FirewallGroup, FirewallRuleOption } from '../services/api';
 import DevicePicker from '../components/common/DevicePicker';
 import { useSocket } from '../hooks/useSocket';
 import { useCanWrite } from '../hooks/useCanWrite';
@@ -122,6 +122,8 @@ export default function FirewallEventsPage() {
   const [deviceId, setDeviceId] = useState(() => (/^\d+$/.test(urlParams.get('device') ?? '') ? urlParams.get('device')! : ''));
   const [action, setAction] = useState('');
   const [protocol, setProtocol] = useState('');
+  // One rule's lines, by its whole log prefix (on the selected device).
+  const [rule, setRule] = useState(() => urlParams.get('rule') ?? '');
   // ?range=7d lets a link open a longer window; anything else means the default.
   const [range, setRange] = useState(() => {
     const r = urlParams.get('range') ?? DEFAULT_RANGE;
@@ -147,7 +149,7 @@ export default function FirewallEventsPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: [
       'firewall-events',
-      { search: debouncedSearch, deviceId, action, protocol, range, page, view, names },
+      { search: debouncedSearch, deviceId, action, protocol, rule, range, page, view, names },
     ],
     queryFn: async (): Promise<{ events: FirewallEvent[]; groups: FirewallGroup[]; total: number; scanLimit?: number }> => {
       const params = {
@@ -158,6 +160,7 @@ export default function FirewallEventsPage() {
           ? (action as FirewallEvent['action'])
           : undefined,
         protocol: protocol || undefined,
+        prefix: rule || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
         names: names ? (1 as const) : undefined,
@@ -172,6 +175,41 @@ export default function FirewallEventsPage() {
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   });
+  // The rule filter's choices: what logged in the period, per device.
+  const { data: ruleOptions = [] } = useQuery({
+    queryKey: ['firewall-rules', { deviceId, range }],
+    queryFn: () =>
+      eventsApi
+        .firewallRules({
+          deviceId: deviceId ? Number(deviceId) : undefined,
+          since: new Date(Date.now() - RANGES[range].ms).toISOString(),
+        })
+        .then((r) => r.data.rules),
+    refetchInterval: 60_000,
+  });
+  // With one device picked, its rules' comments name the choices.
+  const { data: deviceRules = [] } = useQuery({
+    queryKey: ['firewall', Number(deviceId)],
+    queryFn: () => devicesApi.getFirewall(Number(deviceId)).then((r) => r.data),
+    enabled: !!deviceId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const commentByTag = new Map<string, string>();
+  for (const r of deviceRules) {
+    const t = tagOf(r['log-prefix']);
+    if (t && r.comment) commentByTag.set(t, r.comment);
+  }
+  const ruleLabel = (o: FirewallRuleOption) => {
+    const base = o.prefix.replace(/(?:^|\s)mtm#[0-9a-z]{4}(?=\s|$)/i, ' ').trim();
+    const comment = o.tag ? commentByTag.get(o.tag) : undefined;
+    const name = comment ? (base ? `${comment} (${base})` : comment) : (base || `mtm#${o.tag}`);
+    return `${name}${deviceId ? '' : ` · ${o.deviceName ?? 'unknown device'}`} — ${o.count.toLocaleString()}`;
+  };
+  // A rule without a prefix can't be told apart from another; leave it out.
+  const ruleChoices = ruleOptions.filter((o) => o.prefix !== '' && o.deviceId != null);
+  const ruleValue = rule ? `${deviceId}|${rule}` : '';
+
   // Refresh asks the devices for their logs now, then reads again as they land.
   const { refresh, refreshing } = useFleetRefresh(['logs'], refetch);
 
@@ -349,6 +387,35 @@ export default function FirewallEventsPage() {
         </select>
 
         <select
+          className="input w-full sm:w-56"
+          aria-label="Rule"
+          title="Lines from one rule, by its log prefix"
+          value={ruleValue}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (!v) {
+              setRule('');
+            } else {
+              // A rule belongs to a device: picking one picks its device too.
+              const cut = v.indexOf('|');
+              setDeviceId(v.slice(0, cut));
+              setRule(v.slice(cut + 1));
+            }
+            setPage(0);
+          }}
+        >
+          <option value="">All rules</option>
+          {rule && !ruleChoices.some((o) => `${o.deviceId}|${o.prefix}` === ruleValue) && (
+            <option value={ruleValue}>{rule}</option>
+          )}
+          {ruleChoices.map((o) => (
+            <option key={`${o.deviceId}|${o.prefix}`} value={`${o.deviceId}|${o.prefix}`}>
+              {ruleLabel(o)}
+            </option>
+          ))}
+        </select>
+
+        <select
           className="input w-full sm:w-40"
           aria-label="Period"
           value={range}
@@ -370,6 +437,8 @@ export default function FirewallEventsPage() {
           value={deviceId ? Number(deviceId) : null}
           onChange={(id) => {
             setDeviceId(id == null ? '' : String(id));
+            // A rule is one device's; another device has its own.
+            setRule('');
             setPage(0);
           }}
         />
