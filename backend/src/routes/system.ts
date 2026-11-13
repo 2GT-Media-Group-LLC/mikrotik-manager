@@ -144,12 +144,16 @@ router.get('/version-check', async (_req: Request, res: Response) => {
       return res.json({ current: CURRENT_VERSION, latest: null, update_available: false, disabled: true });
     }
 
-    // Check cache
-    const cached = await query<{ value: { version: string; checked_at: string } }>(
+    // Check cache. It answers only for the version and channel that wrote it:
+    // after an update it said the newest release was older than the one
+    // running, and after a move between stable and beta it compared against
+    // the other channel, for up to a day.
+    const cached = await query<{ value: { version: string; checked_at: string; for_version?: string; source?: string } }>(
       `SELECT value FROM app_settings WHERE key = 'version_check_cache'`
     );
     const row = cached[0]?.value;
-    if (row && Date.now() - new Date(row.checked_at).getTime() < CACHE_TTL_MS) {
+    if (row && row.for_version === CURRENT_VERSION && row.source === RAW_URL
+        && Date.now() - new Date(row.checked_at).getTime() < CACHE_TTL_MS) {
 
       return res.json({
         current: CURRENT_VERSION,
@@ -176,7 +180,10 @@ router.get('/version-check', async (_req: Request, res: Response) => {
     await query(
       `INSERT INTO app_settings (key, value) VALUES ('version_check_cache', $1)
        ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
-      [JSON.stringify({ version: latestVersion, checked_at: new Date().toISOString() })]
+      [JSON.stringify({
+        version: latestVersion, checked_at: new Date().toISOString(),
+        for_version: CURRENT_VERSION, source: RAW_URL,
+      })]
     );
 
     return res.json({
