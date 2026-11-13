@@ -3,7 +3,7 @@ import ReviewChangesButton from '../components/common/ReviewChangesButton';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Shield, RefreshCw, AlertTriangle, Power, Plus, Pencil, Trash2,
-  ChevronDown, ChevronRight, Key, Copy, Check, X, Lock,
+  ChevronDown, ChevronRight, Key, Copy, Check, X, Lock, Eye, RotateCw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { networkServicesApi, devicesApi } from '../services/api';
@@ -17,6 +17,9 @@ import { isIpOrPrefix, splitList } from '../utils/ipPrefix';
 import { Link } from 'react-router-dom';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import TagChips, { type TagLike } from '../components/devices/TagChips';
+import { generateWgKeyPair } from '../utils/wireguardKeys';
+import { buildClientConf } from '../utils/wireguardClientConf';
+import ClientConfigPanel from '../components/wireguard/ClientConfigPanel';
 
 type NS = Record<string, string>;
 
@@ -130,9 +133,13 @@ interface PeerFormProps {
   ifaceName: string;
   existing?: NS;
   onClose: () => void;
+  /** For building the new peer's own client .conf — the server side of it. */
+  serverPublicKey?: string;
+  listenPort?: string;
+  deviceAddress?: string;
 }
 
-function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
+function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, listenPort, deviceAddress }: PeerFormProps) {
   const qc = useQueryClient();
   const [pubKey, setPubKey]         = useState(existing?.['public-key'] || '');
   const [allowedAddr, setAllowedAddr] = useState<string[]>(splitList(existing?.['allowed-address'] || ''));
@@ -143,10 +150,22 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
   const [keepalive, setKeepalive]   = useState(String(rosDurationSeconds(existing?.['persistent-keepalive']) ?? ''));
   const [presharedKey, setPresharedKey] = useState('');
 
+  // A client key pair generated in the browser for a brand-new peer, so the
+  // resulting .conf/QR can be shown once it's saved — never sent anywhere but
+  // into this peer and this screen.
+  const [generateClient, setGenerateClient] = useState(!existing);
+  const [genKeys, setGenKeys] = useState(() => (existing ? null : generateWgKeyPair()));
+  const [clientDns, setClientDns] = useState('');
+  const [clientEndpointHost, setClientEndpointHost] = useState(endpointAddr || deviceAddress || '');
+  const [clientAllowedIps, setClientAllowedIps] = useState('0.0.0.0/0, ::/0');
+  const [resultConf, setResultConf] = useState<string | null>(null);
+
+  const effectivePubKey = generateClient && genKeys ? genKeys.publicKey : pubKey;
+
   const saveRequest = () => {
       const body: NS = {
         interface: ifaceName,
-        'public-key': pubKey,
+        'public-key': effectivePubKey,
         'allowed-address': allowedAddr.join(','),
       };
       // When editing, an emptied field is sent as '' so it is cleared on the
@@ -166,6 +185,19 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
       else if (existing) body['persistent-keepalive'] = '0';
       if (presharedKey) body['preshared-key'] = presharedKey;
 
+      // Stored on the router the same way this fleet's existing peers were
+      // (via WinBox's own peer wizard), so "View" keeps working on this peer
+      // later, not just right after creating it.
+      if (generateClient && genKeys) {
+        body['private-key'] = genKeys.privateKey;
+        body['responder'] = 'yes';
+        body['client-address'] = allowedAddr.join(',');
+        body['client-dns'] = clientDns;
+        body['client-endpoint'] = clientEndpointHost;
+        if (keepalive) body['client-keepalive'] = `${keepalive}s`;
+        if (clientAllowedIps && clientAllowedIps !== '0.0.0.0/0, ::/0') body['client-allowed-address'] = clientAllowedIps;
+      }
+
       return existing?.['.id']
         ? networkServicesApi.updateWireGuardPeer(deviceId, existing['.id'], body)
         : networkServicesApi.addWireGuardPeer(deviceId, body);
@@ -173,8 +205,45 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
   const save = useMutation({
     meta: { inlineError: true },
     mutationFn: saveRequest,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['ns-wireguard', deviceId] }); onClose(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ns-wireguard', deviceId] });
+      if (generateClient && genKeys && serverPublicKey) {
+        setResultConf(buildClientConf({
+          privateKey: genKeys.privateKey,
+          address: allowedAddr.join(', '),
+          dns: clientDns || undefined,
+          serverPublicKey,
+          endpoint: clientEndpointHost ? `${clientEndpointHost}:${listenPort || ''}` : undefined,
+          allowedIps: clientAllowedIps,
+          keepaliveSeconds: keepalive || undefined,
+        }));
+      } else {
+        onClose();
+      }
+    },
   });
+
+  if (resultConf) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Peer created</h3>
+            <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="p-5 space-y-3">
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+              Save this now — the private key won&apos;t be shown like this again. (You can still open it from &quot;View&quot; on this peer later.)
+            </p>
+            <ClientConfigPanel conf={resultConf} fileName={`${ifaceName}-peer.conf`} />
+          </div>
+          <div className="px-5 pb-4">
+            <button onClick={onClose} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Done</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -186,10 +255,26 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
           <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Peer Public Key *</label>
-            <input className="input w-full font-mono text-xs" value={pubKey} onChange={e => setPubKey(e.target.value)} placeholder="base64-encoded WireGuard public key" />
-          </div>
+          {!existing && (
+            <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
+              <input type="checkbox" checked={generateClient} onChange={e => { setGenerateClient(e.target.checked); if (e.target.checked && !genKeys) setGenKeys(generateWgKeyPair()); }} />
+              Generate a client key pair now (shows a ready .conf / QR once saved)
+            </label>
+          )}
+          {generateClient && genKeys ? (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-gray-600 dark:text-slate-300">Client Public Key (generated)</label>
+                <button type="button" onClick={() => setGenKeys(generateWgKeyPair())} title="Regenerate" className="p-1 text-gray-400 hover:text-blue-600"><RotateCw className="w-3.5 h-3.5" /></button>
+              </div>
+              <code className="block text-xs font-mono text-gray-700 dark:text-slate-300 break-all bg-gray-50 dark:bg-slate-900 rounded p-2">{genKeys.publicKey}</code>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Peer Public Key *</label>
+              <input className="input w-full font-mono text-xs" value={pubKey} onChange={e => setPubKey(e.target.value)} placeholder="base64-encoded WireGuard public key" />
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Allowed Addresses *</label>
             <ListInput value={allowedAddr} onChange={setAllowedAddr} ariaLabel="Allowed addresses"
@@ -217,15 +302,83 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
               <input className="input w-full font-mono text-xs" value={presharedKey} onChange={e => setPresharedKey(e.target.value)} placeholder="Optional" type="password" />
             </div>
           </div>
+          {generateClient && genKeys && (
+            <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-slate-700">
+              <p className="text-xs font-medium text-gray-500 dark:text-slate-400">Client config (goes into its .conf, not the router&apos;s own settings)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Client Endpoint Host</label>
+                  <input className="input w-full" value={clientEndpointHost} onChange={e => setClientEndpointHost(e.target.value)} placeholder="vpn.example.com" />
+                  <p className="mt-0.5 text-xs text-gray-400">Where the client reaches this router — check it, it may differ from the management address.</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Client DNS</label>
+                  <input className="input w-full" value={clientDns} onChange={e => setClientDns(e.target.value)} placeholder="Optional" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 dark:text-slate-300 mb-1">Client Allowed IPs</label>
+                <input className="input w-full font-mono text-xs" value={clientAllowedIps} onChange={e => setClientAllowedIps(e.target.value)} placeholder="0.0.0.0/0, ::/0" />
+                <p className="mt-0.5 text-xs text-gray-400">What the client routes through this tunnel. Narrow it to just your LAN/VLANs for a split tunnel.</p>
+              </div>
+            </div>
+          )}
         </div>
         <div className="px-5 pb-4 flex items-center gap-3">
-          <button onClick={() => save.mutate()} disabled={!pubKey || allowedAddr.length === 0 || save.isPending}
+          <button onClick={() => save.mutate()} disabled={!effectivePubKey || allowedAddr.length === 0 || save.isPending}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
             <Check className="w-3.5 h-3.5" />{save.isPending ? 'Saving…' : 'Save Peer'}
           </button>
-          <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={!pubKey || allowedAddr.length === 0 || save.isPending} />
+          <ReviewChangesButton request={saveRequest} onApply={() => save.mutate()} applyLabel="Save" disabled={!effectivePubKey || allowedAddr.length === 0 || save.isPending} />
           <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
           {save.isError && <span className="text-xs text-red-500">{apiErrorMessage(save.error)}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Peer config viewer (existing peers with a stored private key) ───────────
+
+interface PeerConfigModalProps {
+  peer: NS;
+  serverPublicKey: string;
+  listenPort: string;
+  onClose: () => void;
+}
+
+function PeerConfigModal({ peer, serverPublicKey, listenPort, onClose }: PeerConfigModalProps) {
+  const privateKey = peer['private-key'];
+  const label = peer['comment'] || peer['name'] || 'peer';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Client Config — {label}</h3>
+          <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-5">
+          {privateKey ? (
+            <ClientConfigPanel
+              conf={buildClientConf({
+                privateKey,
+                address: peer['client-address'] || peer['allowed-address'] || '',
+                dns: peer['client-dns'] || undefined,
+                serverPublicKey,
+                endpoint: peer['client-endpoint'] ? `${peer['client-endpoint']}:${listenPort}` : undefined,
+                allowedIps: peer['client-allowed-address'] || undefined,
+                keepaliveSeconds: String(rosDurationSeconds(peer['client-keepalive'] || peer['persistent-keepalive']) ?? '') || undefined,
+              })}
+              fileName={`${label.replace(/[^a-z0-9_-]+/gi, '-')}.conf`}
+            />
+          ) : (
+            <p className="text-sm text-gray-600 dark:text-slate-300">
+              This peer has no private key stored on the router, so its client config can&apos;t be shown — only the public key it was
+              created with. To get a downloadable config for it, edit the peer, turn on &quot;Generate a client key pair now&quot; and save:
+              that replaces its key, so the device that used the old one will need the new config too.
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -235,13 +388,14 @@ function PeerForm({ deviceId, ifaceName, existing, onClose }: PeerFormProps) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 /** One device's WireGuard interfaces and peers, as a card (#209). */
-function DeviceWireGuardCard({ device }: { device: { id: number; name: string; device_type?: string; status?: string; tags?: TagLike[] } }) {
+function DeviceWireGuardCard({ device }: { device: { id: number; name: string; device_type?: string; status?: string; tags?: TagLike[]; ip_address?: string | null } }) {
   const canWrite = useCanWrite();
   const qc = useQueryClient();
   const deviceId = device.id;
   const [expandedIface, setExpandedIface] = useState<string | null>(null);
   const [ifaceForm, setIfaceForm] = useState<NS | 'new' | null>(null);
   const [peerForm, setPeerForm] = useState<{ ifaceName: string; existing?: NS } | null>(null);
+  const [viewPeer, setViewPeer] = useState<{ ifaceName: string; peer: NS } | null>(null);
 
   const { data: wg, isLoading, refetch, isFetching, error } = useQuery({
     queryKey: ['ns-wireguard', deviceId],
@@ -296,14 +450,31 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
           onClose={() => setIfaceForm(null)}
         />
       )}
-      {peerForm && (
-        <PeerForm
-          deviceId={deviceId}
-          ifaceName={peerForm.ifaceName}
-          existing={peerForm.existing}
-          onClose={() => setPeerForm(null)}
-        />
-      )}
+      {peerForm && (() => {
+        const iface = wg?.interfaces.find(i => i['name'] === peerForm.ifaceName);
+        return (
+          <PeerForm
+            deviceId={deviceId}
+            ifaceName={peerForm.ifaceName}
+            existing={peerForm.existing}
+            onClose={() => setPeerForm(null)}
+            serverPublicKey={iface?.['public-key']}
+            listenPort={iface?.['listen-port']}
+            deviceAddress={device.ip_address || undefined}
+          />
+        );
+      })()}
+      {viewPeer && (() => {
+        const iface = wg?.interfaces.find(i => i['name'] === viewPeer.ifaceName);
+        return (
+          <PeerConfigModal
+            peer={viewPeer.peer}
+            serverPublicKey={iface?.['public-key'] || ''}
+            listenPort={iface?.['listen-port'] || ''}
+            onClose={() => setViewPeer(null)}
+          />
+        );
+      })()}
 
       {writeError && <div className="m-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">{writeError}</div>}
       <GuardedWriteUi state={guard} deviceId={deviceId} deviceName={device.name}
@@ -485,7 +656,11 @@ function DeviceWireGuardCard({ device }: { device: { id: number; name: string; d
                               {canWrite && !isMgmtIface(iface) && (
                                 <td className="px-3 py-2">
                                   <div className="flex items-center justify-end gap-1">
-                                    <button onClick={() => setPeerForm({ ifaceName: name, existing: peer })}
+                                    <button onClick={() => setViewPeer({ ifaceName: name, peer })} title="View client config"
+                                      className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button onClick={() => setPeerForm({ ifaceName: name, existing: peer })} title="Edit"
                                       className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
                                       <Pencil className="w-3.5 h-3.5" />
                                     </button>

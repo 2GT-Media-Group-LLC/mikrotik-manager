@@ -6280,6 +6280,10 @@ export class DeviceCollector {
   }
 
   async getWireGuardPeers(): Promise<Record<string, string>[]> {
+    // The API already returns a responder peer's stored private-key without
+    // asking — show-sensitive is a CLI-only concept (and some RouterOS builds
+    // reject it over the API as an unknown parameter, which broke the whole
+    // read). No extra flag needed here.
     return this.client.execute('/interface/wireguard/peers/print', { detail: '' }).catch(() => [] as Record<string, string>[]);
   }
 
