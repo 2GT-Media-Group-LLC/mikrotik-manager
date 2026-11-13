@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta49" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.49
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta48" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2035,6 +2046,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta49" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.49
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta48" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2574,6 +2596,19 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta49">1.1.0-beta.49<a class="headerlink" href="#110-beta49" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Firewall Logs can hide rules</strong>, from aziz's request and patch in
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/446">#446</a>. <strong>Hide rules</strong> shows
+  everything except the rules you pick, for example a busy drop rule you already know about. It
+  hides a rule on its own device only, works in the grouped view too, and remembers your choice in
+  this browser. Up to 20 rules.</li>
+<li><strong>Rules that would read the same in All rules show their tags</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/443">#443</a>), so two rules with
+  the same comment on one device can be told apart.</li>
+<li><strong>After an update, the dashboard said the latest release was older than the one running</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/443">#443</a>). Also in 1.0.16.</li>
+</ul>
 <h2 id="110-beta48">1.1.0-beta.48<a class="headerlink" href="#110-beta48" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Firewall Logs can show one rule's lines</strong>, from aziz's request and patch in
@@ -3307,6 +3342,23 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1016">1.0.16<a class="headerlink" href="#1016" title="Permanent link">&para;</a></h2>
+<p>Released on Friday 13 November 2026.</p>
+<ul>
+<li><strong>After an update, the dashboard said the latest release was older than the one running</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/443">#443</a>). The update check
+  keeps its answer for a day, and the new version kept using the answer the old one had saved. The
+  saved answer now records which version and channel asked, and the check runs again when either
+  changes.</li>
+</ul>
+<h2 id="1015">1.0.15<a class="headerlink" href="#1015" title="Permanent link">&para;</a></h2>
+<p>Released on Wednesday 11 November 2026.</p>
+<ul>
+<li><strong>Switching to API-SSL or HTTPS explains "not enough permissions"</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/417">#417</a>): which step the
+  router refused, and that the user the manager logs in as needs the <code>full</code> group or the missing
+  policies.</li>
+</ul>
 <h2 id="1014">1.0.14<a class="headerlink" href="#1014" title="Permanent link">&para;</a></h2>
 <p>Released on Monday 9 November 2026.</p>
 <ul>
