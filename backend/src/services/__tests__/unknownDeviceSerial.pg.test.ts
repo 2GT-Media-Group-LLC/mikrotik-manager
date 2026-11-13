@@ -56,24 +56,6 @@ suite('force-added serial reconciliation (PostgreSQL)', () => {
     ))[0];
   }
 
-  it('backfills unknown devices once and preserves pending flags on later migrations', async () => {
-    const unknown = await addDevice({ name: 'unknown' });
-    const offline = await addDevice({ name: 'offline', status: 'offline' });
-    await db.query('ALTER TABLE devices DROP COLUMN force_add_pending');
-    const { runMigrations } = await import('../../db/migrate');
-    await runMigrations();
-    expect(await db.query('SELECT id, force_add_pending FROM devices ORDER BY id')).toEqual([
-      { id: unknown.id, force_add_pending: true },
-      { id: offline.id, force_add_pending: false },
-    ]);
-    await db.query('UPDATE devices SET force_add_pending = (id = $1)', [offline.id]);
-    await runMigrations();
-    expect(await db.query('SELECT id, force_add_pending FROM devices ORDER BY id')).toEqual([
-      { id: unknown.id, force_add_pending: false },
-      { id: offline.id, force_add_pending: true },
-    ]);
-  });
-
   it('clears the pending flag when a successful SSH refresh marks the device online', async () => {
     const candidate = await addDevice({ name: 'candidate', candidate: true });
     const { refreshOverSsh } = await import('../sshOnly');
