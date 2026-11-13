@@ -3,6 +3,19 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.49
+
+- **Firewall Logs can hide rules**, from aziz's request and patch in
+  [#446](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/446). **Hide rules** shows
+  everything except the rules you pick, for example a busy drop rule you already know about. It
+  hides a rule on its own device only, works in the grouped view too, and remembers your choice in
+  this browser. Up to 20 rules.
+- **Rules that would read the same in All rules show their tags**
+  ([#443](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/443)), so two rules with
+  the same comment on one device can be told apart.
+- **After an update, the dashboard said the latest release was older than the one running**
+  ([#443](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/443)). Also in 1.0.16.
+
 ## 1.1.0-beta.48
 
 - **Firewall Logs can show one rule's lines**, from aziz's request and patch in
