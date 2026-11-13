@@ -1817,6 +1817,12 @@ period selector changes that to the last hour, 7 days or 30 days (only lines
 still within the firewall log retention are there to find), and a link can
 open it with <code>?range=1h|24h|7d|30d</code>. Results can be filtered by device, action,
 protocol, or text such as an address, port, interface, or log prefix.</p>
+<p><strong>All rules</strong> narrows the page to one rule's lines. It lists the log prefixes that logged in
+the period, each with its device and how many lines it wrote, busiest first; with a device
+picked, a tagged rule is named by its comment. The match is on the whole prefix, so
+<code>PERMIT-ZT</code> doesn't also bring in <code>PERMIT-ZT-ADMIN</code> the way the search box does. Picking a rule
+picks its device as well, and a link can open it with <code>?device=ID&amp;rule=&lt;prefix&gt;</code>. Lines logged
+without a prefix aren't listed: nothing tells their rules apart.</p>
 <h2 id="enabling-firewall-monitoring">Enabling firewall monitoring<a class="headerlink" href="#enabling-firewall-monitoring" title="Permanent link">&para;</a></h2>
 <p>Users with write access can select <strong>Configure monitoring</strong> on the Firewall
 Logs page.</p>
