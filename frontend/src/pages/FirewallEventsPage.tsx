@@ -219,11 +219,22 @@ export default function FirewallEventsPage() {
     const t = tagOf(r['log-prefix']);
     if (t && r.comment) commentByTag.set(t, r.comment);
   }
-  const ruleLabel = (o: FirewallRuleOption) => {
+  const ruleName = (o: FirewallRuleOption) => {
     const base = o.prefix.replace(/(?:^|\s)mtm#[0-9a-z]{4}(?=\s|$)/i, ' ').trim();
     const comment = o.tag ? commentByTag.get(o.tag) : undefined;
-    const name = comment ? (base ? `${comment} (${base})` : comment) : (base || `mtm#${o.tag}`);
-    return `${name}${deviceId ? '' : ` · ${o.deviceName ?? 'unknown device'}`} — ${o.count.toLocaleString()}`;
+    return comment ? (base ? `${comment} (${base})` : comment) : (base || `mtm#${o.tag}`);
+  };
+  // Two monitored rules with the same action and no comment to hand (across
+  // all devices) read the same; their tags tell them apart (#443).
+  const nameCount = new Map<string, number>();
+  for (const o of ruleOptions) {
+    const k = `${o.deviceId}|${ruleName(o)}`;
+    nameCount.set(k, (nameCount.get(k) ?? 0) + 1);
+  }
+  const ruleLabel = (o: FirewallRuleOption) => {
+    const name = ruleName(o);
+    const clash = o.tag && (nameCount.get(`${o.deviceId}|${name}`) ?? 0) > 1 && !name.includes(`mtm#${o.tag}`);
+    return `${name}${clash ? ` mtm#${o.tag}` : ''}${deviceId ? '' : ` · ${o.deviceName ?? 'unknown device'}`} — ${o.count.toLocaleString()}`;
   };
   // A rule without a prefix can't be told apart from another; leave it out.
   const ruleChoices = ruleOptions.filter((o) => o.prefix !== '' && o.deviceId != null);
