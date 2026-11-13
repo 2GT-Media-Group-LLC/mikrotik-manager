@@ -2970,8 +2970,8 @@ export class DeviceCollector {
 
   async updateDeviceStatus(status: string): Promise<void> {
     await query(
-      `UPDATE devices SET status = $1, last_seen = NOW(), updated_at = NOW(),
-         force_add_pending = CASE WHEN $1 = 'online' THEN FALSE ELSE force_add_pending END
+      `UPDATE devices SET status = $1::varchar, last_seen = NOW(), updated_at = NOW(),
+         force_add_pending = CASE WHEN $1::varchar = 'online' THEN FALSE ELSE force_add_pending END
        WHERE id = $2`,
       [status, this.device.id]
     );

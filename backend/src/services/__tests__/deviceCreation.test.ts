@@ -160,8 +160,8 @@ describe('createDeviceFromBody (API-SSL on any port)', () => {
   /** RouterOSClient(host, port, user, pass, connectMs, readMs, useTls, jumpHostId). */
   const ctorArgs = () => (RouterOSClient as unknown as jest.Mock).mock.calls[0];
   const insertParams = () => (query as jest.Mock).mock.calls.find(([sql]: [string]) => /INSERT INTO devices/.test(sql))![1];
-  /** The INSERT ends (..., api_tls, jump_host_id, added_over_ssh). */
-  const insertedTls = () => insertParams()[insertParams().length - 3];
+  /** The API TLS choice is the 21st INSERT parameter. */
+  const insertedTls = () => insertParams()[20];
 
   it('connects with TLS on a custom port when asked, and stores the choice', async () => {
     const result = await createDeviceFromBody({ ...base, api_port: '18729', api_tls: true }, null);
@@ -396,7 +396,7 @@ describe('createDeviceFromBody (jump hosts)', () => {
     expect(result.ok).toBe(true);
     expect(routeTested()).toBe(4);
     const insert = sqlRan(/INSERT INTO devices/)![1] as unknown[];
-    expect(insert[insert.length - 2]).toBe(4);
+    expect(insert[21]).toBe(4);
   });
 
   it('connects directly when the form says so, whatever the site default', async () => {

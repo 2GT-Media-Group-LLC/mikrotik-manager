@@ -84,6 +84,19 @@ suite('force-added serial reconciliation (PostgreSQL)', () => {
       .toEqual([{ status: 'online', force_add_pending: false }]);
   });
 
+  it('clears the pending flag only when API collection marks the device online', async () => {
+    const candidate = await addDevice({ name: 'candidate', candidate: true });
+    const { DeviceCollector } = await import('../mikrotik/DeviceCollector');
+    const collector: InstanceType<typeof DeviceCollector> = Object.create(DeviceCollector.prototype);
+    Object.defineProperty(collector, 'device', { value: candidate });
+    await collector.updateDeviceStatus('offline');
+    expect(await db.query('SELECT status, force_add_pending FROM devices WHERE id = $1', [candidate.id]))
+      .toEqual([{ status: 'offline', force_add_pending: true }]);
+    await collector.updateDeviceStatus('online');
+    expect(await db.query('SELECT status, force_add_pending FROM devices WHERE id = $1', [candidate.id]))
+      .toEqual([{ status: 'online', force_add_pending: false }]);
+  });
+
   it('removes a new duplicate of an online device, retaining its record and event', async () => {
     const existing = await addDevice({ name: 'existing', serial: 'Ab12', status: 'online' });
     const candidate = await addDevice({ name: 'candidate', candidate: true });

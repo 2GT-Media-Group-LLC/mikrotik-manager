@@ -50,7 +50,8 @@ polls retry the API as described below.
 
 On the first successful connection, a **force-added** device's serial is checked before it is
 collected. Failed polls leave it unknown and pending until it connects; polling statistics retain the
-failure details. If it matches one device in the same site, the new record is removed when the
+failure details. Manual sync and API checks are available after that first poll succeeds.
+If it matches one device in the same site, the new record is removed when the
 existing device is online. Otherwise the new connection settings are merged into the existing
 record, preserving its history and combining tags; the new record is removed. A disabled
 existing device stays disabled. Matches in another site, multiple matches, or conflicting

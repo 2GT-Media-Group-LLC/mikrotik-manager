@@ -22,7 +22,7 @@ import { DeviceCollector, type DeviceRow } from '../mikrotik/DeviceCollector';
 import { query } from '../../config/database';
 
 type TestPoller = {
-  processPollJob(data: { deviceId: number; type: 'full' | 'sshcheck' }): Promise<void>;
+  processPollJob(data: { deviceId: number; type: 'full' | 'fast' | 'sshcheck' }): Promise<void>;
   getDevice: jest.Mock;
   getTimestamp: jest.Mock;
   setTimestamp: jest.Mock;
@@ -185,5 +185,23 @@ describe('SSH-only polling', () => {
     expect(collector.collectAll).not.toHaveBeenCalled();
     expect(collector.release).toHaveBeenCalledWith(false);
     expect(poller.emitForDevice).toHaveBeenCalledWith('device:updated', { deviceId: 10 }, 10);
+  });
+
+  it('does not reconcile an unknown API device that is not pending', async () => {
+    const verified = { ...device, api_port: 8729, ssh_only: false, force_add_pending: false };
+    const collector = {
+      connectPooled: jest.fn().mockResolvedValue(undefined),
+      collectFast: jest.fn().mockResolvedValue(undefined),
+      timings: { connectMs: 1, reused: false },
+      deviceTime: jest.fn().mockReturnValue(0),
+      release: jest.fn(),
+    };
+    poller.getDevice.mockResolvedValue(verified);
+    jest.mocked(DeviceCollector).mockImplementation(() => collector as unknown as DeviceCollector);
+
+    await poller.processPollJob({ deviceId: 45, type: 'fast' });
+
+    expect(resolveUnknownDeviceSerial).not.toHaveBeenCalled();
+    expect(collector.collectFast).toHaveBeenCalled();
   });
 });
