@@ -1863,7 +1863,7 @@ manages wifi-package APs, and a legacy one only legacy wireless APs.</p>
 <tr>
 <td>Controller and AP only: its own CAP, pointed at <code>127.0.0.1</code></td>
 <td><code>/interface wifi cap</code></td>
-<td><code>/interface wireless cap</code>, with its wlans</td>
+<td><code>/interface wireless cap</code>, with the chosen band's wlans</td>
 </tr>
 </tbody>
 </table>
@@ -1878,8 +1878,14 @@ changes</strong> shows the writes first.</p>
   device already has come before the new one, and the form says so. With one band, the new rule
   goes first, so that band's radios take the SSID and the other band's go on matching the rules
   already there. That way you can try a 5 GHz network without touching the 2.4 GHz one.</li>
+<li>With one band and <strong>Controller and AP</strong> on legacy CAPsMAN, only the device's own wlans of that
+  band join the controller. The other band's wlans keep their own settings.</li>
 </ul>
 <h2 id="current-limits">Current limits<a class="headerlink" href="#current-limits" title="Permanent link">&para;</a></h2>
+<p><strong>On wifi CAPsMAN, Controller and AP doesn't hand the device's own radios over yet.</strong> The
+controller and its own CAP come up, but each wifi radio only joins a controller when its
+<code>configuration.manager</code> says so, and the setup doesn't set it, so the radios keep their own
+settings. Other APs join as usual. Legacy CAPsMAN isn't affected.</p>
 <p><strong>Editing an existing controller's provisioning, configurations and interfaces isn't offered</strong>,
 apart from the setup above. A CAPsMAN configuration applies to every access point bound to it
 simultaneously — the fleet-wide version of the failure <a href="../change-guard/">Change Guard</a>

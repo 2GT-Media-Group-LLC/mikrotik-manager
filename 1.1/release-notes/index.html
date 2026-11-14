@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta50" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.50
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta49" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2046,6 +2057,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta50" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.50
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta49" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2596,6 +2618,16 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta50">1.1.0-beta.50<a class="headerlink" href="#110-beta50" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>CAPsMAN quick set with one band took the other band's radio too</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438">#438</a>). On legacy CAPsMAN
+  with <strong>Controller and AP</strong>, choosing 5 GHz only handed every wlan to the controller, so the
+  2.4 GHz one matched no rule and lost its own SSID. Now only the chosen band's wlans join, and
+  running the setup again takes the other band's wlan back out. Thanks to Ron for the report.</li>
+<li><strong>Known limit:</strong> on wifi CAPsMAN, <strong>Controller and AP</strong> doesn't hand the device's own radios over
+  yet; they keep their own settings. See <a href="../capsman/#current-limits">CAPsMAN</a>.</li>
+</ul>
 <h2 id="110-beta49">1.1.0-beta.49<a class="headerlink" href="#110-beta49" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Firewall Logs can hide rules</strong>, from aziz's request and patch in
