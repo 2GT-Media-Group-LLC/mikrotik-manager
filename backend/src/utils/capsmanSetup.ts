@@ -273,13 +273,20 @@ export function planCapsman(input: CapsmanSetupInput, live: CapsmanLive): { step
         description: band === 'both' ? 'Point the provisioning rule at it' : `Point the provisioning rule at it, for ${bandName} radios`,
       });
     }
-    // Back to every radio: the match is taken off rather than set empty.
+    // Back to every radio: wifi takes the match off with unset; legacy
+    // /caps-man has no unset ("no such command", #438), so it is set empty.
     if (bandChanged && !match.value) {
-      steps.push({
-        command: `${p.provisioning}/unset`,
-        params: { numbers: existing['.id'], 'value-name': match.key },
-        description: 'Provision every radio with it, not one band',
-      });
+      steps.push(input.flavor === 'legacy'
+        ? {
+          command: `${p.provisioning}/set`,
+          params: { '.id': existing['.id'], [match.key]: '' },
+          description: 'Provision every radio with it, not one band',
+        }
+        : {
+          command: `${p.provisioning}/unset`,
+          params: { numbers: existing['.id'], 'value-name': match.key },
+          description: 'Provision every radio with it, not one band',
+        });
     }
     if (goFirst && live.provisioning.indexOf(existing) > live.provisioning.indexOf(firstOther)) {
       steps.push({

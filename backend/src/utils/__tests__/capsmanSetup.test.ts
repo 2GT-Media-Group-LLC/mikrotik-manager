@@ -153,6 +153,17 @@ describe('one band only (Ron, #438)', () => {
     expect(steps.find((s) => s.command === '/interface/wireless/cap/set')!.params).toMatchObject({ interfaces: 'wlan2' });
   });
 
+  it('goes back to both bands on legacy with set, which has no unset (Ron, #438)', () => {
+    const rule = { '.id': '*0', action: 'create-dynamic-enabled', 'master-configuration': MTM_CAPSMAN, comment: MTM_CAPSMAN_COMMENT,
+      disabled: 'false', 'hw-supported-modes': 'a,an,ac' };
+    const l = live({ flavor: 'legacy', radios: ['wlan1', 'wlan2'], radioBands: { wlan1: '2ghz', wlan2: '5ghz' }, provisioning: [rule],
+      cap: { enabled: 'true', 'caps-man-addresses': '127.0.0.1', interfaces: 'wlan2', bridge: 'bridge' } });
+    const { steps } = planCapsman(input(l, { ...local, band: 'both' }), l);
+    expect(steps.some((s) => s.command.endsWith('/unset'))).toBe(false);
+    expect(steps.find((s) => s.command === '/caps-man/provisioning/set')!.params).toEqual({ '.id': '*0', 'hw-supported-modes': '' });
+    expect(steps.find((s) => s.command === '/interface/wireless/cap/set')!.params).toMatchObject({ interfaces: 'wlan1,wlan2' });
+  });
+
   it('refuses one band when the device has no radio of it', () => {
     const l = live({ flavor: 'legacy', radios: ['wlan1'], radioBands: { wlan1: '2ghz' } });
     const r = parseCapsmanSetup({ ...local, band: '5ghz' }, l);
