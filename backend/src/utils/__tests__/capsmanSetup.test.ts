@@ -125,10 +125,34 @@ describe('one band only (Ron, #438)', () => {
   });
 
   it('matches legacy radios by their hardware modes', () => {
-    const l = live({ flavor: 'legacy', radios: ['wlan1'] });
+    const l = live({ flavor: 'legacy', radios: ['wlan1'], radioBands: { wlan1: '2ghz' } });
     const { steps } = planCapsman(input(l, { ...body, band: '2ghz' }), l);
     expect(steps[1].params).toMatchObject({ 'hw-supported-modes': 'b,g,gn' });
     expect(steps[1].params).not.toHaveProperty('place-before');   // nothing to go before
+  });
+
+  it('hands a legacy controller only the chosen band\'s radios, so the other keeps its own SSID (Ron, #438)', () => {
+    const l = live({ flavor: 'legacy', radios: ['wlan1', 'wlan2'], radioBands: { wlan1: '2ghz', wlan2: '5ghz' } });
+    const { steps, warnings } = planCapsman(input(l, { ...body, band: '5ghz' }), l);
+    expect(steps.find((s) => s.command === '/interface/wireless/cap/set')!.params).toMatchObject({ interfaces: 'wlan2' });
+    expect(warnings.join(' ')).toMatch(/5 GHz radio \(wlan2\) switches to Office/);
+    expect(warnings.join(' ')).toMatch(/wlan1 keeps its own settings/);
+    // Both bands again: both radios join.
+    const both = planCapsman(input(l, { ...body, band: 'both' }), l).steps;
+    expect(both.find((s) => s.command === '/interface/wireless/cap/set')!.params).toMatchObject({ interfaces: 'wlan1,wlan2' });
+  });
+
+  it('moves an existing legacy setup off the other band\'s radio', () => {
+    const l = live({ flavor: 'legacy', radios: ['wlan1', 'wlan2'], radioBands: { wlan1: '2ghz', wlan2: '5ghz' },
+      cap: { enabled: 'true', 'caps-man-addresses': '127.0.0.1', interfaces: 'wlan1,wlan2', bridge: 'bridge' } });
+    const { steps } = planCapsman(input(l, { ...body, band: '5ghz' }), l);
+    expect(steps.find((s) => s.command === '/interface/wireless/cap/set')!.params).toMatchObject({ interfaces: 'wlan2' });
+  });
+
+  it('refuses one band when the device has no radio of it', () => {
+    const l = live({ flavor: 'legacy', radios: ['wlan1'], radioBands: { wlan1: '2ghz' } });
+    const r = parseCapsmanSetup({ ...body, band: '5ghz' }, l);
+    expect('error' in r && r.error).toMatch(/no 5 GHz radio/);
   });
 
   it('changes an earlier rule\'s band, moves it first, and takes the band off again', () => {

@@ -53,6 +53,18 @@ export interface CapsmanLive {
   cap: Row | null;
   /** The device's own radios that its CAP would hand over (legacy: wlan names). */
   radios: string[];
+  /** Each radio's band, where the device says (legacy: its band setting). */
+  radioBands?: Record<string, '2ghz' | '5ghz'>;
+}
+
+/**
+ * The radios a setup hands to the controller. One band only: just that band's,
+ * so the other band's radios keep their own settings (Ron, #438). Legacy only,
+ * since its CAP lists the radios; wifi's CAP takes every radio.
+ */
+export function capsmanRadios(live: Pick<CapsmanLive, 'flavor' | 'radios' | 'radioBands'>, band: CapsmanBand): string[] {
+  if (band === 'both' || live.flavor !== 'legacy') return live.radios;
+  return live.radios.filter((r) => live.radioBands?.[r] === band);
 }
 
 export interface CapsmanSetupInput {
@@ -132,6 +144,9 @@ export function parseCapsmanSetup(body: unknown, live: CapsmanLive): { input: Ca
   if (country && !/^[a-z0-9 .()-]{2,40}$/.test(country)) return { error: 'Enter the country as RouterOS names it, e.g. "united states", or leave it empty.' };
   if (localRadios && live.radios.length === 0) {
     return { error: `This device has no ${live.flavor === 'wifi' ? 'wifi' : 'legacy wireless'} radios of its own. Choose controller only.` };
+  }
+  if (localRadios && capsmanRadios(live, band).length === 0) {
+    return { error: `This device has no ${band === '2ghz' ? '2.4 GHz' : '5 GHz'} radio of its own. Choose another band, or controller only.` };
   }
   return { input: { flavor: live.flavor, ssid, passphrase, bridge, country, localRadios, band } };
 }
@@ -248,22 +263,27 @@ export function planCapsman(input: CapsmanSetupInput, live: CapsmanLive): { step
   }
 
   const cap = live.cap;
+  const radios = capsmanRadios(live, input.band);
   if (input.localRadios) {
     const params: Row = { enabled: 'yes', 'caps-man-addresses': LOOPBACK };
     if (input.flavor === 'legacy') {
-      params.interfaces = live.radios.join(',');
+      params.interfaces = radios.join(',');
       params.bridge = input.bridge;
     }
     const capNow = new Map(Object.entries(cap ?? {}));
     const same = capIsLocal(cap) && Object.entries(params).every(([k, v]) => k === 'enabled' || (capNow.get(k) ?? '') === v);
     if (!same) {
-      steps.push({ command: `${p.cap}/set`, params, description: `Have its own radios (${live.radios.join(', ')}) join it` });
+      steps.push({ command: `${p.cap}/set`, params, description: `Have its own radios (${radios.join(', ')}) join it` });
       if (yes(cap?.enabled) && !capIsLocal(cap)) {
         warnings.push('This device is a CAP of another controller now. Its radios will be managed by itself instead.');
       }
       warnings.push(input.band === 'both'
-        ? `Its own radios (${live.radios.join(', ')}) switch to ${input.ssid}. Clients on their current networks reconnect to it.`
-        : `Its own ${bandName} radios switch to ${input.ssid}. Clients on their current networks reconnect to it.`);
+        ? `Its own radios (${radios.join(', ')}) switch to ${input.ssid}. Clients on their current networks reconnect to it.`
+        : input.flavor === 'legacy'
+          ? `Its own ${bandName} ${radios.length === 1 ? 'radio' : 'radios'} (${radios.join(', ')}) ${radios.length === 1 ? 'switches' : 'switch'} to ${input.ssid}. Clients on their current networks reconnect to it.`
+          : `Its own ${bandName} radios switch to ${input.ssid}. Clients on their current networks reconnect to it.`);
+      const kept = live.radios.filter((r) => !radios.includes(r));
+      if (kept.length) warnings.push(`${kept.join(', ')} ${kept.length === 1 ? 'keeps its' : 'keep their'} own settings.`);
     }
   } else if (capIsLocal(cap)) {
     // Controller only, after "controller and AP": its radios go back to their own settings.

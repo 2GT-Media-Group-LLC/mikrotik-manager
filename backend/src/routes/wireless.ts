@@ -326,9 +326,17 @@ async function readCapsman(c: DeviceCollector): Promise<{ bridges: string[]; liv
       .filter((r) => (flavor === 'wifi' ? r.local === 'true' : !r['master-interface']))
       .map((r) => (flavor === 'wifi' ? r.interface || r['radio-mac'] : r.name))
       .filter(Boolean);
+    // Legacy radios by their band setting, so one band's setup hands over only those.
+    const radioBands: Record<string, '2ghz' | '5ghz'> = {};
+    if (flavor === 'legacy') {
+      for (const r of radioRows ?? []) {
+        const b = String(r.band ?? '');
+        if (r.name && (b.startsWith('2ghz') || b.startsWith('5ghz'))) radioBands[r.name] = b.startsWith('2ghz') ? '2ghz' : '5ghz';
+      }
+    }
     live[flavor] = {
       flavor, bridges, configurations: configurations ?? [], provisioning: provisioning ?? [],
-      manager: manager[0] ?? null, cap: cap?.[0] ?? null, radios,
+      manager: manager[0] ?? null, cap: cap?.[0] ?? null, radios, radioBands,
     };
   }
   return { bridges, live };
