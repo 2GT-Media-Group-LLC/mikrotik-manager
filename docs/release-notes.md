@@ -3,6 +3,21 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.52
+
+- **CAPsMAN quick set can give 5 GHz an SSID of its own**
+  ([#438](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438)). With both bands,
+  tick **A different SSID on 5 GHz**: 2.4 GHz radios take the first SSID and 5 GHz radios the
+  second, with the same password. Unticking it removes the second one again. Thanks to Ron.
+- **Wifi CAPsMAN is controller only in the quick set.** A wifi controller can't serve its own
+  radios through its own CAP, so **Controller and AP** did nothing there, and the only way
+  RouterOS offers replaces the radios' own SSIDs and virtual APs for good. Legacy CAPsMAN keeps
+  the option. See [CAPsMAN](capsman.md#current-limits).
+- **A site's map zoom applies wherever its devices show**
+  ([#362](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/362)). The dashboard map
+  no longer ignores it when some devices have no site, and centres on the site's pin; a device's
+  own map opens at its site's zoom too. Thanks to Ron.
+
 ## 1.1.0-beta.51
 
 - **Zones dropped a CAPsMAN's own CAP**
