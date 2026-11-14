@@ -3,6 +3,14 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.53
+
+- **CAPsMAN quick set couldn't go back to both bands on legacy CAPsMAN**
+  ([#438](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438)). After a one-band
+  run, choosing 2.4 GHz and 5 GHz again stopped with "no such command": legacy `/caps-man` has no
+  `unset`, so the band match is now cleared by setting it empty, and the controller's own CAP takes
+  both radios again. Thanks to Ron.
+
 ## 1.1.0-beta.52
 
 - **CAPsMAN quick set can give 5 GHz an SSID of its own**
