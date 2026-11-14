@@ -3285,7 +3285,8 @@ and how many rules it adds, removes and keeps. <strong>Show the rules</strong> l
 <p>Every rule is commented <code>mtm zone: …</code>. In order:</p>
 <ul>
 <li><strong>Input</strong> (traffic to the router): accept established, related and untracked; drop invalid;
-  accept to the loopback (for CAPsMAN); accept the manager's own address, when MTM can see it on
+  accept what the router sends itself (in on <code>lo</code> on RouterOS 7, so a CAPsMAN's own CAP isn't
+  dropped; to <code>127.0.0.1</code> on RouterOS 6); accept the manager's own address, when MTM can see it on
   the device; a jump per zone that can reach the router, to <code>&lt;zone&gt;-to-router</code>; then drop the rest.</li>
 <li><strong>Forward</strong> (traffic between zones): FastTrack established and related (optional, with hardware
   offload on RouterOS 7); accept established, related and untracked; drop invalid; an accept per
