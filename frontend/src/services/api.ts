@@ -2385,6 +2385,8 @@ export interface CapsmanFlavorState {
   other_rules: number;
   /** The radios its provisioning rule takes (#438). */
   band: CapsmanBand;
+  /** Both bands with a 5 GHz SSID of its own (#438), else null. */
+  ssid5?: string | null;
 }
 /** All radios, or one band's: 2.4 GHz or 5 GHz (#438). */
 export type CapsmanBand = 'both' | '2ghz' | '5ghz';
@@ -2402,6 +2404,8 @@ export interface CapsmanSetupRequest {
   country: string;
   localRadios: boolean;
   band: CapsmanBand;
+  /** Both bands only: a different SSID for 5 GHz radios (#438). */
+  ssid5?: string;
 }
 
 export const wirelessApi = {

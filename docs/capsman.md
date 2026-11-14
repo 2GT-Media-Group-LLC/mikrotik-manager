@@ -112,9 +112,10 @@ or one, from Ron's request in #438. Choose the device, then enter:
 - the **bridge** Wi-Fi clients join, on the controller and on every AP, so each AP needs a
   bridge with this name;
 - the **country**, optional, as RouterOS names it (`united states`);
-- the **radios**: **2.4 GHz and 5 GHz**, **2.4 GHz only** or **5 GHz only**;
-- the **role**: **Controller and AP**, where its own radios broadcast the SSID too, or
-  **Controller only**.
+- the **radios**: **2.4 GHz and 5 GHz**, **2.4 GHz only** or **5 GHz only**. With both, tick
+  **A different SSID on 5 GHz** to give 5 GHz radios a name of their own, with the same password;
+- the **role**: **Controller and AP**, where its own radios broadcast the SSID too (legacy
+  CAPsMAN only, see below), or **Controller only**.
 
 It works on either CAPsMAN, and asks which when the device has both. A wifi controller only
 manages wifi-package APs, and a legacy one only legacy wireless APs.
@@ -125,8 +126,9 @@ What it does on the device:
 |---|---|---|
 | A configuration named `mtm-capsman` with the SSID, password and bridge | `/interface wifi configuration` | `/caps-man configuration`, with local forwarding |
 | A provisioning rule, commented `mtm capsman`, that gives it to every radio, or one band's | `/interface wifi provisioning`, matching `supported-bands` | `/caps-man provisioning`, matching `hw-supported-modes` |
+| A different SSID on 5 GHz only: a second configuration, `mtm-capsman-5ghz`, and rule, commented `mtm capsman 5ghz`, for 5 GHz radios; the first rule then takes 2.4 GHz | the same menus | the same menus |
 | CAPsMAN on | `/interface wifi capsman` | `/caps-man manager` |
-| Controller and AP only: its own CAP, pointed at `127.0.0.1` | `/interface wifi cap` | `/interface wireless cap`, with the chosen band's wlans |
+| Controller and AP only: its own CAP, pointed at `127.0.0.1` | (not offered) | `/interface wireless cap`, with the chosen band's wlans |
 
 Running it again on the same device changes the same items. Leave the password empty to keep
 the one set. Switching to **Controller only** turns its own CAP off, and its radios go back to
@@ -141,13 +143,18 @@ changes** shows the writes first.
   already there. That way you can try a 5 GHz network without touching the 2.4 GHz one.
 - With one band and **Controller and AP** on legacy CAPsMAN, only the device's own wlans of that
   band join the controller. The other band's wlans keep their own settings.
+- With a different SSID on 5 GHz, both rules go before the device's own. Unticking it, or
+  choosing one band, removes the 5 GHz rule and configuration again.
 
 ## Current limits
 
-**On wifi CAPsMAN, Controller and AP doesn't hand the device's own radios over yet.** The
-controller and its own CAP come up, but each wifi radio only joins a controller when its
-`configuration.manager` says so, and the setup doesn't set it, so the radios keep their own
-settings. Other APs join as usual. Legacy CAPsMAN isn't affected.
+**On wifi CAPsMAN, the controller doesn't serve its own radios.** A wifi controller can't manage
+its own radios through its own CAP (MikroTik's wifi documentation says so). RouterOS only
+offers one way to provision them, `/interface wifi radio provision`. That replaces each radio's
+own settings, its virtual APs included, and they don't come back when the rule goes: on a test
+wAP ax, they had to be rebuilt from a backup. So the wizard only offers **Controller only** on
+wifi. To put the controller's own radios on the SSID, set them by hand. Other APs join as usual,
+and legacy CAPsMAN isn't affected.
 
 **Editing an existing controller's provisioning, configurations and interfaces isn't offered**,
 apart from the setup above. A CAPsMAN configuration applies to every access point bound to it

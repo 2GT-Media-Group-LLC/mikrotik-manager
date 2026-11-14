@@ -1153,3 +1153,19 @@ describe('upsertClients', () => {
     expect((query as jest.Mock).mock.calls).toHaveLength(4);
   });
 });
+
+describe('writeCapsman remove (#438)', () => {
+  it('removes only CAPsMAN configurations and provisioning rules', async () => {
+    const c = new DeviceCollector(testDevice);
+    const execute = jest.fn(() => Promise.resolve([]));
+    (c as unknown as { client: { execute: jest.Mock } }).client.execute = execute;
+    await c.writeCapsman('/interface/wifi/provisioning/remove', { '.id': '*3' });
+    await c.writeCapsman('/caps-man/configuration/remove', { '.id': '*b' });
+    expect(execute).toHaveBeenCalledTimes(2);
+    await expect(c.writeCapsman('/interface/wifi/cap/remove', { '.id': '*1' })).rejects.toThrow(/Not a CAPsMAN write/);
+    await expect(c.writeCapsman('/interface/wireless/remove', { '.id': '*1' })).rejects.toThrow(/Not a CAPsMAN write/);
+    await expect(c.writeCapsman('/ip/firewall/filter/remove', { '.id': '*1' })).rejects.toThrow(/Not a CAPsMAN write/);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+});
+

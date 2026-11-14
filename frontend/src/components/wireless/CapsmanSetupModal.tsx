@@ -40,6 +40,9 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
   const [country, setCountry] = useState('');
   const [localRadios, setLocalRadios] = useState(true);
   const [band, setBand] = useState<CapsmanBand>('both');
+  // Both bands, with 5 GHz on an SSID of its own (Ron, #438).
+  const [split, setSplit] = useState(false);
+  const [ssid5, setSsid5] = useState('');
   const [touched, setTouched] = useState(false);
   const [message, setMessage] = useState('');
   const [failure, setFailure] = useState('');
@@ -56,21 +59,31 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
     setBridge(s?.bridge ?? (d.bridges.includes('bridge') ? 'bridge' : d.bridges[0] ?? ''));
     setCountry(s?.country ?? '');
     setBand(s?.band ?? 'both');
+    setSplit(!!s?.ssid5);
+    setSsid5(s?.ssid5 ?? '');
     setLocalRadios(s ? (s.configured ? s.local_radios : s.radios.length > 0) : false);
     setTouched(false);
   }
 
   const st = stateOf(info.data, flavor);
   const radios = st?.radios ?? [];
+  const splitOn = band === 'both' && split;
+  // A wifi CAPsMAN can't serve its own radios through its own CAP, and the
+  // only way RouterOS offers replaces the radios' own SSIDs, virtual APs
+  // included, for good. So only legacy offers Controller and AP.
+  const canServeOwn = flavor === 'legacy' && radios.length > 0;
+  // A new 5 GHz configuration needs the password, even when the first keeps its own.
+  const newSsid5 = splitOn && !st?.ssid5;
   const errors = {
     ssid: capsmanSsidError(ssid),
-    passphrase: capsmanPassphraseError(passphrase, !!st?.configured),
+    ssid5: !splitOn ? null : capsmanSsidError(ssid5) ? 'Enter the 5 GHz SSID, or untick it.' : ssid5 === ssid ? 'Use a different name from the 2.4 GHz SSID, or untick it.' : null,
+    passphrase: newSsid5 && !passphrase ? 'Enter the Wi-Fi password: the 5 GHz SSID is new.' : capsmanPassphraseError(passphrase, !!st?.configured),
     bridge: bridge ? null : 'Choose the bridge the Wi-Fi clients join.',
     country: capsmanCountryError(country),
   };
   const valid = !!flavor && Object.values(errors).every((e) => !e);
 
-  const body = (): CapsmanSetupRequest => ({ flavor: flavor!, ssid, passphrase, bridge, country: country.trim(), localRadios: localRadios && radios.length > 0, band });
+  const body = (): CapsmanSetupRequest => ({ flavor: flavor!, ssid, passphrase, bridge, country: country.trim(), localRadios: localRadios && canServeOwn, band, ...(splitOn ? { ssid5 } : {}) });
   const applyMut = useMutation({
     mutationFn: (confirm: boolean) => wirelessApi.applyCapsmanSetup(deviceId!, body(), confirm),
     onSuccess: (res) => {
@@ -90,13 +103,23 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
 
   // What the device will do differently, said before it's applied.
   const notes: string[] = [];
-  if (st && localRadios && radios.length && !st.local_radios) {
+  if (st && localRadios && canServeOwn && !st.local_radios) {
     notes.push(band === 'both'
       ? `Its own radios (${radios.join(', ')}) switch to ${ssid || 'this SSID'}. Clients on their current networks reconnect to it.`
       : `Its own ${bandLabel(band)} radios switch to ${ssid || 'this SSID'}. Clients on their current networks reconnect to it.`);
   }
-  if (st && !localRadios && st.local_radios) notes.push('Its own radios stop taking the controller’s SSID and go back to their own settings.');
-  if (st?.other_rules && band === 'both') {
+  if (st && (!localRadios || !canServeOwn) && st.local_radios) {
+    notes.push(flavor === 'wifi'
+      ? 'Its own CAP, pointed at itself, is turned off. On wifi it never served the radios, so they don’t change.'
+      : 'Its own radios stop taking the controller’s SSID and go back to their own settings.');
+  }
+  if (splitOn) {
+    notes.push(`2.4 GHz radios take ${ssid || 'the first SSID'} and 5 GHz radios take ${ssid5 || 'the second'}, with the same password.`);
+  }
+  if (st?.ssid5 && !splitOn) notes.push(`${st.ssid5} goes: ${band === 'both' ? 'every radio' : `${bandLabel(band)} radios`} take ${ssid || 'this SSID'}.`);
+  if (st?.other_rules && splitOn) {
+    notes.push(`Both rules go before the device’s own ${st.other_rules === 1 ? 'rule' : 'rules'}.`);
+  } else if (st?.other_rules && band === 'both') {
     notes.push(`The device already has ${st.other_rules === 1 ? 'a provisioning rule' : `${st.other_rules} provisioning rules`} of its own. `
       + 'RouterOS uses the first rule that matches a radio, so radios those match keep their configuration.');
   } else if (st?.other_rules) {
@@ -145,7 +168,7 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
                   setFlavor(f);
                   const s = stateOf(info.data, f);
                   setLocalRadios(s ? (s.configured ? s.local_radios : s.radios.length > 0) : false);
-                  setBand(s?.band ?? 'both');
+                  setBand(s?.band ?? 'both'); setSplit(!!s?.ssid5); setSsid5(s?.ssid5 ?? '');
                 }}>
                   {info.data.flavors.map((f) => <option key={f} value={f}>{flavorLabel(f)}</option>)}
                 </select>
@@ -155,7 +178,7 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="label">SSID</label>
+                <label className="label">{splitOn ? 'SSID (2.4 GHz)' : 'SSID'}</label>
                 <input className="input" value={ssid} onChange={(e) => setSsid(e.target.value)} maxLength={32} />
                 {field(errors.ssid)}
               </div>
@@ -187,23 +210,40 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
                   <option value="5ghz">5 GHz only</option>
                 </select>
                 <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-1">
-                  {band === 'both' ? 'Every radio that joins gets this SSID.' : `Only ${bandLabel(band)} radios get this SSID; the other band’s are left as they are.`}
+                  {splitOn ? '2.4 GHz radios get the first SSID, 5 GHz radios the second.'
+                    : band === 'both' ? 'Every radio that joins gets this SSID.' : `Only ${bandLabel(band)} radios get this SSID; the other band’s are left as they are.`}
                 </p>
+                {band === 'both' && (
+                  <label className="flex items-center gap-2 text-sm mt-2">
+                    <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} />
+                    A different SSID on 5 GHz
+                  </label>
+                )}
               </div>
+              {splitOn && (
+                <div>
+                  <label className="label">SSID (5 GHz)</label>
+                  <input className="input" value={ssid5} onChange={(e) => setSsid5(e.target.value)} maxLength={32} />
+                  {field(errors.ssid5)}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
               <label className="label">Role</label>
-              <label className={clsx('flex items-start gap-2 text-sm', !radios.length && 'opacity-50')}>
-                <input type="radio" className="mt-1" checked={localRadios && radios.length > 0} disabled={!radios.length} onChange={() => setLocalRadios(true)} />
+              <label className={clsx('flex items-start gap-2 text-sm', !canServeOwn && 'opacity-50')}>
+                <input type="radio" className="mt-1" checked={localRadios && canServeOwn} disabled={!canServeOwn} onChange={() => setLocalRadios(true)} />
                 <span>Controller and AP
                   <span className="block text-[11px] text-gray-500 dark:text-slate-400">
-                    {radios.length ? `Its own radios (${radios.join(', ')}) broadcast the SSID too.` : 'This device has no radios of its own for this CAPsMAN.'}
+                    {canServeOwn ? `Its own radios (${radios.join(', ')}) broadcast the SSID too.`
+                      : flavor === 'wifi' && radios.length
+                        ? 'Not on wifi CAPsMAN: RouterOS can only hand a controller’s own radios to it by replacing their own SSIDs and virtual APs. To put them on this SSID, set them by hand.'
+                        : 'This device has no radios of its own for this CAPsMAN.'}
                   </span>
                 </span>
               </label>
               <label className="flex items-start gap-2 text-sm">
-                <input type="radio" className="mt-1" checked={!localRadios || !radios.length} onChange={() => setLocalRadios(false)} />
+                <input type="radio" className="mt-1" checked={!localRadios || !canServeOwn} onChange={() => setLocalRadios(false)} />
                 <span>Controller only
                   <span className="block text-[11px] text-gray-500 dark:text-slate-400">It only manages the APs that join it.</span>
                 </span>

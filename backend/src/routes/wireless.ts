@@ -358,17 +358,19 @@ router.get('/:id/capsman/setup', async (req, res) => {
     const flavors = (Object.keys(live) as CapsmanFlavor[]);
     const state = Object.fromEntries(flavors.map((f) => {
       const l = live[f]!;
-      const { configuration, rule } = ownItems(l);
+      const { configuration, rule, configuration5, rule5 } = ownItems(l);
       return [f, {
         configured: !!configuration,
         ssid: configuration?.ssid ?? null,
+        // A 5 GHz SSID of its own (#438): its rule and configuration both there.
+        ssid5: rule5 && configuration5 ? configuration5.ssid ?? null : null,
         bridge: configuration?.['datapath.bridge'] ?? null,
         country: configuration?.country ?? null,
         enabled: l.manager?.enabled === 'true' || l.manager?.enabled === 'yes',
         local_radios: capIsLocal(l.cap),
-        band: rule ? ruleBand(f, rule) : 'both',
+        band: rule5 && configuration5 ? 'both' : rule ? ruleBand(f, rule) : 'both',
         radios: l.radios,
-        other_rules: l.provisioning.filter((r) => r !== rule && r.disabled !== 'true').length,
+        other_rules: l.provisioning.filter((r) => r !== rule && r !== rule5 && r.disabled !== 'true').length,
       }];
     }));
     return res.json({
@@ -415,10 +417,11 @@ router.post('/:id/capsman/setup', requireWrite, async (req, res) => {
   if (!steps.length) return res.json({ message: `${device.name} is already set up that way`, warnings });
   const role = parsed.input.localRadios ? 'controller and AP' : 'controller';
   await withGuardedChange(id, req, res,
-    { kind: 'wireless.capsman', summary: `CAPsMAN ${role}: ${parsed.input.ssid} on ${parsed.input.bridge}` },
+    { kind: 'wireless.capsman', summary: `CAPsMAN ${role}: ${parsed.input.ssid}${parsed.input.ssid5 ? ` / ${parsed.input.ssid5}` : ''} on ${parsed.input.bridge}` },
     async (c) => {
       for (const s of steps) await c.writeCapsman(s.command, s.params);
-      return { message: `${device.name} is a CAPsMAN ${role} for ${parsed.input.ssid}`, warnings, steps: steps.map((s) => s.description) };
+      const ssids = parsed.input.ssid5 ? `${parsed.input.ssid} (2.4 GHz) and ${parsed.input.ssid5} (5 GHz)` : parsed.input.ssid;
+      return { message: `${device.name} is a CAPsMAN ${role} for ${ssids}`, warnings, steps: steps.map((s) => s.description) };
     },
     // The Wireless page shows it as a controller from the next role check.
     async (c) => { await c.collectWirelessInterfaces().catch(() => {}); });
