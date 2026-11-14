@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta52" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.52
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta51" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2068,6 +2079,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta52" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.52
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta51" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2640,6 +2662,21 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta52">1.1.0-beta.52<a class="headerlink" href="#110-beta52" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>CAPsMAN quick set can give 5 GHz an SSID of its own</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438">#438</a>). With both bands,
+  tick <strong>A different SSID on 5 GHz</strong>: 2.4 GHz radios take the first SSID and 5 GHz radios the
+  second, with the same password. Unticking it removes the second one again. Thanks to Ron.</li>
+<li><strong>Wifi CAPsMAN is controller only in the quick set.</strong> A wifi controller can't serve its own
+  radios through its own CAP, so <strong>Controller and AP</strong> did nothing there, and the only way
+  RouterOS offers replaces the radios' own SSIDs and virtual APs for good. Legacy CAPsMAN keeps
+  the option. See <a href="../capsman/#current-limits">CAPsMAN</a>.</li>
+<li><strong>A site's map zoom applies wherever its devices show</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/362">#362</a>). The dashboard map
+  no longer ignores it when some devices have no site, and centres on the site's pin; a device's
+  own map opens at its site's zoom too. Thanks to Ron.</li>
+</ul>
 <h2 id="110-beta51">1.1.0-beta.51<a class="headerlink" href="#110-beta51" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Zones dropped a CAPsMAN's own CAP</strong>
