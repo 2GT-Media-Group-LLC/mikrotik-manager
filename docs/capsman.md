@@ -126,7 +126,7 @@ What it does on the device:
 | A configuration named `mtm-capsman` with the SSID, password and bridge | `/interface wifi configuration` | `/caps-man configuration`, with local forwarding |
 | A provisioning rule, commented `mtm capsman`, that gives it to every radio, or one band's | `/interface wifi provisioning`, matching `supported-bands` | `/caps-man provisioning`, matching `hw-supported-modes` |
 | CAPsMAN on | `/interface wifi capsman` | `/caps-man manager` |
-| Controller and AP only: its own CAP, pointed at `127.0.0.1` | `/interface wifi cap` | `/interface wireless cap`, with its wlans |
+| Controller and AP only: its own CAP, pointed at `127.0.0.1` | `/interface wifi cap` | `/interface wireless cap`, with the chosen band's wlans |
 
 Running it again on the same device changes the same items. Leave the password empty to keep
 the one set. Switching to **Controller only** turns its own CAP off, and its radios go back to
@@ -139,8 +139,15 @@ changes** shows the writes first.
   device already has come before the new one, and the form says so. With one band, the new rule
   goes first, so that band's radios take the SSID and the other band's go on matching the rules
   already there. That way you can try a 5 GHz network without touching the 2.4 GHz one.
+- With one band and **Controller and AP** on legacy CAPsMAN, only the device's own wlans of that
+  band join the controller. The other band's wlans keep their own settings.
 
 ## Current limits
+
+**On wifi CAPsMAN, Controller and AP doesn't hand the device's own radios over yet.** The
+controller and its own CAP come up, but each wifi radio only joins a controller when its
+`configuration.manager` says so, and the setup doesn't set it, so the radios keep their own
+settings. Other APs join as usual. Legacy CAPsMAN isn't affected.
 
 **Editing an existing controller's provisioning, configurations and interfaces isn't offered**,
 apart from the setup above. A CAPsMAN configuration applies to every access point bound to it

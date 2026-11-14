@@ -3,6 +3,16 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.50
+
+- **CAPsMAN quick set with one band took the other band's radio too**
+  ([#438](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438)). On legacy CAPsMAN
+  with **Controller and AP**, choosing 5 GHz only handed every wlan to the controller, so the
+  2.4 GHz one matched no rule and lost its own SSID. Now only the chosen band's wlans join, and
+  running the setup again takes the other band's wlan back out. Thanks to Ron for the report.
+- **Known limit:** on wifi CAPsMAN, **Controller and AP** doesn't hand the device's own radios over
+  yet; they keep their own settings. See [CAPsMAN](capsman.md#current-limits).
+
 ## 1.1.0-beta.49
 
 - **Firewall Logs can hide rules**, from aziz's request and patch in
