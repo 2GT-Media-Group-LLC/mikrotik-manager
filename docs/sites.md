@@ -73,9 +73,13 @@ them), or press **Pick on map** and click where the site is. A position set this
 over the address, and **remove pin** takes the site off the map.
 
 **Map zoom** sets how close the site's map opens, from 1 (the whole world) to 19 (a single
-building); 12 is about street level. Blank fits the map to what's on it, as before. It's used
-when the dashboard shows only that site's devices, by the sites map when it's the only site
-with a pin, and by **Pick on map**. While picking, **Use the map's zoom** takes the zoom you've
+building); 12 is about street level. Blank fits the map to what's on it, as before. It's used:
+
+- by the dashboard map, when the devices on it that have a site are all in this one (devices
+  without a site don't count), centred on the site's pin when it has one;
+- by a device's own map, for the devices in this site;
+- by the sites map when it's the only site with a pin;
+- and by **Pick on map**. While picking, **Use the map's zoom** takes the zoom you've
 zoomed the picker to.
 
 If **Settings → Maps enabled** is off, no geocoding or tile request is made and the map is

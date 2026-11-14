@@ -23,7 +23,10 @@ interface LocationForm {
   notes: string;
 }
 
-function MapEmbed({ lat, lng, address }: { lat: number | string; lng: number | string; address: string }) {
+/** The device's site's map zoom when it has one (#362), else street level. */
+const DEVICE_MAP_ZOOM = 15;
+
+function MapEmbed({ lat, lng, address, zoom }: { lat: number | string; lng: number | string; address: string; zoom?: number | null }) {
   const latN = Number(lat);
   const lngN = Number(lng);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,9 +38,9 @@ function MapEmbed({ lat, lng, address }: { lat: number | string; lng: number | s
     L.circleMarker([latN, lngN], {
       radius: 9, color: '#fff', weight: 2, fillColor: '#3b82f6', fillOpacity: 0.9,
     }).bindPopup(`<b>${escapeHtml(address)}</b>`).addTo(map);
-    map.setView([latN, lngN], 15);
+    map.setView([latN, lngN], zoom ?? DEVICE_MAP_ZOOM);
     return () => { map.remove(); };
-  }, [latN, lngN, address]);
+  }, [latN, lngN, address, zoom]);
 
   return (
     <div className="card overflow-hidden h-full flex flex-col">
@@ -338,6 +341,7 @@ export default function DeviceLocationSection({ device }: Props) {
           lat={effective!.lat!}
           lng={effective!.lng!}
           address={effective!.address ?? ''}
+          zoom={currentSite?.map_zoom}
         />
       )}
     </div>

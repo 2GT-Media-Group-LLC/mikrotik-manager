@@ -23,6 +23,7 @@ import type { Device, DeviceEvent } from '../types';
 import { fleetStatus } from '../utils/fleetStatus';
 import { fleetActionSummary, type FleetActionSummary } from '../utils/fleetAction';
 import { escapeHtml } from '../utils/escapeHtml';
+import { siteMapView } from '../utils/siteMapView';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import { byAttention, CARD_ROWS } from '../utils/deviceCards';
 import { filterDevices } from '../utils/devicePicker';
@@ -112,15 +113,12 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
     devices.filter(d => d.effective_location?.lat != null && d.effective_location?.lng != null),
     [devices]
   );
-  // When every device on the map is in one site with a zoom of its own (#362),
-  // the map opens at that zoom instead of fitting the devices.
+  // When the devices on the map that have a site are all in one, and it has a
+  // zoom of its own (#362), the map opens at that zoom, on the site's pin when
+  // it has one, instead of fitting the devices. Devices without a site don't
+  // stop it (Ron: a pin and a zoom should show wherever the site's devices do).
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: () => sitesApi.list().then((r) => r.data), staleTime: 300_000 });
-  const siteZoom = useMemo(() => {
-    const ids = new Set(mapped.map((d) => d.site_id ?? null));
-    if (ids.size !== 1) return null;
-    const site = sites.find((s) => s.id === [...ids][0]);
-    return site?.map_zoom ?? null;
-  }, [mapped, sites]);
+  const siteView = useMemo(() => siteMapView(mapped, sites), [mapped, sites]);
 
   useEffect(() => {
     if (!containerRef.current || mapped.length === 0) return;
@@ -175,15 +173,15 @@ function DeviceLocationsMap({ devices }: { devices: Device[] }) {
       markers.push(marker);
     });
 
-    if (siteZoom != null) {
-      map.setView(L.featureGroup(markers).getBounds().getCenter(), siteZoom);
+    if (siteView) {
+      map.setView(siteView.center ?? L.featureGroup(markers).getBounds().getCenter(), siteView.zoom);
     } else if (markers.length === 1) {
       map.setView([Number(mapped[0].effective_location!.lat), Number(mapped[0].effective_location!.lng)], 13);
     } else {
       map.fitBounds(L.featureGroup(markers).getBounds(), { padding: [40, 40] });
     }
     return () => { map.remove(); };
-  }, [mapped, siteZoom]);
+  }, [mapped, siteView]);
 
   if (mapped.length === 0) {
     return (
