@@ -3,6 +3,15 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.51
+
+- **Zones dropped a CAPsMAN's own CAP**
+  ([#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369)). A controller that
+  serves its own radios has its CAP broadcast discovery in on the loopback interface, `lo`, which
+  no zone holds, so the final drop caught and logged it. On RouterOS 7 the loopback rule now
+  accepts everything in on `lo`, not only traffic to 127.0.0.1. A device with zones already
+  applied says so on its Zones tab: **Apply** once to update the rule. Thanks to Ron for the report.
+
 ## 1.1.0-beta.50
 
 - **CAPsMAN quick set with one band took the other band's radio too**
