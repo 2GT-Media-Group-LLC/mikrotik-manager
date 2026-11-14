@@ -262,6 +262,29 @@ describe('compiling zones', () => {
     expect(zoneRulesOutdated(null)).toEqual([]);
   });
 
+  it('accepts all the router sends itself when it has lo, so its own CAPsMAN CAP isn\'t dropped (Ron, #369)', () => {
+    const { input } = parseZoneInput(body(), live);
+    const withLo = compileZones(input!.config, { ...ctx, hasLoopback: true });
+    const lo = withLo.filter((r) => r.params.chain === 'input' && r.params.action === 'accept' && (r.params['in-interface'] || r.params['dst-address']));
+    expect(lo.map((r) => r.params)).toEqual([expect.objectContaining({ 'in-interface': 'lo' })]);
+    expect(lo[0].params).not.toHaveProperty('dst-address');
+    // Before the final drop.
+    const input7 = withLo.filter((r) => r.params.chain === 'input');
+    expect(input7.indexOf(lo[0])).toBeLessThan(input7.findIndex((r) => r.params.action === 'drop' && !r.params['connection-state']));
+    // Without lo (RouterOS 6): to 127.0.0.1, as before.
+    const without = compileZones(input!.config, ctx);
+    expect(without.some((r) => r.params['dst-address'] === '127.0.0.1')).toBe(true);
+    expect(without.some((r) => r.params['in-interface'] === 'lo')).toBe(false);
+    // A setup applied before says so, only where lo exists, and not once applied again.
+    expect(zoneRulesOutdated(without, true).join(' ')).toMatch(/Apply to update the loopback rule/);
+    expect(zoneRulesOutdated(without, false)).toEqual([]);
+    expect(zoneRulesOutdated(withLo, true)).toEqual([]);
+    // The apply swaps the one rule.
+    const plan = planApply(without.map((r, i) => ({ ...r.params, '.id': `*${i + 1}` })), withLo);
+    expect(plan.add.map((a) => a.params['in-interface'])).toEqual(['lo']);
+    expect(plan.remove.map((r) => r.rule['dst-address'])).toEqual(['127.0.0.1']);
+  });
+
   it('drops a quiet zone\'s traffic unlogged, before the logged drop (#415)', () => {
     const { input: q } = parseZoneInput(body({ quietZones: ['WAN', 'nope'] }), live);
     expect(q!.config.quietZones).toEqual(['WAN']);

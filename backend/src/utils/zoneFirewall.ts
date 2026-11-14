@@ -102,6 +102,12 @@ export interface ZoneContext {
   managerIp: string | null;
   /** The device takes hw-offload on a FastTrack rule (some RouterOS 7 builds don't, #369). */
   fasttrackHwOffload?: boolean;
+  /**
+   * The device has the loopback interface, lo (RouterOS 7). Then all the
+   * router sends itself is accepted, not only to 127.0.0.1: a CAPsMAN's own
+   * CAP also broadcasts discovery on lo, which no zone holds (#369).
+   */
+  hasLoopback?: boolean;
 }
 
 // ─── Services ────────────────────────────────────────────────────────────────
@@ -460,7 +466,8 @@ export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule
   // Input: the router itself.
   add({ chain: 'input', action: 'accept', 'connection-state': 'established,related,untracked' }, 'accept established, related, untracked to the router');
   add({ chain: 'input', action: 'drop', 'connection-state': 'invalid' }, 'drop invalid to the router');
-  add({ chain: 'input', action: 'accept', 'dst-address': '127.0.0.1' }, 'accept loopback (CAPsMAN)');
+  if (ctx.hasLoopback) add({ chain: 'input', action: 'accept', 'in-interface': 'lo' }, 'accept from the router itself (loopback, CAPsMAN)');
+  else add({ chain: 'input', action: 'accept', 'dst-address': '127.0.0.1' }, 'accept loopback (CAPsMAN)');
   if (ctx.managerIp && config.managerAccess === 'management') {
     // All the manager connects to: the API (8728 or 8729) and SSH (terminal,
     // SSH-only devices, keys). It doesn't ping or poll SNMP.
@@ -642,10 +649,15 @@ export interface ZoneDrift { missing: string[]; extra: string[] }
  * nothing edited still brings them up to date. Today: logged final drops
  * from before the log limit (#369).
  */
-export function zoneRulesOutdated(desired: CompiledRule[] | null | undefined): string[] {
+export function zoneRulesOutdated(desired: CompiledRule[] | null | undefined, hasLoopback = false): string[] {
+  const out: string[] = [];
   const unlimited = (desired ?? []).some((r) => r.params.action === 'drop' && r.params.log === 'yes'
     && (r.params['log-prefix'] ?? '').startsWith('zone drop') && !r.params.limit);
-  return unlimited ? [`Dropped traffic is now logged at most ${DROP_LOG_LIMIT.split(',')[0]} times a second, so a flood or a scan can't overload the router. Apply to update the final drops.`] : [];
+  if (unlimited) out.push(`Dropped traffic is now logged at most ${DROP_LOG_LIMIT.split(',')[0]} times a second, so a flood or a scan can't overload the router. Apply to update the final drops.`);
+  const onlyLocalhost = hasLoopback && (desired ?? []).some((r) => r.params.chain === 'input' && r.params.action === 'accept'
+    && r.params['dst-address'] === '127.0.0.1' && !r.params['in-interface']);
+  if (onlyLocalhost) out.push('All the router sends itself is now accepted, not only to 127.0.0.1, so a CAPsMAN\'s own CAP isn\'t dropped. Apply to update the loopback rule.');
+  return out;
 }
 
 /** What differs between the device and the last apply. Null when they match. */
