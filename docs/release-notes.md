@@ -3,6 +3,27 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.54
+
+- **CAPsMAN quick set: a 5 GHz SSID of its own now reaches radios already joined**
+  ([#438](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/438)). Legacy CAPsMAN
+  applies provisioning rules only when a radio joins, so a joined 5 GHz radio kept the old SSID.
+  When the rules change, the setup now provisions the joined radios again (their clients
+  reconnect). On wifi CAPsMAN, joined access points take new rules when they next connect, and
+  the form says so. Thanks to Ron.
+- **A legacy controller's own radios count as its own**
+  ([#447](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/447)). A controller
+  serving its own wlans showed 0 clients on the Wireless page and a banner calling its own CAP an
+  access point not in the fleet. Wireless Settings now marks wlans CAPsMAN manages and shows the
+  SSID the controller puts on the air. Thanks to Ron.
+- **Capacity & health metrics open their graph**
+  ([#448](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/448)). On the dashboard,
+  a device's CPU opens its CPU graph and its memory the Memory graph; the name still opens the
+  device. Thanks to Ron.
+- **The sites map opens on the default site** when it has a pin
+  ([#362](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/362)), at its map zoom.
+  Thanks to Ron.
+
 ## 1.1.0-beta.53
 
 - **CAPsMAN quick set couldn't go back to both bands on legacy CAPsMAN**
