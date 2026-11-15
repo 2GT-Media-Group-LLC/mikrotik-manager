@@ -322,6 +322,27 @@ export function lookupDeviceForMac(
   return null;
 }
 
+/**
+ * A legacy controller's radio: on another managed device, or one of the
+ * controller's own, served through its own CAP (#447). The legacy radio list
+ * has no `local` flag, so the MAC says; another device holding the MAC wins.
+ */
+export function matchLegacyRadio(
+  mac: string | null,
+  index: Map<string, number[]>,
+  controllerDeviceId: number
+): { deviceId: number | null; local: boolean } {
+  if (!mac) return { deviceId: null, local: false };
+  for (const key of macIndexKeys(mac)) {
+    const candidates = index.get(key);
+    if (!candidates) continue;
+    const other = candidates.find((id) => id !== controllerDeviceId);
+    if (other !== undefined) return { deviceId: other, local: false };
+    return { deviceId: controllerDeviceId, local: true };
+  }
+  return { deviceId: null, local: false };
+}
+
 export interface RadioLiveState {
   state: string | null;
   /** Operating channel, e.g. `5500/ax/Ceee/D`. */

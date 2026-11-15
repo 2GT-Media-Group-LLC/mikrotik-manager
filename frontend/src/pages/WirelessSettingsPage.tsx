@@ -1013,6 +1013,12 @@ export default function WirelessSettingsPage() {
                 <div className="p-8 text-center text-gray-400 dark:text-slate-500 text-sm">No wireless interfaces found.</div>
               ) : (
                 <div className="overflow-x-auto">
+                  {ifaces.some((f) => f['managed_by_capsman']) && (
+                    <p className="px-5 py-2 text-xs text-gray-500 dark:text-slate-400 border-b border-gray-100 dark:border-slate-700/50">
+                      CAPsMAN manages {ifaces.filter((f) => f['managed_by_capsman']).map((f) => f.name).join(', ')}: the SSID shown
+                      is the one it puts on the air. Change it in CAPsMAN on the Wireless page; edits here don&apos;t apply while it manages them.
+                    </p>
+                  )}
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50">
@@ -1036,6 +1042,14 @@ export default function WirelessSettingsPage() {
                           </td>
                           <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
                             {iface.ssid || <span className="text-gray-400">—</span>}
+                            {iface['managed_by_capsman'] && (
+                              <span
+                                className="ml-2 px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700/50 rounded text-xs font-medium"
+                                title="CAPsMAN sets this radio's SSID and security; its own settings here don't apply while it does"
+                              >
+                                CAPsMAN
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-xs text-gray-600 dark:text-slate-400">
                             {iface.bridge

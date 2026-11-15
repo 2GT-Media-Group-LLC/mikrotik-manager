@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -77,7 +77,7 @@ function Section({ id, title, summary, collapsed, onToggle, since, children }: {
   since?: string | null; children: React.ReactNode;
 }) {
   return (
-    <div className="card overflow-hidden">
+    <div id={`graph-${id}`} className="card overflow-hidden scroll-mt-4">
       <button type="button" onClick={() => onToggle(id)} className="w-full flex items-center gap-2 px-4 py-2.5 text-left">
         {collapsed ? <ChevronRight className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         <span className="text-sm font-semibold text-gray-900 dark:text-white">{title}</span>
@@ -100,7 +100,12 @@ function useGraphQuery<T>(deviceId: number, range: string, key: string, fn: () =
   return useQuery({ queryKey: ['device-graphs', deviceId, key, range], queryFn: fn, refetchInterval: 60_000 });
 }
 
-export default function GraphsTab({ deviceId }: { deviceId: number }) {
+/** A graph to open at, from a link (the dashboard's Capacity card, #448). */
+export function graphFocus(v: string | null | undefined): SectionId | null {
+  return SECTIONS.some((x) => x.id === v) ? v as SectionId : null;
+}
+
+export default function GraphsTab({ deviceId, focus }: { deviceId: number; focus?: SectionId | null }) {
   const { formatTime, formatDateTime } = useDateTimeFormat();
   const [range, setRange] = useRememberedRange<string>('device-graphs', '24h');
   const [hidden, setHidden] = useState(() => loadSet(HIDDEN_KEY));
@@ -193,6 +198,21 @@ export default function GraphsTab({ deviceId }: { deviceId: number }) {
   };
   const shown = (id: SectionId) => has[id] && !hidden.has(id);
   const onCollapse = (id: SectionId) => toggle(collapsed, setCollapsed, COLLAPSED_KEY, id);
+
+  // Opened at one graph: show it open, and scroll to it once it has data.
+  useEffect(() => {
+    if (!focus) return;
+    if (collapsed.has(focus)) toggle(collapsed, setCollapsed, COLLAPSED_KEY, focus);
+    if (hidden.has(focus)) toggle(hidden, setHidden, HIDDEN_KEY, focus);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus]);
+  const scrolled = useRef<string | null>(null);
+  const focusReady = !!focus && has[focus] && !hidden.has(focus);
+  useEffect(() => {
+    if (!focus || !focusReady || scrolled.current === focus) return;
+    scrolled.current = focus;
+    document.getElementById(`graph-${focus}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [focus, focusReady]);
   const prettyChain = (k: string) => k.replace(/^pps_/, '').replace(/_/g, ' ');
   const prettyTemp = (k: string) => k.replace(/_/g, ' ').replace(/temperature/, 'temp');
 

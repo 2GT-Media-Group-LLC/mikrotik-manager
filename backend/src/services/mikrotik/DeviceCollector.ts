@@ -35,7 +35,7 @@ import { aggregateBridgeVlans, portVlanMembership, expandVlanIds, rosList } from
 import {
   classifyWifiRole, isCapsmanManaged, parseCapsmanStatus, parseCapStatus,
   normalizeRadios, macIndexKeys, parseRadioMonitor, resolveDatapath,
-  clientsPerRadio, buildMacIndex, matchRadiosToDevices, lookupDeviceForMac,
+  clientsPerRadio, buildMacIndex, matchRadiosToDevices, matchLegacyRadio,
   legacyManagerEnabled, legacyCapInterfaces, legacyRadios, hasRadios, chooseWifiPackage,
   type WifiRole,
 } from './capsman';
@@ -57,7 +57,7 @@ const legacyScanMode = new Map<number, 'script' | 'api'>();
 // every RouterOS 7.13+ device, which hid a hAP ac²'s legacy radios.
 const WIFI_ROLE_PROBE = 4;
 /** The menus the CAPsMAN quick set reads and writes (#438). */
-const CAPSMAN_MENU = /^\/(interface\/wifi\/(configuration|provisioning|capsman|cap|radio)|caps-man\/(configuration|provisioning|manager)|interface\/wireless(\/cap)?)$/;
+const CAPSMAN_MENU = /^\/(interface\/wifi\/(configuration|provisioning|capsman|cap|radio)|caps-man\/(configuration|provisioning|manager|radio)|interface\/wireless(\/cap)?)$/;
 
 /**
  * How often a device found to have no wireless role is checked again. CAPsMAN
@@ -3132,6 +3132,26 @@ export class DeviceCollector {
   private legacyCapIfaces: string[] = [];
 
   /**
+   * The SSID a legacy controller put on the air for each interface this device
+   * hands it, by MAC: the interface's own SSID no longer applies (#250, #447).
+   * Call after detectWifiRole.
+   */
+  private async legacyControllerSsids(wlans: Record<string, string>[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (this.legacyCapIfaces.length === 0) return out;
+    const macs = wlans.filter((w) => this.legacyCapIfaces.includes(w['name']))
+      .map((w) => (w['mac-address'] || '').toUpperCase()).filter(Boolean);
+    if (macs.length === 0) return out;
+    const rows = await query<{ radio_mac: string; ssid: string | null }>(
+      `SELECT DISTINCT ON (radio_mac) radio_mac, ssid FROM capsman_radios
+        WHERE radio_mac = ANY($1::text[]) AND ssid IS NOT NULL ORDER BY radio_mac, updated_at DESC`,
+      [macs]
+    ).catch(() => []);
+    for (const r of rows) out.set(r.radio_mac, r.ssid as string);
+    return out;
+  }
+
+  /**
    * Controller-side inventory: the radios it manages, the named configurations, and
    * the provisioning rules binding them together.
    *
@@ -3298,21 +3318,24 @@ export class DeviceCollector {
       const seen: string[] = [];
       for (const r of radios) {
         seen.push(r.radioMac);
+        // The controller's own radios, through its own CAP, are its own (#447).
+        const match = matchLegacyRadio(r.radioMac, macIndex, this.device.id);
         await query(
           `INSERT INTO capsman_radios
              (controller_device_id, radio_mac, interface_name, local, hw_type,
               current_channel, remote_cap_name, matched_device_id, config_json,
               state, registered_peers, authorized_peers, tx_power, ssid, updated_at)
-           VALUES ($1,$2,$3,false,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+           VALUES ($1,$2,$3,$13,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
            ON CONFLICT (controller_device_id, radio_mac) DO UPDATE SET
-             interface_name=$3, local=false, hw_type=NULL, current_channel=$4,
+             interface_name=$3, local=$13, hw_type=NULL, current_channel=$4,
              remote_cap_name=$5, matched_device_id=$6, config_json=$7,
              state=$8, registered_peers=$9, authorized_peers=$10, tx_power=$11,
              ssid=$12, updated_at=NOW()`,
           [
             this.device.id, r.radioMac, r.interfaceName, r.channel, r.capIdentity,
-            lookupDeviceForMac(r.radioMac, macIndex, this.device.id),
+            match.deviceId,
             JSON.stringify(r.raw), r.state, r.registeredPeers, r.authorizedPeers, r.txPower, r.ssid,
+            match.local,
           ]
         );
       }
@@ -3505,19 +3528,7 @@ export class DeviceCollector {
       // A legacy CAP keeps its old local settings on the interfaces it hands to
       // the controller, which no longer apply. The controller's view of the radio
       // (same MAC) has the SSID actually on the air (#250).
-      const controllerSsid = new Map<string, string>();
-      if (this.legacyCapIfaces.length > 0) {
-        const macs = wlans.filter((w) => this.legacyCapIfaces.includes(w['name']))
-          .map((w) => (w['mac-address'] || '').toUpperCase()).filter(Boolean);
-        if (macs.length > 0) {
-          const rows = await query<{ radio_mac: string; ssid: string | null }>(
-            `SELECT DISTINCT ON (radio_mac) radio_mac, ssid FROM capsman_radios
-              WHERE radio_mac = ANY($1::text[]) AND ssid IS NOT NULL ORDER BY radio_mac, updated_at DESC`,
-            [macs]
-          ).catch(() => []);
-          for (const r of rows) controllerSsid.set(r.radio_mac, r.ssid as string);
-        }
-      }
+      const controllerSsid = await this.legacyControllerSsids(wlans);
 
       for (const wlan of wlans) {
         const name = wlan['name'];
@@ -4000,15 +4011,21 @@ export class DeviceCollector {
     // annotation has to be applied here too — otherwise the Radios tab shows blank
     // fields with no indication that a controller owns them.
     const role = await this.detectWifiRole();
+    // A legacy CAP's interfaces keep their own SSIDs, which no longer apply:
+    // show the controller's (#447).
+    const legacyCap = pkg === 'wireless' ? this.legacyCapIfaces : [];
+    const controllerSsid = await this.legacyControllerSsids(rawNormalized);
     const ifaces = rawNormalized.map((iface, i) => {
       const status = parseCapsmanStatus(rawIfaces[i] ?? iface);
-      const managed = isCapsmanManaged(rawIfaces[i] ?? iface, role);
+      const managed = isCapsmanManaged(rawIfaces[i] ?? iface, role) || legacyCap.includes(iface['name']);
       if (!managed && !status) return iface;
+      const fromController = controllerSsid.get((iface['mac-address'] || '').toUpperCase());
       return {
         ...iface,
         managed_by_capsman: 'true',
         ...(status?.controllerMac ? { capsman_controller_mac: status.controllerMac } : {}),
-        ...(status?.ssid && !iface['ssid'] ? { ssid: status.ssid } : {}),
+        ...(fromController ? { ssid: fromController } : {}),
+        ...(status?.ssid && !iface['ssid'] && !fromController ? { ssid: status.ssid } : {}),
         ...(status?.mode && !iface['mode'] ? { mode: status.mode } : {}),
         ...(status?.channel ? { capsman_channel: status.channel } : {}),
       };
@@ -5070,8 +5087,13 @@ export class DeviceCollector {
 
   /** One CAPsMAN setup write, from utils/capsmanSetup's plan. */
   async writeCapsman(command: string, params: Record<string, string>): Promise<void> {
-    const path = command.replace(/\/(add|set|unset|move|remove)$/, '');
+    const path = command.replace(/\/(add|set|unset|move|remove|provision)$/, '');
     if (path === command || !CAPSMAN_MENU.test(path)) throw new Error(`Not a CAPsMAN write: ${command}`);
+    // Provisioning: only legacy's joined radios, again after a rule change (#438).
+    // Never wifi's radio menu, where it replaces a local radio's own setup.
+    if ((command.endsWith('/provision') || path === '/caps-man/radio') && command !== '/caps-man/radio/provision') {
+      throw new Error(`Not a CAPsMAN write: ${command}`);
+    }
     // Removing: only the setup's own configurations and rules (a 5 GHz pair, #438).
     if (command.endsWith('/remove') && !/\/(configuration|provisioning)$/.test(path)) throw new Error(`Not a CAPsMAN write: ${command}`);
     await this.client.execute(command, params);

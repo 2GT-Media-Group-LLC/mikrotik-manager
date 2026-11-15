@@ -1095,16 +1095,23 @@ function OperationsView({
                 <span>Device</span>{!capacityNarrow && <span>CPU 24h</span>}<span>CPU now</span><span className="text-right">Mem</span>
               </div>
               {shownCapacity.map((c) => (
-                <button key={c.id} onClick={() => navigate(`/devices/${c.id}`)}
-                  title={`${c.name}${c.cpu_peak_24h != null ? ` · 24h CPU peak ${c.cpu_peak_24h}%` : ''}`}
+                // The name opens the device; a metric opens its graph (Ron, #448).
+                <div key={c.id}
                   className="w-full text-left grid items-center gap-x-3 py-[5px] group"
                   style={{ gridTemplateColumns: CAPACITY_GRID }}>
-                  <div className="min-w-0">
-                    <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--ink)' }}>{shortName(c.name, capacityPrefix)}</div>
+                  <button type="button" onClick={() => navigate(`/devices/${c.id}`)} title={c.name} className="min-w-0 text-left">
+                    <div className="text-[12.5px] font-medium truncate hover:underline" style={{ color: 'var(--ink)' }}>{shortName(c.name, capacityPrefix)}</div>
                     {c.model && <div className="text-[10.5px] truncate" style={{ color: 'var(--ink-4)' }}>{c.model}</div>}
-                  </div>
-                  {!capacityNarrow && <CpuTrend points={c.cpu_series} />}
-                  <div className="flex items-center gap-1.5">
+                  </button>
+                  {!capacityNarrow && (
+                    <button type="button" onClick={() => navigate(`/devices/${c.id}?tab=graphs&graph=cpu`)}
+                      title={`CPU graph${c.cpu_peak_24h != null ? ` · 24h peak ${c.cpu_peak_24h}%` : ''}`} className="min-w-0">
+                      <CpuTrend points={c.cpu_series} />
+                    </button>
+                  )}
+                  <button type="button" onClick={() => navigate(`/devices/${c.id}?tab=graphs&graph=cpu`)}
+                    title={`CPU graph${c.cpu_peak_24h != null ? ` · 24h peak ${c.cpu_peak_24h}%` : ''}`}
+                    className="flex items-center gap-1.5">
                     <div className="relative flex-1 h-1.5 rounded-full" style={{ background: 'var(--surface-3)' }}>
                       <div className="h-full rounded-full" style={{ width: `${Math.min(100, c.cpu)}%`, background: loadColor(c.cpu) }} />
                       {c.cpu_peak_24h != null && c.cpu_peak_24h > c.cpu && (
@@ -1113,10 +1120,11 @@ function OperationsView({
                       )}
                     </div>
                     <span className="mono text-[11px] font-semibold num-tab text-right" style={{ color: loadText(c.cpu), width: 30 }}>{c.cpu}%</span>
-                  </div>
-                  <span className="mono text-[11px] num-tab text-right" style={{ color: memText(c.mem_pct) }}
-                    title={memHint(c)}>{c.mem_pct}%</span>
-                </button>
+                  </button>
+                  <button type="button" onClick={() => navigate(`/devices/${c.id}?tab=graphs&graph=memory`)}
+                    className="mono text-[11px] num-tab text-right" style={{ color: memText(c.mem_pct) }}
+                    title={[memHint(c), 'Memory graph'].filter(Boolean).join(' · ')}>{c.mem_pct}%</button>
+                </div>
               ))}
               {sortedCapacity.length > CAPACITY_ROWS && (
                 <div className="pt-2 text-[11.5px] flex items-center gap-2" style={{ color: 'var(--ink-3)' }}>

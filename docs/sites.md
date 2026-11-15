@@ -78,7 +78,8 @@ building); 12 is about street level. Blank fits the map to what's on it, as befo
 - by the dashboard map, when the devices on it that have a site are all in this one (devices
   without a site don't count), centred on the site's pin when it has one;
 - by a device's own map, for the devices in this site;
-- by the sites map when it's the only site with a pin;
+- by the sites map when it's the default site and has a pin (the map opens on it), or when it's
+  the only site with a pin;
 - and by **Pick on map**. While picking, **Use the map's zoom** takes the zoom you've
 zoomed the picker to.
 

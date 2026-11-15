@@ -316,9 +316,11 @@ async function readCapsman(c: DeviceCollector): Promise<{ bridges: string[]; liv
     const p = CAPSMAN_PATHS[flavor];
     const manager = await c.readCapsmanMenu(p.manager);
     if (!manager) continue;
-    const [configurations, provisioning, cap, radioRows] = await Promise.all([
+    const [configurations, provisioning, cap, radioRows, joined] = await Promise.all([
       c.readCapsmanMenu(p.configuration), c.readCapsmanMenu(p.provisioning), c.readCapsmanMenu(p.cap),
       c.readCapsmanMenu(flavor === 'wifi' ? '/interface/wifi/radio' : '/interface/wireless'),
+      // Legacy: the radios that have joined, to provision again after a rule change (#438).
+      flavor === 'legacy' ? c.readCapsmanMenu('/caps-man/radio') : Promise.resolve(null),
     ]);
     // Its own radios: wifi lists a controller's remote radios too, marked not
     // local; legacy lists virtual APs, which have a master interface.
@@ -337,6 +339,7 @@ async function readCapsman(c: DeviceCollector): Promise<{ bridges: string[]; liv
     live[flavor] = {
       flavor, bridges, configurations: configurations ?? [], provisioning: provisioning ?? [],
       manager: manager[0] ?? null, cap: cap?.[0] ?? null, radios, radioBands,
+      joinedRadios: (joined ?? []).map((r) => r['.id']).filter(Boolean),
     };
   }
   return { bridges, live };
@@ -421,7 +424,7 @@ router.post('/:id/capsman/setup', requireWrite, async (req, res) => {
     async (c) => {
       for (const s of steps) await c.writeCapsman(s.command, s.params);
       const ssids = parsed.input.ssid5 ? `${parsed.input.ssid} (2.4 GHz) and ${parsed.input.ssid5} (5 GHz)` : parsed.input.ssid;
-      return { message: `${device.name} is a CAPsMAN ${role} for ${ssids}`, warnings, steps: steps.map((s) => s.description) };
+      return { message: `${device.name} is a CAPsMAN ${role} for ${ssids}.`, warnings, steps: steps.map((s) => s.description) };
     },
     // The Wireless page shows it as a controller from the next role check.
     async (c) => { await c.collectWirelessInterfaces().catch(() => {}); });

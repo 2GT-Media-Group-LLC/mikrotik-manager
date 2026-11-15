@@ -255,6 +255,31 @@ describe('a 5 GHz SSID of its own (Ron, #438)', () => {
     expect(one.map((s) => s.command)).toContain('/interface/wifi/provisioning/remove');
   });
 
+  it('provisions legacy radios that have joined again, so they take the new rule (Ron, #438)', () => {
+    const rule = { '.id': '*0', action: 'create-dynamic-enabled', 'master-configuration': MTM_CAPSMAN, comment: MTM_CAPSMAN_COMMENT, disabled: 'false' };
+    const cfg = { '.id': '*a', name: MTM_CAPSMAN, ssid: 'Office', 'datapath.bridge': 'bridge', 'security.authentication-types': 'wpa2-psk' };
+    const l = live({ flavor: 'legacy', radios: ['wlan1', 'wlan2'], radioBands: { wlan1: '2ghz', wlan2: '5ghz' },
+      configurations: [cfg], provisioning: [rule], manager: { enabled: 'true' }, joinedRadios: ['*1', '*2'],
+      cap: { enabled: 'true', 'caps-man-addresses': '127.0.0.1', interfaces: 'wlan1,wlan2', bridge: 'bridge' } });
+    const { steps, warnings } = planCapsman(input(l, { ...local, ssid5: 'Office-5G' }), l);
+    expect(steps[steps.length - 1]).toEqual(expect.objectContaining({ command: '/caps-man/radio/provision', params: { numbers: '*1,*2' } }));
+    expect(warnings.join(' ')).toMatch(/provisioned again/);
+
+    // The CAP rejoining provisions them anyway.
+    const moving = live({ ...l, cap: { ...l.cap!, interfaces: 'wlan2' } });
+    expect(planCapsman(input(moving, { ...local, ssid5: 'Office-5G' }), moving).steps.map((x) => x.command)).not.toContain('/caps-man/radio/provision');
+    // No rule change, nothing to provision.
+    const same = planCapsman(input(l, { ...local, passphrase: '' }), l).steps;
+    expect(same.map((x) => x.command)).not.toContain('/caps-man/radio/provision');
+  });
+
+  it('tells wifi that joined APs take new rules when they next connect', () => {
+    const l = live({ ...configured, configurations: [configured.configurations[0]], provisioning: [configured.provisioning[0]] });
+    const { steps, warnings } = planCapsman(input(l, { ...body, ssid5: 'Office-5G' }), l);
+    expect(steps.map((x) => x.command)).not.toContain('/caps-man/radio/provision');
+    expect(warnings.join(' ')).toMatch(/when they next connect/);
+  });
+
   it('treats the same name as one SSID, and asks for the password for a new 5 GHz SSID', () => {
     const l = live({ ...configured, configurations: [configured.configurations[0]], provisioning: [configured.provisioning[0]] });
     expect(input(l, { ...body, ssid5: 'Office' })).not.toHaveProperty('ssid5');

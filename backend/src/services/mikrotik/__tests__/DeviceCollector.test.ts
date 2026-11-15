@@ -472,7 +472,21 @@ describe('legacy CAPsMAN (#250)', () => {
     expect(insert).toBeDefined();
     const p = insert![1];
     expect(p.slice(0, 6)).toEqual([1, 'D4:CA:6D:BB:0E:57', 'BonusRoom 2.4Ghz', '2412/20/gn', 'BonusRoom', 42]);
-    expect(p.slice(7)).toEqual(['running-ap', 3, 3, 30, 'Laney Legacy']);
+    expect(p.slice(7)).toEqual(['running-ap', 3, 3, 30, 'Laney Legacy', false]);
+  });
+
+  it('stores the controller\'s own radio as its own, local (#447)', async () => {
+    const { collector } = on({
+      '/interface/wifi/print': [], '/caps-man/manager/print': legacyFixture.manager,
+      '/caps-man/interface/print': legacyFixture.interface, '/caps-man/remote-cap/print': legacyFixture.remoteCap,
+      '/caps-man/registration-table/print': legacyFixture.registrations,
+    });
+    (query as jest.Mock).mockImplementation(async (sql: string) =>
+      sql.includes('FROM interfaces WHERE mac_address') ? [{ device_id: 1, mac_address: 'D4:CA:6D:BB:0E:57' }] : []);
+    await collector.collectCapsman();
+    const p = (query as jest.Mock).mock.calls.find(([sql]) => String(sql).includes('INSERT INTO capsman_radios'))![1];
+    expect(p[5]).toBe(1);
+    expect(p[12]).toBe(true);
   });
 
   it('reads both when a CHR runs the newer and the legacy CAPsMAN together', async () => {
@@ -1151,6 +1165,20 @@ describe('upsertClients', () => {
     const stored = await upsertClients(7, 'core', rows);
     expect(stored).toEqual([rows[0][0], rows[2][0]]);
     expect((query as jest.Mock).mock.calls).toHaveLength(4);
+  });
+});
+
+describe('writeCapsman provision (#438)', () => {
+  it('provisions only legacy CAPsMAN radios', async () => {
+    const c = new DeviceCollector(testDevice);
+    const execute = jest.fn(() => Promise.resolve([]));
+    (c as unknown as { client: { execute: jest.Mock } }).client.execute = execute;
+    await c.writeCapsman('/caps-man/radio/provision', { numbers: '*1,*2' });
+    expect(execute).toHaveBeenCalledWith('/caps-man/radio/provision', { numbers: '*1,*2' });
+    await expect(c.writeCapsman('/interface/wifi/radio/provision', { numbers: '*1' })).rejects.toThrow(/Not a CAPsMAN write/);
+    await expect(c.writeCapsman('/caps-man/radio/set', { '.id': '*1' })).rejects.toThrow(/Not a CAPsMAN write/);
+    await expect(c.writeCapsman('/caps-man/provisioning/provision', { numbers: '*1' })).rejects.toThrow(/Not a CAPsMAN write/);
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });
 

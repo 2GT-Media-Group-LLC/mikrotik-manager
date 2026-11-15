@@ -453,6 +453,9 @@ header. Click a header to fold a section, or use the chips at the top to hide on
 both are remembered in your browser. Sections only appear where the device has the data: a switch
 without connection tracking has no Connections section, a single-core device no per-core chart.
 
+On the dashboard's **Capacity & health** card, a device's CPU opens this tab at its CPU graph and
+its memory at the Memory graph; the name opens the device.
+
 | Section | What it shows |
 |---|---|
 | **CPU** | Load as 5-minute (or longer) averages, with a light band up to the highest reading in each window, and each core on its own when there are several: one core pinned at 100% hardly moves the overall load |

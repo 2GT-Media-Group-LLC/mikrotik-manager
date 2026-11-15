@@ -62,6 +62,8 @@ export interface CapsmanLive {
   radios: string[];
   /** Each radio's band, where the device says (legacy: its band setting). */
   radioBands?: Record<string, '2ghz' | '5ghz'>;
+  /** Legacy: the ids of the radios that have joined (/caps-man/radio). */
+  joinedRadios?: string[];
 }
 
 /**
@@ -348,6 +350,22 @@ export function planCapsman(input: CapsmanSetupInput, live: CapsmanLive): { step
     // Controller only, after "controller and AP": its radios go back to their own settings.
     steps.push({ command: `${p.cap}/set`, params: { enabled: 'no' }, description: 'Stop managing its own radios' });
     warnings.push('Its own radios stop taking the controller\'s SSID and go back to their own settings.');
+  }
+
+  // Legacy applies provisioning rules only when a radio joins, so radios
+  // already joined keep the SSID they were given (Ron, #438). Provision them
+  // again, unless the CAP is about to rejoin anyway.
+  const rulesChanged = steps.some((s) => s.command.startsWith(`${p.provisioning}/`));
+  const capRejoins = steps.some((s) => s.command === `${p.cap}/set`);
+  if (input.flavor === 'legacy' && rulesChanged && !capRejoins && live.joinedRadios?.length) {
+    steps.push({
+      command: '/caps-man/radio/provision',
+      params: { numbers: live.joinedRadios.join(',') },
+      description: 'Provision the joined radios again, so they take the new rules',
+    });
+    warnings.push('Radios that have already joined are provisioned again: their clients reconnect.');
+  } else if (input.flavor === 'wifi' && rulesChanged) {
+    warnings.push('Access points that have already joined take the new rules when they next connect.');
   }
 
   return { steps, warnings };

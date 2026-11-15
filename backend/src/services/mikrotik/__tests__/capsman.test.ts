@@ -1,6 +1,6 @@
 import {
   classifyWifiRole, parseCapsmanStatus, parseCapStatus, isCapsmanManaged,
-  normalizeRadios, matchRadiosToDevices, lookupDeviceForMac, macIndexKeys, buildMacIndex,
+  normalizeRadios, matchRadiosToDevices, lookupDeviceForMac, matchLegacyRadio, macIndexKeys, buildMacIndex,
   hasRadios, wirelessDeviceSql, radioDeviceSql, chooseWifiPackage,
 } from '../capsman';
 
@@ -143,6 +143,32 @@ describe('matchRadiosToDevices', () => {
   it('leaves an unmanaged CAP unattributed rather than guessing', () => {
     const radios = normalizeRadios([{ 'radio-mac': '11:22:33:44:55:66', local: 'false' }]);
     expect(matchRadiosToDevices(radios, index, 3)[0].deviceId).toBeNull();
+  });
+});
+
+describe('matchLegacyRadio (#447)', () => {
+  const idx = buildMacIndex([
+    { device_id: 1, mac_address: 'AA:BB:CC:00:00:01' },
+    { device_id: 5, mac_address: 'DD:EE:FF:00:00:01' },
+  ]);
+
+  it('gives a remote CAP\'s radio to the device carrying the MAC', () => {
+    expect(matchLegacyRadio('DD:EE:FF:00:00:01', idx, 1)).toEqual({ deviceId: 5, local: false });
+  });
+
+  it('marks the controller\'s own radio local, matched to the controller', () => {
+    expect(matchLegacyRadio('aa:bb:cc:00:00:01', idx, 1)).toEqual({ deviceId: 1, local: true });
+    expect(matchLegacyRadio('AA:BB:CC:00:00:02', idx, 1)).toEqual({ deviceId: 1, local: true });
+  });
+
+  it('leaves an unknown radio unmatched', () => {
+    expect(matchLegacyRadio('11:22:33:44:55:66', idx, 1)).toEqual({ deviceId: null, local: false });
+    expect(matchLegacyRadio(null, idx, 1)).toEqual({ deviceId: null, local: false });
+  });
+
+  it('prefers another device that holds the MAC too', () => {
+    const shared = buildMacIndex([{ device_id: 1, mac_address: 'AA:BB:CC:00:00:01' }, { device_id: 7, mac_address: 'AA:BB:CC:00:00:01' }]);
+    expect(matchLegacyRadio('AA:BB:CC:00:00:01', shared, 1)).toEqual({ deviceId: 7, local: false });
   });
 });
 

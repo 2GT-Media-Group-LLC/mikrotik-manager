@@ -145,6 +145,13 @@ changes** shows the writes first.
   band join the controller. The other band's wlans keep their own settings.
 - With a different SSID on 5 GHz, both rules go before the device's own. Unticking it, or
   choosing one band, removes the 5 GHz rule and configuration again.
+- RouterOS applies provisioning rules when a radio joins. On legacy CAPsMAN, when the rules
+  change, the setup provisions the radios that have already joined again, so they take the new
+  SSID; their clients reconnect. On wifi CAPsMAN, access points that have already joined take
+  the new rules when they next connect.
+- A legacy controller that also serves its own radios counts them as its own on the Wireless
+  page, clients included, and Wireless Settings marks those wlans **CAPsMAN** with the SSID the
+  controller puts on the air.
 
 ## Current limits
 

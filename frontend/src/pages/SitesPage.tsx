@@ -42,14 +42,17 @@ function SitesMap({ sites, onSelect }: { sites: Site[]; onSelect: (id: number) =
       marker.on('click', () => onSelect(s.id));
     }
 
-    // Fit to the sites we have; fall back to a whole-world view when none are
-    // geocoded yet, so the map is never a blank grey box.
-    if (points.length === 1) map.setView(points[0], pinned[0].map_zoom ?? 11);
+    // The default site, when it has a pin, is where the map opens (Ron, #362).
+    // Otherwise fit to the sites we have; fall back to a whole-world view when
+    // none are geocoded yet, so the map is never a blank grey box.
+    const home = pinned.find((s) => s.is_default);
+    if (home) map.setView([Number(home.location_lat), Number(home.location_lng)], home.map_zoom ?? 11);
+    else if (points.length === 1) map.setView(points[0], pinned[0].map_zoom ?? 11);
     else if (points.length > 1) map.fitBounds(L.latLngBounds(points).pad(0.25));
     else map.setView([20, 0], 2);
 
     return () => { map.remove(); };
-  }, [JSON.stringify(pinned.map((s) => [s.id, s.location_lat, s.location_lng, s.map_zoom, s.online_count])), onSelect]);
+  }, [JSON.stringify(pinned.map((s) => [s.id, s.location_lat, s.location_lng, s.map_zoom, s.online_count, s.is_default])), onSelect]);
 
   return (
     <div className="card overflow-hidden">

@@ -22,7 +22,7 @@ import FirmwareTab from '../components/device-detail/FirmwareTab';
 import SystemConfigTab from '../components/device-detail/SystemConfigTab';
 import ConfigHistoryTab from '../components/device-detail/ConfigHistoryTab';
 import HardwareTab from '../components/device-detail/HardwareTab';
-import GraphsTab from '../components/device-detail/GraphsTab';
+import GraphsTab, { graphFocus } from '../components/device-detail/GraphsTab';
 import ToolsTab from '../components/device-detail/ToolsTab';
 import RadiosTab from '../components/device-detail/RadiosTab';
 import AntennaAlignerTab from '../components/device-detail/AntennaAlignerTab';
@@ -585,7 +585,7 @@ export default function DeviceDetailPage() {
       {shownTab === 'firmware' && <FirmwareTab deviceId={deviceId} device={device} />}
       {shownTab === 'config-history' && <ConfigHistoryTab deviceId={deviceId} />}
       {shownTab === 'hardware' && <HardwareTab deviceId={deviceId} />}
-      {shownTab === 'graphs' && <GraphsTab deviceId={deviceId} />}
+      {shownTab === 'graphs' && <GraphsTab deviceId={deviceId} focus={graphFocus(searchParams.get('graph'))} />}
       {shownTab === 'radios' && <RadiosTab deviceId={deviceId} deviceStatus={device.status} />}
       {shownTab === 'alignment' && <AntennaAlignerTab key={deviceId} device={device} />}
       {shownTab === 'lte' && <LteTab deviceId={deviceId} />}
