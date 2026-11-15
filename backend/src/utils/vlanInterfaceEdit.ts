@@ -55,6 +55,11 @@ export function vlanInterfaceEntry(body: Record<string, unknown>, creating: bool
     if (typeof body.disabled !== 'boolean') return { error: 'disabled must be true or false' };
     fields.disabled = body.disabled ? 'yes' : 'no';
   }
+  // 802.1ad (#449): tag with the 0x88a8 service tag, as on a Q-in-Q bridge.
+  if (body.use_service_tag !== undefined) {
+    if (typeof body.use_service_tag !== 'boolean') return { error: 'use_service_tag must be true or false' };
+    fields['use-service-tag'] = body.use_service_tag ? 'yes' : 'no';
+  }
 
   let address: string | null = null;
   if (body.address !== undefined && body.address !== null && String(body.address).trim() !== '') {

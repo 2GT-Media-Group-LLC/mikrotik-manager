@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Settings, Users, Key, Plus, Trash2, CheckCircle, AlertCircle, Pencil, X,
   ShieldCheck, ShieldAlert, RefreshCw, Upload, Lock, Bell, Send, ClipboardList, Zap, LogIn,
-  Activity, Moon, Globe, HardDrive, Bot } from 'lucide-react';
+  Activity, Moon, Globe, HardDrive, Bot, Flame } from 'lucide-react';
 import { settingsApi, authApi, certApi, alertsApi, auditLogApi, tagsApi } from '../services/api';
 import { docsUrl } from '../version';
 import MaintenanceWindowsCard from '../components/settings/MaintenanceWindowsCard';
@@ -25,6 +25,7 @@ import FirmwareTimeoutCard from '../components/settings/FirmwareTimeoutCard';
 import PollModulesCard from '../components/settings/PollModulesCard';
 import TagRow from '../components/settings/TagRow';
 import DarkSiteCard from '../components/settings/DarkSiteCard';
+import FirewallLogSettingsCard from '../components/settings/FirewallLogSettingsCard';
 import FleetSshKeysCard from '../components/settings/FleetSshKeysCard';
 import AutomationSettings from '../components/settings/AutomationSettings';
 import EncryptionKeyCard from '../components/settings/EncryptionKeyCard';
@@ -61,7 +62,7 @@ interface EditUserState {
 }
 
 const SETTINGS_TABS = ['general', 'users', 'sso', 'ai', 'security', 'certificate', 'alerting', 'audit', 'tags',
-  'maintenance', 'automation', 'poller', 'darksite', 'sshkeys', 'platformbackup'] as const;
+  'maintenance', 'automation', 'poller', 'darksite', 'sshkeys', 'platformbackup', 'firewalllogs'] as const;
 type SettingsTab = typeof SETTINGS_TABS[number];
 
 export default function SettingsPage() {
@@ -508,6 +509,7 @@ export default function SettingsPage() {
         ...(isAdmin ? [{ key: 'sshkeys' as const, label: 'SSH Keys', icon: Key }] : []),
         { key: 'alerting' as const, label: 'Alerting', icon: Bell },
         { key: 'automation' as const, label: 'Automation', icon: Zap },
+        { key: 'firewalllogs' as const, label: 'Firewall Logs', icon: Flame },
         ...(isAdmin ? [
           { key: 'tags' as const, label: 'Tags', icon: ShieldCheck },
           { key: 'maintenance' as const, label: 'Maintenance', icon: ShieldAlert },
@@ -1113,6 +1115,12 @@ export default function SettingsPage() {
       ))}
 
       {/* ── Users ── */}
+      {activeTab === 'firewalllogs' && (
+        <div className="max-w-2xl">
+          <FirewallLogSettingsCard isAdmin={isAdmin} />
+        </div>
+      )}
+
       {activeTab === 'darksite' && (
         <div className="max-w-2xl">
           <DarkSiteCard isAdmin={isAdmin} />

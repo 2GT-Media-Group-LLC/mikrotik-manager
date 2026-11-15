@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { tagOf, ruleUrl } from '../utils/ruleTags';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Ban, ChevronLeft, ChevronRight, CircleCheck, CircleHelp, CircleX, RefreshCw, Search, Settings2, ShieldCheck, Trash2, Zap } from 'lucide-react';
 import { pageItems, zoneColor } from '../utils/firewallLogView';
+import { HIGHLIGHT_COLORS, highlightColors, savedServices, serviceFor, serviceIndex, trafficKind } from '../utils/portServices';
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useFleetRefresh } from '../hooks/useFleetRefresh';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import clsx from 'clsx';
 
-import { devicesApi, eventsApi } from '../services/api';
+import { devicesApi, eventsApi, settingsApi } from '../services/api';
 import type { FirewallEvent, FirewallGroup, FirewallRuleOption } from '../services/api';
 import HideRulesPicker, { HIDE_MAX, ruleKey } from '../components/firewall/HideRulesPicker';
 import DevicePicker from '../components/common/DevicePicker';
@@ -160,6 +161,18 @@ export default function FirewallEventsPage() {
     queryKey: ['devices'],
     queryFn: () => devicesApi.list().then((r) => r.data),
   });
+  // Port names and row colours from Settings → Firewall Logs (#415).
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => settingsApi.get().then((r) => r.data),
+    staleTime: 60_000,
+  });
+  const services = useMemo(() => serviceIndex(savedServices(settings?.firewall_log_services)), [settings]);
+  const colors = highlightColors(settings?.firewall_log_colors);
+  const rowTint = (l: { protocol: string; dstIp: string; srcPort?: number; dstPort?: number }) => {
+    const kind = trafficKind(l);
+    return kind ? HIGHLIGHT_COLORS[colors[kind]].row : '';
+  };
 
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: [
@@ -369,6 +382,10 @@ export default function FirewallEventsPage() {
             names ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/40')}>
           Resolve names
         </button>
+        <Link to="/settings?tab=firewalllogs" className="text-sm whitespace-nowrap" style={{ color: 'var(--accent)' }}
+          title="Name ports for the Application column, and colour DHCP and multicast lines">
+          Port names &amp; colours
+        </Link>
         <div className="relative w-full sm:flex-1 sm:min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -512,6 +529,7 @@ export default function FirewallEventsPage() {
                   <th className="table-header px-4 py-2.5 text-left">Source</th>
                   <th className="table-header px-4 py-2.5 text-left">Destination</th>
                   <th className="table-header px-4 py-2.5 text-left">Proto</th>
+                  <th className="table-header px-4 py-2.5 text-left">Application</th>
                   <th className="table-header px-4 py-2.5 text-left">Rule</th>
                   <th className="table-header px-4 py-2.5 text-left">{fromLabel}</th>
                   <th className="table-header px-4 py-2.5 text-left">{toLabel}</th>
@@ -522,7 +540,7 @@ export default function FirewallEventsPage() {
                 {groups.map((g, i) => (
                   <tr key={`${g.deviceId}|${g.prefix}|${g.chain}|${g.srcIp}|${g.dstIp}|${g.dstPort}|${g.protocol}|${i}`}
                     title={`Latest line: ${g.rawMessage}`}
-                    className={clsx('hover:bg-gray-50 dark:hover:bg-slate-700/30', g.action === 'drop' && 'bg-red-50/30 dark:bg-red-900/10')}>
+                    className={clsx('hover:bg-gray-50 dark:hover:bg-slate-700/30', rowTint(g) || (g.action === 'drop' && 'bg-red-50/30 dark:bg-red-900/10'))}>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
                       {formatDateTime(g.lastSeen, { year: undefined, second: '2-digit' })}
                     </td>
@@ -539,6 +557,7 @@ export default function FirewallEventsPage() {
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap"><Address ip={g.srcIp} name={g.srcName} /></td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap"><Address ip={g.dstIp} port={g.dstPort} name={g.dstName} /></td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 uppercase whitespace-nowrap">{g.protocol}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">{serviceFor(services, g.protocol, g.dstPort) ?? '—'}</td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
                       {/* Zones say where traffic went; the chain only repeats it (#415). */}
                       {(!g.zoned || !tagOf(g.prefix)) && g.chain}
@@ -572,6 +591,7 @@ export default function FirewallEventsPage() {
                   <th className="table-header px-4 py-2.5 text-left">Source</th>
                   <th className="table-header px-4 py-2.5 text-left">Destination</th>
                   <th className="table-header px-4 py-2.5 text-left">Proto</th>
+                  <th className="table-header px-4 py-2.5 text-left">Application</th>
                   <th className="table-header px-4 py-2.5 text-left">{allZoned ? 'Rule' : 'Chain'}</th>
                   <th className="table-header px-4 py-2.5 text-left">{fromLabel}</th>
                   <th className="table-header px-4 py-2.5 text-left">{toLabel}</th>
@@ -585,8 +605,8 @@ export default function FirewallEventsPage() {
                     title={event.rawMessage}
                     className={clsx(
                       'hover:bg-gray-50 dark:hover:bg-slate-700/30',
-                      event.action === 'drop' &&
-                        'bg-red-50/30 dark:bg-red-900/10'
+                      rowTint(event) || (event.action === 'drop' &&
+                        'bg-red-50/30 dark:bg-red-900/10')
                     )}
                   >
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">
@@ -612,6 +632,10 @@ export default function FirewallEventsPage() {
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 uppercase whitespace-nowrap">
                       {event.protocol}
                       {event.tcpFlags ? ` (${event.tcpFlags})` : ''}
+                    </td>
+
+                    <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">
+                      {serviceFor(services, event.protocol, event.dstPort, event.srcPort) ?? '—'}
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">

@@ -836,6 +836,10 @@ The label next to the parent says what it is:
   tag, nothing is enforced on the bridge's ports
 - **bond**, or **Q-in-Q** for a VLAN stacked on another VLAN interface
 
+A VLAN interface tagged with the 802.1ad service tag (0x88a8) rather than 802.1Q is marked
+**service tag**. Tick **Service tag (802.1ad)** in the form for one on a Q-in-Q bridge (see
+[Q-in-Q and MVRP](#q-in-q-and-mvrp)) (#449).
+
 The card is read live from the device each time the tab opens and every minute while it's open.
 
 With write access you can add, edit and remove VLAN interfaces there. **Add VLAN interface**
@@ -885,6 +889,31 @@ has a small chip icon; hover a port for its PVID and spanning tree role.
 Everything runs through [Change Guard](change-guard.md). Renaming the bridge the manager
 connects through, or changing its spanning tree or MTU, can't be simulated, so it runs with
 auto-revert required; turning that bridge off is predicted as a lockout and asks first.
+
+### Q-in-Q and MVRP
+
+The bridge's **Edit** form and its ports cover 802.1ad Q-in-Q, tag stacking and MVRP (#449).
+
+- **VLAN tag (EtherType)** is the tag the bridge reads as the VLAN: 0x8100 (802.1Q, the
+  default), 0x88a8 (the 802.1ad service tag) or 0x9100. It takes effect with VLAN filtering on.
+  With 0x88a8, a customer's 802.1Q tags pass through inside the service VLAN, and a VLAN
+  interface on the bridge needs **Service tag** ticked. A bridge reading anything other than
+  0x8100 shows a **Q-in-Q** label. Some switch chips only do 0x8100 in hardware (MikroTik lists
+  the 88E6393X, 88E6191X and 88E6190 as having no Q-in-Q), and switch the rest on the CPU.
+- **MVRP** registers VLANs with neighbouring switches. A VLAN a neighbour registers makes that
+  port a tagged member of it, dynamically. The setting only shows when the device's RouterOS
+  has MVRP.
+- Both are VLAN filtering settings: RouterOS only shows them with VLAN filtering on, so on a
+  bridge with filtering off the form asks you to turn it on first.
+- Click a port to set its **tag stacking**: every frame in is treated as untagged and gets the
+  port's PVID as an outer tag, over any tag it had. On a bridge with MVRP, the same panel sets the
+  port's **applicant** (normal, or non-participant: sends nothing) and **registrar** (normal, or
+  fixed: ignores registrations and stays in its configured VLANs). A port with tag stacking is
+  marked **TS**.
+- On a bridge running MVRP, a table lists each port's **registered** and **declared** VLANs, read
+  from the device when the tab opens.
+
+On the bridge or port the manager connects through, these run with auto-revert required.
 
 ## Routing between VLANs in hardware
 

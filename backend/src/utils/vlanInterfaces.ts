@@ -25,6 +25,8 @@ export interface VlanInterface {
   /** Interface addresses, IPv4 then global/ULA IPv6; link-local is left out. */
   addresses: string[];
   comment: string;
+  /** Tags with the 802.1ad service tag (0x88a8) rather than 802.1Q (#449). */
+  useServiceTag: boolean;
 }
 
 /** fe80::/10, which every IPv6 interface has, says nothing about the VLAN. */
@@ -70,6 +72,7 @@ export function vlanInterfacesView(
         disabled: isTrue(v['disabled']),
         addresses: addressesOn(v['name'] || ''),
         comment: v['comment'] || '',
+        useServiceTag: isTrue(v['use-service-tag']),
       };
     })
     .sort((a, b) => (a.vlanId ?? 0) - (b.vlanId ?? 0) || a.name.localeCompare(b.name));

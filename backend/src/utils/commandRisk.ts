@@ -13,6 +13,7 @@ const RISKY_PATTERNS: { pattern: RegExp; why: string }[] = [
   { pattern: /vlan-filtering\s*=/i, why: 'changes bridge VLAN filtering, the most common way to lose a switch' },
   { pattern: /\/interface\/?\s*bridge\/?\s*(port|vlan)\b[\s\S]*?\bset\b/i, why: 'changes bridge port or VLAN membership' },
   { pattern: /\b(pvid|frame-types)\s*=/i, why: 'changes port VLAN tagging, which can move management to another VLAN' },
+  { pattern: /\b(ether-type|tag-stacking|use-service-tag)\s*=/i, why: 'changes which tag counts as the VLAN (Q-in-Q), which can move management to another VLAN' },
   { pattern: /\/ip\/?\s*dhcp-client\b[\s\S]*?\b(remove|disable|set)\b/i, why: 'changes the DHCP client, which can drop the management address' },
   { pattern: /\/system\/?\s*(reboot|shutdown|reset-configuration)/i, why: 'reboots, shuts down or resets the device' },
   { pattern: /\/system\/?\s*package\b[\s\S]*?\b(downgrade|disable|uninstall)\b/i, why: 'changes installed packages' },

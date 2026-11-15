@@ -65,6 +65,29 @@ Reverse DNS answers are kept for an hour and misses for ten minutes. A page wait
 default, because reverse DNS sends the addresses on the page to the manager's DNS server.
 Search still matches addresses, not names.
 
+## Application and row colours
+
+The **Application** column names the service behind a line's port (#415): 443 is HTTPS, 587 is
+SUBMISSION, 8291 is WINBOX. It goes by the destination port, or by the source port for a reply
+(a DNS answer from port 53 back to a client shows as DNS). The grouped view has only the
+destination port, so it names that. Names come from a built-in list based on `/etc/services`,
+plus the MikroTik ports it doesn't know (WinBox, the API, MNDP, bandwidth test). Search still
+matches ports, not names.
+
+Two kinds of background traffic get a row colour, so they stand apart:
+
+- **DHCP**: UDP 67/68, and DHCPv6 on 546/547. A DHCP discover to 255.255.255.255 counts as
+  DHCP.
+- **Multicast and broadcast**: 224.0.0.0/4, ff00::/8 and 255.255.255.255. A subnet's own
+  broadcast address (192.168.88.255, say) isn't recognised, because the log line doesn't carry
+  the mask.
+
+Set both under **Settings**, **Firewall Logs**, or with **Port names & colours** on the page.
+Each colour can be one of nine, or **None**. **Port names** adds a port the list doesn't know, or
+names one it does your way, for TCP, UDP or both. Show the built-in list to see what it already
+names; a port you've renamed is struck out there. Everyone sees the same names and colours;
+only admins change them.
+
 ## Where the events come from
 
 Firewall logs are collected from the normal RouterOS log stream. A firewall

@@ -1017,8 +1017,12 @@ export const devicesApi = {
   addBridge: (id: number, data: { name: string; protocol_mode?: string; priority?: string; vlan_filtering?: boolean; comment?: string }) =>
     api.post(`/devices/${id}/bridges`, data, GUARDED),
   updateBridge: (id: number, bridgeName: string,
-    data: { name?: string; protocol_mode?: string; priority?: string; comment?: string; disabled?: boolean; mtu?: string }, confirmLockout = false) =>
+    data: { name?: string; protocol_mode?: string; priority?: string; comment?: string; disabled?: boolean; mtu?: string; ether_type?: string; mvrp?: boolean }, confirmLockout = false) =>
     api.put(`/devices/${id}/bridges/${encodeURIComponent(bridgeName)}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
+  /** Q-in-Q and MVRP on one bridge port (#449). */
+  updateBridgePort: (id: number, iface: string,
+    data: { tag_stacking?: boolean; mvrp_applicant_state?: string; mvrp_registrar_state?: string }, confirmLockout = false) =>
+    api.put(`/devices/${id}/bridge-ports/${encodeURIComponent(iface)}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
   setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`,
       { enabled, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
@@ -3180,12 +3184,23 @@ export const platformBackupApi = {
 };
 
 /** One bridge as the Bridges tab shows it (#284). */
+export interface BridgePortView {
+  name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null;
+  l2mtu?: number | null; maxL2mtu?: number | null;
+  /** Q-in-Q and MVRP (#449). */
+  tagStacking?: boolean; mvrpApplicant?: string | null; mvrpRegistrar?: string | null;
+  registeredVlans?: string | null; declaredVlans?: string | null;
+}
 export interface BridgeView {
   id: string; name: string; protocolMode: string; priority: string | null; vlanFiltering: boolean;
   running: boolean; disabled: boolean; dynamic: boolean; comment: string | null; mtu: string | null; macAddress: string | null;
   /** The MTU as set: "auto" or a number. `mtu` is what it is in effect. */
   mtuSetting?: string;
-  ports: { name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null; l2mtu?: number | null; maxL2mtu?: number | null }[];
+  /** The tag read as a VLAN (#449): 0x8100, or 0x88a8 for 802.1ad. Null with filtering off (RouterOS doesn't print it). */
+  etherType?: string | null;
+  /** MVRP on the bridge; null where RouterOS doesn't have it (#449). */
+  mvrp?: boolean | null;
+  ports: BridgePortView[];
   vlans: string[];
   dynamicVlans?: string[];
   addresses: string[];
@@ -3354,6 +3369,8 @@ export interface VlanInterfaceInput {
   mtu?: number | '';
   comment?: string;
   disabled?: boolean;
+  /** 802.1ad service tag (0x88a8) rather than 802.1Q (#449). */
+  use_service_tag?: boolean;
 }
 
 export interface VlanInterface {
@@ -3367,6 +3384,7 @@ export interface VlanInterface {
   disabled: boolean;
   addresses: string[];
   comment: string;
+  useServiceTag?: boolean;
 }
 
 /** An /ipv6/route row (#312). */

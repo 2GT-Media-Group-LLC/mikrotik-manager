@@ -1,4 +1,4 @@
-import { parseBridgeCreate, parseBridgeUpdate, parsePriority, parseBridgeMtu, bridgeMtuProblem } from '../bridgeEdit';
+import { parseBridgeCreate, parseBridgeUpdate, parseBridgePortUpdate, parsePriority, parseBridgeMtu, bridgeMtuProblem } from '../bridgeEdit';
 
 describe('bridge edits', () => {
   it('creates with RSTP unless told otherwise', () => {
@@ -60,5 +60,23 @@ describe('bridge MTU', () => {
     expect(p).toMatch(/Raise the MTU of qsfp28-1-1 \(1584\)/);
     expect(p).toMatch(/ether1 \(2028\) can't go that high .* take it out of the bridge, or keep the bridge at 2028 or less/);
     expect(bridgeMtuProblem('2028', [{ name: 'ether1', l2mtu: 2028, maxL2mtu: 2028 }])).toBeNull();
+  });
+});
+
+describe('Q-in-Q and MVRP (#449)', () => {
+  it('sets the bridge EtherType and MVRP', () => {
+    expect(parseBridgeUpdate({ ether_type: '0x88A8', mvrp: true })).toEqual({ fields: { 'ether-type': '0x88a8', mvrp: 'yes' } });
+    expect(parseBridgeUpdate({ mvrp: false })).toEqual({ fields: { mvrp: 'no' } });
+    expect(parseBridgeUpdate({ ether_type: '0x0800' })).toEqual({ error: expect.stringMatching(/ether_type/) });
+    expect(parseBridgeUpdate({ mvrp: 'yes' })).toEqual({ error: expect.stringMatching(/mvrp/) });
+  });
+
+  it('sets a port\'s tag stacking and MVRP states', () => {
+    expect(parseBridgePortUpdate({ tag_stacking: true, mvrp_applicant_state: 'non-participant', mvrp_registrar_state: 'fixed' }))
+      .toEqual({ fields: { 'tag-stacking': 'yes', 'mvrp-applicant-state': 'non-participant', 'mvrp-registrar-state': 'fixed' } });
+    expect(parseBridgePortUpdate({})).toEqual({ error: 'Nothing to change' });
+    expect(parseBridgePortUpdate({ tag_stacking: 'yes' })).toEqual({ error: expect.stringMatching(/tag_stacking/) });
+    expect(parseBridgePortUpdate({ mvrp_registrar_state: 'forbidden' })).toEqual({ error: expect.stringMatching(/registrar/) });
+    expect(parseBridgePortUpdate({ mvrp_applicant_state: 'active' })).toEqual({ error: expect.stringMatching(/applicant/) });
   });
 });

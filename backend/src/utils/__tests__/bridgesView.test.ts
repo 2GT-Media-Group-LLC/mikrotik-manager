@@ -38,7 +38,8 @@ describe('bridgesView', () => {
     expect(main.ports.map((p) => p.name)).toEqual(['ether1', 'sfp-sfpplus2', 'sfp-sfpplus10']);
     expect(main.ports[1]).toMatchObject({ inactive: true, pvid: '10' });
     expect(guest).toMatchObject({ name: 'guest', protocolMode: 'none', running: false, vlanFiltering: false, addresses: ['10.9.9.1/24'] });
-    expect(guest.ports).toEqual([{ name: 'ether9', hw: false, pvid: '1', disabled: false, inactive: false, dynamic: false, role: null, l2mtu: null, maxL2mtu: null }]);
+    expect(guest.ports).toEqual([{ name: 'ether9', hw: false, pvid: '1', disabled: false, inactive: false, dynamic: false, role: null, l2mtu: null, maxL2mtu: null,
+      tagStacking: false, mvrpApplicant: null, mvrpRegistrar: null, registeredVlans: null, declaredVlans: null }]);
   });
 
   it('lists each VLAN once, keeping dynamic-only ones apart (#284)', () => {
@@ -56,5 +57,25 @@ describe('bridgesView', () => {
     const [b] = bridgesView({ bridges: [{ '.id': '*1', name: 'bridge1' }], ports: [], vlans: rows, addresses: [] });
     expect(b.vlans).toEqual(['10', '20', '30', '40', '99']);
     expect(b.dynamicVlans).toEqual(['1']);
+  });
+
+  it('reads Q-in-Q and MVRP (#449)', () => {
+    const [plain] = bridgesView({ bridges: [bridge], ports, vlans: [], addresses: [] });
+    expect(plain.etherType).toBe('0x8100');
+    expect(plain.mvrp).toBeNull();
+    // Filtering off: RouterOS doesn't print ether-type, so it isn't known.
+    expect(bridgesView({ bridges: [{ ...bridge, 'vlan-filtering': 'false' }], ports: [], vlans: [], addresses: [] })[0].etherType).toBeNull();
+    expect(plain.ports[0]).toMatchObject({ tagStacking: false, mvrpApplicant: null, registeredVlans: null });
+
+    const [b] = bridgesView({
+      bridges: [{ ...bridge, 'ether-type': '0x88a8', mvrp: 'true' }],
+      ports: [{ ...ports[1], 'tag-stacking': 'true', 'mvrp-applicant-state': 'normal-participant', 'mvrp-registrar-state': 'fixed' }],
+      vlans: [], addresses: [],
+      mvrp: [{ interface: 'ether1', 'registered-vlan-ids': '1,10,20-21', 'declared-vlan-ids': '1,10' }],
+    });
+    expect(b).toMatchObject({ etherType: '0x88a8', mvrp: true });
+    expect(b.ports[0]).toMatchObject({
+      tagStacking: true, mvrpApplicant: 'normal-participant', mvrpRegistrar: 'fixed', registeredVlans: '1,10,20-21', declaredVlans: '1,10',
+    });
   });
 });

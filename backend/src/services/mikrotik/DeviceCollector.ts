@@ -5925,6 +5925,7 @@ export class DeviceCollector {
   async getBridgesDetail(): Promise<{
     bridges: Record<string, string>[]; ports: Record<string, string>[];
     vlans: Record<string, string>[]; addresses: Record<string, string>[]; interfaces: Record<string, string>[];
+    mvrp: Record<string, string>[];
   }> {
     const none = () => [] as Record<string, string>[];
     const [bridges, ports, vlans, addresses, interfaces] = await Promise.all([
@@ -5935,7 +5936,24 @@ export class DeviceCollector {
       // Each port's L2 MTU, the ceiling for the bridge's MTU.
       this.client.execute('/interface/print', { '.proplist': 'name,l2mtu,max-l2mtu' }).catch(none),
     ]);
-    return { bridges, ports, vlans, addresses, interfaces };
+    // What MVRP registered and declared on each port of a bridge running it
+    // (#449). A monitor, read once; nothing to show if it fails.
+    const mvrpBridges = new Set(bridges.filter((b) => b['mvrp'] === 'true' || b['mvrp'] === 'yes').map((b) => b['name']));
+    const mvrpPorts = ports.filter((p) => mvrpBridges.has(p['bridge']) && p['.id'] && p['dynamic'] !== 'true');
+    const mvrp = mvrpPorts.length
+      ? await this.client.execute('/interface/bridge/port/monitor', { numbers: mvrpPorts.map((p) => p['.id']).join(','), once: '' })
+        .then((rows) => rows.map((r, i) => ({ ...r, interface: r['interface'] || mvrpPorts[i]?.['interface'] || '' })))
+        .catch(none)
+      : [];
+    return { bridges, ports, vlans, addresses, interfaces, mvrp };
+  }
+
+  /** A bridge port's own settings, by its interface (#449). Static entries only. */
+  async updateBridgePort(iface: string, fields: Record<string, string>): Promise<void> {
+    const port = (await this.client.execute('/interface/bridge/port/print'))
+      .find((p) => p['interface'] === iface && p['dynamic'] !== 'true');
+    if (!port?.['.id']) throw new Error(`${iface} isn't a port of any bridge on this device.`);
+    await this.setItem('/interface/bridge/port', port['.id'], fields);
   }
 
   async addBridge(fields: Record<string, string>): Promise<void> {

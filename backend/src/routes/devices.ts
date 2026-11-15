@@ -92,7 +92,7 @@ import { ipv6RoutesView } from '../utils/ipv6Routes';
 import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchVlanEdit';
 import { ipAddressEdit } from '../utils/ipAddressEdit';
 import { parseBgpConnection } from '../utils/bgpConnection';
-import { parseBridgeCreate, parseBridgeUpdate, bridgeMtuProblem } from '../utils/bridgeEdit';
+import { parseBridgeCreate, parseBridgeUpdate, parseBridgePortUpdate, bridgeMtuProblem } from '../utils/bridgeEdit';
 import { bridgesView } from '../utils/bridgesView';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
@@ -2299,6 +2299,7 @@ router.put('/:id/vlan-interfaces/:entryId', requireWrite, async (req, res) => {
     ? req.body.current_name : req.params.entryId;
   const changes: PlannedChange[] = [{ kind: 'vlan-iface.set', id: req.params.entryId, fields }];
   if (fields.mtu !== undefined) changes.push({ kind: 'path-object.change', name: label, what: 'MTU' });
+  if (fields['use-service-tag'] !== undefined) changes.push({ kind: 'path-object.change', name: label, what: 'The tag type (802.1ad service tag)' });
   await withGuardedChange(req.params.id, req, res,
     {
       kind: 'vlan-iface.set',
@@ -4101,9 +4102,12 @@ router.put('/:id/bridges/:bridgeName', requireWrite, async (req, res) => {
   if (f.name && f.name !== name) changes.push({ kind: 'path-object.change', name, what: `Renaming the bridge to ${f.name}` });
   if (f.mtu) changes.push({ kind: 'path-object.change', name, what: 'Changing the MTU' });
   if (f['protocol-mode'] || f.priority) changes.push({ kind: 'path-object.change', name, what: 'Changing spanning tree' });
+  if (f['ether-type']) changes.push({ kind: 'path-object.change', name, what: 'Changing which tag the bridge reads as a VLAN' });
+  if (f.mvrp) changes.push({ kind: 'path-object.change', name, what: `Turning MVRP ${f.mvrp === 'yes' ? 'on' : 'off'}` });
   if (f.disabled) changes.push({ kind: 'interface.disable', name, disabled: f.disabled === 'yes' });
   const what = [f.name && f.name !== name ? `rename to '${f.name}'` : '', f['protocol-mode'] ? `protocol ${f['protocol-mode']}` : '',
-    f.priority ? `priority ${f.priority}` : '', f.mtu ? `MTU ${f.mtu}` : '', f.disabled ? (f.disabled === 'yes' ? 'disable' : 'enable') : '',
+    f.priority ? `priority ${f.priority}` : '', f.mtu ? `MTU ${f.mtu}` : '',
+    f['ether-type'] ? `EtherType ${f['ether-type']}` : '', f.mvrp ? `MVRP ${f.mvrp === 'yes' ? 'on' : 'off'}` : '', f.disabled ? (f.disabled === 'yes' ? 'disable' : 'enable') : '',
     f.comment !== undefined ? 'comment' : ''].filter(Boolean).join(', ');
   await withGuardedChange(req.params.id, req, res,
     {
@@ -4111,6 +4115,31 @@ router.put('/:id/bridges/:bridgeName', requireWrite, async (req, res) => {
       ...(changes.length ? { change: changes.length === 1 ? changes[0] : { kind: 'batch', changes } } : {}),
     },
     async (c) => { await c.updateBridge(name, f); return { message: `Bridge ${f.name ?? name} updated` }; },
+    async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); });
+});
+
+// PUT /api/devices/:id/bridge-ports/:iface { tag_stacking?, mvrp_applicant_state?, mvrp_registrar_state? }
+// Q-in-Q and MVRP on one port (#449). Tag stacking changes which VLAN the
+// port's frames land in, so on the port management comes in by it runs with
+// auto-revert.
+router.put('/:id/bridge-ports/:iface', requireWrite, async (req, res) => {
+  const iface = req.params.iface;
+  if (!IFACE_NAME.test(iface)) return res.status(400).json({ error: 'Invalid interface name.' });
+  const parsed = parseBridgePortUpdate(req.body ?? {});
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const f = parsed.fields;
+  const changes: PlannedChange[] = [];
+  if (f['tag-stacking']) changes.push({ kind: 'path-object.change', name: iface, what: `Turning tag stacking ${f['tag-stacking'] === 'yes' ? 'on' : 'off'}` });
+  if (f['mvrp-applicant-state'] || f['mvrp-registrar-state']) changes.push({ kind: 'path-object.change', name: iface, what: 'Changing how the port takes part in MVRP' });
+  const what = [f['tag-stacking'] ? `tag stacking ${f['tag-stacking'] === 'yes' ? 'on' : 'off'}` : '',
+    f['mvrp-applicant-state'] ? `MVRP applicant ${f['mvrp-applicant-state']}` : '',
+    f['mvrp-registrar-state'] ? `MVRP registrar ${f['mvrp-registrar-state']}` : ''].filter(Boolean).join(', ');
+  await withGuardedChange(req.params.id, req, res,
+    {
+      kind: 'bridge-port.set', summary: `Bridge port ${iface}: ${what}`,
+      change: changes.length === 1 ? changes[0] : { kind: 'batch', changes },
+    },
+    async (c) => { await c.updateBridgePort(iface, f); return { message: `Bridge port ${iface} updated` }; },
     async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); });
 });
 

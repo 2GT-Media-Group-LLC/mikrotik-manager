@@ -9,6 +9,8 @@ export interface VlanInterfaceForm {
   mtu: string;
   comment: string;
   enabled: boolean;
+  /** 802.1ad service tag (0x88a8), for a Q-in-Q bridge (#449). Optional: older forms leave it out. */
+  serviceTag?: boolean;
   /** Only when adding. */
   address: string;
 }
@@ -80,5 +82,6 @@ export function vlanInterfaceChanges(v: VlanInterface, f: VlanInterfaceForm): Pa
   if (f.mtu && f.mtu !== v.mtu) out.mtu = Number(f.mtu);
   if (f.comment.trim() !== v.comment) out.comment = f.comment.trim();
   if (f.enabled === v.disabled) out.disabled = !f.enabled;
+  if (f.serviceTag !== undefined && f.serviceTag !== !!v.useServiceTag) out.use_service_tag = f.serviceTag;
   return out;
 }

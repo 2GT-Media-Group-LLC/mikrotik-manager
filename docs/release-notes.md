@@ -3,6 +3,20 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.56
+
+- **Firewall Logs: an Application column, and colours for DHCP and multicast**
+  ([#415](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415)). Each line names
+  the service behind its port (443 HTTPS, 587 SUBMISSION, 8291 WINBOX) from a built-in list based
+  on `/etc/services`. DHCP lines and multicast/broadcast lines are tinted. Change the colours and
+  add or rename ports under **Settings**, **Firewall Logs**
+  ([how](firewall-events.md#application-and-row-colours)). Thanks to Ron.
+- **Bridges: Q-in-Q and MVRP**
+  ([#449](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/449)). A bridge's VLAN tag
+  type (0x8100, the 802.1ad 0x88a8, or 0x9100) and MVRP, a port's tag stacking and MVRP applicant
+  and registrar, and the 802.1ad service tag on VLAN interfaces. A bridge running MVRP lists each
+  port's registered and declared VLANs ([how](devices.md#q-in-q-and-mvrp)). Thanks to Ron.
+
 ## 1.1.0-beta.55
 
 - **Saving a site could remove its map pin**

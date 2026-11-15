@@ -9,6 +9,7 @@ import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { validatePassword } from '../utils/passwordPolicy';
 import { OIDC_SETTINGS_KEY } from '../services/oidc/oidcConfig';
 import { isTimeFormat } from '../utils/timeFormat';
+import { FIREWALL_LOG_COLORS_KEY, FIREWALL_LOG_SERVICES_KEY, colorsError, servicesError } from '../utils/firewallLogSettings';
 
 const router = Router();
 router.use(requireAuth);
@@ -47,6 +48,15 @@ router.put('/', requireAdmin, async (req, res) => {
   }
   if ('change_guard_enabled' in updates && typeof updates['change_guard_enabled'] !== 'boolean') {
     return res.status(400).json({ error: 'change_guard_enabled must be true or false.' });
+  }
+  // Firewall Logs names and colours (#415): every viewer's page reads them.
+  if (FIREWALL_LOG_SERVICES_KEY in updates) {
+    const err = servicesError(updates[FIREWALL_LOG_SERVICES_KEY]);
+    if (err) return res.status(400).json({ error: err });
+  }
+  if (FIREWALL_LOG_COLORS_KEY in updates) {
+    const err = colorsError(updates[FIREWALL_LOG_COLORS_KEY]);
+    if (err) return res.status(400).json({ error: err });
   }
   for (const [key, value] of Object.entries(updates)) {
     if (PROTECTED_SETTING_KEYS.has(key)) continue;

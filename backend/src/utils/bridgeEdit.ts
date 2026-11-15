@@ -5,6 +5,10 @@
  */
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 export const PROTOCOL_MODES = ['none', 'stp', 'rstp', 'mstp'] as const;
+/** The tag the bridge reads as a VLAN (#449): 802.1Q, 802.1ad service tag, or the old 0x9100. */
+export const ETHER_TYPES = ['0x8100', '0x88a8', '0x9100'] as const;
+export const MVRP_APPLICANT = ['normal-participant', 'non-participant'] as const;
+export const MVRP_REGISTRAR = ['normal', 'fixed'] as const;
 
 type Result = { fields: Record<string, string> } | { error: string };
 
@@ -66,6 +70,40 @@ export function parseBridgeUpdate(body: Record<string, unknown>): Result {
     const m = parseBridgeMtu(body.mtu);
     if (!m) return { error: 'MTU: auto, or a number from 576 to 65535' };
     fields.mtu = m;
+  }
+  if (body.ether_type !== undefined) {
+    const t = String(body.ether_type).toLowerCase();
+    if (!(ETHER_TYPES as readonly string[]).includes(t)) return { error: `ether_type must be one of ${ETHER_TYPES.join(', ')}` };
+    fields['ether-type'] = t;
+  }
+  if (body.mvrp !== undefined) {
+    if (typeof body.mvrp !== 'boolean') return { error: 'mvrp must be true or false' };
+    fields.mvrp = body.mvrp ? 'yes' : 'no';
+  }
+  if (Object.keys(fields).length === 0) return { error: 'Nothing to change' };
+  return { fields };
+}
+
+/**
+ * A bridge port's Q-in-Q and MVRP settings (#449): tag stacking (push the
+ * port's PVID over whatever tag a frame already has) and how the port takes
+ * part in MVRP.
+ */
+export function parseBridgePortUpdate(body: Record<string, unknown>): Result {
+  const fields: Record<string, string> = {};
+  if (body.tag_stacking !== undefined) {
+    if (typeof body.tag_stacking !== 'boolean') return { error: 'tag_stacking must be true or false' };
+    fields['tag-stacking'] = body.tag_stacking ? 'yes' : 'no';
+  }
+  if (body.mvrp_applicant_state !== undefined) {
+    const v = String(body.mvrp_applicant_state);
+    if (!(MVRP_APPLICANT as readonly string[]).includes(v)) return { error: `mvrp_applicant_state must be one of ${MVRP_APPLICANT.join(', ')}` };
+    fields['mvrp-applicant-state'] = v;
+  }
+  if (body.mvrp_registrar_state !== undefined) {
+    const v = String(body.mvrp_registrar_state);
+    if (!(MVRP_REGISTRAR as readonly string[]).includes(v)) return { error: `mvrp_registrar_state must be one of ${MVRP_REGISTRAR.join(', ')}` };
+    fields['mvrp-registrar-state'] = v;
   }
   if (Object.keys(fields).length === 0) return { error: 'Nothing to change' };
   return { fields };

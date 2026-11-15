@@ -1,6 +1,10 @@
 import { vlanInterfaceEntry, interfaceAddress } from '../vlanInterfaceEdit';
 
 describe('vlanInterfaceEntry', () => {
+  it('sets the 802.1ad service tag (#449)', () => {
+    expect(vlanInterfaceEntry({ use_service_tag: true }, false)).toEqual({ fields: { 'use-service-tag': 'yes' }, address: null });
+    expect(vlanInterfaceEntry({ use_service_tag: 'yes' }, false)).toEqual({ error: expect.stringMatching(/use_service_tag/) });
+  });
   it('builds a new VLAN interface, named after its VLAN when no name is given', () => {
     expect(vlanInterfaceEntry({ vlan_id: 20, interface: 'ether2' }, true))
       .toEqual({ fields: { 'vlan-id': '20', interface: 'ether2', name: 'vlan20' }, address: null });
