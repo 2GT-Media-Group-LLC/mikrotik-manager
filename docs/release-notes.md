@@ -7,6 +7,15 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.17
+
+Released on Sunday 15 November 2026.
+
+- **Saving a site could remove its map pin**
+  ([#362](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/362)). Renaming a site
+  or changing its group, without touching the address, cleared its position. A save now changes
+  the pin only when it sends one or when the address changes. Thanks to Ron for the report.
+
 ## 1.0.16
 
 Released on Friday 13 November 2026.
