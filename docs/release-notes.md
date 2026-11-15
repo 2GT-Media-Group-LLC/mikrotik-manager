@@ -3,6 +3,13 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.55
+
+- **Saving a site could remove its map pin**
+  ([#362](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/362)). Changing only a
+  site's map zoom, its name or its group cleared its position. A save now changes the pin only
+  when it sends one or when the address changes. Also in 1.0.17. Thanks to Ron.
+
 ## 1.1.0-beta.54
 
 - **CAPsMAN quick set: a 5 GHz SSID of its own now reaches radios already joined**
@@ -850,6 +857,15 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.17
+
+Released on Sunday 15 November 2026.
+
+- **Saving a site could remove its map pin**
+  ([#362](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/362)). Renaming a site
+  or changing its group, without touching the address, cleared its position. A save now changes
+  the pin only when it sends one or when the address changes. Thanks to Ron for the report.
 
 ## 1.0.16
 
