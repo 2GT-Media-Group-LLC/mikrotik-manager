@@ -225,10 +225,11 @@ router.put('/:id', requireWrite, async (req, res) => {
     if (clash) { res.status(409).json({ error: 'A site with that name already exists' }); return; }
   }
 
-  // Address and coordinates travel together: changing the address without
-  // re-geocoding would leave the pin on the old location, which is worse than
-  // no pin at all.
+  // The pin changes when it's sent. Without one, a changed address clears it:
+  // a pin left on the old location is worse than none. Saving the same
+  // address (the form always sends it) keeps the pin (Ron, #362).
   const addressGiven = body.address !== undefined;
+  const coordsGiven = body.location_lat !== undefined || body.location_lng !== undefined;
   const { lat, lng } = normaliseCoords(body.location_lat, body.location_lng);
   const group = await parseGroupId(req, res);
   if (!group.ok) return;
@@ -237,8 +238,12 @@ router.put('/:id', requireWrite, async (req, res) => {
     `UPDATE sites SET
        name         = COALESCE($1, name),
        address      = CASE WHEN $2::boolean THEN $3 ELSE address END,
-       location_lat = CASE WHEN $2::boolean THEN $4 ELSE location_lat END,
-       location_lng = CASE WHEN $2::boolean THEN $5 ELSE location_lng END,
+       location_lat = CASE WHEN $14::boolean THEN $4
+                           WHEN $2::boolean AND address IS DISTINCT FROM $3 THEN NULL
+                           ELSE location_lat END,
+       location_lng = CASE WHEN $14::boolean THEN $5
+                           WHEN $2::boolean AND address IS DISTINCT FROM $3 THEN NULL
+                           ELSE location_lng END,
        notes        = COALESCE($6, notes),
        group_id     = CASE WHEN $8::boolean THEN $9 ELSE group_id END,
        default_jump_host_id = CASE WHEN $10::boolean THEN $11::integer ELSE default_jump_host_id END,
@@ -249,7 +254,7 @@ router.put('/:id', requireWrite, async (req, res) => {
                location_lng::float8 AS location_lng, map_zoom, notes, is_default, created_at, group_id, default_jump_host_id`,
     [name, addressGiven, body.address?.trim() || null, lat, lng, body.notes?.trim() ?? null, id,
      group.value !== undefined, group.value ?? null, defaultJumpHost !== undefined, defaultJumpHost ?? null,
-     zoom.value !== undefined, zoom.value ?? null]
+     zoom.value !== undefined, zoom.value ?? null, coordsGiven]
   );
   if (!rows[0]) { res.status(404).json({ error: 'Site not found' }); return; }
   if (group.value !== undefined) groupsChanged();
