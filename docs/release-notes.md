@@ -9,6 +9,8 @@ shaped by people running MikroTik Manager on their own fleets.
 
 ## 1.0.19
 
+Released on Monday 16 November 2026.
+
 - **Device tools: Ping failed on RouterOS 6, and Traceroute showed no results**
   ([#460](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/460)). Ping asked for
   `/tool/ping`, which only RouterOS 7 has; it now uses `/ping`, which both have. Traceroute
