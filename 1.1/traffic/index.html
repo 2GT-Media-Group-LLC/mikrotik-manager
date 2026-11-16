@@ -1693,6 +1693,56 @@ clients behind it over the same range: each one's download, upload and share of 
 application's traffic, busiest first, up to 50 (from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s</p>
 <h1 id="366-selecting-a-client-opens-its-page-the-charts-folded-other-slice-is-several">366). Selecting a client opens its page. The chart's folded <strong>Other</strong> slice is several<a class="headerlink" href="#366-selecting-a-client-opens-its-page-the-charts-folded-other-slice-is-several" title="Permanent link">&para;</a></h1>
 <p>applications together, so it doesn't open a list; the applications in it do, from the list.</p>
+<h3 id="where-traffic-goes">Where traffic goes<a class="headerlink" href="#where-traffic-goes" title="Permanent link">&para;</a></h3>
+<p>Each application's card has a second tab, <strong>Where it goes</strong>: the remote addresses that carried
+it, busiest first (#366). Below the applications, <strong>Top destinations</strong> does the same for all of
+the site's traffic; click one to see which clients used it. On a client's row, <strong>Where to</strong> lists
+that client's destinations for the application, and a client's page has <strong>Where it goes</strong> under
+its traffic.</p>
+<p>Each address is named by the organisation that owns it (Google, Telegram, Cloudflare...), with
+its country, AS number and reverse DNS name. Private, CGNAT and multicast addresses say so
+instead. The names come from the <a href="https://iptoasn.com">iptoasn.com</a> list (public domain): a copy
+is built into each release, and a newer one is downloaded weekly unless <strong>Settings → Dark Site
+Mode</strong> turns that off. An organisation is who owns the address, not always the service: a CDN
+such as Cloudflare or Akamai carries many sites. The name the client actually looked up comes from
+the sources under <a href="#names-for-addresses">Names for addresses</a>.</p>
+<p>To keep it small, each client keeps its busiest 20 addresses per application in each minute,
+counted by the hour; the rest are added together and shown as a total under the list. Only
+traffic between a client and an address outside the network is counted.</p>
+<h3 id="names-looked-up-adguard-home-and-pi-hole">Names looked up (AdGuard Home and Pi-hole)<a class="headerlink" href="#names-looked-up-adguard-home-and-pi-hole" title="Permanent link">&para;</a></h3>
+<p>NetFlow carries addresses, not names. Add the servers that answer a site's DNS under
+<strong>Settings → DNS Query Log</strong> (fleet admins): AdGuard Home or Pi-hole (version 6 or later), with
+the site whose clients use it, its web address and login. Add every one of them: two resolvers
+sharing the load each see their own part of the lookups, and the counts add up. <strong>Test</strong> checks
+the address and login first. MikroTik Manager then reads each query log every minute and keeps
+how often each client looked up each name, per hour, and how many of those were blocked.</p>
+<p>Then the <strong>DNS</strong> application has a <strong>Names looked up</strong> tab, each client's row under it shows
+that client's lookups, and a client's page has <strong>Names looked up</strong>.</p>
+<p>The servers see clients by address, so lookups are matched to clients through the addresses
+MikroTik Manager knows for them in that site. A client behind another NAT, or using a different
+resolver, isn't covered. Lookups the server makes itself (Pi-hole naming its clients) aren't
+counted. Passwords are stored encrypted, and changing the address or turning off the
+certificate check needs the password typed again, so a saved one is never sent to a server it
+wasn't saved for. Pi-hole logs in with a password alone; with two-factor login on, use an app
+password from Pi-hole's settings. The servers' own logs aren't copied, only the counts.</p>
+<h3 id="names-for-addresses">Names for addresses<a class="headerlink" href="#names-for-addresses" title="Permanent link">&para;</a></h3>
+<p>Destinations, <a href="../firewall-events/">Firewall Logs</a> (with names on) and Sessions show the name
+behind an address, from the best source there is:</p>
+<ol>
+<li><strong>AdGuard Home's answers:</strong> AdGuard logs the addresses each name answered with, so a
+   destination gets the domain the client asked for (<code>www.youtube.com</code> rather than just Google).
+   Pi-hole doesn't log answers.</li>
+<li><strong>Routers' DNS caches:</strong> a router that answers DNS for its network (<strong>IP &gt; DNS &gt; Allow Remote
+   Requests</strong>) holds the names it resolved and their addresses. MikroTik Manager reads the cache
+   of those routers every fast poll and names each address by the name that was asked, following
+   CNAMEs back (<code>www.netflix.com</code>, not <code>ftl-www.netflix.com</code>). This covers Pi-hole, or any
+   resolver that forwards to the router, but isn't per client. Switch it off under <strong>Settings →
+   Polling → Collectors</strong>.</li>
+<li><strong>Reverse DNS</strong> from the manager's own resolver, which for a CDN often names the server
+   rather than the site.</li>
+</ol>
+<p>A shared address (a CDN serving many sites) can carry several names; the most recent are shown.
+Names are kept for the days set for DNS lookups under <strong>Settings → General → Data Retention</strong>.</p>
 <p>With a site selected, every view shows that site's traffic only, and accounts limited to
 particular sites see only theirs. <strong>Flow Sources &amp; Data Health</strong> lists that site's exporting
 devices too; its packet and attribution counts are the collector's own and cover every site.
@@ -1706,7 +1756,7 @@ what it is: anything on 443 reads as HTTPS whether or not it is a browser.</p>
 <p>Each chart remembers the time range you last picked, in this browser, rather than going back to
 its default (#331). That goes for the charts on device, client and port pages too.</p>
 <h2 id="retention">Retention<a class="headerlink" href="#retention" title="Permanent link">&para;</a></h2>
-<p>Two settings, both in <strong>Settings</strong>:</p>
+<p>Four settings, under <strong>Settings → General → Data Retention</strong>:</p>
 <table>
 <thead>
 <tr>
@@ -1725,6 +1775,16 @@ its default (#331). That goes for the charts on device, client and port pages to
 <td><code>netflow_daily_retention_days</code></td>
 <td>365</td>
 <td>Daily per-client rollups</td>
+</tr>
+<tr>
+<td><code>retention_destinations_days</code></td>
+<td>7</td>
+<td>Where traffic goes: per client, application and remote address, by hour</td>
+</tr>
+<tr>
+<td><code>retention_dns_days</code></td>
+<td>7</td>
+<td>Lookup counts and answers from AdGuard Home and Pi-hole, and names from routers' DNS caches</td>
 </tr>
 </tbody>
 </table>

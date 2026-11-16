@@ -1205,6 +1205,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="WireGuard">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#client-config-and-qr-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client config and QR code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1766,6 +1783,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="WireGuard">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#client-config-and-qr-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client config and QR code
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2010,6 +2044,24 @@ platform.</p>
 <p>Every device in the site that has WireGuard gets its own card. Devices without it are listed
 underneath; <strong>Show / add interface</strong> opens a card for one so an interface can be added.</p>
 <p>A peer's persistent keepalive is in seconds; leave it empty to turn keepalive off.</p>
+<h3 id="client-config-and-qr-code">Client config and QR code<a class="headerlink" href="#client-config-and-qr-code" title="Permanent link">&para;</a></h3>
+<p><strong>View</strong> (the eye) on a peer shows the client's <code>.conf</code> and a QR code to scan into the WireGuard
+app, when the router keeps the client's private key for that peer. Peers made with WinBox's
+WireGuard wizard do, and so do peers made here with <strong>Generate a client key pair now</strong> (#444):</p>
+<ul>
+<li>The key pair is made in your browser. The public key goes into the peer, and the private key
+  is saved on the router with the client's address, DNS and endpoint, as WinBox does. Anyone who
+  can read the router's configuration can read it.</li>
+<li><strong>Client endpoint host</strong> is where the client reaches this router. It starts as the management
+  address, which is often not the address the client should use, so check it. The router's
+  listen port is added unless you give one.</li>
+<li><strong>Client allowed IPs</strong> is what the client sends through the tunnel. Narrowing it from the
+  full tunnel needs RouterOS 7.21 or later.</li>
+<li>Turning it on when editing a peer replaces the peer's key, so the client using the old one
+  needs the new config.</li>
+</ul>
+<p>A peer whose private key isn't on the router has no config to show; View says so. Operators and
+admins see View; read-only accounts never receive private keys.</p>
 <h2 id="routing">Routing<a class="headerlink" href="#routing" title="Permanent link">&para;</a></h2>
 <p><strong>Network Services → Routing</strong> lists every BGP peer and OSPF neighbour across the fleet, or the
 selected site (#279): the device, the peer's address, AS or router ID, whether it's up, how long

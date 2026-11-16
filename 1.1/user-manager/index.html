@@ -1225,6 +1225,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#users" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Users
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8021x-with-user-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        802.1X with User Manager
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#limits" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1597,6 +1619,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#users" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Users
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8021x-with-user-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        802.1X with User Manager
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#limits" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1659,16 +1703,34 @@ it holds is copied into the manager's database.</p>
 </ul>
 <p><strong>Passwords and secrets never leave the server.</strong> User passwords, OTP secrets and the
 shared secrets of the devices are left out of every read, on the backend, whatever
-RouterOS returns.</p>
+RouterOS returns. Edits write them and never read them back.</p>
 <h2 id="clearing-a-stuck-session">Clearing a stuck session<a class="headerlink" href="#clearing-a-stuck-session" title="Permanent link">&para;</a></h2>
 <p>A session stays open in User Manager when the device never reports the logout (it
 rebooted, or lost contact). For a user allowed only one session, that blocks the next
 login. <strong>Clear</strong> on the session removes the record from User Manager. It doesn't log
 anyone off the device itself. It needs operator access or above.</p>
+<h2 id="users">Users<a class="headerlink" href="#users" title="Permanent link">&para;</a></h2>
+<p>Admins (of the server's site) can add, edit, disable and remove users (#360): username,
+password, group, how many sessions at once, a comment, and RADIUS attributes. Passwords are
+written to the server and never read back; leave the field empty when editing to keep it.</p>
+<p><strong>VLAN for 802.1X</strong> puts the user in a VLAN when they log in on an 802.1X port: it sets the three
+attributes RouterOS's 802.1X reads (<code>Tunnel-Type:13</code>, <code>Tunnel-Medium-Type:6</code>,
+<code>Tunnel-Private-Group-ID:&lt;vlan&gt;</code>) alongside any others you give.</p>
+<h2 id="8021x-with-user-manager">802.1X with User Manager<a class="headerlink" href="#8021x-with-user-manager" title="Permanent link">&para;</a></h2>
+<p><strong>Use for a switch's 802.1X</strong>, under the devices that authenticate against it, links a managed
+switch or router in one step. A new random shared secret is set on both ends:</p>
+<ul>
+<li>User Manager accepts the switch, at its management address unless you give another. A
+  switch already listed at that address gets the new secret.</li>
+<li>The switch gets a RADIUS server for 802.1X at User Manager's management address (or the one
+  you give), or its existing entry there takes the new secret. This runs under Change Guard.</li>
+</ul>
+<p>Then turn 802.1X on for the switch's ports on its <a href="../devices/#8021x">802.1X tab</a>. Give each
+address as the other end sees it: when the switch reaches User Manager through NAT or another
+interface, enter that address.</p>
 <h2 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Read-only apart from clearing sessions. Adding, disabling or editing users is not
-  offered yet.</li>
+<li>Groups and their attributes are read-only here; edit them in RouterOS.</li>
 <li>Failed logins aren't shown here: User Manager doesn't keep them as session records, only
   in the server's log.</li>
 </ul>

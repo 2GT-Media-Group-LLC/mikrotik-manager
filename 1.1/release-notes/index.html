@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta58" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.58
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta57" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2134,6 +2145,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta58" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.58
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta57" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2772,6 +2794,37 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta58">1.1.0-beta.58<a class="headerlink" href="#110-beta58" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Traffic: where it goes, and the names behind it</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/366">#366</a>, steps 2 and 3).
+  An application's card has <strong>Where it goes</strong>, the Traffic page has <strong>Top destinations</strong>, and a
+  client's page lists its own. Each address is named by the organisation that owns it, with its
+  country and reverse DNS name, from a list built into each release and refreshed weekly unless
+  Dark Site Mode turns that off. Add your AdGuard Home and Pi-hole servers (as many as share a
+  site's DNS) under <strong>Settings → DNS Query Log</strong> to see the names each client looked up and which
+  were blocked. Destinations, Firewall Logs and Sessions show the name behind each address, from
+  AdGuard Home's answers or the DNS cache of routers that answer DNS. See
+  <a href="../traffic/#where-traffic-goes">Traffic</a>. Thanks to aziz for the request.</li>
+<li><strong>WireGuard: a peer's client config and QR code</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/444">#444</a>, PR #445 by
+  <a href="https://github.com/Lithiuhm">@Lithiuhm</a>). <strong>View</strong> on a peer shows the <code>.conf</code> and a QR code
+  when the router keeps the client's key, as WinBox's wizard does, and <strong>Add Peer</strong> can generate a
+  key pair to do the same. See <a href="../network-services/#client-config-and-qr-code">Network services</a>.</li>
+<li><strong>802.1X, with User Manager</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/360">#360</a>). Switches and
+  routers have an <strong>802.1X</strong> tab: ports that authenticate (802.1X and MAC, with guest, reject
+  and server-down VLANs), who's authenticated now, RADIUS servers, and a supplicant for an
+  uplink, all under Change Guard. User Manager can now add and edit users, with a VLAN for
+  802.1X, and link a switch to itself in one step with a fresh shared secret on both ends. See
+  <a href="../devices/#8021x">Devices</a> and <a href="../user-manager/#8021x-with-user-manager">User Manager</a>.
+  Thanks to Ron for the request.</li>
+<li><strong>Zone presets</strong> (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/330">#330</a>).
+  Setting up zones can start from a preset: home or small office, an office with a guest
+  network, a management network, or servers in a DMZ. See <a href="../devices/#turning-zones-on">Zones</a>.
+  Thanks to Ron for the idea.</li>
+<li>Dependency updates (Dependabot #450 and #452 to #459).</li>
+</ul>
 <h2 id="110-beta57">1.1.0-beta.57<a class="headerlink" href="#110-beta57" title="Permanent link">&para;</a></h2>
 <p>Security fixes, reported by <a href="https://github.com/davidcoulson">@davidcoulson</a>; update as soon as
 you can.</p>

@@ -956,6 +956,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#8021x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        802.1X
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#routing-between-vlans-in-hardware" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2498,6 +2509,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#8021x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        802.1X
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#routing-between-vlans-in-hardware" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3315,6 +3337,42 @@ defaults: LAN reaches everything, WAN only gets ping to the router.</p>
 interfaces in zones: a bridge, a VLAN interface, the WAN port. The firewall sees routed traffic on
 the bridge, not on its ports, so a zone made of bridge ports gets a warning. So does an interface
 with an address that's in no zone, since nothing reaches the router or another zone through it.</p>
+<p><strong>Start from a preset</strong> (#330) lays out the zones and matrix for a common network, and replaces
+whatever the form held:</p>
+<table>
+<thead>
+<tr>
+<th>Preset</th>
+<th>Zones</th>
+<th>What it allows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Home or small office</td>
+<td>LAN, WAN</td>
+<td>LAN reaches everything; WAN gets ping to the router</td>
+</tr>
+<tr>
+<td>Office with a guest network</td>
+<td>LAN, GUEST, WAN</td>
+<td>Guests get the internet and the router's DNS and DHCP, not the LAN or each other</td>
+</tr>
+<tr>
+<td>Management network</td>
+<td>MGMT, LAN, GUEST, WAN</td>
+<td>Only MGMT manages the router and reaches every zone; LAN and guests get the internet and DNS, DHCP (and NTP for LAN) from the router</td>
+</tr>
+<tr>
+<td>Servers in a DMZ</td>
+<td>LAN, DMZ, WAN</td>
+<td>WAN reaches the DMZ on web ports only (add a port forward per server); the DMZ can't reach the LAN</td>
+</tr>
+</tbody>
+</table>
+<p>A zone named like an interface list already on the device keeps that list's interfaces; the
+others start empty, for you to fill. Then check the cells, and nothing is sent until you turn
+zones on or apply.</p>
 <p>As you change the matrix, the form shows what applying will do: the lists and members it changes,
 and how many rules it adds, removes and keeps. <strong>Show the rules</strong> lists them all.</p>
 <h3 id="the-rules">The rules<a class="headerlink" href="#the-rules" title="Permanent link">&para;</a></h3>
@@ -3581,6 +3639,28 @@ auto-revert required; turning that bridge off is predicted as a lockout and asks
   from the device when the tab opens.</li>
 </ul>
 <p>On the bridge or port the manager connects through, these run with auto-revert required.</p>
+<h2 id="8021x">802.1X<a class="headerlink" href="#8021x" title="Permanent link">&para;</a></h2>
+<p>Switches and routers have an <strong>802.1X</strong> tab (#360) for port authentication: a port with 802.1X
+passes nothing until a device on it authenticates against a RADIUS server, such as
+<a href="../user-manager/#8021x-with-user-manager">User Manager</a>.</p>
+<ul>
+<li><strong>Ports that authenticate:</strong> turn 802.1X on for a port, with 802.1X, MAC authentication or
+  both (MAC is tried after three unanswered 802.1X attempts). A port can put devices in a
+  <strong>guest VLAN</strong> when they don't do 802.1X (only with 802.1X alone, as RouterOS requires), a
+  <strong>reject VLAN</strong> when RADIUS says no, and a <strong>server down VLAN</strong> when RADIUS doesn't answer.
+  These, and VLANs RADIUS assigns, need VLAN filtering on the bridge. Each port shows its
+  state: authorized, un-authorized, rejected or down.</li>
+<li><strong>Authenticated now:</strong> each device that's in, with its MAC, user, how it got in (802.1X, MAC,
+  or one of the fallback VLANs) and its VLAN.</li>
+<li><strong>RADIUS servers:</strong> the servers this device asks for 802.1X. Shared secrets are never shown;
+  leave the field empty when editing to keep the one there.</li>
+<li><strong>This device authenticating upstream:</strong> a supplicant on an uplink into a switch that requires
+  802.1X, with its EAP methods, identity and password or client certificate.</li>
+</ul>
+<p>Turning 802.1X on blocks a port until something authenticates, and a refused supplicant loses
+its uplink. Both run under Change Guard: on the port the device is managed through, it asks
+first and arms auto-revert. <strong>Review changes</strong> shows the RouterOS commands before they're sent.
+RouterOS has no 802.1X on SMIPS devices (hAP lite, hAP mini); the tab says so there.</p>
 <h2 id="routing-between-vlans-in-hardware">Routing between VLANs in hardware<a class="headerlink" href="#routing-between-vlans-in-hardware" title="Permanent link">&para;</a></h2>
 <p>On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),
 the <strong>VLANs</strong> tab has an <strong>L3 hardware offloading</strong> card (#254). It shows:</p>

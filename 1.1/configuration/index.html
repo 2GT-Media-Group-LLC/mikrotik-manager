@@ -2717,6 +2717,11 @@ turned off individually. All are <strong>on</strong> by default.</p>
 <td>The vendor list is not refreshed; an existing copy is still used</td>
 </tr>
 <tr>
+<td>IP owner database download</td>
+<td><code>iptoasn.com</code></td>
+<td>Traffic destinations are named from the copy built into the release, which ages until the next update</td>
+</tr>
+<tr>
 <td>RouterOS vulnerability list</td>
 <td><code>services.nvd.nist.gov</code>, <code>www.cisa.gov</code></td>
 <td>The Security page doesn't list known CVEs for the fleet's versions</td>
@@ -2728,7 +2733,7 @@ turned off individually. All are <strong>on</strong> by default.</p>
 </tr>
 </tbody>
 </table>
-<p>Alert channels — Slack, Discord, Telegram, ntfy, webhooks — are not listed. They send only
+<p>Alert channels (Slack, Discord, Telegram, ntfy, webhooks) and AdGuard Home sources are not listed. They send only
 when a destination has been configured, so leaving them unconfigured is already the off switch.</p>
 <p>The daily RouterOS check is the one that is easy to miss when auditing a firewall: the request
 comes from each MikroTik device, not from the manager's host.</p>
