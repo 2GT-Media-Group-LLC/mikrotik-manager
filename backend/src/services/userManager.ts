@@ -91,3 +91,39 @@ export async function removeSession(device: DeviceRow, id: string): Promise<void
     await c.commandRunner().execute('/user-manager/session/remove', { numbers: id });
   });
 }
+
+// ─── Writes (#360) ───────────────────────────────────────────────────────────
+
+/** Add a user, or change one (`id`); fields are RouterOS names (parseUmUser). */
+export async function saveUser(device: DeviceRow, id: string | null, fields: Record<string, string>): Promise<void> {
+  await withCollector(device, async (c) => {
+    const run = c.commandRunner();
+    if (id) await run.execute('/user-manager/user/set', { numbers: id, ...fields });
+    else await run.execute('/user-manager/user/add', fields);
+  });
+}
+
+export async function removeUser(device: DeviceRow, id: string): Promise<void> {
+  await withCollector(device, async (c) => {
+    await c.commandRunner().execute('/user-manager/user/remove', { numbers: id });
+  });
+}
+
+/**
+ * Make sure User Manager accepts RADIUS requests from `address` with `secret`:
+ * the router entry at that address gets the new secret, or one is added.
+ * Returns whether it was added.
+ */
+export async function upsertRouter(device: DeviceRow, name: string, address: string, secret: string): Promise<'added' | 'updated'> {
+  return withCollector(device, async (c) => {
+    const run = c.commandRunner();
+    const routers = await run.execute('/user-manager/router/print', { detail: '' });
+    const existing = routers.find((r) => (r['address'] || '').split('/')[0] === address);
+    if (existing?.['.id']) {
+      await run.execute('/user-manager/router/set', { numbers: existing['.id'], 'shared-secret': secret });
+      return 'updated';
+    }
+    await run.execute('/user-manager/router/add', { name: name.slice(0, 64), address, 'shared-secret': secret });
+    return 'added';
+  });
+}

@@ -93,6 +93,8 @@ import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchV
 import { ipAddressEdit } from '../utils/ipAddressEdit';
 import { parseBgpConnection } from '../utils/bgpConnection';
 import { parseBridgeCreate, parseBridgeUpdate, parseBridgePortUpdate, bridgeMtuProblem } from '../utils/bridgeEdit';
+import { parseDot1xServer, parseDot1xClient, parseRadius } from '../utils/dot1xEdit';
+import { isItemId } from '../utils/userManager';
 import { bridgesView } from '../utils/bridgesView';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
@@ -4141,6 +4143,100 @@ router.put('/:id/bridge-ports/:iface', requireWrite, async (req, res) => {
     },
     async (c) => { await c.updateBridgePort(iface, f); return { message: `Bridge port ${iface} updated` }; },
     async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); });
+});
+
+// ─── 802.1X (#360) ───────────────────────────────────────────────────────────
+
+/** A RouterOS row without its secret: whether there is one, never the value. */
+function withoutSecret(row: Record<string, string>, key: 'password' | 'secret'): Record<string, string | boolean> {
+  const out: Record<string, string | boolean> = {};
+  for (const [k, v] of Object.entries(row)) if (k !== key) out[k] = v;
+  out[`has_${key}`] = !!row[key];
+  return out;
+}
+
+// GET /api/devices/:id/dot1x — authenticators, port states, who's authenticated,
+// supplicants and RADIUS servers. Passwords and shared secrets are never returned.
+router.get('/:id/dot1x', async (req, res) => {
+  const device = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
+  if (!device) return res.status(404).json({ error: 'Device not found' });
+  const c = new DeviceCollector(device);
+  try {
+    await c.connect();
+    const d = await c.getDot1x();
+    res.json({
+      supported: d.supported, servers: d.servers, state: d.state, active: d.active,
+      clients: d.clients.map((r) => withoutSecret(r, 'password')),
+      radius: d.radius.map((r) => withoutSecret(r, 'secret')),
+    });
+  } catch (e) {
+    res.status(502).json({ error: `Couldn't read 802.1X on ${device.name.trim()}: ${(e as Error).message}` });
+  } finally {
+    c.disconnect();
+  }
+});
+
+const DOT1X_MENUS = {
+  servers: { menu: '/interface/dot1x/server', kind: 'dot1x.server', parse: parseDot1xServer, noun: '802.1X on' },
+  clients: { menu: '/interface/dot1x/client', kind: 'dot1x.client', parse: parseDot1xClient, noun: '802.1X supplicant on' },
+  radius: { menu: '/radius', kind: 'radius.set', parse: parseRadius, noun: 'RADIUS server' },
+} as const;
+type Dot1xMenu = keyof typeof DOT1X_MENUS;
+const isDot1xMenu = (m: string): m is Dot1xMenu => m === 'servers' || m === 'clients' || m === 'radius';
+
+/**
+ * What a change to an authenticator or supplicant can do to the way in: a port
+ * with 802.1X on drops everything until a client authenticates, and a
+ * supplicant that's refused upstream loses its uplink. Flagged on the port, so
+ * Change Guard asks for auto-revert when it's the management path.
+ */
+function dot1xChange(menu: Dot1xMenu, iface: string | undefined, what: string): PlannedChange | undefined {
+  if (menu === 'radius' || !iface) return undefined;
+  return { kind: 'path-object.change', name: iface, what };
+}
+
+// POST /api/devices/:id/dot1x/:menu — add an authenticator, supplicant or RADIUS server.
+router.post('/:id/dot1x/:menu', requireWrite, async (req, res) => {
+  const menu = String(req.params.menu);
+  if (!isDot1xMenu(menu)) return res.status(404).json({ error: 'Not found' });
+  const m = DOT1X_MENUS[menu];
+  const p = m.parse(req.body ?? {}, true);
+  if ('error' in p) return res.status(400).json({ error: p.error, field: p.field });
+  const label = menu === 'radius' ? `${m.noun} ${p.fields.address}` : `${m.noun} ${p.fields.interface}`;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: m.kind, summary: `Add ${label}`, change: dot1xChange(menu, p.fields.interface, 'Turning on 802.1X, which blocks the port until a client authenticates') },
+    async (c) => { await c.addMenuItem(m.menu, p.fields); return { message: `Added ${label}` }; });
+});
+
+// PUT /api/devices/:id/dot1x/:menu/:rid — change one. The port it's on is sent
+// with it (body.interface), so the change can be flagged on the right port.
+router.put('/:id/dot1x/:menu/:rid', requireWrite, async (req, res) => {
+  const menu = String(req.params.menu);
+  const rid = String(req.params.rid);
+  if (!isDot1xMenu(menu)) return res.status(404).json({ error: 'Not found' });
+  if (!isItemId(rid)) return res.status(400).json({ error: 'That isn’t an item id' });
+  const m = DOT1X_MENUS[menu];
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  if (menu !== 'radius' && typeof body.interface !== 'string') return res.status(400).json({ error: 'Send the port it’s on as interface.', field: 'interface' });
+  const p = m.parse(body, false);
+  if ('error' in p) return res.status(400).json({ error: p.error, field: p.field });
+  const label = menu === 'radius' ? m.noun : `${m.noun} ${String(body.interface)}`;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: m.kind, summary: `Change ${label}`, change: dot1xChange(menu, body.interface as string | undefined, 'Changing 802.1X on the port') },
+    async (c) => { await c.setMenuItem(m.menu, rid, p.fields); return { message: `Changed ${label}` }; });
+});
+
+// DELETE /api/devices/:id/dot1x/:menu/:rid?interface=ether5
+router.delete('/:id/dot1x/:menu/:rid', requireWrite, async (req, res) => {
+  const menu = String(req.params.menu);
+  const rid = String(req.params.rid);
+  if (!isDot1xMenu(menu)) return res.status(404).json({ error: 'Not found' });
+  if (!isItemId(rid)) return res.status(400).json({ error: 'That isn’t an item id' });
+  const m = DOT1X_MENUS[menu];
+  const iface = typeof req.query.interface === 'string' && IFACE_NAME.test(req.query.interface) ? req.query.interface : undefined;
+  await withGuardedChange(req.params.id, req, res,
+    { kind: m.kind, summary: `Remove ${m.noun}${iface ? ` ${iface}` : ''}`, change: dot1xChange(menu, iface, 'Removing 802.1X from the port') },
+    async (c) => { await c.removeMenuItem(m.menu, rid); return { message: 'Removed' }; });
 });
 
 router.delete('/:id/bridges/:bridgeName', requireWrite, async (req, res) => {

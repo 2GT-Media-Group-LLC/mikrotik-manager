@@ -81,3 +81,61 @@ export function matchNasToDevices(
   }
   return out;
 }
+
+// ─── Writes (#360) ───────────────────────────────────────────────────────────
+
+const PRINTABLE_ONE_LINE = (v: string) => ![...v].some((c) => c.charCodeAt(0) < 32);
+
+/** A user as an admin edits it: RouterOS fields, or what's wrong. */
+export function parseUmUser(body: Record<string, unknown>, adding: boolean, opts: {
+  isSealed: (v: unknown) => boolean;
+  withVlanAttributes: (existing: string, vlan: number | null) => string;
+}): { fields: Record<string, string> } | { error: string; field: string } {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+  const f: Record<string, string> = {};
+  if (adding || has('name')) {
+    const n = body.name;
+    if (typeof n !== 'string' || !n.trim() || n.length > 64 || !PRINTABLE_ONE_LINE(n)) return { error: 'The username is 1 to 64 characters.', field: 'name' };
+    f.name = n.trim();
+  }
+  if (adding || (has('password') && body.password !== '')) {
+    const p = body.password;
+    if (typeof p !== 'string' || !p || p.length > 128) return { error: 'Enter a password, up to 128 characters.', field: 'password' };
+    if (opts.isSealed(p)) return { error: 'Enter the password itself.', field: 'password' };
+    f.password = p;
+  }
+  if (has('group')) {
+    const g = body.group;
+    if (typeof g !== 'string' || !g || g.length > 64 || !PRINTABLE_ONE_LINE(g)) return { error: 'Choose a group.', field: 'group' };
+    f.group = g;
+  }
+  if (has('shared_users')) {
+    const n = body.shared_users;
+    if (!Number.isInteger(n) || (n as number) < 1 || (n as number) > 1000) return { error: 'Sessions at once is 1 to 1000.', field: 'shared_users' };
+    f['shared-users'] = String(n);
+  }
+  if (has('attributes') || has('vlan_id')) {
+    const a = body.attributes === undefined || body.attributes === null ? '' : body.attributes;
+    if (typeof a !== 'string' || a.length > 1000 || !PRINTABLE_ONE_LINE(a)
+      || a.split(',').map((s) => s.trim()).filter(Boolean).some((x) => !/^[A-Za-z][A-Za-z0-9-]*:.+$/.test(x))) {
+      return { error: 'Attributes are Name:value pairs separated by commas.', field: 'attributes' };
+    }
+    let vlan: number | null = null;
+    if (body.vlan_id !== undefined && body.vlan_id !== null) {
+      if (!Number.isInteger(body.vlan_id) || (body.vlan_id as number) < 1 || (body.vlan_id as number) > 4094) return { error: 'A VLAN ID is 1 to 4094.', field: 'vlan_id' };
+      vlan = body.vlan_id as number;
+    }
+    f.attributes = opts.withVlanAttributes(a, vlan);
+  }
+  if (has('disabled')) {
+    if (typeof body.disabled !== 'boolean') return { error: 'disabled is true or false.', field: 'disabled' };
+    f.disabled = body.disabled ? 'yes' : 'no';
+  }
+  if (has('comment')) {
+    const c = body.comment;
+    if (typeof c !== 'string' || c.length > 255 || !PRINTABLE_ONE_LINE(c)) return { error: 'The comment is up to 255 characters on one line.', field: 'comment' };
+    f.comment = c;
+  }
+  if (Object.keys(f).length === 0) return { error: 'Nothing to change.', field: '' };
+  return { fields: f };
+}

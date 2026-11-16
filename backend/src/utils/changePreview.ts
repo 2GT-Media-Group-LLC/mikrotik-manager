@@ -197,6 +197,8 @@ const PREVIEWABLE: [string, RegExp][] = [
   ['PUT', /^\/api\/devices\/\d+\/bridge\/[^/]+\/vlan-filtering$/],
   ['POST|PUT', /^\/api\/devices\/\d+\/bridges(\/[^/]+)?$/],
   ['PUT', /^\/api\/devices\/\d+\/bridge-ports\/[^/]+$/],
+  // 802.1X authenticators, supplicants and RADIUS servers (#360).
+  ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/dot1x\/(servers|clients|radius)(\/\*[0-9A-Fa-f]+)?$/],
   ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/switch-vlans(\/[^/]+)?$/],
   ['POST|PUT|DELETE', /^\/api\/devices\/\d+\/vlan-interfaces(\/[^/]+)?$/],
   ['PUT', /^\/api\/devices\/\d+\/switch-ports\/[^/]+\/vlan$/],

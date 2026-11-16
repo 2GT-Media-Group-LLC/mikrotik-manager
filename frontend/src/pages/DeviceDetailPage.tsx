@@ -35,12 +35,13 @@ import clsx from 'clsx';
 import { displayState, STATE_LABEL } from '../utils/deviceState';
 import DeviceHealthCard from '../components/device-detail/DeviceHealthCard';
 import BridgesTab from '../components/device-detail/BridgesTab';
+import Dot1xTab from '../components/device-detail/Dot1xTab';
 import PollingNote from '../components/device-detail/PollingNote';
 import { DeviceIdentityBanner } from '../components/security/IdentityChange';
 import { isWirelessDevice } from '../utils/wireless';
 import SshOnlyBanner from '../components/device-detail/SshOnlyBanner';
 
-type TabKey = 'overview' | 'ports' | 'bridges' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'firmware' | 'config-history' | 'hardware' | 'graphs' | 'tools' | 'radios' | 'alignment' | 'lte';
+type TabKey = 'overview' | 'ports' | 'bridges' | 'dot1x' | 'vlans' | 'routing' | 'firewall' | 'security' | 'queues' | 'connections' | 'config' | 'firmware' | 'config-history' | 'hardware' | 'graphs' | 'tools' | 'radios' | 'alignment' | 'lte';
 
 function formatUptime(raw: string): string {
   if (!raw) return '—';
@@ -69,7 +70,7 @@ export default function DeviceDetailPage() {
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const [searchParams, setSearchParams] = useSearchParams();
-  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'firmware', 'config-history', 'hardware', 'graphs', 'tools', 'radios', 'alignment', 'lte'];
+  const VALID_TABS: TabKey[] = ['overview', 'ports', 'bridges', 'dot1x', 'vlans', 'routing', 'firewall', 'security', 'queues', 'connections', 'config', 'firmware', 'config-history', 'hardware', 'graphs', 'tools', 'radios', 'alignment', 'lte'];
   const requestedTab = searchParams.get('tab') as TabKey | null;
   const [activeTab, setActiveTab] = useState<TabKey>(requestedTab && VALID_TABS.includes(requestedTab) ? requestedTab : 'overview');
   const [autoOpenBridge, setAutoOpenBridge] = useState<string | null>(null);
@@ -200,6 +201,8 @@ export default function DeviceDetailPage() {
     { key: 'ports', label: 'Ports' },
     { key: 'bridges', label: 'Bridges' },
     { key: 'vlans', label: 'VLANs' },
+    // Port authentication (#360): switches and routers, not access points or CPE.
+    ...(device.device_type === 'switch' || device.device_type === 'router' ? [{ key: 'dot1x' as TabKey, label: '802.1X' }] : []),
     { key: 'routing', label: 'Routing' },
     { key: 'firewall', label: 'Firewall' },
     { key: 'security', label: 'Security' },
@@ -570,6 +573,7 @@ export default function DeviceDetailPage() {
         <BridgesTab deviceId={deviceId} deviceName={device.name}
           onGoToPorts={(bridgeName) => { if (bridgeName) setAutoOpenBridge(bridgeName); setActiveTab('ports'); }} />
       )}
+      {shownTab === 'dot1x' && <Dot1xTab deviceId={deviceId} deviceName={device.name} canWrite={canWrite} />}
       {shownTab === 'routing' && <RoutingTab deviceId={deviceId} deviceName={device.name} />}
       {shownTab === 'firewall' && <FirewallTab deviceId={deviceId} deviceName={device.name} />}
       {shownTab === 'security' && <SecurityTab deviceId={deviceId} deviceName={device.name} onQuickRules={(family) => {

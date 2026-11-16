@@ -155,6 +155,26 @@ const MENUS = {
   ipv6FirewallNat: {
     path: '/ipv6/firewall/nat', mode: 'ordered', hasDynamic: true, readOnly: ['bytes', 'packets'],
   },
+  // 802.1X (#360). Passwords and shared secrets aren't printed, so a removed
+  // supplicant or RADIUS entry comes back without one; the rest is restored.
+  radius: {
+    path: '/radius', mode: 'keyed', addKeys: ['address', 'service'], fallback: true,
+    only: ['service', 'address', 'authentication-port', 'accounting-port', 'timeout', 'src-address', 'called-id',
+      'domain', 'realm', 'protocol', 'require-message-auth', 'disabled', 'comment'],
+    unsetIfAbsent: ['src-address'],
+  },
+  dot1xServer: {
+    path: '/interface/dot1x/server', mode: 'keyed', addKeys: ['interface'], hasDynamic: true, fallback: true,
+    only: ['interface', 'auth-types', 'accounting', 'interim-update', 'mac-auth-mode', 'radius-mac-format',
+      'auth-timeout', 'retrans-timeout', 'reauth-timeout', 'reauth-period', 'guest-vlan-id', 'reject-vlan-id',
+      'server-fail-vlan-id', 'disabled', 'comment'],
+    // 7.25 prints the re-authentication time as reauth-period (set as reauth-timeout).
+    unsetIfAbsent: ['reauth-period', 'guest-vlan-id', 'reject-vlan-id', 'server-fail-vlan-id'],
+  },
+  dot1xClient: {
+    path: '/interface/dot1x/client', mode: 'keyed', addKeys: ['interface', 'eap-methods'], fallback: true,
+    only: ['interface', 'eap-methods', 'identity', 'anon-identity', 'client-certificate', 'disabled', 'comment'],
+  },
 } satisfies Record<string, MenuDef>;
 
 export type MenuKey = keyof typeof MENUS;
@@ -178,6 +198,9 @@ const SCOPES: Record<string, MenuKey[]> = {
   'bridge.add': ['bridge'],
   'bridge.set': ['bridge'],
   'bridge-port.set': ['bridgePort'],
+  'dot1x.server': ['dot1xServer'],
+  'dot1x.client': ['dot1xClient'],
+  'radius.set': ['radius'],
   'interface.set': ['interface', 'ethernet', 'ethernetPoe'],
   'ip.add': ['ipAddress'],
   'ip.remove': ['ipAddress'],

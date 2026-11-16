@@ -7186,6 +7186,46 @@ export class DeviceCollector {
     await this.client.execute(cmd, { '.id': id });
   }
 
+  // 802.1X (#360) ─────────────────────────────────────────────────────────────
+
+  /**
+   * Everything the 802.1X tab shows: authenticators, each port's state, who is
+   * authenticated, supplicants, and the RADIUS servers asked. A menu RouterOS
+   * doesn't have (an SMIPS device) reads as empty, with `supported` false.
+   */
+  async getDot1x(): Promise<{
+    supported: boolean;
+    servers: Record<string, string>[]; state: Record<string, string>[]; active: Record<string, string>[];
+    clients: Record<string, string>[]; radius: Record<string, string>[];
+  }> {
+    const run = (cmd: string) => this.client.execute(cmd, { detail: '' });
+    let supported = true;
+    const servers = await run('/interface/dot1x/server/print').catch((e) => {
+      if (e instanceof RouterOSTrapError) supported = false;
+      return [] as Record<string, string>[];
+    });
+    const [state, active, clients, radius] = await Promise.all([
+      supported ? run('/interface/dot1x/server/state/print').catch(() => []) : [],
+      supported ? run('/interface/dot1x/server/active/print').catch(() => []) : [],
+      supported ? run('/interface/dot1x/client/print').catch(() => []) : [],
+      run('/radius/print').catch(() => []),
+    ]);
+    return { supported, servers, state, active, clients, radius };
+  }
+
+  async addMenuItem(menu: '/interface/dot1x/server' | '/interface/dot1x/client' | '/radius', fields: Record<string, string>): Promise<void> {
+    const entries = Object.entries(fields).filter(([k, v]) => ROS_PROPERTY.test(k) && v !== '');
+    await this.client.execute(`${menu}/add`, Object.fromEntries(entries));
+  }
+
+  async setMenuItem(menu: '/interface/dot1x/server' | '/interface/dot1x/client' | '/radius', id: string, fields: Record<string, string>): Promise<void> {
+    await this.setItem(menu, id, fields);
+  }
+
+  async removeMenuItem(menu: '/interface/dot1x/server' | '/interface/dot1x/client' | '/radius', id: string): Promise<void> {
+    await this.client.execute(`${menu}/remove`, { '.id': id });
+  }
+
   async getWireGuardPeers(): Promise<Record<string, string>[]> {
     // The API already returns a responder peer's stored private-key without
     // asking — show-sensitive is a CLI-only concept (and some RouterOS builds

@@ -95,6 +95,11 @@ describe('isPreviewableRoute', () => {
   it('accepts the edit forms', () => {
     expect(isPreviewableRoute('POST', '/api/devices/7/vlans')).toBe(true);
     expect(isPreviewableRoute('PUT', '/api/devices/7/bridge-ports/ether3')).toBe(true);
+    // 802.1X (#360)
+    expect(isPreviewableRoute('POST', '/api/devices/7/dot1x/servers')).toBe(true);
+    expect(isPreviewableRoute('PUT', '/api/devices/7/dot1x/radius/*1A')).toBe(true);
+    expect(isPreviewableRoute('DELETE', '/api/devices/7/dot1x/clients/*2?interface=ether1')).toBe(true);
+    expect(isPreviewableRoute('POST', '/api/devices/7/dot1x/other')).toBe(false);
     // PPP users and servers are config; disconnecting a session isn't (Discussion #85).
     expect(isPreviewableRoute('PUT', '/api/tunnels/ppp/user?deviceId=3')).toBe(true);
     expect(isPreviewableRoute('PUT', '/api/tunnels/ppp/server?deviceId=3')).toBe(true);

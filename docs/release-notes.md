@@ -18,6 +18,14 @@
   [@Lithiuhm](https://github.com/Lithiuhm)). **View** on a peer shows the `.conf` and a QR code
   when the router keeps the client's key, as WinBox's wizard does, and **Add Peer** can generate a
   key pair to do the same. See [Network services](network-services.md#client-config-and-qr-code).
+- **802.1X, with User Manager**
+  ([#360](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/360)). Switches and
+  routers have an **802.1X** tab: ports that authenticate (802.1X and MAC, with guest, reject
+  and server-down VLANs), who's authenticated now, RADIUS servers, and a supplicant for an
+  uplink, all under Change Guard. User Manager can now add and edit users, with a VLAN for
+  802.1X, and link a switch to itself in one step with a fresh shared secret on both ends. See
+  [Devices](devices.md#8021x) and [User Manager](user-manager.md#8021x-with-user-manager).
+  Thanks to Ron for the request.
 - Dependency updates (Dependabot #450 and #452 to #459).
 
 ## 1.1.0-beta.57

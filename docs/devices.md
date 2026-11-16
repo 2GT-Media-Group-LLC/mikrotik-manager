@@ -915,6 +915,30 @@ The bridge's **Edit** form and its ports cover 802.1ad Q-in-Q, tag stacking and 
 
 On the bridge or port the manager connects through, these run with auto-revert required.
 
+## 802.1X
+
+Switches and routers have an **802.1X** tab (#360) for port authentication: a port with 802.1X
+passes nothing until a device on it authenticates against a RADIUS server, such as
+[User Manager](user-manager.md#8021x-with-user-manager).
+
+- **Ports that authenticate:** turn 802.1X on for a port, with 802.1X, MAC authentication or
+  both (MAC is tried after three unanswered 802.1X attempts). A port can put devices in a
+  **guest VLAN** when they don't do 802.1X (only with 802.1X alone, as RouterOS requires), a
+  **reject VLAN** when RADIUS says no, and a **server down VLAN** when RADIUS doesn't answer.
+  These, and VLANs RADIUS assigns, need VLAN filtering on the bridge. Each port shows its
+  state: authorized, un-authorized, rejected or down.
+- **Authenticated now:** each device that's in, with its MAC, user, how it got in (802.1X, MAC,
+  or one of the fallback VLANs) and its VLAN.
+- **RADIUS servers:** the servers this device asks for 802.1X. Shared secrets are never shown;
+  leave the field empty when editing to keep the one there.
+- **This device authenticating upstream:** a supplicant on an uplink into a switch that requires
+  802.1X, with its EAP methods, identity and password or client certificate.
+
+Turning 802.1X on blocks a port until something authenticates, and a refused supplicant loses
+its uplink. Both run under Change Guard: on the port the device is managed through, it asks
+first and arms auto-revert. **Review changes** shows the RouterOS commands before they're sent.
+RouterOS has no 802.1X on SMIPS devices (hAP lite, hAP mini); the tab says so there.
+
 ## Routing between VLANs in hardware
 
 On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),

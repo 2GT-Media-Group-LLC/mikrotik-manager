@@ -1020,6 +1020,16 @@ export const devicesApi = {
     data: { name?: string; protocol_mode?: string; priority?: string; comment?: string; disabled?: boolean; mtu?: string; ether_type?: string; mvrp?: boolean }, confirmLockout = false) =>
     api.put(`/devices/${id}/bridges/${encodeURIComponent(bridgeName)}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
   /** Q-in-Q and MVRP on one bridge port (#449). */
+  /** 802.1X (#360): authenticators, port states, who's in, supplicants, RADIUS servers. */
+  getDot1x: (id: number) => api.get<Dot1xView>(`/devices/${id}/dot1x`),
+  addDot1x: (id: number, menu: Dot1xMenu, data: Record<string, unknown>, confirmLockout = false) =>
+    api.post(`/devices/${id}/dot1x/${menu}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
+  updateDot1x: (id: number, menu: Dot1xMenu, rid: string, data: Record<string, unknown>, confirmLockout = false) =>
+    api.put(`/devices/${id}/dot1x/${menu}/${rid}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
+  removeDot1x: (id: number, menu: Dot1xMenu, rid: string, iface?: string, confirmLockout = false) =>
+    api.delete(`/devices/${id}/dot1x/${menu}/${rid}`, {
+      ...GUARDED, params: { ...(iface ? { interface: iface } : {}), ...(confirmLockout ? { confirm_lockout: 'true' } : {}) },
+    }),
   updateBridgePort: (id: number, iface: string,
     data: { tag_stacking?: boolean; mvrp_applicant_state?: string; mvrp_registrar_state?: string }, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge-ports/${encodeURIComponent(iface)}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
@@ -3198,7 +3208,25 @@ export const userManagerApi = {
   get: (id: number) => api.get<UserManagerView>(`/user-manager/${id}`, { timeout: 45_000 }),
   removeSession: (id: number, sid: string) => api.post<{ ok: boolean }>(`/user-manager/${id}/sessions/${encodeURIComponent(sid)}/remove`),
   recheck: () => api.post<{ ok: boolean }>('/user-manager/recheck'),
+  /** Users (#360): a VLAN for 802.1X is set as vlan_id; password '' on an edit keeps it. */
+  addUser: (id: number, data: UmUserInput) => api.post(`/user-manager/${id}/users`, data),
+  updateUser: (id: number, uid: string, data: UmUserInput) => api.put(`/user-manager/${id}/users/${uid}`, data),
+  removeUser: (id: number, uid: string) => api.delete(`/user-manager/${id}/users/${uid}`),
+  /** Have a switch's 802.1X ask this server, with a new shared secret on both ends. */
+  linkDot1x: (id: number, data: { device_id: number; um_address?: string; nas_address?: string }, confirmLockout = false) =>
+    api.post<{ message?: string; guard?: unknown }>(`/user-manager/${id}/link-dot1x`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
 };
+
+export interface UmUserInput {
+  name?: string;
+  password?: string;
+  group?: string;
+  shared_users?: number;
+  attributes?: string;
+  vlan_id?: number | null;
+  disabled?: boolean;
+  comment?: string;
+}
 
 /** A client's firewall address lists on one router (#145). */
 export interface ClientAddressListView {
@@ -3625,3 +3653,15 @@ export const reverseProxyApi = {
   removeCert: (deviceId: number, sni: string, forget = false) =>
     api.delete<{ ok: boolean; message: string }>('/reverse-proxy/cert', rp(deviceId, { sni, ...(forget ? { forget: '1' } : {}) })),
 };
+
+// ─── 802.1X (#360) ───────────────────────────────────────────────────────────
+export type Dot1xMenu = 'servers' | 'clients' | 'radius';
+export interface Dot1xView {
+  /** false on devices without 802.1X (SMIPS: hAP lite, hAP mini). */
+  supported: boolean;
+  servers: Record<string, string>[];
+  state: Record<string, string>[];
+  active: Record<string, string>[];
+  clients: (Record<string, string | boolean> & { has_password: boolean })[];
+  radius: (Record<string, string | boolean> & { has_secret: boolean })[];
+}

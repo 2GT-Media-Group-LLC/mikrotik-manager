@@ -5,15 +5,22 @@
  *   GET  /api/user-manager/:id                  a live read of one (no passwords or secrets)
  *   POST /api/user-manager/:id/sessions/:sid/remove   clear a stuck session
  *   POST /api/user-manager/recheck              look for it again on the next slow poll
+ *   POST|PUT|DELETE /api/user-manager/:id/users[/:uid]   users, with a VLAN for 802.1X (#360)
+ *   POST /api/user-manager/:id/link-dot1x        a switch's 802.1X authenticates here (#360)
  */
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../config/database';
-import { requireAuth, requireWrite } from '../middleware/auth';
+import { requireAuth, requireWrite, requireSiteAdmin, isSiteScoped } from '../middleware/auth';
 import { activeSite } from '../middleware/site';
 import { siteScopeDevices } from '../utils/siteScope';
-import { deviceSiteAccess, deviceIdParam, guardIdParams } from '../utils/siteAccess';
-import { readUserManager, removeSession } from '../services/userManager';
-import { isItemId } from '../utils/userManager';
+import { deviceSiteAccess, deviceIdParam, guardIdParams, devicesDenied, strictId } from '../utils/siteAccess';
+import { readUserManager, removeSession, saveUser, removeUser, upsertRouter } from '../services/userManager';
+import { isItemId, parseUmUser } from '../utils/userManager';
+import { isSealed } from '../utils/sealed';
+import { withVlanAttributes, newSharedSecret } from '../utils/dot1xEdit';
+import { withGuardedChange } from '../services/changeGuard/guardedRoute';
+import { randomBytes } from 'crypto';
+import net from 'net';
 import type { DeviceRow } from '../services/mikrotik/DeviceCollector';
 import { RouterOSTrapError } from '../services/mikrotik/RouterOSClient';
 
@@ -73,6 +80,100 @@ router.post('/:id/sessions/:sid/remove', deviceSiteAccess(deviceIdParam), requir
     if (e instanceof RouterOSTrapError) return res.status(400).json({ error: `${d.name.trim()} refused: ${msg}` });
     res.status(502).json({ error: `Couldn’t reach ${d.name.trim()}: ${msg}` });
   }
+});
+
+// ─── Users and 802.1X (#360) ─────────────────────────────────────────────────
+// A User Manager user can be what a firewall or switch grants admin on, so
+// writing users is for admins of the server's site.
+
+function sendWriteError(res: Response, d: DeviceRow, e: unknown) {
+  const msg = (e as Error).message;
+  if (e instanceof RouterOSTrapError) return res.status(400).json({ error: `${d.name.trim()} refused: ${msg}` });
+  return res.status(502).json({ error: `Couldn’t reach ${d.name.trim()}: ${msg}` });
+}
+
+const userOpts = { isSealed, withVlanAttributes };
+
+router.post('/:id/users', deviceSiteAccess(deviceIdParam), requireSiteAdmin, async (req, res) => {
+  const p = parseUmUser(req.body ?? {}, true, userOpts);
+  if ('error' in p) return res.status(400).json({ error: p.error, field: p.field });
+  const d = await serverDevice(req, res);
+  if (!d) return;
+  try { await saveUser(d, null, p.fields); res.status(201).json({ ok: true }); } catch (e) { sendWriteError(res, d, e); }
+});
+
+router.put('/:id/users/:uid', deviceSiteAccess(deviceIdParam), requireSiteAdmin, async (req, res) => {
+  const uid = String(req.params.uid);
+  if (!isItemId(uid)) return res.status(400).json({ error: 'That isn’t a user id' });
+  const p = parseUmUser(req.body ?? {}, false, userOpts);
+  if ('error' in p) return res.status(400).json({ error: p.error, field: p.field });
+  const d = await serverDevice(req, res);
+  if (!d) return;
+  try { await saveUser(d, uid, p.fields); res.json({ ok: true }); } catch (e) { sendWriteError(res, d, e); }
+});
+
+router.delete('/:id/users/:uid', deviceSiteAccess(deviceIdParam), requireSiteAdmin, async (req, res) => {
+  const uid = String(req.params.uid);
+  if (!isItemId(uid)) return res.status(400).json({ error: 'That isn’t a user id' });
+  const d = await serverDevice(req, res);
+  if (!d) return;
+  try { await removeUser(d, uid); res.json({ ok: true }); } catch (e) { sendWriteError(res, d, e); }
+});
+
+/**
+ * POST /api/user-manager/:id/link-dot1x { device_id, um_address?, nas_address? }
+ *
+ * Have a switch's 802.1X ask this User Manager: a new shared secret is set on
+ * both ends. User Manager accepts the switch at `nas_address` (its management
+ * address unless given), and the switch gets a RADIUS entry for 802.1X at
+ * `um_address` (the server's management address unless given), or its
+ * existing one there takes the new secret. The switch side is a guarded change.
+ */
+router.post('/:id/link-dot1x', deviceSiteAccess(deviceIdParam), requireSiteAdmin, async (req, res) => {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const switchId = strictId(body.device_id);
+  if (!switchId) return res.status(400).json({ error: 'Choose the switch.', field: 'device_id' });
+  for (const k of ['um_address', 'nas_address']) {
+    if (body[k] !== undefined && body[k] !== '' && !(typeof body[k] === 'string' && net.isIP(body[k] as string))) {
+      return res.status(400).json({ error: 'That isn’t an IP address.', field: k });
+    }
+  }
+  const um = await serverDevice(req, res);
+  if (!um) return;
+  // Admin on the switch too: its RADIUS settings decide who gets onto its ports.
+  if (isSiteScoped(req.user) && (await devicesDenied(req.user!, [switchId], 'admin')).length > 0) {
+    return res.status(404).json({ error: 'Switch not found' });
+  }
+  const sw = await queryOne<DeviceRow>(`SELECT * FROM devices WHERE id = $1`, [switchId]);
+  if (!sw) return res.status(404).json({ error: 'Switch not found' });
+  const umAddress = (body.um_address as string) || um.ip_address;
+  const nasAddress = (body.nas_address as string) || sw.ip_address;
+  if (!net.isIP(umAddress) || !net.isIP(nasAddress)) {
+    return res.status(400).json({ error: 'Give the addresses as IP addresses: one of the devices is managed by name.', field: net.isIP(umAddress) ? 'nas_address' : 'um_address' });
+  }
+  const secret = newSharedSecret(randomBytes);
+  let umResult: 'added' | 'updated';
+  try {
+    umResult = await upsertRouter(um, sw.name.trim(), nasAddress, secret);
+  } catch (e) {
+    return sendWriteError(res, um, e);
+  }
+  await withGuardedChange(switchId, req, res,
+    { kind: 'radius.set', summary: `802.1X authenticates against User Manager on ${um.name.trim()} (${umAddress})` },
+    async (c) => {
+      const radius = (await c.getDot1x()).radius;
+      const there = radius.find((r) => (r['address'] || '') === umAddress);
+      if (there?.['.id']) {
+        const services = new Set((there['service'] || '').split(',').filter(Boolean));
+        services.add('dot1x');
+        await c.setMenuItem('/radius', there['.id'], { secret, service: [...services].join(',') });
+      } else {
+        await c.addMenuItem('/radius', { address: umAddress, service: 'dot1x', secret, comment: `User Manager on ${um.name.trim()}` });
+      }
+      return {
+        message: `${sw.name.trim()} now asks User Manager on ${um.name.trim()} for 802.1X (${umResult === 'added' ? 'added to' : 'secret changed in'} its RADIUS clients).`,
+      };
+    });
 });
 
 export default router;

@@ -37,7 +37,7 @@ it holds is copied into the manager's database.
 
 **Passwords and secrets never leave the server.** User passwords, OTP secrets and the
 shared secrets of the devices are left out of every read, on the backend, whatever
-RouterOS returns.
+RouterOS returns. Edits write them and never read them back.
 
 ## Clearing a stuck session
 
@@ -46,9 +46,32 @@ rebooted, or lost contact). For a user allowed only one session, that blocks the
 login. **Clear** on the session removes the record from User Manager. It doesn't log
 anyone off the device itself. It needs operator access or above.
 
+## Users
+
+Admins (of the server's site) can add, edit, disable and remove users (#360): username,
+password, group, how many sessions at once, a comment, and RADIUS attributes. Passwords are
+written to the server and never read back; leave the field empty when editing to keep it.
+
+**VLAN for 802.1X** puts the user in a VLAN when they log in on an 802.1X port: it sets the three
+attributes RouterOS's 802.1X reads (`Tunnel-Type:13`, `Tunnel-Medium-Type:6`,
+`Tunnel-Private-Group-ID:<vlan>`) alongside any others you give.
+
+## 802.1X with User Manager
+
+**Use for a switch's 802.1X**, under the devices that authenticate against it, links a managed
+switch or router in one step. A new random shared secret is set on both ends:
+
+- User Manager accepts the switch, at its management address unless you give another. A
+  switch already listed at that address gets the new secret.
+- The switch gets a RADIUS server for 802.1X at User Manager's management address (or the one
+  you give), or its existing entry there takes the new secret. This runs under Change Guard.
+
+Then turn 802.1X on for the switch's ports on its [802.1X tab](devices.md#8021x). Give each
+address as the other end sees it: when the switch reaches User Manager through NAT or another
+interface, enter that address.
+
 ## Limits
 
-- Read-only apart from clearing sessions. Adding, disabling or editing users is not
-  offered yet.
+- Groups and their attributes are read-only here; edit them in RouterOS.
 - Failed logins aren't shown here: User Manager doesn't keep them as session records, only
   in the server's log.
