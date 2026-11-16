@@ -2,7 +2,7 @@
  * Zone-based firewall (#369): the editor's draft, its checks and summaries.
  * The server checks the same things; these keep the form honest as you type.
  */
-import type { ZoneRequest, ZonePolicy, ZonesData, ZoneCustomService } from '../services/api';
+import type { ZoneRequest, ZonePolicy, ZonesData, ZoneCustomService, ZoneAction } from '../services/api';
 
 export const ROUTER = '@router';
 export const pairKey = (from: string, to: string) => `${from}>${to}`;
@@ -214,4 +214,89 @@ export function setPolicy(d: ZoneRequest, key: string, p: ZonePolicy): ZoneReque
   const policies = { ...d.config.policies };
   if (p.action === 'deny') delete policies[key]; else policies[key] = p;
   return { ...d, config: { ...d.config, policies } };
+}
+
+// ─── Presets (#330) ──────────────────────────────────────────────────────────
+
+type PresetPolicy = ZoneAction | string[];
+export interface ZonePreset {
+  key: string;
+  label: string;
+  description: string;
+  zones: string[];
+  /** Zones whose interfaces may not reach each other (a guest network). */
+  isolated?: string[];
+  /** `${from}>${to}`: 'allow', 'deny', or the services allowed. Pairs left out are denied. */
+  policies: Record<string, PresetPolicy>;
+}
+
+const R = ROUTER;
+export const ZONE_PRESETS: ZonePreset[] = [
+  {
+    key: 'home', label: 'Home or small office',
+    description: 'LAN reaches everything; the internet only gets ping to the router.',
+    zones: ['LAN', 'WAN'],
+    policies: { [`LAN>WAN`]: 'allow', [`LAN>${R}`]: 'allow', [`WAN>${R}`]: ['ping'] },
+  },
+  {
+    key: 'guests', label: 'Office with a guest network',
+    description: 'Guests get the internet and the router’s DNS and DHCP, but not the LAN or each other.',
+    zones: ['LAN', 'GUEST', 'WAN'], isolated: ['GUEST'],
+    policies: {
+      [`LAN>WAN`]: 'allow', [`LAN>${R}`]: 'allow',
+      [`GUEST>WAN`]: 'allow', [`GUEST>${R}`]: ['dns', 'dhcp', 'ping'],
+      [`WAN>${R}`]: ['ping'],
+    },
+  },
+  {
+    key: 'management', label: 'Management network',
+    description: 'Only MGMT can manage the router and reach every zone. LAN and guests get the internet and DNS, DHCP and NTP from the router.',
+    zones: ['MGMT', 'LAN', 'GUEST', 'WAN'], isolated: ['GUEST'],
+    policies: {
+      [`MGMT>LAN`]: 'allow', [`MGMT>GUEST`]: 'allow', [`MGMT>WAN`]: 'allow', [`MGMT>${R}`]: 'allow',
+      [`LAN>WAN`]: 'allow', [`LAN>${R}`]: ['dns', 'dhcp', 'ntp', 'ping'],
+      [`GUEST>WAN`]: 'allow', [`GUEST>${R}`]: ['dns', 'dhcp', 'ping'],
+      [`WAN>${R}`]: ['ping'],
+    },
+  },
+  {
+    key: 'dmz', label: 'Servers in a DMZ',
+    description: 'The internet reaches the DMZ on web ports only; the DMZ can’t reach the LAN. Add a port forward for each server.',
+    zones: ['LAN', 'DMZ', 'WAN'],
+    policies: {
+      [`LAN>WAN`]: 'allow', [`LAN>DMZ`]: 'allow', [`LAN>${R}`]: 'allow',
+      [`DMZ>WAN`]: 'allow', [`DMZ>${R}`]: ['dns', 'ntp', 'ping'],
+      [`WAN>DMZ`]: ['web'], [`WAN>${R}`]: ['ping'],
+    },
+  },
+];
+
+/**
+ * A draft laid out from a preset: its zones and matrix. A zone named like an
+ * interface list on the device keeps that list's interfaces; the rest start
+ * empty for you to fill. Logging, FastTrack and the manager's access stay as
+ * they were.
+ */
+export function applyPreset(current: ZoneRequest, data: ZonesData, preset: ZonePreset): ZoneRequest {
+  const staticMembers = (name: string) => data.lists.find((l) => l.name === name)?.members.filter((m) => !m.dynamic).map((m) => m.interface) ?? [];
+  const policies: Record<string, ZonePolicy> = {};
+  for (const [k, p] of Object.entries(preset.policies)) {
+    policies[k] = Array.isArray(p) ? { action: 'services', services: p, custom: [] } : { action: p, services: [], custom: [] };
+  }
+  const taken = new Set<string>();
+  const members: Record<string, string[]> = {};
+  for (const z of preset.zones) {
+    members[z] = staticMembers(z).filter((i) => !taken.has(i));
+    for (const i of members[z]) taken.add(i);
+  }
+  return {
+    config: {
+      ...current.config,
+      zones: [...preset.zones],
+      intra: Object.fromEntries(preset.zones.map((z) => [z, !preset.isolated?.includes(z)])),
+      policies,
+      quietZones: current.config.quietZones?.filter((z) => preset.zones.includes(z)),
+    },
+    members,
+  };
 }

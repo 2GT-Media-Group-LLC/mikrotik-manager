@@ -26,6 +26,10 @@
   802.1X, and link a switch to itself in one step with a fresh shared secret on both ends. See
   [Devices](devices.md#8021x) and [User Manager](user-manager.md#8021x-with-user-manager).
   Thanks to Ron for the request.
+- **Zone presets** ([#330](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/330)).
+  Setting up zones can start from a preset: home or small office, an office with a guest
+  network, a management network, or servers in a DMZ. See [Zones](devices.md#turning-zones-on).
+  Thanks to Ron for the idea.
 - Dependency updates (Dependabot #450 and #452 to #459).
 
 ## 1.1.0-beta.57

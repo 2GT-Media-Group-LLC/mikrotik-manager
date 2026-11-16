@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ZonesData } from '../services/api';
-import { initialDraft, draftErrors, policySummary, addZone, removeZone, setPolicy, zoneNameError, portsError, customError, customLabel, pairKey, ROUTER, logsDrops, setLogsDrops } from './zones';
+import { initialDraft, draftErrors, policySummary, addZone, removeZone, setPolicy, zoneNameError, portsError, customError, customLabel, pairKey, ROUTER, logsDrops, setLogsDrops, applyPreset, ZONE_PRESETS } from './zones';
 
 const data = (over: Partial<ZonesData> = {}): ZonesData => ({
   enabled: false, config: null, applied_at: null, applied_by: null, eligible: true, foreign_rules: 0,
@@ -115,5 +115,41 @@ describe('quiet zones (#415)', () => {
     expect(setLogsDrops(quiet, 'WAN', true).config).not.toHaveProperty('quietZones');
     expect(removeZone(quiet, 'WAN').config).not.toHaveProperty('quietZones');
     expect(logsDrops({ ...d, config: { ...d.config, logDrops: false } }, 'LAN')).toBe(false);
+  });
+});
+
+describe('zone presets (#330)', () => {
+  const data = {
+    enabled: false, config: null, applied_at: null, applied_by: null, eligible: true, foreign_rules: 0,
+    lists: [
+      { name: 'LAN', members: [{ interface: 'bridge', dynamic: false }] },
+      { name: 'WAN', members: [{ interface: 'ether1', dynamic: false }, { interface: 'pppoe-out1', dynamic: true }] },
+      { name: 'OLD', members: [{ interface: 'ether9', dynamic: false }] },
+    ],
+    interfaces: [], manager_ip: null, drift: null, services: { forward: [], router: [] },
+  } as unknown as Parameters<typeof applyPreset>[1];
+  const current = initialDraft(data);
+
+  it('lays out the zones and matrix, keeping the interfaces of lists with the same names', () => {
+    const d = applyPreset(current, data, ZONE_PRESETS.find((p) => p.key === 'guests')!);
+    expect(d.config.zones).toEqual(['LAN', 'GUEST', 'WAN']);
+    expect(d.members).toEqual({ LAN: ['bridge'], GUEST: [], WAN: ['ether1'] });
+    expect(d.config.intra).toEqual({ LAN: true, GUEST: false, WAN: true });
+    expect(d.config.policies['GUEST>@router']).toEqual({ action: 'services', services: ['dns', 'dhcp', 'ping'], custom: [] });
+    expect(d.config.policies['GUEST>LAN']).toBeUndefined();
+    expect(d.config.fasttrack).toBe(current.config.fasttrack);
+  });
+
+  it('only uses services the zone form knows', () => {
+    const forward = ['ping', 'web', 'dns', 'ssh', 'rdp', 'smb', 'ntp'];
+    const router = ['ping', 'winbox', 'ssh', 'web', 'api', 'dns', 'dhcp', 'ntp', 'snmp'];
+    for (const p of ZONE_PRESETS) {
+      for (const [k, v] of Object.entries(p.policies)) {
+        const [from, to] = k.split('>');
+        expect(p.zones).toContain(from);
+        if (to !== '@router') expect(p.zones).toContain(to);
+        if (Array.isArray(v)) for (const s of v) expect(to === '@router' ? router : forward).toContain(s);
+      }
+    }
   });
 });

@@ -595,6 +595,20 @@ interfaces in zones: a bridge, a VLAN interface, the WAN port. The firewall sees
 the bridge, not on its ports, so a zone made of bridge ports gets a warning. So does an interface
 with an address that's in no zone, since nothing reaches the router or another zone through it.
 
+**Start from a preset** (#330) lays out the zones and matrix for a common network, and replaces
+whatever the form held:
+
+| Preset | Zones | What it allows |
+|---|---|---|
+| Home or small office | LAN, WAN | LAN reaches everything; WAN gets ping to the router |
+| Office with a guest network | LAN, GUEST, WAN | Guests get the internet and the router's DNS and DHCP, not the LAN or each other |
+| Management network | MGMT, LAN, GUEST, WAN | Only MGMT manages the router and reaches every zone; LAN and guests get the internet and DNS, DHCP (and NTP for LAN) from the router |
+| Servers in a DMZ | LAN, DMZ, WAN | WAN reaches the DMZ on web ports only (add a port forward per server); the DMZ can't reach the LAN |
+
+A zone named like an interface list already on the device keeps that list's interfaces; the
+others start empty, for you to fill. Then check the cells, and nothing is sent until you turn
+zones on or apply.
+
 As you change the matrix, the form shows what applying will do: the lists and members it changes,
 and how many rules it adds, removes and keeps. **Show the rules** lists them all.
 
