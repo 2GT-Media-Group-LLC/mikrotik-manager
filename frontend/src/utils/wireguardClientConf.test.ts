@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildClientConf } from './wireguardClientConf';
+import { buildClientConf, endpointWithPort } from './wireguardClientConf';
 
 describe('buildClientConf', () => {
   it('builds the minimal [Interface]/[Peer] blocks', () => {
@@ -36,5 +36,24 @@ describe('buildClientConf', () => {
 
   it('falls back to a full tunnel when no AllowedIPs is given, matching the fleet’s existing peers', () => {
     expect(buildClientConf({ privateKey: 'p=', address: 'a', serverPublicKey: 's=' })).toContain('AllowedIPs = 0.0.0.0/0, ::/0');
+  });
+});
+
+describe('endpointWithPort', () => {
+  it('adds the listen port to a bare host', () => {
+    expect(endpointWithPort('vpn.example.com', '51820')).toBe('vpn.example.com:51820');
+    expect(endpointWithPort('203.0.113.5', '51820')).toBe('203.0.113.5:51820');
+  });
+  it('keeps a port the router already stores (RouterOS client-endpoint)', () => {
+    expect(endpointWithPort('vpn.example.com:13231', '51820')).toBe('vpn.example.com:13231');
+    expect(endpointWithPort('[2001:db8::1]:13231', '51820')).toBe('[2001:db8::1]:13231');
+  });
+  it('brackets an IPv6 address', () => {
+    expect(endpointWithPort('2001:db8::1', '51820')).toBe('[2001:db8::1]:51820');
+    expect(endpointWithPort('[2001:db8::1]', '51820')).toBe('[2001:db8::1]:51820');
+  });
+  it('leaves the port off when none is known', () => {
+    expect(endpointWithPort('vpn.example.com', '')).toBe('vpn.example.com');
+    expect(endpointWithPort('  ', '51820')).toBe('');
   });
 });

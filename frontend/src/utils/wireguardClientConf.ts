@@ -19,3 +19,20 @@ export function buildClientConf(opts: {
   if (opts.keepaliveSeconds) lines.push(`PersistentKeepalive = ${opts.keepaliveSeconds}`);
   return lines.join('\n');
 }
+
+/**
+ * `host:port` for a client's Endpoint line and the router's client-endpoint
+ * field, which RouterOS stores with its port ("vpn.example.com:13231"). An
+ * IPv6 address goes in brackets. A host that already names a port keeps it,
+ * so a peer set up in WinBox isn't given a second one; with no port known,
+ * the host is returned alone.
+ */
+export function endpointWithPort(host: string, port?: string): string {
+  const h = host.trim();
+  if (!h) return '';
+  if (/^\[.+\]:\d+$/.test(h)) return h;                    // [v6]:port
+  if (/^[^:]+:\d+$/.test(h)) return h;                       // name or v4 with port
+  const bare = h.replace(/^\[(.*)\]$/, '$1');
+  const shown = bare.includes(':') ? `[${bare}]` : bare;     // v6 needs brackets
+  return port && /^\d+$/.test(port) ? `${shown}:${port}` : shown;
+}

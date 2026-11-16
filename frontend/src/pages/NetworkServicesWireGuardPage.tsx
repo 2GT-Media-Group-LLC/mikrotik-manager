@@ -18,7 +18,7 @@ import { Link } from 'react-router-dom';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import TagChips, { type TagLike } from '../components/devices/TagChips';
 import { generateWgKeyPair, type WgKeyPair } from '../utils/wireguardKeys';
-import { buildClientConf } from '../utils/wireguardClientConf';
+import { buildClientConf, endpointWithPort } from '../utils/wireguardClientConf';
 import ClientConfigPanel from '../components/wireguard/ClientConfigPanel';
 
 type NS = Record<string, string>;
@@ -158,7 +158,9 @@ function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, lis
   const [generateClient, setGenerateClient] = useState(false);
   const [genKeys, setGenKeys] = useState<WgKeyPair | null>(null);
   const [clientDns, setClientDns] = useState('');
-  const [clientEndpointHost, setClientEndpointHost] = useState(endpointAddr || deviceAddress || '');
+  // Where the client reaches this router: what's saved for the peer, else the
+  // management address to start from. Not the peer's own endpoint, which is the client's.
+  const [clientEndpointHost, setClientEndpointHost] = useState(existing?.['client-endpoint'] || deviceAddress || '');
   const [clientAllowedIps, setClientAllowedIps] = useState('0.0.0.0/0, ::/0');
   const [resultConf, setResultConf] = useState<string | null>(null);
 
@@ -195,7 +197,8 @@ function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, lis
         body['responder'] = 'yes';
         body['client-address'] = allowedAddr.join(',');
         body['client-dns'] = clientDns;
-        body['client-endpoint'] = clientEndpointHost;
+        // RouterOS keeps the port in client-endpoint ("vpn.example.com:13231").
+        body['client-endpoint'] = endpointWithPort(clientEndpointHost, listenPort);
         if (keepalive) body['client-keepalive'] = `${keepalive}s`;
         if (clientAllowedIps && clientAllowedIps !== '0.0.0.0/0, ::/0') body['client-allowed-address'] = clientAllowedIps;
       }
@@ -215,7 +218,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, lis
           address: allowedAddr.join(', '),
           dns: clientDns || undefined,
           serverPublicKey,
-          endpoint: clientEndpointHost ? `${clientEndpointHost}:${listenPort || ''}` : undefined,
+          endpoint: endpointWithPort(clientEndpointHost, listenPort) || undefined,
           allowedIps: clientAllowedIps,
           keepaliveSeconds: keepalive || undefined,
         }));
@@ -374,7 +377,7 @@ function PeerConfigModal({ peer, serverPublicKey, listenPort, onClose }: PeerCon
                 address: peer['client-address'] || peer['allowed-address'] || '',
                 dns: peer['client-dns'] || undefined,
                 serverPublicKey,
-                endpoint: peer['client-endpoint'] ? `${peer['client-endpoint']}:${listenPort}` : undefined,
+                endpoint: endpointWithPort(peer['client-endpoint'] || '', listenPort) || undefined,
                 allowedIps: peer['client-allowed-address'] || undefined,
                 keepaliveSeconds: String(rosDurationSeconds(peer['client-keepalive'] || peer['persistent-keepalive']) ?? '') || undefined,
               })}

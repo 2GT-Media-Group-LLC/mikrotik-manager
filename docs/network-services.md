@@ -76,6 +76,26 @@ underneath; **Show / add interface** opens a card for one so an interface can be
 
 A peer's persistent keepalive is in seconds; leave it empty to turn keepalive off.
 
+### Client config and QR code
+
+**View** (the eye) on a peer shows the client's `.conf` and a QR code to scan into the WireGuard
+app, when the router keeps the client's private key for that peer. Peers made with WinBox's
+WireGuard wizard do, and so do peers made here with **Generate a client key pair now** (#444):
+
+- The key pair is made in your browser. The public key goes into the peer, and the private key
+  is saved on the router with the client's address, DNS and endpoint, as WinBox does. Anyone who
+  can read the router's configuration can read it.
+- **Client endpoint host** is where the client reaches this router. It starts as the management
+  address, which is often not the address the client should use, so check it. The router's
+  listen port is added unless you give one.
+- **Client allowed IPs** is what the client sends through the tunnel. Narrowing it from the
+  full tunnel needs RouterOS 7.21 or later.
+- Turning it on when editing a peer replaces the peer's key, so the client using the old one
+  needs the new config.
+
+A peer whose private key isn't on the router has no config to show; View says so. Operators and
+admins see View; read-only accounts never receive private keys.
+
 ## Routing
 
 **Network Services → Routing** lists every BGP peer and OSPF neighbour across the fleet, or the
