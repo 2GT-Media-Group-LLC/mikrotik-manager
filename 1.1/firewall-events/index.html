@@ -774,6 +774,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#application-and-row-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Application and row colours
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-the-events-come-from" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1658,6 +1669,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#application-and-row-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Application and row colours
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-the-events-come-from" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1808,6 +1830,26 @@ comes from one of two places:</p>
 1.5 seconds for them, and slower answers show on the next refresh. The setting is off by
 default, because reverse DNS sends the addresses on the page to the manager's DNS server.
 Search still matches addresses, not names.</p>
+<h2 id="application-and-row-colours">Application and row colours<a class="headerlink" href="#application-and-row-colours" title="Permanent link">&para;</a></h2>
+<p>The <strong>Application</strong> column names the service behind a line's port (#415): 443 is HTTPS, 587 is
+SUBMISSION, 8291 is WINBOX. It goes by the destination port, or by the source port for a reply
+(a DNS answer from port 53 back to a client shows as DNS). The grouped view has only the
+destination port, so it names that. Names come from a built-in list based on <code>/etc/services</code>,
+plus the MikroTik ports it doesn't know (WinBox, the API, MNDP, bandwidth test). Search still
+matches ports, not names.</p>
+<p>Two kinds of background traffic get a row colour, so they stand apart:</p>
+<ul>
+<li><strong>DHCP</strong>: UDP 67/68, and DHCPv6 on 546/547. A DHCP discover to 255.255.255.255 counts as
+  DHCP.</li>
+<li><strong>Multicast and broadcast</strong>: 224.0.0.0/4, ff00::/8 and 255.255.255.255. A subnet's own
+  broadcast address (192.168.88.255, say) isn't recognised, because the log line doesn't carry
+  the mask.</li>
+</ul>
+<p>Set both under <strong>Settings</strong>, <strong>Firewall Logs</strong>, or with <strong>Port names &amp; colours</strong> on the page.
+Each colour can be one of nine, or <strong>None</strong>. <strong>Port names</strong> adds a port the list doesn't know, or
+names one it does your way, for TCP, UDP or both. Show the built-in list to see what it already
+names; a port you've renamed is struck out there. Everyone sees the same names and colours;
+only admins change them.</p>
 <h2 id="where-the-events-come-from">Where the events come from<a class="headerlink" href="#where-the-events-come-from" title="Permanent link">&para;</a></h2>
 <p>Firewall logs are collected from the normal RouterOS log stream. A firewall
 rule therefore produces entries on this page only when logging is enabled for

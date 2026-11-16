@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta56" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.56
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta55" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2112,6 +2123,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta56" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.56
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta55" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2728,6 +2750,20 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta56">1.1.0-beta.56<a class="headerlink" href="#110-beta56" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Firewall Logs: an Application column, and colours for DHCP and multicast</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415">#415</a>). Each line names
+  the service behind its port (443 HTTPS, 587 SUBMISSION, 8291 WINBOX) from a built-in list based
+  on <code>/etc/services</code>. DHCP lines and multicast/broadcast lines are tinted. Change the colours and
+  add or rename ports under <strong>Settings</strong>, <strong>Firewall Logs</strong>
+  (<a href="../firewall-events/#application-and-row-colours">how</a>). Thanks to Ron.</li>
+<li><strong>Bridges: Q-in-Q and MVRP</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/449">#449</a>). A bridge's VLAN tag
+  type (0x8100, the 802.1ad 0x88a8, or 0x9100) and MVRP, a port's tag stacking and MVRP applicant
+  and registrar, and the 802.1ad service tag on VLAN interfaces. A bridge running MVRP lists each
+  port's registered and declared VLANs (<a href="../devices/#q-in-q-and-mvrp">how</a>). Thanks to Ron.</li>
+</ul>
 <h2 id="110-beta55">1.1.0-beta.55<a class="headerlink" href="#110-beta55" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Saving a site could remove its map pin</strong>

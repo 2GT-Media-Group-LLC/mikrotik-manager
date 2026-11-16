@@ -936,6 +936,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Bridges">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#q-in-q-and-mvrp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Q-in-Q and MVRP
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2461,6 +2478,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Bridges">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#q-in-q-and-mvrp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Q-in-Q and MVRP
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3476,6 +3510,9 @@ ID, name, parent, addresses (IPv4, and IPv6 other than link-local), MTU, state a
   tag, nothing is enforced on the bridge's ports</li>
 <li><strong>bond</strong>, or <strong>Q-in-Q</strong> for a VLAN stacked on another VLAN interface</li>
 </ul>
+<p>A VLAN interface tagged with the 802.1ad service tag (0x88a8) rather than 802.1Q is marked
+<strong>service tag</strong>. Tick <strong>Service tag (802.1ad)</strong> in the form for one on a Q-in-Q bridge (see
+<a href="#q-in-q-and-mvrp">Q-in-Q and MVRP</a>) (#449).</p>
 <p>The card is read live from the device each time the tab opens and every minute while it's open.</p>
 <p>With write access you can add, edit and remove VLAN interfaces there. <strong>Add VLAN interface</strong>
 takes a VLAN ID, the parent it's tagged on, a name (<code>vlan</code> and the ID if left blank), an MTU, a
@@ -3521,6 +3558,29 @@ has a small chip icon; hover a port for its PVID and spanning tree role.</p>
 <p>Everything runs through <a href="../change-guard/">Change Guard</a>. Renaming the bridge the manager
 connects through, or changing its spanning tree or MTU, can't be simulated, so it runs with
 auto-revert required; turning that bridge off is predicted as a lockout and asks first.</p>
+<h3 id="q-in-q-and-mvrp">Q-in-Q and MVRP<a class="headerlink" href="#q-in-q-and-mvrp" title="Permanent link">&para;</a></h3>
+<p>The bridge's <strong>Edit</strong> form and its ports cover 802.1ad Q-in-Q, tag stacking and MVRP (#449).</p>
+<ul>
+<li><strong>VLAN tag (EtherType)</strong> is the tag the bridge reads as the VLAN: 0x8100 (802.1Q, the
+  default), 0x88a8 (the 802.1ad service tag) or 0x9100. It takes effect with VLAN filtering on.
+  With 0x88a8, a customer's 802.1Q tags pass through inside the service VLAN, and a VLAN
+  interface on the bridge needs <strong>Service tag</strong> ticked. A bridge reading anything other than
+  0x8100 shows a <strong>Q-in-Q</strong> label. Some switch chips only do 0x8100 in hardware (MikroTik lists
+  the 88E6393X, 88E6191X and 88E6190 as having no Q-in-Q), and switch the rest on the CPU.</li>
+<li><strong>MVRP</strong> registers VLANs with neighbouring switches. A VLAN a neighbour registers makes that
+  port a tagged member of it, dynamically. The setting only shows when the device's RouterOS
+  has MVRP.</li>
+<li>Both are VLAN filtering settings: RouterOS only shows them with VLAN filtering on, so on a
+  bridge with filtering off the form asks you to turn it on first.</li>
+<li>Click a port to set its <strong>tag stacking</strong>: every frame in is treated as untagged and gets the
+  port's PVID as an outer tag, over any tag it had. On a bridge with MVRP, the same panel sets the
+  port's <strong>applicant</strong> (normal, or non-participant: sends nothing) and <strong>registrar</strong> (normal, or
+  fixed: ignores registrations and stays in its configured VLANs). A port with tag stacking is
+  marked <strong>TS</strong>.</li>
+<li>On a bridge running MVRP, a table lists each port's <strong>registered</strong> and <strong>declared</strong> VLANs, read
+  from the device when the tab opens.</li>
+</ul>
+<p>On the bridge or port the manager connects through, these run with auto-revert required.</p>
 <h2 id="routing-between-vlans-in-hardware">Routing between VLANs in hardware<a class="headerlink" href="#routing-between-vlans-in-hardware" title="Permanent link">&para;</a></h2>
 <p>On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),
 the <strong>VLANs</strong> tab has an <strong>L3 hardware offloading</strong> card (#254). It shows:</p>
