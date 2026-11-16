@@ -136,6 +136,7 @@ import { planNtpWrites, isLegacyClient, legacyServerList, type NtpForm } from '.
 import { recordInterfaceCounters } from '../interfaceErrors';
 import { parseRateBps } from '../../utils/wifiRate';
 import { probeUserManager, USER_MANAGER_RECHECK_MS } from '../userManager';
+import { cachePairs, due as dnsPairsDue, writeCachePairs } from '../dns/dnsCacheStore';
 import { poolSize, usedPerPool } from '../../utils/dhcpPools';
 import { recordOptics } from '../opticLevels';
 import { routeOf } from '../jumpHosts';
@@ -519,6 +520,7 @@ export class DeviceCollector {
     await this.collectResourceUsage();
     await this.collectGraphMetrics();
     if (this.modules.clients) await this.updateClients();
+    if (this.modules.dnsCache && (this.device as unknown as { dns_resolver?: boolean }).dns_resolver) await this.collectDnsCache();
     // Radios of its own, whatever it was added as: an all-in-one router such
     // as the hAP ac² is an access point too.
     if (hasRadios(this.device as unknown as { device_type: string; wifi_role?: string | null })) {
@@ -590,6 +592,38 @@ export class DeviceCollector {
     }
     await this.checkUserManager();
     await this.collectDhcpPools();
+    if (this.modules.dnsCache) await this.checkDnsResolver();
+  }
+
+  /**
+   * Does this router answer DNS for its network (#366)? Its cache then holds
+   * the names behind the addresses its clients reach. Asked each slow poll; a
+   * failed read keeps what was stored.
+   */
+  private async checkDnsResolver(): Promise<void> {
+    try {
+      const dns = (await this.client.execute('/ip/dns/print'))[0];
+      if (!dns) return;
+      const on = dns['allow-remote-requests'] === 'true' || dns['allow-remote-requests'] === 'yes';
+      if (on !== Boolean((this.device as unknown as { dns_resolver?: boolean }).dns_resolver)) {
+        await query(`UPDATE devices SET dns_resolver = $2 WHERE id = $1`, [this.device.id, on]);
+        (this.device as unknown as { dns_resolver?: boolean }).dns_resolver = on;
+      }
+    } catch { /* advisory */ }
+  }
+
+  /**
+   * The names in a resolving router's DNS cache (#366), each fast poll since
+   * records last only their TTL. Only pairs not written in the last ten
+   * minutes are written.
+   */
+  private async collectDnsCache(): Promise<void> {
+    try {
+      const rows = await this.client.execute('/ip/dns/cache/print', { '.proplist': 'name,type,data' }, [], { timeoutMs: 20_000 });
+      const siteId = (this.device as unknown as { site_id?: number | null }).site_id ?? 0;
+      const pairs = dnsPairsDue(siteId, cachePairs(rows));
+      if (pairs.length) await writeCachePairs(siteId, pairs);
+    } catch { /* a missed minute is a small gap */ }
   }
 
   /**
@@ -1005,6 +1039,7 @@ export class DeviceCollector {
     // User Manager too, whenever it was last checked: Sync is how someone who
     // just switched it on gets it found, and its page into the sidebar.
     await this.checkUserManager(true);
+    if (this.modules.dnsCache) await this.checkDnsResolver();
     await this.saveFullConfig();
     this.assertStillConnected();
     await this.updateDeviceStatus('online');

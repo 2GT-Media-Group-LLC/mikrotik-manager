@@ -33,6 +33,9 @@ export function cleanName(name: string | undefined): string | null {
   return n;
 }
 
+/** The DNS server itself (Pi-hole looks up its clients' names from 127.0.0.1): not a client. */
+const isLoopback = (ip: string) => ip === '::1' || ip.startsWith('127.') || ip.startsWith('::ffff:127.');
+
 const hourOf = (t: number) => new Date(Math.floor(t / 3_600_000) * 3_600_000).toISOString();
 
 /**
@@ -49,11 +52,12 @@ export function summarise(items: QueryLogItem[], after: number | null): {
   for (const it of items) {
     const t = Date.parse(it.time ?? '');
     if (!Number.isFinite(t) || (after !== null && t <= after)) continue;
-    const clientIp = typeof it.client === 'string' && net.isIP(it.client) ? it.client : null;
+    // Read is read, counted or not: skipped entries mustn't be read again next poll.
+    if (newest === null || t > newest) newest = t;
+    const clientIp = typeof it.client === 'string' && net.isIP(it.client) && !isLoopback(it.client) ? it.client : null;
     const name = cleanName(it.question?.name);
     if (!clientIp || !name) continue;
     used++;
-    if (newest === null || t > newest) newest = t;
     const hour = hourOf(t);
     const k = `${hour}|${clientIp}|${name}`;
     const c = counts.get(k) ?? { hour, clientIp, name, allowed: 0, blocked: 0 };

@@ -11,6 +11,7 @@ import { isSealed } from './sealed';
 
 export interface DnsSourceInput {
   name: string;
+  kind: 'adguard' | 'pihole';
   site_id: number;
   url: string;
   username: string;
@@ -24,7 +25,7 @@ export interface SavedSource { url: string; tls_verify: boolean; password: strin
 
 /** A base address MikroTik Manager may call: http(s), no credentials, no query or fragment. */
 export function urlError(raw: unknown): string | null {
-  if (typeof raw !== 'string' || !raw.trim() || raw.length > 500) return 'Enter the AdGuard Home address, like http://192.168.88.2:3000.';
+  if (typeof raw !== 'string' || !raw.trim() || raw.length > 500) return 'Enter the server\'s web address, like http://192.168.88.2.';
   let u: URL;
   try { u = new URL(raw.trim()); } catch { return 'That isn\'t a valid address.'; }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return 'The address must start with http:// or https://.';
@@ -35,10 +36,12 @@ export function urlError(raw: unknown): string | null {
 
 /** The input checked, or what's wrong with it. `saved` is the source being edited. */
 export function parseDnsSource(body: Record<string, unknown>, saved?: SavedSource): { value: DnsSourceInput } | { error: string; field: string } {
+  const kind = body.kind === undefined ? 'adguard' : body.kind;
+  if (kind !== 'adguard' && kind !== 'pihole') return { error: 'Choose AdGuard Home or Pi-hole.', field: 'kind' };
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name || name.length > 100) return { error: 'Give the source a name, up to 100 characters.', field: 'name' };
   const siteId = Number(body.site_id);
-  if (!Number.isSafeInteger(siteId) || siteId <= 0) return { error: 'Choose the site whose clients use this AdGuard Home.', field: 'site_id' };
+  if (!Number.isSafeInteger(siteId) || siteId <= 0) return { error: 'Choose the site whose clients use this DNS server.', field: 'site_id' };
   const ue = urlError(body.url);
   if (ue) return { error: ue, field: 'url' };
   const url = String(body.url).trim().replace(/\/+$/, '');
@@ -58,5 +61,6 @@ export function parseDnsSource(body: Record<string, unknown>, saved?: SavedSourc
     const moved = url !== saved.url || (saved.tls_verify && !tlsVerify);
     if (moved) return { error: 'The address or its certificate check changed, so enter the password again.', field: 'password' };
   }
-  return { value: { name, site_id: siteId, url, username, password, tls_verify: tlsVerify, enabled } };
+  // Pi-hole logs in with a password alone.
+  return { value: { name, kind, site_id: siteId, url, username: kind === 'pihole' ? '' : username, password, tls_verify: tlsVerify, enabled } };
 }

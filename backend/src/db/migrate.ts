@@ -2095,6 +2095,20 @@ CREATE TABLE IF NOT EXISTS dns_answers (
   PRIMARY KEY (site_id, ip, client_ip, name)
 );
 CREATE INDEX IF NOT EXISTS idx_dns_answers_seen ON dns_answers(last_seen);
+-- Pi-hole as well as AdGuard Home (#366).
+ALTER TABLE dns_sources ADD COLUMN IF NOT EXISTS kind VARCHAR(16) NOT NULL DEFAULT 'adguard';
+-- Routers that answer DNS for their network, and the names their caches hold
+-- (#366): what names addresses wherever the clients' resolver sits.
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS dns_resolver BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE IF NOT EXISTS dns_cache_names (
+  site_id    INTEGER NOT NULL,
+  ip         VARCHAR(45) NOT NULL,
+  name       VARCHAR(255) NOT NULL,
+  first_seen TIMESTAMPTZ NOT NULL,
+  last_seen  TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (site_id, ip, name)
+);
+CREATE INDEX IF NOT EXISTS idx_dns_cache_names_seen ON dns_cache_names(last_seen);
 `;
 
 const DEFAULT_SETTINGS = [
@@ -2167,6 +2181,7 @@ const DEFAULT_SETTINGS = [
   { key: 'poll_neighbors_enabled', value: true },
   { key: 'poll_logs_enabled', value: true },
   { key: 'poll_certificates_enabled', value: true },
+  { key: 'poll_dns_cache_enabled', value: true },
   { key: 'config_health_enabled', value: true },
   { key: 'config_health_interval_min', value: 60 },
   // Geocoding and map tiles are third-party requests that also disclose device

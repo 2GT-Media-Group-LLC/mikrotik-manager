@@ -971,6 +971,7 @@ export class PollerService {
       // DNS lookups from AdGuard Home (#366 step 3).
       { table: 'dns_name_counts', where: 'hour < $1', setting: 'retention_dns_days', fallback: 7, batches: 200 },
       { table: 'dns_answers', where: 'last_seen < $1', setting: 'retention_dns_days', fallback: 7, batches: 200 },
+      { table: 'dns_cache_names', where: 'last_seen < $1', setting: 'retention_dns_days', fallback: 7, batches: 200 },
     ];
     const BATCH = 20_000;
     const settingMap = new Map(Object.entries(settings));

@@ -2731,6 +2731,8 @@ export interface NetflowSession {
   server_nat_port: number | null;
   client_mac: string | null;
   client_name: string | null;
+  /** The name a DNS lookup answered with for the server (AdGuard Home or a router's DNS cache, #366). */
+  server_name?: string | null;
   app: string | null;
   started_at: string;
   ended_at: string;
@@ -2807,6 +2809,7 @@ export interface TrafficDnsClients {
 export interface DnsSource {
   id: number;
   name: string;
+  kind: 'adguard' | 'pihole';
   site_id: number;
   site_name: string | null;
   url: string;
@@ -2821,6 +2824,7 @@ export interface DnsSource {
 }
 export interface DnsSourceInput {
   name: string;
+  kind: 'adguard' | 'pihole';
   site_id: number;
   url: string;
   username: string;

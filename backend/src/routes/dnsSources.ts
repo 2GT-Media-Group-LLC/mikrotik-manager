@@ -3,18 +3,18 @@ import { query, queryOne } from '../config/database';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { seal } from '../utils/sealed';
 import { parseDnsSource } from '../utils/dnsSourceInput';
-import { getJson, querylogUrl, pollSource, type DnsSourceRow } from '../services/dns/DnsLogService';
-import { unseal } from '../utils/sealed';
+import { pollSource, testSource, dropPiholeSession, type DnsSourceRow } from '../services/dns/DnsLogService';
 
 /**
- * AdGuard Home sources for DNS query logs (#366 step 3). Fleet admins only:
+ * AdGuard Home and Pi-hole sources for DNS query logs (#366 step 3), any
+ * number per site (active/active resolvers each count their share). Fleet admins only:
  * the manager calls the address with the saved login. The password is stored
  * sealed and never sent back, only whether there is one.
  */
 const router = Router();
 router.use(requireAuth, requireAdmin);
 
-const PUBLIC_COLUMNS = `s.id, s.name, s.site_id, st.name AS site_name, s.url, s.username, (s.password <> '') AS has_password,
+const PUBLIC_COLUMNS = `s.id, s.name, s.kind, s.site_id, st.name AS site_name, s.url, s.username, (s.password <> '') AS has_password,
   s.tls_verify, s.enabled, s.cursor_at, s.last_polled_at, s.last_error, s.queries_counted, s.created_at`;
 
 async function siteExists(id: number): Promise<boolean> {
@@ -31,9 +31,9 @@ router.post('/', async (req, res) => {
   if (!(await siteExists(p.value.site_id))) return res.status(400).json({ error: 'That site doesn\'t exist.', field: 'site_id' });
   const v = p.value;
   const row = await queryOne<{ id: number }>(
-    `INSERT INTO dns_sources (name, site_id, url, username, password, tls_verify, enabled)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [v.name, v.site_id, v.url, v.username, v.password ? seal(v.password) : '', v.tls_verify, v.enabled]);
+    `INSERT INTO dns_sources (name, site_id, url, username, password, tls_verify, enabled, kind)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+    [v.name, v.site_id, v.url, v.username, v.password ? seal(v.password) : '', v.tls_verify, v.enabled, v.kind]);
   res.status(201).json({ id: row!.id });
 });
 
@@ -45,20 +45,22 @@ router.put('/:id', async (req, res) => {
   if ('error' in p) return res.status(400).json({ error: p.error, field: p.field });
   if (!(await siteExists(p.value.site_id))) return res.status(400).json({ error: 'That site doesn\'t exist.', field: 'site_id' });
   const v = p.value;
-  // A different server or site starts its log afresh.
-  const restart = v.url !== saved.url || v.site_id !== saved.site_id;
+  // A different server, kind or site starts its log afresh.
+  const restart = v.url !== saved.url || v.site_id !== saved.site_id || v.kind !== saved.kind;
+  await dropPiholeSession(saved);
   await query(
-    `UPDATE dns_sources SET name=$2, site_id=$3, url=$4, username=$5, password=$6, tls_verify=$7, enabled=$8,
+    `UPDATE dns_sources SET name=$2, site_id=$3, url=$4, username=$5, password=$6, tls_verify=$7, enabled=$8, kind=$10,
             cursor_at = CASE WHEN $9 THEN NULL ELSE cursor_at END, last_error = CASE WHEN $9 THEN NULL ELSE last_error END
       WHERE id = $1`,
     [id, v.name, v.site_id, v.url, v.username, v.password === undefined ? saved.password : (v.password ? seal(v.password) : ''),
-      v.tls_verify, v.enabled, restart]);
+      v.tls_verify, v.enabled, restart, v.kind]);
   res.json({ ok: true });
 });
 
 router.delete('/:id', async (req, res) => {
-  const rows = await query(`DELETE FROM dns_sources WHERE id = $1 RETURNING id`, [Number(req.params.id) || 0]);
+  const rows = await query<DnsSourceRow>(`DELETE FROM dns_sources WHERE id = $1 RETURNING *`, [Number(req.params.id) || 0]);
   if (!rows.length) return res.status(404).json({ error: 'Source not found' });
+  await dropPiholeSession(rows[0]);
   res.json({ ok: true });
 });
 
@@ -72,11 +74,10 @@ router.post('/test', async (req, res) => {
     ? await queryOne<DnsSourceRow>(`SELECT * FROM dns_sources WHERE id = $1`, [savedId]) : null;
   const p = parseDnsSource({ name: 'test', site_id: 1, ...body }, saved ?? undefined);
   if ('error' in p) return res.status(400).json({ error: p.error, field: p.field });
-  const pass = p.value.password !== undefined ? p.value.password : saved?.password ? unseal(saved.password) : '';
+  const password = p.value.password !== undefined ? seal(p.value.password) : saved?.password ?? '';
   try {
-    const r = await getJson(querylogUrl(p.value.url).replace('limit=1000', 'limit=5'), p.value.username, pass, p.value.tls_verify) as { data?: unknown[] };
-    if (!Array.isArray(r?.data)) return res.status(400).json({ error: 'That answered, but not with a query log. Is this the AdGuard Home address?' });
-    res.json({ ok: true, entries: r.data.length });
+    const entries = await testSource({ kind: p.value.kind, url: p.value.url, username: p.value.username, password, tls_verify: p.value.tls_verify });
+    res.json({ ok: true, entries });
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
   }

@@ -224,6 +224,9 @@ function SessionRow({ s, formatDateTime, onAddress }: {
       </td>
       <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">
         {addr(s.server_addr, s.server_port)}
+        {s.server_name && (
+          <div className="font-sans text-[11px] text-gray-500 dark:text-slate-400 truncate max-w-[16rem]" title="The name a DNS lookup answered with (#366)">{s.server_name}</div>
+        )}
         {s.server_nat_addr && (
           <div className="text-[11px] text-gray-400 dark:text-slate-500" title="The address the client connected to, before a port forward">
             via {hostPort(s.server_nat_addr, s.server_nat_port, s.protocol)}

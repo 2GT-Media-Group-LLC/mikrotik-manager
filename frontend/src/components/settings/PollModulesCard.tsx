@@ -45,6 +45,12 @@ const MODULES: ModuleDef[] = [
     cadence: 'every slow poll',
     cost: 'No certificate inventory and no expiry warnings.',
   },
+  {
+    key: 'poll_dns_cache_enabled',
+    label: 'DNS cache of resolving routers',
+    cadence: 'every fast poll, on routers that answer DNS',
+    cost: 'Traffic destinations, firewall logs and sessions are named only by owner, reverse DNS and AdGuard Home.',
+  },
 ];
 
 interface Props {

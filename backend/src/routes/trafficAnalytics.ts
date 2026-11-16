@@ -8,6 +8,7 @@ import { activeSite } from '../middleware/site';
 import { siteList } from '../utils/siteScope';
 import { lookupAsn, specialKind, asnStatus } from '../utils/asnDatabase';
 import { reverseNames } from '../utils/reverseNames';
+import { namesForAddresses } from '../utils/addressNames';
 import { OTHER_REMOTE } from '../services/netflow/DestinationAggregator';
 import net from 'net';
 
@@ -414,28 +415,14 @@ async function clientIps(req: Request, mac: string): Promise<string[]> {
 }
 
 /**
- * The names that answered with each address, busiest first: what the clients
- * asked for to reach it. With `ips`, only those clients' lookups.
+ * The names behind each address: what clients asked for (AdGuard Home), then
+ * the routers' DNS caches. With `ips`, AdGuard answers to those clients only.
  */
 async function domainsFor(req: Request, remotes: string[], ips?: string[]): Promise<Map<string, string[]>> {
-  const out = new Map<string, string[]>();
-  if (remotes.length === 0 || (ips && ips.length === 0)) return out;
-  const sites = siteList(activeSite(req));
-  const params: unknown[] = [remotes, rangeStart(req)];
-  let where = 'ip = ANY($1::text[]) AND last_seen >= $2';
-  if (sites) { params.push(sites); where += ` AND site_id = ANY($${params.length}::int[])`; }
-  if (ips) { params.push(ips); where += ` AND client_ip = ANY($${params.length}::text[])`; }
-  const rows = await query<{ ip: string; name: string }>(
-    `SELECT ip, name FROM dns_answers WHERE ${where} GROUP BY ip, name ORDER BY ip, SUM(count) DESC`, params).catch(() => []);
-  for (const r of rows) {
-    const list = out.get(r.ip) ?? [];
-    if (list.length < 5) list.push(r.name);
-    out.set(r.ip, list);
-  }
-  return out;
+  return namesForAddresses(remotes, { sites: siteList(activeSite(req)), since: rangeStart(req), clientIps: ips });
 }
 
-/** Whether an AdGuard Home source covers any site in view. */
+/** Whether an AdGuard Home or Pi-hole source covers any site in view. */
 async function dnsConfigured(req: Request): Promise<boolean> {
   const sites = siteList(activeSite(req));
   const r = await query<{ n: number }>(

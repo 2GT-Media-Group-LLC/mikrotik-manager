@@ -1,16 +1,20 @@
-// Pulls DNS query logs from AdGuard Home (#366 step 3) every minute, for each
-// enabled source, and keeps their totals: lookups per hour, client and name,
-// and which names answered with which addresses (adguardLog.ts).
+// Pulls DNS query logs from AdGuard Home and Pi-hole (#366 step 3) every
+// minute, for each enabled source, and keeps their totals: lookups per hour,
+// client and name, and (AdGuard Home only, Pi-hole doesn't log them) which
+// names answered with which addresses (adguardLog.ts). Any number of sources
+// per site: active/active resolvers each see their own share of the lookups,
+// so their counts add up to the site's.
 //
-// Only newer entries are read each time: the log is paged newest first until
-// the last poll's newest entry, up to a bound, so a long outage or a first
-// poll of a busy server can't read for minutes.
+// Only newer entries are read each time, newest first until the last poll's
+// newest entry, up to a bound, so a long outage or a first poll of a busy
+// server can't read for minutes.
 
 import http from 'http';
 import https from 'https';
 import { query } from '../../config/database';
 import { unseal } from '../../utils/sealed';
 import { summarise, type QueryLogItem } from './adguardLog';
+import { fromPihole, type PiholeQuery } from './piholeLog';
 
 export const POLL_MS = 60_000;
 const PAGE = 1000;
@@ -20,9 +24,13 @@ const MAX_BODY = 32 * 1024 * 1024;
 /** A first poll reads back this far, at most. */
 const FIRST_POLL_MS = 3_600_000;
 
+export type DnsSourceKind = 'adguard' | 'pihole';
+export const PRODUCT: Record<DnsSourceKind, string> = { adguard: 'AdGuard Home', pihole: 'Pi-hole' };
+
 export interface DnsSourceRow {
   id: number;
   name: string;
+  kind: DnsSourceKind;
   site_id: number;
   url: string;
   username: string;
@@ -33,21 +41,26 @@ export interface DnsSourceRow {
   cursor_at: Date | string | null;
 }
 
-/** GET a JSON document with basic auth. */
-export function getJson(url: string, user: string, pass: string, tlsVerify: boolean): Promise<unknown> {
+type SourceLogin = Pick<DnsSourceRow, 'kind' | 'url' | 'username' | 'password' | 'tls_verify'> & { id?: number };
+
+/** An HTTP request with a JSON answer: its status and parsed body. */
+export function requestJson(url: string, opts: {
+  method?: 'GET' | 'POST' | 'DELETE'; headers?: Record<string, string>; body?: unknown; tlsVerify: boolean; product: string;
+}): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const opts = {
+    const payload = opts.body === undefined ? undefined : Buffer.from(JSON.stringify(opts.body));
+    const reqOpts = {
+      method: opts.method ?? 'GET',
       timeout: TIMEOUT_MS,
       headers: {
         Accept: 'application/json',
-        ...(user || pass ? { Authorization: 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64') } : {}),
+        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': String(payload.length) } : {}),
+        ...opts.headers,
       },
-      ...(u.protocol === 'https:' ? { rejectUnauthorized: tlsVerify } : {}),
+      ...(u.protocol === 'https:' ? { rejectUnauthorized: opts.tlsVerify } : {}),
     };
     const onResponse = (res: http.IncomingMessage) => {
-      if (res.statusCode === 401 || res.statusCode === 403) { res.resume(); reject(new Error('AdGuard Home refused the username or password')); return; }
-      if (res.statusCode !== 200) { res.resume(); reject(new Error(`AdGuard Home answered HTTP ${res.statusCode}`)); return; }
       const chunks: Buffer[] = [];
       let size = 0;
       res.on('data', (c: Buffer) => {
@@ -56,39 +69,137 @@ export function getJson(url: string, user: string, pass: string, tlsVerify: bool
         chunks.push(c);
       });
       res.on('end', () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new Error('The answer wasn\'t JSON. Is this the AdGuard Home address?')); }
+        const text = Buffer.concat(chunks).toString('utf8');
+        if (!text) { resolve({ status: res.statusCode ?? 0, body: null }); return; }
+        try { resolve({ status: res.statusCode ?? 0, body: JSON.parse(text) }); } catch {
+          reject(new Error(`The answer wasn't JSON. Is this the ${opts.product} address?`));
+        }
       });
     };
     // Named in full, so the guard on outbound connections (jumpHostRoutes.test) sees both.
-    const req = u.protocol === 'https:' ? https.get(u, opts, onResponse) : http.get(u, opts, onResponse);
+    const req = u.protocol === 'https:' ? https.request(u, reqOpts, onResponse) : http.request(u, reqOpts, onResponse);
     req.on('timeout', () => req.destroy(new Error('No answer within 15 seconds')));
     req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
   });
 }
 
-/** The query log endpoint for a source's base address. */
-export function querylogUrl(base: string, olderThan?: string): string {
+/** GET a JSON document with basic auth (AdGuard Home). */
+export async function getJson(url: string, user: string, pass: string, tlsVerify: boolean): Promise<unknown> {
+  const r = await requestJson(url, {
+    tlsVerify, product: 'AdGuard Home',
+    headers: user || pass ? { Authorization: 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64') } : {},
+  });
+  if (r.status === 401 || r.status === 403) throw new Error('AdGuard Home refused the username or password');
+  if (r.status !== 200) throw new Error(`AdGuard Home answered HTTP ${r.status}`);
+  return r.body;
+}
+
+/** The AdGuard Home query log endpoint for a source's base address. */
+export function querylogUrl(base: string, olderThan?: string, limit = PAGE): string {
   const u = new URL(base.replace(/\/+$/, '') + '/control/querylog');
-  u.searchParams.set('limit', String(PAGE));
+  u.searchParams.set('limit', String(limit));
   if (olderThan) u.searchParams.set('older_than', olderThan);
   return u.toString();
 }
 
-/** Read entries newer than `since`, newest first, page by page. */
-export async function readNewEntries(src: Pick<DnsSourceRow, 'url' | 'username' | 'password' | 'tls_verify'>, since: number): Promise<QueryLogItem[]> {
+async function readAdguard(src: SourceLogin, since: number, limit = PAGE, maxPages = MAX_PAGES): Promise<QueryLogItem[]> {
   const pass = src.password ? unseal(src.password) : '';
   const items: QueryLogItem[] = [];
   let olderThan: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const body = await getJson(querylogUrl(src.url, olderThan), src.username, pass, src.tls_verify) as { data?: unknown; oldest?: unknown };
+  for (let page = 0; page < maxPages; page++) {
+    const body = await getJson(querylogUrl(src.url, olderThan, limit), src.username, pass, src.tls_verify) as { data?: unknown };
     const data = Array.isArray(body?.data) ? body.data as QueryLogItem[] : null;
     if (!data) throw new Error('The answer had no query log. Is this the AdGuard Home address?');
     items.push(...data);
     const oldest = data.length ? Date.parse(data[data.length - 1].time ?? '') : NaN;
-    if (data.length < PAGE || !Number.isFinite(oldest) || oldest <= since) break;
+    if (data.length < limit || !Number.isFinite(oldest) || oldest <= since) break;
     olderThan = data[data.length - 1].time;
   }
   return items;
+}
+
+// ─── Pi-hole 6 ───────────────────────────────────────────────────────────────
+// A login gives a session id valid for a while (30 minutes by default). It's
+// kept and reused, since Pi-hole allows only a few sessions at once; one that
+// has expired is replaced once.
+
+const piholeSessions = new Map<number, { sid: string; until: number }>();
+
+const base = (url: string) => url.replace(/\/+$/, '');
+
+async function piholeLogin(src: SourceLogin): Promise<string> {
+  const pass = src.password ? unseal(src.password) : '';
+  const r = await requestJson(`${base(src.url)}/api/auth`, { method: 'POST', body: { password: pass }, tlsVerify: src.tls_verify, product: 'Pi-hole' });
+  const session = (r.body as { session?: { valid?: boolean; sid?: string | null; validity?: number; message?: string; totp?: boolean } } | null)?.session;
+  if (session?.valid && session.sid) {
+    if (src.id !== undefined) piholeSessions.set(src.id, { sid: session.sid, until: Date.now() + Math.max(60, (session.validity ?? 300) - 60) * 1000 });
+    return session.sid;
+  }
+  if (session?.totp) throw new Error('Pi-hole asks for a two-factor code. Use an app password from Pi-hole’s settings instead.');
+  if (r.status === 401 || session) throw new Error('Pi-hole refused the password');
+  throw new Error(r.status === 404 ? 'No Pi-hole 6 API there. Pi-hole 6 or later is needed.' : `Pi-hole answered HTTP ${r.status}`);
+}
+
+/** Log out a kept session (a source removed or changed). */
+export async function dropPiholeSession(src: SourceLogin & { id: number }): Promise<void> {
+  const s = piholeSessions.get(src.id);
+  piholeSessions.delete(src.id);
+  if (!s) return;
+  await requestJson(`${base(src.url)}/api/auth`, { method: 'DELETE', headers: { 'X-FTL-SID': s.sid }, tlsVerify: src.tls_verify, product: 'Pi-hole' }).catch(() => {});
+}
+
+async function piholeGet(src: SourceLogin, path: string): Promise<unknown> {
+  const kept = src.id !== undefined ? piholeSessions.get(src.id) : undefined;
+  let sid = kept && kept.until > Date.now() ? kept.sid : await piholeLogin(src);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await requestJson(`${base(src.url)}${path}`, { headers: { 'X-FTL-SID': sid }, tlsVerify: src.tls_verify, product: 'Pi-hole' });
+    if (r.status === 200) return r.body;
+    if (r.status !== 401 || attempt > 0) throw new Error(`Pi-hole answered HTTP ${r.status}`);
+    sid = await piholeLogin(src);   // the session ended early (Pi-hole restarted, or it was logged out)
+  }
+  throw new Error('Pi-hole refused the session');
+}
+
+async function readPihole(src: SourceLogin, since: number, length = PAGE, maxPages = MAX_PAGES): Promise<QueryLogItem[]> {
+  const items: PiholeQuery[] = [];
+  const from = Math.floor(since / 1000);
+  let cursor: number | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const q = new URLSearchParams({ from: String(from), length: String(length), start: String(page * length) });
+    if (cursor !== undefined) q.set('cursor', String(cursor));
+    const body = await piholeGet(src, `/api/queries?${q}`) as { queries?: unknown; cursor?: unknown };
+    const data = Array.isArray(body?.queries) ? body.queries as PiholeQuery[] : null;
+    if (!data) throw new Error('The answer had no query log. Is this the Pi-hole address?');
+    items.push(...data);
+    // The cursor keeps the pages to one view of the log while it grows.
+    if (cursor === undefined && typeof body.cursor === 'number') cursor = body.cursor;
+    if (data.length < length) break;
+  }
+  return fromPihole(items);
+}
+
+/** Read entries newer than `since` from a source of either kind. */
+export function readNewEntries(src: SourceLogin, since: number): Promise<QueryLogItem[]> {
+  return src.kind === 'pihole' ? readPihole(src, since) : readAdguard(src, since);
+}
+
+/** Check an address and login: how many recent entries it answered with. */
+export async function testSource(src: SourceLogin): Promise<number> {
+  if (src.kind === 'pihole') {
+    const sid = await piholeLogin(src);
+    try {
+      const r = await requestJson(`${base(src.url)}/api/queries?length=5`, { headers: { 'X-FTL-SID': sid }, tlsVerify: src.tls_verify, product: 'Pi-hole' });
+      const qs = (r.body as { queries?: unknown } | null)?.queries;
+      if (r.status !== 200 || !Array.isArray(qs)) throw new Error('That answered, but not with a query log. Is this the Pi-hole address?');
+      return qs.length;
+    } finally {
+      // A test doesn't keep a session open.
+      await requestJson(`${base(src.url)}/api/auth`, { method: 'DELETE', headers: { 'X-FTL-SID': sid }, tlsVerify: src.tls_verify, product: 'Pi-hole' }).catch(() => {});
+    }
+  }
+  return (await readAdguard(src, Date.now(), 5, 1)).length;
 }
 
 async function store(siteId: number, counts: ReturnType<typeof summarise>['counts'], answers: ReturnType<typeof summarise>['answers']): Promise<void> {

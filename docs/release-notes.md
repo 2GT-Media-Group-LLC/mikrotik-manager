@@ -10,9 +10,11 @@
   An application's card has **Where it goes**, the Traffic page has **Top destinations**, and a
   client's page lists its own. Each address is named by the organisation that owns it, with its
   country and reverse DNS name, from a list built into each release and refreshed weekly unless
-  Dark Site Mode turns that off. Connect AdGuard Home under **Settings → DNS Query Log** to see
-  the names each client looked up, which were blocked, and the domain behind each destination.
-  See [Traffic](traffic.md#where-traffic-goes). Thanks to aziz for the request.
+  Dark Site Mode turns that off. Add your AdGuard Home and Pi-hole servers (as many as share a
+  site's DNS) under **Settings → DNS Query Log** to see the names each client looked up and which
+  were blocked. Destinations, Firewall Logs and Sessions show the name behind each address, from
+  AdGuard Home's answers or the DNS cache of routers that answer DNS. See
+  [Traffic](traffic.md#where-traffic-goes). Thanks to aziz for the request.
 - **WireGuard: a peer's client config and QR code**
   ([#444](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/444), PR #445 by
   [@Lithiuhm](https://github.com/Lithiuhm)). **View** on a peer shows the `.conf` and a QR code

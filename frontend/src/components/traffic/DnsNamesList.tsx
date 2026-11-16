@@ -17,12 +17,12 @@ export default function DnsNamesList({ range, mac, limit = 30, className }: { ra
   if (!data.configured) {
     return (
       <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">
-        Connect AdGuard Home under <Link to="/settings?tab=dns" className="underline">Settings → DNS query log</Link> to see the names clients look up.
+        Add your AdGuard Home or Pi-hole servers under <Link to="/settings?tab=dns" className="underline">Settings → DNS Query Log</Link> to see the names clients look up.
       </div>
     );
   }
   if (mac && data.client_addresses && data.client_addresses.length === 0) {
-    return <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">This client has no known address to match AdGuard Home&apos;s log against.</div>;
+    return <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">This client has no known address to match the DNS servers&apos; logs against.</div>;
   }
   if (data.names.length === 0) {
     return <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">No lookups in this range.</div>;

@@ -4,7 +4,7 @@ const base = { name: 'Home AdGuard', site_id: 1, url: 'http://192.168.88.2:3000/
 
 describe('AdGuard Home source input (#366 step 3)', () => {
   it('accepts a source and tidies the address', () => {
-    expect(parseDnsSource(base)).toEqual({ value: { name: 'Home AdGuard', site_id: 1, url: 'http://192.168.88.2:3000', username: 'admin', password: 'pw', tls_verify: true, enabled: true } });
+    expect(parseDnsSource(base)).toEqual({ value: { name: 'Home AdGuard', kind: 'adguard', site_id: 1, url: 'http://192.168.88.2:3000', username: 'admin', password: 'pw', tls_verify: true, enabled: true } });
   });
 
   it('refuses addresses it shouldn\'t call', () => {
@@ -27,6 +27,11 @@ describe('AdGuard Home source input (#366 step 3)', () => {
     expect(parseDnsSource({ ...noPw, url: 'https://192.168.88.2:3000', tls_verify: false }, saved)).toMatchObject({ field: 'password' });
     expect(parseDnsSource({ ...noPw, tls_verify: false }, { ...saved, url: 'https://x', tls_verify: true })).toMatchObject({ field: 'password' });
     expect(parseDnsSource({ ...base, url: 'http://elsewhere' }, saved)).toMatchObject({ value: { password: 'pw' } });
+  });
+
+  it('takes Pi-hole too, which logs in with a password alone', () => {
+    expect(parseDnsSource({ ...base, kind: 'pihole' })).toMatchObject({ value: { kind: 'pihole', username: '' } });
+    expect(parseDnsSource({ ...base, kind: 'bind' })).toMatchObject({ field: 'kind' });
   });
 
   it('checks the other fields', () => {

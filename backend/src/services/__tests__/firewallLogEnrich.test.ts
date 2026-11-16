@@ -77,7 +77,7 @@ describe('withNames', () => {
     const out = await withNames([
       { deviceId: 1, srcIp: '192.168.62.15', dstIp: '57.145.12.8' },
       { deviceId: 1, srcIp: '192.168.62.15', dstIp: '192.168.62.1' },
-    ], lookup);
+    ], lookup, async () => new Map());
     expect(out[0]).toMatchObject({ srcName: 'laptop', dstName: 'edge.example.net' });
     expect(out[1]).toMatchObject({ srcName: 'laptop' });
     expect(out[1]).not.toHaveProperty('dstName');
@@ -85,12 +85,30 @@ describe('withNames', () => {
     expect(lookup.mock.calls.map((c) => c[0]).sort()).toEqual(['192.168.62.1', '57.145.12.8']);
   });
 
+  it('prefers the name a lookup in the same site answered with over reverse DNS (#366)', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ id: 1, site_id: 10 }, { id: 2, site_id: 20 }] as never)
+      .mockResolvedValueOnce([] as never);
+    const lookup = jest.fn(async () => 'arn11s10-in-f14.1e100.net');
+    const forward = jest.fn(async (bySite: Map<number, string[]>) => {
+      expect([...bySite.keys()].sort()).toEqual([10, 20]);
+      return new Map([['10|142.250.74.110', 'www.youtube.com']]);
+    });
+    const out = await withNames([
+      { deviceId: 1, srcIp: '192.168.1.5', dstIp: '142.250.74.110' },
+      { deviceId: 2, srcIp: '10.0.0.5', dstIp: '142.250.74.110' },
+    ], lookup, forward);
+    expect(out[0].dstName).toBe('www.youtube.com');
+    // Site 20's lookups didn't name it, so reverse DNS does.
+    expect(out[1].dstName).toBe('arn11s10-in-f14.1e100.net');
+  });
+
   it("doesn't wait past its budget for slow DNS", async () => {
     jest.useFakeTimers();
     try {
       mockQuery.mockResolvedValue([] as never);
       const lookup = () => new Promise<string | null>(() => {});
-      const p = withNames([{ deviceId: null, srcIp: '10.0.0.1', dstIp: '10.0.0.2' }], lookup);
+      const p = withNames([{ deviceId: null, srcIp: '10.0.0.1', dstIp: '10.0.0.2' }], lookup, async () => new Map());
       await jest.advanceTimersByTimeAsync(1600);
       expect(await p).toEqual([{ deviceId: null, srcIp: '10.0.0.1', dstIp: '10.0.0.2' }]);
     } finally {

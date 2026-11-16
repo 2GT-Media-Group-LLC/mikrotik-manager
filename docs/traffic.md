@@ -81,32 +81,52 @@ its country, AS number and reverse DNS name. Private, CGNAT and multicast addres
 instead. The names come from the [iptoasn.com](https://iptoasn.com) list (public domain): a copy
 is built into each release, and a newer one is downloaded weekly unless **Settings → Dark Site
 Mode** turns that off. An organisation is who owns the address, not always the service: a CDN
-such as Cloudflare or Akamai carries many sites. Connecting AdGuard Home (below) adds the name
-the client actually looked up.
+such as Cloudflare or Akamai carries many sites. The name the client actually looked up comes from
+the sources under [Names for addresses](#names-for-addresses).
 
 To keep it small, each client keeps its busiest 20 addresses per application in each minute,
 counted by the hour; the rest are added together and shown as a total under the list. Only
 traffic between a client and an address outside the network is counted.
 
-### Names looked up (AdGuard Home)
+### Names looked up (AdGuard Home and Pi-hole)
 
-NetFlow carries addresses, not names. If AdGuard Home answers a site's DNS, add it under
-**Settings → DNS Query Log** (fleet admins), with the site whose clients use it, its web address
-and login. **Test** checks the address and login first. MikroTik Manager then reads its query log
-every minute and keeps:
-
-- how often each client looked up each name, per hour, and how many of those were blocked;
-- which addresses each name answered with, per client.
+NetFlow carries addresses, not names. Add the servers that answer a site's DNS under
+**Settings → DNS Query Log** (fleet admins): AdGuard Home or Pi-hole (version 6 or later), with
+the site whose clients use it, its web address and login. Add every one of them: two resolvers
+sharing the load each see their own part of the lookups, and the counts add up. **Test** checks
+the address and login first. MikroTik Manager then reads each query log every minute and keeps
+how often each client looked up each name, per hour, and how many of those were blocked.
 
 Then the **DNS** application has a **Names looked up** tab, each client's row under it shows
-that client's lookups, a client's page has **Names looked up**, and destinations show the domain
-the client asked for (`www.youtube.com` rather than just Google).
+that client's lookups, and a client's page has **Names looked up**.
 
-AdGuard Home sees clients by address, so its lookups are matched to clients through the
-addresses MikroTik Manager knows for them in that site. A client behind another NAT, or
-using a different resolver, isn't covered. The password is stored encrypted. Changing the
-address or turning off the certificate check needs it typed again, so a saved password is
-never sent to a server it wasn't saved for. AdGuard Home's own log isn't copied, only the counts.
+The servers see clients by address, so lookups are matched to clients through the addresses
+MikroTik Manager knows for them in that site. A client behind another NAT, or using a different
+resolver, isn't covered. Lookups the server makes itself (Pi-hole naming its clients) aren't
+counted. Passwords are stored encrypted, and changing the address or turning off the
+certificate check needs the password typed again, so a saved one is never sent to a server it
+wasn't saved for. Pi-hole logs in with a password alone; with two-factor login on, use an app
+password from Pi-hole's settings. The servers' own logs aren't copied, only the counts.
+
+### Names for addresses
+
+Destinations, [Firewall Logs](firewall-events.md) (with names on) and Sessions show the name
+behind an address, from the best source there is:
+
+1. **AdGuard Home's answers:** AdGuard logs the addresses each name answered with, so a
+   destination gets the domain the client asked for (`www.youtube.com` rather than just Google).
+   Pi-hole doesn't log answers.
+2. **Routers' DNS caches:** a router that answers DNS for its network (**IP > DNS > Allow Remote
+   Requests**) holds the names it resolved and their addresses. MikroTik Manager reads the cache
+   of those routers every fast poll and names each address by the name that was asked, following
+   CNAMEs back (`www.netflix.com`, not `ftl-www.netflix.com`). This covers Pi-hole, or any
+   resolver that forwards to the router, but isn't per client. Switch it off under **Settings →
+   Polling → Collectors**.
+3. **Reverse DNS** from the manager's own resolver, which for a CDN often names the server
+   rather than the site.
+
+A shared address (a CDN serving many sites) can carry several names; the most recent are shown.
+Names are kept for the days set for DNS lookups under **Settings → General → Data Retention**.
 
 With a site selected, every view shows that site's traffic only, and accounts limited to
 particular sites see only theirs. **Flow Sources & Data Health** lists that site's exporting
@@ -132,7 +152,7 @@ Four settings, under **Settings → General → Data Retention**:
 | `netflow_retention_days` | 30 | Per-client time series (one-minute detail) |
 | `netflow_daily_retention_days` | 365 | Daily per-client rollups |
 | `retention_destinations_days` | 7 | Where traffic goes: per client, application and remote address, by hour |
-| `retention_dns_days` | 7 | Lookup counts and answers read from AdGuard Home |
+| `retention_dns_days` | 7 | Lookup counts and answers from AdGuard Home and Pi-hole, and names from routers' DNS caches |
 
 Flow records are the bulky ones; the daily rollups are small and are what the longer ranges are
 drawn from. Raising the first is the expensive change.

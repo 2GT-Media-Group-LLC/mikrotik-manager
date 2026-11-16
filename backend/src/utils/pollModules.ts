@@ -26,6 +26,11 @@ export interface PollModules {
   logs: boolean;
   /** Certificate inventory on the slow poll. Off: no expiry warnings. */
   certificates: boolean;
+  /**
+   * The DNS cache of routers that answer DNS, on the fast poll (#366). Off:
+   * addresses are named only by their owner, reverse DNS and AdGuard Home.
+   */
+  dnsCache: boolean;
 }
 
 export const ALL_MODULES: PollModules = {
@@ -33,6 +38,7 @@ export const ALL_MODULES: PollModules = {
   neighbors: true,
   logs: true,
   certificates: true,
+  dnsCache: true,
 };
 
 export const MODULE_SETTING_KEYS = [
@@ -40,6 +46,7 @@ export const MODULE_SETTING_KEYS = [
   'poll_neighbors_enabled',
   'poll_logs_enabled',
   'poll_certificates_enabled',
+  'poll_dns_cache_enabled',
 ] as const;
 
 /**
@@ -56,6 +63,7 @@ export function resolveModules(settings: Record<string, unknown>): PollModules {
     neighbors: on('poll_neighbors_enabled'),
     logs: on('poll_logs_enabled'),
     certificates: on('poll_certificates_enabled'),
+    dnsCache: on('poll_dns_cache_enabled'),
   };
 }
 

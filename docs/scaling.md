@@ -236,6 +236,7 @@ trip per device per cycle.
 | Neighbour discovery | slow poll | Topology stops updating; no automatic discovery |
 | Device logs | own 60s poll | No events; log alerts go quiet. The session is skipped entirely |
 | Certificates | slow poll | No certificate inventory or expiry warnings |
+| DNS cache of resolving routers | fast poll, routers that answer DNS only | Destinations, firewall logs and sessions aren't named from the routers' caches |
 
 Measured on the reference fleet, turning off clients and logs:
 

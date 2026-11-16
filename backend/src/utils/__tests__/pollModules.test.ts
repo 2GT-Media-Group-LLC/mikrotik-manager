@@ -21,11 +21,11 @@ describe('resolveModules', () => {
     }
   });
 
-  it('handles all four off', () => {
+  it('handles all of them off', () => {
     expect(resolveModules({
       poll_clients_enabled: false, poll_neighbors_enabled: false,
-      poll_logs_enabled: false, poll_certificates_enabled: false,
-    })).toEqual({ clients: false, neighbors: false, logs: false, certificates: false });
+      poll_logs_enabled: false, poll_certificates_enabled: false, poll_dns_cache_enabled: false,
+    })).toEqual({ clients: false, neighbors: false, logs: false, certificates: false, dnsCache: false });
   });
 });
 

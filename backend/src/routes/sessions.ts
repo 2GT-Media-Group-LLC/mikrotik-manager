@@ -9,6 +9,7 @@ import { requireAuth, requireWrite } from '../middleware/auth';
 import { activeSite } from '../middleware/site';
 import { deviceSiteAccess } from '../utils/siteAccess';
 import { siteScopeByNullableDevice } from '../utils/siteScope';
+import { namesForAddresses } from '../utils/addressNames';
 import { END_REASONS } from '../services/netflow/sessions';
 import { netflowCollector } from '../services/netflow/NetflowCollector';
 
@@ -97,7 +98,7 @@ export function sessionFilters(req: Request): Parsed {
   return { where, params };
 }
 
-type SessionRow = Record<string, unknown> & { total_count?: never };
+type SessionRow = Record<string, unknown> & { total_count?: never; device_id: number | null; server_addr: string };
 
 // GET /api/sessions — newest first
 router.get('/', async (req, res) => {
@@ -138,9 +139,33 @@ router.get('/', async (req, res) => {
     ),
   ]);
   const total = count?.n ?? 0;
+  // The server's name, from what a lookup in the device's site answered with
+  // (AdGuard Home, or a resolving router's DNS cache, #366). No reverse DNS
+  // here: it would hold the list up.
+  const serverNames = new Map<string, string>();
+  const siteOf = new Map<number, number>();
+  if (rows.length) {
+    const ids = [...new Set(rows.map((r) => r.device_id).filter((d): d is number => d != null))];
+    if (ids.length) {
+      for (const d of await query<{ id: number; site_id: number | null }>(`SELECT id, site_id FROM devices WHERE id = ANY($1::int[])`, [ids])) {
+        siteOf.set(d.id, d.site_id ?? 0);
+      }
+    }
+    const bySite = new Map<number, string[]>();
+    for (const r of rows) {
+      const site = r.device_id != null ? siteOf.get(r.device_id) ?? 0 : 0;
+      bySite.set(site, [...(bySite.get(site) ?? []), r.server_addr]);
+    }
+    const since = new Date(Date.now() - 7 * 86_400_000);
+    for (const [site, ips] of bySite) {
+      const names = await namesForAddresses(ips, { sites: [site], since, perAddress: 1 });
+      for (const [ip, list] of names) if (list[0]) serverNames.set(`${site}|${ip}`, list[0]);
+    }
+  }
   res.json({
     sessions: rows.map((r) => ({
       ...r,
+      server_name: serverNames.get(`${r.device_id != null ? siteOf.get(r.device_id) ?? 0 : 0}|${r.server_addr}`) ?? null,
       // bigint columns come back as strings
       id: Number(r.id),
       bytes_out: Number(r.bytes_out), bytes_in: Number(r.bytes_in),
