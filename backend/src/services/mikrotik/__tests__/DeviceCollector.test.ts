@@ -751,6 +751,32 @@ describe('collectStp with a bonded root port (#363)', () => {
   });
 });
 
+describe('collectNeighbors keeps the spanning-tree roles', () => {
+  it('writes each port\'s role back onto the rebuilt links', async () => {
+    const c = new DeviceCollector({ ...testDevice, id: 9202 });
+    const execute = jest.fn(async (cmd: string) => cmd === '/ip/neighbor/print'
+      ? [{ interface: 'sfp28-2,bridge', identity: 'core', address: '192.0.2.40', 'mac-address': 'F4:1E:57:00:00:01', 'discovered-by': 'lldp' },
+         { interface: 'ether5,bridge', identity: 'ap', address: '192.0.2.41', 'mac-address': 'F4:1E:57:00:00:02', 'discovered-by': 'mndp' }]
+      : []);
+    (c as unknown as { client: { execute: typeof execute } }).client = { execute };
+    const q = query as jest.Mock;
+    q.mockReset();
+    q.mockImplementation(async (sql: string) => /DELETE FROM topology_links/.test(sql)
+      ? [{ from_interface: 'sfp28-2', stp_role: 'root', stp_state: 'forwarding', bridge_name: 'bridge' },
+         { from_interface: 'ether9', stp_role: null, stp_state: null, bridge_name: null }]
+      : []);
+    await c.collectNeighbors();
+    const inserts = q.mock.calls.filter(([sql]) => /INSERT INTO topology_links/.test(sql)).map(([, p]) => p as unknown[]);
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0][1]).toBe('sfp28-2');
+    expect(inserts[0].slice(-3)).toEqual(['root', 'forwarding', 'bridge']);
+    // A port the spanning-tree read hasn't seen yet gets its role on the next read.
+    expect(inserts[1][1]).toBe('ether5');
+    expect(inserts[1].slice(-3)).toEqual([null, null, null]);
+    q.mockReset();
+  });
+});
+
 // ── Wireless role checked again (#365) ───────────────────────────────────────
 
 describe('a device without a wireless role is checked again (#365)', () => {

@@ -2218,8 +2218,19 @@ export class DeviceCollector {
         if (mac && ip && !ip.includes(':') && !macToIpv4[mac]) macToIpv4[mac] = ip;
       }
 
-      // Wipe existing rows for this device so removed neighbors don't linger
-      await query(`DELETE FROM topology_links WHERE from_device_id = $1`, [this.device.id]);
+      // Wipe existing rows for this device so removed neighbors don't linger,
+      // keeping each port's spanning-tree role. collectStp writes it onto these
+      // rows and the slow poll runs that just before this, so rebuilding them
+      // bare cleared every role within seconds of reading it: the topology map
+      // lost blocked links and a client's way up lost its root port.
+      const prior = await query<{ from_interface: string | null; stp_role: string | null; stp_state: string | null; bridge_name: string | null }>(
+        `DELETE FROM topology_links WHERE from_device_id = $1
+         RETURNING from_interface, stp_role, stp_state, bridge_name`,
+        [this.device.id]
+      );
+      const stpByPort = new Map(prior
+        .filter((r) => r.from_interface && (r.stp_role || r.stp_state || r.bridge_name))
+        .map((r) => [r.from_interface as string, r]));
 
       for (const nb of neighbors) {
         // RouterOS returns comma-separated interface names like "ether1,bridge1" — the
@@ -2295,8 +2306,9 @@ export class DeviceCollector {
         await query(
           `INSERT INTO topology_links
              (from_device_id, from_interface, to_interface, neighbor_address, neighbor_identity,
-              neighbor_platform, neighbor_mac, neighbor_caps, link_type, discovered_by, neighbor_description, discovered_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())`,
+              neighbor_platform, neighbor_mac, neighbor_caps, link_type, discovered_by, neighbor_description, discovered_at,
+              stp_role, stp_state, bridge_name)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14)`,
           [
             this.device.id,
             fromInterface,
@@ -2309,6 +2321,9 @@ export class DeviceCollector {
             discoveredBy,
             discoveredByStored,
             neighborDescription,
+            stpByPort.get(fromInterface)?.stp_role ?? null,
+            stpByPort.get(fromInterface)?.stp_state ?? null,
+            stpByPort.get(fromInterface)?.bridge_name ?? null,
           ]
         );
       }
