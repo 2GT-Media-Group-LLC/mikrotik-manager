@@ -7,7 +7,7 @@ import {
 import clsx from 'clsx';
 import { firmwareApi, commandTemplatesApi } from '../services/api';
 import UpdateChannelCard from '../components/firmware/UpdateChannelCard';
-import { useCanWrite } from '../hooks/useCanWrite';
+import { useCanWrite, useIsAdminIn } from '../hooks/useCanWrite';
 import { formatDistanceToNow } from 'date-fns';
 import ChangelogModal from '../components/ChangelogModal';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
@@ -20,6 +20,8 @@ import { ROLLOUT_STATUS } from '../components/firmware/rolloutStatus';
 export default function FirmwarePage() {
   const qc = useQueryClient();
   const canWrite = useCanWrite();
+  // Post-upgrade commands run as each router's admin login: admins only, checked per device by the server (GHSA-fv5m-vfmw-8h9v).
+  const canRunCommands = useIsAdminIn(null);
   const [selected, setSelected] = useState<Map<number, number>>(new Map()); // deviceId → wave
   const [rolloutName, setRolloutName] = useState('');
   const [preBackup, setPreBackup] = useState(true);
@@ -109,7 +111,7 @@ export default function FirmwarePage() {
       halt_on_failure: haltOnFailure,
       pre_backup: preBackup,
       routerboot_after: rolloutKind === 'routeros' && routerbootAfter,
-      post_template_id: rolloutKind === 'routerboot' || postTemplateId === '' ? null : postTemplateId,
+      post_template_id: rolloutKind === 'routerboot' || postTemplateId === '' || !canRunCommands ? null : postTemplateId,
       wave_concurrency: waveConcurrency,
       package_source: packageSource,
       scheduled_at: scheduleAt ? new Date(scheduleAt).toISOString() : null,
@@ -389,7 +391,7 @@ export default function FirmwarePage() {
                 <input type="checkbox" className="w-4 h-4 rounded" checked={routerbootAfter} onChange={e => setRouterbootAfter(e.target.checked)} />
                 Then RouterBOOT
               </label>
-              <label
+              {canRunCommands && <label
                 className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300"
                 title="Run a command template on each device once its upgrade is verified, over SSH and under Change Guard. Not on devices that didn't upgrade. If it fails, the upgrade stands but halt-on-failure applies."
               >
@@ -399,7 +401,7 @@ export default function FirmwarePage() {
                   <option value="">nothing</option>
                   {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
-              </label>
+              </label>}
               </>)}
               <label
                 className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-slate-300"

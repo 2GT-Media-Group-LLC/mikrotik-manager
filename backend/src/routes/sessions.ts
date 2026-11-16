@@ -1,3 +1,4 @@
+import { decodedPath } from '../utils/requestPath';
 // Session log (#415 step 2): connections from NetFlow, one row each, client
 // to server, both directions paired. Written by the NetFlow collector; see
 // services/netflow/sessions.ts.
@@ -152,7 +153,10 @@ router.get('/', async (req, res) => {
 
 // PUT /api/sessions/devices/:id — { enabled } turns the session log on or off for a device
 const deviceFromPath = (req: Request): number | null => {
-  const m = /^\/devices\/(\d+)\/?$/.exec(req.path);
+  // Decoded and lower-cased like the other site checks, so /DEVICES/5 is checked too (GHSA-4rjj-7mfg-vrpg).
+  const path = decodedPath(req);
+  if (path === null) return NaN;
+  const m = /^\/devices\/(\d+)$/.exec(path);
   return m ? Number(m[1]) : null;
 };
 router.put('/devices/:id', deviceSiteAccess(deviceFromPath), requireWrite, async (req, res) => {

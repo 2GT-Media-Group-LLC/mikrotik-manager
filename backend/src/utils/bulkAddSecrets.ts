@@ -15,10 +15,18 @@ type Field = typeof FIELDS[number];
 
 type Item = Partial<Record<Field, string | null>>;
 
-/** A copy of each item with its passwords encrypted into `<field>_sealed`. */
+/**
+ * A copy of each item with its passwords encrypted into `<field>_sealed`.
+ *
+ * A `_sealed` field the request itself carried is dropped. The worker decrypts
+ * those and logs in with the result at the item's address, so passing one
+ * through let a caller with a copied ciphertext have it decrypted and sent to
+ * a server of their choosing (GHSA-qm4w-hmcg-7rq9).
+ */
 export function sealItems<T extends Item>(items: T[]): T[] {
   return items.map((item) => {
     const out: Record<string, unknown> = { ...item };
+    for (const f of FIELDS) delete out[`${f}_sealed`];
     for (const f of FIELDS) {
       const v = item[f];
       if (typeof v === 'string' && v !== '') {

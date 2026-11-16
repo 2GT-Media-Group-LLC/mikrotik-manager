@@ -164,11 +164,27 @@ suite('scheduled bulk commands (#359)', () => {
     await scheduler.tick();
     expect((await runsOf(gone))[0]).toMatchObject({ status: 'missed', note: expect.stringMatching(/removed/) });
 
-    const sid = await schedule({ name: 'site', device_ids: [id.a1, id.b1], created_by: 'siteop', created_by_user_id: id.op });
-    await scheduler.tick();
-    const [run] = await settled(sid);
-    expect(ran).toEqual(['a1']);
-    expect(run.note).toMatch(/outside siteop's sites/);
+    // Admin in A, operator in B: only A's device runs, since commands are admin-only (GHSA-fv5m-vfmw-8h9v).
+    await db.query(`UPDATE user_site_roles SET role = 'admin' WHERE user_id = $1 AND site_id = $2`, [id.op, id.A]);
+    await db.query(`INSERT INTO user_site_roles (user_id, site_id, role) VALUES ($1, $2, 'operator')`, [id.op, id.B]);
+    try {
+      const sid = await schedule({ name: 'site', device_ids: [id.a1, id.b1], created_by: 'siteop', created_by_user_id: id.op });
+      await scheduler.tick();
+      const [run] = await settled(sid);
+      expect(ran).toEqual(['a1']);
+      expect(run.note).toMatch(/outside siteop's sites/);
+
+      // Demoted to operator: the schedule stops running as them.
+      await db.query(`UPDATE user_site_roles SET role = 'operator' WHERE user_id = $1`, [id.op]);
+      ran.length = 0;
+      const demoted = await schedule({ name: 'demoted', device_ids: [id.a1], created_by: 'siteop', created_by_user_id: id.op });
+      await scheduler.tick();
+      expect((await runsOf(demoted))[0]).toMatchObject({ status: 'missed', note: expect.stringMatching(/no longer an admin/) });
+      expect(ran).toEqual([]);
+    } finally {
+      await db.query(`DELETE FROM user_site_roles WHERE user_id = $1 AND site_id = $2`, [id.op, id.B]);
+      await db.query(`UPDATE user_site_roles SET role = 'operator' WHERE user_id = $1`, [id.op]);
+    }
   });
 
   it('refuses an unguarded scheduled command that could cut management, and keeps schedules to their owner', async () => {

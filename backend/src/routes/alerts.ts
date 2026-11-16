@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query } from '../config/database';
 import { requireAuth, requireWrite, fleetOnly } from '../middleware/auth';
 import { alertService } from '../services/AlertService';
-import { maskConfig, mergeConfig, sealConfig } from '../utils/alertChannelSecrets';
+import { maskConfig, mergeConfig, sealConfig, sealedSecretInput, PLAIN_SECRET_ERROR } from '../utils/alertChannelSecrets';
 
 const router = Router();
 
@@ -136,6 +136,9 @@ router.post('/channels', requireWrite, async (req, res) => {
   if (!validTypes.includes(type)) {
     return res.status(400).json({ error: `type must be one of: ${validTypes.join(', ')}` });
   }
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return res.status(400).json({ error: 'config must be an object' });
+  // A secret that arrives already encrypted would be decrypted and sent (GHSA-qm4w-hmcg-7rq9).
+  if (sealedSecretInput(type, config)) return res.status(400).json({ error: PLAIN_SECRET_ERROR });
 
   const rows = await query(
     `INSERT INTO alert_channels (name, type, enabled, config)
@@ -165,6 +168,9 @@ router.put('/channels/:id', requireWrite, async (req, res) => {
   const existingConfig = existing[0].config as Record<string, unknown>;
   const type           = existing[0].type;
 
+  if (config !== undefined && (!config || typeof config !== 'object' || Array.isArray(config))) {
+    return res.status(400).json({ error: 'config must be an object' });
+  }
   // Merge new config over existing, preserving existing passwords when placeholders sent
   const merge = mergeConfig(type, existingConfig, config ?? {});
   if ('error' in merge) return res.status(400).json({ error: merge.error });

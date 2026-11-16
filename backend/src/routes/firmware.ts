@@ -1,10 +1,10 @@
 import { loadBondMembers } from '../services/topology/bondMembers';
 import { decodedPath } from '../utils/requestPath';
 import { Router } from 'express';
-import { resourceSiteAccess, guardIdParams, strictIdList } from '../utils/siteAccess';
+import { resourceSiteAccess, guardIdParams, strictIdList, devicesDenied } from '../utils/siteAccess';
 import { query, queryOne } from '../config/database';
 import { isUpdateChannel, UPDATE_CHANNELS } from '../utils/updateChannel';
-import { requireAuth, requireWrite } from '../middleware/auth';
+import { requireAuth, requireWrite, isSiteScoped } from '../middleware/auth';
 import { siteScopeDevices, siteScopeByDevice } from '../utils/siteScope';
 import { activeSite, writableScope } from '../middleware/site';
 import { DeviceCollector, DeviceRow } from '../services/mikrotik/DeviceCollector';
@@ -184,6 +184,17 @@ router.post('/rollouts', requireWrite, async (req, res) => {
   for (const d of devices) {
     if (!Number.isInteger(d.device_id) || !Number.isInteger(d.wave) || d.wave < 1 || d.wave > 9) {
       return res.status(400).json({ error: 'each device needs device_id and wave (1-9)' });
+    }
+  }
+  // Post-upgrade commands run over SSH as each router's admin login, so they
+  // are as admin-only as running commands (#411, GHSA-fv5m-vfmw-8h9v): an
+  // admin for every device in the rollout.
+  if (post) {
+    const user = req.user!;
+    const notAdmin = user.role !== 'admin'
+      || (isSiteScoped(user) && (await devicesDenied(user, devices.map((d) => d.device_id), 'admin')).length > 0);
+    if (notAdmin) {
+      return res.status(403).json({ error: 'Post-upgrade commands need admin access to every device in the rollout.' });
     }
   }
   if (scheduled_at && isNaN(Date.parse(scheduled_at))) return res.status(400).json({ error: 'scheduled_at must be a valid timestamp' });

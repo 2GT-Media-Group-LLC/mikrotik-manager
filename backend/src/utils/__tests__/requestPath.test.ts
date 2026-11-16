@@ -15,6 +15,13 @@ describe('decodedPath', () => {
   it('returns null for a path that cannot be decoded', () => {
     expect(decodedPath(req('/%E0%A4%A/x'))).toBeNull();
   });
+  // GHSA-4rjj-7mfg-vrpg: Express routes these to the same handlers.
+  it('reads other casings and a trailing slash as the plain spelling', () => {
+    expect(decodedPath(req('/ROLLOUTS/42/Start'))).toBe('/rollouts/42/start');
+    expect(decodedPath(req('/channel/'))).toBe('/channel');
+    expect(decodedPath(req('/%52OLLOUTS/'))).toBe('/rollouts');
+    expect(decodedPath(req('/'))).toBe('/');
+  });
 });
 
 describe('device id helpers read the decoded id', () => {
@@ -39,6 +46,9 @@ describe('deviceSiteAccess', () => {
     await deviceSiteAccess(() => deviceIdParam(r))(r, res as unknown as Response, (() => { passed = true; }) as NextFunction);
     return { passed, status: res.statusCode };
   };
+  it('takes the device lock for other casings too', () => {
+    expect(deviceIdFromPath(req('/12/VLANS/'))).toBe(12);
+  });
   it('refuses a malformed path for a site-scoped account rather than letting it through', async () => {
     expect(await run('/%E0%A4%A/system-config')).toEqual({ passed: false, status: 400 });
   });

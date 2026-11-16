@@ -92,6 +92,8 @@ suite('site-scoped accounts stay in their sites (GHSA-j9x4-qwcj-p8v8)', () => {
     app.use('/api/user-manager', require('../userManager').default);
     app.use('/api/commands', require('../commands').default);
     app.use('/api/tags', require('../tags').default);
+    app.use('/api/metrics', require('../metrics').default);
+    app.use('/api/command-templates', require('../commandTemplates').default);
 
     id.A = await one(`INSERT INTO sites (name) VALUES ('A') RETURNING id`);
     id.B = await one(`INSERT INTO sites (name) VALUES ('B') RETURNING id`);
@@ -100,10 +102,12 @@ suite('site-scoped accounts stay in their sites (GHSA-j9x4-qwcj-p8v8)', () => {
        VALUES ($1, $2, 'u', 'x', 'router', $3, 'offline') RETURNING id`, [n, `192.0.2.${site}`, site]);
     id.devA = await device('in-A', id.A);
     id.devB = await device('in-B', id.B);
+    id.backupA = await one(`INSERT INTO backups (device_id, filename, file_path) VALUES ($1, 'a.rsc', '/nonexistent/a.rsc') RETURNING id`, [id.devA]);
     id.backupB = await one(`INSERT INTO backups (device_id, filename, file_path) VALUES ($1, 'b.rsc', '/nonexistent/b.rsc') RETURNING id`, [id.devB]);
     id.rolloutB = await one(`INSERT INTO firmware_rollouts (name) VALUES ('B rollout') RETURNING id`);
     await db.query(`INSERT INTO firmware_rollout_devices (rollout_id, device_id) VALUES ($1, $2)`, [id.rolloutB, id.devB]);
     id.tag = await one(`INSERT INTO tags (name) VALUES ('t') RETURNING id`);
+    id.template = await one(`INSERT INTO command_templates (name, command) VALUES ('t', '/system identity print') RETURNING id`);
     id.fleetMute = await one(`INSERT INTO security_check_suppressions (check_id, device_id) VALUES ('ssh-enabled', NULL) RETURNING id`);
     id.muteB = await one(`INSERT INTO security_check_suppressions (check_id, device_id) VALUES ('ssh-enabled', $1) RETURNING id`, [id.devB]);
   });
@@ -204,5 +208,53 @@ suite('site-scoped accounts stay in their sites (GHSA-j9x4-qwcj-p8v8)', () => {
     currentUser = fleetAdmin();
     expect((await request(app).post('/api/devices/security/suppressions').send({ check_id: 'api-enabled', device_id: null })).status).toBe(201);
     expect((await request(app).post('/api/devices/security/suppressions').send({ check_id: 'x', device_id: '0x1' })).status).toBe(400);
+  });
+
+  // GHSA-4rjj-7mfg-vrpg: Express routes other casings and a trailing slash to
+  // the same handlers, so the site checks must read them the same way.
+  it('path spellings: other casings and a trailing slash are checked like the plain path', async () => {
+    const before = await db.query<{ update_channel: string | null }>(`SELECT update_channel FROM devices WHERE id = $1`, [id.devB]);
+    for (const p of ['/api/firmware/channel/', '/api/firmware/CHANNEL']) {
+      const res = await request(app).put(p).send({ deviceIds: [id.devB], channel: 'testing' });
+      expect([res.status, p]).toEqual([404, p]);
+    }
+    expect(await db.query(`SELECT update_channel FROM devices WHERE id = $1`, [id.devB])).toEqual(before);
+    for (const p of ['/api/firmware/rollouts/', '/api/firmware/ROLLOUTS']) {
+      const res = await request(app).post(p).send({ name: 'x', devices: [{ device_id: id.devB, wave: 1 }] });
+      expect([res.status, p]).toEqual([404, p]);
+    }
+    for (const p of [`/api/firmware/ROLLOUTS/${id.rolloutB}/start`, `/api/firmware/rollouts/${id.rolloutB}/START/`]) {
+      expect([(await request(app).post(p)).status, p]).toEqual([404, p]);
+    }
+    expect((await db.query<{ status: string }>(`SELECT status FROM firmware_rollouts WHERE id = $1`, [id.rolloutB]))[0].status).toBe('pending');
+    expect((await request(app).post(`/api/tags/${id.tag}/DEVICES`).send({ deviceIds: [id.devB] })).status).toBe(404);
+    expect((await request(app).post(`/api/tags/${id.tag}/devices/`).send({ deviceIds: [id.devB] })).status).toBe(404);
+    expect(await db.query(`SELECT 1 FROM device_tags WHERE device_id = $1`, [id.devB])).toHaveLength(0);
+    expect((await request(app).get(`/api/metrics/DEVICE/${id.devB}/resources`)).status).toBe(404);
+    expect((await request(app).get(`/api/backups/${id.backupA}/DIFF/${id.backupB}`)).status).toBe(404);
+  });
+
+  // GHSA-fv5m-vfmw-8h9v: a command template can run as a router's admin login.
+  it('command templates: only fleet admins write them', async () => {
+    currentUser = { userId: 3, username: 'fop', role: 'operator' };
+    expect((await request(app).post('/api/command-templates').send({ name: 'x', command: '/user print' })).status).toBe(403);
+    expect((await request(app).put(`/api/command-templates/${id.template}`).send({ command: '/user add name=x group=full' })).status).toBe(403);
+    expect((await request(app).delete(`/api/command-templates/${id.template}`)).status).toBe(403);
+    currentUser = { userId: 1, username: 'sa', role: 'admin', siteRoles: { [id.A]: 'admin' } };
+    expect((await request(app).post('/api/command-templates').send({ name: 'x', command: '/user print' })).status).toBe(403);
+    expect((await db.query<{ command: string }>(`SELECT command FROM command_templates WHERE id = $1`, [id.template]))[0].command).toBe('/system identity print');
+    currentUser = fleetAdmin();
+    expect((await request(app).post('/api/command-templates').send({ name: 'mine', command: '/system identity print' })).status).toBe(201);
+  });
+
+  it('firmware: a post-upgrade command needs admin on every device in the rollout', async () => {
+    const body = (devices: number[]) => ({ name: 'p', post_template_id: id.template, devices: devices.map((d) => ({ device_id: d, wave: 1 })) });
+    currentUser = { userId: 3, username: 'fop', role: 'operator' };
+    expect((await request(app).post('/api/firmware/rollouts').send(body([id.devA]))).status).toBe(403);
+    currentUser = operatorInA();
+    expect((await request(app).post('/api/firmware/rollouts').send(body([id.devA]))).status).toBe(403);
+    currentUser = { userId: 1, username: 'sa', role: 'admin', siteRoles: { [id.A]: 'admin', [id.B]: 'operator' } };
+    expect((await request(app).post('/api/firmware/rollouts').send(body([id.devA, id.devB]))).status).toBe(403);
+    expect(await db.query(`SELECT 1 FROM firmware_rollouts WHERE post_command IS NOT NULL`)).toHaveLength(0);
   });
 });
