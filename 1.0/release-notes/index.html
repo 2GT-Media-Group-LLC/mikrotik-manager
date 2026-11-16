@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1018" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.18
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1017" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1665,6 +1676,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1018" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.18
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1017" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1949,6 +1971,31 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1018">1.0.18<a class="headerlink" href="#1018" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 16 November 2026. Security fixes, reported by
+<a href="https://github.com/davidcoulson">@davidcoulson</a>; update as soon as you can.</p>
+<ul>
+<li><strong>Saved alert passwords and tokens could be sent to another server</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-qm4w-hmcg-7rq9">GHSA-qm4w-hmcg-7rq9</a>).
+  Changing an alert channel's server needs its password or token typed again, but a request
+  that left the secret out skipped that check, so an operator could point the channel at their
+  own server and press <strong>Test</strong>. A left-out secret is now treated like the masked one, turning
+  off an email channel's TLS or certificate check counts as a new server, and a secret that
+  arrives already encrypted is refused everywhere the manager would decrypt it (alert channels,
+  webhook signing secrets and bulk device adds).</li>
+<li><strong>Operators could run commands as the router's admin through a firmware rollout</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-fv5m-vfmw-8h9v">GHSA-fv5m-vfmw-8h9v</a>).
+  Running commands has been admin-only since 1.0.9, but an operator could still write a command
+  template and pick it as a rollout's post-upgrade command. Templates are now written by fleet
+  admins only, and a post-upgrade command needs admin access to every device in the rollout
+  (<a href="../commands/#templates">Bulk commands</a>).</li>
+<li><strong>Site-scoped accounts could reach other sites through a differently spelled address</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-4rjj-7mfg-vrpg">GHSA-4rjj-7mfg-vrpg</a>).
+  <code>/api/firmware/ROLLOUTS/…</code> or a trailing slash reached the same action as the usual address
+  but skipped the site check, so a rollout, update channel, tag, metric or backup in another
+  site could be reached. The checks now read every spelling the same way. Installs without
+  site-scoped accounts weren't affected.</li>
+</ul>
 <h2 id="1017">1.0.17<a class="headerlink" href="#1017" title="Permanent link">&para;</a></h2>
 <p>Released on Sunday 15 November 2026.</p>
 <ul>

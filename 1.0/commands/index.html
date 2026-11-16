@@ -1692,7 +1692,9 @@ since a command can do anything the router's admin account can. Operators can se
 cancel one in progress.</p>
 <h2 id="templates">Templates<a class="headerlink" href="#templates" title="Permanent link">&para;</a></h2>
 <p>Commands you run more than once can be saved as templates: firewall rules, LTE settings, DNS
-and NTP defaults, anything you would otherwise keep in a notes file.</p>
+and NTP defaults, anything you would otherwise keep in a notes file. Creating, editing and
+deleting templates is for fleet admins, since a template can run after a firmware upgrade. Site
+admins can load and run them.</p>
 <ul>
 <li>The <strong>Templates</strong> page (under Operations) lists them all, with search, and lets you create,
   edit, duplicate and delete them. <strong>Run</strong> opens a template in Bulk Commands.</li>
@@ -1702,7 +1704,8 @@ and NTP defaults, anything you would otherwise keep in a notes file.</p>
 <p>Loading or running a template only fills the command box. It runs like any typed command, with
 the same waves, halt-on-failure and Change Guard. A template can also run on each device after
 a firmware upgrade: pick it under <strong>Then run</strong> when creating a rollout (see
-<a href="../firmware/#the-pipeline">Firmware rollouts</a>).</p>
+<a href="../firmware/#the-pipeline">Firmware rollouts</a>). Like running commands, that needs admin access
+to every device in the rollout.</p>
 <h3 id="secrets-in-commands">Secrets in commands<a class="headerlink" href="#secrets-in-commands" title="Permanent link">&para;</a></h3>
 <p>A command that sets a password, such as creating a dedicated user for the manager on every
 device, would otherwise show that password in the template, the run, its history and its output.
