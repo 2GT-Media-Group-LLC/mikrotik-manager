@@ -1827,7 +1827,9 @@ see runs and schedules and cancel a run in progress. Schedules an operator saved
 keep running; an admin can edit, pause or delete them.</p>
 <h2 id="templates">Templates<a class="headerlink" href="#templates" title="Permanent link">&para;</a></h2>
 <p>Commands you run more than once can be saved as templates: firewall rules, LTE settings, DNS
-and NTP defaults, anything you would otherwise keep in a notes file.</p>
+and NTP defaults, anything you would otherwise keep in a notes file. Creating, editing and
+deleting templates is for fleet admins, since a template can run after a firmware upgrade. Site
+admins can load and run them.</p>
 <ul>
 <li>The <strong>Templates</strong> page (under Operations) lists them all, with search, and lets you create,
   edit, duplicate and delete them. <strong>Run</strong> opens a template in Bulk Commands.</li>
@@ -1837,7 +1839,8 @@ and NTP defaults, anything you would otherwise keep in a notes file.</p>
 <p>Loading or running a template only fills the command box. It runs like any typed command, with
 the same waves, halt-on-failure and Change Guard. A template can also run on each device after
 a firmware upgrade: pick it under <strong>Then run</strong> when creating a rollout (see
-<a href="../firmware/#the-pipeline">Firmware rollouts</a>).</p>
+<a href="../firmware/#the-pipeline">Firmware rollouts</a>). Like running commands, that needs admin access
+to every device in the rollout.</p>
 <h3 id="a-template-from-a-device">A template from a device<a class="headerlink" href="#a-template-from-a-device" title="Permanent link">&para;</a></h3>
 <p>To copy settings from a device you've already set up, press <strong>From a device…</strong> on the
 Templates page. Choose the device and what to take: DNS servers, the NTP client, IP services
