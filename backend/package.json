@@ -28,7 +28,7 @@
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.12.1",
-    "nodemailer": "^10.3.1",
+    "nodemailer": "^10.5.0",
     "openid-client": "^6.8.9",
     "otpauth": "^9.6.0",
     "pg": "^8.23.1",
