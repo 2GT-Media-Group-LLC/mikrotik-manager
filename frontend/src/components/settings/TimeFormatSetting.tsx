@@ -34,7 +34,7 @@ export default function TimeFormatSetting() {
 
   return (
     <div className="card p-5 space-y-4">
-      <h3 className="font-semibold text-gray-900 dark:text-white">Time format</h3>
+      <h3 className="font-semibold text-gray-900 dark:text-white">Time Format</h3>
       {isAdmin && (
         <div className="space-y-2">
           <label htmlFor="system-time-format" className="text-sm font-medium text-gray-700 dark:text-slate-300">System default</label>

@@ -7,7 +7,7 @@ a stopping point before a bad build reaches everything.
 
 ## The Firmware page
 
-**Fleet versions** lists each device's RouterOS, the latest on its channel, and RouterBOOT.
+**Fleet Versions** lists each device's RouterOS, the latest on its channel, and RouterBOOT.
 Devices with nothing to install are hidden by default; **Show up-to-date (N)** brings them
 back, and the choice is remembered.
 
@@ -15,7 +15,7 @@ The page shows the running or latest rollout and the five before it. **All upgra
 opens every rollout, newest first, 25 to a page; click one to see its devices and steps.
 
 A single device's RouterOS and RouterBOOT check and install are on that device's **Firmware** tab, which
-links to this page for upgrading several devices at once. The dashboard's "Updates available" banner opens this page.
+links to this page for upgrading several devices at once. The dashboard's "Updates Available" banner opens this page.
 
 ## Timeouts
 
@@ -197,7 +197,7 @@ When any selected device uses a mirror, the rollout bar offers **Packages from: 
 From there the pipeline is the same: reboot, prove it, verify the version, RouterBOOT.
 Devices in the same rollout that don't use a mirror download from MikroTik as before.
 
-The **Fleet versions** table shows a mirror device's newest available version under
+The **Fleet Versions** table shows a mirror device's newest available version under
 **Latest**, and offers it for upgrade when it's newer than what the device runs, even if the
 device hasn't asked MikroTik.
 
@@ -223,7 +223,7 @@ typical rollout is one canary device in wave 1, then `lab`, then `branch`, then 
 ## Update channels
 
 RouterOS checks for updates on a channel: `stable`, `long-term`, `testing` or `development`.
-The **Update channel** card sets it.
+The **Update Channel** card sets it.
 
 - **Fleet default** applies to every device. *Leave each device on its own channel* means the manager never changes a
   device's channel.

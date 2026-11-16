@@ -216,7 +216,7 @@ export default function DeviceDetailPage() {
     { key: 'hardware', label: 'Hardware' },
     { key: 'graphs', label: 'Graphs' },
     ...(isWirelessAP ? [{ key: 'radios' as TabKey, label: 'Radios' }] : []),
-    ...(canAlignAntenna(device) ? [{ key: 'alignment' as TabKey, label: 'Antenna aligner' }] : []),
+    ...(canAlignAntenna(device) ? [{ key: 'alignment' as TabKey, label: 'Antenna Aligner' }] : []),
     // Cellular is a property of the hardware, not the device type: a modem turns
     // up on routers, CPE and travel gear alike, so the flag is set from the
     // interface list rather than inferred (discussion #85).

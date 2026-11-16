@@ -1,5 +1,6 @@
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import { useState } from 'react';
+import { useRowsHeight } from '../hooks/useRowsHeight';
 import { useRememberedRange } from '../hooks/useRememberedRange';
 import { Link } from 'react-router-dom';
 import LoadError from '../components/common/LoadError';
@@ -156,6 +157,9 @@ export default function TrafficAnalyticsPage() {
   // accurate.
   const [clientQuery, setClientQuery] = useState('');
   const [topLimit, setTopLimit] = useState(10);
+  // Top Talkers shows five rows and scrolls for the rest, so it stays the
+  // height of Traffic by Application beside it.
+  const [talkerListRef, talkerListPx] = useRowsHeight(5, 64, 1);
   const navigate = useNavigate();
 
   const { data: series = [], isLoading: seriesLoading, isError: seriesError, error: seriesErr } = useQuery({
@@ -342,9 +346,9 @@ export default function TrafficAnalyticsPage() {
             </ResponsiveContainer>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            {/* Top talkers */}
-            <div className="card overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Top talkers: five rows high, scrolling for the rest */}
+            <div className="card overflow-hidden lg:col-start-1 lg:row-start-1">
               <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 space-y-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <BarChart3 className="w-4 h-4 text-blue-500" />
@@ -373,13 +377,13 @@ export default function TrafficAnalyticsPage() {
                 </div>
               </div>
               {topClients.length === 0
-                ? <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">No client traffic recorded.</div>
+                ? <div className="p-6 flex items-center justify-center text-center text-sm text-gray-400 dark:text-slate-500" style={{ height: talkerListPx }}>No client traffic recorded.</div>
                 : visibleClients.length === 0
-                ? <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">
+                ? <div className="p-6 flex items-center justify-center text-center text-sm text-gray-400 dark:text-slate-500" style={{ height: talkerListPx }}>
                     No client in the top {topClients.length} matches “{clientQuery.trim()}”.
                   </div>
                 : (
-                  <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                  <div ref={talkerListRef} className="divide-y divide-gray-100 dark:divide-slate-800 overflow-y-auto" style={{ height: talkerListPx }}>
                     {visibleClients.map(c => {
                       const isReal = c.mac !== 'unknown' && c.mac !== 'other';
                       return (
@@ -409,18 +413,18 @@ export default function TrafficAnalyticsPage() {
                 )}
             </div>
 
-            {/* Right column: protocol breakdown + data health, stacked to align with Top Talkers */}
-            <div className="space-y-6">
-            {/* App categories */}
-            <div className="card overflow-hidden">
+            {/* App categories: beside Top Talkers and the same height. On wide
+                screens contain:size keeps its own content out of the row's sizing,
+                so Top Talkers sets the height and this card fills it. */}
+            <div className="card overflow-hidden flex flex-col lg:col-start-2 lg:row-start-1 lg:[contain:size]">
               <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
                 <Activity className="w-4 h-4 text-indigo-500" />
                 <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Traffic by Application</h2>
               </div>
               {apps.length === 0
-                ? <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">No application data recorded.</div>
+                ? <div className="p-6 flex-1 flex items-center justify-center text-sm text-gray-400 dark:text-slate-500">No application data recorded.</div>
                 : (
-                  <div className="p-5 flex flex-col sm:flex-row sm:items-center gap-5">
+                  <div className="p-5 flex-1 min-h-0 overflow-y-auto flex flex-col sm:flex-row sm:items-center gap-5">
                     {/* Donut — grows to fill the available space */}
                     <div className="relative w-full sm:w-1/2 flex-shrink-0">
                       <ResponsiveContainer width="100%" height={260}>
@@ -466,17 +470,11 @@ export default function TrafficAnalyticsPage() {
                 )}
             </div>
 
+            {/* Right column under it: who uses the picked application, then data
+                health. Before Top Destinations in the page so on a phone the
+                picked application's clients open right under the donut. */}
+            <div className="space-y-6 lg:col-start-2 lg:row-start-2 self-start">
             {selectedApp && <AppClientsCard app={selectedApp} range={range} onClose={() => setSelectedApp(null)} />}
-
-            {/* Where the site's traffic goes (#366 step 2) */}
-            <div className="card overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
-                <Globe className="w-4 h-4 text-teal-500" />
-                <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Top destinations</h2>
-                <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">Click one to see who used it</span>
-              </div>
-              <DestinationsList range={range} limit={15} className="max-h-[32rem] overflow-y-auto" />
-            </div>
 
             {/* Flow sources & data health */}
             <div className="card overflow-hidden">
@@ -561,6 +559,16 @@ export default function TrafficAnalyticsPage() {
                 )}
             </div>
             </div>
+            </div>
+
+            {/* Where the site's traffic goes (#366 step 2), under Top Talkers */}
+            <div className="card overflow-hidden self-start lg:col-start-1 lg:row-start-2">
+              <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-teal-500" />
+                <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Top Destinations</h2>
+                <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">Click one to see who used it</span>
+              </div>
+              <DestinationsList range={range} limit={15} className="max-h-[32rem] overflow-y-auto" />
             </div>
           </div>
         </>

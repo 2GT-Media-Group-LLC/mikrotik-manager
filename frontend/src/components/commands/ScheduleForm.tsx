@@ -81,7 +81,7 @@ export default function ScheduleForm({ initial, existing, tags, devices, timeZon
     <div className="card p-5 space-y-4 border-blue-200 dark:border-blue-900/60">
       <div className="flex items-center gap-2">
         <CalendarClock className="w-4 h-4 text-blue-500" />
-        <h2 className="text-sm font-semibold text-gray-800 dark:text-slate-100">{existing ? 'Edit schedule' : 'Schedule this command'}</h2>
+        <h2 className="text-sm font-semibold text-gray-800 dark:text-slate-100">{existing ? 'Edit Schedule' : 'Schedule This Command'}</h2>
         <button onClick={onDone} className="ml-auto p-1 text-gray-400 hover:text-gray-600" title="Close"><X className="w-4 h-4" /></button>
       </div>
 

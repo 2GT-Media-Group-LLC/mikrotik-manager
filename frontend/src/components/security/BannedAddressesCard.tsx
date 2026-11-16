@@ -20,7 +20,7 @@ export default function BannedAddressesCard() {
     <div className="card overflow-hidden flex flex-col max-h-[420px]">
       <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 flex-wrap">
         <Ban className="w-4 h-4 text-red-500" />
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Banned addresses</h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Banned Addresses</h2>
         <span className="text-xs text-gray-400 dark:text-slate-500">
           {bans.length} on {devices} {devices === 1 ? 'device' : 'devices'} · brute-force protection · as of the last slow poll
         </span>

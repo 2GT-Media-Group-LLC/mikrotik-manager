@@ -56,7 +56,7 @@ export default function ChangePreviewModal({ preview, deviceName, onApply, apply
         <div className="flex items-start gap-3 p-5 pb-3 border-b border-gray-100 dark:border-slate-700">
           <Eye className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent)' }} />
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 dark:text-white">Review changes</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white">Review Changes</h3>
             <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
               Nothing has been applied. This is what would be sent to {deviceName || 'the device'}
               {real.length > 0 ? `: ${real.length} change${real.length === 1 ? '' : 's'}` : ''}.

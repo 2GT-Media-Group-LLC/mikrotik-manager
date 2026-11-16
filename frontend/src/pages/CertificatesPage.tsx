@@ -88,7 +88,7 @@ function SetUpCa({ choices, onDone }: { choices: number[]; onDone: () => void })
   return (
     <div className="card p-5 space-y-4">
       <div>
-        <h2 className="font-semibold text-gray-900 dark:text-white">Set up a certificate authority</h2>
+        <h2 className="font-semibold text-gray-900 dark:text-white">Set Up a Certificate Authority</h2>
         <p className="text-sm text-gray-500 dark:text-slate-400">
           The manager signs a certificate for each device you choose with it. Nothing changes on any device until you issue one.
         </p>
@@ -197,7 +197,7 @@ function SettingsCard({ data, onSaved }: { data: DeviceCertsOverview; onSaved: (
   });
   return (
     <div className="card p-5 space-y-3">
-      <h3 className="font-semibold text-gray-900 dark:text-white">Device certificate defaults</h3>
+      <h3 className="font-semibold text-gray-900 dark:text-white">Device Certificate Defaults</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
         <div><label className="label">Lifetime</label><LifetimePicker value={f.default_days} max={data.limits.max_days} onChange={(d) => setF({ ...f, default_days: d })} /></div>
         <div><label className="label">Renew this many days before expiry</label>
@@ -252,7 +252,7 @@ function IssueDialog({ target, data, onClose, onDone }: {
       <div className="card w-full max-w-lg mx-4">
         <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
           <h3 className="font-semibold text-gray-900 dark:text-white">
-            {target.reissue ? 'Reissue certificate' : 'Issue certificate'}{single ? ` · ${single.name.trim()}` : ` to ${target.rows.length} devices`}
+            {target.reissue ? 'Reissue Certificate' : 'Issue Certificate'}{single ? ` · ${single.name.trim()}` : ` to ${target.rows.length} devices`}
           </h3>
           <button onClick={onClose} disabled={!!progress} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
@@ -393,7 +393,7 @@ function DevicesCard({ data, onChange }: { data: DeviceCertsOverview; onChange: 
 
 const TABS = [
   { key: 'pki', label: 'PKI' },
-  { key: 'reverse-proxy', label: 'Reverse proxy' },
+  { key: 'reverse-proxy', label: 'Reverse Proxy' },
 ] as const;
 type Tab = typeof TABS[number]['key'];
 

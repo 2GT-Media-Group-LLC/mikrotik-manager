@@ -54,12 +54,12 @@ within 10 seconds of each other stay unidentified.
 
 | View | Answers |
 |---|---|
-| **Top talkers** | Which clients are using the most, over 1h → 30d |
+| **Top Talkers** | Which clients are using the most, over 1h → 30d |
 | **Application breakdown** | HTTPS, QUIC, DNS, SSH, email, WireGuard and others, by port and protocol; click one to see who's using it |
 | **Per-client history** | What one client has been doing over time |
 | **Time series** | Throughput across the selected range |
 
-Top talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a client opens
+Top Talkers can be filtered by IP, name, MAC or vendor, and sorted. Selecting a client opens
 its detail page — see [Clients](clients.md).
 
 Clicking an application in **Traffic by Application**, on the chart or its list, opens the
@@ -71,7 +71,7 @@ applications together, so it doesn't open a list; the applications in it do, fro
 ### Where traffic goes
 
 Each application's card has a second tab, **Where it goes**: the remote addresses that carried
-it, busiest first (#366). Below the applications, **Top destinations** does the same for all of
+it, busiest first (#366). Under Top Talkers, **Top Destinations** does the same for all of
 the site's traffic; click one to see which clients used it. On a client's row, **Where to** lists
 that client's destinations for the application, and a client's page has **Where it goes** under
 its traffic.
@@ -160,7 +160,7 @@ drawn from. Raising the first is the expensive change.
 ## Proxy usage
 
 If a router runs a proxy in a RouterOS container (3proxy, for example) that writes its access
-log as JSON to the device log, the dashboard shows a **Proxy usage** card. It ranks the busiest
+log as JSON to the device log, the dashboard shows a **Proxy Usage** card. It ranks the busiest
 **Clients**, authenticated **Users**, **Destinations**, and **Denied** attempts over 1 hour,
 24 hours, 7 days or 30 days, with a selector when there is more than one proxy. Clicking a row
 opens the matching lines on the Events page.

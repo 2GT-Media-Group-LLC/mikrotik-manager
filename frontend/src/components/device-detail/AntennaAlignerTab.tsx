@@ -194,7 +194,7 @@ function SignalHistory({ a, b, paired, sampleKey, active, time }: {
     <div className="card p-5 space-y-4">
       <div className="flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h3 className="font-semibold text-gray-900 dark:text-white">{paired ? 'Weakest end of the link' : 'Local RX signal'}</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">{paired ? 'Weakest End of the Link' : 'Local RX Signal'}</h3>
           <p className="text-xs text-gray-500 dark:text-slate-400">Higher (less negative) dBm means a stronger received signal.</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -295,7 +295,7 @@ export default function AntennaAlignerTab({ device }: { device: Device }) {
   return (
     <div className="space-y-4">
       <div className="card p-5 space-y-3">
-        <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2"><Radio className="w-5 h-5" />Antenna aligner</h2>
+        <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2"><Radio className="w-5 h-5" />Antenna Aligner</h2>
         <p className="text-sm text-gray-600 dark:text-slate-300">Select the interface and peer at each end, then make small antenna adjustments while watching the signal and chain spread.</p>
         <label className="block text-sm text-gray-600 dark:text-slate-300">Other end of the link (optional)
           <select className="input mt-1 max-w-lg" value={secondId} onChange={e => setSecondId(e.target.value)}>

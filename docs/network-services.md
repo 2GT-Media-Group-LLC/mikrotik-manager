@@ -27,7 +27,7 @@ lists the rest.
 A DHCP server bound to an interface that later changes VLAN is a common way to hand out
 addresses on the wrong segment; the lease list is the quickest way to notice.
 
-**DHCP pool usage**, at the top of the page (and on Wireless → Overview), shows how full every
+**DHCP Pool Usage**, at the top of the page (and on Wireless → Overview), shows how full every
 IPv4 address pool across the fleet is, read on each slow poll (#156): yellow from 80%, red from
 95%. A pool that runs out is a quiet failure, since clients connect but get no address, so
 a nearly full pool is also listed on the dashboard. Widen the range or shorten the lease
@@ -146,7 +146,7 @@ that match the filters.
 
 ### PPP users and sessions
 
-**PPP users and sessions**, at the top of the page, reads one router live: its PPPoE servers,
+**PPP Users and Sessions**, at the top of the page, reads one router live: its PPPoE servers,
 who is connected, and its PPP users (`/ppp secret`). Choose the router, or press **manage** on
 a PPPoE server or PPP session row. Operators and admins can:
 

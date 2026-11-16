@@ -55,7 +55,7 @@ export default function BulkCredentialsModal({ devices, onClose }: { devices: De
       <div className="card w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <KeyRound className="w-4 h-4" /> Change login for {devices.length} device{devices.length === 1 ? '' : 's'}
+            <KeyRound className="w-4 h-4" /> Change Login for {devices.length} device{devices.length === 1 ? '' : 's'}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>

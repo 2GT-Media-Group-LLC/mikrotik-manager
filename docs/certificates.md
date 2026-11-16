@@ -1,7 +1,7 @@
 # Device certificates
 
 **Operations → Certificates** (fleet admins only) has two tabs: **PKI**, described first, and
-[**Reverse proxy**](#reverse-proxy).
+[**Reverse Proxy**](#reverse-proxy).
 
 The **PKI** tab gives devices certificates from a
 certificate authority (CA) of your own, instead of the self-signed certificates RouterOS and
@@ -138,7 +138,7 @@ Install `mikrotik-manager-ca.crt` as a trusted root:
 
 ## Reverse proxy
 
-The **Reverse proxy** tab manages RouterOS's reverse proxy (#358). A router answers HTTPS for a host
+The **Reverse Proxy** tab manages RouterOS's reverse proxy (#358). A router answers HTTPS for a host
 name, such as `nas.example.com`, and passes the request to a web server behind it over plain HTTP.
 Several servers can then share the router's address on port 443 without a NAT rule each. It needs
 RouterOS 7.22 or later, and isn't available on SMIPS devices (hAP lite, hAP mini). Point each host

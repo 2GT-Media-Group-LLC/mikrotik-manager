@@ -230,7 +230,7 @@ function ZoneList({ data, draft, errors, editable, onChange }: {
   const ifaces = data.interfaces.filter((i) => i.type !== 'loopback');
   return (
     <div className="space-y-2">
-      <div className="text-xs font-medium text-gray-700 dark:text-slate-300">Zones and their interfaces</div>
+      <div className="text-xs font-medium text-gray-700 dark:text-slate-300">Zones and Their Interfaces</div>
       {draft.config.zones.map((z) => {
         const dynamic = data.lists.find((l) => l.name === z)?.members.filter((m) => m.dynamic).map((m) => m.interface) ?? [];
         const free = ifaces.filter((i) => !owner.has(i.name) && !dynamic.includes(i.name));
@@ -321,7 +321,7 @@ function Matrix({ draft, labels, errors, editable, onChange, services, managerIp
   return (
     <div className="space-y-2">
       <div>
-        <div className="text-xs font-medium text-gray-700 dark:text-slate-300">What each zone can reach</div>
+        <div className="text-xs font-medium text-gray-700 dark:text-slate-300">What Each Zone Can Reach</div>
         <div className="text-[11px] text-gray-500 dark:text-slate-400">
           {editable ? 'Click a cell to choose what the zone on the left can reach in the zone or router above it.' : 'Click a cell to see what\u2019s allowed.'}
         </div>

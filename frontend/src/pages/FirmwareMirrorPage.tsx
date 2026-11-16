@@ -114,7 +114,7 @@ export default function FirmwareMirrorPage() {
           <Link to="/firmware" className="text-xs text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1">
             <ArrowLeft className="w-3 h-3" /> Firmware
           </Link>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Package mirror</h1>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Package Mirror</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
             Devices pull RouterOS packages from a router you choose, instead of each downloading them from MikroTik
           </p>
@@ -187,7 +187,7 @@ function SetupCard({ canAddFleet, siteChoices, onDone, onCancel }: {
       <div className="flex items-start gap-3">
         <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20"><Server className="w-5 h-5 text-blue-600 dark:text-blue-400" /></div>
         <div className="text-sm text-gray-600 dark:text-slate-300 space-y-1">
-          <p className="font-semibold text-gray-900 dark:text-white">Set up a package server</p>
+          <p className="font-semibold text-gray-900 dark:text-white">Set Up a Package Server</p>
           <p>
             Pick a router to hold the packages. The manager fetches each RouterOS release once from MikroTik, checks it against
             MikroTik&apos;s checksum, and keeps this router stocked with only the architectures and packages your devices run.

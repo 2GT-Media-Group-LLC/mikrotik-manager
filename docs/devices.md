@@ -6,7 +6,7 @@ what each tab of a device does, and the parts that write to hardware.
 ## Adding devices
 
 Use **Wireless Systems** for outdoor PTP/PtMP bridges, antennas and CPE. It has a
-dedicated device filter and an **Antenna aligner** tab for watching both ends of
+dedicated device filter and an **Antenna Aligner** tab for watching both ends of
 a link. Existing devices can be reclassified in Edit Device. See the
 [antenna aligner guide](antenna-aligner.md).
 
@@ -453,7 +453,7 @@ header. Click a header to fold a section, or use the chips at the top to hide on
 both are remembered in your browser. Sections only appear where the device has the data: a switch
 without connection tracking has no Connections section, a single-core device no per-core chart.
 
-On the dashboard's **Capacity & health** card, a device's CPU opens this tab at its CPU graph and
+On the dashboard's **Capacity & Health** card, a device's CPU opens this tab at its CPU graph and
 its memory at the Memory graph; the name opens the device.
 
 | Section | What it shows |
@@ -461,7 +461,7 @@ its memory at the Memory graph; the name opens the device.
 | **CPU** | Load as 5-minute (or longer) averages, with a light band up to the highest reading in each window, and each core on its own when there are several: one core pinned at 100% hardly moves the overall load |
 | **Memory** | Memory used, with the peak band where it differs |
 | **Connections** | Active connections (with the peak, and the share of the table's maximum), connections by protocol and NAT translations (src-nat, dst-nat), and new connections per second where the router counts them (below). Only where connection tracking is running |
-| **Firewall drops** | Packets per second dropped by drop and reject rules, per chain (input, forward, and raw), and the rules that dropped the most in the range |
+| **Firewall Drops** | Packets per second dropped by drop and reject rules, per chain (input, forward, and raw), and the rules that dropped the most in the range |
 | **Interfaces** | The four busiest ports and bonds in the range (or the ones you pick, up to eight), in and out on one chart each, their utilisation of the link speed, and packets per second. The same traffic isn't picked twice: a bond is picked rather than its members, a PPPoE client rather than the port under it, and VLAN and VRRP interfaces are left out (their traffic is counted on the port or bond they ride on). A bond's speed is its running members' together and a PPPoE client's is its port's; an interface whose speed isn't known is named under the utilisation chart. The picker lists ports in number order (ether1, ether2 … ether48, then SFP and QSFP ports, bonds and VLANs) |
 | **Temperature** | Each temperature sensor the device reports |
 
@@ -812,7 +812,7 @@ lite, can't hardware-switch a bridge with VLAN filtering on: turning it on moves
 switching to the CPU. On these chips VLANs belong in the switch chip's own table (**Switch,
 VLAN** in WinBox), with each port's VLAN mode, VLAN header and default VLAN.
 
-On such a device the **VLANs** tab shows a **Switch chip VLANs** card with that table and the
+On such a device the **VLANs** tab shows a **Switch Chip VLANs** card with that table and the
 port settings (#278), and no longer suggests turning on bridge VLAN filtering or offers to add
 bridge VLANs. You can edit it there:
 
@@ -838,7 +838,7 @@ use bridge VLAN filtering as described above and don't show the card.
 
 Routers often carry VLANs as VLAN interfaces (`/interface vlan`, **Interfaces, VLAN** in WinBox)
 on a port, with no bridge VLAN table at all: the router-on-a-stick layout on a CCR, CHR or RB.
-When a device has any, the **VLANs** tab lists them in a **VLAN interfaces** card (#309): VLAN
+When a device has any, the **VLANs** tab lists them in a **VLAN Interfaces** card (#309): VLAN
 ID, name, parent, addresses (IPv4, and IPv6 other than link-local), MTU, state and comment.
 
 The label next to the parent says what it is:
@@ -956,7 +956,7 @@ RouterOS has no 802.1X on SMIPS devices (hAP lite, hAP mini); the tab says so th
 ## Routing between VLANs in hardware
 
 On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),
-the **VLANs** tab has an **L3 hardware offloading** card (#254). It shows:
+the **VLANs** tab has an **L3 Hardware Offloading** card (#254). It shows:
 
 - whether offloading is on, and the switch chip;
 - which VLAN interfaces have addresses, so which VLANs the device routes between;

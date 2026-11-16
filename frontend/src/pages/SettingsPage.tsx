@@ -1912,7 +1912,7 @@ export default function SettingsPage() {
 
           {/* Hardware health limit (#168) */}
           <div className="card p-5">
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Hardware health</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Hardware Health</h3>
             <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
               A device shows as degraded when a power supply or fan reports a failure, or a temperature
               reaches this limit. Readings can be ignored per device on its Overview tab.

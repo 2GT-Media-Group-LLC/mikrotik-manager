@@ -114,7 +114,7 @@ export default function VlanInterfacesCard({ deviceId, deviceName }: { deviceId:
     <div className="card p-4 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <Layers className="w-4 h-4 text-indigo-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">VLAN interfaces</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">VLAN Interfaces</h3>
         <span className="text-xs text-gray-400 dark:text-slate-500">{rows.length}</span>
         {(isFetching || busy) && <RefreshCw className="w-3.5 h-3.5 animate-spin text-gray-400 ml-auto" />}
       </div>
@@ -222,7 +222,7 @@ export default function VlanInterfacesCard({ deviceId, deviceName }: { deviceId:
       {canWrite && form && (
         <div className="p-3 rounded-lg border border-blue-200 dark:border-slate-600 bg-blue-50/40 dark:bg-slate-800/60 space-y-3">
           <h4 className="text-xs font-semibold text-gray-700 dark:text-slate-200">
-            {editing ? `Edit ${editing.name}` : 'Add VLAN interface'}
+            {editing ? `Edit ${editing.name}` : 'Add VLAN Interface'}
           </h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>

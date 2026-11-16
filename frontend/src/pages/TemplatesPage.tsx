@@ -113,7 +113,7 @@ export default function TemplatesPage() {
 
       {capturing && !draft && (
         <div className="card p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900 dark:text-white">Template from a device</h2>
+          <h2 className="font-semibold text-gray-900 dark:text-white">Template from a Device</h2>
           <p className="text-sm text-gray-600 dark:text-slate-300">
             Pick a device you&rsquo;ve set up the way you want, and what to take from it. It&rsquo;s read now and written as the commands
             that set it, in a new template to check before saving. Secrets (SNMP communities, passwords) and the device&rsquo;s own
@@ -146,7 +146,7 @@ export default function TemplatesPage() {
 
       {draft && (
         <div className="card p-5 space-y-3">
-          <h2 className="font-semibold text-gray-900 dark:text-white">{draft.id ? 'Edit template' : 'New template'}</h2>
+          <h2 className="font-semibold text-gray-900 dark:text-white">{draft.id ? 'Edit Template' : 'New Template'}</h2>
           <input className="input w-full" placeholder="Name, e.g. LTE failover defaults" value={draft.name}
                  onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus />
           <input className="input w-full" placeholder="What it's for (optional)" value={draft.description}

@@ -47,7 +47,7 @@ over that wireless link the manager may lose contact (#294). Enabling one doesn'
 - **TX-retry histogram**, derived from per-client CCQ. This is only available on the legacy
   `wireless` driver; on an all-RouterOS-7 fleet the panel says so rather than showing an empty
   chart forever.
-- **DHCP pool usage**: how full each address pool is (see
+- **DHCP Pool Usage**: how full each address pool is (see
   [DHCP](network-services.md#dhcp)). It replaced the log-derived "WiFi Connectivity Success"
   funnel, which counted ordinary disconnects as failures (#156). An exhausted pool is the
   quiet failure worth watching: clients connect and get no address.

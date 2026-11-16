@@ -121,7 +121,7 @@ export default function CommandsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-          <Terminal className="w-5 h-5 text-blue-500" /> Bulk commands
+          <Terminal className="w-5 h-5 text-blue-500" /> Bulk Commands
         </h1>
         <p className="text-sm text-gray-600 dark:text-slate-300 mt-1 max-w-3xl">
           Run RouterOS console commands across many devices, in waves, stopping at the first
@@ -289,7 +289,7 @@ export default function CommandsPage() {
       {/* Results */}
       <div className="card overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700">
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Recent runs</h2>
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Recent Runs</h2>
         </div>
         {runs.length === 0 ? (
           <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">Nothing run yet.</div>

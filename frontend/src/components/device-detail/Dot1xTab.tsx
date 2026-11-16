@@ -173,7 +173,7 @@ export default function Dot1xTab({ deviceId, deviceName, canWrite }: { deviceId:
       {/* ── Authenticating ports ── */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100 flex-1">Ports that authenticate</h3>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100 flex-1">Ports That Authenticate</h3>
           {canWrite && !server && (
             <button type="button" className="btn-secondary text-xs flex items-center gap-1" onClick={() => setServer({ interface: '', dot1x: true, mac: false, guest: '', reject: '', fail: '', retrans: '30', reauth: '', macMode: 'mac-as-username', accounting: true, comment: '' })}>
               <Plus className="w-3.5 h-3.5" />Add a port
@@ -269,7 +269,7 @@ export default function Dot1xTab({ deviceId, deviceName, canWrite }: { deviceId:
       {/* ── Authenticated now ── */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Authenticated now</h3>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">Authenticated Now</h3>
         </div>
         {data.active.length === 0 ? <div className="p-4 text-sm text-gray-400">Nobody is authenticated.</div> : (
           <div className="overflow-x-auto">
@@ -298,7 +298,7 @@ export default function Dot1xTab({ deviceId, deviceName, canWrite }: { deviceId:
       {/* ── RADIUS servers ── */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100 flex-1">RADIUS servers</h3>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100 flex-1">RADIUS Servers</h3>
           {canWrite && !radius && (
             <button type="button" className="btn-secondary text-xs flex items-center gap-1" onClick={() => setRadius({ address: '', secret: '', timeout: '', comment: '', hasSecret: false })}>
               <Plus className="w-3.5 h-3.5" />Add a server
@@ -361,7 +361,7 @@ export default function Dot1xTab({ deviceId, deviceName, canWrite }: { deviceId:
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">This device authenticating upstream</h3>
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-slate-100">This Device Authenticating Upstream</h3>
             <p className="text-xs text-gray-400">For an uplink into a switch that requires 802.1X.</p>
           </div>
           {canWrite && !client && (

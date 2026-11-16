@@ -58,7 +58,7 @@ function SitesMap({ sites, onSelect }: { sites: Site[]; onSelect: (id: number) =
     <div className="card overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 dark:border-slate-700">
         <MapPin className="w-4 h-4 text-blue-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex-1">Site locations</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex-1">Site Locations</h3>
         <span className="text-xs text-gray-400">
           {pinned.length} of {sites.length} mapped
         </span>
@@ -259,7 +259,7 @@ export default function SitesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">All sites</h1>
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-white">All Sites</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400">
             {sites.length} site{sites.length === 1 ? '' : 's'} · {totalDevices} device
             {totalDevices === 1 ? '' : 's'} · {totalOnline} online

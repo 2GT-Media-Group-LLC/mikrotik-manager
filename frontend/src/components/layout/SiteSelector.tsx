@@ -20,7 +20,7 @@ interface Props {
  */
 export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
   // An account limited to particular sites sees only those; "all" means all of its own (P1-7).
-  const allLabel = useIsSiteScoped() ? 'All my sites' : 'All sites';
+  const allLabel = useIsSiteScoped() ? 'All My Sites' : 'All Sites';
   const queryClient = useQueryClient();
   const canWrite = useCanWrite();
   const { currentSiteId, setCurrentSite, currentGroupId, setCurrentGroup } = useSiteStore();

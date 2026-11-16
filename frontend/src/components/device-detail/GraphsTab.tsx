@@ -295,7 +295,7 @@ export default function GraphsTab({ deviceId, focus }: { deviceId: number; focus
       )}
 
       {shown('firewall') && (
-        <Section id="firewall" title="Firewall drops" collapsed={collapsed.has('firewall')} onToggle={onCollapse} since={sinceOf((drops.data ?? []).map((r) => r.time))}
+        <Section id="firewall" title="Firewall Drops" collapsed={collapsed.has('firewall')} onToggle={onCollapse} since={sinceOf((drops.data ?? []).map((r) => r.time))}
           summary={dropRules.data && dropRules.data.length ? `top rule: ${dropRules.data[0].label} (${fmtK(dropRules.data[0].packets)} packets in ${range})` : 'packets/s dropped by drop and reject rules'}>
           <SeriesChart time={time} data={withLabels(drops.data)} unit={fmtPps}
             lines={dropKeys.map((k, i) => ({ key: k, name: prettyChain(k), color: COLORS[i % COLORS.length] }))} />

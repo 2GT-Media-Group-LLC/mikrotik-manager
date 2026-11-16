@@ -125,7 +125,7 @@ export default function CsvImportModal({ existingAddresses, onClose, onSuccess }
         <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-500" />
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Import devices from CSV</h2>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Import Devices from CSV</h2>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>

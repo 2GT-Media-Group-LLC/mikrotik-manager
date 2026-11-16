@@ -158,7 +158,7 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
 
       {adding && (
         <div className="card p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">New bridge</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">New Bridge</h3>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div><label className="label">Name</label>
               <input className="input font-mono" value={adding.name} placeholder="bridge-guest" autoFocus

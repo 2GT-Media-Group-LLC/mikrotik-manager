@@ -103,7 +103,7 @@ export default function UpdateChannelCard({ devices, canWrite }: Props) {
     <div className="card p-5 space-y-4">
       <div className="flex items-center gap-2">
         <Radio className="w-4 h-4 text-blue-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Update channel</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Update Channel</h3>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

@@ -137,7 +137,7 @@ function SetupWizard({ deviceId, interfaces, isAP, onDone }: {
     <div className="card p-6 max-w-2xl">
       <div className="flex items-center gap-2 mb-1">
         <Ticket className="w-5 h-5 text-blue-500" />
-        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Set up Guest WiFi</h2>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Set Up Guest WiFi</h2>
       </div>
       <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
         Builds the whole guest network in one pass: broadcasts a new guest SSID, isolates the traffic
@@ -271,7 +271,7 @@ function VoucherGenerator({ deviceId, userProfiles, networkName, onCreated }: {
     <div className="card p-5">
       <div className="flex items-center gap-2 mb-4">
         <Plus className="w-4 h-4 text-green-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Generate vouchers</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Generate Vouchers</h3>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
@@ -591,7 +591,7 @@ export default function GuestWifiPage() {
           <div className="card overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
               <Globe className="w-4 h-4 text-emerald-500" />
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Walled garden</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Walled Garden</h3>
               <span className="text-xs text-gray-400 dark:text-slate-500">sites reachable before login</span>
             </div>
             <div className="p-4 space-y-3">

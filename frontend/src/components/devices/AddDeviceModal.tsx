@@ -408,7 +408,7 @@ export default function AddDeviceModal({
                 {!sshOnly && (
                 <details className="group mt-3">
                   <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider select-none">
-                    SSH Credentials (optional, for backup/restore)
+                    SSH Credentials (Optional, for Backup/Restore)
                   </summary>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <div>

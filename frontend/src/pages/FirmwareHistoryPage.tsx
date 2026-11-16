@@ -35,7 +35,7 @@ export default function FirmwareHistoryPage() {
         <Link to="/firmware" className="text-sm text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1">
           <ArrowLeft className="w-4 h-4" /> Firmware
         </Link>
-        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Upgrade history</h1>
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Upgrade History</h1>
         <span className="text-sm text-gray-400 dark:text-slate-500">{total} rollout{total === 1 ? '' : 's'}</span>
       </div>
 

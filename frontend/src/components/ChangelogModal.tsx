@@ -39,7 +39,7 @@ export default function ChangelogModal({ version, onClose }: { version: string; 
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <FileText className="w-4 h-4 text-blue-500" />
-            What&apos;s new in RouterOS {version}
+            What&apos;s New in RouterOS {version}
           </h2>
           <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">
             <X className="w-4 h-4" />

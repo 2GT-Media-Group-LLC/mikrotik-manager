@@ -252,7 +252,7 @@ function MovePortModal({ deviceId, onClose }: { deviceId: number; onClose: () =>
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['reverse-proxy'] }); qc.invalidateQueries({ queryKey: ['reverse-proxy-device', deviceId] }); onClose(); },
   });
   return (
-    <Modal title="Move a port" onClose={onClose}>
+    <Modal title="Move a Port" onClose={onClose}>
       <div className="p-5">{view ? <PortChoice view={view} value={fix} onChange={setFix} proxyActive={view.rules.some((r) => !r.disabled)}
         intro={`WebFig HTTPS is on port ${view.service.wwwSslPort ?? '?'}${view.service.wwwSslDisabled ? ' (off)' : ''}, the reverse proxy on ${view.service.port ?? '?'}. Choose which to move:`} /> : <p className="text-sm text-gray-400">Reading the device…</p>}</div>
       <div className="px-5 pb-4 flex items-center gap-3 flex-wrap">
@@ -431,7 +431,7 @@ function DeviceCard({ d, onNote }: { d: ProxyFleetDevice; onNote: (n: { ok: bool
         )}
         {d.managed_certs.length > 0 && (
           <div className="text-xs space-y-1">
-            <div className="font-semibold text-gray-500 uppercase tracking-wide">Certificates from the manager&apos;s CA</div>
+            <div className="font-semibold text-gray-500 uppercase tracking-wide">Certificates from the Manager&apos;s CA</div>
             {d.managed_certs.map((m) => (
               <div key={m.sni} className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium">{m.sni}</span>

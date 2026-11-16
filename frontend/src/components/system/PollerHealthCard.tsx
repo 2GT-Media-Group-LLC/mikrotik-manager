@@ -292,7 +292,7 @@ function PhasesPanel({ phases, onSaved }: { phases: PollerPhases; onSaved: () =>
   return (
     <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3 space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="text-xs font-medium text-gray-700 dark:text-slate-200">Where a fast poll’s time goes</div>
+        <div className="text-xs font-medium text-gray-700 dark:text-slate-200">Where a Fast Poll’s Time Goes</div>
         <div className="flex items-center gap-4 flex-wrap">
           <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300" title="Off by default: each poll opens its own connection. On: one API session per device is kept open and reused, which saves the handshake and login on every poll">
             <input type="checkbox" checked={phases.persistent_sessions} disabled={!isFleetAdmin || save.isPending}
@@ -328,7 +328,7 @@ function PhasesPanel({ phases, onSaved }: { phases: PollerPhases; onSaved: () =>
       {slowest.length > 0 && (
         <div>
           <div className="flex items-center gap-3 text-[11px] text-gray-500 mb-1.5 flex-wrap">
-            <span className="font-medium text-gray-700 dark:text-slate-200">Slowest fast polls</span>
+            <span className="font-medium text-gray-700 dark:text-slate-200">Slowest Fast Polls</span>
             <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-400" />connecting</span>
             <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-500" />waiting on the device</span>
             <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-gray-400" />database and processing</span>

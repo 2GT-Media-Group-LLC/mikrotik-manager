@@ -50,7 +50,7 @@ export default function FirmwareTimeoutCard({ settings, onSave, saving }: Props)
     <div className="card p-5">
       <div className="flex items-center gap-2 mb-1">
         <Clock className="w-4 h-4 text-blue-500" />
-        <h3 className="font-semibold text-gray-900 dark:text-white">Firmware rollout timeouts</h3>
+        <h3 className="font-semibold text-gray-900 dark:text-white">Firmware Rollout Timeouts</h3>
       </div>
       <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
         Applied at the start of each rollout, so a change needs no restart and a rollout in

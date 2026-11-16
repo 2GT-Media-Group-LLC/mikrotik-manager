@@ -133,7 +133,7 @@ export default function RoamingTimeline({ mac }: { mac: string }) {
     <div className="card p-4 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <Route className="w-4 h-4 text-blue-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Roaming &amp; sessions</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Roaming &amp; Sessions</h3>
         <div className="ml-auto flex rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
           {RANGES.map(r => (
             <button key={r} onClick={() => setRange(r)}

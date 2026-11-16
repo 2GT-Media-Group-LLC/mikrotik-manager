@@ -233,7 +233,7 @@ function PeerForm({ deviceId, ifaceName, existing, onClose, serverPublicKey, lis
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Peer created</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Peer Created</h3>
             <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"><X className="w-4 h-4" /></button>
           </div>
           <div className="p-5 space-y-3">

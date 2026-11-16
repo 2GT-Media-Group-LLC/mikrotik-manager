@@ -332,7 +332,7 @@ export default function LteTab({ deviceId }: Props) {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <RadioTower className="w-4 h-4 text-gray-400 dark:text-slate-500" />
-                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Carriers in use</h4>
+                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Carriers in Use</h4>
               </div>
               <BandChips iface={iface} />
 
@@ -410,7 +410,7 @@ export default function LteTab({ deviceId }: Props) {
       {/* Signal over time */}
       <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-          <h3 className="font-semibold text-gray-900 dark:text-white">Signal over time</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">Signal over Time</h3>
           <div className="flex gap-1">
             {RANGES.map(r => (
               <button
@@ -464,7 +464,7 @@ export default function LteTab({ deviceId }: Props) {
           <div className="flex items-start gap-3">
             <Clock className="w-5 h-5 mt-0.5 text-gray-400 dark:text-slate-500" />
             <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white">Where this link spends its time</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-white">Where This Link Spends Its Time</h3>
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
                 Reconstructed from handovers and band changes. Aggregated carriers each count
                 for the whole stretch, so band shares describe usage rather than dividing the window.
@@ -492,12 +492,12 @@ export default function LteTab({ deviceId }: Props) {
 
         <div className="grid sm:grid-cols-2 gap-6">
           <div>
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">By band</h4>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">By Band</h4>
             <DwellList rows={dwell?.bands ?? []}
               emptyText="No band changes recorded yet — the modem has stayed on one set of carriers." />
           </div>
           <div>
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">By cell</h4>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">By Cell</h4>
             <DwellList rows={dwell?.cells ?? []}
               emptyText="No handovers recorded yet — the modem has stayed on one cell." />
           </div>

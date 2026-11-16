@@ -66,7 +66,7 @@ export default function BackupViewerModal({ ids, onClose, onDownload }: Props) {
             {comparing ? (
               <>
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                  Comparing backups
+                  Comparing Backups
                 </h3>
                 {pair.data && (
                   // The filename lives here rather than in the table: it is how you

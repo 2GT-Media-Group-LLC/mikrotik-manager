@@ -83,7 +83,7 @@ Two kinds of background traffic get a row colour, so they stand apart:
   the mask.
 
 Set both under **Settings**, **Firewall Logs**, or with **Port names & colours** on the page.
-Each colour can be one of nine, or **None**. **Port names** adds a port the list doesn't know, or
+Each colour can be one of nine, or **None**. **Port Names** adds a port the list doesn't know, or
 names one it does your way, for TCP, UDP or both. Show the built-in list to see what it already
 names; a port you've renamed is struck out there. Everyone sees the same names and colours;
 only admins change them.

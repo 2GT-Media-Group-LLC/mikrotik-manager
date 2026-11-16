@@ -75,7 +75,7 @@ export default function ChangePasswordPage() {
           isDark ? 'bg-slate-900/80 border border-slate-700/60' : 'bg-white/75 border border-slate-300/60'
         }`}>
           <h2 className={`text-lg font-semibold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-800'}`}>
-            <KeyRound className="w-5 h-5 text-blue-500" /> Set a new password
+            <KeyRound className="w-5 h-5 text-blue-500" /> Set a New Password
           </h2>
           <p className={`text-sm mt-1 mb-5 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
             {user?.username ? <><strong>{user.username}</strong> is</> : 'This account is'} still using the

@@ -12,7 +12,7 @@ export default function AcmeAttemptStatus() {
 
   return (
     <div className="border-t border-gray-200 dark:border-slate-700 pt-3">
-      <h4 className="text-sm font-medium text-gray-900 dark:text-white">Last Certbot attempt</h4>
+      <h4 className="text-sm font-medium text-gray-900 dark:text-white">Last Certbot Attempt</h4>
       {error ? (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           Could not load Certbot status: {apiErrorMessage(error)}

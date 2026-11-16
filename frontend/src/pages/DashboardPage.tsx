@@ -17,6 +17,7 @@ import TerminalModal from '../components/TerminalModal';
 import ProxyUsageCard from '../components/ProxyUsageCard';
 import { useSocket } from '../hooks/useSocket';
 import { useCanWrite } from '../hooks/useCanWrite';
+import { useRowsHeight } from '../hooks/useRowsHeight';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, formatDistanceToNow } from 'date-fns';
 import type { Device, DeviceEvent } from '../types';
@@ -268,7 +269,7 @@ function HealthBar({
         {/* Mini-stats */}
         {[
           {
-            label: 'Active clients',
+            label: 'Active Clients',
             value: String(summary?.clients.active ?? '—'),
             spark: clientSparkline,
             color: 'var(--accent)',
@@ -384,6 +385,11 @@ function SummaryView(props: Record<string, any>) {
   // Bars over a category axis fill their slots (thick, minimal gaps) rather than
   // sitting as thin fixed-width marks on a continuous time axis. Downsample to
   // keep them chunky even on long ranges.
+  // Five devices show and the rest scroll, so this card stays near the height
+  // of Connected Clients beside it.
+  const [deviceListRef, deviceListPx] = useRowsHeight(5, 46, 1);
+  const cardDevices = byAttention(devices as Device[]).slice(0, CARD_ROWS);
+
   const chartData = downsample(clientsOverTime as { ts: number; value: number }[], 60);
   const tickEvery = Math.max(0, Math.ceil(chartData.length / 6) - 1);
 
@@ -397,11 +403,11 @@ function SummaryView(props: Record<string, any>) {
 
       {/* Main grid: clients chart + devices list */}
       <div className="grid gap-4" style={{ gridTemplateColumns: '1.6fr 1fr' }}>
-        {/* Clients chart */}
-        <div className="card" style={{ padding: '16px 18px' }}>
+        {/* Clients chart: grows to the height of the Devices card beside it */}
+        <div className="card flex flex-col" style={{ padding: '16px 18px' }}>
           <div className="flex items-baseline justify-between mb-3">
             <div>
-              <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Connected clients</div>
+              <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Connected Clients</div>
               <div className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>last {chartRange} · 5min buckets</div>
             </div>
             <div className="flex items-baseline gap-2">
@@ -430,7 +436,8 @@ function SummaryView(props: Record<string, any>) {
             </div>
           </div>
           {clientsOverTime.length > 0 ? (
-            <ResponsiveContainer width="100%" height={180}>
+            <div className="flex-1" style={{ minHeight: 180 }}>
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }} barCategoryGap="12%">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--line-soft)" vertical={false} />
                 <XAxis
@@ -456,8 +463,9 @@ function SummaryView(props: Record<string, any>) {
                 <Bar dataKey="value" fill="var(--accent)" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </div>
           ) : (
-            <div className="flex items-center justify-center text-[13px]" style={{ height: 180, color: 'var(--ink-4)' }}>
+            <div className="flex-1 flex items-center justify-center text-[13px]" style={{ minHeight: 180, color: 'var(--ink-4)' }}>
               No data yet — metrics appear after devices are polled
             </div>
           )}
@@ -477,8 +485,8 @@ function SummaryView(props: Record<string, any>) {
           </div>
           {/* A large fleet gets the devices needing attention, not a page of
               names (#303). */}
-          <div className="space-y-[1px]">
-            {byAttention(devices as Device[]).slice(0, CARD_ROWS).map((d) => (
+          <div ref={deviceListRef} className="space-y-[1px] overflow-y-auto" style={{ maxHeight: deviceListPx }}>
+            {cardDevices.map((d) => (
               <div
                 key={d.id}
                 className="flex items-center gap-[10px] px-[6px] py-[7px] rounded-[5px] cursor-pointer transition-colors"
@@ -547,7 +555,7 @@ function SummaryView(props: Record<string, any>) {
             the collector has data; otherwise device-reported connection counters. */}
         <div className="card" style={{ padding: '16px 18px' }}>
           <div className="flex items-baseline justify-between mb-3">
-            <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Top talkers</div>
+            <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Top Talkers</div>
             <span
               className="mono text-[11px]"
               style={{ color: 'var(--ink-3)' }}
@@ -982,7 +990,7 @@ function OperationsView({
               style={{ background: 'var(--warn)', color: 'var(--accent-fg)' }}
             >!
             </div>
-            <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Things to handle</span>
+            <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Things to Handle</span>
             <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
               {thingsToHandle.length} item{thingsToHandle.length !== 1 ? 's' : ''}
             </span>
@@ -1076,7 +1084,7 @@ function OperationsView({
         <div className="card" style={{ overflow: 'hidden' }} ref={capacityRef}>
           <div className="flex items-center gap-2 px-5 py-[14px]" style={{ borderBottom: '1px solid var(--line)' }}>
             <Cpu className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-            <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Capacity &amp; health</span>
+            <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Capacity &amp; Health</span>
             <span className="mono text-[11px] ml-auto" style={{ color: 'var(--ink-3)' }}>busiest CPU first</span>
           </div>
           {sortedCapacity.length === 0 ? (
@@ -1156,7 +1164,7 @@ function OperationsView({
         >
           <div className="flex items-center gap-2 px-5 py-[14px]" style={{ borderBottom: '1px solid var(--line)' }}>
             <Shield className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-            <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Security posture</span>
+            <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Security Posture</span>
             <ChevronRight className="w-4 h-4 ml-auto" style={{ color: 'var(--ink-3)' }} />
           </div>
           <div className="px-5 py-4">
@@ -1191,7 +1199,7 @@ function OperationsView({
       <div className="card" style={{ overflow: 'hidden' }}>
         <div className="flex items-center gap-2 px-5 py-[14px]" style={{ borderBottom: '1px solid var(--line)' }}>
           <Clock className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Recent activity</span>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Recent Activity</span>
           <button
             onClick={toggleRequests}
             className="ml-auto text-[11px]"
@@ -1291,7 +1299,7 @@ function OperationsView({
           <div className="card w-full max-w-sm" style={{ overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2 px-5 py-[14px]" style={{ borderBottom: '1px solid var(--line)' }}>
               <Terminal className="w-4 h-4" style={{ color: 'var(--violet)' }} />
-              <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Open terminal — pick a device</span>
+              <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Open Terminal — Pick a Device</span>
               <button onClick={() => setPickTerminal(false)} className="ml-auto" style={{ color: 'var(--ink-3)' }}>
                 <X className="w-4 h-4" />
               </button>
@@ -1515,7 +1523,7 @@ export default function DashboardPage() {
         >
           <ArrowUpCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--warn)' }} />
           <div className="flex-1 text-[13px] space-y-1" style={{ color: 'var(--ink-2)' }}>
-            <span className="font-semibold" style={{ color: 'var(--warn)' }}>Updates available</span>
+            <span className="font-semibold" style={{ color: 'var(--warn)' }}>Updates Available</span>
             <button onClick={() => navigate('/firmware')} className="ml-3 underline underline-offset-2" style={{ color: 'var(--ink-3)' }}>
               Upgrade several devices
             </button>

@@ -57,7 +57,7 @@ export default function PollOverridesCard({ scope, id, siteId, compact = false }
 
   return (
     <div className={compact ? '' : 'card p-5'}>
-      {!compact && <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Polling and backups</h3>}
+      {!compact && <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Polling and Backups</h3>}
       <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
         {scope === 'site'
           ? 'Devices in this site use these instead of the global settings, unless a device overrides them itself.'

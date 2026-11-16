@@ -370,7 +370,7 @@ export function DhcpPoolUsage() {
     <div className="card p-5">
       <div className="flex items-center gap-2 mb-1">
         <ShieldCheck className="w-4 h-4 text-green-500" />
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">DHCP pool usage</h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">DHCP Pool Usage</h2>
       </div>
       <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
         How full each address pool is. When one runs out, clients connect but get no address. Yellow from 80%, red from 95%;

@@ -292,7 +292,7 @@ function CacheFolderModal({ view, onClose }: { view: NetinstallDeviceView; onClo
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['netinstall-device', deviceId] }); onClose(); },
   });
   return (
-    <Modal title="Cache folder" onClose={onClose}>
+    <Modal title="Cache Folder" onClose={onClose}>
       <div className="p-5 space-y-3">
         <p className="text-xs text-gray-500 dark:text-slate-400">
           Where install files are kept. At the root they&apos;re in {view.storage.kind === 'ram' && !view.storage.disk ? 'RAM on this device' : 'the device\'s flash'};

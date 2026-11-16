@@ -71,7 +71,7 @@ export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean 
       <div className="card p-5">
         <div className="flex items-center gap-2 mb-1">
           <ShieldCheck className="w-4 h-4 text-blue-500" />
-          <h3 className="font-semibold text-gray-900 dark:text-white">Row colours</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">Row Colours</h3>
         </div>
         <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
           Lines of this traffic are tinted on the Firewall Logs page, so the background noise stands apart. A DHCP
@@ -105,7 +105,7 @@ export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean 
       </div>
 
       <div className="card p-5">
-        <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Port names</h3>
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-1">Port Names</h3>
         <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
           The Application column names a line&apos;s destination port (or its source port, for a reply) from a built-in
           list based on /etc/services. Add a port here to name one it doesn&apos;t know, or list one it does to name it

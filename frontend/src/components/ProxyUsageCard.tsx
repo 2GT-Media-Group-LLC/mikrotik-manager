@@ -56,7 +56,7 @@ export default function ProxyUsageCard() {
   return (
     <div className="card" style={{ padding: '16px 18px' }}>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Proxy usage</div>
+        <div className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>Proxy Usage</div>
         <div className="flex flex-wrap items-center gap-3">
           {instances.length > 1 && (
             <select

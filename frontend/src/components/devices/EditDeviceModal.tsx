@@ -418,7 +418,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
           {!selectedPreset && (
           <details className="group" open={device.ssh_only || undefined}>
             <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider select-none">
-              SSH Credentials (optional, for backup/restore)
+              SSH Credentials (Optional, for Backup/Restore)
             </summary>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
@@ -458,7 +458,7 @@ export default function EditDeviceModal({ device, onClose, onSuccess }: Props) {
               out of sight; a site's are set on the Sites page. */}
           <details className="group">
             <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider select-none">
-              Advanced: polling and backups
+              Advanced: Polling and Backups
             </summary>
             <div className="mt-3">
               <PollOverridesCard scope="device" id={device.id} siteId={device.site_id ?? null} compact />

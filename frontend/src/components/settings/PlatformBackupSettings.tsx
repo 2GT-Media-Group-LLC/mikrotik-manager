@@ -79,7 +79,7 @@ function BackupNowCard({ hasSaved, min, destinations, onDone }: { hasSaved: bool
   });
   return (
     <div className="card p-5 space-y-4">
-      <h3 className="font-semibold text-gray-900 dark:text-white">Back up now</h3>
+      <h3 className="font-semibold text-gray-900 dark:text-white">Back Up Now</h3>
       <div className="flex flex-wrap gap-4 text-sm">
         {(Object.keys(CONTENTS_LABEL) as PlatformBackupContents[]).map((c) => (
           <label key={c} className="flex items-center gap-2 text-gray-700 dark:text-slate-300">
@@ -208,7 +208,7 @@ function DestinationModal({ initial, onClose, onSaved }: { initial: DestForm; on
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="card w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
-          <h3 className="font-semibold text-gray-900 dark:text-white">{editing ? 'Edit destination' : 'Add destination'}</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">{editing ? 'Edit Destination' : 'Add Destination'}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5 space-y-3">
@@ -407,7 +407,7 @@ function RestoreDialog({ source, appVersion, onClose, onStarted }: { source: Res
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="card w-full max-w-lg mx-4 border-2 border-red-500">
         <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
-          <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 flex items-center gap-2"><RotateCcw className="w-5 h-5" /> Restore a platform backup</h3>
+          <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 flex items-center gap-2"><RotateCcw className="w-5 h-5" /> Restore a Platform Backup</h3>
           <button onClick={onClose} disabled={go.isPending} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5 space-y-4 text-sm">

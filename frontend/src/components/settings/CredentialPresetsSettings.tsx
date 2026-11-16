@@ -346,7 +346,7 @@ export default function CredentialPresetsSettings() {
 
               <div>
                 <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">
-                  SSH (optional, for backups)
+                  SSH (Optional, for Backups)
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

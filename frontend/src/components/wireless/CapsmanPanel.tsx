@@ -181,7 +181,7 @@ function Controller({ c }: { c: CapsmanController }) {
           {c.provisioning.length > 0 && (
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">
-                Unmatched provisioning rules
+                Unmatched Provisioning Rules
               </div>
               <ul className="space-y-1">
                 {c.provisioning.map((p) => (

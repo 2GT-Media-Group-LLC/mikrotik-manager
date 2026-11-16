@@ -21,8 +21,8 @@ export function byAttention<T extends CardDevice>(devices: T[]): T[] {
   return [...devices].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
-/** Rows a dashboard card shows before "View all". */
-export const CARD_ROWS = 10;
+/** Rows a dashboard card holds (five show, the rest scroll) before "View all". */
+export const CARD_ROWS = 50;
 
 /** "a, b, c and 12 more": a sentence naming devices that stays one line (#303). */
 export function shortList(names: string[], max = 5): string {

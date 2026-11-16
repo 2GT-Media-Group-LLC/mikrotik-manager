@@ -154,7 +154,7 @@ export default function QuickRulesModal({ deviceId, deviceName, family, initial,
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <Zap className="w-4 h-4 text-amber-500" /> Quick rules{v6 ? ' (IPv6)' : ''}{deviceName ? ` · ${deviceName}` : ''}
+            <Zap className="w-4 h-4 text-amber-500" /> Quick Rules{v6 ? ' (IPv6)' : ''}{deviceName ? ` · ${deviceName}` : ''}
           </h3>
           <button onClick={onClose} aria-label="Close" className="p-1 rounded text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
         </div>

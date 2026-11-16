@@ -189,7 +189,7 @@ When it runs:
 Times are in the manager's time zone (**Settings → General**), except a one-off's date, which
 you enter in your browser's time.
 
-Each scheduled run is an ordinary run in **Recent runs**, marked with a calendar, with waves,
+Each scheduled run is an ordinary run in **Recent Runs**, marked with a calendar, with waves,
 Change Guard and output as usual. Its options:
 
 - **Only inside a maintenance window:** a device that isn't in an active

@@ -134,7 +134,7 @@ export default function CapsmanSetupModal({ onClose, initialDeviceId }: { onClos
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="card w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Set up CAPsMAN</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Set Up CAPsMAN</h2>
           <button onClick={onClose} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300" aria-label="Close"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-5 space-y-4">

@@ -141,7 +141,7 @@ export default function DnsSourcesCard() {
   return (
     <div className="card p-5 space-y-4">
       <div>
-        <h3 className="font-semibold text-gray-900 dark:text-white">DNS servers</h3>
+        <h3 className="font-semibold text-gray-900 dark:text-white">DNS Servers</h3>
         <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
           NetFlow shows where traffic goes, but not the names behind it. Add the AdGuard Home or Pi-hole servers that
           answer a site&apos;s DNS (all of them, when several share the load) and MikroTik Manager reads their query logs

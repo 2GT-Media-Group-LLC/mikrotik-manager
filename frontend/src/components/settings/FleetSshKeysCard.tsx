@@ -95,7 +95,7 @@ export default function FleetSshKeysCard() {
           <KeyRound className="w-4 h-4 text-blue-600 dark:text-blue-400" />
         </div>
         <div>
-          <h2 className="font-semibold text-gray-900 dark:text-white">SSH keys for the fleet</h2>
+          <h2 className="font-semibold text-gray-900 dark:text-white">SSH Keys for the Fleet</h2>
           <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
             Installs a separate key on each device, so backups, config export and bulk commands stop
             using passwords over SSH. One device at a time, in the background. You can leave this page.

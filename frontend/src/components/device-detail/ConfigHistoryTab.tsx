@@ -230,7 +230,7 @@ export default function ConfigHistoryTab({ deviceId }: Props) {
         <div className="card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <GitCompare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <h3 className="font-semibold text-sm text-gray-900 dark:text-white">Compare snapshots</h3>
+            <h3 className="font-semibold text-sm text-gray-900 dark:text-white">Compare Snapshots</h3>
           </div>
           <div className="flex items-center gap-2 flex-wrap text-sm">
             <select

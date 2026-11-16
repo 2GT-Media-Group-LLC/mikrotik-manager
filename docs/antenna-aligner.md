@@ -17,7 +17,7 @@ all radio equipment and show its device category.
 
 1. Add both radios to Manager using their existing RouterOS API/API-SSL login.
 2. Set their device type to **Wireless Systems**.
-3. Open either device and choose **Antenna aligner**.
+3. Open either device and choose **Antenna Aligner**.
 4. Optionally select the other managed Wireless Systems device. Choose the interface and peer
    MAC at each end of the intended link. A single interface/peer is selected
    automatically; multiple choices always require a selection. A disconnected

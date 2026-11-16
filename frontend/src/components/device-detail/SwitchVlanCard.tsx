@@ -106,7 +106,7 @@ export default function SwitchVlanCard({ view, deviceId }: { view: SwitchVlanVie
     <div className="card p-4 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <Cpu className="w-4 h-4 text-indigo-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Switch chip VLANs</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Switch Chip VLANs</h3>
         <span className={clsx('px-2 py-0.5 rounded-full text-xs font-medium',
           view.inUse ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300')}>
           {view.inUse ? 'In use' : 'Not set up'}

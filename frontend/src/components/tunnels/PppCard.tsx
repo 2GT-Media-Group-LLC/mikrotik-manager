@@ -88,7 +88,7 @@ export default function PppCard({ devices, deviceId, onDevice }: {
     <div className="card p-4 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <Users className="w-4 h-4 text-blue-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">PPP users and sessions</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">PPP Users and Sessions</h3>
         <select className="input max-w-xs text-sm py-1" value={deviceId ?? ''} aria-label="Router"
           onChange={(e) => { onDevice(e.target.value ? Number(e.target.value) : null); setMessage(''); setErr(''); }}>
           <option value="">Choose a router…</option>

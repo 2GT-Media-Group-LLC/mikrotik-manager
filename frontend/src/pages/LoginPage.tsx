@@ -145,7 +145,7 @@ export default function LoginPage() {
             : 'bg-white/75 border border-slate-300/60 shadow-slate-400/30'
         }`}>
           <h2 className={`text-lg font-semibold mb-6 ${isDark ? 'text-white' : 'text-slate-800'}`}>
-            Sign in to your account
+            Sign In to Your Account
           </h2>
 
           {!passwordLogin ? (

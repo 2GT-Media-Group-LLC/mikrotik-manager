@@ -62,7 +62,7 @@ export default function SshKeyCard(
         <KeyRound className="w-5 h-5 mt-0.5 text-gray-400 dark:text-slate-500" />
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-semibold text-gray-900 dark:text-white">SSH key</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white">SSH Key</h3>
             {data && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                 verified

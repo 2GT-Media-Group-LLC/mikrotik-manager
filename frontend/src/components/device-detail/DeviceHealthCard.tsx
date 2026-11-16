@@ -43,7 +43,7 @@ export default function DeviceHealthCard({ device }: { device: Device }) {
     <div className="card p-5 space-y-4">
       <div className="flex items-center gap-2">
         <HeartPulse className="w-4 h-4 text-blue-500" />
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex-1">Hardware health</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex-1">Hardware Health</h3>
         {save.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />}
       </div>
 

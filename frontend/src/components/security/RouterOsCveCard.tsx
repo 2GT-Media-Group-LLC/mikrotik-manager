@@ -60,7 +60,7 @@ export default function RouterOsCveCard() {
     <div className="card overflow-hidden">
       <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 flex-wrap">
         <Bug className="w-4 h-4 text-red-500" />
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">RouterOS vulnerabilities</h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">RouterOS Vulnerabilities</h2>
         {data && data.enabled && (
           <span className="text-xs text-gray-400 dark:text-slate-500">
             {affected.length === 0

@@ -71,7 +71,7 @@ export default function PollingNote({ deviceId, siteId }: { deviceId: number; si
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Polling and backups</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Polling and Backups</h3>
         {canEdit && !draft && (
           <button onClick={openEdit} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5">
             <Pencil className="w-3.5 h-3.5" /> Edit

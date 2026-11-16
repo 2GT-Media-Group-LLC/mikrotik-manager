@@ -601,7 +601,7 @@ function PortInfoCard({ deviceId, portName, errors, errorsPerMin = 10, flapsPerH
 
   return (
     <div className="card p-4 overflow-y-auto">
-      <div className="text-[13px] font-semibold mb-3" style={{ color: 'var(--ink)' }}>Port info</div>
+      <div className="text-[13px] font-semibold mb-3" style={{ color: 'var(--ink)' }}>Port Info</div>
 
       <div>
         {infoRow('Status', d['status'])}
@@ -2021,7 +2021,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
               {/* PoE */}
               <div>
                 <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3">
-                  PoE Out (Ethernet only)
+                  PoE Out (Ethernet Only)
                 </h4>
                 <select
                   className="input"
@@ -2767,7 +2767,7 @@ export default function SwitchPortDiagram({ deviceId, deviceName, deviceModel, a
               <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
                 <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                   <Network className="w-4 h-4 text-blue-500" />
-                  Move to bridge
+                  Move to Bridge
                 </h3>
                 <button onClick={() => setMoveOpen(false)} className="text-gray-400 hover:text-gray-600">
                   <X className="w-5 h-5" />

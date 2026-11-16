@@ -229,7 +229,7 @@ export default function FirmwarePage() {
       {/* Fleet table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Fleet versions</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Fleet Versions</h3>
           {canWrite && (
             <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400"
               title="RouterBOOT only upgrades the bootloader on devices with one pending, without changing RouterOS (#262).">

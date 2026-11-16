@@ -102,7 +102,7 @@ export default function DataCapCard({ deviceId, interfaceName }: { deviceId: num
       <div className="flex items-start gap-3">
         <MessageSquare className="w-5 h-5 mt-0.5 text-gray-400 dark:text-slate-500" />
         <div className="min-w-0">
-          <h3 className="font-semibold text-gray-900 dark:text-white">Data-cap reset SMS</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">Data-Cap Reset SMS</h3>
           <p className="text-sm text-gray-600 dark:text-slate-300 mt-0.5">
             Some carriers throttle an “unlimited” plan past a daily allowance and lift it when you
             text a short code. This tracks usage on <span className="font-mono text-xs">{interfaceName}</span> and
@@ -232,7 +232,7 @@ export default function DataCapCard({ deviceId, interfaceName }: { deviceId: num
 
       {sends.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-gray-900 dark:text-white mb-1">Recent sends</h4>
+          <h4 className="text-xs font-medium text-gray-900 dark:text-white mb-1">Recent Sends</h4>
           <ul className="space-y-1">
             {sends.slice(0, 5).map((s, i) => (
               <li key={i} className="text-[11px] flex flex-wrap gap-x-2">

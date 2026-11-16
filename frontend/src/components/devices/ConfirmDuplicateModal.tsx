@@ -35,7 +35,7 @@ export default function ConfirmDuplicateModal({
         <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-slate-700">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-500" />
-            Duplicate serial detected
+            Duplicate Serial Detected
           </h3>
           <button onClick={onCancel} disabled={loading} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">
             <X className="w-5 h-5" />

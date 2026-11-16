@@ -157,7 +157,7 @@ export default function FirmwareTab({ deviceId, device }: Props) {
           Software &amp; Firmware Updates
           <Link to="/firmware" className="ml-auto text-xs font-normal text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
             title="Upgrade several devices in staged waves, with backups and verification">
-            <ArrowUpCircle className="w-3.5 h-3.5" /> Update several devices
+            <ArrowUpCircle className="w-3.5 h-3.5" /> Update Several Devices
           </Link>
         </h3>
 

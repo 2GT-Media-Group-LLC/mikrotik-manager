@@ -35,7 +35,7 @@ export default function EncryptionKeyCard() {
   return (
     <div className="card p-5 space-y-3">
       <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-        <KeyRound className="w-4 h-4 text-blue-500" /> Encryption key
+        <KeyRound className="w-4 h-4 text-blue-500" /> Encryption Key
       </h3>
       <p className="text-xs text-gray-500 dark:text-slate-400">
         Device passwords, credential presets, SSH keys, the SSO client secret and backups that contain secrets are

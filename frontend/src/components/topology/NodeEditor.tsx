@@ -29,7 +29,7 @@ export default function NodeEditor({ node, onClose, onSaved }: { node: TopologyN
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="card w-full max-w-md mx-4 p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-gray-900 dark:text-white">{node ? 'Edit node' : 'Add a node'}</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">{node ? 'Edit Node' : 'Add a Node'}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
         </div>
         <p className="text-xs text-gray-500 dark:text-slate-400">

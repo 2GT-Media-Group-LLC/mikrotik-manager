@@ -171,7 +171,7 @@ export default function UserManagerPage() {
             <div><span className="text-gray-500 dark:text-slate-400">Devices </span>{data.routers.length}</div>
           </div>
 
-          <Section title="Logged in now" count={data.sessions.active.length}>
+          <Section title="Logged In Now" count={data.sessions.active.length}>
             {data.sessions.active.length === 0 ? (
               <p className="px-4 py-3 text-sm text-gray-500 dark:text-slate-400">No active sessions.</p>
             ) : (
@@ -282,7 +282,7 @@ export default function UserManagerPage() {
             </table>
           </Section>
 
-          <Section title="Devices that authenticate against it" count={data.routers.length}>
+          <Section title="Devices That Authenticate Against It" count={data.routers.length}>
             {isAdmin && !linking && (
               <div className="px-4 pt-3">
                 <button type="button" className="btn-secondary text-xs flex items-center gap-1" onClick={() => setLinking(true)}><Link2 className="w-3.5 h-3.5" />Use for a switch&apos;s 802.1X</button>
@@ -308,7 +308,7 @@ export default function UserManagerPage() {
           </Section>
 
           {data.sessions.recent.length > 0 && (
-            <Section title="Recent sessions" count={data.sessions.recent.length}>
+            <Section title="Recent Sessions" count={data.sessions.recent.length}>
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-gray-100 dark:border-slate-700">
                   <th className={th}>User</th><th className={th}>Device</th><th className={th}>From</th><th className={th}>Started</th><th className={th}>Ended</th><th className={th}>Why</th>
