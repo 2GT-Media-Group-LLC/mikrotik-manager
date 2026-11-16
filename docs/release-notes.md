@@ -3,6 +3,11 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.59
+
+- **Device tools work on RouterOS 6, and Traceroute shows its hops on every version**, as in
+  1.0.19 below ([#460](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/460)).
+
 ## 1.1.0-beta.58
 
 - **Traffic: where it goes, and the names behind it**
