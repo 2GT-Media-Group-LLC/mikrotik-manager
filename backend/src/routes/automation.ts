@@ -1,4 +1,4 @@
-import { seal } from '../utils/sealed';
+import { seal, isSealed } from '../utils/sealed';
 import { Router, Request, Response } from 'express';
 import { randomBytes, createHash } from 'crypto';
 import { query, queryOne } from '../config/database';
@@ -9,6 +9,17 @@ import { reportService, computeNextRun } from '../services/ReportService';
 
 const router = Router();
 router.use(requireAuth);
+
+/**
+ * A signing secret is typed in plain. One that arrives already encrypted would
+ * be decrypted to sign each delivery, to a URL the sender chose
+ * (GHSA-qm4w-hmcg-7rq9), so it is refused.
+ */
+function badSecret(secret: unknown): string | null {
+  if (secret === undefined || secret === null) return null;
+  if (typeof secret !== 'string') return 'secret must be text';
+  return isSealed(secret.trim()) ? 'Enter the signing secret itself. A value starting with "enc:" isn\'t accepted.' : null;
+}
 // Webhooks and scheduled reports are fleet-wide: an account limited to some
 // sites neither reads nor changes them (GHSA-28hr-v457-cc6g).
 router.use(['/webhooks', '/reports'], fleetOnly);
@@ -77,6 +88,8 @@ router.post('/webhooks', requireWrite, async (req: Request, res: Response) => {
   if (!url || !/^https?:\/\//.test(url)) return res.status(400).json({ error: 'url must be http(s)' });
   const evts = (Array.isArray(events) ? events : []).filter(e => (WEBHOOK_EVENTS as readonly string[]).includes(e));
   if (evts.length === 0) return res.status(400).json({ error: 'subscribe to at least one event' });
+  const secretError = badSecret(secret);
+  if (secretError) return res.status(400).json({ error: secretError });
 
   const row = await queryOne<{ id: number }>(
     `INSERT INTO webhooks (name, url, secret, events) VALUES ($1,$2,$3,$4) RETURNING id`,
@@ -94,6 +107,8 @@ router.put('/webhooks/:id', requireWrite, async (req: Request, res: Response) =>
   if (!existing) return res.status(404).json({ error: 'Webhook not found' });
 
   if (url !== undefined && !/^https?:\/\//.test(url)) return res.status(400).json({ error: 'url must be http(s)' });
+  const secretError = badSecret(secret);
+  if (secretError) return res.status(400).json({ error: secretError });
   const evts = events !== undefined
     ? (Array.isArray(events) ? events : []).filter(e => (WEBHOOK_EVENTS as readonly string[]).includes(e))
     : undefined;

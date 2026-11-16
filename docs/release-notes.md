@@ -7,6 +7,32 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.18
+
+Released on Monday 16 November 2026. Security fixes, reported by
+[@davidcoulson](https://github.com/davidcoulson); update as soon as you can.
+
+- **Saved alert passwords and tokens could be sent to another server**
+  ([GHSA-qm4w-hmcg-7rq9](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-qm4w-hmcg-7rq9)).
+  Changing an alert channel's server needs its password or token typed again, but a request
+  that left the secret out skipped that check, so an operator could point the channel at their
+  own server and press **Test**. A left-out secret is now treated like the masked one, turning
+  off an email channel's TLS or certificate check counts as a new server, and a secret that
+  arrives already encrypted is refused everywhere the manager would decrypt it (alert channels,
+  webhook signing secrets and bulk device adds).
+- **Operators could run commands as the router's admin through a firmware rollout**
+  ([GHSA-fv5m-vfmw-8h9v](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-fv5m-vfmw-8h9v)).
+  Running commands has been admin-only since 1.0.9, but an operator could still write a command
+  template and pick it as a rollout's post-upgrade command. Templates are now written by fleet
+  admins only, and a post-upgrade command needs admin access to every device in the rollout
+  ([Bulk commands](commands.md#templates)).
+- **Site-scoped accounts could reach other sites through a differently spelled address**
+  ([GHSA-4rjj-7mfg-vrpg](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-4rjj-7mfg-vrpg)).
+  `/api/firmware/ROLLOUTS/…` or a trailing slash reached the same action as the usual address
+  but skipped the site check, so a rollout, update channel, tag, metric or backup in another
+  site could be reached. The checks now read every spelling the same way. Installs without
+  site-scoped accounts weren't affected.
+
 ## 1.0.17
 
 Released on Sunday 15 November 2026.

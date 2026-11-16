@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, Plus, Play, Pencil, Copy, Trash2, Search, X } from 'lucide-react';
 import { commandTemplatesApi, type CommandTemplate } from '../services/api';
-import { useCanWrite } from '../hooks/useCanWrite';
 import SecretsCard from '../components/templates/SecretsCard';
 import { useAuthStore } from '../store/authStore';
 
@@ -23,7 +22,8 @@ export default function TemplatesPage() {
   // Secrets are fleet-admin only (#259), so is the card that manages them.
   const isFleetAdmin = useAuthStore((st) => st.user?.role === 'admin' && !(st.user as { siteRoles?: Record<string, string> | null })?.siteRoles);
   const qc = useQueryClient();
-  const canWrite = useCanWrite();
+  // Writing templates is fleet-admin only: a template can run as a router's admin login (GHSA-fv5m-vfmw-8h9v).
+  const canWrite = isFleetAdmin;
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState('');

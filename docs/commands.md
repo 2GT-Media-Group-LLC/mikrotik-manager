@@ -15,7 +15,9 @@ cancel one in progress.
 ## Templates
 
 Commands you run more than once can be saved as templates: firewall rules, LTE settings, DNS
-and NTP defaults, anything you would otherwise keep in a notes file.
+and NTP defaults, anything you would otherwise keep in a notes file. Creating, editing and
+deleting templates is for fleet admins, since a template can run after a firmware upgrade. Site
+admins can load and run them.
 
 - The **Templates** page (under Operations) lists them all, with search, and lets you create,
   edit, duplicate and delete them. **Run** opens a template in Bulk Commands.
@@ -25,7 +27,8 @@ and NTP defaults, anything you would otherwise keep in a notes file.
 Loading or running a template only fills the command box. It runs like any typed command, with
 the same waves, halt-on-failure and Change Guard. A template can also run on each device after
 a firmware upgrade: pick it under **Then run** when creating a rollout (see
-[Firmware rollouts](firmware.md#the-pipeline)).
+[Firmware rollouts](firmware.md#the-pipeline)). Like running commands, that needs admin access
+to every device in the rollout.
 
 ### Secrets in commands
 

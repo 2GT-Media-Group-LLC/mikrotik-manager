@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookMarked, Save, Trash2, X } from 'lucide-react';
 import { commandTemplatesApi, type CommandTemplate } from '../../services/api';
+import { useIsFleetAdmin } from '../../hooks/useCanWrite';
 
 /**
  * Load a saved command into Bulk Commands, or save the current one (#163).
@@ -61,6 +62,8 @@ export default function CommandTemplateBar({ command, onLoad, initialTemplateId 
   });
 
   const changed = loaded && loaded.command !== command.trim();
+  // Saving templates is fleet-admin only (GHSA-fv5m-vfmw-8h9v); a site admin can still load one.
+  const canEdit = useIsFleetAdmin();
 
   return (
     <div className="space-y-2">
@@ -79,18 +82,18 @@ export default function CommandTemplateBar({ command, onLoad, initialTemplateId 
           <option value="">{templates.length ? 'Load a saved template…' : 'No saved templates yet'}</option>
           {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        {command.trim() && !saving && (
+        {canEdit && command.trim() && !saving && (
           <button type="button" className="btn-secondary text-xs py-1 flex items-center gap-1"
                   onClick={() => { setSaving(true); setName(''); setDescription(''); setError(''); }}>
             <Save className="w-3.5 h-3.5" /> Save as template
           </button>
         )}
-        {loaded && changed && (
+        {canEdit && loaded && changed && (
           <button type="button" className="btn-secondary text-xs py-1" disabled={update.isPending} onClick={() => update.mutate()}>
             Update &ldquo;{loaded.name}&rdquo;
           </button>
         )}
-        {loaded && (
+        {canEdit && loaded && (
           <button type="button" className="text-xs text-red-600 flex items-center gap-1" disabled={remove.isPending}
                   onClick={() => { if (confirm(`Delete the template "${loaded.name}"?`)) remove.mutate(); }}>
             <Trash2 className="w-3.5 h-3.5" /> Delete template
@@ -100,7 +103,7 @@ export default function CommandTemplateBar({ command, onLoad, initialTemplateId 
       {loaded?.description && !saving && (
         <p className="text-xs text-gray-500 dark:text-slate-400">{loaded.description}</p>
       )}
-      {saving && (
+      {canEdit && saving && (
         <div className="flex flex-wrap items-center gap-2">
           <input className="input py-1 text-sm w-56" placeholder="Template name" value={name}
                  onChange={(e) => setName(e.target.value)} autoFocus />
