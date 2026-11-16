@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta59" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.59
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta58" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2145,6 +2156,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta59" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.59
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta58" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2794,6 +2816,11 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta59">1.1.0-beta.59<a class="headerlink" href="#110-beta59" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Device tools work on RouterOS 6, and Traceroute shows its hops on every version</strong>, as in
+  1.0.19 below (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/460">#460</a>).</li>
+</ul>
 <h2 id="110-beta58">1.1.0-beta.58<a class="headerlink" href="#110-beta58" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Traffic: where it goes, and the names behind it</strong>
@@ -3674,6 +3701,15 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1019">1.0.19<a class="headerlink" href="#1019" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Device tools: Ping failed on RouterOS 6, and Traceroute showed no results</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/460">#460</a>). Ping asked for
+  <code>/tool/ping</code>, which only RouterOS 7 has; it now uses <code>/ping</code>, which both have. Traceroute
+  results were dropped on every version: RouterOS sends a snapshot of the whole route per round
+  of probes, and the last one is now shown. Ping's summary also showed the totals after the first
+  packet, and loss in red when there was none. Thanks to schmitt330 for the report.</li>
+</ul>
 <h2 id="1018">1.0.18<a class="headerlink" href="#1018" title="Permanent link">&para;</a></h2>
 <p>Released on Monday 16 November 2026. Security fixes, reported by
 <a href="https://github.com/davidcoulson">@davidcoulson</a>; update as soon as you can.</p>
