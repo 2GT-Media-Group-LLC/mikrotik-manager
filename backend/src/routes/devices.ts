@@ -78,6 +78,7 @@ import { switchVlanEntry, switchPortVlan, validPortName } from '../utils/switchV
 import { ipAddressEdit } from '../utils/ipAddressEdit';
 import { parseBgpConnection } from '../utils/bgpConnection';
 import { parseBridgeCreate, parseBridgeUpdate } from '../utils/bridgeEdit';
+import { tracerouteHops } from '../utils/traceroute';
 import { bridgesView } from '../utils/bridgesView';
 import { opticStatuses, opticHistory, dropThreshold, rxLimits } from '../services/opticLevels';
 
@@ -3929,7 +3930,9 @@ router.post('/:id/tools/ping', requireWrite, async (req: Request, res: Response)
       count: String(Math.min(Math.max(1, Number(count) || 4), 20)),
     };
     if (iface) params['interface'] = iface;
-    const results = await client.execute('/tool/ping', params);
+    // /ping: the API path on RouterOS 6 and 7. /tool/ping is 7 only, so RouterOS 6
+    // answered "no such command" (#460).
+    const results = await client.execute('/ping', params);
     return res.json(results);
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message });
@@ -3950,17 +3953,8 @@ router.post('/:id/tools/traceroute', requireWrite, async (req: Request, res: Res
   try {
     await client.connect();
     const raw = await client.execute('/tool/traceroute', { address, count: '3', timeout: '1' });
-
-    // RouterOS sends multiple !re updates per hop as probes return.
-    // Deduplicate by .id, keeping the last (most complete) row per hop.
-    const byId = new Map<string, Record<string, string>>();
-    for (const row of raw) {
-      if (row['id']) byId.set(row['id'], row);
-    }
-    const results = Array.from(byId.values()).sort(
-      (a, b) => Number(a['id'] || 0) - Number(b['id'] || 0)
-    );
-    return res.json(results);
+    // A snapshot of the whole route per round of probes; the last is the fullest (#460).
+    return res.json(tracerouteHops(raw));
   } catch (err) {
     return res.status(500).json({ error: (err as Error).message });
   } finally {
