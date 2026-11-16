@@ -966,6 +966,11 @@ export class PollerService {
       // A busy router can write a session every few milliseconds, so this one
       // gets more room per run (#415).
       { table: 'netflow_sessions', where: 'ended_at < $1', setting: 'retention_sessions_days', fallback: 3, batches: 200 },
+      // Traffic destinations (#366): a row per client, application and remote address each hour.
+      { table: 'client_destinations', where: 'hour < $1', setting: 'retention_destinations_days', fallback: 7, batches: 200 },
+      // DNS lookups from AdGuard Home (#366 step 3).
+      { table: 'dns_name_counts', where: 'hour < $1', setting: 'retention_dns_days', fallback: 7, batches: 200 },
+      { table: 'dns_answers', where: 'last_seen < $1', setting: 'retention_dns_days', fallback: 7, batches: 200 },
     ];
     const BATCH = 20_000;
     const settingMap = new Map(Object.entries(settings));

@@ -12,6 +12,8 @@ import { getWriteApi } from '../../config/influxdb';
 import { decodePacket, pruneTemplateCache, TemplateCache } from './decoder';
 import { classifyApp, APP_LAN } from './appCategories';
 import { FlowAggregator, CLIENT_UNKNOWN, Direction } from './FlowAggregator';
+import { DestinationAggregator } from './DestinationAggregator';
+import { writeDestinations } from './destinationStore';
 import { PacketRateLimiter } from './rateLimiter';
 import { SessionTracker } from './sessions';
 import { writeSessions } from './sessionStore';
@@ -103,6 +105,8 @@ export class NetflowCollector {
   private settings: NetflowSettings = {
     enabled: false, port: 2055, topN: 50, acceptUnknown: false, sessionsUnidentified: false, activeTimeoutMs: 60_000,
   };
+  /** Where clients' traffic goes (#366 step 2), written with each flush. */
+  private destinations = new DestinationAggregator();
   private sessions = new SessionTracker();
   private sessionTimer: ReturnType<typeof setInterval> | null = null;
   private sessionWriting = false;
@@ -471,12 +475,17 @@ export class NetflowCollector {
       else add(dst, 'download', APP_LAN);
       return;
     }
+    // A client and a remote address: also where the client's traffic goes (#366).
+    const toward = (side: { mac?: string; siteId: number | null }, direction: Direction, app: string, remote: string) => {
+      add(side, direction, app);
+      this.destinations.add({ exporterId, siteId: side.siteId, clientKey: side.mac || CLIENT_UNKNOWN, app, remote, direction, bytes, packets });
+    };
     if (srcLocal && !dstLocal) {
-      add(src, 'upload', classifyApp(protocol, srcPort, dstPort));
+      toward(src, 'upload', classifyApp(protocol, srcPort, dstPort), dstAddr);
       return;
     }
     if (!srcLocal && dstLocal) {
-      add(dst, 'download', classifyApp(protocol, dstPort, srcPort));
+      toward(dst, 'download', classifyApp(protocol, dstPort, srcPort), srcAddr);
       return;
     }
     // Neither endpoint local — transit or post-NAT duplicate; drop.
@@ -505,6 +514,13 @@ export class NetflowCollector {
   }
 
   private async flush(): Promise<void> {
+    const destinations = this.destinations.drain();
+    if (destinations.length > 0) {
+      // Lost rather than retried: a missed minute of destinations is a small gap,
+      // and holding them would grow memory while the database is down.
+      await writeDestinations(destinations, new Date())
+        .catch((e) => console.error('[NetFlow] Destinations write error:', (e as Error).message));
+    }
     const rows = this.aggregator.drain(this.settings.topN);
     if (rows.length === 0 && this.pendingRollups.length === 0) return;
 

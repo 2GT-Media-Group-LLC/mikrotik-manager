@@ -3,6 +3,23 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.58
+
+- **Traffic: where it goes, and the names behind it**
+  ([#366](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/366), steps 2 and 3).
+  An application's card has **Where it goes**, the Traffic page has **Top destinations**, and a
+  client's page lists its own. Each address is named by the organisation that owns it, with its
+  country and reverse DNS name, from a list built into each release and refreshed weekly unless
+  Dark Site Mode turns that off. Connect AdGuard Home under **Settings → DNS Query Log** to see
+  the names each client looked up, which were blocked, and the domain behind each destination.
+  See [Traffic](traffic.md#where-traffic-goes). Thanks to aziz for the request.
+- **WireGuard: a peer's client config and QR code**
+  ([#444](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/444), PR #445 by
+  [@Lithiuhm](https://github.com/Lithiuhm)). **View** on a peer shows the `.conf` and a QR code
+  when the router keeps the client's key, as WinBox's wizard does, and **Add Peer** can generate a
+  key pair to do the same. See [Network services](network-services.md#client-config-and-qr-code).
+- Dependency updates (Dependabot #450 and #452 to #459).
+
 ## 1.1.0-beta.57
 
 Security fixes, reported by [@davidcoulson](https://github.com/davidcoulson); update as soon as

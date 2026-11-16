@@ -39,6 +39,8 @@ const OWN_CONNECTIONS = new Map([
   ['services/jumpHosts.ts', 'the SSH connection to the jump host itself'],
   ['services/firmwareMirror.ts', 'downloads from mikrotik.com only'],
   ['utils/oui.ts', 'the IEEE vendor list'],
+  ['utils/asnDatabase.ts', 'the iptoasn.com IP owner list (#366)'],
+  ['services/dns/DnsLogService.ts', 'AdGuard Home query logs, at the address an admin configured (#366)'],
   ['routes/clients.ts', 'a Wake-on-LAN broadcast, not a connection to a device'],
   ['services/netflow/NetflowCollector.ts', 'listens for flows the devices send'],
 ]);

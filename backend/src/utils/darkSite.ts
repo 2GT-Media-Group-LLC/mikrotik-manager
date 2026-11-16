@@ -57,6 +57,12 @@ export const DARK_SITE_FEATURES: DarkSiteFeature[] = [
     cost: 'The vendor list is not refreshed. A copy already downloaded is still used; without one, client vendors show as unknown.',
   },
   {
+    key: 'asn_download_enabled',
+    label: 'IP owner database download',
+    destination: 'iptoasn.com',
+    cost: 'Traffic destinations are named from the copy built into this release, which ages until the next update.',
+  },
+  {
     key: 'cve_feed_enabled',
     label: 'RouterOS vulnerability list',
     destination: 'services.nvd.nist.gov, www.cisa.gov',

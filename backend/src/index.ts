@@ -16,6 +16,7 @@ dotenv.config();
 
 import { pool, queryOne, query } from './config/database';
 import { initOuiDatabase } from './utils/oui';
+import { startAsnDatabase } from './utils/asnDatabase';
 import { redis } from './config/redis';
 import { runMigrations } from './db/migrate';
 import { buildEventIndexes } from './db/eventIndexes';
@@ -83,6 +84,8 @@ import wirelessRoutes from './routes/wireless';
 import networkServicesRoutes from './routes/networkServices';
 import userManagerRoutes from './routes/userManager';
 import trafficAnalyticsRoutes from './routes/trafficAnalytics';
+import dnsSourceRoutes from './routes/dnsSources';
+import { dnsLogService } from './services/dns/DnsLogService';
 import credentialPresetsRoutes from './routes/credentialPresets';
 import jumpHostsRoutes from './routes/jumpHosts';
 import commandRoutes from './routes/commands';
@@ -501,6 +504,7 @@ app.use('/api/wireless', wirelessRoutes);
 app.use('/api/network-services', networkServicesRoutes);
 app.use('/api/user-manager', userManagerRoutes);
 app.use('/api/traffic', trafficAnalyticsRoutes);
+app.use('/api/dns-sources', dnsSourceRoutes);
 app.use('/api/credential-presets', credentialPresetsRoutes);
 app.use('/api/jump-hosts', jumpHostsRoutes);
 app.use('/api/audit-log', auditLogRoutes);
@@ -620,6 +624,11 @@ async function start(): Promise<void> {
     `SELECT value FROM app_settings WHERE key = 'oui_download_enabled'`
   ).then((r) => r[0]?.value !== false).catch(() => true);
   initOuiDatabase(ouiAllowed).catch(() => {});
+  // Who owns an IP address, for naming traffic destinations (#366). Dark Site
+  // Mode is read before each download, so turning it off takes effect at once.
+  startAsnDatabase(() => query<{ value: unknown }>(
+    `SELECT value FROM app_settings WHERE key = 'asn_download_enabled'`
+  ).then((r) => r[0]?.value !== false).catch(() => false));
 
   // Connect Redis
   await redis.connect().catch(() => console.warn('Redis connection warning'));
@@ -652,6 +661,8 @@ async function start(): Promise<void> {
 
   // NetFlow/IPFIX collector (binds its UDP socket only when netflow_enabled)
   await netflowCollector.start();
+  // DNS query logs from AdGuard Home (#366 step 3).
+  dnsLogService.start();
 
   // Firmware rollout scheduler (starts rollouts whose scheduled_at has arrived)
   // Close out any rollout or command run left mid-flight by a previous process
@@ -697,6 +708,7 @@ async function start(): Promise<void> {
     await stopBulkAddWorker();
     await stopSshKeyFleetWorker();
     await netflowCollector.stop();
+    dnsLogService.stop();
     await pollerService.stop();
     await redis.quit().catch(() => {});
     await pool.end();

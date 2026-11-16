@@ -2767,7 +2767,99 @@ export const trafficApi = {
     api.get<{ series: ClientTrafficPoint[]; apps: TrafficApp[] }>(
       `/traffic/client/${encodeURIComponent(mac)}`, { params: { range } }
     ),
+  /** Where traffic goes (#366 step 2): the site, one application, one client, or both. */
+  destinations: (opts: { range?: string; app?: string; mac?: string; limit?: number }) =>
+    api.get<TrafficDestinations>('/traffic/destinations', { params: { range: '24h', ...opts } }),
+  /** The clients that talked to one remote address. */
+  destinationClients: (remote: string, range = '24h', app?: string) =>
+    api.get<TrafficDestinationClients>(`/traffic/destinations/${encodeURIComponent(remote)}/clients`, { params: { range, app } }),
+  /** Names looked up through AdGuard Home (#366 step 3), for the site or one client. */
+  dnsNames: (opts: { range?: string; mac?: string; limit?: number }) =>
+    api.get<TrafficDnsNames>('/traffic/dns', { params: { range: '24h', ...opts } }),
+  dnsClients: (range = '24h') => api.get<TrafficDnsClients>('/traffic/dns/clients', { params: { range } }),
 };
+
+export interface TrafficDnsNames {
+  /** Whether an AdGuard Home source covers the site(s) in view. */
+  configured: boolean;
+  allowed: number;
+  blocked: number;
+  names: { name: string; allowed: number; blocked: number; clients: number }[];
+  /** The client's addresses AdGuard Home was searched for, when one client was asked about. */
+  client_addresses: string[] | null;
+}
+export interface TrafficDnsClients {
+  configured: boolean;
+  clients: (TrafficTopClient & { client_ip: string; allowed: number; blocked: number; names: number })[];
+}
+
+// ─── DNS sources (AdGuard Home, #366 step 3) ─────────────────────────────────
+export interface DnsSource {
+  id: number;
+  name: string;
+  site_id: number;
+  site_name: string | null;
+  url: string;
+  username: string;
+  has_password: boolean;
+  tls_verify: boolean;
+  enabled: boolean;
+  cursor_at: string | null;
+  last_polled_at: string | null;
+  last_error: string | null;
+  queries_counted: string;
+}
+export interface DnsSourceInput {
+  name: string;
+  site_id: number;
+  url: string;
+  username: string;
+  /** Left out to keep the saved password. */
+  password?: string;
+  tls_verify: boolean;
+  enabled: boolean;
+}
+export const dnsSourcesApi = {
+  list: () => api.get<DnsSource[]>('/dns-sources'),
+  create: (data: DnsSourceInput) => api.post<{ id: number }>('/dns-sources', data),
+  update: (id: number, data: DnsSourceInput) => api.put('/dns-sources/' + id, data),
+  remove: (id: number) => api.delete('/dns-sources/' + id),
+  test: (data: Partial<DnsSourceInput> & { id?: number }) => api.post<{ ok: boolean; entries: number }>('/dns-sources/test', data),
+  poll: (id: number) => api.post<{ ok: boolean; counted: number }>(`/dns-sources/${id}/poll`),
+};
+
+/** Who an address belongs to, or what kind of address it is (#366). */
+export interface RemoteOwner {
+  org: string | null;
+  asn: number | null;
+  country: string | null;
+  kind: 'public' | 'private' | 'loopback' | 'link-local' | 'multicast' | 'cgnat' | 'reserved' | 'other';
+  /** Reverse DNS, when it answered in time. */
+  name: string | null;
+  /** Names the client looked up that answered with this address (AdGuard Home, #366 step 3). */
+  domains?: string[];
+}
+export interface TrafficDestination extends RemoteOwner {
+  remote: string;
+  upload_bytes: number;
+  download_bytes: number;
+  total_bytes: number;
+  share: number;
+  client_count: number;
+  apps: string[];
+}
+export interface TrafficDestinations {
+  total_bytes: number;
+  /** Traffic to addresses beyond each client's busiest ones, summed. */
+  other_bytes: number;
+  retention_days: number;
+  names_available: boolean;
+  destinations: TrafficDestination[];
+}
+export interface TrafficDestinationClients extends RemoteOwner {
+  remote: string;
+  clients: (TrafficTopClient & { apps: string[] })[];
+}
 
 // ─── Maintenance Windows ──────────────────────────────────────────────────────
 export interface MaintenanceWindow {

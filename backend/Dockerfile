@@ -32,6 +32,15 @@ RUN apk add --no-cache arp-scan libcap openssl \
 # Copy built files
 COPY --from=builder /app/dist ./dist
 
+# Who owns each IP address, for naming traffic destinations (#366): the
+# iptoasn.com list (public domain), so a dark site has names too. After the
+# dist copy, so every release fetches a current one rather than reusing a
+# cached layer. A failed download leaves it out; the backend then downloads
+# one itself unless Dark Site Mode says not to.
+RUN mkdir -p /app/asn \
+  && (wget -q -T 120 -O /app/asn/ip2asn-combined.tsv.gz https://iptoasn.com/data/ip2asn-combined.tsv.gz \
+      || rm -f /app/asn/ip2asn-combined.tsv.gz)
+
 # Create writable data directories. Pre-creating them (owned by appuser after
 # the chown below) means a fresh named volume mounted here inherits appuser
 # ownership, so the non-root process can persist backups and secrets.

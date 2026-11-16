@@ -1,4 +1,6 @@
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
+import DestinationsList from '../components/traffic/DestinationsList';
+import DnsNamesList from '../components/traffic/DnsNamesList';
 import { useState } from 'react';
 import { useRememberedRange } from '../hooks/useRememberedRange';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -788,6 +790,7 @@ function AppTrafficCard({ mac }: { mac: string }) {
   // sticky state without an effect.
   const [hadData, setHadData] = useState(false);
   if (!hadData && (series.length > 0 || apps.length > 0)) setHadData(true);
+  const [showDestinations, setShowDestinations] = useState<'where' | 'names' | null>(null);
   if (!isLoading && series.length === 0 && apps.length === 0 && !hadData) return null;
 
   const ranges = [
@@ -886,6 +889,30 @@ function AppTrafficCard({ mac }: { mac: string }) {
               ))}
             </div>
           )}
+
+          {/* Where this client's traffic goes (#366 step 2) */}
+          <div className="border-t border-gray-100 dark:border-slate-800 pt-2">
+            <div className="flex gap-4">
+              <button type="button" onClick={() => setShowDestinations(showDestinations === 'where' ? null : 'where')}
+                className="text-xs font-medium text-teal-600 dark:text-teal-400 hover:underline">
+                {showDestinations === 'where' ? 'Hide where it goes' : 'Where it goes'}
+              </button>
+              <button type="button" onClick={() => setShowDestinations(showDestinations === 'names' ? null : 'names')}
+                className="text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline">
+                {showDestinations === 'names' ? 'Hide names looked up' : 'Names looked up'}
+              </button>
+            </div>
+            {showDestinations === 'where' && (
+              <div className="-mx-5 mt-1">
+                <DestinationsList range={range} mac={mac} limit={20} className="max-h-[24rem] overflow-y-auto" />
+              </div>
+            )}
+            {showDestinations === 'names' && (
+              <div className="-mx-5 mt-1">
+                <DnsNamesList range={range} mac={mac} limit={30} className="max-h-[24rem] overflow-y-auto" />
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>

@@ -6,6 +6,10 @@ import { netflowCollector } from '../services/netflow/NetflowCollector';
 import { fluxString } from '@influxdata/influxdb-client';
 import { activeSite } from '../middleware/site';
 import { siteList } from '../utils/siteScope';
+import { lookupAsn, specialKind, asnStatus } from '../utils/asnDatabase';
+import { reverseNames } from '../utils/reverseNames';
+import { OTHER_REMOTE } from '../services/netflow/DestinationAggregator';
+import net from 'net';
 
 const router = Router();
 router.use(requireAuth);
@@ -351,6 +355,250 @@ router.get('/client/:mac', async (req, res) => {
     series: Object.values(pivoted).sort((a, b) => a.time.localeCompare(b.time)),
     apps: apps.sort((a, b) => b.bytes - a.bytes),
   });
+});
+
+// ─── Destinations (#366 step 2) ──────────────────────────────────────────────
+
+const RANGE_HOURS: Record<string, number> = { '1h': 1, '2h': 2, '3h': 3, '6h': 6, '12h': 12, '24h': 24, '7d': 168, '30d': 720 };
+
+/**
+ * The WHERE clause and parameters for destinations in view: the range (whole
+ * hours, so 1h covers the current and previous hour), the site(s) in view, and
+ * optionally one application, client or remote address. Traffic with no site
+ * (site_id 0) is only in a fleet-wide view.
+ */
+function destinationScope(req: Request, extra: { app?: string; mac?: string; remote?: string }): { where: string; params: unknown[] } {
+  const range = rangeToFlux(String(req.query.range || '24h'));
+  const params: unknown[] = [RANGE_HOURS[range] ?? 24];
+  const where = [`hour >= date_trunc('hour', NOW()) - make_interval(hours => $1::int)`];
+  const add = (sql: (n: number) => string, value: unknown) => { params.push(value); where.push(sql(params.length)); };
+  const sites = siteList(activeSite(req));
+  if (sites) add((n) => `site_id = ANY($${n}::int[])`, sites);
+  if (extra.app) add((n) => `app = $${n}`, extra.app);
+  if (extra.mac) add((n) => `mac = $${n}`, extra.mac);
+  if (extra.remote !== undefined) add((n) => `remote = $${n}`, extra.remote);
+  return { where: where.join(' AND '), params };
+}
+
+const validApp = (app: unknown): app is string => typeof app === 'string' && /^[\x20-\x7e]{1,32}$/.test(app);
+
+/** Who an address belongs to: its organisation, or what kind of address it is. */
+function describeRemote(remote: string) {
+  if (remote === OTHER_REMOTE) return { org: null, asn: null, country: null, kind: 'other' as const };
+  const kind = specialKind(remote);
+  if (kind) return { org: null, asn: null, country: null, kind };
+  const a = lookupAsn(remote);
+  return { org: a?.org ?? null, asn: a?.asn ?? null, country: a?.country || null, kind: 'public' as const };
+}
+
+// ─── DNS names from AdGuard Home (#366 step 3) ───────────────────────────────
+
+/** The start of the range in view, for the DNS tables. */
+function rangeStart(req: Request): Date {
+  const range = rangeToFlux(String(req.query.range || '24h'));
+  const hours = RANGE_HOURS[range] ?? 24;
+  const d = new Date(Date.now() - hours * 3_600_000);
+  d.setUTCMinutes(0, 0, 0);
+  return d;
+}
+
+/** A client's addresses in the site(s) in view, as AdGuard Home sees it. */
+async function clientIps(req: Request, mac: string): Promise<string[]> {
+  const sites = siteList(activeSite(req));
+  const rows = await query<{ ip_address: string }>(
+    `SELECT DISTINCT c.ip_address FROM clients c JOIN devices d ON d.id = c.device_id
+      WHERE LOWER(c.mac_address) = $1 AND c.ip_address IS NOT NULL AND c.ip_address <> ''
+        ${sites ? 'AND d.site_id = ANY($2::int[])' : ''}`,
+    sites ? [mac, sites] : [mac]);
+  return rows.map((r) => r.ip_address);
+}
+
+/**
+ * The names that answered with each address, busiest first: what the clients
+ * asked for to reach it. With `ips`, only those clients' lookups.
+ */
+async function domainsFor(req: Request, remotes: string[], ips?: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (remotes.length === 0 || (ips && ips.length === 0)) return out;
+  const sites = siteList(activeSite(req));
+  const params: unknown[] = [remotes, rangeStart(req)];
+  let where = 'ip = ANY($1::text[]) AND last_seen >= $2';
+  if (sites) { params.push(sites); where += ` AND site_id = ANY($${params.length}::int[])`; }
+  if (ips) { params.push(ips); where += ` AND client_ip = ANY($${params.length}::text[])`; }
+  const rows = await query<{ ip: string; name: string }>(
+    `SELECT ip, name FROM dns_answers WHERE ${where} GROUP BY ip, name ORDER BY ip, SUM(count) DESC`, params).catch(() => []);
+  for (const r of rows) {
+    const list = out.get(r.ip) ?? [];
+    if (list.length < 5) list.push(r.name);
+    out.set(r.ip, list);
+  }
+  return out;
+}
+
+/** Whether an AdGuard Home source covers any site in view. */
+async function dnsConfigured(req: Request): Promise<boolean> {
+  const sites = siteList(activeSite(req));
+  const r = await query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM dns_sources WHERE enabled ${sites ? 'AND site_id = ANY($1::int[])' : ''}`,
+    sites ? [sites] : []).catch(() => [{ n: 0 }]);
+  return (r[0]?.n ?? 0) > 0;
+}
+
+// GET /api/traffic/dns?range=24h&mac=..&limit=50 — the names looked up, with
+// how often each was allowed and blocked, for the site(s) in view or one client.
+router.get('/dns', async (req, res) => {
+  let ips: string[] | undefined;
+  if (req.query.mac !== undefined) {
+    const mac = sanitizeMac(String(req.query.mac));
+    if (!mac) return res.status(400).json({ error: 'Invalid mac' });
+    ips = await clientIps(req, mac);
+  }
+  const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
+  const sites = siteList(activeSite(req));
+  const params: unknown[] = [rangeStart(req)];
+  let where = 'hour >= $1';
+  if (sites) { params.push(sites); where += ` AND site_id = ANY($${params.length}::int[])`; }
+  if (ips) { params.push(ips); where += ` AND client_ip = ANY($${params.length}::text[])`; }
+  try {
+    const configured = await dnsConfigured(req);
+    const [names, totals] = ips && ips.length === 0 ? [[], [{ allowed: 0, blocked: 0 }]] : await Promise.all([
+      query<{ name: string; allowed: number; blocked: number; clients: number }>(
+        `SELECT name, SUM(allowed)::int AS allowed, SUM(blocked)::int AS blocked, COUNT(DISTINCT client_ip)::int AS clients
+           FROM dns_name_counts WHERE ${where}
+          GROUP BY name ORDER BY SUM(allowed + blocked) DESC LIMIT ${limit}`, params),
+      query<{ allowed: number; blocked: number }>(
+        `SELECT COALESCE(SUM(allowed), 0)::int AS allowed, COALESCE(SUM(blocked), 0)::int AS blocked
+           FROM dns_name_counts WHERE ${where}`, params),
+    ]);
+    res.json({ configured, allowed: totals[0]?.allowed ?? 0, blocked: totals[0]?.blocked ?? 0, names,
+      client_addresses: ips ?? null });
+  } catch (e) {
+    console.error('[Traffic] dns:', (e as Error).message);
+    res.status(503).json({ error: 'DNS lookups could not be read right now.' });
+  }
+});
+
+// GET /api/traffic/dns/clients?range=24h — clients by how many lookups they
+// made, with how many were blocked, matched to clients by address.
+router.get('/dns/clients', async (req, res) => {
+  const sites = siteList(activeSite(req));
+  const params: unknown[] = [rangeStart(req)];
+  let where = 'n.hour >= $1';
+  if (sites) { params.push(sites); where += ` AND n.site_id = ANY($${params.length}::int[])`; }
+  try {
+    const rows = await query<{ client_ip: string; site_id: number; allowed: number; blocked: number; names: number }>(
+      `SELECT n.client_ip, n.site_id, SUM(n.allowed)::int AS allowed, SUM(n.blocked)::int AS blocked, COUNT(DISTINCT n.name)::int AS names
+         FROM dns_name_counts n WHERE ${where}
+        GROUP BY n.client_ip, n.site_id ORDER BY SUM(n.allowed + n.blocked) DESC LIMIT 100`, params);
+    // The client behind each address, in the source's site; newest holder first (DHCP reuse).
+    const macs = new Map<string, string>();
+    if (rows.length) {
+      const found = await query<{ site_id: number; ip_address: string; mac_address: string }>(
+        `SELECT DISTINCT ON (d.site_id, c.ip_address) d.site_id, c.ip_address, LOWER(c.mac_address) AS mac_address
+           FROM clients c JOIN devices d ON d.id = c.device_id
+          WHERE c.ip_address = ANY($1::text[])
+          ORDER BY d.site_id, c.ip_address, c.last_seen DESC NULLS LAST`, [rows.map((r) => r.client_ip)]);
+      for (const f of found) macs.set(`${f.site_id}|${f.ip_address}`, f.mac_address);
+    }
+    const clients = rows.map((r) => ({
+      mac: macs.get(`${r.site_id}|${r.client_ip}`) ?? 'unknown', client_ip: r.client_ip,
+      allowed: r.allowed, blocked: r.blocked, names: r.names,
+      upload_bytes: 0, download_bytes: 0, total_bytes: 0,
+    }));
+    res.json({ configured: await dnsConfigured(req), clients: await withClientNames(req, clients) });
+  } catch (e) {
+    console.error('[Traffic] dns clients:', (e as Error).message);
+    res.status(503).json({ error: 'DNS lookups could not be read right now.' });
+  }
+});
+
+async function destinationRetention(): Promise<number> {
+  const r = await query<{ value: unknown }>(`SELECT value FROM app_settings WHERE key = 'retention_destinations_days'`).catch(() => []);
+  const n = Number(r[0]?.value);
+  return Number.isFinite(n) && n > 0 ? n : 7;
+}
+
+// GET /api/traffic/destinations?range=24h&app=HTTPS&mac=..&limit=50 — where
+// traffic goes: the whole site, one application, one client, or one client's
+// use of one application. Each row: the remote address, who owns it (the
+// organisation, from the ASN list), its reverse DNS name if any, bytes each
+// way, and how many clients used it.
+router.get('/destinations', async (req, res) => {
+  const app = req.query.app === undefined ? undefined : String(req.query.app);
+  if (app !== undefined && !validApp(app)) return res.status(400).json({ error: 'Invalid application' });
+  let mac: string | undefined;
+  if (req.query.mac !== undefined) {
+    const m = sanitizeMac(String(req.query.mac));
+    if (!m) return res.status(400).json({ error: 'Invalid mac' });
+    mac = m;
+  }
+  const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
+  const { where, params } = destinationScope(req, { app, mac });
+  try {
+    const [rows, totals] = await Promise.all([
+      query<{ remote: string; upload: string; download: string; clients: number; apps: string[] }>(
+        `SELECT remote, SUM(upload_bytes)::text AS upload, SUM(download_bytes)::text AS download,
+                COUNT(DISTINCT mac)::int AS clients, (ARRAY_AGG(DISTINCT app))[1:5] AS apps
+           FROM client_destinations WHERE ${where} AND remote <> ''
+          GROUP BY remote ORDER BY SUM(upload_bytes + download_bytes) DESC LIMIT ${limit}`, params),
+      query<{ total: string | null; other: string | null }>(
+        `SELECT SUM(upload_bytes + download_bytes)::text AS total,
+                (SUM(upload_bytes + download_bytes) FILTER (WHERE remote = ''))::text AS other
+           FROM client_destinations WHERE ${where}`, params),
+    ]);
+    const total = Number(totals[0]?.total ?? 0);
+    const remotes = rows.map((r) => r.remote);
+    const [names, domains] = await Promise.all([
+      reverseNames(remotes),
+      domainsFor(req, remotes, mac ? await clientIps(req, mac) : undefined),
+    ]);
+    res.json({
+      total_bytes: total,
+      other_bytes: Number(totals[0]?.other ?? 0),
+      retention_days: await destinationRetention(),
+      names_available: asnStatus().loaded,
+      destinations: rows.map((r) => {
+        const up = Number(r.upload), down = Number(r.download);
+        return {
+          remote: r.remote, ...describeRemote(r.remote), name: names.get(r.remote) ?? null,
+          domains: domains.get(r.remote) ?? [],
+          upload_bytes: up, download_bytes: down, total_bytes: up + down,
+          share: total > 0 ? (up + down) / total : 0, client_count: r.clients, apps: r.apps,
+        };
+      }),
+    });
+  } catch (e) {
+    console.error('[Traffic] destinations:', (e as Error).message);
+    res.status(503).json({ error: 'Destinations could not be read right now.' });
+  }
+});
+
+// GET /api/traffic/destinations/:remote/clients?range=24h&app=.. — the clients
+// that talked to one address, busiest first.
+router.get('/destinations/:remote/clients', async (req, res) => {
+  const remote = String(req.params.remote);
+  if (!net.isIP(remote)) return res.status(400).json({ error: 'Invalid address' });
+  const app = req.query.app === undefined ? undefined : String(req.query.app);
+  if (app !== undefined && !validApp(app)) return res.status(400).json({ error: 'Invalid application' });
+  const { where, params } = destinationScope(req, { app, remote });
+  try {
+    const rows = await query<{ mac: string; upload: string; download: string; apps: string[] }>(
+      `SELECT mac, SUM(upload_bytes)::text AS upload, SUM(download_bytes)::text AS download, ARRAY_AGG(DISTINCT app) AS apps
+         FROM client_destinations WHERE ${where}
+        GROUP BY mac ORDER BY SUM(upload_bytes + download_bytes) DESC LIMIT 100`, params);
+    const clients = rows.map((r) => ({
+      mac: r.mac, upload_bytes: Number(r.upload), download_bytes: Number(r.download),
+      total_bytes: Number(r.upload) + Number(r.download), apps: r.apps,
+    }));
+    const [names, domains] = await Promise.all([reverseNames([remote]), domainsFor(req, [remote])]);
+    res.json({
+      remote, ...describeRemote(remote), name: names.get(remote) ?? null, domains: domains.get(remote) ?? [],
+      clients: await withClientNames(req, clients),
+    });
+  } catch (e) {
+    console.error('[Traffic] destination clients:', (e as Error).message);
+    res.status(503).json({ error: 'Destinations could not be read right now.' });
+  }
 });
 
 export default router;

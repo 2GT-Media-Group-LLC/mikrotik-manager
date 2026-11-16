@@ -10,11 +10,13 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { chartTooltip, pieTooltip } from '../components/common/chartTooltip';
-import { Activity, ArrowDown, ArrowUp, BarChart3, Router as RouterIcon, Settings2, AlertTriangle, X } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, BarChart3, Router as RouterIcon, Settings2, AlertTriangle, X, Globe, MapPin } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow } from 'date-fns';
 import type { DateTimeFormatters } from '../utils/dateTimeFormat';
 import clsx from 'clsx';
 import { trafficApi, type TrafficApp } from '../services/api';
+import DestinationsList from '../components/traffic/DestinationsList';
+import DnsNamesList from '../components/traffic/DnsNamesList';
 
 type Range = '1h' | '24h' | '7d' | '30d';
 const RANGES: Range[] = ['1h', '24h', '7d', '30d'];
@@ -57,9 +59,17 @@ function clientLabel(c: { mac: string; custom_name: string | null; hostname: str
   return c.custom_name || c.hostname || c.vendor || c.mac;
 }
 
-/** Who generates one application's traffic (#366 step 1). */
+/**
+ * One application's traffic (#366): who generates it, and where it goes. A
+ * client's "Where to" opens its destinations for this application.
+ */
 function AppClientsCard({ app, range, onClose }: { app: string; range: Range; onClose: () => void }) {
   const navigate = useNavigate();
+  const [tab, setTab] = useState<'clients' | 'destinations' | 'names'>('clients');
+  // DNS traffic also has the names behind it, from AdGuard Home (#366 step 3).
+  const isDns = app === 'DNS';
+  const tabs = isDns ? (['clients', 'destinations', 'names'] as const) : (['clients', 'destinations'] as const);
+  const [whereTo, setWhereTo] = useState<string | null>(null);
   const { data, isLoading, isError } = useQuery({
     queryKey: ['traffic-app-clients', app, range],
     queryFn: () => trafficApi.appClients(app, range).then((r) => r.data),
@@ -67,15 +77,25 @@ function AppClientsCard({ app, range, onClose }: { app: string; range: Range; on
   const max = Math.max(1, ...(data?.clients ?? []).map((c) => c.total_bytes));
   return (
     <div className="card overflow-hidden">
-      <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
+      <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2 flex-wrap">
         <Activity className="w-4 h-4 text-indigo-500" />
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 truncate">{app}: who&rsquo;s using it</h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 truncate">{app}</h2>
+        <div className="flex rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden text-xs" role="tablist">
+          {tabs.map((t) => (
+            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
+              className={clsx('px-2.5 py-1', tab === t ? 'bg-indigo-500 text-white' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/40')}>
+              {t === 'clients' ? 'Who\u2019s using it' : t === 'destinations' ? 'Where it goes' : 'Names looked up'}
+            </button>
+          ))}
+        </div>
         <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto flex-shrink-0">
           {data ? `${data.client_count} client${data.client_count === 1 ? '' : 's'} · ${formatBytes(data.total_bytes)}` : ''}
         </span>
         <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200" title="Close"><X className="w-4 h-4" /></button>
       </div>
-      {isLoading ? <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
+      {tab === 'names' ? <DnsNamesList range={range} className="max-h-[28rem] overflow-y-auto" />
+        : tab === 'destinations' ? <DestinationsList range={range} app={app} className="max-h-[28rem] overflow-y-auto" />
+        : isLoading ? <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
         : isError ? <div className="p-6 text-center text-sm text-red-500">The metrics database could not be read, so this data is unavailable right now.</div>
         : !data || data.clients.length === 0 ? <div className="p-6 text-center text-sm text-gray-400 dark:text-slate-500">No client traffic for {app} in this range.</div>
         : (
@@ -99,7 +119,20 @@ function AppClientsCard({ app, range, onClose }: { app: string; range: Range; on
                   <div className="mt-0.5 flex gap-3 text-xs text-gray-400 dark:text-slate-500">
                     <span className="inline-flex items-center gap-0.5"><ArrowDown className="w-3 h-3" />{formatBytes(c.download_bytes)}</span>
                     <span className="inline-flex items-center gap-0.5"><ArrowUp className="w-3 h-3" />{formatBytes(c.upload_bytes)}</span>
+                    {c.mac !== 'other' && (
+                      <button type="button" className="ml-auto inline-flex items-center gap-0.5 text-teal-600 dark:text-teal-400 hover:underline"
+                        onClick={(e) => { e.stopPropagation(); setWhereTo(whereTo === c.mac ? null : c.mac); }}>
+                        <MapPin className="w-3 h-3" />{whereTo === c.mac ? 'Hide' : isDns ? 'Names' : 'Where to'}
+                      </button>
+                    )}
                   </div>
+                  {whereTo === c.mac && (
+                    <div className="mt-2 -mx-5 border-t border-gray-100 dark:border-slate-800 bg-gray-50/60 dark:bg-slate-900/40" onClick={(e) => e.stopPropagation()}>
+                      {isDns && c.mac !== 'unknown'
+                        ? <DnsNamesList range={range} mac={c.mac} limit={15} />
+                        : <DestinationsList range={range} app={app} mac={c.mac} limit={10} />}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -434,6 +467,16 @@ export default function TrafficAnalyticsPage() {
             </div>
 
             {selectedApp && <AppClientsCard app={selectedApp} range={range} onClose={() => setSelectedApp(null)} />}
+
+            {/* Where the site's traffic goes (#366 step 2) */}
+            <div className="card overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-teal-500" />
+                <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200">Top destinations</h2>
+                <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">Click one to see who used it</span>
+              </div>
+              <DestinationsList range={range} limit={15} className="max-h-[32rem] overflow-y-auto" />
+            </div>
 
             {/* Flow sources & data health */}
             <div className="card overflow-hidden">

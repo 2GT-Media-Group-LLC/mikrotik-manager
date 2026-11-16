@@ -68,6 +68,46 @@ application's traffic, busiest first, up to 50 (from [@azizfayziev](https://gith
 #366). Selecting a client opens its page. The chart's folded **Other** slice is several
 applications together, so it doesn't open a list; the applications in it do, from the list.
 
+### Where traffic goes
+
+Each application's card has a second tab, **Where it goes**: the remote addresses that carried
+it, busiest first (#366). Below the applications, **Top destinations** does the same for all of
+the site's traffic; click one to see which clients used it. On a client's row, **Where to** lists
+that client's destinations for the application, and a client's page has **Where it goes** under
+its traffic.
+
+Each address is named by the organisation that owns it (Google, Telegram, Cloudflare...), with
+its country, AS number and reverse DNS name. Private, CGNAT and multicast addresses say so
+instead. The names come from the [iptoasn.com](https://iptoasn.com) list (public domain): a copy
+is built into each release, and a newer one is downloaded weekly unless **Settings → Dark Site
+Mode** turns that off. An organisation is who owns the address, not always the service: a CDN
+such as Cloudflare or Akamai carries many sites. Connecting AdGuard Home (below) adds the name
+the client actually looked up.
+
+To keep it small, each client keeps its busiest 20 addresses per application in each minute,
+counted by the hour; the rest are added together and shown as a total under the list. Only
+traffic between a client and an address outside the network is counted.
+
+### Names looked up (AdGuard Home)
+
+NetFlow carries addresses, not names. If AdGuard Home answers a site's DNS, add it under
+**Settings → DNS Query Log** (fleet admins), with the site whose clients use it, its web address
+and login. **Test** checks the address and login first. MikroTik Manager then reads its query log
+every minute and keeps:
+
+- how often each client looked up each name, per hour, and how many of those were blocked;
+- which addresses each name answered with, per client.
+
+Then the **DNS** application has a **Names looked up** tab, each client's row under it shows
+that client's lookups, a client's page has **Names looked up**, and destinations show the domain
+the client asked for (`www.youtube.com` rather than just Google).
+
+AdGuard Home sees clients by address, so its lookups are matched to clients through the
+addresses MikroTik Manager knows for them in that site. A client behind another NAT, or
+using a different resolver, isn't covered. The password is stored encrypted. Changing the
+address or turning off the certificate check needs it typed again, so a saved password is
+never sent to a server it wasn't saved for. AdGuard Home's own log isn't copied, only the counts.
+
 With a site selected, every view shows that site's traffic only, and accounts limited to
 particular sites see only theirs. **Flow Sources & Data Health** lists that site's exporting
 devices too; its packet and attribution counts are the collector's own and cover every site.
@@ -85,12 +125,14 @@ its default (#331). That goes for the charts on device, client and port pages to
 
 ## Retention
 
-Two settings, both in **Settings**:
+Four settings, under **Settings → General → Data Retention**:
 
 | Setting | Default | Covers |
 |---|---|---|
 | `netflow_retention_days` | 30 | Per-client time series (one-minute detail) |
 | `netflow_daily_retention_days` | 365 | Daily per-client rollups |
+| `retention_destinations_days` | 7 | Where traffic goes: per client, application and remote address, by hour |
+| `retention_dns_days` | 7 | Lookup counts and answers read from AdGuard Home |
 
 Flow records are the bulky ones; the daily rollups are small and are what the longer ranges are
 drawn from. Raising the first is the expensive change.
