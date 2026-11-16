@@ -923,6 +923,15 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.19
+
+- **Device tools: Ping failed on RouterOS 6, and Traceroute showed no results**
+  ([#460](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/460)). Ping asked for
+  `/tool/ping`, which only RouterOS 7 has; it now uses `/ping`, which both have. Traceroute
+  results were dropped on every version: RouterOS sends a snapshot of the whole route per round
+  of probes, and the last one is now shown. Ping's summary also showed the totals after the first
+  packet, and loss in red when there was none. Thanks to schmitt330 for the report.
+
 ## 1.0.18
 
 Released on Monday 16 November 2026. Security fixes, reported by

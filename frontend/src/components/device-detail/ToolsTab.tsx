@@ -85,9 +85,12 @@ function PingTool({ deviceId, interfaces }: { deviceId: number; interfaces: stri
     }
   };
 
-  // Split results into per-packet rows and summary (last row has packet-loss)
+  // Per-packet rows, and the running totals each one carries: the last row's are
+  // the final ones (#460; the first only counted one packet).
   const packets = results?.filter((r) => r['seq'] !== undefined) ?? [];
-  const summary = results?.find((r) => r['sent'] !== undefined);
+  const summary = results ? [...results].reverse().find((r) => r['sent'] !== undefined) : undefined;
+  // RouterOS gives loss as a bare number and times with their units ("6ms282us").
+  const loss = summary ? String(summary['packet-loss'] ?? '').replace(/%$/, '') : '';
 
   return (
     <div className="space-y-4">
@@ -126,7 +129,7 @@ function PingTool({ deviceId, interfaces }: { deviceId: number; interfaces: stri
             rows={packets.map((r) => [
               r['seq'] ?? null,
               r['host'] ?? null,
-              r['time'] ? `${r['time']}ms` : null,
+              r['time'] ? withUnit(r['time']) : null,
               r['ttl'] ?? null,
               r['size'] ? `${r['size']}B` : null,
               r['status'] || (r['time'] ? 'OK' : 'timeout'),
@@ -137,11 +140,11 @@ function PingTool({ deviceId, interfaces }: { deviceId: number; interfaces: stri
               <span>Sent: <b className="text-gray-900 dark:text-white">{summary['sent']}</b></span>
               <span>Received: <b className="text-gray-900 dark:text-white">{summary['received']}</b></span>
               <span>Loss: <b className={clsx(
-                summary['packet-loss'] === '0%' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-              )}>{summary['packet-loss']}</b></span>
-              {summary['avg-rtt'] && <span>Avg RTT: <b className="text-gray-900 dark:text-white">{summary['avg-rtt']}ms</b></span>}
-              {summary['min-rtt'] && <span>Min: <b className="text-gray-900 dark:text-white">{summary['min-rtt']}ms</b></span>}
-              {summary['max-rtt'] && <span>Max: <b className="text-gray-900 dark:text-white">{summary['max-rtt']}ms</b></span>}
+                Number(loss) === 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+              )}>{loss}%</b></span>
+              {summary['avg-rtt'] && <span>Avg RTT: <b className="text-gray-900 dark:text-white">{withUnit(summary['avg-rtt'])}</b></span>}
+              {summary['min-rtt'] && <span>Min: <b className="text-gray-900 dark:text-white">{withUnit(summary['min-rtt'])}</b></span>}
+              {summary['max-rtt'] && <span>Max: <b className="text-gray-900 dark:text-white">{withUnit(summary['max-rtt'])}</b></span>}
             </div>
           )}
         </div>
@@ -620,6 +623,12 @@ function ToolCard({ title, icon: Icon, children }: { title: string; icon: React.
       {children}
     </div>
   );
+}
+
+
+/** A RouterOS time as shown: "6ms282us" stays, a bare "6" (older output) gets "ms". */
+function withUnit(v: string): string {
+  return /^[\d.]+$/.test(v) ? `${v}ms` : v;
 }
 
 export default function ToolsTab({ deviceId }: { deviceId: number }) {
