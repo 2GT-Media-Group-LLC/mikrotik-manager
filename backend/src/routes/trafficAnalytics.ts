@@ -533,11 +533,20 @@ router.get('/destinations', async (req, res) => {
                 (SUM(upload_bytes + download_bytes) FILTER (WHERE remote = ''))::text AS other
            FROM client_destinations WHERE ${where}`, params),
       // When collecting began: right after an upgrade a 24h view holds only the
-      // last hour or so, which shouldn't read as missing data.
+      // last hour or so, which shouldn't read as missing data. Every site's rows
+      // count, since it's the manager that began, not a site; hour leads the
+      // primary key, so this is an index lookup.
       query<{ first: Date | null }>(`SELECT MIN(hour) AS first FROM client_destinations`),
     ]);
     const total = Number(totals[0]?.total ?? 0);
+    const retentionDays = await destinationRetention();
+    // Once retention has pruned the oldest hours, the first one left is the
+    // retention cutoff, not when collecting began: the range's start or that
+    // cutoff, whichever is later, is where rows are expected to begin. An hour's
+    // slack covers pruning that isn't on the hour.
+    const expectedFrom = Math.max(rangeStart(req).getTime(), Date.now() - retentionDays * 86_400_000);
     const firstHour = first[0]?.first ? new Date(first[0].first) : null;
+    const recordedSince = firstHour && firstHour.getTime() > expectedFrom + 3_600_000 ? firstHour.toISOString() : null;
     const remotes = rows.map((r) => r.remote);
     const [names, domains] = await Promise.all([
       reverseNames(remotes),
@@ -546,9 +555,9 @@ router.get('/destinations', async (req, res) => {
     res.json({
       total_bytes: total,
       other_bytes: Number(totals[0]?.other ?? 0),
-      retention_days: await destinationRetention(),
+      retention_days: retentionDays,
       // Set only when the range starts before anything was recorded.
-      recorded_since: firstHour && firstHour > rangeStart(req) ? firstHour.toISOString() : null,
+      recorded_since: recordedSince,
       names_available: asnStatus().loaded,
       destinations: rows.map((r) => {
         const up = Number(r.upload), down = Number(r.download);
