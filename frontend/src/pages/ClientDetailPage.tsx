@@ -1,7 +1,7 @@
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
 import DestinationsList from '../components/traffic/DestinationsList';
 import DnsNamesList from '../components/traffic/DnsNamesList';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useRememberedRange } from '../hooks/useRememberedRange';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -172,14 +172,59 @@ function NodeLabel({ text, to }: { text: string; to?: string }) {
   );
 }
 
+/** One box on the path: an icon, the name (linked when managed), and what's under it. */
+function PathNode({ icon: Icon, tone, name, to, lines }: {
+  icon: typeof Router; tone: 'client' | 'device' | 'up' | 'unmanaged' | 'offline';
+  name: string; to?: string; lines: { text: string; mono?: boolean; accent?: boolean }[];
+}) {
+  const [box, ink] = (() => {
+    switch (tone) {
+      case 'client': return ['bg-green-100 dark:bg-green-900/30', 'text-green-600 dark:text-green-400'];
+      case 'device': return ['bg-blue-100 dark:bg-blue-900/30', 'text-blue-600 dark:text-blue-400'];
+      case 'up': return ['bg-purple-100 dark:bg-purple-900/30', 'text-purple-600 dark:text-purple-400'];
+      case 'unmanaged': return ['bg-gray-100 dark:bg-slate-700', 'text-gray-500 dark:text-slate-400'];
+      default: return ['bg-gray-100 dark:bg-slate-700', 'text-gray-400'];
+    }
+  })();
+  return (
+    <div className="flex flex-col items-center gap-1 min-w-[80px]">
+      <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center', box)}>
+        <Icon className={clsx('w-5 h-5', ink)} />
+      </div>
+      <NodeLabel text={name} to={to} />
+      {lines.map((l) => (
+        <span key={l.text} className={clsx('text-[10px]', l.mono && 'font-mono',
+          l.accent ? 'text-blue-500 dark:text-blue-400 font-medium' : 'text-gray-400 dark:text-slate-500')}>{l.text}</span>
+      ))}
+    </div>
+  );
+}
+
+/** The arrow between two steps, with the port it leaves by. */
+function PathArrow({ port, title }: { port?: string | null; title?: string }) {
+  return (
+    <div className="flex flex-col items-center flex-shrink-0 -mt-4" title={title}>
+      {port ? <span className="text-[9px] font-mono text-gray-400 dark:text-slate-500">{port}</span> : <span className="h-3" />}
+      <ChevronRight className="w-4 h-4 text-gray-300 dark:text-slate-600" />
+    </div>
+  );
+}
+
+/**
+ * The client, the device it's on, and that device's way to the top of the
+ * site, a step at a time: by spanning tree where it says, otherwise by
+ * neighbour discovery. A managed device's own address starts at the device.
+ */
 function ConnectionDiagram({ client }: { client: ClientDetail }) {
   const ClientIcon = client.client_type === 'wireless' ? Wifi : Network;
-  const DeviceIcon = deviceIcon(client.device_type);
-  // A neighbour the manager doesn't manage could be anything (#365).
-  const UpstreamIcon = client.upstream_managed === false ? Box
-    : client.upstream_device_type ? deviceIcon(client.upstream_device_type) : Router;
-
   const clientName = client.custom_name || client.hostname || client.mac_address;
+  const own = client.own_device ?? null;
+  // Older servers sent only the first step.
+  const path = client.path ?? (client.upstream_device_name ? [{
+    device_id: client.upstream_device_id ?? null, name: client.upstream_device_name, device_type: client.upstream_device_type ?? null,
+    ip: client.upstream_device_ip ?? null, managed: client.upstream_managed !== false, from_port: null,
+    port: client.upstream_interface ?? null, how: 'discovery' as const,
+  }] : []);
 
   return (
     <div className="card p-4 space-y-3">
@@ -187,72 +232,39 @@ function ConnectionDiagram({ client }: { client: ClientDetail }) {
         <Activity className="w-4 h-4 text-gray-400" />
         Connection Path
       </h2>
+      {own && (
+        <p className="text-xs text-gray-500 dark:text-slate-400">
+          This is an address of <Link to={`/devices/${own.id}`} className="text-blue-600 dark:text-blue-400 hover:underline">{own.name}</Link> itself,
+          heard by the switches around it, so the path starts at that device.
+        </p>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Client node */}
-        <div className="flex flex-col items-center gap-1 min-w-[80px]">
-          <div className={clsx(
-            'w-10 h-10 rounded-xl flex items-center justify-center',
-            client.active
-              ? 'bg-green-100 dark:bg-green-900/30'
-              : 'bg-gray-100 dark:bg-slate-700'
-          )}>
-            <ClientIcon className={clsx(
-              'w-5 h-5',
-              client.active ? 'text-green-600 dark:text-green-400' : 'text-gray-400'
-            )} />
-          </div>
-          <NodeLabel text={clientName} />
-          {client.ip_address && (
-            <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">
-              {client.ip_address}
-            </span>
-          )}
-        </div>
+        {own ? (
+          <PathNode icon={deviceIcon(own.device_type ?? undefined)} tone="device" name={own.name} to={`/devices/${own.id}`}
+            lines={own.ip_address ? [{ text: own.ip_address, mono: true }] : []} />
+        ) : (<>
+          <PathNode icon={ClientIcon} tone={client.active ? 'client' : 'offline'} name={clientName}
+            lines={client.ip_address ? [{ text: client.ip_address, mono: true }] : []} />
+          <PathArrow />
+          <PathNode icon={deviceIcon(client.device_type)} tone="device" name={client.device_name || 'Unknown'}
+            to={client.device_id ? `/devices/${client.device_id}` : undefined}
+            lines={client.ssid ? [{ text: client.ssid, accent: true }] : client.interface_name ? [{ text: client.interface_name, mono: true }] : []} />
+        </>)}
 
-        {/* Arrow */}
-        <ChevronRight className="w-4 h-4 text-gray-300 dark:text-slate-600 flex-shrink-0" />
-
-        {/* Connected device (AP/switch) */}
-        <div className="flex flex-col items-center gap-1 min-w-[80px]">
-          <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-            {/* eslint-disable-next-line react-hooks/static-components */}
-            <DeviceIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <NodeLabel text={client.device_name || 'Unknown'} to={client.device_id ? `/devices/${client.device_id}` : undefined} />
-          {client.ssid && (
-            <span className="text-[10px] text-blue-500 dark:text-blue-400 font-medium">
-              {client.ssid}
-            </span>
-          )}
-          {client.interface_name && !client.ssid && (
-            <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">
-              {client.interface_name}
-            </span>
-          )}
-        </div>
-
-        {/* Upstream device (if known) */}
-        {client.upstream_device_name && (
-          <>
-            <ChevronRight className="w-4 h-4 text-gray-300 dark:text-slate-600 flex-shrink-0" />
-            <div className="flex flex-col items-center gap-1 min-w-[80px]">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                {/* eslint-disable-next-line react-hooks/static-components */}
-                <UpstreamIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              </div>
-              <NodeLabel text={client.upstream_device_name} to={client.upstream_device_id ? `/devices/${client.upstream_device_id}` : undefined} />
-              {client.upstream_managed === false && (
-                <span className="text-[10px] text-gray-400 dark:text-slate-500">not managed</span>
-              )}
-              {client.upstream_device_ip && (
-                <span className="text-[10px] font-mono text-gray-400 dark:text-slate-500">
-                  {client.upstream_device_ip}
-                </span>
-              )}
-            </div>
-          </>
-        )}
+        {path.map((h, i) => (
+          <Fragment key={`${h.device_id ?? h.name}-${i}`}>
+            <PathArrow port={h.from_port}
+              title={h.how === 'stp' ? 'Spanning tree names this as the way up' : 'Chosen from neighbour discovery: no spanning-tree answer here'} />
+            <PathNode icon={!h.managed ? Box : deviceIcon(h.device_type ?? undefined)} tone={h.managed ? 'up' : 'unmanaged'}
+              name={h.name} to={h.device_id ? `/devices/${h.device_id}` : undefined}
+              lines={[
+                ...(h.port ? [{ text: h.port, mono: true }] : []),
+                ...(!h.managed ? [{ text: 'not managed' }] : []),
+                ...(h.ip && !h.managed ? [{ text: h.ip, mono: true }] : []),
+              ]} />
+          </Fragment>
+        ))}
       </div>
     </div>
   );

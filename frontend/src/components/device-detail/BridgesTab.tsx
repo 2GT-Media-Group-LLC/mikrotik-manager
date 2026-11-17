@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Network, Plus, Pencil, Trash2, Check, X, RefreshCw, AlertCircle, Cpu } from 'lucide-react';
 import clsx from 'clsx';
-import { devicesApi, type BridgeView, type BridgePortView } from '../../services/api';
+import { devicesApi, type BridgeView, type BridgePortView, type BridgePortUpdate } from '../../services/api';
+import { portPriorityValue, portPriorityError, pathCostError, bpduGuardWarning } from '../../utils/portStp';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { bridgeMtuCeiling, bridgeMtuError } from '../../utils/mtu';
 import { LockoutVerdictDialog, lockoutVerdictOf, guardOutcomeMessage, type LockoutVerdict, type GuardResult } from '../ChangeGuardDialog';
@@ -27,19 +28,48 @@ const ETHER_TYPES = [
   { value: '0x9100', label: '0x9100 (older Q-in-Q)' },
 ];
 
-interface PortForm { tag_stacking: boolean; mvrp_applicant_state: string; mvrp_registrar_state: string }
+interface PortForm {
+  tag_stacking: boolean; mvrp_applicant_state: string; mvrp_registrar_state: string;
+  stp_priority: string; path_cost: string; edge: string; point_to_point: string;
+  bpdu_guard: boolean; restricted_role: boolean; restricted_tcn: boolean;
+}
 const portFormOf = (p: BridgePortView): PortForm => ({
   tag_stacking: !!p.tagStacking,
   mvrp_applicant_state: p.mvrpApplicant ?? 'normal-participant',
   mvrp_registrar_state: p.mvrpRegistrar ?? 'normal',
+  stp_priority: p.stpPriority ?? '',
+  path_cost: p.pathCost ?? '',
+  edge: p.edge ?? 'auto',
+  point_to_point: p.pointToPoint ?? 'auto',
+  bpdu_guard: !!p.bpduGuard,
+  restricted_role: !!p.restrictedRole,
+  restricted_tcn: !!p.restrictedTcn,
 });
 const portChanges = (p: BridgePortView, f: PortForm) => {
-  const d: Partial<PortForm> = {};
+  const d: BridgePortUpdate = {};
   if (f.tag_stacking !== !!p.tagStacking) d.tag_stacking = f.tag_stacking;
   if (p.mvrpApplicant != null && f.mvrp_applicant_state !== p.mvrpApplicant) d.mvrp_applicant_state = f.mvrp_applicant_state;
   if (p.mvrpRegistrar != null && f.mvrp_registrar_state !== p.mvrpRegistrar) d.mvrp_registrar_state = f.mvrp_registrar_state;
+  // Spanning tree: only what changed, and only settings the device reported.
+  if (f.stp_priority.trim() && portPriorityValue(f.stp_priority) !== portPriorityValue(p.stpPriority ?? '')) d.stp_priority = f.stp_priority.trim();
+  if (f.path_cost.trim() && f.path_cost.trim() !== (p.pathCost ?? '')) d.path_cost = f.path_cost.trim();
+  // Emptied: back to RouterOS's own (it doesn't print the default).
+  else if (!f.path_cost.trim() && p.pathCost) d.path_cost = 'default';
+  if (p.edge != null && f.edge !== p.edge) d.edge = f.edge;
+  if (p.pointToPoint != null && f.point_to_point !== p.pointToPoint) d.point_to_point = f.point_to_point;
+  if (p.bpduGuard != null && f.bpdu_guard !== p.bpduGuard) d.bpdu_guard = f.bpdu_guard;
+  if (p.restrictedRole != null && f.restricted_role !== p.restrictedRole) d.restricted_role = f.restricted_role;
+  if (p.restrictedTcn != null && f.restricted_tcn !== p.restrictedTcn) d.restricted_tcn = f.restricted_tcn;
   return d;
 };
+
+const EDGE_CHOICES = [
+  { value: 'auto', label: 'Auto (edge until a BPDU arrives)' },
+  { value: 'yes', label: 'Yes (end device: forward at once)' },
+  { value: 'no', label: 'No (always a link to a switch)' },
+  { value: 'yes-discover', label: 'Yes, but become non-edge on a BPDU' },
+  { value: 'no-discover', label: 'No, but become edge without BPDUs' },
+];
 
 /**
  * Every bridge on the device (#284): its settings, ports (hardware-switched or
@@ -107,7 +137,7 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
     onError: (e, v) => failed(() => update.mutate({ ...v, confirm: true }))(e),
   });
   const portUpdate = useMutation({
-    mutationFn: ({ iface, d, confirm = false }: { iface: string; d: Partial<PortForm>; confirm?: boolean }) =>
+    mutationFn: ({ iface, d, confirm = false }: { iface: string; d: BridgePortUpdate; confirm?: boolean }) =>
       devicesApi.updateBridgePort(deviceId, iface, d, confirm),
     onSuccess: (r) => { setPortEdit(null); done(r); },
     onError: (e, v) => failed(() => portUpdate.mutate({ ...v, confirm: true }))(e),
@@ -323,7 +353,8 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                           title={[p.hw ? 'Switched by the switch chip' : 'Switched by the CPU', p.pvid ? `PVID ${p.pvid}` : '', p.role ?? '',
                             p.tagStacking ? 'tag stacking' : '', p.mvrpRegistrar === 'fixed' ? 'MVRP registrar fixed' : '',
                             p.mvrpApplicant === 'non-participant' ? 'MVRP non-participant' : '',
-                            p.inactive ? 'inactive' : '', p.disabled ? 'disabled' : '', editable ? 'Click for tag stacking and MVRP' : ''].filter(Boolean).join(' · ')}
+                            p.bpduGuard ? 'BPDU guard' : '', p.restrictedRole ? 'restricted role' : '',
+                            p.inactive ? 'inactive' : '', p.disabled ? 'disabled' : '', editable ? 'Click for spanning tree, tag stacking and MVRP' : ''].filter(Boolean).join(' · ')}
                           className={clsx('px-1.5 py-0.5 rounded font-mono text-xs border disabled:cursor-default',
                             open ? 'border-blue-500 ring-1 ring-blue-500' : '',
                             p.disabled || p.inactive ? 'border-gray-200 text-gray-400 dark:border-slate-700' : 'border-gray-300 text-gray-700 dark:border-slate-600 dark:text-slate-200',
@@ -366,6 +397,11 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
               const pe = portEdit;
               const d = portChanges(pe.port, pe.form);
               const hasMvrp = pe.port.mvrpApplicant != null || pe.port.mvrpRegistrar != null;
+              const hasStp = b.protocolMode !== 'none' && (pe.port.edge != null || pe.port.stpPriority != null);
+              const prioErr = portPriorityError(pe.form.stp_priority);
+              const costErr = pathCostError(pe.form.path_cost);
+              const guardWarn = pe.form.bpdu_guard && !pe.port.bpduGuard ? bpduGuardWarning(pe.port.role) : null;
+              const setF = (patch: Partial<PortForm>) => setPortEdit({ ...pe, form: { ...pe.form, ...patch } });
               return (
                 <div className="rounded-lg border border-gray-200 dark:border-slate-700 p-3 space-y-3">
                   <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Port <span className="font-mono">{pe.port.name}</span></h4>
@@ -393,9 +429,66 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                         </select></div>
                     </>)}
                   </div>
+                  {hasStp && (
+                    <div className="space-y-2 border-t border-gray-100 dark:border-slate-700 pt-3">
+                      <div className="text-xs font-semibold text-gray-700 dark:text-slate-200">
+                        Spanning Tree
+                        <span className="ml-2 font-normal text-gray-400">
+                          {[pe.port.role ? `${pe.port.role.replace(/-port$/, '')} port` : '', pe.port.edgePort ? 'running as an edge port' : ''].filter(Boolean).join(' · ') || 'not running yet'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <div><label className="label">Port priority</label>
+                          <input className={clsx('input font-mono', prioErr && 'border-red-400')} value={pe.form.stp_priority} placeholder="0x80"
+                            onChange={(ev) => setF({ stp_priority: ev.target.value })} />
+                          {prioErr && <p className="text-[11px] mt-1 text-red-500">{prioErr}</p>}</div>
+                        <div><label className="label">Path cost</label>
+                          <input className={clsx('input font-mono', costErr && 'border-red-400')} value={pe.form.path_cost} placeholder="default"
+                            onChange={(ev) => setF({ path_cost: ev.target.value })} />
+                          {costErr && <p className="text-[11px] mt-1 text-red-500">{costErr}</p>}</div>
+                        <div><label className="label">Edge</label>
+                          <select className="input" value={pe.form.edge} onChange={(ev) => setF({ edge: ev.target.value })}>
+                            {EDGE_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                          </select></div>
+                        <div><label className="label">Point-to-point</label>
+                          <select className="input" value={pe.form.point_to_point} onChange={(ev) => setF({ point_to_point: ev.target.value })}>
+                            <option value="auto">Auto (from duplex)</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No (shared segment)</option>
+                          </select></div>
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        Between two links to the same switch, the lower path cost becomes the root port, then the lower priority.
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
+                            <input type="checkbox" checked={pe.form.bpdu_guard} onChange={(ev) => setF({ bpdu_guard: ev.target.checked })} />
+                            BPDU guard
+                          </label>
+                          <p className="text-[11px] mt-1 text-gray-400">Shuts the port if a BPDU arrives. For ports to end devices only.</p>
+                          {guardWarn && <p className="text-[11px] mt-1 text-amber-600 dark:text-amber-400 flex gap-1"><AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />{guardWarn}</p>}
+                        </div>
+                        <div>
+                          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
+                            <input type="checkbox" checked={pe.form.restricted_role} onChange={(ev) => setF({ restricted_role: ev.target.checked })} />
+                            Restricted role
+                          </label>
+                          <p className="text-[11px] mt-1 text-gray-400">The port can never become the root port, so equipment beyond it can&apos;t take over as root.</p>
+                        </div>
+                        <div>
+                          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
+                            <input type="checkbox" checked={pe.form.restricted_tcn} onChange={(ev) => setF({ restricted_tcn: ev.target.checked })} />
+                            Restricted TCN
+                          </label>
+                          <p className="text-[11px] mt-1 text-gray-400">Topology changes heard on the port aren&apos;t passed on, so they don&apos;t flush the network&apos;s MAC tables.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <p className="text-xs text-gray-400">On the port the manager connects through, these run with auto-revert.</p>
                   <div className="flex gap-2">
-                    <button onClick={() => portUpdate.mutate({ iface: pe.port.name, d })} disabled={busy || Object.keys(d).length === 0}
+                    <button onClick={() => portUpdate.mutate({ iface: pe.port.name, d })} disabled={busy || Object.keys(d).length === 0 || !!prioErr || !!costErr}
                       className="btn-primary flex items-center gap-2 text-sm">
                       {portUpdate.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Save
                     </button>

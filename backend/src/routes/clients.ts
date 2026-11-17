@@ -15,7 +15,8 @@ import { fingerprintClient, DEVICE_CATEGORIES, DeviceCategory } from '../utils/c
 import { parseRoamLine, buildSessions, flappingSessions } from '../utils/roaming';
 import { fluxString } from '@influxdata/influxdb-client';
 import { counterDeltas } from '../utils/counterDeltas';
-import { INFRA_PORTS_CTE, CLIENT_SIGHTINGS, CLIENT_SIGHTING_ORDER, CLIENT_MAC_COLUMNS, UPSTREAM_LINK_ORDER, UPSTREAM_CANDIDATE, UPSTREAM_IS_TOP, withMacColumns } from '../utils/clientPorts';
+import { INFRA_PORTS_CTE, CLIENT_SIGHTINGS, CLIENT_SIGHTING_ORDER, CLIENT_MAC_COLUMNS, withMacColumns } from '../utils/clientPorts';
+import { clientPath, deviceOwningMac, type PathHop } from '../services/topology/clientPath';
 
 // Effective category: the user's override wins; otherwise the fingerprint.
 function withCategory<T extends Record<string, unknown>>(row: T): T & { device_category: string; auto_category: string } {
@@ -318,25 +319,19 @@ router.get('/', async (req, res) => {
   });
 });
 
-// GET /api/clients/:mac — detail view with SSID, VLAN name, device type, upstream topology
+// GET /api/clients/:mac — detail view with SSID, VLAN name, device type, and its path to the top of the site
 router.get('/:mac', async (req, res) => {
   const mac = req.params.mac.toLowerCase();
 
   // The sighting that says where the client is (CLIENT_SIGHTING_ORDER, #363);
-  // online and last seen come from all its sightings. Use LATERAL for topology
-  // so we never multiply rows.
+  // online and last seen come from all its sightings. Its way up is worked out
+  // after (clientPath).
   const rows = await query<Record<string, unknown>>(
     `WITH ${INFRA_PORTS_CTE}
      SELECT c.*, d.name as device_name, d.device_type,
             ${CLIENT_MAC_COLUMNS},
             COALESCE(c.capsman_ssid, wi.ssid) as ssid,
-            v.name as vlan_name,
-            topo.upstream_device_id,
-            topo.upstream_interface,
-            topo.upstream_device_name,
-            topo.upstream_device_type,
-            topo.upstream_device_ip,
-            topo.upstream_managed
+            v.name as vlan_name
      FROM ${CLIENT_SIGHTINGS} c
      JOIN devices d ON d.id = c.device_id
      LEFT JOIN wireless_interfaces wi
@@ -349,25 +344,6 @@ router.get('/:mac', async (req, res) => {
         ORDER BY (vv.device_id = c.device_id) DESC
         LIMIT 1
      ) v ON TRUE
-     -- The device's way up (J7, #363): see UPSTREAM_LINK_ORDER. None when it
-     -- leads down from the top of the site (UPSTREAM_IS_TOP, #365). A neighbour
-     -- the manager doesn't manage is named as discovery heard it.
-     LEFT JOIN LATERAL (
-       SELECT up.* FROM (
-         SELECT tl.to_device_id   AS upstream_device_id,
-                tl.to_interface   AS upstream_interface,
-                COALESCE(ud.name, NULLIF(TRIM(tl.neighbor_identity), ''), tl.neighbor_address) AS upstream_device_name,
-                ud.device_type    AS upstream_device_type,
-                COALESCE(ud.ip_address, tl.neighbor_address) AS upstream_device_ip,
-                (tl.to_device_id IS NOT NULL) AS upstream_managed,
-                ${UPSTREAM_IS_TOP} AS is_top
-         FROM topology_links tl
-         LEFT JOIN devices ud ON ud.id = tl.to_device_id
-         WHERE tl.from_device_id = c.device_id AND ${UPSTREAM_CANDIDATE}
-         ORDER BY ${UPSTREAM_LINK_ORDER}
-         LIMIT 1
-       ) up WHERE NOT up.is_top
-     ) topo ON TRUE
      WHERE LOWER(c.mac_address) = $1
        ${siteScopeByDevice(activeSite(req), 'c.device_id') ? `AND ${siteScopeByDevice(activeSite(req), 'c.device_id')}` : ''}
      WINDOW mac AS (PARTITION BY c.mac_address)
@@ -376,8 +352,31 @@ router.get('/:mac', async (req, res) => {
     [mac]
   );
 
+  // A managed device's own address, heard by every switch around it: the
+  // page is about that device, and its path starts there rather than at a
+  // neighbour that heard it (which led back to the device itself).
   if (!rows.length) return res.status(404).json({ error: 'Client not found' });
-  return res.json(withCategory(withMacColumns(rows[0])));
+  const own = await deviceOwningMac(mac, siteScopeByDevice(activeSite(req), 'd.id'));
+  const row = withCategory(withMacColumns(rows[0]));
+  const start = own ? Number(own.id) : Number(row.device_id);
+  // The way to the top of the site, a step at a time (see clientPath).
+  const path = await clientPath(start).catch((e) => {
+    console.warn(`[Clients] path for ${mac}: ${(e as Error).message}`);
+    return [] as PathHop[];
+  });
+  const first = path[0];
+  return res.json({
+    ...row,
+    path,
+    own_device: own ? { id: Number(own.id), name: own.name, device_type: own.device_type, ip_address: own.ip_address } : null,
+    // The first step, as the page read it before the whole path (kept for API users).
+    upstream_device_id: own ? null : first?.device_id ?? null,
+    upstream_interface: own ? null : first?.port ?? null,
+    upstream_device_name: own ? null : first?.name ?? null,
+    upstream_device_type: own ? null : first?.device_type ?? null,
+    upstream_device_ip: own ? null : first?.ip ?? null,
+    upstream_managed: own || !first ? null : first.managed,
+  });
 });
 
 // GET /api/clients/:mac/presence?range=2h|24h|7d — connectivity timeline from InfluxDB

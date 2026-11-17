@@ -344,4 +344,74 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
     await wired(ap3, '02:00:00:00:01:08');
     expect(await up('02:00:00:00:01:08')).toEqual([null, null]);
   });
+
+  it('walks the whole path by spanning tree, and starts a device\'s own address at the device', async () => {
+    // A site of its own, so nothing above leaks in. CORE is the root bridge;
+    // BIG's root port faces it; the AP's bridge hears no BPDUs, so it calls
+    // itself root; MINI's root is an unmanaged switch at a lower priority.
+    const site = (await db.query<{ id: number }>(`INSERT INTO sites (name) VALUES ('STP lab') RETURNING id`))[0].id;
+    const dev = async (n: string, ip: string, type: string) => (await db.query<{ id: number }>(
+      `INSERT INTO devices (name, ip_address, api_username, api_password_encrypted, device_type, status, site_id)
+       VALUES ($1, $2, 'u', 'x', $3, 'online', $4) RETURNING id`, [n, ip, type, site]))[0].id;
+    const core = await dev('LAB-CORE', '10.6.0.40', 'switch');
+    const big = await dev('LAB-BIG', '10.6.0.39', 'switch');
+    const ap = await dev('LAB-AP', '10.6.0.101', 'wireless_ap');
+    const mini = await dev('LAB-MINI', '10.6.0.60', 'switch');
+    const bridge = (d: number, bid: string, root: string, port: string, cost: number, designated: string | null) => db.query(
+      `INSERT INTO device_bridges (device_id, bridge_name, bridge_id, root_bridge, root_bridge_id, root_port, root_path_cost, protocol_mode, designated_bridge_id)
+       VALUES ($1, 'bridge', $2::text, $2::text = $3::text, $3, $4, $5, 'rstp', $6)`, [d, bid, root, port, cost, designated]);
+    await bridge(core, '0x8000.F4:1E:57:51:74:1E', '0x8000.F4:1E:57:51:74:1E', 'none', 0, null);
+    await bridge(big, '0x8000.F4:1E:57:BD:F0:2A', '0x8000.F4:1E:57:51:74:1E', 'sfp28-2', 800, '0x8000.F4:1E:57:51:74:1E');
+    await bridge(ap, '0x8000.D0:EA:11:0A:DE:77', '0x8000.D0:EA:11:0A:DE:77', 'none', 0, null);
+    await bridge(mini, '0x8000.38:32:7A:34:E5:1B', '0x2000.70:A7:41:EF:8F:FB', 'sfp-sfpplus1', 43010, '0x2000.70:A7:41:EF:8F:FB');
+    const link = (from: number, fromIf: string, to: number | null, toIf: string, by: string, ident: string | null = null, mac: string | null = null) => db.query(
+      `INSERT INTO topology_links (from_device_id, from_interface, to_device_id, to_interface, neighbor_address, neighbor_identity, neighbor_mac, discovered_by, link_type)
+       VALUES ($1, $2, $3, $4, (SELECT ip_address FROM devices WHERE id = $3), COALESCE((SELECT name FROM devices WHERE id = $3), $6), $7, $5::text, split_part($5::text, ',', 1))`,
+      [from, fromIf, to, toIf, by, ident, mac]);
+    await link(big, 'sfp28-2', core, 'bridge/sfp28-2', 'cdp,lldp,mndp');
+    await link(core, 'sfp28-2', big, 'bridge/sfp28-2', 'cdp,lldp,mndp');
+    await link(core, 'sfp28-1', mini, 'bridge/sfp-sfpplus1', 'cdp,mndp');
+    await link(ap, 'ether2', big, 'bridge/sfp28-2', 'cdp,mndp');
+    await link(mini, 'sfp-sfpplus1', null, 'Port 24', 'lldp', 'USW-Core', '70:a7:41:ef:8f:fb');
+    await link(mini, 'sfp-sfpplus1', big, 'bridge/sfp28-2', 'cdp,mndp');
+    const client = (d: number, mac: string, iface: string, type = 'wired') => db.query(
+      `INSERT INTO clients (device_id, mac_address, interface_name, active, client_type, last_seen)
+       VALUES ($1, $2, $3, true, $4, NOW())`, [d, mac, iface, type]);
+    const pathOf = async (mac: string) => {
+      const c = await get(`/api/clients/${mac}`) as Row;
+      return { device: c.device_name, own: (c.own_device as Row | null)?.name ?? null,
+        path: (c.path as Row[]).map((h) => [h.name, h.port, h.how]) };
+    };
+
+    // A phone on the AP: up a tier to BIG (the AP is root only of itself),
+    // then spanning tree to CORE, which is root: the top.
+    await client(ap, '02:00:00:00:02:01', 'wifi4', 'wireless');
+    expect(await pathOf('02:00:00:00:02:01')).toEqual({ device: 'LAB-AP', own: null, path: [
+      ['LAB-BIG', 'sfp28-2', 'discovery'], ['LAB-CORE', 'sfp28-2', 'stp']] });
+
+    // On MINI: spanning tree names the unmanaged switch at the other end, not BIG heard through it.
+    await client(mini, '02:00:00:00:02:02', 'ether3');
+    const onMini = await get('/api/clients/02:00:00:00:02:02') as Row;
+    expect((onMini.path as Row[]).map((h) => [h.name, h.managed, h.from_port, h.how])).toEqual([['USW-Core', false, 'sfp-sfpplus1', 'stp']]);
+    expect(onMini).toMatchObject({ upstream_device_name: 'USW-Core', upstream_managed: false });
+
+    // BIG's own address, heard by every switch around it: its page starts at BIG.
+    await db.query(`INSERT INTO interfaces (device_id, name, type, mac_address) VALUES ($1, 'sfp28-2', 'ether', 'f4:1e:57:bd:f0:33')`, [big]);
+    await client(core, 'f4:1e:57:bd:f0:33', 'sfp28-2');
+    await client(mini, 'f4:1e:57:bd:f0:33', 'sfp-sfpplus1');
+    expect(await pathOf('f4:1e:57:bd:f0:33')).toEqual({ device: 'LAB-CORE', own: 'LAB-BIG', path: [['LAB-CORE', 'sfp28-2', 'stp']] });
+
+    // Seen only on uplinks: not where it reaches MINI by MINI's root port, but
+    // where CORE sees it on a port leading down.
+    await client(mini, '02:00:00:00:02:03', 'sfp-sfpplus1');
+    await client(core, '02:00:00:00:02:03', 'sfp28-2');
+    expect((await pathOf('02:00:00:00:02:03')).device).toBe('LAB-CORE');
+
+    // The AP's bridge hears no BPDUs, so spanning tree doesn't mark its uplink;
+    // its link to a switch above still says the port leads up. The newer AP
+    // sighting doesn't win.
+    await client(core, '02:00:00:00:02:04', 'sfp28-1');
+    await client(ap, '02:00:00:00:02:04', 'ether2');
+    expect((await pathOf('02:00:00:00:02:04')).device).toBe('LAB-CORE');
+  });
 });

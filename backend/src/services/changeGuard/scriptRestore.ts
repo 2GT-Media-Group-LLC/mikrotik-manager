@@ -104,7 +104,8 @@ const MENUS = {
   bridgePort: {
     path: '/interface/bridge/port', mode: 'keyed', hasDynamic: true,
     only: ['interface', 'bridge', 'pvid', 'frame-types', 'ingress-filtering', 'tag-stacking', 'hw', 'edge',
-      'point-to-point', 'horizon', 'mvrp-applicant-state', 'mvrp-registrar-state', 'disabled', 'comment'],
+      'point-to-point', 'horizon', 'mvrp-applicant-state', 'mvrp-registrar-state',
+      'priority', 'path-cost', 'bpdu-guard', 'restricted-role', 'restricted-tcn', 'disabled', 'comment'],
   },
   bridgeVlan: {
     path: '/interface/bridge/vlan', mode: 'keyed', hasDynamic: true,

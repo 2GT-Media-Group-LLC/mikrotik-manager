@@ -36,6 +36,7 @@ import EdgeMenu from '../components/topology/EdgeMenu';
 import NodeEditor from '../components/topology/NodeEditor';
 import HandLinksTable from '../components/topology/HandLinksTable';
 import HiddenLinksTable from '../components/topology/HiddenLinksTable';
+import SpanningTreeCard from '../components/topology/SpanningTreeCard';
 import NeighbourEditor from '../components/topology/NeighbourEditor';
 import DisplaySettings from '../components/topology/DisplaySettings';
 
@@ -681,6 +682,12 @@ export default function TopologyPage() {
             <span className="ml-auto text-gray-400">Drag cards to arrange the map (saved for everyone) · click a link to choose where it attaches · hover a device to light up its links</span>
           </div>
         </>
+      )}
+
+      {/* The spanning trees among the bridges in view, with priorities to set */}
+      {data && (
+        <SpanningTreeCard devices={(data.devices as TopologyDevice[]) || []} bridges={(data.bridges as BridgeInfo[]) || []}
+          domains={data.stpDomains ?? []} canWrite={canWrite} onChanged={invalidate} />
       )}
 
       {/* Links drawn by hand, removable from here as well as on the map */}

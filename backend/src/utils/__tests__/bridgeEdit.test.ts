@@ -1,4 +1,4 @@
-import { parseBridgeCreate, parseBridgeUpdate, parseBridgePortUpdate, parsePriority, parseBridgeMtu, bridgeMtuProblem } from '../bridgeEdit';
+import { parseBridgeCreate, parseBridgeUpdate, parseBridgePortUpdate, parsePriority, parsePortPriority, parsePathCost, parseBridgeMtu, bridgeMtuProblem } from '../bridgeEdit';
 
 describe('bridge edits', () => {
   it('creates with RSTP unless told otherwise', () => {
@@ -78,5 +78,34 @@ describe('Q-in-Q and MVRP (#449)', () => {
     expect(parseBridgePortUpdate({ tag_stacking: 'yes' })).toEqual({ error: expect.stringMatching(/tag_stacking/) });
     expect(parseBridgePortUpdate({ mvrp_registrar_state: 'forbidden' })).toEqual({ error: expect.stringMatching(/registrar/) });
     expect(parseBridgePortUpdate({ mvrp_applicant_state: 'active' })).toEqual({ error: expect.stringMatching(/applicant/) });
+  });
+
+  it('takes a port\'s spanning-tree settings', () => {
+    expect(parseBridgePortUpdate({
+      stp_priority: '0x40', path_cost: 2000, edge: 'no', point_to_point: 'yes',
+      bpdu_guard: true, restricted_role: false, restricted_tcn: true,
+    })).toEqual({ fields: {
+      priority: '0x40', 'path-cost': '2000', edge: 'no', 'point-to-point': 'yes',
+      'bpdu-guard': 'yes', 'restricted-role': 'no', 'restricted-tcn': 'yes',
+    } });
+    expect(parseBridgePortUpdate({ stp_priority: '' })).toEqual({ error: 'Nothing to change' });
+    // Back to the default: unset, so RouterOS works it out again.
+    expect(parseBridgePortUpdate({ path_cost: 'default' })).toEqual({ fields: { 'path-cost': '' } });
+    expect(parseBridgePortUpdate({ stp_priority: 100 })).toEqual({ error: expect.stringMatching(/Port priority/) });
+    expect(parseBridgePortUpdate({ path_cost: 0 })).toEqual({ error: expect.stringMatching(/Path cost/) });
+    expect(parseBridgePortUpdate({ edge: 'maybe' })).toEqual({ error: expect.stringMatching(/edge/) });
+    expect(parseBridgePortUpdate({ point_to_point: 'shared' })).toEqual({ error: expect.stringMatching(/point_to_point/) });
+    expect(parseBridgePortUpdate({ bpdu_guard: 'yes' })).toEqual({ error: expect.stringMatching(/bpdu_guard/) });
+  });
+
+  it('reads port priority and path cost as RouterOS takes them', () => {
+    expect(parsePortPriority('128')).toBe('0x80');
+    expect(parsePortPriority('0xF0')).toBe('0xf0');
+    expect(parsePortPriority(0)).toBe('0x00');
+    expect(parsePortPriority(256)).toBeNull();
+    expect(parsePortPriority(24)).toBeNull();
+    expect(parsePathCost('10')).toBe('10');
+    expect(parsePathCost(200_000_001)).toBeNull();
+    expect(parsePathCost('1.5')).toBeNull();
   });
 });

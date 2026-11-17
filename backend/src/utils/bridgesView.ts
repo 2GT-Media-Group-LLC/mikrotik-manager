@@ -82,6 +82,16 @@ export function bridgesView(input: { bridges: Row[]; ports: Row[]; vlans: Row[];
           tagStacking: isTrue(p['tag-stacking']),
           mvrpApplicant: p['mvrp-applicant-state'] || null,
           mvrpRegistrar: p['mvrp-registrar-state'] || null,
+          // Spanning tree on the port: what's set, and how it's running.
+          stpPriority: p['priority'] || null,
+          pathCost: p['path-cost'] || null,
+          edge: p['edge'] || null,
+          pointToPoint: p['point-to-point'] || null,
+          bpduGuard: p['bpdu-guard'] === undefined ? null : isTrue(p['bpdu-guard']),
+          restrictedRole: p['restricted-role'] === undefined ? null : isTrue(p['restricted-role']),
+          restrictedTcn: p['restricted-tcn'] === undefined ? null : isTrue(p['restricted-tcn']),
+          edgePort: p['edge-port'] === undefined ? null : isTrue(p['edge-port']),
+          status: p['status'] || null,
           registeredVlans: mvrpOf.get(p['interface'] ?? '')?.['registered-vlan-ids'] || null,
           declaredVlans: mvrpOf.get(p['interface'] ?? '')?.['declared-vlan-ids'] || null,
         }))

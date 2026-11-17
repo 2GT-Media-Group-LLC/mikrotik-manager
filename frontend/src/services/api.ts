@@ -1031,7 +1031,7 @@ export const devicesApi = {
       ...GUARDED, params: { ...(iface ? { interface: iface } : {}), ...(confirmLockout ? { confirm_lockout: 'true' } : {}) },
     }),
   updateBridgePort: (id: number, iface: string,
-    data: { tag_stacking?: boolean; mvrp_applicant_state?: string; mvrp_registrar_state?: string }, confirmLockout = false) =>
+    data: BridgePortUpdate, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge-ports/${encodeURIComponent(iface)}`, { ...data, ...(confirmLockout ? { confirm_lockout: true } : {}) }, GUARDED),
   setBridgeVlanFiltering: (id: number, bridgeName: string, enabled: boolean, confirmLockout = false) =>
     api.put(`/devices/${id}/bridge/${encodeURIComponent(bridgeName)}/vlan-filtering`,
@@ -1277,6 +1277,24 @@ export interface ClientDetail extends Client {
   /** False for a neighbour the manager doesn't manage (an unmanaged switch heard over LLDP, #365). */
   upstream_managed?: boolean;
   comment?: string;
+  /** The way from the client's device to the top of the site, nearest first. The upstream_* fields are its first step. */
+  path?: ClientPathHop[];
+  /** Set when this address is one of a managed device's own: the path then starts at that device. */
+  own_device?: { id: number; name: string; device_type: string | null; ip_address: string | null } | null;
+}
+
+export interface ClientPathHop {
+  device_id: number | null;
+  name: string;
+  device_type: string | null;
+  ip: string | null;
+  managed: boolean;
+  /** The port on the step below that leads here. */
+  from_port: string | null;
+  /** The port on this step the link arrives at. */
+  port: string | null;
+  /** Spanning tree named this step, or neighbour discovery's ranking chose it. */
+  how: 'stp' | 'discovery';
 }
 
 export interface PresencePoint { time: string; online: number; }
@@ -3308,12 +3326,22 @@ export const platformBackupApi = {
 };
 
 /** One bridge as the Bridges tab shows it (#284). */
+/** What the Bridges tab can change on a port (#449). */
+export interface BridgePortUpdate {
+  tag_stacking?: boolean; mvrp_applicant_state?: string; mvrp_registrar_state?: string;
+  stp_priority?: string; path_cost?: string; edge?: string; point_to_point?: string;
+  bpdu_guard?: boolean; restricted_role?: boolean; restricted_tcn?: boolean;
+}
 export interface BridgePortView {
   name: string; hw: boolean; pvid: string | null; disabled: boolean; inactive: boolean; dynamic: boolean; role: string | null;
   l2mtu?: number | null; maxL2mtu?: number | null;
   /** Q-in-Q and MVRP (#449). */
   tagStacking?: boolean; mvrpApplicant?: string | null; mvrpRegistrar?: string | null;
   registeredVlans?: string | null; declaredVlans?: string | null;
+  /** Spanning tree on the port: as set, and how it's running. */
+  stpPriority?: string | null; pathCost?: string | null; edge?: string | null; pointToPoint?: string | null;
+  bpduGuard?: boolean | null; restrictedRole?: boolean | null; restrictedTcn?: boolean | null;
+  edgePort?: boolean | null; status?: string | null;
 }
 export interface BridgeView {
   id: string; name: string; protocolMode: string; priority: string | null; vlanFiltering: boolean;

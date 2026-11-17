@@ -4118,13 +4118,16 @@ router.put('/:id/bridges/:bridgeName', requireWrite, async (req, res) => {
       ...(changes.length ? { change: changes.length === 1 ? changes[0] : { kind: 'batch', changes } } : {}),
     },
     async (c) => { await c.updateBridge(name, f); return { message: `Bridge ${f.name ?? name} updated` }; },
-    async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); });
+    // Spanning tree too: a new priority or mode shows at once, not at the next slow poll.
+    async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); await c.collectStp().catch(() => {}); });
 });
 
-// PUT /api/devices/:id/bridge-ports/:iface { tag_stacking?, mvrp_applicant_state?, mvrp_registrar_state? }
-// Q-in-Q and MVRP on one port (#449). Tag stacking changes which VLAN the
-// port's frames land in, so on the port management comes in by it runs with
-// auto-revert.
+// PUT /api/devices/:id/bridge-ports/:iface { tag_stacking?, mvrp_applicant_state?, mvrp_registrar_state?,
+//   stp_priority?, path_cost?, edge?, point_to_point?, bpdu_guard?, restricted_role?, restricted_tcn? }
+// Q-in-Q, MVRP and spanning tree on one port (#449). Tag stacking changes which
+// VLAN the port's frames land in, and spanning tree can block or shut a port
+// (BPDU guard on an uplink shuts it), so on the port management comes in by
+// either runs with auto-revert.
 router.put('/:id/bridge-ports/:iface', requireWrite, async (req, res) => {
   const iface = req.params.iface;
   if (!IFACE_NAME.test(iface)) return res.status(400).json({ error: 'Invalid interface name.' });
@@ -4134,16 +4137,22 @@ router.put('/:id/bridge-ports/:iface', requireWrite, async (req, res) => {
   const changes: PlannedChange[] = [];
   if (f['tag-stacking']) changes.push({ kind: 'path-object.change', name: iface, what: `Turning tag stacking ${f['tag-stacking'] === 'yes' ? 'on' : 'off'}` });
   if (f['mvrp-applicant-state'] || f['mvrp-registrar-state']) changes.push({ kind: 'path-object.change', name: iface, what: 'Changing how the port takes part in MVRP' });
+  const stp = [f.priority ? `priority ${f.priority}` : '', f['path-cost'] !== undefined ? `path cost ${f['path-cost'] || 'back to default'}` : '',
+    f.edge ? `edge ${f.edge}` : '', f['point-to-point'] ? `point-to-point ${f['point-to-point']}` : '',
+    f['bpdu-guard'] ? `BPDU guard ${f['bpdu-guard'] === 'yes' ? 'on' : 'off'}` : '',
+    f['restricted-role'] ? `restricted role ${f['restricted-role'] === 'yes' ? 'on' : 'off'}` : '',
+    f['restricted-tcn'] ? `restricted TCN ${f['restricted-tcn'] === 'yes' ? 'on' : 'off'}` : ''].filter(Boolean);
+  if (stp.length) changes.push({ kind: 'path-object.change', name: iface, what: `Changing spanning tree on the port: ${stp.join(', ')}` });
   const what = [f['tag-stacking'] ? `tag stacking ${f['tag-stacking'] === 'yes' ? 'on' : 'off'}` : '',
     f['mvrp-applicant-state'] ? `MVRP applicant ${f['mvrp-applicant-state']}` : '',
-    f['mvrp-registrar-state'] ? `MVRP registrar ${f['mvrp-registrar-state']}` : ''].filter(Boolean).join(', ');
+    f['mvrp-registrar-state'] ? `MVRP registrar ${f['mvrp-registrar-state']}` : '', ...stp].filter(Boolean).join(', ');
   await withGuardedChange(req.params.id, req, res,
     {
       kind: 'bridge-port.set', summary: `Bridge port ${iface}: ${what}`,
       change: changes.length === 1 ? changes[0] : { kind: 'batch', changes },
     },
     async (c) => { await c.updateBridgePort(iface, f); return { message: `Bridge port ${iface} updated` }; },
-    async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); });
+    async (c) => { await c.collectInterfaces(); await c.collectVlans().catch(() => {}); await c.collectStp().catch(() => {}); });
 });
 
 // ─── 802.1X (#360) ───────────────────────────────────────────────────────────

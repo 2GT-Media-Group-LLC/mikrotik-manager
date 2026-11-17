@@ -28,21 +28,35 @@ one keeps a client that's already online there for 15 minutes after the router l
 properly, since a printer or a phone on standby that's still there spends most of its time
 `stale`, but it doesn't bring a client online, and it doesn't move **Last seen**.
 
-On the client's page, **Connection Path** shows that device and its way up: the spanning-tree
-root port where there is one, otherwise a link on a bridge port (or a member of a bonded one)
-rather than an out-of-band management port, and among those a neighbour heard over LLDP. Bridges
-pass MNDP and CDP on but not LLDP, so an access point behind a switch also hears the router
-through it, and only the LLDP neighbour, the switch, is at the other end of the cable. When links
-still tie, a router comes before a switch, and a switch before anything else, and a neighbour whose
-own way up is this device comes last. That covers the spanning-tree root bridge, which has no root
-port, and two switches that would otherwise each go up to the other (#365).
+On the client's page, **Connection Path** shows the device the client is on and the whole way
+from there to the top of the site, a step at a time, with the port each step leaves by and the
+port it arrives at. Names wrap in full and link to the device.
 
-The top of a site has no way up. When the best neighbour goes up through this device, and is a
-switch or access point under a router (or an access point under a switch), the device is the
-top, and Connection Path stops there rather than going back down into the LAN. A neighbour the
-manager doesn't manage is the way up only when there's no managed one, and only if it was heard
-over LLDP, so it's at the other end of the cable: an access point behind an unmanaged switch
-shows that switch, marked **not managed**. Names wrap in full and link to the device.
+Each step is spanning tree's answer where it has one, the same one the
+[topology map](topology.md#spanning-tree) uses: the switch at the other end of the device's root
+port, managed or not. An unmanaged switch is shown by the name discovery heard, marked
+**not managed**, and the path ends there. A device that is the root bridge is the top of its
+tree, so from there the path only goes up a tier, to a router above a switch or a switch above
+an access point, never back down into the tree. An access point whose bridge hears no BPDUs
+calls itself root, and still goes up to its switch.
+
+Where spanning tree has no answer, the step comes from neighbour discovery: a link on a bridge
+port (or a member of a bonded one) rather than an out-of-band management port, and among those
+a neighbour heard over LLDP. Bridges pass MNDP and CDP on but not LLDP, so an access point
+behind a switch also hears the router through it, and only the LLDP neighbour, the switch, is at
+the other end of the cable. When links still tie, a router comes before a switch, and a switch
+before anything else, and a neighbour whose own way up is this device comes last (#365). A
+neighbour the manager doesn't manage is a step only when there's no managed one, and only if it
+was heard over LLDP. The top of a site has no way up: when the best neighbour goes up through
+this device and is a tier below it, the path stops. Hover an arrow to see which way chose it.
+
+A client seen only on uplinks, behind equipment the manager doesn't manage, is placed on the
+device deepest in the tree that sees it on a port leading down, rather than on one that sees it
+on its way up (its root port, or a link to a device a tier above).
+
+A managed device's own address is heard by every switch around it. Its page says so, links to
+the device, and starts the path there; it used to start at a neighbour that heard it, and lead
+back to the device itself.
 
 !!! note "This can be switched off"
     Client tracking is the heaviest collector on most fleets. **Settings → Polling →

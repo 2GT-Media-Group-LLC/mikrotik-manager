@@ -39,7 +39,9 @@ describe('bridgesView', () => {
     expect(main.ports[1]).toMatchObject({ inactive: true, pvid: '10' });
     expect(guest).toMatchObject({ name: 'guest', protocolMode: 'none', running: false, vlanFiltering: false, addresses: ['10.9.9.1/24'] });
     expect(guest.ports).toEqual([{ name: 'ether9', hw: false, pvid: '1', disabled: false, inactive: false, dynamic: false, role: null, l2mtu: null, maxL2mtu: null,
-      tagStacking: false, mvrpApplicant: null, mvrpRegistrar: null, registeredVlans: null, declaredVlans: null }]);
+      tagStacking: false, mvrpApplicant: null, mvrpRegistrar: null, registeredVlans: null, declaredVlans: null,
+      stpPriority: null, pathCost: null, edge: null, pointToPoint: null, bpduGuard: null, restrictedRole: null,
+      restrictedTcn: null, edgePort: null, status: null }]);
   });
 
   it('lists each VLAN once, keeping dynamic-only ones apart (#284)', () => {
@@ -76,6 +78,19 @@ describe('bridgesView', () => {
     expect(b).toMatchObject({ etherType: '0x88a8', mvrp: true });
     expect(b.ports[0]).toMatchObject({
       tagStacking: true, mvrpApplicant: 'normal-participant', mvrpRegistrar: 'fixed', registeredVlans: '1,10,20-21', declaredVlans: '1,10',
+    });
+  });
+
+  it('shows a port\'s spanning-tree settings and state', () => {
+    const [b] = bridgesView({
+      bridges: [bridge],
+      ports: [{ ...ports[1], priority: '0x40', 'path-cost': '2000', edge: 'auto', 'point-to-point': 'auto',
+        'bpdu-guard': 'true', 'restricted-role': 'false', 'restricted-tcn': 'false', 'edge-port': 'true', status: 'in-bridge', role: 'designated-port' }],
+      vlans: [], addresses: [],
+    });
+    expect(b.ports[0]).toMatchObject({
+      stpPriority: '0x40', pathCost: '2000', edge: 'auto', pointToPoint: 'auto', bpduGuard: true,
+      restrictedRole: false, restrictedTcn: false, edgePort: true, status: 'in-bridge', role: 'designated-port',
     });
   });
 });

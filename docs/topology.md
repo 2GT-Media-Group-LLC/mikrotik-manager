@@ -135,6 +135,27 @@ is exactly what you want to know about before unplugging something.
   than by anyone's choice; reported on the root, or on its members when the root isn't managed;
 - an access point as root of a tree of several switches.
 
+### The Spanning Tree card
+
+Under the map, **Spanning Tree** lists every tree among the bridges in view: its root, then each
+bridge with its mode, priority, root port and cost to the root. Bridges with spanning tree off
+are listed apart, since they take part in none. Each bridge's priority can be changed in place
+(the pencil), through [Change Guard](change-guard.md); the list shows the new priority at once,
+and the rest of the tree as each device is next polled.
+
+The lowest priority wins root, and a tie goes to the lowest MAC address. Choose it on purpose:
+the core switch lowest (0x1000), distribution next (0x2000 to 0x4000), access switches at the
+default 0x8000 and access points highest (0xF000), so an access point never ends up root.
+
+The card says when:
+
+- the bridges form more than one tree. In one network that means a link between them is
+  dropping BPDUs: spanning tree off on a port or bridge, BPDU filtering, or an unmanaged switch
+  that doesn't pass them. Neither tree then protects the other from a loop;
+- a root kept the default priority, so it won on lowest MAC address, and whether it's an access
+  point;
+- a root isn't managed here, named as discovery saw it where it can be.
+
 ## Layout
 
 The map is drawn in tiers, from the gateway down (#367). Each device hangs under its **way up**,

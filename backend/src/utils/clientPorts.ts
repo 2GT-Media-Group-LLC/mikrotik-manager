@@ -118,12 +118,41 @@ export const CLIENT_PORT_RANK = `(CASE
     ELSE 1
   END)`;
 
+/** Router, then switch, then anything else (a neighbour the manager doesn't manage too). */
+export const deviceTier = (alias: string) => `CASE ${alias}.device_type WHEN 'router' THEN 0 WHEN 'switch' THEN 1 ELSE 2 END`;
+
+/**
+ * Seen on a port that leads up from its device: the spanning-tree root port,
+ * or a link to a managed device a tier above (an access point's port to a
+ * switch, a switch's to a router). The client is somewhere above that device,
+ * not below it, so another sighting says better where it is. The tier rule
+ * covers a bridge that hears no BPDUs and calls itself root, whose uplink
+ * spanning tree doesn't mark.
+ */
+const LEADS_UP = `(EXISTS (SELECT 1 FROM device_bridges sb WHERE sb.device_id = c.device_id
+      AND COALESCE(sb.protocol_mode, 'none') <> 'none' AND sb.root_port = c.interface_name)
+    OR EXISTS (SELECT 1 FROM topology_links ul
+                 JOIN devices ud ON ud.id = ul.to_device_id
+                 JOIN devices cd ON cd.id = c.device_id
+                WHERE ul.from_device_id = c.device_id AND ul.from_interface = c.interface_name
+                  AND ${deviceTier('ud')} < ${deviceTier('cd')}))`;
+
+/**
+ * How far down its spanning tree the device sits (its cost to the root). A
+ * client seen only on uplinks, behind equipment the manager doesn't manage,
+ * is nearest the deepest device that sees it on a port leading down.
+ */
+const TREE_DEPTH = `COALESCE((SELECT MAX(sb.root_path_cost) FROM device_bridges sb WHERE sb.device_id = c.device_id
+    AND COALESCE(sb.protocol_mode, 'none') <> 'none'), 0)`;
+
 /**
  * The sighting that says where a client is, best first. Columns of `clients c`.
  *
  * Current sightings (live, or seen in the last day) first. Then a live AP
  * registration, since the AP knows a wireless client best. Then the edge port
- * before an uplink (#363), then live before stale, then the latest.
+ * before an uplink (#363); among uplinks, one leading down before one leading
+ * up, and the device deepest in the tree first. Then live before stale,
+ * then the latest.
  *
  * Live isn't first: overnight a switch's host table forgets a quiet PC while
  * the router's ARP table still lists it, and the router's VLAN interface won
@@ -132,7 +161,7 @@ export const CLIENT_PORT_RANK = `(CASE
  */
 export const CLIENT_SIGHTING_ORDER =
   `(c.active OR c.last_seen > NOW() - INTERVAL '24 hours') DESC, (c.active AND c.client_type = 'wireless') DESC, ` +
-  `${CLIENT_PORT_RANK} ASC, c.active DESC, c.last_seen DESC NULLS LAST`;
+  `${CLIENT_PORT_RANK} ASC, ${LEADS_UP} ASC, ${TREE_DEPTH} DESC, c.active DESC, c.last_seen DESC NULLS LAST`;
 
 /**
  * Columns from all of a MAC's sightings, for a query that shows one row per
@@ -198,8 +227,6 @@ function upstreamLinkOrder(d: string, tl: string, ud: string, mutual: boolean): 
        ${tl}.id`;
 }
 
-/** Router, then switch, then anything else (a neighbour the manager doesn't manage too). */
-const deviceTier = (alias: string) => `CASE ${alias}.device_type WHEN 'router' THEN 0 WHEN 'switch' THEN 1 ELSE 2 END`;
 
 /** Whether the neighbour `ud` (at the far end of `tl`) would itself go up to `tl`'s device. */
 function goesUpThrough(tl: string, ud: string): string {

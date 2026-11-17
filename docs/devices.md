@@ -929,6 +929,33 @@ The bridge's **Edit** form and its ports cover 802.1ad Q-in-Q, tag stacking and 
 
 On the bridge or port the manager connects through, these run with auto-revert required.
 
+### A port's spanning tree
+
+Click a port on a bridge running spanning tree to set how it takes part. The panel shows the
+port's role now (root, designated, alternate) and whether it's running as an edge port.
+
+- **Port priority** (0 to 240 in steps of 16, default 0x80) and **path cost** decide which of
+  two links to the same switch becomes the root port: the lower path cost, then the lower
+  priority. RouterOS works out the path cost itself unless you set one, and doesn't show it
+  then; empty the field to go back to that.
+- **Edge**: an edge port goes straight to forwarding, for end devices. **Auto** treats a port as
+  an edge until a BPDU arrives. **Yes** and **No** force it; the **discover** choices start
+  that way and change on what the port hears.
+- **Point-to-point**: whether the port is a direct link to one other switch, which lets RSTP
+  change its state quickly. **Auto** goes by duplex.
+- **BPDU guard** shuts the port the moment a BPDU arrives: for ports to end devices only. The
+  panel warns before you turn it on for a port that is the root, alternate or backup port,
+  since a switch is sending it BPDUs.
+- **Restricted role**: the port can never become the root port, so equipment beyond it can't
+  take over as root. For ports facing equipment you don't control.
+- **Restricted TCN**: topology changes heard on the port aren't passed on, so they don't flush
+  the MAC tables of the rest of the network.
+
+These run under [Change Guard](change-guard.md), with auto-revert on the port the manager
+connects through: BPDU guard, an edge setting or a restricted role on the wrong port can take a
+link down. Each bridge's own priority is set from its **Edit** form, or for a whole site from
+the **Spanning Tree** card on the [Topology](topology.md#the-spanning-tree-card) page.
+
 ## 802.1X
 
 Switches and routers have an **802.1X** tab (#360) for port authentication: a port with 802.1X
