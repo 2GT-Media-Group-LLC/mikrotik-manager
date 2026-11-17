@@ -950,6 +950,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#a-ports-spanning-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A port's spanning tree
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2503,6 +2514,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#a-ports-spanning-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A port's spanning tree
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2644,7 +2666,7 @@
 what each tab of a device does, and the parts that write to hardware.</p>
 <h2 id="adding-devices">Adding devices<a class="headerlink" href="#adding-devices" title="Permanent link">&para;</a></h2>
 <p>Use <strong>Wireless Systems</strong> for outdoor PTP/PtMP bridges, antennas and CPE. It has a
-dedicated device filter and an <strong>Antenna aligner</strong> tab for watching both ends of
+dedicated device filter and an <strong>Antenna Aligner</strong> tab for watching both ends of
 a link. Existing devices can be reclassified in Edit Device. See the
 <a href="../antenna-aligner/">antenna aligner guide</a>.</p>
 <p><strong>Devices → Discover</strong> finds MikroTik hardware your managed devices can already see, over
@@ -3139,7 +3161,7 @@ for it above the FastTrack rule) or turn FastTrack off.</p>
 header. Click a header to fold a section, or use the chips at the top to hide ones you don't need;
 both are remembered in your browser. Sections only appear where the device has the data: a switch
 without connection tracking has no Connections section, a single-core device no per-core chart.</p>
-<p>On the dashboard's <strong>Capacity &amp; health</strong> card, a device's CPU opens this tab at its CPU graph and
+<p>On the dashboard's <strong>Capacity &amp; Health</strong> card, a device's CPU opens this tab at its CPU graph and
 its memory at the Memory graph; the name opens the device.</p>
 <table>
 <thead>
@@ -3162,7 +3184,7 @@ its memory at the Memory graph; the name opens the device.</p>
 <td>Active connections (with the peak, and the share of the table's maximum), connections by protocol and NAT translations (src-nat, dst-nat), and new connections per second where the router counts them (below). Only where connection tracking is running</td>
 </tr>
 <tr>
-<td><strong>Firewall drops</strong></td>
+<td><strong>Firewall Drops</strong></td>
 <td>Packets per second dropped by drop and reject rules, per chain (input, forward, and raw), and the rules that dropped the most in the range</td>
 </tr>
 <tr>
@@ -3533,7 +3555,7 @@ applied.</p>
 lite, can't hardware-switch a bridge with VLAN filtering on: turning it on moves that bridge's
 switching to the CPU. On these chips VLANs belong in the switch chip's own table (<strong>Switch,
 VLAN</strong> in WinBox), with each port's VLAN mode, VLAN header and default VLAN.</p>
-<p>On such a device the <strong>VLANs</strong> tab shows a <strong>Switch chip VLANs</strong> card with that table and the
+<p>On such a device the <strong>VLANs</strong> tab shows a <strong>Switch Chip VLANs</strong> card with that table and the
 port settings (#278), and no longer suggests turning on bridge VLAN filtering or offers to add
 bridge VLANs. You can edit it there:</p>
 <ul>
@@ -3557,7 +3579,7 @@ use bridge VLAN filtering as described above and don't show the card.</p>
 <h3 id="vlan-interfaces">VLAN interfaces<a class="headerlink" href="#vlan-interfaces" title="Permanent link">&para;</a></h3>
 <p>Routers often carry VLANs as VLAN interfaces (<code>/interface vlan</code>, <strong>Interfaces, VLAN</strong> in WinBox)
 on a port, with no bridge VLAN table at all: the router-on-a-stick layout on a CCR, CHR or RB.
-When a device has any, the <strong>VLANs</strong> tab lists them in a <strong>VLAN interfaces</strong> card (#309): VLAN
+When a device has any, the <strong>VLANs</strong> tab lists them in a <strong>VLAN Interfaces</strong> card (#309): VLAN
 ID, name, parent, addresses (IPv4, and IPv6 other than link-local), MTU, state and comment.</p>
 <p>The label next to the parent says what it is:</p>
 <ul>
@@ -3639,6 +3661,31 @@ auto-revert required; turning that bridge off is predicted as a lockout and asks
   from the device when the tab opens.</li>
 </ul>
 <p>On the bridge or port the manager connects through, these run with auto-revert required.</p>
+<h3 id="a-ports-spanning-tree">A port's spanning tree<a class="headerlink" href="#a-ports-spanning-tree" title="Permanent link">&para;</a></h3>
+<p>Click a port on a bridge running spanning tree to set how it takes part. The panel shows the
+port's role now (root, designated, alternate) and whether it's running as an edge port.</p>
+<ul>
+<li><strong>Port priority</strong> (0 to 240 in steps of 16, default 0x80) and <strong>path cost</strong> decide which of
+  two links to the same switch becomes the root port: the lower path cost, then the lower
+  priority. RouterOS works out the path cost itself unless you set one, and doesn't show it
+  then; empty the field to go back to that.</li>
+<li><strong>Edge</strong>: an edge port goes straight to forwarding, for end devices. <strong>Auto</strong> treats a port as
+  an edge until a BPDU arrives. <strong>Yes</strong> and <strong>No</strong> force it; the <strong>discover</strong> choices start
+  that way and change on what the port hears.</li>
+<li><strong>Point-to-point</strong>: whether the port is a direct link to one other switch, which lets RSTP
+  change its state quickly. <strong>Auto</strong> goes by duplex.</li>
+<li><strong>BPDU guard</strong> shuts the port the moment a BPDU arrives: for ports to end devices only. The
+  panel warns before you turn it on for a port that is the root, alternate or backup port,
+  since a switch is sending it BPDUs.</li>
+<li><strong>Restricted role</strong>: the port can never become the root port, so equipment beyond it can't
+  take over as root. For ports facing equipment you don't control.</li>
+<li><strong>Restricted TCN</strong>: topology changes heard on the port aren't passed on, so they don't flush
+  the MAC tables of the rest of the network.</li>
+</ul>
+<p>These run under <a href="../change-guard/">Change Guard</a>, with auto-revert on the port the manager
+connects through: BPDU guard, an edge setting or a restricted role on the wrong port can take a
+link down. Each bridge's own priority is set from its <strong>Edit</strong> form, or for a whole site from
+the <strong>Spanning Tree</strong> card on the <a href="../topology/#the-spanning-tree-card">Topology</a> page.</p>
 <h2 id="8021x">802.1X<a class="headerlink" href="#8021x" title="Permanent link">&para;</a></h2>
 <p>Switches and routers have an <strong>802.1X</strong> tab (#360) for port authentication: a port with 802.1X
 passes nothing until a device on it authenticates against a RADIUS server, such as
@@ -3663,7 +3710,7 @@ first and arms auto-revert. <strong>Review changes</strong> shows the RouterOS c
 RouterOS has no 802.1X on SMIPS devices (hAP lite, hAP mini); the tab says so there.</p>
 <h2 id="routing-between-vlans-in-hardware">Routing between VLANs in hardware<a class="headerlink" href="#routing-between-vlans-in-hardware" title="Permanent link">&para;</a></h2>
 <p>On a device whose switch chip supports it (Marvell 98DX: CRS3xx, CRS5xx, CCR2116, CCR2216),
-the <strong>VLANs</strong> tab has an <strong>L3 hardware offloading</strong> card (#254). It shows:</p>
+the <strong>VLANs</strong> tab has an <strong>L3 Hardware Offloading</strong> card (#254). It shows:</p>
 <ul>
 <li>whether offloading is on, and the switch chip;</li>
 <li>which VLAN interfaces have addresses, so which VLANs the device routes between;</li>

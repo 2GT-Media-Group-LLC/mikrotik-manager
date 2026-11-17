@@ -659,6 +659,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Spanning tree">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-spanning-tree-card" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Spanning Tree card
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1710,6 +1727,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Spanning tree">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-spanning-tree-card" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Spanning Tree card
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1997,6 +2031,24 @@ is exactly what you want to know about before unplugging something.</p>
 <li>a tree whose root kept the default priority (0x8000), so it won on lowest MAC address rather
   than by anyone's choice; reported on the root, or on its members when the root isn't managed;</li>
 <li>an access point as root of a tree of several switches.</li>
+</ul>
+<h3 id="the-spanning-tree-card">The Spanning Tree card<a class="headerlink" href="#the-spanning-tree-card" title="Permanent link">&para;</a></h3>
+<p>Under the map, <strong>Spanning Tree</strong> lists every tree among the bridges in view: its root, then each
+bridge with its mode, priority, root port and cost to the root. Bridges with spanning tree off
+are listed apart, since they take part in none. Each bridge's priority can be changed in place
+(the pencil), through <a href="../change-guard/">Change Guard</a>; the list shows the new priority at once,
+and the rest of the tree as each device is next polled.</p>
+<p>The lowest priority wins root, and a tie goes to the lowest MAC address. Choose it on purpose:
+the core switch lowest (0x1000), distribution next (0x2000 to 0x4000), access switches at the
+default 0x8000 and access points highest (0xF000), so an access point never ends up root.</p>
+<p>The card says when:</p>
+<ul>
+<li>the bridges form more than one tree. In one network that means a link between them is
+  dropping BPDUs: spanning tree off on a port or bridge, BPDU filtering, or an unmanaged switch
+  that doesn't pass them. Neither tree then protects the other from a loop;</li>
+<li>a root kept the default priority, so it won on lowest MAC address, and whether it's an access
+  point;</li>
+<li>a root isn't managed here, named as discovery saw it where it can be.</li>
 </ul>
 <h2 id="layout">Layout<a class="headerlink" href="#layout" title="Permanent link">&para;</a></h2>
 <p>The map is drawn in tiers, from the gateway down (#367). Each device hangs under its <strong>way up</strong>,

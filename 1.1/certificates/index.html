@@ -1839,7 +1839,7 @@
 
 <h1 id="device-certificates">Device certificates<a class="headerlink" href="#device-certificates" title="Permanent link">&para;</a></h1>
 <p><strong>Operations → Certificates</strong> (fleet admins only) has two tabs: <strong>PKI</strong>, described first, and
-<a href="#reverse-proxy"><strong>Reverse proxy</strong></a>.</p>
+<a href="#reverse-proxy"><strong>Reverse Proxy</strong></a>.</p>
 <p>The <strong>PKI</strong> tab gives devices certificates from a
 certificate authority (CA) of your own, instead of the self-signed certificates RouterOS and
 the manager make. Then the manager, your browser, scripts and other tools can all check a
@@ -1976,7 +1976,7 @@ certificate on the device.</p>
   or <code>ssl_context.load_verify_locations('mikrotik-manager-ca.crt')</code> in Python.</li>
 </ul>
 <h2 id="reverse-proxy">Reverse proxy<a class="headerlink" href="#reverse-proxy" title="Permanent link">&para;</a></h2>
-<p>The <strong>Reverse proxy</strong> tab manages RouterOS's reverse proxy (#358). A router answers HTTPS for a host
+<p>The <strong>Reverse Proxy</strong> tab manages RouterOS's reverse proxy (#358). A router answers HTTPS for a host
 name, such as <code>nas.example.com</code>, and passes the request to a web server behind it over plain HTTP.
 Several servers can then share the router's address on port 443 without a NAT rule each. It needs
 RouterOS 7.22 or later, and isn't available on SMIPS devices (hAP lite, hAP mini). Point each host

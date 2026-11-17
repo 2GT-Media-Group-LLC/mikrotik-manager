@@ -2469,7 +2469,7 @@ Certificate (ACME)</strong>. The email is optional, but without one you get no e
   in use, including an uploaded one, and nginx reloads.</li>
 <li>Renewal is checked every 12 hours. A failed request is retried after an hour, and the
   certificate in use stays until a new one arrives.</li>
-<li><strong>Last Certbot attempt</strong> on the same card shows the result and Certbot's output, which is the
+<li><strong>Last Certbot Attempt</strong> on the same card shows the result and Certbot's output, which is the
   place to look when it fails. <code>docker compose logs nginx</code> has it too.</li>
 <li>To turn it off, press <strong>Use .env Values</strong> with no <code>ACME_DOMAIN</code> in <code>.env</code>. The certificate it
   got stays in place.</li>

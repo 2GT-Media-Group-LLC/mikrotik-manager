@@ -1954,13 +1954,13 @@
 <p>Upgrade RouterOS across a fleet in waves, with a verified pipeline per device and
 a stopping point before a bad build reaches everything.</p>
 <h2 id="the-firmware-page">The Firmware page<a class="headerlink" href="#the-firmware-page" title="Permanent link">&para;</a></h2>
-<p><strong>Fleet versions</strong> lists each device's RouterOS, the latest on its channel, and RouterBOOT.
+<p><strong>Fleet Versions</strong> lists each device's RouterOS, the latest on its channel, and RouterBOOT.
 Devices with nothing to install are hidden by default; <strong>Show up-to-date (N)</strong> brings them
 back, and the choice is remembered.</p>
 <p>The page shows the running or latest rollout and the five before it. <strong>All upgrade history</strong>
 opens every rollout, newest first, 25 to a page; click one to see its devices and steps.</p>
 <p>A single device's RouterOS and RouterBOOT check and install are on that device's <strong>Firmware</strong> tab, which
-links to this page for upgrading several devices at once. The dashboard's "Updates available" banner opens this page.</p>
+links to this page for upgrading several devices at once. The dashboard's "Updates Available" banner opens this page.</p>
 <h2 id="timeouts">Timeouts<a class="headerlink" href="#timeouts" title="Permanent link">&para;</a></h2>
 <p>Two settings, both in minutes, changed without a restart:</p>
 <table>
@@ -2131,7 +2131,7 @@ using it</strong> removes it again. Devices older than 7.17 can't be selected.</
 </ol>
 <p>From there the pipeline is the same: reboot, prove it, verify the version, RouterBOOT.
 Devices in the same rollout that don't use a mirror download from MikroTik as before.</p>
-<p>The <strong>Fleet versions</strong> table shows a mirror device's newest available version under
+<p>The <strong>Fleet Versions</strong> table shows a mirror device's newest available version under
 <strong>Latest</strong>, and offers it for upgrade when it's newer than what the device runs, even if the
 device hasn't asked MikroTik.</p>
 <h2 id="waves">Waves<a class="headerlink" href="#waves" title="Permanent link">&para;</a></h2>
@@ -2149,7 +2149,7 @@ chip for each tag in use. Clicking one adds that tag's updatable devices as the 
 typical rollout is one canary device in wave 1, then <code>lab</code>, then <code>branch</code>, then <code>core</code>.</p>
 <h2 id="update-channels">Update channels<a class="headerlink" href="#update-channels" title="Permanent link">&para;</a></h2>
 <p>RouterOS checks for updates on a channel: <code>stable</code>, <code>long-term</code>, <code>testing</code> or <code>development</code>.
-The <strong>Update channel</strong> card sets it.</p>
+The <strong>Update Channel</strong> card sets it.</p>
 <ul>
 <li><strong>Fleet default</strong> applies to every device. <em>Leave each device on its own channel</em> means the manager never changes a
   device's channel.</li>
