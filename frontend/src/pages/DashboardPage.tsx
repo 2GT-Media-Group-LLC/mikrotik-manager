@@ -33,9 +33,18 @@ import { useElementWidth } from '../hooks/useElementWidth';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
-function StatusDot({ color = 'var(--good)', glow = false, size = 6 }: {
+function StatusDot({ color = 'var(--good)', glow = false, size = 6, healthy = false }: {
   color?: string; glow?: boolean; size?: number;
+  /** Everything's healthy: the vibrant green that pulses (index.css). */
+  healthy?: boolean;
 }) {
+  if (healthy) {
+    return (
+      <span className="health-pulse"
+        style={{ width: size, height: size, borderRadius: 999, display: 'inline-block', flexShrink: 0,
+          ['--pulse-spread' as string]: `${Math.round(size * 0.8)}px` }} />
+    );
+  }
   return (
     <span
       style={{
@@ -218,11 +227,11 @@ function HealthBar({
         <div className="flex items-center gap-3 flex-shrink-0">
           <div
             className="w-9 h-9 rounded-[8px] flex items-center justify-center flex-shrink-0"
-            style={{ background: 'var(--accent-soft)' }}
+            style={{ background: status.tone === 'good' ? 'rgb(var(--healthy-rgb) / 0.14)' : 'var(--accent-soft)' }}
           >
             <StatusDot
-              color={status.tone === 'good' ? 'var(--accent)'
-                   : status.tone === 'warn' ? 'var(--warn)' : 'var(--ink-4)'}
+              healthy={status.tone === 'good'}
+              color={status.tone === 'warn' ? 'var(--warn)' : 'var(--ink-4)'}
               glow size={10}
             />
           </div>
@@ -706,8 +715,7 @@ function OperationsView({
   const canWrite = useCanWrite();
   const status = fleetStatus(summary?.devices);
   const statusText = status.sentence;
-  const statusColor = status.tone === 'good' ? 'var(--accent)'
-                    : status.tone === 'warn' ? 'var(--warn)' : 'var(--ink-4)';
+  const statusColor = status.tone === 'warn' ? 'var(--warn)' : 'var(--ink-4)';
 
   const deviceList = devices as Device[];
   const onlineDevices = deviceList.filter(d => d.status === 'online');
@@ -866,9 +874,11 @@ function OperationsView({
           <div className="flex items-center gap-5">
             <div
               className="w-16 h-16 rounded-[14px] flex items-center justify-center flex-shrink-0"
-              style={{ background: 'radial-gradient(circle, rgba(193,241,126,0.2), transparent)' }}
+              style={{ background: status.tone === 'good'
+                ? 'radial-gradient(circle, rgb(var(--healthy-rgb) / 0.22), transparent)'
+                : 'radial-gradient(circle, rgba(193,241,126,0.2), transparent)' }}
             >
-              <StatusDot color={statusColor} glow size={20} />
+              <StatusDot healthy={status.tone === 'good'} color={statusColor} glow size={20} />
             </div>
             <div>
               <div className="text-[11px] uppercase tracking-[0.1em] mb-[6px]" style={{ color: 'var(--ink-3)' }}>Network status</div>

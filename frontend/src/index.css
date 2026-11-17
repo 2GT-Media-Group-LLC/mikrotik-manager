@@ -69,6 +69,9 @@
     --port-frame-off:    #b9b6ad;
 
     /* ── status ── */
+    /* The "everything's healthy" dot on the dashboard: a vibrant green, as
+       channels so its glow and pulse can fade it. */
+    --healthy-rgb: 22 196 94;
     --good:        #2d7a2a;
     --good-bg:     #dcf5dc;
     --warn:        #8a6200;
@@ -131,6 +134,7 @@
     --port-frame-off:    #4a4f57;
 
     /* ── status ── */
+    --healthy-rgb: 52 230 120;
     --good:        #8de08a;
     --good-bg:     rgba(141, 224, 138, 0.12);
     --warn:        #f0c87a;
@@ -368,4 +372,32 @@
    users, but not after a mouse click, which recharts 2 never showed. */
 .recharts-surface:focus:not(:focus-visible) {
   outline: none;
+}
+
+/* The dashboard's "all healthy" dot: a vibrant green that breathes, with a
+   soft ring spreading from it. Slow and eased so it reads as alive rather than
+   as an alert; still for anyone who asks the system for less motion. */
+.health-pulse {
+  background: rgb(var(--healthy-rgb));
+  animation: health-pulse 2.4s ease-in-out infinite;
+}
+@keyframes health-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(var(--healthy-rgb) / 0.55), 0 0 6px 1px rgb(var(--healthy-rgb) / 0.55);
+  }
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 var(--pulse-spread, 6px) rgb(var(--healthy-rgb) / 0), 0 0 12px 3px rgb(var(--healthy-rgb) / 0.75);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(var(--healthy-rgb) / 0), 0 0 6px 1px rgb(var(--healthy-rgb) / 0.55);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .health-pulse {
+    animation: none;
+    box-shadow: 0 0 0 2px rgb(var(--healthy-rgb) / 0.2), 0 0 8px rgb(var(--healthy-rgb) / 0.6);
+  }
 }
