@@ -109,7 +109,7 @@ export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean 
         <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
           The Application column names a line&apos;s destination port (or its source port, for a reply) from a built-in
           list based on /etc/services. Add a port here to name one it doesn&apos;t know, or list one it does to name it
-          your way.
+          your way. Names for ports Traffic counts as Other TCP or Other UDP name those applications too.
         </p>
 
         {rows.length > 0 && (

@@ -57,9 +57,41 @@ const PORT_MAP: Record<string, string> = {
   [`${TCP}/5061`]: 'Video/Voice Calls',
 };
 
-/** A port this table names a service for, such as 443 or 53. */
+/**
+ * Port names an admin added under Settings → Firewall Logs (#415), used for
+ * ports the table above doesn't name: a VPN on 1198 or an app's own port then
+ * shows as an application of its own instead of Other UDP / Other TCP. They
+ * never rename a port the table already names, so existing categories and
+ * their history stay as they are.
+ */
+let savedNames = new Map<string, string>();
+
+/** Take the saved Firewall Logs port names (`firewall_log_services`). Anything malformed is skipped. */
+export function setSavedPortNames(entries: unknown): void {
+  const next = new Map<string, string>();
+  if (Array.isArray(entries)) {
+    for (const e of entries) {
+      if (!e || typeof e !== 'object') continue;
+      const { port, protocol, name } = e as Record<string, unknown>;
+      if (!Number.isInteger(port) || (port as number) < 1 || (port as number) > 65535) continue;
+      if (typeof name !== 'string' || !/^[\x20-\x7e]{1,32}$/.test(name)) continue;
+      if (protocol !== 'tcp' && protocol !== 'udp' && protocol !== 'both') continue;
+      if (protocol !== 'udp') next.set(`${TCP}/${port}`, name);
+      if (protocol !== 'tcp') next.set(`${UDP}/${port}`, name);
+    }
+  }
+  savedNames = next;
+}
+
+/** The application for one port: the table's name, else a saved one. */
+function nameFor(protocol: number, port: number): string | undefined {
+  const key = `${protocol}/${port}`;
+  return PORT_MAP[key] ?? savedNames.get(key);
+}
+
+/** A port with a service name, built in (443, 53) or saved by an admin. */
 export function isKnownServicePort(protocol: number, port: number): boolean {
-  return PORT_MAP[`${protocol}/${port}`] !== undefined;
+  return nameFor(protocol, port) !== undefined;
 }
 
 export function classifyApp(
@@ -73,9 +105,9 @@ export function classifyApp(
 
   // Remote port first (the service the client is talking to), then local port
   // (the client is hosting the service, e.g. inbound SSH).
-  const byRemote = PORT_MAP[`${protocol}/${remotePort}`];
+  const byRemote = nameFor(protocol, remotePort);
   if (byRemote) return byRemote;
-  const byLocal = PORT_MAP[`${protocol}/${localPort}`];
+  const byLocal = nameFor(protocol, localPort);
   if (byLocal) return byLocal;
 
   if (protocol === TCP) return 'Other TCP';

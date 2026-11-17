@@ -88,6 +88,10 @@ To keep it small, each client keeps its busiest 20 addresses per application in 
 counted by the hour; the rest are added together and shown as a total under the list. Only
 traffic between a client and an address outside the network is counted.
 
+Destinations start from when the manager began recording them, for a new install or right after
+the upgrade that added them, so for a while a 24-hour view holds only the hours since. The list
+then says when recording began, so the gap doesn't read as missing traffic.
+
 ### Names looked up (AdGuard Home and Pi-hole)
 
 NetFlow carries addresses, not names. Add the servers that answer a site's DNS under
@@ -107,6 +111,14 @@ counted. Passwords are stored encrypted, and changing the address or turning off
 certificate check needs the password typed again, so a saved one is never sent to a server it
 wasn't saved for. Pi-hole logs in with a password alone; with two-factor login on, use an app
 password from Pi-hole's settings. The servers' own logs aren't copied, only the counts.
+
+**AdGuard Home as a Home Assistant add-on** answers on its own port only once one is set:
+**Settings → Add-ons → AdGuard Home → Configuration → Network → Web interface** (for example
+3001), then restart the add-on. With the add-on's **ssl** option on, that port serves HTTPS and
+needs the certificate files in `/ssl`; without them the add-on doesn't start at all, DNS
+included, so turn **ssl** off (plain HTTP, for a manager on the same network) or add the
+certificates first. The address is then `http://<Home Assistant address>:3001`, and the login is
+a Home Assistant user: a separate one for the manager, without admin rights, is enough.
 
 ### Names for addresses
 
@@ -139,6 +151,14 @@ selection that includes every device, nothing is filtered and all of it shows (0
 
 Application classification is by port and protocol. It identifies what a flow *looks* like, not
 what it is: anything on 443 reads as HTTPS whether or not it is a browser.
+
+Ports the built-in list doesn't know count as **Other TCP** or **Other UDP**. The port names
+added under **Settings → Firewall Logs** ([Port names](firewall-events.md#application-and-row-colours))
+name those too: add `udp 1198 OpenVPN` and a VPN on that port becomes an application of its own,
+in the chart, its clients and Where it goes, and its sessions read the right way round. A saved
+name never renames a port the built-in list already names (443 stays HTTPS), so the categories
+and their history don't change. New flows take a change within a minute; traffic already
+recorded keeps the name it had.
 
 Each chart remembers the time range you last picked, in this browser, rather than going back to
 its default (#331). That goes for the charts on device, client and port pages too.

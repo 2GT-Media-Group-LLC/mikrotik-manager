@@ -10,7 +10,7 @@ import { Point } from '@influxdata/influxdb-client';
 import { query } from '../../config/database';
 import { getWriteApi } from '../../config/influxdb';
 import { decodePacket, pruneTemplateCache, TemplateCache } from './decoder';
-import { classifyApp, APP_LAN } from './appCategories';
+import { classifyApp, APP_LAN, setSavedPortNames } from './appCategories';
 import { FlowAggregator, CLIENT_UNKNOWN, Direction } from './FlowAggregator';
 import { DestinationAggregator } from './DestinationAggregator';
 import { writeDestinations } from './destinationStore';
@@ -215,10 +215,14 @@ export class NetflowCollector {
       const rows = await query<{ key: string; value: unknown }>(
         `SELECT key, value FROM app_settings
          WHERE key IN ('netflow_enabled', 'netflow_collector_port', 'netflow_topn_clients',
-                       'netflow_accept_unknown', 'netflow_sessions_unidentified', 'netflow_active_timeout')`
+                       'netflow_accept_unknown', 'netflow_sessions_unidentified', 'netflow_active_timeout',
+                       'firewall_log_services')`
       );
       const map: Record<string, unknown> = {};
       for (const row of rows) map[row.key] = row.value;
+      // Port names from Settings → Firewall Logs also name applications here,
+      // for ports the built-in table leaves as Other.
+      setSavedPortNames(map['firewall_log_services']);
       return {
         enabled: map['netflow_enabled'] === true,
         // In Docker the container always binds 2055 (NETFLOW_BIND_PORT) and the

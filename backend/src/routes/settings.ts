@@ -71,7 +71,8 @@ router.put('/', requireAdmin, async (req, res) => {
   }
   // Apply NetFlow listener changes immediately instead of waiting for the
   // collector's periodic settings reconcile.
-  if (Object.keys(updates).some((k) => k.startsWith('netflow_'))) {
+  // Port names also name Traffic applications, so take them at once too.
+  if (Object.keys(updates).some((k) => k.startsWith('netflow_') || k === FIREWALL_LOG_SERVICES_KEY)) {
     netflowCollector.reconcile().catch(() => {});
   }
   res.json({ message: 'Settings updated' });

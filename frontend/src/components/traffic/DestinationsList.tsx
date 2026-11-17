@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Globe, Home, ChevronRight, ChevronDown } from 'luci
 import clsx from 'clsx';
 import { trafficApi, type RemoteOwner, type TrafficDestination } from '../../services/api';
 import { formatBytes } from '../../utils/formatBytes';
+import { useDateTimeFormat } from '../../hooks/useDateTimeFormat';
 
 /**
  * Where traffic goes (#366 step 2): the busiest remote addresses for a site,
@@ -86,6 +87,7 @@ interface Props {
 
 export default function DestinationsList({ range, app, mac, limit = 25, expandable = !mac, className }: Props) {
   const [open, setOpen] = useState<string | null>(null);
+  const { formatDateTime } = useDateTimeFormat();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['traffic-destinations', range, app, mac, limit],
     queryFn: () => trafficApi.destinations({ range, app, mac, limit }).then((r) => r.data),
@@ -132,6 +134,9 @@ export default function DestinationsList({ range, app, mac, limit = 25, expandab
       <div className="px-5 py-2 text-xs text-gray-400 dark:text-slate-500 space-y-0.5">
         {data.other_bytes > 0 && (
           <div>{formatBytes(data.other_bytes)} went to addresses beyond each client&apos;s busiest twenty a minute, counted together.</div>
+        )}
+        {data.recorded_since && (
+          <div>Recorded since {formatDateTime(data.recorded_since)}, when collecting began; the range&apos;s earlier hours aren&apos;t here.</div>
         )}
         {!data.names_available && <div>Organisation names aren&apos;t loaded yet, so addresses are shown without them.</div>}
         <div>Kept for {data.retention_days} day{data.retention_days === 1 ? '' : 's'} (Settings → General → Data Retention).</div>

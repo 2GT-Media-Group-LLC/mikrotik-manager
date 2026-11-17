@@ -2887,6 +2887,8 @@ export interface TrafficDestinations {
   /** Traffic to addresses beyond each client's busiest ones, summed. */
   other_bytes: number;
   retention_days: number;
+  /** When recording began, if that's inside the range (just after an upgrade). */
+  recorded_since?: string | null;
   names_available: boolean;
   destinations: TrafficDestination[];
 }

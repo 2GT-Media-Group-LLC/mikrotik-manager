@@ -522,7 +522,7 @@ router.get('/destinations', async (req, res) => {
   const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
   const { where, params } = destinationScope(req, { app, mac });
   try {
-    const [rows, totals] = await Promise.all([
+    const [rows, totals, first] = await Promise.all([
       query<{ remote: string; upload: string; download: string; clients: number; apps: string[] }>(
         `SELECT remote, SUM(upload_bytes)::text AS upload, SUM(download_bytes)::text AS download,
                 COUNT(DISTINCT mac)::int AS clients, (ARRAY_AGG(DISTINCT app))[1:5] AS apps
@@ -532,8 +532,12 @@ router.get('/destinations', async (req, res) => {
         `SELECT SUM(upload_bytes + download_bytes)::text AS total,
                 (SUM(upload_bytes + download_bytes) FILTER (WHERE remote = ''))::text AS other
            FROM client_destinations WHERE ${where}`, params),
+      // When collecting began: right after an upgrade a 24h view holds only the
+      // last hour or so, which shouldn't read as missing data.
+      query<{ first: Date | null }>(`SELECT MIN(hour) AS first FROM client_destinations`),
     ]);
     const total = Number(totals[0]?.total ?? 0);
+    const firstHour = first[0]?.first ? new Date(first[0].first) : null;
     const remotes = rows.map((r) => r.remote);
     const [names, domains] = await Promise.all([
       reverseNames(remotes),
@@ -543,6 +547,8 @@ router.get('/destinations', async (req, res) => {
       total_bytes: total,
       other_bytes: Number(totals[0]?.other ?? 0),
       retention_days: await destinationRetention(),
+      // Set only when the range starts before anything was recorded.
+      recorded_since: firstHour && firstHour > rangeStart(req) ? firstHour.toISOString() : null,
       names_available: asnStatus().loaded,
       destinations: rows.map((r) => {
         const up = Number(r.upload), down = Number(r.download);

@@ -74,6 +74,9 @@ destination port, so it names that. Names come from a built-in list based on `/e
 plus the MikroTik ports it doesn't know (WinBox, the API, MNDP, bandwidth test). Search still
 matches ports, not names.
 
+Names you add under **Settings → Firewall Logs** also name applications in
+[Traffic](traffic.md#what-it-shows), for ports it would otherwise count as Other TCP or Other UDP.
+
 Two kinds of background traffic get a row colour, so they stand apart:
 
 - **DHCP**: UDP 67/68, and DHCPv6 on 546/547. A DHCP discover to 255.255.255.255 counts as
