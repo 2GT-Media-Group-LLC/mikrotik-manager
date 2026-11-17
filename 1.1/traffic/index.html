@@ -1709,6 +1709,9 @@ the sources under <a href="#names-for-addresses">Names for addresses</a>.</p>
 <p>To keep it small, each client keeps its busiest 20 addresses per application in each minute,
 counted by the hour; the rest are added together and shown as a total under the list. Only
 traffic between a client and an address outside the network is counted.</p>
+<p>Destinations start from when the manager began recording them, for a new install or right after
+the upgrade that added them, so for a while a 24-hour view holds only the hours since. The list
+then says when recording began, so the gap doesn't read as missing traffic.</p>
 <h3 id="names-looked-up-adguard-home-and-pi-hole">Names looked up (AdGuard Home and Pi-hole)<a class="headerlink" href="#names-looked-up-adguard-home-and-pi-hole" title="Permanent link">&para;</a></h3>
 <p>NetFlow carries addresses, not names. Add the servers that answer a site's DNS under
 <strong>Settings → DNS Query Log</strong> (fleet admins): AdGuard Home or Pi-hole (version 6 or later), with
@@ -1725,6 +1728,13 @@ counted. Passwords are stored encrypted, and changing the address or turning off
 certificate check needs the password typed again, so a saved one is never sent to a server it
 wasn't saved for. Pi-hole logs in with a password alone; with two-factor login on, use an app
 password from Pi-hole's settings. The servers' own logs aren't copied, only the counts.</p>
+<p><strong>AdGuard Home as a Home Assistant add-on</strong> answers on its own port only once one is set:
+<strong>Settings → Add-ons → AdGuard Home → Configuration → Network → Web interface</strong> (for example
+3001), then restart the add-on. With the add-on's <strong>ssl</strong> option on, that port serves HTTPS and
+needs the certificate files in <code>/ssl</code>; without them the add-on doesn't start at all, DNS
+included, so turn <strong>ssl</strong> off (plain HTTP, for a manager on the same network) or add the
+certificates first. The address is then <code>http://&lt;Home Assistant address&gt;:3001</code>, and the login is
+a Home Assistant user: a separate one for the manager, without admin rights, is enough.</p>
 <h3 id="names-for-addresses">Names for addresses<a class="headerlink" href="#names-for-addresses" title="Permanent link">&para;</a></h3>
 <p>Destinations, <a href="../firewall-events/">Firewall Logs</a> (with names on) and Sessions show the name
 behind an address, from the best source there is:</p>
@@ -1753,6 +1763,13 @@ selection that includes every device, nothing is filtered and all of it shows (0
 0.24.47 hid it, and its site filter also made long ranges slow enough to time out).</p>
 <p>Application classification is by port and protocol. It identifies what a flow <em>looks</em> like, not
 what it is: anything on 443 reads as HTTPS whether or not it is a browser.</p>
+<p>Ports the built-in list doesn't know count as <strong>Other TCP</strong> or <strong>Other UDP</strong>. The port names
+added under <strong>Settings → Firewall Logs</strong> (<a href="../firewall-events/#application-and-row-colours">Port names</a>)
+name those too: add <code>udp 1198 OpenVPN</code> and a VPN on that port becomes an application of its own,
+in the chart, its clients and Where it goes, and its sessions read the right way round. A saved
+name never renames a port the built-in list already names (443 stays HTTPS), so the categories
+and their history don't change. New flows take a change within a minute; traffic already
+recorded keeps the name it had.</p>
 <p>Each chart remembers the time range you last picked, in this browser, rather than going back to
 its default (#331). That goes for the charts on device, client and port pages too.</p>
 <h2 id="retention">Retention<a class="headerlink" href="#retention" title="Permanent link">&para;</a></h2>

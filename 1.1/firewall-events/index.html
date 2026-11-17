@@ -1837,6 +1837,8 @@ SUBMISSION, 8291 is WINBOX. It goes by the destination port, or by the source po
 destination port, so it names that. Names come from a built-in list based on <code>/etc/services</code>,
 plus the MikroTik ports it doesn't know (WinBox, the API, MNDP, bandwidth test). Search still
 matches ports, not names.</p>
+<p>Names you add under <strong>Settings → Firewall Logs</strong> also name applications in
+<a href="../traffic/#what-it-shows">Traffic</a>, for ports it would otherwise count as Other TCP or Other UDP.</p>
 <p>Two kinds of background traffic get a row colour, so they stand apart:</p>
 <ul>
 <li><strong>DHCP</strong>: UDP 67/68, and DHCPv6 on 546/547. A DHCP discover to 255.255.255.255 counts as

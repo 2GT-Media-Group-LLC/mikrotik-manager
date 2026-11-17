@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta61" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.61
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta60" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2167,6 +2178,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta61" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.61
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta60" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2838,6 +2860,20 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta61">1.1.0-beta.61<a class="headerlink" href="#110-beta61" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Your port names name Traffic's applications too.</strong> A name added under <strong>Settings → Firewall
+  Logs</strong> now also names traffic on that port where Traffic would count it as Other TCP or Other
+  UDP, so a VPN on UDP 1198 becomes an application of its own in the chart, Where it goes and
+  Sessions. Built-in names stay as they are, and traffic already recorded keeps its name. See
+  <a href="../traffic/#names-for-addresses">Traffic</a>. Thanks to aziz
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/366">#366</a>).</li>
+<li><strong>Top Destinations says when recording began</strong>, so right after the upgrade that added it a
+  24-hour view doesn't read as missing traffic.</li>
+<li><strong>AdGuard Home as a Home Assistant add-on</strong>: how to set its port, and why its <strong>ssl</strong> option
+  without certificates stops the add-on, DNS included. See
+  <a href="../traffic/#names-looked-up-adguard-home-and-pi-hole">Traffic</a>.</li>
+</ul>
 <h2 id="110-beta60">1.1.0-beta.60<a class="headerlink" href="#110-beta60" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Spanning tree you can set, site by site.</strong> A <strong>Spanning Tree</strong> card under the topology map
