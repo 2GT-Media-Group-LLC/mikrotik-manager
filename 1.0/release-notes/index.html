@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1020" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.20
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1019" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1687,6 +1698,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1020" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0.20
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1019" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1993,6 +2015,15 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1020">1.0.20<a class="headerlink" href="#1020" title="Permanent link">&para;</a></h2>
+<p>Released on Monday 16 November 2026.</p>
+<ul>
+<li><strong>Spanning-tree roles were lost seconds after being read.</strong> Each poll read the spanning tree
+  and marked every link's role, then re-read neighbours, which rebuilt the links without it. The
+  topology map rarely showed a blocked link for long, and a client's way up couldn't use the
+  root port to tell which way is up, so on some networks two switches each named the other as
+  their way up. Roles now survive the rebuild.</li>
+</ul>
 <h2 id="1019">1.0.19<a class="headerlink" href="#1019" title="Permanent link">&para;</a></h2>
 <p>Released on Monday 16 November 2026.</p>
 <ul>
