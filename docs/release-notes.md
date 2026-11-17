@@ -978,6 +978,15 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.21
+
+Released on Tuesday 17 November 2026.
+
+- **Editing a bridge VLAN dropped its name.** An edit on the VLANs tab removes the entry and
+  adds it back, and the new one lost the entry's comment, which the manager shows as the VLAN's
+  name, along with whether it was disabled. Both now carry over, as do MVRP forbidden ports set
+  on the device.
+
 ## 1.0.20
 
 Released on Monday 16 November 2026.
