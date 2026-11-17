@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta62" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.62
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta61" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2178,6 +2189,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta62" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.62
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta61" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2860,6 +2882,17 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta62">1.1.0-beta.62<a class="headerlink" href="#110-beta62" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>MVRP forbidden ports.</strong> Adding or editing a VLAN on a bridge running MVRP can name ports
+  that never register or declare it, so MVRP can't carry that VLAN over those links (RouterOS
+  7.15 and later). The VLANs table lists them when any VLAN has some. See
+  <a href="../devices/#q-in-q-and-mvrp">Devices</a>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/449">#449</a>).</li>
+<li><strong>Editing a bridge VLAN dropped its name.</strong> An edit removes the entry and adds it back, and
+  the new one lost the entry's comment, which the manager shows as the VLAN's name, along with
+  whether it was disabled and its forbidden ports. All of them carry over now.</li>
+</ul>
 <h2 id="110-beta61">1.1.0-beta.61<a class="headerlink" href="#110-beta61" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Your port names name Traffic's applications too.</strong> A name added under <strong>Settings → Firewall

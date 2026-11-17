@@ -3659,8 +3659,16 @@ auto-revert required; turning that bridge off is predicted as a lockout and asks
   marked <strong>TS</strong>.</li>
 <li>On a bridge running MVRP, a table lists each port's <strong>registered</strong> and <strong>declared</strong> VLANs, read
   from the device when the tab opens.</li>
+<li><strong>MVRP forbidden ports</strong> are set per VLAN, on the <strong>VLANs</strong> tab: adding or editing a VLAN on a
+  bridge running MVRP shows the field. A forbidden port never registers that VLAN from a
+  neighbour and never declares it, so MVRP can't extend the VLAN over that link. It needs
+  RouterOS 7.15 or later. The VLANs table shows the forbidden ports in their own column when any
+  VLAN has some.</li>
 </ul>
 <p>On the bridge or port the manager connects through, these run with auto-revert required.</p>
+<p>Editing a VLAN on the <strong>VLANs</strong> tab keeps the parts of the entry the form doesn't show: its
+comment (shown as the VLAN's name), whether it's disabled, and its forbidden ports. Before
+1.1.0-beta.62, an edit dropped them.</p>
 <h3 id="a-ports-spanning-tree">A port's spanning tree<a class="headerlink" href="#a-ports-spanning-tree" title="Permanent link">&para;</a></h3>
 <p>Click a port on a bridge running spanning tree to set how it takes part. The panel shows the
 port's role now (root, designated, alternate) and whether it's running as an edge port.</p>
