@@ -6155,17 +6155,52 @@ export class DeviceCollector {
 
   // ─── VLAN management ──────────────────────────────────────────────────────
 
-  async addBridgeVlan(bridge: string, vlanId: number, taggedPorts: string[], untaggedPorts: string[]): Promise<void> {
-    const params: Record<string, string> = { bridge, 'vlan-ids': String(vlanId) };
+  /**
+   * `mvrpForbidden`: ports that never register or declare this VLAN through MVRP
+   * (#449, RouterOS 7.15+). Left out when empty, so older RouterOS, which has no
+   * such property, takes the add as before.
+   */
+  async addBridgeVlan(
+    bridge: string, vlanId: number, taggedPorts: string[], untaggedPorts: string[],
+    opts: { mvrpForbidden?: string[]; carry?: Record<string, string> } = {},
+  ): Promise<void> {
+    const params: Record<string, string> = { ...opts.carry, bridge, 'vlan-ids': String(vlanId) };
     if (taggedPorts.length) params['tagged'] = taggedPorts.join(',');
     if (untaggedPorts.length) params['untagged'] = untaggedPorts.join(',');
+    if (opts.mvrpForbidden !== undefined) {
+      if (opts.mvrpForbidden.length) params['mvrp-forbidden'] = opts.mvrpForbidden.join(',');
+      else delete params['mvrp-forbidden'];
+    }
     await this.client.execute('/interface/bridge/vlan/add', params);
   }
 
-  async updateBridgeVlan(bridge: string, vlanId: number, taggedPorts: string[], untaggedPorts: string[]): Promise<void> {
+  /**
+   * What an edit keeps from the entry it replaces. An edit removes the entry and
+   * adds it back, so without these its comment, its disabled state and its MVRP
+   * forbidden ports, set on the device or by an earlier edit, were dropped.
+   */
+  private static readonly BRIDGE_VLAN_CARRY = ['comment', 'disabled', 'mvrp-forbidden'] as const;
+
+  async updateBridgeVlan(
+    bridge: string, vlanId: number, taggedPorts: string[], untaggedPorts: string[],
+    opts: { mvrpForbidden?: string[] } = {},
+  ): Promise<void> {
+    const rows = await this.client
+      .execute('/interface/bridge/vlan/print', { detail: '' }, [`?bridge=${bridge}`])
+      .catch(() => [] as Record<string, string>[]);
+    const old = (rows as Record<string, string>[]).find((e) =>
+      e['dynamic'] !== 'true' && expandVlanIds(e['vlan-ids']).includes(vlanId));
+    const carry: Record<string, string> = {};
+    for (const key of DeviceCollector.BRIDGE_VLAN_CARRY) {
+      const v = old?.[key];
+      if (v === undefined || v === '') continue;
+      // RouterOS prints disabled as true/false; set takes yes/no.
+      carry[key] = key === 'disabled' ? (v === 'true' || v === 'yes' ? 'yes' : 'no') : v;
+    }
+    if (carry['disabled'] === 'no') delete carry['disabled'];
     await this.removeBridgeVlan(bridge, vlanId);
     try {
-      await this.addBridgeVlan(bridge, vlanId, taggedPorts, untaggedPorts);
+      await this.addBridgeVlan(bridge, vlanId, taggedPorts, untaggedPorts, { ...opts, carry });
     } catch (err) {
       // The old row is already gone: the VLAN does not exist now.
       throw new PartialApplyError(

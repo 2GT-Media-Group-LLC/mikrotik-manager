@@ -926,8 +926,17 @@ The bridge's **Edit** form and its ports cover 802.1ad Q-in-Q, tag stacking and 
   marked **TS**.
 - On a bridge running MVRP, a table lists each port's **registered** and **declared** VLANs, read
   from the device when the tab opens.
+- **MVRP forbidden ports** are set per VLAN, on the **VLANs** tab: adding or editing a VLAN on a
+  bridge running MVRP shows the field. A forbidden port never registers that VLAN from a
+  neighbour and never declares it, so MVRP can't extend the VLAN over that link. It needs
+  RouterOS 7.15 or later. The VLANs table shows the forbidden ports in their own column when any
+  VLAN has some.
 
 On the bridge or port the manager connects through, these run with auto-revert required.
+
+Editing a VLAN on the **VLANs** tab keeps the parts of the entry the form doesn't show: its
+comment (shown as the VLAN's name), whether it's disabled, and its forbidden ports. Before
+1.1.0-beta.62, an edit dropped them.
 
 ### A port's spanning tree
 

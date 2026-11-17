@@ -16,6 +16,16 @@ import VlanInterfacesCard from './VlanInterfacesCard';
 interface PortForm {
   tagged_ports: string;
   untagged_ports: string;
+  mvrp_forbidden: string;
+}
+
+const splitPorts = (v: string) => v.split(',').map((s) => s.trim()).filter(Boolean);
+
+/** A bridge VLAN's MVRP forbidden ports (#449), from the RouterOS row(s) as read. */
+function forbiddenOf(vlan: Vlan): string[] {
+  const c = vlan.config_json;
+  const rows = Array.isArray(c) ? c : c ? [c] : [];
+  return [...new Set(rows.flatMap((r) => splitPorts(r['mvrp-forbidden'] || '')))];
 }
 
 export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts }: {
@@ -79,12 +89,12 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
 
   // ── Add form ──
   const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({ vlan_id: '', bridge: '', tagged_ports: '', untagged_ports: '' });
+  const [addForm, setAddForm] = useState({ vlan_id: '', bridge: '', tagged_ports: '', untagged_ports: '', mvrp_forbidden: '' });
   const [addError, setAddError] = useState('');
 
   // ── Edit form ──
   const [editingVlan, setEditingVlan] = useState<Vlan | null>(null);
-  const [editForm, setEditForm] = useState<PortForm>({ tagged_ports: '', untagged_ports: '' });
+  const [editForm, setEditForm] = useState<PortForm>({ tagged_ports: '', untagged_ports: '', mvrp_forbidden: '' });
   const [editError, setEditError] = useState('');
 
   // ── Delete error ──
@@ -92,6 +102,13 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
 
   // Every bridge on the device, not just those that already have VLANs: a bridge
   // with none could never get its first one (outside review U14).
+  // Forbidden ports only mean something on a bridge running MVRP (#449).
+  const mvrpOn = (bridge?: string) => {
+    const v = ports.find((p) => p.type === 'bridge' && p.name === bridge)?.config_json?.['mvrp'];
+    return v === 'true' || v === 'yes';
+  };
+  const anyForbidden = (vlans as Vlan[]).some((v) => forbiddenOf(v).length > 0);
+
   const bridgeOptions = [...new Set([
     ...ports.filter((p) => p.type === 'bridge').map((p) => p.name),
     ...(vlans as Vlan[]).map((v) => v.bridge),
@@ -99,13 +116,15 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
 
   // ── Mutations ──
   const addRequest = (confirm: boolean) => {
-    const tagged = addForm.tagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
-    const untagged = addForm.untagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
+    const tagged = splitPorts(addForm.tagged_ports);
+    const untagged = splitPorts(addForm.untagged_ports);
+    const forbidden = mvrpOn(addForm.bridge) ? splitPorts(addForm.mvrp_forbidden) : [];
     return devicesApi.addVlan(deviceId, {
       bridge: addForm.bridge,
       vlan_id: parseInt(addForm.vlan_id, 10),
       tagged_ports: tagged,
       untagged_ports: untagged,
+      ...(forbidden.length ? { mvrp_forbidden: forbidden } : {}),
       ...(confirm ? { confirm_lockout: true } : {}),
     });
   };
@@ -113,7 +132,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
     mutationFn: addRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vlans', deviceId] });
-      setAddForm({ vlan_id: '', bridge: bridgeOptions[0] || '', tagged_ports: '', untagged_ports: '' });
+      setAddForm({ vlan_id: '', bridge: bridgeOptions[0] || '', tagged_ports: '', untagged_ports: '', mvrp_forbidden: '' });
       setShowAdd(false);
       setAddError('');
       setLockout(null);
@@ -126,13 +145,16 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
     },
   });
 
+  const showEditForbidden = !!editingVlan && (mvrpOn(editingVlan.bridge) || forbiddenOf(editingVlan).length > 0);
   const updateRequest = (confirm: boolean) => {
     if (!editingVlan) throw new Error('No VLAN selected');
-    const tagged = editForm.tagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
-    const untagged = editForm.untagged_ports.split(',').map((s) => s.trim()).filter(Boolean);
+    const tagged = splitPorts(editForm.tagged_ports);
+    const untagged = splitPorts(editForm.untagged_ports);
     return devicesApi.updateVlan(deviceId, editingVlan.id, {
       tagged_ports: tagged,
       untagged_ports: untagged,
+      // Sent only when the field is shown; otherwise the entry keeps what it has.
+      ...(showEditForbidden ? { mvrp_forbidden: splitPorts(editForm.mvrp_forbidden) } : {}),
       ...(confirm ? { confirm_lockout: true } : {}),
     });
   };
@@ -189,6 +211,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
     setEditForm({
       tagged_ports: (vlan.tagged_ports ?? []).join(', '),
       untagged_ports: (vlan.untagged_ports ?? []).join(', '),
+      mvrp_forbidden: forbiddenOf(vlan).join(', '),
     });
   };
 
@@ -260,7 +283,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
                 setShowAdd(!showAdd);
                 setEditingVlan(null);
                 setAddError('');
-                setAddForm({ vlan_id: '', bridge: bridgeOptions[0] || '', tagged_ports: '', untagged_ports: '' });
+                setAddForm({ vlan_id: '', bridge: bridgeOptions[0] || '', tagged_ports: '', untagged_ports: '', mvrp_forbidden: '' });
               }}
               className="btn-primary flex items-center gap-2 text-sm"
             >
@@ -326,6 +349,18 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
               />
               <p className="text-xs text-gray-400 mt-1">Comma-separated</p>
             </div>
+            {mvrpOn(addForm.bridge) && (
+            <div>
+              <label className="label">MVRP Forbidden Ports</label>
+              <input
+                className="input font-mono"
+                value={addForm.mvrp_forbidden}
+                onChange={(e) => setAddForm((f) => ({ ...f, mvrp_forbidden: e.target.value }))}
+                placeholder="ether5"
+              />
+              <p className="text-xs text-gray-400 mt-1">Ports that never register or declare this VLAN through MVRP. RouterOS 7.15 or later.</p>
+            </div>
+            )}
           </div>
           {addError && (
             <div className="flex items-center gap-2 text-sm text-red-500">
@@ -386,6 +421,18 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
               />
               <p className="text-xs text-gray-400 mt-1">Comma-separated interface names</p>
             </div>
+            {showEditForbidden && (
+            <div>
+              <label className="label">MVRP Forbidden Ports</label>
+              <input
+                className="input font-mono"
+                value={editForm.mvrp_forbidden}
+                onChange={(e) => setEditForm((f) => ({ ...f, mvrp_forbidden: e.target.value }))}
+                placeholder="ether5"
+              />
+              <p className="text-xs text-gray-400 mt-1">Ports that never register or declare this VLAN through MVRP. RouterOS 7.15 or later.</p>
+            </div>
+            )}
           </div>
 
           {editError && (
@@ -442,6 +489,7 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
                 <th className="table-header px-4 py-2.5 text-left">Bridge</th>
                 <th className="table-header px-4 py-2.5 text-left">Tagged Ports</th>
                 <th className="table-header px-4 py-2.5 text-left">Untagged Ports</th>
+                {anyForbidden && <th className="table-header px-4 py-2.5 text-left">MVRP Forbidden</th>}
                 {canWrite && <th className="table-header px-4 py-2.5 w-16" />}
               </tr>
             </thead>
@@ -483,6 +531,18 @@ export default function VlansTab({ deviceId, deviceName, deviceType, onGoToPorts
                       {!(vlan.untagged_ports?.length) && '—'}
                     </div>
                   </td>
+                  {anyForbidden && (
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1">
+                        {forbiddenOf(vlan).map((p) => (
+                          <span key={p} className="px-1.5 py-0.5 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs rounded font-mono">
+                            {p}
+                          </span>
+                        ))}
+                        {forbiddenOf(vlan).length === 0 && '—'}
+                      </div>
+                    </td>
+                  )}
                   {canWrite && (
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-1">

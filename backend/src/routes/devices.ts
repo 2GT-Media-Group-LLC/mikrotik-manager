@@ -3693,6 +3693,18 @@ router.get('/:id/routing/router-id', async (req, res) => {
 
 // POST /api/devices/:id/vlans (add bridge VLAN)
 /**
+ * MVRP forbidden ports for a bridge VLAN (#449): undefined when not given (an
+ * edit keeps what the entry has), else a list of interface names.
+ */
+function mvrpForbiddenOf(v: unknown): { ports?: string[]; error?: string } {
+  if (v === undefined) return {};
+  if (!Array.isArray(v) || v.length > 512
+    || !v.every((p) => typeof p === 'string' && /^[^\s,"'=;\\]{1,64}$/.test(p))) {
+    return { error: 'mvrp_forbidden must be a list of interface names' };
+  }
+  return { ports: [...new Set(v as string[])] };
+}
+/**
  * A single RouterOS bridge VLAN row can cover a range or list ("10-20"), which the
  * cache expands into one row per VLAN. Editing or deleting one of those rows would
  * rewrite the whole entry, silently taking the other VLANs with it — so refuse, and
@@ -3712,6 +3724,8 @@ router.post('/:id/vlans', requireWrite, async (req, res) => {
   if (!bridge || !Number.isInteger(vlan_id) || vlan_id < 1 || vlan_id > 4094) {
     return res.status(400).json({ error: 'bridge and vlan_id (a whole number, 1-4094) are required' });
   }
+  const forbidden = mvrpForbiddenOf(req.body.mvrp_forbidden);
+  if (forbidden.error) return res.status(400).json({ error: forbidden.error });
 
   await withGuardedChange(
     req.params.id,
@@ -3723,7 +3737,7 @@ router.post('/:id/vlans', requireWrite, async (req, res) => {
       change: { kind: 'vlan.add', bridge, vlanId: vlan_id, tagged: tagged_ports, untagged: untagged_ports },
     },
     async (c) => {
-      await c.addBridgeVlan(bridge, vlan_id, tagged_ports, untagged_ports);
+      await c.addBridgeVlan(bridge, vlan_id, tagged_ports, untagged_ports, { mvrpForbidden: forbidden.ports });
       return { message: `VLAN ${vlan_id} added` };
     },
     async (c) => { await c.collectVlans(); }
@@ -3741,6 +3755,8 @@ router.put('/:id/vlans/:vlanDbId', requireWrite, async (req, res) => {
   if (multi) return res.status(409).json({ error: multi, reason: multi });
 
   const { tagged_ports = [], untagged_ports = [] } = req.body;
+  const forbidden = mvrpForbiddenOf(req.body.mvrp_forbidden);
+  if (forbidden.error) return res.status(400).json({ error: forbidden.error });
 
   await withGuardedChange(
     req.params.id,
@@ -3755,7 +3771,7 @@ router.put('/:id/vlans/:vlanDbId', requireWrite, async (req, res) => {
       },
     },
     async (c) => {
-      await c.updateBridgeVlan(vlan.bridge, vlan.vlan_id, tagged_ports, untagged_ports);
+      await c.updateBridgeVlan(vlan.bridge, vlan.vlan_id, tagged_ports, untagged_ports, { mvrpForbidden: forbidden.ports });
       return { message: `VLAN ${vlan.vlan_id} updated` };
     },
     async (c) => { await c.collectVlans(); }

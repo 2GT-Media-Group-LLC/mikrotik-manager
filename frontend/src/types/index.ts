@@ -196,6 +196,8 @@ export interface Vlan {
   vlan_ids?: string | null;
   tagged_ports?: string[];
   untagged_ports?: string[];
+  /** The RouterOS row(s) as read: one object, or a list when several rows make up this VLAN. */
+  config_json?: Record<string, string> | Record<string, string>[] | null;
 }
 
 export interface BridgeVlanEntry {

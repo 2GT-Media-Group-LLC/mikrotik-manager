@@ -109,7 +109,7 @@ const MENUS = {
   },
   bridgeVlan: {
     path: '/interface/bridge/vlan', mode: 'keyed', hasDynamic: true,
-    only: ['bridge', 'vlan-ids', 'tagged', 'untagged', 'disabled', 'comment'],
+    only: ['bridge', 'vlan-ids', 'tagged', 'untagged', 'mvrp-forbidden', 'disabled', 'comment'],
   },
   // Zones (#369): which interfaces are in each list. The lists themselves
   // aren't restored; a new one left behind is empty and harmless.

@@ -968,9 +968,9 @@ export const devicesApi = {
       confirmLockout ? { data: { confirm_lockout: true } } : undefined),
   // confirm_lockout overrides a predicted-lockout refusal (HTTP 409) after the user
   // has seen and accepted the verdict.
-  addVlan: (id: number, data: { bridge: string; vlan_id: number; tagged_ports?: string[]; untagged_ports?: string[]; confirm_lockout?: boolean }) =>
+  addVlan: (id: number, data: { bridge: string; vlan_id: number; tagged_ports?: string[]; untagged_ports?: string[]; mvrp_forbidden?: string[]; confirm_lockout?: boolean }) =>
     api.post(`/devices/${id}/vlans`, data),
-  updateVlan: (id: number, vlanDbId: number, data: { tagged_ports: string[]; untagged_ports: string[]; confirm_lockout?: boolean }) =>
+  updateVlan: (id: number, vlanDbId: number, data: { tagged_ports: string[]; untagged_ports: string[]; mvrp_forbidden?: string[]; confirm_lockout?: boolean }) =>
     api.put(`/devices/${id}/vlans/${vlanDbId}`, data),
   deleteVlan: (id: number, vlanDbId: number, confirmLockout = false) =>
     api.delete(`/devices/${id}/vlans/${vlanDbId}`, confirmLockout ? { data: { confirm_lockout: true } } : undefined),
