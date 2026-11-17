@@ -5339,17 +5339,40 @@ export class DeviceCollector {
 
   // ─── VLAN management ──────────────────────────────────────────────────────
 
-  async addBridgeVlan(bridge: string, vlanId: number, taggedPorts: string[], untaggedPorts: string[]): Promise<void> {
-    const params: Record<string, string> = { bridge, 'vlan-ids': String(vlanId) };
+  async addBridgeVlan(
+    bridge: string, vlanId: number, taggedPorts: string[], untaggedPorts: string[],
+    carry: Record<string, string> = {},
+  ): Promise<void> {
+    const params: Record<string, string> = { ...carry, bridge, 'vlan-ids': String(vlanId) };
     if (taggedPorts.length) params['tagged'] = taggedPorts.join(',');
     if (untaggedPorts.length) params['untagged'] = untaggedPorts.join(',');
     await this.client.execute('/interface/bridge/vlan/add', params);
   }
 
+  /**
+   * What an edit keeps from the entry it replaces. An edit removes the entry and
+   * adds it back, so without these its comment (shown as the VLAN's name), its
+   * disabled state and its MVRP forbidden ports were dropped.
+   */
+  private static readonly BRIDGE_VLAN_CARRY = ['comment', 'disabled', 'mvrp-forbidden'] as const;
+
   async updateBridgeVlan(bridge: string, vlanId: number, taggedPorts: string[], untaggedPorts: string[]): Promise<void> {
+    const rows = await this.client
+      .execute('/interface/bridge/vlan/print', { detail: '' }, [`?bridge=${bridge}`])
+      .catch(() => [] as Record<string, string>[]);
+    const old = (rows as Record<string, string>[]).find((e) =>
+      e['dynamic'] !== 'true' && expandVlanIds(e['vlan-ids']).includes(vlanId));
+    const carry: Record<string, string> = {};
+    for (const key of DeviceCollector.BRIDGE_VLAN_CARRY) {
+      const v = old?.[key];
+      if (v === undefined || v === '') continue;
+      // RouterOS prints disabled as true/false; set takes yes/no.
+      carry[key] = key === 'disabled' ? (v === 'true' || v === 'yes' ? 'yes' : 'no') : v;
+    }
+    if (carry['disabled'] === 'no') delete carry['disabled'];
     await this.removeBridgeVlan(bridge, vlanId);
     try {
-      await this.addBridgeVlan(bridge, vlanId, taggedPorts, untaggedPorts);
+      await this.addBridgeVlan(bridge, vlanId, taggedPorts, untaggedPorts, carry);
     } catch (err) {
       // The old row is already gone: the VLAN does not exist now.
       throw new PartialApplyError(

@@ -102,7 +102,7 @@ const MENUS = {
   },
   bridgeVlan: {
     path: '/interface/bridge/vlan', mode: 'keyed', hasDynamic: true,
-    only: ['bridge', 'vlan-ids', 'tagged', 'untagged', 'disabled', 'comment'],
+    only: ['bridge', 'vlan-ids', 'tagged', 'untagged', 'mvrp-forbidden', 'disabled', 'comment'],
   },
   ipAddress: {
     path: '/ip/address', mode: 'keyed', hasDynamic: true,

@@ -902,3 +902,20 @@ describe('checkRouterboardUpgrade', () => {
     expect((await withRouterboard('7.24', '7.24.0').checkRouterboardUpgrade()).upgradeAvailable).toBe(false);
   });
 });
+
+describe('bridge VLAN edits keep what they don\'t change', () => {
+  it('carries the comment, disabled state and MVRP forbidden ports through an edit', async () => {
+    const collector = new DeviceCollector(testDevice);
+    const calls: Array<[string, Record<string, string> | undefined]> = [];
+    const execute = jest.fn(async (cmd: string, params?: Record<string, string>) => {
+      calls.push([cmd, params]);
+      return cmd.endsWith('/print')
+        ? [{ '.id': '*1', bridge: 'bridge1', 'vlan-ids': '20', tagged: 'ether1', comment: 'cameras', disabled: 'true', 'mvrp-forbidden': 'ether5' }]
+        : [];
+    });
+    (collector as unknown as { client: { execute: typeof execute } }).client = { execute };
+    await collector.updateBridgeVlan('bridge1', 20, ['ether1', 'ether2'], []);
+    expect(calls.find(([c]) => c === '/interface/bridge/vlan/add')?.[1])
+      .toEqual({ bridge: 'bridge1', 'vlan-ids': '20', tagged: 'ether1,ether2', comment: 'cameras', disabled: 'yes', 'mvrp-forbidden': 'ether5' });
+  });
+});
