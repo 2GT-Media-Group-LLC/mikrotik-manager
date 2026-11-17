@@ -50,6 +50,13 @@ neighbour the manager doesn't manage is a step only when there's no managed one,
 was heard over LLDP. The top of a site has no way up: when the best neighbour goes up through
 this device and is a tier below it, the path stops. Hover an arrow to see which way chose it.
 
+A path can cross into another site. Discovery only matches a neighbour to a device in the same
+site, so a switch cabled to one managed in another site looks unmanaged from here. The path
+still shows it as that managed device when the neighbour proves it is: its MAC is one of that
+device's own, no other device in the fleet has it, and it calls itself by that device's name.
+The path then goes on in the other site. If you can't see that site, the step shows the name
+discovery heard, marked **in a site you can't see**, and the path stops there.
+
 A client seen only on uplinks, behind equipment the manager doesn't manage, is placed on the
 device deepest in the tree that sees it on a port leading down, rather than on one that sees it
 on its way up (its root port, or a link to a device a tier above).

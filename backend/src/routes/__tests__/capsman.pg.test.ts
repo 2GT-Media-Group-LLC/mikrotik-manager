@@ -39,6 +39,8 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
   let app: express.Express;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mtm-e2e-capsman-'));
   const id: Record<string, number> = {};
+  // Who's asking: fleet-wide unless a test narrows it to some sites.
+  let viewer: Record<string, unknown> = { userId: 1, username: 'admin', role: 'admin' };
 
   beforeAll(async () => {
     const base = new URL(PG!);
@@ -61,6 +63,7 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
 
     app = express();
     app.use(express.json());
+    app.use((req, _res, next) => { (req as unknown as { user: unknown }).user = viewer; next(); });
     app.use('/api/wireless', require('../wireless').default);
     app.use('/api/clients', require('../clients').default);
 
@@ -413,5 +416,34 @@ suite('CAPsMAN controllers and CAPs on the wireless and client pages (#365)', ()
     await client(core, '02:00:00:00:02:04', 'sfp28-1');
     await client(ap, '02:00:00:00:02:04', 'ether2');
     expect((await pathOf('02:00:00:00:02:04')).device).toBe('LAB-CORE');
+    // A switch managed in another site, cabled to one here. Discovery doesn't
+    // match across sites, but the LLDP neighbour's MAC is the other switch's
+    // own and it uses that switch's name, and spanning tree names its bridge.
+    const other = (await db.query<{ id: number }>(`INSERT INTO sites (name) VALUES ('Other lab') RETURNING id`))[0].id;
+    const test = (await db.query<{ id: number }>(
+      `INSERT INTO devices (name, ip_address, api_username, api_password_encrypted, device_type, status, site_id)
+       VALUES ('LAB-TEST', '10.6.0.51', 'u', 'x', 'switch', 'online', $1) RETURNING id`, [other]))[0].id;
+    await db.query(`INSERT INTO interfaces (device_id, name, type, mac_address) VALUES ($1, 'sfp-sfpplus1', 'ether', 'C4:AD:34:D5:BC:AF')`, [test]);
+    await db.query(`INSERT INTO device_bridges (device_id, bridge_name, bridge_id, root_bridge, root_bridge_id, root_port, root_path_cost, protocol_mode)
+       VALUES ($1, 'bridge', '0x3000.C4:AD:34:D5:BC:B7', false, '0x1000.70:A7:41:EF:8F:FB', 'ether1', 41010, 'rstp')`, [test]);
+    const mini2 = await dev('LAB-MINI2', '10.6.0.61', 'switch');
+    await bridge(mini2, '0x3000.38:32:7A:34:E5:1C', '0x1000.70:A7:41:EF:8F:FB', 'sfp-sfpplus1', 43010, '0x3000.C4:AD:34:D5:BC:B7');
+    await link(mini2, 'sfp-sfpplus1', null, 'bridge/sfp-sfpplus1', 'cdp,lldp,mndp', 'LAB-TEST', 'C4:AD:34:D5:BC:AF');
+    await client(mini2, '38:05:25:38:a6:aa', 'ether8');
+    const hopsOf = async () => ((await get('/api/clients/38:05:25:38:a6:aa') as Row).path as Row[])
+      .map((h) => ({ name: h.name, id: h.device_id, managed: h.managed, other: h.other_site ?? false }));
+    expect(await hopsOf()).toEqual([{ name: 'LAB-TEST', id: test, managed: true, other: false }]);
+
+    // Someone who can't see the other site gets the name discovery heard, and no more.
+    viewer = { userId: 2, username: 'lab', role: 'viewer', siteRoles: { [site]: 'admin' } };
+    try {
+      expect(await hopsOf()).toEqual([{ name: 'LAB-TEST', id: null, managed: true, other: true }]);
+    } finally {
+      viewer = { userId: 1, username: 'admin', role: 'admin' };
+    }
+
+    // The same MAC under another name isn't proof: not the same box.
+    await db.query(`UPDATE topology_links SET neighbor_identity = 'SOMETHING-ELSE' WHERE from_device_id = $1`, [mini2]);
+    expect(await hopsOf()).toEqual([{ name: 'SOMETHING-ELSE', id: null, managed: false, other: false }]);
   });
 });

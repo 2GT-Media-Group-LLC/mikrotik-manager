@@ -7,7 +7,7 @@ import { normalizeMac } from '../utils/fit';
 import { logSafe } from '../utils/logSafe';
 import { requireAuth, requireAdmin, requireWrite } from '../middleware/auth';
 import { siteList, siteScopeByDevice, siteScopeByNullableDevice } from '../utils/siteScope';
-import { fluxDeviceFilter } from '../utils/siteAccess';
+import { fluxDeviceFilter, roleInSite } from '../utils/siteAccess';
 import { activeSite, writableScope } from '../middleware/site';
 import { PollerService } from '../services/PollerService';
 import { getQueryApi, bucket } from '../config/influxdb';
@@ -360,7 +360,10 @@ router.get('/:mac', async (req, res) => {
   const row = withCategory(withMacColumns(rows[0]));
   const start = own ? Number(own.id) : Number(row.device_id);
   // The way to the top of the site, a step at a time (see clientPath).
-  const path = await clientPath(start).catch((e) => {
+  // A step into a site the viewer can't see is named but not identified.
+  const user = req.user;
+  const canSee = (siteId: number | null) => !!user && roleInSite(user, siteId) != null;
+  const path = await clientPath(start, canSee).catch((e) => {
     console.warn(`[Clients] path for ${mac}: ${(e as Error).message}`);
     return [] as PathHop[];
   });

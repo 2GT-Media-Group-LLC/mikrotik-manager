@@ -1289,6 +1289,8 @@ export interface ClientPathHop {
   device_type: string | null;
   ip: string | null;
   managed: boolean;
+  /** A managed device in a site you can't see: named as discovery heard it, and the path stops there. */
+  other_site?: boolean;
   /** The port on the step below that leads here. */
   from_port: string | null;
   /** The port on this step the link arrives at. */

@@ -256,11 +256,12 @@ function ConnectionDiagram({ client }: { client: ClientDetail }) {
           <Fragment key={`${h.device_id ?? h.name}-${i}`}>
             <PathArrow port={h.from_port}
               title={h.how === 'stp' ? 'Spanning tree names this as the way up' : 'Chosen from neighbour discovery: no spanning-tree answer here'} />
-            <PathNode icon={!h.managed ? Box : deviceIcon(h.device_type ?? undefined)} tone={h.managed ? 'up' : 'unmanaged'}
+            <PathNode icon={!h.managed || h.other_site ? Box : deviceIcon(h.device_type ?? undefined)}
+              tone={h.managed && !h.other_site ? 'up' : 'unmanaged'}
               name={h.name} to={h.device_id ? `/devices/${h.device_id}` : undefined}
               lines={[
                 ...(h.port ? [{ text: h.port, mono: true }] : []),
-                ...(!h.managed ? [{ text: 'not managed' }] : []),
+                ...(h.other_site ? [{ text: 'in a site you can’t see' }] : !h.managed ? [{ text: 'not managed' }] : []),
                 ...(h.ip && !h.managed ? [{ text: h.ip, mono: true }] : []),
               ]} />
           </Fragment>
