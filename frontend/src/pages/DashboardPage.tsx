@@ -788,9 +788,12 @@ function OperationsView({
   const [actionMsg, setActionMsg] = useState<FleetActionSummary | null>(null);
   const [pickTerminal, setPickTerminal] = useState(false);
   const [terminalSearch, setTerminalSearch] = useState('');
-  // Capacity lists the busiest devices first and stops at CAPACITY_ROWS, which
-  // silently hid the rest: nine devices showed eight rows, reported as a bug.
-  const [showAllCapacity, setShowAllCapacity] = useState(false);
+  // Capacity, Security Posture and Recent Activity each show five rows and
+  // scroll for the rest, so every device is in the list without the cards
+  // growing down the page (stopping at eight once hid the ninth).
+  const [capacityListRef, capacityListPx] = useRowsHeight(5, 34);
+  const [postureListRef, postureListPx] = useRowsHeight(5, 18, 6);
+  const [activityListRef, activityListPx] = useRowsHeight(5, 52);
   // The card lays out by its own width: in a narrow window the graphs go, not the names (#368).
   const [capacityRef, capacityWidth] = useElementWidth<HTMLDivElement>();
   const capacityNarrow = capacityWidth > 0 && capacityWidth < CAPACITY_NARROW_PX;
@@ -840,12 +843,11 @@ function OperationsView({
   const scored = (posture ?? []).filter(p => p.score !== null);
   const avgScore = scored.length ? Math.round(scored.reduce((s, p) => s + (p.score ?? 0), 0) / scored.length) : null;
   const highFindings = (posture ?? []).reduce((s, p) => s + p.checks.filter(c => c.severity === 'high').length, 0);
-  const worstDevices = [...scored].sort((a, b) => (a.score ?? 0) - (b.score ?? 0)).slice(0, 3);
+  const worstDevices = [...scored].sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
   const scoreColor = (s: number | null) => s == null ? 'var(--ink-3)' : s >= 85 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : 'var(--bad)';
 
   // Busiest CPU first; memory counts only once it's high and growing (#368).
   const sortedCapacity = sortCapacity(capacity);
-  const CAPACITY_ROWS = 8;
   const CAPACITY_GRID = capacityGrid(capacityNarrow);
   // Fleet strip: two rows of tiles at most, the last one linking to the rest (#303).
   const FLEET_TILES = 10;
@@ -853,11 +855,10 @@ function OperationsView({
   const fleetTiles = fleetList.length > FLEET_TILES ? byAttention(fleetList).slice(0, FLEET_TILES - 1) : fleetList;
   const fleetHidden = fleetList.length - fleetTiles.length;
   const fleetOffline = fleetList.filter((d) => d.status === 'offline').length;
-  const shownCapacity = showAllCapacity ? sortedCapacity : sortedCapacity.slice(0, CAPACITY_ROWS);
-  // A prefix the rows on show share (01-SITE-ASW) is shown once, not on each
+  // A prefix the busiest rows share (01-SITE-ASW) is shown once, not on each
   // row. Taken from those rows, so an out-of-band 99-SITE-MGMT further down
-  // the list doesn't cancel it (#368).
-  const capacityPrefix = commonPrefix(shownCapacity.map((c) => c.name));
+  // the list doesn't cancel it (#368); a row without it shows its whole name.
+  const capacityPrefix = commonPrefix(sortedCapacity.slice(0, 8).map((c) => c.name));
 
   const sevColor = (s: string) => s === 'error' ? 'var(--bad)' : s === 'warn' ? 'var(--warn)' : 'var(--info)';
   const activityIcon = (kind: string) => kind === 'config' ? FileText : kind === 'alert' ? Bell : Activity;
@@ -1100,7 +1101,7 @@ function OperationsView({
           {sortedCapacity.length === 0 ? (
             <div className="py-8 text-center text-[13px]" style={{ color: 'var(--ink-3)' }}>No resource data yet.</div>
           ) : (
-            <div className="px-5 py-3" style={showAllCapacity ? { maxHeight: 'min(52vh, 460px)', overflowY: 'auto' } : undefined}>
+            <div className="px-5 py-3">
               {capacityPrefix && (
                 <div className="pb-2 text-[11px]" style={{ color: 'var(--ink-4)' }}>
                   Common prefix{' '}
@@ -1112,7 +1113,8 @@ function OperationsView({
                 style={{ gridTemplateColumns: CAPACITY_GRID, color: 'var(--ink-4)' }}>
                 <span>Device</span>{!capacityNarrow && <span>CPU 24h</span>}<span>CPU now</span><span className="text-right">Mem</span>
               </div>
-              {shownCapacity.map((c) => (
+              <div ref={capacityListRef} className="overflow-y-auto -mx-5 px-5" style={{ maxHeight: capacityListPx }}>
+              {sortedCapacity.map((c) => (
                 // The name opens the device; a metric opens its graph (Ron, #448).
                 <div key={c.id}
                   className="w-full text-left grid items-center gap-x-3 py-[5px] group"
@@ -1144,18 +1146,10 @@ function OperationsView({
                     title={[memHint(c), 'Memory graph'].filter(Boolean).join(' · ')}>{c.mem_pct}%</button>
                 </div>
               ))}
-              {sortedCapacity.length > CAPACITY_ROWS && (
-                <div className="pt-2 text-[11.5px] flex items-center gap-2" style={{ color: 'var(--ink-3)' }}>
-                  {showAllCapacity
-                    ? `All ${sortedCapacity.length} devices`
-                    : `${CAPACITY_ROWS} busiest of ${sortedCapacity.length} shown`}
-                  <button
-                    onClick={() => setShowAllCapacity((v) => !v)}
-                    className="underline"
-                    style={{ color: 'var(--accent)' }}
-                  >
-                    {showAllCapacity ? 'Show fewer' : 'Show all'}
-                  </button>
+              </div>
+              {sortedCapacity.length > 5 && (
+                <div className="pt-2 text-[11.5px]" style={{ color: 'var(--ink-3)' }}>
+                  {sortedCapacity.length} devices, busiest first: scroll for the rest
                 </div>
               )}
             </div>
@@ -1191,7 +1185,7 @@ function OperationsView({
               {highFindings} high-severity finding{highFindings !== 1 ? 's' : ''}
             </div>
             {worstDevices.length > 0 && (
-              <div className="space-y-1.5">
+              <div ref={postureListRef} className="space-y-1.5 overflow-y-auto" style={{ maxHeight: postureListPx }}>
                 {worstDevices.map((d) => (
                   <div key={d.id} className="flex items-center gap-2 text-[12px]">
                     <StatusDot color={scoreColor(d.score)} size={6} />
@@ -1224,7 +1218,7 @@ function OperationsView({
         {activity.length === 0 ? (
           <div className="py-8 text-center text-[13px]" style={{ color: 'var(--ink-3)' }}>No recent activity.</div>
         ) : (
-          <div>
+          <div ref={activityListRef} className="overflow-y-auto" style={{ maxHeight: activityListPx }}>
             {activity.map((a, i) => {
               const Icon = activityIcon(a.kind);
               const color = a.kind === 'alert' ? sevColor(a.sev === 'error' ? 'error' : 'warn') : a.kind === 'config' ? 'var(--info)' : 'var(--ink-3)';
@@ -1234,7 +1228,7 @@ function OperationsView({
                   <Icon className="w-3.5 h-3.5 flex-shrink-0 mt-[2px]" style={{ color }} />
                   <div className="min-w-0 flex-1">
                     <div className="text-[12.5px] truncate" style={{ color: 'var(--ink)' }}>{a.title}</div>
-                    <div className="text-[11px]" style={{ color: 'var(--ink-3)' }}>{a.sub}</div>
+                    <div className="text-[11px] truncate" style={{ color: 'var(--ink-3)' }} title={a.sub}>{a.sub}</div>
                   </div>
                   <span className="mono text-[10.5px] flex-shrink-0" style={{ color: 'var(--ink-4)' }}>
                     {formatDistanceToNow(new Date(a.at), { addSuffix: false })}
