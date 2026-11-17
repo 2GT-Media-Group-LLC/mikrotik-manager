@@ -3,6 +3,20 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.61
+
+- **Your port names name Traffic's applications too.** A name added under **Settings → Firewall
+  Logs** now also names traffic on that port where Traffic would count it as Other TCP or Other
+  UDP, so a VPN on UDP 1198 becomes an application of its own in the chart, Where it goes and
+  Sessions. Built-in names stay as they are, and traffic already recorded keeps its name. See
+  [Traffic](traffic.md#names-for-addresses). Thanks to aziz
+  ([#366](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/366)).
+- **Top Destinations says when recording began**, so right after the upgrade that added it a
+  24-hour view doesn't read as missing traffic.
+- **AdGuard Home as a Home Assistant add-on**: how to set its port, and why its **ssl** option
+  without certificates stops the add-on, DNS included. See
+  [Traffic](traffic.md#names-looked-up-adguard-home-and-pi-hole).
+
 ## 1.1.0-beta.60
 
 - **Spanning tree you can set, site by site.** A **Spanning Tree** card under the topology map
