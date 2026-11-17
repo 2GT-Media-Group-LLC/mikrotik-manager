@@ -3,6 +3,17 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.62
+
+- **MVRP forbidden ports.** Adding or editing a VLAN on a bridge running MVRP can name ports
+  that never register or declare it, so MVRP can't carry that VLAN over those links (RouterOS
+  7.15 and later). The VLANs table lists them when any VLAN has some. See
+  [Devices](devices.md#q-in-q-and-mvrp)
+  ([#449](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/449)).
+- **Editing a bridge VLAN dropped its name.** An edit removes the entry and adds it back, and
+  the new one lost the entry's comment, which the manager shows as the VLAN's name, along with
+  whether it was disabled and its forbidden ports. All of them carry over now.
+
 ## 1.1.0-beta.61
 
 - **Your port names name Traffic's applications too.** A name added under **Settings → Firewall
