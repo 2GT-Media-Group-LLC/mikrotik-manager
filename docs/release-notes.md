@@ -7,6 +7,16 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.20
+
+Released on Monday 16 November 2026.
+
+- **Spanning-tree roles were lost seconds after being read.** Each poll read the spanning tree
+  and marked every link's role, then re-read neighbours, which rebuilt the links without it. The
+  topology map rarely showed a blocked link for long, and a client's way up couldn't use the
+  root port to tell which way is up, so on some networks two switches each named the other as
+  their way up. Roles now survive the rebuild.
+
 ## 1.0.19
 
 Released on Monday 16 November 2026.
