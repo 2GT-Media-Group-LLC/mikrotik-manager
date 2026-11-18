@@ -60,3 +60,51 @@ describe('GET /api/traffic/destinations recorded_since (#366)', () => {
     expect((await request(app).get('/api/traffic/destinations?range=24h')).body.recorded_since).toBeNull();
   });
 });
+
+describe('Traffic windows picked on the chart (#463)', () => {
+  const calls = () => jest.mocked(query).mock.calls as unknown as [string, unknown[]][];
+  beforeEach(() => jest.mocked(query).mockClear());
+
+  it('counts the hours a picked window touches', async () => {
+    table(new Date(Date.now() - 3 * DAY));
+    const from = new Date(Date.now() - 5 * HOUR - 15 * 60_000).toISOString();
+    const to = new Date(Date.now() - 4 * HOUR).toISOString();
+    const res = await request(app).get(`/api/traffic/destinations?from=${from}&to=${to}`);
+    expect(res.status).toBe(200);
+    const [sql, params] = calls().find(([s]) => s.includes('GROUP BY remote'))!;
+    expect(sql).toContain("hour >= date_trunc('hour', $1::timestamptz)");
+    expect(sql).toContain('hour < $2::timestamptz');
+    expect((params[0] as Date).toISOString()).toBe(from);
+    expect((params[1] as Date).toISOString()).toBe(to);
+  });
+
+  it('keeps a preset range counted back from now', async () => {
+    table(new Date(Date.now() - 3 * DAY));
+    await request(app).get('/api/traffic/destinations?range=24h');
+    const [sql, params] = calls().find(([s]) => s.includes('GROUP BY remote'))!;
+    expect(sql).toContain('make_interval(hours => $1::int)');
+    expect(params[0]).toBe(24);
+  });
+
+  it('bounds the DNS names by the picked window', async () => {
+    jest.mocked(query).mockImplementation((async () => [{ n: 0, allowed: 0, blocked: 0 }]) as never);
+    const from = new Date(Date.now() - 3 * HOUR).toISOString();
+    const to = new Date(Date.now() - 2 * HOUR).toISOString();
+    expect((await request(app).get(`/api/traffic/dns?from=${from}&to=${to}`)).status).toBe(200);
+    const [sql] = calls().find(([s]) => s.includes('FROM dns_name_counts'))!;
+    expect(sql).toContain('hour >= $1 AND hour < $2');
+  });
+
+  it('refuses a window that is not one', async () => {
+    const now = Date.now();
+    for (const q of [
+      `from=${new Date(now - HOUR).toISOString()}&to=${new Date(now - 2 * HOUR).toISOString()}`,
+      `from=${new Date(now - 40 * DAY).toISOString()}&to=${new Date(now).toISOString()}`,
+      `from=yesterday&to=${new Date(now).toISOString()}`,
+      `from=${new Date(now - HOUR).toISOString()}`,
+    ]) {
+      const res = await request(app).get(`/api/traffic/destinations?${q}`);
+      expect(res.status).toBe(400);
+    }
+  });
+});

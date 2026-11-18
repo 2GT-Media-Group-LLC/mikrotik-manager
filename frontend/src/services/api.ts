@@ -2784,31 +2784,41 @@ export const sessionsApi = {
     api.put<{ id: number; sessions: boolean }>(`/sessions/devices/${deviceId}`, { enabled }),
 };
 
+/**
+ * The time a Traffic view covers: a preset ("24h"), or a window picked on the
+ * chart (#463), written "<from>/<to>" in ISO time so it can stand in for a
+ * range anywhere one is passed or used as a query key.
+ */
+export function trafficWindowParams(view: string): { range: string } | { from: string; to: string } {
+  const slash = view.indexOf('/');
+  return slash < 0 ? { range: view } : { from: view.slice(0, slash), to: view.slice(slash + 1) };
+}
+
 export const trafficApi = {
   status: () => api.get<TrafficCollectorStats>('/traffic/status'),
   timeseries: (range = '24h') =>
-    api.get<ClientTrafficPoint[]>('/traffic/timeseries', { params: { range } }),
+    api.get<ClientTrafficPoint[]>('/traffic/timeseries', { params: trafficWindowParams(range) }),
   topClients: (range = '24h', limit = 10) =>
-    api.get<TrafficTopClient[]>('/traffic/top-clients', { params: { range, limit } }),
+    api.get<TrafficTopClient[]>('/traffic/top-clients', { params: { ...trafficWindowParams(range), limit } }),
   apps: (range = '24h', mac?: string) =>
-    api.get<TrafficApp[]>('/traffic/apps', { params: { range, mac } }),
+    api.get<TrafficApp[]>('/traffic/apps', { params: { ...trafficWindowParams(range), mac } }),
   /** Who generates one application's traffic (#366). */
   appClients: (app: string, range = '24h') =>
-    api.get<TrafficAppClients>(`/traffic/apps/${encodeURIComponent(app)}/clients`, { params: { range } }),
+    api.get<TrafficAppClients>(`/traffic/apps/${encodeURIComponent(app)}/clients`, { params: trafficWindowParams(range) }),
   client: (mac: string, range = '24h') =>
     api.get<{ series: ClientTrafficPoint[]; apps: TrafficApp[] }>(
-      `/traffic/client/${encodeURIComponent(mac)}`, { params: { range } }
+      `/traffic/client/${encodeURIComponent(mac)}`, { params: trafficWindowParams(range) }
     ),
   /** Where traffic goes (#366 step 2): the site, one application, one client, or both. */
-  destinations: (opts: { range?: string; app?: string; mac?: string; limit?: number }) =>
-    api.get<TrafficDestinations>('/traffic/destinations', { params: { range: '24h', ...opts } }),
+  destinations: ({ range = '24h', ...opts }: { range?: string; app?: string; mac?: string; limit?: number }) =>
+    api.get<TrafficDestinations>('/traffic/destinations', { params: { ...trafficWindowParams(range), ...opts } }),
   /** The clients that talked to one remote address. */
   destinationClients: (remote: string, range = '24h', app?: string) =>
-    api.get<TrafficDestinationClients>(`/traffic/destinations/${encodeURIComponent(remote)}/clients`, { params: { range, app } }),
+    api.get<TrafficDestinationClients>(`/traffic/destinations/${encodeURIComponent(remote)}/clients`, { params: { ...trafficWindowParams(range), app } }),
   /** Names looked up through AdGuard Home (#366 step 3), for the site or one client. */
-  dnsNames: (opts: { range?: string; mac?: string; limit?: number }) =>
-    api.get<TrafficDnsNames>('/traffic/dns', { params: { range: '24h', ...opts } }),
-  dnsClients: (range = '24h') => api.get<TrafficDnsClients>('/traffic/dns/clients', { params: { range } }),
+  dnsNames: ({ range = '24h', ...opts }: { range?: string; mac?: string; limit?: number }) =>
+    api.get<TrafficDnsNames>('/traffic/dns', { params: { ...trafficWindowParams(range), ...opts } }),
+  dnsClients: (range = '24h') => api.get<TrafficDnsClients>('/traffic/dns/clients', { params: trafficWindowParams(range) }),
 };
 
 export interface TrafficDnsNames {

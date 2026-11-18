@@ -68,6 +68,22 @@ application's traffic, busiest first, up to 50 (from [@azizfayziev](https://gith
 #366). Selecting a client opens its page. The chart's folded **Other** slice is several
 applications together, so it doesn't open a list; the applications in it do, from the list.
 
+### Zooming in on a time
+
+To look into a spike, drag across it on the **Network Traffic** or **Inbound Packets** chart
+(from [@ronchan44](https://github.com/ronchan44)'s #463). The whole page then covers just that
+window: the totals, both charts, Top Talkers, Traffic by Application and the clients behind an
+application, Top Destinations and the names looked up. A bar at the top shows the window, and
+**Back to** returns to the range you were on. Picking another range does the same.
+
+The charts redraw in finer steps for the window, down to a minute, so you can drag again to
+narrow it further. A window can be from a minute to 31 days long. A zoomed view doesn't
+refresh, since a window in the past doesn't change.
+
+Top Destinations and the names looked up are kept by the hour, so they cover every whole hour
+the window touches: a window from 20:15 to 20:45 shows the 20:00 to 21:00 hour. The bar says
+which hours when the window doesn't start and end on the hour.
+
 ### Where traffic goes
 
 Each application's card has a second tab, **Where it goes**: the remote addresses that carried

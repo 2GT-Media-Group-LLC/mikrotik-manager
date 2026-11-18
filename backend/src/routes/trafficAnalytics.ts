@@ -11,6 +11,7 @@ import { reverseNames } from '../utils/reverseNames';
 import { namesForAddresses } from '../utils/addressNames';
 import { OTHER_REMOTE } from '../services/netflow/DestinationAggregator';
 import net from 'net';
+import { timeWindow, BAD_WINDOW, type TimeWindow } from '../utils/trafficWindow';
 
 const router = Router();
 router.use(requireAuth);
@@ -40,21 +41,6 @@ async function siteFilter(req: Request): Promise<string> {
   // contains() is evaluated in Flux after reading every point in the range, and
   // also stops the filters after it from being pushed down.
   return `|> filter(fn: (r) => ${sites.map((id) => `r.site_id == "${id}"`).join(' or ')})`;
-}
-
-function rangeToFlux(range: string): string {
-  const allowed = ['1h', '2h', '3h', '6h', '12h', '24h', '7d', '30d'];
-  return allowed.includes(range) ? range : '24h';
-}
-
-// Aggregation window sized to the range so charts stay readable (points are
-// written every 60s by the collector flush).
-function windowForRange(range: string): string {
-  const map: Record<string, string> = {
-    '1h': '1m', '2h': '2m', '3h': '5m', '6h': '5m', '12h': '10m',
-    '24h': '15m', '7d': '1h', '30d': '6h',
-  };
-  return map[range] || '15m';
 }
 
 // MACs are used inside Flux queries — restrict to safe charsets (real MACs
@@ -87,19 +73,19 @@ router.get('/status', async (req, res) => {
 
 // GET /api/traffic/timeseries?range=24h — fleet-wide upload/download over time
 router.get('/timeseries', async (req, res) => {
-  const range = rangeToFlux(String(req.query.range || '24h'));
-  const every = windowForRange(range);
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
   const queryApi = getQueryApi();
   const site = await siteFilter(req);
 
   const fluxQuery = `
     from(bucket: "${bucket}")
-      |> range(start: -${range})
+      |> range(${w.flux})
       |> filter(fn: (r) => r._measurement == "client_traffic")
       ${site}
       |> filter(fn: (r) => r._field == "bytes" or r._field == "packets")
       |> group(columns: ["direction", "_field"])
-      |> aggregateWindow(every: ${every}, fn: sum, createEmpty: false)
+      |> aggregateWindow(every: ${w.every}, fn: sum, createEmpty: false)
   `;
 
   type Point = { time: string; upload: number; download: number; uploadPackets: number; downloadPackets: number };
@@ -154,14 +140,15 @@ async function withClientNames<T extends { mac: string }>(req: Request, rows: T[
 
 // GET /api/traffic/top-clients?range=24h&limit=10 — top talkers with client names
 router.get('/top-clients', async (req, res) => {
-  const range = rangeToFlux(String(req.query.range || '24h'));
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
   const limit = Math.min(parseInt(String(req.query.limit || '10'), 10) || 10, 50);
   const queryApi = getQueryApi();
   const site = await siteFilter(req);
 
   const fluxQuery = `
     from(bucket: "${bucket}")
-      |> range(start: -${range})
+      |> range(${w.flux})
       |> filter(fn: (r) => r._measurement == "client_traffic")
       ${site}
       |> filter(fn: (r) => r._field == "bytes")
@@ -199,7 +186,8 @@ router.get('/top-clients', async (req, res) => {
 // GET /api/traffic/apps?range=24h&mac=xx:xx:.. — app-category byte totals
 // (fleet-wide, or for a single client when mac is given)
 router.get('/apps', async (req, res) => {
-  const range = rangeToFlux(String(req.query.range || '24h'));
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
   const queryApi = getQueryApi();
   const site = await siteFilter(req);
 
@@ -212,7 +200,7 @@ router.get('/apps', async (req, res) => {
 
   const fluxQuery = `
     from(bucket: "${bucket}")
-      |> range(start: -${range})
+      |> range(${w.flux})
       |> filter(fn: (r) => r._measurement == "client_traffic")
       ${site}
       |> filter(fn: (r) => r._field == "bytes" or r._field == "packets")
@@ -250,13 +238,14 @@ router.get('/apps/:app/clients', async (req, res) => {
   const app = String(req.params.app);
   // App names come from the classifier (HTTP, QUIC, DNS, Other…): printable and short.
   if (!/^[\x20-\x7e]{1,64}$/.test(app)) return res.status(400).json({ error: 'Invalid application' });
-  const range = rangeToFlux(String(req.query.range || '24h'));
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
   const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
   const site = await siteFilter(req);
 
   const fluxQuery = `
     from(bucket: "${bucket}")
-      |> range(start: -${range})
+      |> range(${w.flux})
       |> filter(fn: (r) => r._measurement == "client_traffic")
       ${site}
       |> filter(fn: (r) => r._field == "bytes" and r.app == ${fluxString(app)})
@@ -290,20 +279,20 @@ router.get('/apps/:app/clients', async (req, res) => {
 router.get('/client/:mac', async (req, res) => {
   const mac = sanitizeMac(req.params.mac);
   if (!mac) return res.status(400).json({ error: 'Invalid mac' });
-  const range = rangeToFlux(String(req.query.range || '24h'));
-  const every = windowForRange(range);
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
   const queryApi = getQueryApi();
   const site = await siteFilter(req);
 
   const seriesFlux = `
     from(bucket: "${bucket}")
-      |> range(start: -${range})
+      |> range(${w.flux})
       |> filter(fn: (r) => r._measurement == "client_traffic")
       ${site}
       |> filter(fn: (r) => r._field == "bytes")
       |> filter(fn: (r) => r.mac == ${fluxString(String(mac))})
       |> group(columns: ["direction"])
-      |> aggregateWindow(every: ${every}, fn: sum, createEmpty: false)
+      |> aggregateWindow(every: ${w.every}, fn: sum, createEmpty: false)
   `;
 
   const pivoted: Record<string, { time: string; upload: number; download: number }> = {};
@@ -323,7 +312,7 @@ router.get('/client/:mac', async (req, res) => {
 
   const appsFlux = `
     from(bucket: "${bucket}")
-      |> range(start: -${range})
+      |> range(${w.flux})
       |> filter(fn: (r) => r._measurement == "client_traffic")
       ${site}
       |> filter(fn: (r) => r._field == "bytes" or r._field == "packets")
@@ -360,19 +349,23 @@ router.get('/client/:mac', async (req, res) => {
 
 // ─── Destinations (#366 step 2) ──────────────────────────────────────────────
 
-const RANGE_HOURS: Record<string, number> = { '1h': 1, '2h': 2, '3h': 3, '6h': 6, '12h': 12, '24h': 24, '7d': 168, '30d': 720 };
-
 /**
- * The WHERE clause and parameters for destinations in view: the range (whole
- * hours, so 1h covers the current and previous hour), the site(s) in view, and
- * optionally one application, client or remote address. Traffic with no site
- * (site_id 0) is only in a fleet-wide view.
+ * The WHERE clause and parameters for destinations in view: the window (whole
+ * hours, so 1h covers the current and previous hour, and a window picked on
+ * the chart covers every hour it touches), the site(s) in view, and optionally
+ * one application, client or remote address. Traffic with no site (site_id 0)
+ * is only in a fleet-wide view.
  */
-function destinationScope(req: Request, extra: { app?: string; mac?: string; remote?: string }): { where: string; params: unknown[] } {
-  const range = rangeToFlux(String(req.query.range || '24h'));
-  const params: unknown[] = [RANGE_HOURS[range] ?? 24];
-  const where = [`hour >= date_trunc('hour', NOW()) - make_interval(hours => $1::int)`];
+function destinationScope(req: Request, w: TimeWindow, extra: { app?: string; mac?: string; remote?: string }): { where: string; params: unknown[] } {
+  const params: unknown[] = [];
+  const where: string[] = [];
   const add = (sql: (n: number) => string, value: unknown) => { params.push(value); where.push(sql(params.length)); };
+  if (w.stop) {
+    add((n) => `hour >= date_trunc('hour', $${n}::timestamptz)`, w.start);
+    add((n) => `hour < $${n}::timestamptz`, w.stop);
+  } else {
+    add((n) => `hour >= date_trunc('hour', NOW()) - make_interval(hours => $${n}::int)`, w.hours);
+  }
   const sites = siteList(activeSite(req));
   if (sites) add((n) => `site_id = ANY($${n}::int[])`, sites);
   if (extra.app) add((n) => `app = $${n}`, extra.app);
@@ -394,11 +387,9 @@ function describeRemote(remote: string) {
 
 // ─── DNS names from AdGuard Home (#366 step 3) ───────────────────────────────
 
-/** The start of the range in view, for the DNS tables. */
-function rangeStart(req: Request): Date {
-  const range = rangeToFlux(String(req.query.range || '24h'));
-  const hours = RANGE_HOURS[range] ?? 24;
-  const d = new Date(Date.now() - hours * 3_600_000);
+/** The first hour in view, for the hourly DNS tables. */
+function hourStart(w: TimeWindow): Date {
+  const d = new Date(w.start);
   d.setUTCMinutes(0, 0, 0);
   return d;
 }
@@ -418,8 +409,8 @@ async function clientIps(req: Request, mac: string): Promise<string[]> {
  * The names behind each address: what clients asked for (AdGuard Home), then
  * the routers' DNS caches. With `ips`, AdGuard answers to those clients only.
  */
-async function domainsFor(req: Request, remotes: string[], ips?: string[]): Promise<Map<string, string[]>> {
-  return namesForAddresses(remotes, { sites: siteList(activeSite(req)), since: rangeStart(req), clientIps: ips });
+async function domainsFor(req: Request, w: TimeWindow, remotes: string[], ips?: string[]): Promise<Map<string, string[]>> {
+  return namesForAddresses(remotes, { sites: siteList(activeSite(req)), since: hourStart(w), clientIps: ips });
 }
 
 /** Whether an AdGuard Home or Pi-hole source covers any site in view. */
@@ -434,6 +425,8 @@ async function dnsConfigured(req: Request): Promise<boolean> {
 // GET /api/traffic/dns?range=24h&mac=..&limit=50 — the names looked up, with
 // how often each was allowed and blocked, for the site(s) in view or one client.
 router.get('/dns', async (req, res) => {
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
   let ips: string[] | undefined;
   if (req.query.mac !== undefined) {
     const mac = sanitizeMac(String(req.query.mac));
@@ -442,8 +435,9 @@ router.get('/dns', async (req, res) => {
   }
   const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
   const sites = siteList(activeSite(req));
-  const params: unknown[] = [rangeStart(req)];
+  const params: unknown[] = [hourStart(w)];
   let where = 'hour >= $1';
+  if (w.stop) { params.push(w.stop); where += ` AND hour < $${params.length}`; }
   if (sites) { params.push(sites); where += ` AND site_id = ANY($${params.length}::int[])`; }
   if (ips) { params.push(ips); where += ` AND client_ip = ANY($${params.length}::text[])`; }
   try {
@@ -468,9 +462,12 @@ router.get('/dns', async (req, res) => {
 // GET /api/traffic/dns/clients?range=24h — clients by how many lookups they
 // made, with how many were blocked, matched to clients by address.
 router.get('/dns/clients', async (req, res) => {
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
   const sites = siteList(activeSite(req));
-  const params: unknown[] = [rangeStart(req)];
+  const params: unknown[] = [hourStart(w)];
   let where = 'n.hour >= $1';
+  if (w.stop) { params.push(w.stop); where += ` AND n.hour < $${params.length}`; }
   if (sites) { params.push(sites); where += ` AND n.site_id = ANY($${params.length}::int[])`; }
   try {
     const rows = await query<{ client_ip: string; site_id: number; allowed: number; blocked: number; names: number }>(
@@ -520,7 +517,9 @@ router.get('/destinations', async (req, res) => {
     mac = m;
   }
   const limit = Math.min(parseInt(String(req.query.limit || '50'), 10) || 50, 200);
-  const { where, params } = destinationScope(req, { app, mac });
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
+  const { where, params } = destinationScope(req, w, { app, mac });
   try {
     const [rows, totals, first] = await Promise.all([
       query<{ remote: string; upload: string; download: string; clients: number; apps: string[] }>(
@@ -544,13 +543,13 @@ router.get('/destinations', async (req, res) => {
     // retention cutoff, not when collecting began: the range's start or that
     // cutoff, whichever is later, is where rows are expected to begin. An hour's
     // slack covers pruning that isn't on the hour.
-    const expectedFrom = Math.max(rangeStart(req).getTime(), Date.now() - retentionDays * 86_400_000);
+    const expectedFrom = Math.max(hourStart(w).getTime(), Date.now() - retentionDays * 86_400_000);
     const firstHour = first[0]?.first ? new Date(first[0].first) : null;
     const recordedSince = firstHour && firstHour.getTime() > expectedFrom + 3_600_000 ? firstHour.toISOString() : null;
     const remotes = rows.map((r) => r.remote);
     const [names, domains] = await Promise.all([
       reverseNames(remotes),
-      domainsFor(req, remotes, mac ? await clientIps(req, mac) : undefined),
+      domainsFor(req, w, remotes, mac ? await clientIps(req, mac) : undefined),
     ]);
     res.json({
       total_bytes: total,
@@ -582,7 +581,9 @@ router.get('/destinations/:remote/clients', async (req, res) => {
   if (!net.isIP(remote)) return res.status(400).json({ error: 'Invalid address' });
   const app = req.query.app === undefined ? undefined : String(req.query.app);
   if (app !== undefined && !validApp(app)) return res.status(400).json({ error: 'Invalid application' });
-  const { where, params } = destinationScope(req, { app, remote });
+  const w = timeWindow(req.query);
+  if (!w) return res.status(400).json({ error: BAD_WINDOW });
+  const { where, params } = destinationScope(req, w, { app, remote });
   try {
     const rows = await query<{ mac: string; upload: string; download: string; apps: string[] }>(
       `SELECT mac, SUM(upload_bytes)::text AS upload, SUM(download_bytes)::text AS download, ARRAY_AGG(DISTINCT app) AS apps
@@ -592,7 +593,7 @@ router.get('/destinations/:remote/clients', async (req, res) => {
       mac: r.mac, upload_bytes: Number(r.upload), download_bytes: Number(r.download),
       total_bytes: Number(r.upload) + Number(r.download), apps: r.apps,
     }));
-    const [names, domains] = await Promise.all([reverseNames([remote]), domainsFor(req, [remote])]);
+    const [names, domains] = await Promise.all([reverseNames([remote]), domainsFor(req, w, [remote])]);
     res.json({
       remote, ...describeRemote(remote), name: names.get(remote) ?? null, domains: domains.get(remote) ?? [],
       clients: await withClientNames(req, clients),
