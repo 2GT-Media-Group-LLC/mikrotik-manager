@@ -3593,6 +3593,10 @@ ID, name, parent, addresses (IPv4, and IPv6 other than link-local), MTU, state a
 <p>A VLAN interface tagged with the 802.1ad service tag (0x88a8) rather than 802.1Q is marked
 <strong>service tag</strong>. Tick <strong>Service tag (802.1ad)</strong> in the form for one on a Q-in-Q bridge (see
 <a href="#q-in-q-and-mvrp">Q-in-Q and MVRP</a>) (#449).</p>
+<p>A VLAN interface with <strong>MVRP</strong> on is marked <strong>MVRP</strong>: it declares its VLAN to MVRP neighbours on
+its parent, so switches running MVRP add the VLAN to their links toward this device. Tick
+<strong>MVRP</strong> in the form to turn it on. It needs RouterOS 7.15 or later, and the form only offers it
+on a device that has it.</p>
 <p>The card is read live from the device each time the tab opens and every minute while it's open.</p>
 <p>With write access you can add, edit and remove VLAN interfaces there. <strong>Add VLAN interface</strong>
 takes a VLAN ID, the parent it's tagged on, a name (<code>vlan</code> and the ID if left blank), an MTU, a
@@ -3664,6 +3668,8 @@ auto-revert required; turning that bridge off is predicted as a lockout and asks
   neighbour and never declares it, so MVRP can't extend the VLAN over that link. It needs
   RouterOS 7.15 or later. The VLANs table shows the forbidden ports in their own column when any
   VLAN has some.</li>
+<li>A <strong>VLAN interface</strong> can declare its VLAN over MVRP too: tick <strong>MVRP</strong> on it in the VLAN
+  Interfaces card (see <a href="#vlan-interfaces">VLAN interfaces</a>).</li>
 </ul>
 <p>On the bridge or port the manager connects through, these run with auto-revert required.</p>
 <p>Editing a VLAN on the <strong>VLANs</strong> tab keeps the parts of the entry the form doesn't show: its

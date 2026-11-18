@@ -1693,6 +1693,18 @@ clients behind it over the same range: each one's download, upload and share of 
 application's traffic, busiest first, up to 50 (from <a href="https://github.com/azizfayziev">@azizfayziev</a>'s</p>
 <h1 id="366-selecting-a-client-opens-its-page-the-charts-folded-other-slice-is-several">366). Selecting a client opens its page. The chart's folded <strong>Other</strong> slice is several<a class="headerlink" href="#366-selecting-a-client-opens-its-page-the-charts-folded-other-slice-is-several" title="Permanent link">&para;</a></h1>
 <p>applications together, so it doesn't open a list; the applications in it do, from the list.</p>
+<h3 id="zooming-in-on-a-time">Zooming in on a time<a class="headerlink" href="#zooming-in-on-a-time" title="Permanent link">&para;</a></h3>
+<p>To look into a spike, drag across it on the <strong>Network Traffic</strong> or <strong>Inbound Packets</strong> chart
+(from <a href="https://github.com/ronchan44">@ronchan44</a>'s #463). The whole page then covers just that
+window: the totals, both charts, Top Talkers, Traffic by Application and the clients behind an
+application, Top Destinations and the names looked up. A bar at the top shows the window, and
+<strong>Back to</strong> returns to the range you were on. Picking another range does the same.</p>
+<p>The charts redraw in finer steps for the window, down to a minute, so you can drag again to
+narrow it further. A window can be from a minute to 31 days long. A zoomed view doesn't
+refresh, since a window in the past doesn't change.</p>
+<p>Top Destinations and the names looked up are kept by the hour, so they cover every whole hour
+the window touches: a window from 20:15 to 20:45 shows the 20:00 to 21:00 hour. The bar says
+which hours when the window doesn't start and end on the hour.</p>
 <h3 id="where-traffic-goes">Where traffic goes<a class="headerlink" href="#where-traffic-goes" title="Permanent link">&para;</a></h3>
 <p>Each application's card has a second tab, <strong>Where it goes</strong>: the remote addresses that carried
 it, busiest first (#366). Under Top Talkers, <strong>Top Destinations</strong> does the same for all of
