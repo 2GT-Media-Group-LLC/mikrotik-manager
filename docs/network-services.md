@@ -10,7 +10,8 @@ again. On a large fleet the page fills in over a few seconds rather than contact
 at once (see [Scaling](scaling.md#pages-that-show-something-from-every-device)).
 
 DHCP, DNS and NTP show one device at a time, chosen at the top of the page. When the selected
-site or group has only one device, it is chosen for you (from [@ronchan44](https://github.com/ronchan44)'s #464).
+site or group has only one device, it is chosen for you (from [@ronchan44](https://github.com/ronchan44)'s #464), and
+so is the router for **PPP Users and Sessions** when there's only one.
 
 Most of it writes to the device (Routing, Tunnels & PPP and MLAG only read). Changes go through [Change Guard](change-guard.md) where
 they could affect reachability.

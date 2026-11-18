@@ -431,7 +431,8 @@ manager in is caught before it is applied.
 
 The **Config** tab's **IP Addresses** card lists the device's IPv4 addresses. Add one with the
 form below the list, remove one with the bin, or click the pencil to edit it in place: the
-address and prefix, the interface, the comment, and whether it's enabled (#285). Only the
+address and prefix, the interface, the comment, and whether it's enabled (#285). A bridge's
+addresses can also be edited from its row on the **Bridges** tab (see [Bridges](#bridges)). Only the
 fields you change are sent. Dynamic addresses (from a DHCP client, say) can't be edited.
 
 Every change runs through [Change Guard](change-guard.md). Changing, disabling or moving the
@@ -903,6 +904,12 @@ has a small chip icon; hover a port for its PVID and spanning tree role.
   port whose hardware can't go that high, such as a CRS510's 2028-byte management port, has to
   leave the bridge instead.
 - **turn on / turn off** next to VLAN filtering works as it does from the faceplate.
+- **Edit** (or **Add one**) next to the addresses opens the bridge's addresses under it: add
+  one, change one in place, or remove one, the same as **Config**, **IP Addresses** (see
+  [IP addresses](#ip-addresses)) but only for this bridge (from
+  [@ronchan44](https://github.com/ronchan44)'s #466). A DHCP server on the bridge isn't changed
+  with it: after moving a bridge to a new subnet, update its DHCP network, gateway and pool on
+  **Network Services**, **DHCP**.
 - The bin deletes a bridge with no ports, addresses or VLAN entries.
 
 Everything runs through [Change Guard](change-guard.md). Renaming the bridge the manager

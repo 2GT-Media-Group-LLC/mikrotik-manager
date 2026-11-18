@@ -57,6 +57,8 @@ export default function NetworkServicesTunnelsPage() {
       .sort((a, b) => Number(withPpp.has(b.id)) - Number(withPpp.has(a.id)) || a.name.localeCompare(b.name))
       .map((d) => ({ id: d.id, name: d.name }));
   }, [rows, allDevices]);
+  // A site or group with one router: there's nothing to choose, so it's chosen (#464).
+  const pppChosen = pppDevices.length === 1 ? pppDevices[0].id : pppDevice;
 
   const shown = useMemo(() => rows.filter((t) => {
     if (kind && t.kind !== kind) return false;
@@ -103,7 +105,7 @@ export default function NetworkServicesTunnelsPage() {
         ))}
       </div>
 
-      <div id="ppp-card"><PppCard devices={pppDevices} deviceId={pppDevice} onDevice={setPppDevice} /></div>
+      <div id="ppp-card"><PppCard devices={pppDevices} deviceId={pppChosen} onDevice={setPppDevice} /></div>
 
       <FilterBar>
         <FilterSearch value={search} onChange={setSearch} placeholder="Filter by device, name, address, user, MAC…" />

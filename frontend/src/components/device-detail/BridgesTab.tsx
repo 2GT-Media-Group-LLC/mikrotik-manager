@@ -6,6 +6,7 @@ import { devicesApi, type BridgeView, type BridgePortView, type BridgePortUpdate
 import { portPriorityValue, portPriorityError, pathCostError, bpduGuardWarning } from '../../utils/portStp';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { bridgeMtuCeiling, bridgeMtuError } from '../../utils/mtu';
+import IpAddressesCard from './IpAddressesCard';
 import { LockoutVerdictDialog, lockoutVerdictOf, guardOutcomeMessage, type LockoutVerdict, type GuardResult } from '../ChangeGuardDialog';
 
 const MODES = [
@@ -91,6 +92,8 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
   const [adding, setAdding] = useState<{ name: string; protocol_mode: string; vlan_filtering: boolean; comment: string } | null>(null);
   const [editing, setEditing] = useState<{ bridge: BridgeView; form: EditForm } | null>(null);
   const [portEdit, setPortEdit] = useState<{ bridgeId: string; port: BridgePortView; form: PortForm } | null>(null);
+  // The bridge whose addresses are open for editing (#466).
+  const [addrFor, setAddrFor] = useState<string | null>(null);
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['bridges', deviceId] });
@@ -389,9 +392,21 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
               <div>
                 <div className="text-xs text-gray-500 dark:text-slate-400 mb-1">Addresses</div>
                 {b.addresses.length ? <span className="font-mono text-xs text-gray-700 dark:text-slate-300">{b.addresses.join(', ')}</span> : <span className="text-gray-400">none</span>}
+                {canWrite && !b.dynamic && (
+                  <button type="button" className="ml-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    onClick={() => setAddrFor(addrFor === b.name ? null : b.name)}>
+                    {addrFor === b.name ? 'Close' : b.addresses.length ? 'Edit' : 'Add one'}
+                  </button>
+                )}
                 {b.mtu && <div className="text-xs text-gray-400 mt-1">MTU {b.mtu}{b.macAddress ? ` · ${b.macAddress}` : ''}</div>}
               </div>
             </div>
+
+            {addrFor === b.name && (
+              <div className="mt-3">
+                <IpAddressesCard deviceId={deviceId} deviceName={deviceName || 'confirm'} iface={b.name} onChanged={refresh} />
+              </div>
+            )}
 
             {portEdit?.bridgeId === b.id && (() => {
               const pe = portEdit;
