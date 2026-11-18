@@ -29,6 +29,11 @@ interface Props<T extends PickerDevice> {
   id?: string;
   'aria-label'?: string;
   title?: string;
+  /**
+   * Choose the device when the list holds only one (#464), for a page that
+   * shows nothing until a device is picked. Not for filters ("All devices").
+   */
+  pickOnly?: boolean;
 }
 
 /**
@@ -38,7 +43,7 @@ interface Props<T extends PickerDevice> {
  */
 export default function DevicePicker<T extends PickerDevice>({
   devices, value, onChange, placeholder = 'Choose a device', emptyLabel, describe, unavailable,
-  className, disabled, variant = 'input', id, 'aria-label': ariaLabel, title,
+  className, disabled, variant = 'input', id, 'aria-label': ariaLabel, title, pickOnly,
 }: Props<T>) {
   const compact = variant === 'filter';
   const [open, setOpen] = useState(false);
@@ -73,6 +78,14 @@ export default function DevicePicker<T extends PickerDevice>({
   );
 
   const selected = value == null ? null : rows.find((d) => d.id === value) ?? null;
+
+  // A site or group with one device: there's nothing to choose, so choose it.
+  // Also replaces a choice from another site that this list doesn't have.
+  const only = pickOnly && !disabled && devices.length === 1 && !unavailable?.(devices[0]) ? devices[0] : null;
+  useEffect(() => {
+    if (only && value !== only.id) onChange(only.id, only);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [only?.id, value]);
 
   const place = () => {
     const r = buttonRef.current?.getBoundingClientRect();

@@ -9,6 +9,9 @@ refreshing anything older than ten minutes in the background; **Refresh** reads 
 again. On a large fleet the page fills in over a few seconds rather than contacting every device
 at once (see [Scaling](scaling.md#pages-that-show-something-from-every-device)).
 
+DHCP, DNS and NTP show one device at a time, chosen at the top of the page. When the selected
+site or group has only one device, it is chosen for you (from [@ronchan44](https://github.com/ronchan44)'s #464).
+
 Most of it writes to the device (Routing, Tunnels & PPP and MLAG only read). Changes go through [Change Guard](change-guard.md) where
 they could affect reachability.
 

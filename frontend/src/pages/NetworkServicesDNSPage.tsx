@@ -284,7 +284,7 @@ export default function NetworkServicesDNSPage() {
       <div className="card p-4">
         <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-2">Select Device</label>
         <DevicePicker
-          className="max-w-xs" devices={devices} aria-label="Device"
+          className="max-w-xs" devices={devices} aria-label="Device" pickOnly
           value={selectedDeviceId === '' ? null : selectedDeviceId}
           onChange={(id) => setSelectedDeviceId(id ?? '')}
         />
