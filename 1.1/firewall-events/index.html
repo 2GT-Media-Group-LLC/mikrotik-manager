@@ -1849,8 +1849,10 @@ matches ports, not names.</p>
 </ul>
 <p>Set both under <strong>Settings</strong>, <strong>Firewall Logs</strong>, or with <strong>Port names &amp; colours</strong> on the page.
 Each colour can be one of nine, or <strong>None</strong>. <strong>Port Names</strong> adds a port the list doesn't know, or
-names one it does your way, for TCP, UDP or both. Show the built-in list to see what it already
-names; a port you've renamed is struck out there. Everyone sees the same names and colours;
+names one it does your way, for TCP, UDP or both. A port can also be a range, such as
+<code>5000-5100</code>, which names every port in it (from <a href="https://github.com/ronchan44">@ronchan44</a>'s #415). A single port listed as
+well keeps its own name, a narrower range wins over a wider one, and two ranges can't overlap.
+Show the built-in list to see what it already names; a port you've renamed is struck out there. Everyone sees the same names and colours;
 only admins change them.</p>
 <h2 id="where-the-events-come-from">Where the events come from<a class="headerlink" href="#where-the-events-come-from" title="Permanent link">&para;</a></h2>
 <p>Firewall logs are collected from the normal RouterOS log stream. A firewall

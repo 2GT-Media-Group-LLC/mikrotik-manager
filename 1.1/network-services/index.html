@@ -1991,6 +1991,8 @@ search it, sort by any service, and click a row to open the device.</p>
 refreshing anything older than ten minutes in the background; <strong>Refresh</strong> reads every device
 again. On a large fleet the page fills in over a few seconds rather than contacting every device
 at once (see <a href="../scaling/#pages-that-show-something-from-every-device">Scaling</a>).</p>
+<p>DHCP, DNS and NTP show one device at a time, chosen at the top of the page. When the selected
+site or group has only one device, it is chosen for you (from <a href="https://github.com/ronchan44">@ronchan44</a>'s #464).</p>
 <p>Most of it writes to the device (Routing, Tunnels &amp; PPP and MLAG only read). Changes go through <a href="../change-guard/">Change Guard</a> where
 they could affect reachability.</p>
 <h2 id="dhcp">DHCP<a class="headerlink" href="#dhcp" title="Permanent link">&para;</a></h2>
