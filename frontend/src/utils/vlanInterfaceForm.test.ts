@@ -37,6 +37,13 @@ describe('vlanInterfaceChanges', () => {
   it('does not clear the name or MTU when left blank', () => {
     expect(vlanInterfaceChanges(v, { ...f, name: ' ', mtu: '' })).toEqual({});
   });
+  it('sends MVRP only when it changed, and only where the device has it (#449)', () => {
+    const on = { ...v, mvrp: false };
+    expect(vlanInterfaceChanges(on, { ...f, mvrp: false })).toEqual({});
+    expect(vlanInterfaceChanges(on, { ...f, mvrp: true })).toEqual({ mvrp: true });
+    expect(vlanInterfaceChanges({ ...v, mvrp: true }, { ...f, mvrp: false })).toEqual({ mvrp: false });
+    expect(vlanInterfaceChanges({ ...v, mvrp: null }, { ...f, mvrp: true })).toEqual({});
+  });
 });
 
 describe('vlanNameError', () => {

@@ -60,6 +60,11 @@ export function vlanInterfaceEntry(body: Record<string, unknown>, creating: bool
     if (typeof body.use_service_tag !== 'boolean') return { error: 'use_service_tag must be true or false' };
     fields['use-service-tag'] = body.use_service_tag ? 'yes' : 'no';
   }
+  // MVRP (#449, RouterOS 7.15+): declare the VLAN to MVRP neighbours on the parent.
+  if (body.mvrp !== undefined) {
+    if (typeof body.mvrp !== 'boolean') return { error: 'mvrp must be true or false' };
+    fields.mvrp = body.mvrp ? 'yes' : 'no';
+  }
 
   let address: string | null = null;
   if (body.address !== undefined && body.address !== null && String(body.address).trim() !== '') {

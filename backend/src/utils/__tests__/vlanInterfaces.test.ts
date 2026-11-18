@@ -47,6 +47,15 @@ describe('vlanInterfacesView', () => {
     expect(byName['vlan9-gone'].parentKind).toBe('unknown');
   });
 
+  it('reads MVRP, and leaves it null where the device has no such setting (#449)', () => {
+    const rows = vlanInterfacesView([
+      { '.id': '*1', name: 'cctv', 'vlan-id': '11', interface: 'bridge', mvrp: 'true' },
+      { '.id': '*2', name: 'mgmt', 'vlan-id': '99', interface: 'bridge', mvrp: 'false' },
+      { '.id': '*3', name: 'old', 'vlan-id': '5', interface: 'ether1' },
+    ], bridges, interfaces, [], []);
+    expect(Object.fromEntries(rows.map((r) => [r.name, r.mvrp]))).toEqual({ cctv: true, mgmt: false, old: null });
+  });
+
   it('is empty for a device without VLAN interfaces', () => {
     expect(vlanInterfacesView([], bridges, interfaces, [], [])).toEqual([]);
   });

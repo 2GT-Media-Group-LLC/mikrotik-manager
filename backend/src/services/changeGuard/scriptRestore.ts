@@ -99,7 +99,7 @@ const MENUS = {
   // (a bridge port) and what sits on it (addresses) (#309).
   vlanInterface: {
     path: '/interface/vlan', mode: 'keyed', addKeys: ['name', 'vlan-id', 'interface'], fallback: true,
-    only: ['name', 'vlan-id', 'interface', 'mtu', 'arp', 'use-service-tag', 'disabled', 'comment'],
+    only: ['name', 'vlan-id', 'interface', 'mtu', 'arp', 'use-service-tag', 'mvrp', 'disabled', 'comment'],
   },
   bridgePort: {
     path: '/interface/bridge/port', mode: 'keyed', hasDynamic: true,

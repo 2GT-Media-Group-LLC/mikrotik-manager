@@ -854,6 +854,11 @@ A VLAN interface tagged with the 802.1ad service tag (0x88a8) rather than 802.1Q
 **service tag**. Tick **Service tag (802.1ad)** in the form for one on a Q-in-Q bridge (see
 [Q-in-Q and MVRP](#q-in-q-and-mvrp)) (#449).
 
+A VLAN interface with **MVRP** on is marked **MVRP**: it declares its VLAN to MVRP neighbours on
+its parent, so switches running MVRP add the VLAN to their links toward this device. Tick
+**MVRP** in the form to turn it on. It needs RouterOS 7.15 or later, and the form only offers it
+on a device that has it.
+
 The card is read live from the device each time the tab opens and every minute while it's open.
 
 With write access you can add, edit and remove VLAN interfaces there. **Add VLAN interface**
@@ -931,6 +936,8 @@ The bridge's **Edit** form and its ports cover 802.1ad Q-in-Q, tag stacking and 
   neighbour and never declares it, so MVRP can't extend the VLAN over that link. It needs
   RouterOS 7.15 or later. The VLANs table shows the forbidden ports in their own column when any
   VLAN has some.
+- A **VLAN interface** can declare its VLAN over MVRP too: tick **MVRP** on it in the VLAN
+  Interfaces card (see [VLAN interfaces](#vlan-interfaces)).
 
 On the bridge or port the manager connects through, these run with auto-revert required.
 

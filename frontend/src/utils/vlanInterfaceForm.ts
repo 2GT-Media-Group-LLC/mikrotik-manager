@@ -11,6 +11,8 @@ export interface VlanInterfaceForm {
   enabled: boolean;
   /** 802.1ad service tag (0x88a8), for a Q-in-Q bridge (#449). Optional: older forms leave it out. */
   serviceTag?: boolean;
+  /** MVRP declares the VLAN on the parent (#449). Left out where the device has no such setting. */
+  mvrp?: boolean;
   /** Only when adding. */
   address: string;
 }
@@ -83,5 +85,6 @@ export function vlanInterfaceChanges(v: VlanInterface, f: VlanInterfaceForm): Pa
   if (f.comment.trim() !== v.comment) out.comment = f.comment.trim();
   if (f.enabled === v.disabled) out.disabled = !f.enabled;
   if (f.serviceTag !== undefined && f.serviceTag !== !!v.useServiceTag) out.use_service_tag = f.serviceTag;
+  if (f.mvrp !== undefined && v.mvrp != null && f.mvrp !== v.mvrp) out.mvrp = f.mvrp;
   return out;
 }

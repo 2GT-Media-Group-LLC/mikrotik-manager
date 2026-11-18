@@ -27,6 +27,11 @@ export interface VlanInterface {
   comment: string;
   /** Tags with the 802.1ad service tag (0x88a8) rather than 802.1Q (#449). */
   useServiceTag: boolean;
+  /**
+   * Declares the VLAN to MVRP neighbours on its parent (#449). Null when the
+   * device doesn't have the setting (before RouterOS 7.15), which leaves it out.
+   */
+  mvrp: boolean | null;
 }
 
 /** fe80::/10, which every IPv6 interface has, says nothing about the VLAN. */
@@ -73,6 +78,7 @@ export function vlanInterfacesView(
         addresses: addressesOn(v['name'] || ''),
         comment: v['comment'] || '',
         useServiceTag: isTrue(v['use-service-tag']),
+        mvrp: v['mvrp'] === undefined ? null : isTrue(v['mvrp']),
       };
     })
     .sort((a, b) => (a.vlanId ?? 0) - (b.vlanId ?? 0) || a.name.localeCompare(b.name));

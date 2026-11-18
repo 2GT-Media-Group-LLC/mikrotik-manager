@@ -3537,6 +3537,8 @@ export interface VlanInterfaceInput {
   disabled?: boolean;
   /** 802.1ad service tag (0x88a8) rather than 802.1Q (#449). */
   use_service_tag?: boolean;
+  /** Declare the VLAN to MVRP neighbours on the parent (#449, RouterOS 7.15+). */
+  mvrp?: boolean;
 }
 
 export interface VlanInterface {
@@ -3551,6 +3553,8 @@ export interface VlanInterface {
   addresses: string[];
   comment: string;
   useServiceTag?: boolean;
+  /** MVRP declares this VLAN on its parent (#449); null when the device has no such setting. */
+  mvrp?: boolean | null;
 }
 
 /** An /ipv6/route row (#312). */
