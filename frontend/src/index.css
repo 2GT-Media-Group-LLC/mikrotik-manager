@@ -302,3 +302,13 @@
     fill-opacity: 0.92;
   }
 }
+
+/* Chart text: tick values and labels (axis titles, reference lines) in one
+   muted ink that reads on light and dark. Recharts writes its own grey (#666,
+   #808080) as an SVG attribute, which was too faint on the dark theme
+   (Discussion #85); a CSS fill outranks the attribute, so every chart gets
+   this without saying so. */
+.recharts-cartesian-axis-tick-value,
+.recharts-label {
+  fill: var(--ink-3);
+}

@@ -9,6 +9,7 @@ import {
   ResponsiveContainer, Legend,
 } from 'recharts';
 import clsx from 'clsx';
+import { chartTooltip } from '../common/chartTooltip';
 
 interface HealthMetric {
   name: string;
@@ -288,13 +289,8 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
             <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
             <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10 }} />
             <Tooltip
+              {...chartTooltip}
               formatter={(v) => `${v}%`}
-              contentStyle={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                fontSize: '12px',
-              }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="cpu" stroke="#f59e0b" name="CPU Load" dot={false} strokeWidth={2} />

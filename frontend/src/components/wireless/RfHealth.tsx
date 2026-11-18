@@ -13,6 +13,7 @@ import {
   RSSI_ZONES, rssiColor, RETRY_BUCKETS, retryBucketIndex, retryColor,
 } from '../../utils/wifiChannels';
 import { barGeometry } from '../../utils/spectrumGeometry';
+import { textOn } from '../../utils/textOn';
 
 const ALL_BANDS: RfBand[] = ['2.4', '5', '6'];
 
@@ -263,8 +264,8 @@ export function RssiDensity({ deviceId }: { deviceId?: number }) {
                     '',
                     `Click to list ${zone.label.toLowerCase()}-signal clients`,
                   ].join('\n')}
-                  className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center text-[10px] font-semibold text-white shadow ring-2 ring-white dark:ring-slate-800 hover:ring-blue-400 transition-shadow cursor-pointer"
-                  style={{ left: `${pos(bin)}%`, width: size, height: size, backgroundColor: rssiColor(bin) }}>
+                  className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center text-[10px] font-semibold shadow ring-2 ring-white dark:ring-slate-800 hover:ring-blue-400 transition-shadow cursor-pointer"
+                  style={{ left: `${pos(bin)}%`, width: size, height: size, backgroundColor: rssiColor(bin), color: textOn(rssiColor(bin)) }}>
                   {rows.length > 1 ? rows.length : ''}
                 </button>
               );
@@ -323,15 +324,19 @@ export function TxRetries({ deviceId }: { deviceId?: number }) {
       ) : (
         <>
           <div className="flex gap-1">
-            {ordered.map(b => (
-              <div key={b.label} className="flex-1 text-center">
-                <div className="h-9 rounded-md flex items-center justify-center text-sm font-bold text-white"
-                  style={{ backgroundColor: b.count > 0 ? retryColor((b.min + Math.min(b.max, 40)) / 2) : 'var(--color-border, #e5e7eb)' }}>
-                  <span className={clsx(b.count === 0 && 'text-gray-400 dark:text-slate-600')}>{b.count || ''}</span>
+            {ordered.map(b => {
+              const bg = retryColor((b.min + Math.min(b.max, 40)) / 2);
+              return (
+                <div key={b.label} className="flex-1 text-center">
+                  {/* Dark or white text, whichever reads on the tile's colour; an empty tile is the surface. */}
+                  <div className="h-9 rounded-md flex items-center justify-center text-sm font-bold"
+                    style={b.count > 0 ? { backgroundColor: bg, color: textOn(bg) } : { backgroundColor: 'var(--surface-3)' }}>
+                    {b.count || ''}
+                  </div>
+                  <div className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">{b.label}</div>
                 </div>
-                <div className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">{b.label}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-3">
             Radios bucketed by transmit-retry rate over the last 6h ({inBand.length} on {BAND_LABEL[band]}). Lower is better.

@@ -7,6 +7,25 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.22
+
+Released on Wednesday 18 November 2026.
+
+- **Chart text you couldn't read.** A client's Signal Strength chart drew its Excellent, Good
+  and Fair names in green and amber over bars of the same colour; they now sit beside the chart.
+  Thanks to Stanley ([Discussion #85](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85)).
+  Going through every chart in light and dark mode found more, also fixed:
+    - Axis numbers and titles were a faint grey on the dark theme. They now use the theme's
+      muted text colour everywhere.
+    - Tooltips on the client page, Hardware, a port's packets and Radios were always dark, or
+      had no background. They follow the theme now.
+    - A client's traffic tooltips had lost the words Download and Upload.
+    - RF Health on the Wireless page put white numbers on bright green, lime and amber. They're
+      dark where that reads better, and empty retry tiles no longer show light grey in dark mode.
+    - The roaming timeline wrote signal values in those same bright colours; the colour is a dot
+      beside the value now.
+    - The Dashboard's Connected Clients times fell back to a serif font.
+
 ## 1.0.21
 
 Released on Tuesday 17 November 2026.

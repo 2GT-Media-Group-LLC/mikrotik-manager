@@ -25,6 +25,7 @@ import { escapeHtml } from '../utils/escapeHtml';
 import DeviceTypePill from '../components/devices/DeviceTypePill';
 import { byAttention, CARD_ROWS } from '../utils/deviceCards';
 import { filterDevices } from '../utils/devicePicker';
+import { chartTooltip } from '../components/common/chartTooltip';
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
@@ -387,23 +388,17 @@ function SummaryView(props: Record<string, any>) {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--line-soft)" vertical={false} />
                 <XAxis
                   dataKey="ts"
-                  tick={{ fontSize: 10, fill: 'var(--ink-4)', fontFamily: 'Geist Mono' }}
+                  tick={{ fontSize: 10, fontFamily: "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace" }}
                   interval={tickEvery}
                   minTickGap={20}
                   tickFormatter={(t) => format(new Date(t as number), chartRange === '7d' ? 'MMM d' : 'HH:mm')}
                 />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--ink-4)' }} allowDecimals={false} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
                 <Tooltip
                   cursor={{ fill: 'var(--surface-3)', opacity: 0.4 }}
                   formatter={(v: number) => [v, 'Clients']}
                   labelFormatter={(t) => format(new Date(t as number), 'MMM d, HH:mm')}
-                  contentStyle={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--line)',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    color: 'var(--ink)',
-                  }}
+                  {...chartTooltip}
                 />
                 <Bar dataKey="value" fill="var(--accent)" radius={[3, 3, 0, 0]} />
               </BarChart>

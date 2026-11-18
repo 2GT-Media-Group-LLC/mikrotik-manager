@@ -24,7 +24,14 @@ const day = (iso: string) =>
 
 function Signal({ dbm }: { dbm: number | null }) {
   if (dbm == null) return <span className="text-gray-400">—</span>;
-  return <span className="mono num-tab" style={{ color: rssiColor(dbm) }}>{dbm} dBm</span>;
+  // The zone colour as a dot: as text, its bright green and amber were too
+  // faint on a light page (Discussion #85).
+  return (
+    <span className="mono num-tab inline-flex items-center gap-1">
+      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: rssiColor(dbm) }} aria-hidden />
+      {dbm} dBm
+    </span>
+  );
 }
 
 function Session({ s }: { s: RoamSession }) {

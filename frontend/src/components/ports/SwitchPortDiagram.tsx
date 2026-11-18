@@ -302,8 +302,8 @@ function PortTrafficGraph({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trafficData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" opacity={0.5} />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--ink-4)' }} interval="preserveStartEnd" />
-              <YAxis tickFormatter={formatBps} tick={{ fontSize: 10, fill: 'var(--ink-4)' }} width={72} />
+              <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+              <YAxis tickFormatter={formatBps} tick={{ fontSize: 10 }} width={72} />
               <Tooltip
                 formatter={(v) => formatBps(v as number)}
                 contentStyle={{
@@ -384,13 +384,8 @@ function PortPacketGraph({
               <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
               <YAxis tickFormatter={formatPps} tick={{ fontSize: 10 }} width={72} />
               <Tooltip
+                {...chartTooltip}
                 formatter={(v) => formatPps(v as number)}
-                contentStyle={{
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                }}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Line type="monotone" dataKey="rx" stroke="#8b5cf6" name="RX packets" dot={false} strokeWidth={2} />
