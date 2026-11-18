@@ -67,6 +67,17 @@ export function contrast(a: string, b: string): number {
   return (x + 0.05) / (y + 0.05);
 }
 
+const TEXT_DARK = '#111827';
+
+/**
+ * Text for a label drawn on a fixed colour (a green signal dot, an amber
+ * histogram tile): white or near-black, whichever reads better. White on the
+ * bright status colours was about 2:1 (Discussion #85).
+ */
+export function textOn(bg: string): string {
+  return contrast(bg, '#ffffff') >= contrast(bg, TEXT_DARK) ? '#ffffff' : TEXT_DARK;
+}
+
 const BLACK: Rgb = [0, 0, 0];
 
 /**

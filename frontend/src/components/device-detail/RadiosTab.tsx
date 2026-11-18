@@ -11,7 +11,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts';
-import { chartTooltip } from '../common/chartTooltip';
+import { chartTooltip, pieTooltip } from '../common/chartTooltip';
 import { wirelessApi, devicesApi } from '../../services/api';
 import { useCanWrite } from '../../hooks/useCanWrite';
 import { invalidateDevice } from '../../utils/invalidateDevice';
@@ -275,7 +275,7 @@ function WirelessCharts({ deviceId, ifaces }: { deviceId: number; ifaces: Wirele
               <XAxis dataKey="time" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
+                {...chartTooltip}
                 formatter={(v) => [Number(v), 'Clients']}
               />
               <Line type="monotone" dataKey="clients" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
@@ -301,7 +301,7 @@ function WirelessCharts({ deviceId, ifaces }: { deviceId: number; ifaces: Wirele
               <XAxis dataKey="time" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} reversed />
               <Tooltip
-                contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: '12px' }}
+                {...chartTooltip}
                 formatter={(v) => [`${Number(v)} dBm`, 'Noise Floor']}
               />
               <Line type="monotone" dataKey="noise_floor" stroke="#f59e0b" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
@@ -571,18 +571,18 @@ function SpectrumAnalyzer({ deviceId, ifaces }: { deviceId: number; ifaces: Wire
                 type="category"
                 tick={{ fontSize: 9 }}
                 interval="preserveStartEnd"
-                label={{ value: 'Frequency (MHz)', position: 'insideBottomRight', offset: -4, style: { fontSize: 10, fill: '#94a3b8' } }}
+                label={{ value: 'Frequency (MHz)', position: 'insideBottomRight', offset: -4, fontSize: 10 }}
               />
               <YAxis
                 tickFormatter={v => String(v + SPECTRAL_BASELINE)}
                 tick={{ fontSize: 9 }}
                 domain={[0, 90]}
-                label={{ value: 'dBm', angle: -90, position: 'insideLeft', style: { fontSize: 10, fill: '#94a3b8' } }}
+                label={{ value: 'dBm', angle: -90, position: 'insideLeft', fontSize: 10 }}
               />
               <Tooltip
                 formatter={(value) => [`${Number(value) + SPECTRAL_BASELINE} dBm`, 'Power']}
                 labelFormatter={(label) => `${label} MHz`}
-                {...chartTooltip}
+                {...pieTooltip}
               />
               <Bar dataKey="barValue" maxBarSize={8} isAnimationActive={false}>
                 {chartData.map((entry, index) => (

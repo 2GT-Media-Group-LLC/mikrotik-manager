@@ -374,6 +374,17 @@
   outline: none;
 }
 
+/* Chart text: tick values and labels (axis titles, reference lines) in one
+   muted ink that reads on light, dark and Midnight. Recharts writes its own
+   grey (#666, #808080) as an SVG attribute, which was too faint on the dark
+   themes (Discussion #85); a CSS fill outranks the attribute, so every chart
+   gets this without saying so. Recharts 3 draws labels outside their axis's
+   group, so they're matched on their own. */
+.recharts-cartesian-axis-tick-value,
+.recharts-label {
+  fill: var(--ink-3);
+}
+
 /* The dashboard's "all healthy" dot: a vibrant green that breathes, with a
    soft ring spreading from it. Slow and eased so it reads as alive rather than
    as an alert; still for anyone who asks the system for less motion. */

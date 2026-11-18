@@ -25,7 +25,7 @@ import clsx from 'clsx';
 import { formatRatePair } from '../utils/wifiRate';
 import ClientAddressLists from '../components/clients/ClientAddressLists';
 import { disconnectClient } from '../utils/disconnectClient';
-import { inDeclaredOrder } from '../components/common/chartTooltip';
+import { chartTooltip, inDeclaredOrder, pieTooltip } from '../components/common/chartTooltip';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -732,24 +732,17 @@ function TrafficCard({ mac }: { mac: string }) {
             <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 10, fill: 'currentColor' }}
-              className="text-gray-400 dark:text-slate-500"
+              tick={{ fontSize: 10 }}
               interval="preserveStartEnd"
             />
             <YAxis
               tickFormatter={(v) => formatBytes(v)}
-              tick={{ fontSize: 10, fill: 'currentColor' }}
-              className="text-gray-400 dark:text-slate-500"
+              tick={{ fontSize: 10 }}
               width={60}
             />
             <Tooltip
-              formatter={(value) => [formatBytes(Number(value)), '']}
-              contentStyle={{
-                fontSize: '11px',
-                backgroundColor: 'var(--tooltip-bg, #1e293b)',
-                borderColor: 'var(--tooltip-border, #334155)',
-                color: 'var(--tooltip-color, #e2e8f0)',
-              }}
+              {...chartTooltip}
+              formatter={(value, name) => [formatBytes(Number(value)), name]}
             />
             <Legend wrapperStyle={{ fontSize: '11px' }} itemSorter={inDeclaredOrder(['Upload', 'Download'])} />
             <Area
@@ -862,24 +855,17 @@ function AppTrafficCard({ mac }: { mac: string }) {
                 <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
                 <XAxis
                   dataKey="label"
-                  tick={{ fontSize: 10, fill: 'currentColor' }}
-                  className="text-gray-400 dark:text-slate-500"
+                  tick={{ fontSize: 10 }}
                   interval="preserveStartEnd"
                 />
                 <YAxis
                   tickFormatter={(v) => formatBytes(v)}
-                  tick={{ fontSize: 10, fill: 'currentColor' }}
-                  className="text-gray-400 dark:text-slate-500"
+                  tick={{ fontSize: 10 }}
                   width={60}
                 />
                 <Tooltip
-                  formatter={(value) => [formatBytes(Number(value)), '']}
-                  contentStyle={{
-                    fontSize: '11px',
-                    backgroundColor: 'var(--tooltip-bg, #1e293b)',
-                    borderColor: 'var(--tooltip-border, #334155)',
-                    color: 'var(--tooltip-color, #e2e8f0)',
-                  }}
+                  {...chartTooltip}
+                  formatter={(value, name) => [formatBytes(Number(value)), name]}
                 />
                 <Legend wrapperStyle={{ fontSize: '11px' }} />
                 <Area type="monotone" dataKey="Download" stroke="#3b82f6" fill="#3b82f620" strokeWidth={1.5} dot={false} />
@@ -1011,40 +997,35 @@ function SignalCard({ mac }: { mac: string }) {
       ) : (
         <>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <BarChart data={chartData} margin={{ top: 8, right: 56, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} className="opacity-20" />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 10, fill: 'currentColor' }}
-                className="text-gray-400 dark:text-slate-500"
+                tick={{ fontSize: 10 }}
                 interval="preserveStartEnd"
               />
               <YAxis
                 domain={[0, yDomainMax]}
                 tickFormatter={(v) => `${v + BASELINE}`}
-                tick={{ fontSize: 10, fill: 'currentColor' }}
-                className="text-gray-400 dark:text-slate-500"
-                width={46}
-                unit=" dBm"
+                tick={{ fontSize: 10 }}
+                width={48}
+                label={{ value: 'dBm', angle: -90, position: 'insideLeft', fontSize: 10 }}
               />
               <Tooltip
+                {...pieTooltip}
                 formatter={(_v, _n, props: { payload?: { signal_strength: number } }) =>
                   [`${props.payload?.signal_strength ?? ''} dBm`, 'Signal']
                 }
-                contentStyle={{
-                  fontSize: '11px',
-                  backgroundColor: 'var(--tooltip-bg, #1e293b)',
-                  borderColor: 'var(--tooltip-border, #334155)',
-                  color: 'var(--tooltip-color, #e2e8f0)',
-                }}
               />
-              {/* Quality threshold reference lines (offset to bar scale) */}
+              {/* Quality threshold reference lines (offset to bar scale), named
+                  in the margin to the right: drawn over bars of their own
+                  colour, the names couldn't be read (Discussion #85). */}
               <ReferenceLine y={refExcellent} stroke="#22c55e" strokeDasharray="3 3" strokeOpacity={0.6}
-                label={{ value: 'Excellent', position: 'insideTopRight', fontSize: 9, fill: '#22c55e' }} />
+                label={{ value: 'Excellent', position: 'right', fontSize: 10 }} />
               <ReferenceLine y={refGood} stroke="#84cc16" strokeDasharray="3 3" strokeOpacity={0.6}
-                label={{ value: 'Good', position: 'insideTopRight', fontSize: 9, fill: '#84cc16' }} />
+                label={{ value: 'Good', position: 'right', fontSize: 10 }} />
               <ReferenceLine y={refFair} stroke="#eab308" strokeDasharray="3 3" strokeOpacity={0.6}
-                label={{ value: 'Fair', position: 'insideTopRight', fontSize: 9, fill: '#eab308' }} />
+                label={{ value: 'Fair', position: 'right', fontSize: 10 }} />
               <Bar dataKey="bar_value" name="Signal" radius={[2, 2, 0, 0]}>
                 {chartData.map((entry, i) => (
                   <Cell key={i} fill={qualityColor(entry.signal_strength)} />

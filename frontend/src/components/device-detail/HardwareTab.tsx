@@ -9,6 +9,7 @@ import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart, Area,
 } from 'recharts';
 import clsx from 'clsx';
+import { chartTooltip } from '../common/chartTooltip';
 
 interface HealthMetric {
   name: string;
@@ -314,12 +315,7 @@ function ResourceChart({ deviceId }: { deviceId: number }) {
             <Tooltip
               // The band carries [average, peak]; the tooltip shows the peak.
               formatter={(v) => `${Array.isArray(v) ? v[1] : v}%`}
-              contentStyle={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                fontSize: '12px',
-              }}
+              {...chartTooltip}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="cpu" stroke="#f59e0b" name="CPU Load" dot={false} strokeWidth={2} />

@@ -1,7 +1,7 @@
 import css from '../index.css?raw';
 import { describe, it, expect } from 'vitest';
 import colors from 'tailwindcss/colors';
-import { PALETTES, STEPS, accentPalette, paletteFrom, fitPalette, contrast, accentTokens, channels, normalizeHex, type AccentId } from './palette';
+import { PALETTES, STEPS, accentPalette, paletteFrom, fitPalette, contrast, accentTokens, channels, normalizeHex, textOn, type AccentId } from './palette';
 
 describe('accent palettes (#329)', () => {
   it('are Tailwind\'s own, step for step', () => {
@@ -51,5 +51,16 @@ describe('accent palettes (#329)', () => {
   it('gives the design tokens the same values index.css has for blue', () => {
     expect(accentTokens(PALETTES.blue, false)).toEqual({ '--accent': '#2563eb', '--accent-2': '#1d4ed8', '--accent-soft': '#eff6ff', '--accent-fg': '#ffffff' });
     expect(accentTokens(PALETTES.blue, true)).toEqual({ '--accent': '#60a5fa', '--accent-2': '#3b82f6', '--accent-soft': 'rgba(96, 165, 250, 0.1)', '--accent-fg': '#0e0f12' });
+  });
+});
+
+describe('textOn', () => {
+  it('puts dark text on the bright status colours and white on dark ones', () => {
+    for (const bg of ['#22c55e', '#84cc16', '#f59e0b', '#eab308', '#ef4444']) {
+      expect(textOn(bg)).toBe('#111827');
+      expect(contrast(bg, textOn(bg))).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(textOn('#1d4ed8')).toBe('#ffffff');
+    expect(textOn('#111827')).toBe('#ffffff');
   });
 });
