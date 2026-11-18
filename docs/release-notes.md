@@ -3,6 +3,17 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.64
+
+- **Port ranges in port names.** Under **Settings → Firewall Logs**, a port name can cover a
+  range such as `5000-5100`, for TCP, UDP or both. It names every port in it in the Firewall Logs
+  Application column and in Traffic; a single port listed too keeps its own name. See
+  [Firewall Logs](firewall-events.md#application-and-row-colours). Thanks to Ron
+  ([#415](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415)).
+- **The only device is chosen for you.** On DHCP, DNS and NTP under Network Services, a site or
+  group with one device opens on that device rather than asking you to choose it. Thanks to Ron
+  ([#464](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/464)).
+
 ## 1.1.0-beta.63
 
 - **Zoom in on a time in Traffic.** Drag across the Network Traffic or Inbound Packets chart and
