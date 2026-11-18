@@ -1,0 +1,67 @@
+name: Bug report
+description: Something in MikroTik Manager isn't working as it should.
+title: "(Bug) "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Only the description is required, so fill in
+        what you can: each detail below saves a round of questions and gets us to a fix sooner.
+
+        Found a security problem? Please don't open an issue. Report it privately instead (see the
+        link on the previous page, or [SECURITY.md](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/blob/main/SECURITY.md)).
+  - type: input
+    id: version
+    attributes:
+      label: MikroTik Manager version
+      description: Shown in the sidebar under the logo.
+      placeholder: v1.0.22 or v1.1.0-beta.65
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it's installed
+      options:
+        - Published images (docker-compose.ghcr.yml)
+        - Built from source (git checkout)
+        - Other (say below)
+  - type: input
+    id: device
+    attributes:
+      label: Device model and RouterOS version
+      description: If the problem involves a device. Leave blank if it doesn't.
+      placeholder: CRS326-24G-2S+, RouterOS 7.20.2
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and where (the page or menu).
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        For errors or anything that stopped working, the backend log helps most:
+        `docker compose logs --tail 200 backend`. For a container that won't start or keeps
+        restarting, add `docker compose ps`. Remove passwords, keys and anything else you don't
+        want public first.
+      render: shell
+  - type: textarea
+    id: more
+    attributes:
+      label: Screenshots or anything else
+      description: Screenshots, the browser you use, the output of a print or export from the device, anything that might help.
