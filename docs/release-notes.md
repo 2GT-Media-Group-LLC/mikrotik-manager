@@ -3,6 +3,17 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.66
+
+- **A bridge's addresses from the Bridges tab.** **Edit** next to a bridge's addresses opens
+  them under it: add, change or remove one, through Change Guard as on **Config**, **IP
+  Addresses**. See [Bridges](devices.md#bridges). Thanks to Ron
+  ([#466](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/466)).
+- **The only router is chosen for PPP too.** **PPP Users and Sessions** on Tunnels & PPP opens on
+  the router when the selected site or group has just one, as DHCP, DNS and NTP do since
+  beta.64. Thanks to Ron
+  ([#464](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/464)).
+
 ## 1.1.0-beta.65
 
 - **Chart text you couldn't read.** A client's Signal Strength chart drew its Excellent, Good
