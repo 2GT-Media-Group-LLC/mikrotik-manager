@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta65" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.65
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta64" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2211,6 +2222,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta65" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.65
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta64" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2926,6 +2948,16 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta65">1.1.0-beta.65<a class="headerlink" href="#110-beta65" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Chart text you couldn't read.</strong> A client's Signal Strength chart drew its Excellent, Good
+  and Fair names over bars of the same colour; they sit beside the chart now. Every chart was
+  then checked in light, dark and Midnight: axis text is the theme's muted ink throughout,
+  tooltips follow the theme, a client's traffic tooltips say Download and Upload again, RF Health
+  numbers are dark where white didn't read, and the roaming timeline shows signal as a coloured
+  dot. Also in 1.0.22. Thanks to Stanley
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85">Discussion #85</a>).</li>
+</ul>
 <h2 id="110-beta64">1.1.0-beta.64<a class="headerlink" href="#110-beta64" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Port ranges in port names.</strong> Under <strong>Settings → Firewall Logs</strong>, a port name can cover a
@@ -3884,6 +3916,26 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1022">1.0.22<a class="headerlink" href="#1022" title="Permanent link">&para;</a></h2>
+<p>Released on Wednesday 18 November 2026.</p>
+<ul>
+<li><strong>Chart text you couldn't read.</strong> A client's Signal Strength chart drew its Excellent, Good
+  and Fair names in green and amber over bars of the same colour; they now sit beside the chart.
+  Thanks to Stanley (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85">Discussion #85</a>).
+  Going through every chart in light and dark mode found more, also fixed:<ul>
+<li>Axis numbers and titles were a faint grey on the dark theme. They now use the theme's
+  muted text colour everywhere.</li>
+<li>Tooltips on the client page, Hardware, a port's packets and Radios were always dark, or
+  had no background. They follow the theme now.</li>
+<li>A client's traffic tooltips had lost the words Download and Upload.</li>
+<li>RF Health on the Wireless page put white numbers on bright green, lime and amber. They're
+  dark where that reads better, and empty retry tiles no longer show light grey in dark mode.</li>
+<li>The roaming timeline wrote signal values in those same bright colours; the colour is a dot
+  beside the value now.</li>
+<li>The Dashboard's Connected Clients times fell back to a serif font.</li>
+</ul>
+</li>
+</ul>
 <h2 id="1021">1.0.21<a class="headerlink" href="#1021" title="Permanent link">&para;</a></h2>
 <p>Released on Tuesday 17 November 2026.</p>
 <ul>
