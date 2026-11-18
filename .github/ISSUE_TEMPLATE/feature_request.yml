@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest something new, or a change to something that's already there.
+title: "(Feature Request) "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. If you'd like to talk it over first, or see what others think,
+        [Discussions](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions) is a good place too.
+  - type: textarea
+    id: want
+    attributes:
+      label: What would you like?
+      description: What you'd like MikroTik Manager to do, and the problem it solves for you.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How you'd use it
+      description: Where you'd expect to find it, and how it would fit into what you do today.
+  - type: input
+    id: device
+    attributes:
+      label: Device model and RouterOS version
+      description: If it's about a device feature. Leave blank if it isn't.
+      placeholder: hAP ax3, RouterOS 7.20.2
+  - type: textarea
+    id: example
+    attributes:
+      label: An example from the device
+      description: |
+        For anything set on the device, a WinBox screenshot or the relevant lines from
+        `/export` show exactly what you mean. Remove passwords and keys first.
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else

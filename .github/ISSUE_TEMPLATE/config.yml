@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/new
+    about: Please report security problems privately here, not in a public issue.
+  - name: Questions and ideas
+    url: https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions
+    about: Ask a question, share how you use MikroTik Manager, or talk an idea through.
+  - name: Documentation
+    url: https://2gt-media-group-llc.github.io/mikrotik-manager/latest/
+    about: Guides for installing, configuring and using MikroTik Manager.
