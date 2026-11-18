@@ -3,6 +3,16 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.65
+
+- **Chart text you couldn't read.** A client's Signal Strength chart drew its Excellent, Good
+  and Fair names over bars of the same colour; they sit beside the chart now. Every chart was
+  then checked in light, dark and Midnight: axis text is the theme's muted ink throughout,
+  tooltips follow the theme, a client's traffic tooltips say Download and Upload again, RF Health
+  numbers are dark where white didn't read, and the roaming timeline shows signal as a coloured
+  dot. Also in 1.0.22. Thanks to Stanley
+  ([Discussion #85](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85)).
+
 ## 1.1.0-beta.64
 
 - **Port ranges in port names.** Under **Settings → Firewall Logs**, a port name can cover a
@@ -1000,6 +1010,25 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.22
+
+Released on Wednesday 18 November 2026.
+
+- **Chart text you couldn't read.** A client's Signal Strength chart drew its Excellent, Good
+  and Fair names in green and amber over bars of the same colour; they now sit beside the chart.
+  Thanks to Stanley ([Discussion #85](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/discussions/85)).
+  Going through every chart in light and dark mode found more, also fixed:
+    - Axis numbers and titles were a faint grey on the dark theme. They now use the theme's
+      muted text colour everywhere.
+    - Tooltips on the client page, Hardware, a port's packets and Radios were always dark, or
+      had no background. They follow the theme now.
+    - A client's traffic tooltips had lost the words Download and Upload.
+    - RF Health on the Wireless page put white numbers on bright green, lime and amber. They're
+      dark where that reads better, and empty retry tiles no longer show light grey in dark mode.
+    - The roaming timeline wrote signal values in those same bright colours; the colour is a dot
+      beside the value now.
+    - The Dashboard's Connected Clients times fell back to a serif font.
 
 ## 1.0.21
 
