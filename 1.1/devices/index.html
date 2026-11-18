@@ -3145,7 +3145,8 @@ manager in is caught before it is applied.</p>
 <h3 id="ip-addresses">IP addresses<a class="headerlink" href="#ip-addresses" title="Permanent link">&para;</a></h3>
 <p>The <strong>Config</strong> tab's <strong>IP Addresses</strong> card lists the device's IPv4 addresses. Add one with the
 form below the list, remove one with the bin, or click the pencil to edit it in place: the
-address and prefix, the interface, the comment, and whether it's enabled (#285). Only the
+address and prefix, the interface, the comment, and whether it's enabled (#285). A bridge's
+addresses can also be edited from its row on the <strong>Bridges</strong> tab (see <a href="#bridges">Bridges</a>). Only the
 fields you change are sent. Dynamic addresses (from a DHCP client, say) can't be edited.</p>
 <p>Every change runs through <a href="../change-guard/">Change Guard</a>. Changing, disabling or moving the
 address the manager connects to is predicted as a lockout and stops for confirmation, and
@@ -3638,6 +3639,12 @@ has a small chip icon; hover a port for its PVID and spanning tree role.</p>
   port whose hardware can't go that high, such as a CRS510's 2028-byte management port, has to
   leave the bridge instead.
 - <strong>turn on / turn off</strong> next to VLAN filtering works as it does from the faceplate.
+- <strong>Edit</strong> (or <strong>Add one</strong>) next to the addresses opens the bridge's addresses under it: add
+  one, change one in place, or remove one, the same as <strong>Config</strong>, <strong>IP Addresses</strong> (see
+  <a href="#ip-addresses">IP addresses</a>) but only for this bridge (from
+  <a href="https://github.com/ronchan44">@ronchan44</a>'s #466). A DHCP server on the bridge isn't changed
+  with it: after moving a bridge to a new subnet, update its DHCP network, gateway and pool on
+  <strong>Network Services</strong>, <strong>DHCP</strong>.
 - The bin deletes a bridge with no ports, addresses or VLAN entries.</p>
 <p>Everything runs through <a href="../change-guard/">Change Guard</a>. Renaming the bridge the manager
 connects through, or changing its spanning tree or MTU, can't be simulated, so it runs with

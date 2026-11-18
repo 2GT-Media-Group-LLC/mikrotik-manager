@@ -1992,7 +1992,8 @@ refreshing anything older than ten minutes in the background; <strong>Refresh</s
 again. On a large fleet the page fills in over a few seconds rather than contacting every device
 at once (see <a href="../scaling/#pages-that-show-something-from-every-device">Scaling</a>).</p>
 <p>DHCP, DNS and NTP show one device at a time, chosen at the top of the page. When the selected
-site or group has only one device, it is chosen for you (from <a href="https://github.com/ronchan44">@ronchan44</a>'s #464).</p>
+site or group has only one device, it is chosen for you (from <a href="https://github.com/ronchan44">@ronchan44</a>'s #464), and
+so is the router for <strong>PPP Users and Sessions</strong> when there's only one.</p>
 <p>Most of it writes to the device (Routing, Tunnels &amp; PPP and MLAG only read). Changes go through <a href="../change-guard/">Change Guard</a> where
 they could affect reachability.</p>
 <h2 id="dhcp">DHCP<a class="headerlink" href="#dhcp" title="Permanent link">&para;</a></h2>
