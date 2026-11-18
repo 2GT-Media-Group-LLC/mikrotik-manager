@@ -3,6 +3,18 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.63
+
+- **Zoom in on a time in Traffic.** Drag across the Network Traffic or Inbound Packets chart and
+  the whole page covers just that window: the totals, the charts in steps down to a minute, Top
+  Talkers, Traffic by Application, Top Destinations and the names looked up. **Back to** returns
+  to the range you were on. See [Traffic](traffic.md#zooming-in-on-a-time). Thanks to Ron
+  ([#463](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/463)).
+- **MVRP on VLAN interfaces.** A VLAN interface can declare its VLAN to MVRP neighbours on its
+  parent: tick **MVRP** in the VLAN Interfaces card (RouterOS 7.15 and later). See
+  [Devices](devices.md#vlan-interfaces)
+  ([#449](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/449)).
+
 ## 1.1.0-beta.62
 
 - **MVRP forbidden ports.** Adding or editing a VLAN on a bridge running MVRP can name ports
