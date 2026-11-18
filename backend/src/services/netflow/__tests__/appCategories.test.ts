@@ -60,4 +60,21 @@ describe('classifyApp with saved port names (Settings → Firewall Logs)', () =>
     setSavedPortNames(undefined);
     expect(classifyApp(UDP, 50000, 1198)).toBe('Other UDP');
   });
+
+  it('names every port in a range, a single port over it, and never a built-in one (#415)', () => {
+    setSavedPortNames([
+      { port: 5000, to: 5100, protocol: 'udp', name: 'Game' },
+      { port: 5050, protocol: 'udp', name: 'Voice' },
+      { port: 5040, to: 5060, protocol: 'udp', name: 'Lobby' },
+      { port: 1, to: 1000, protocol: 'tcp', name: 'Low' },
+    ]);
+    expect(classifyApp(UDP, 50000, 5000)).toBe('Game');
+    expect(classifyApp(UDP, 50000, 5100)).toBe('Game');
+    expect(classifyApp(UDP, 50000, 5101)).toBe('Other UDP');
+    expect(classifyApp(UDP, 50000, 5045)).toBe('Lobby');
+    expect(classifyApp(UDP, 50000, 5050)).toBe('Voice');
+    expect(classifyApp(TCP, 50000, 5050)).toBe('Other TCP');
+    expect(classifyApp(TCP, 50000, 443)).toBe('HTTPS');
+    expect(classifyApp(TCP, 50000, 999)).toBe('Low');
+  });
 });

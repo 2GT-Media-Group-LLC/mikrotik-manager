@@ -66,16 +66,29 @@ const PORT_MAP: Record<string, string> = {
  */
 let savedNames = new Map<string, string>();
 
-/** Take the saved Firewall Logs port names (`firewall_log_services`). Anything malformed is skipped. */
+/**
+ * Take the saved Firewall Logs port names (`firewall_log_services`). Anything
+ * malformed is skipped. A range (`to`, #415) names every port in it; a single
+ * port names itself over a range, and a narrower range over a wider one.
+ */
 export function setSavedPortNames(entries: unknown): void {
   const next = new Map<string, string>();
+  const ok: { lo: number; hi: number; protocol: string; name: string }[] = [];
   if (Array.isArray(entries)) {
     for (const e of entries) {
       if (!e || typeof e !== 'object') continue;
-      const { port, protocol, name } = e as Record<string, unknown>;
+      const { port, to, protocol, name } = e as Record<string, unknown>;
       if (!Number.isInteger(port) || (port as number) < 1 || (port as number) > 65535) continue;
+      if (to !== undefined && (!Number.isInteger(to) || (to as number) < (port as number) || (to as number) > 65535)) continue;
       if (typeof name !== 'string' || !/^[\x20-\x7e]{1,32}$/.test(name)) continue;
       if (protocol !== 'tcp' && protocol !== 'udp' && protocol !== 'both') continue;
+      ok.push({ lo: port as number, hi: (to as number | undefined) ?? (port as number), protocol, name });
+    }
+  }
+  // Widest first, so narrower ranges and single ports are set over them.
+  ok.sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo));
+  for (const { lo, hi, protocol, name } of ok) {
+    for (let port = lo; port <= hi; port++) {
       if (protocol !== 'udp') next.set(`${TCP}/${port}`, name);
       if (protocol !== 'tcp') next.set(`${UDP}/${port}`, name);
     }

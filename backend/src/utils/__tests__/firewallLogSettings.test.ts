@@ -25,6 +25,27 @@ describe('servicesError', () => {
       { port: 53, protocol: 'udp', name: 'Resolver' },
     ])).toMatch(/UDP port 53 is listed twice/);
   });
+  it('takes port ranges, with single ports inside them (#415)', () => {
+    expect(servicesError([
+      { port: 5000, to: 5100, protocol: 'udp', name: 'Game' },
+      { port: 5050, protocol: 'udp', name: 'Voice' },
+      { port: 5000, to: 5100, protocol: 'tcp', name: 'Game TCP' },
+    ])).toBeNull();
+  });
+  it('refuses a bad end of range, and ranges that overlap', () => {
+    expect(servicesError([{ port: 5000, to: 5000, protocol: 'tcp', name: 'x' }])).toMatch(/end of the range/);
+    expect(servicesError([{ port: 5000, to: 4000, protocol: 'tcp', name: 'x' }])).toMatch(/end of the range/);
+    expect(servicesError([{ port: 5000, to: 70000, protocol: 'tcp', name: 'x' }])).toMatch(/end of the range/);
+    expect(servicesError([{ port: 5000, to: '5100', protocol: 'tcp', name: 'x' }])).toMatch(/end of the range/);
+    expect(servicesError([
+      { port: 5000, to: 5100, protocol: 'both', name: 'A' },
+      { port: 5100, to: 5200, protocol: 'udp', name: 'B' },
+    ])).toMatch(/UDP ports 5000-5100 and 5100-5200 overlap/);
+    expect(servicesError([
+      { port: 5000, to: 5100, protocol: 'tcp', name: 'A' },
+      { port: 5050, to: 5060, protocol: 'udp', name: 'B' },
+    ])).toBeNull();
+  });
   it('caps the list', () => {
     const many = Array.from({ length: SERVICES_MAX + 1 }, (_, i) => ({ port: i + 1, protocol: 'tcp', name: 'x' }));
     expect(servicesError(many)).toMatch(/at most/);

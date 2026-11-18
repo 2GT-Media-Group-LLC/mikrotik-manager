@@ -1,7 +1,8 @@
 // Firewall Logs: the application behind a port, and traffic worth a colour (#415).
 
 export type ServiceProto = 'tcp' | 'udp' | 'both';
-export interface PortService { port: number; protocol: ServiceProto; name: string }
+/** `to` makes it a range, `port` to `to` (#415). */
+export interface PortService { port: number; to?: number; protocol: ServiceProto; name: string }
 
 /**
  * The ports seen on a MikroTik network, named as /etc/services names them
@@ -37,13 +38,19 @@ export const BUILTIN_SERVICES: PortService[] = TABLE.map(([port, protocol, name]
 
 const key = (port: number, proto: 'tcp' | 'udp') => `${proto}/${port}`;
 
-/** A lookup from the built-in table with the saved entries laid over it. */
+/**
+ * A lookup from the built-in table with the saved entries laid over it. A
+ * saved range names every port in it; a saved single port names itself over
+ * a range, and a narrower range over a wider one.
+ */
 export function serviceIndex(custom: PortService[] = []): Map<string, string> {
   const m = new Map<string, string>();
-  for (const list of [BUILTIN_SERVICES, custom]) {
-    for (const s of list) {
-      if (s.protocol !== 'udp') m.set(key(s.port, 'tcp'), s.name);
-      if (s.protocol !== 'tcp') m.set(key(s.port, 'udp'), s.name);
+  const width = (s: PortService) => (s.to ?? s.port) - s.port;
+  const saved = [...custom].sort((a, b) => width(b) - width(a));
+  for (const s of [...BUILTIN_SERVICES, ...saved]) {
+    for (let port = s.port; port <= (s.to ?? s.port); port++) {
+      if (s.protocol !== 'udp') m.set(key(port, 'tcp'), s.name);
+      if (s.protocol !== 'tcp') m.set(key(port, 'udp'), s.name);
     }
   }
   return m;
@@ -109,5 +116,6 @@ export function savedServices(saved: unknown): PortService[] {
   if (!Array.isArray(saved)) return [];
   return saved.filter((s): s is PortService =>
     !!s && typeof s === 'object' && Number.isInteger(s.port) && s.port >= 1 && s.port <= 65535
+    && (s.to === undefined || (Number.isInteger(s.to) && s.to >= s.port && s.to <= 65535))
     && ['tcp', 'udp', 'both'].includes(s.protocol) && typeof s.name === 'string' && s.name.length > 0);
 }

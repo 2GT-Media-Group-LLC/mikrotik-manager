@@ -26,6 +26,21 @@ describe('serviceFor', () => {
     expect(serviceFor(custom, 'udp', 443)).toBe('HTTPS');
     expect(serviceFor(custom, 'udp', 9999)).toBe('Camera');
   });
+  it('names every port in a saved range, with single ports and narrower ranges over it (#415)', () => {
+    const custom = serviceIndex([
+      { port: 5050, protocol: 'udp', name: 'Voice' },
+      { port: 5000, to: 5100, protocol: 'udp', name: 'Game' },
+      { port: 5040, to: 5060, protocol: 'udp', name: 'Lobby' },
+      { port: 20, to: 25, protocol: 'tcp', name: 'Old' },
+    ]);
+    expect(serviceFor(custom, 'udp', 5000)).toBe('Game');
+    expect(serviceFor(custom, 'udp', 5100)).toBe('Game');
+    expect(serviceFor(custom, 'udp', 5101)).toBeUndefined();
+    expect(serviceFor(custom, 'udp', 5045)).toBe('Lobby');
+    expect(serviceFor(custom, 'udp', 5050)).toBe('Voice');
+    expect(serviceFor(custom, 'tcp', 5050)).toBeUndefined();
+    expect(serviceFor(custom, 'tcp', 22)).toBe('Old');
+  });
 });
 
 describe('trafficKind', () => {
@@ -56,5 +71,15 @@ describe('saved settings', () => {
       { port: 80, protocol: 'tcp', name: 'Web' },
     ]);
     expect(savedServices('nope')).toEqual([]);
+  });
+});
+
+describe('saved ranges', () => {
+  it('keeps a well-formed range and drops a backwards one', () => {
+    expect(savedServices([
+      { port: 5000, to: 5100, protocol: 'udp', name: 'Game' },
+      { port: 5000, to: 4000, protocol: 'udp', name: 'Bad' },
+      { port: 5000, to: 70000, protocol: 'udp', name: 'Bad' },
+    ])).toEqual([{ port: 5000, to: 5100, protocol: 'udp', name: 'Game' }]);
   });
 });

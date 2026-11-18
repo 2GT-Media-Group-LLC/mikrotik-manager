@@ -22,14 +22,33 @@ const KINDS: { kind: TrafficKind; label: string; help: string }[] = [
 
 type Row = { port: string; protocol: ServiceProto; name: string };
 
+/** "5000" or "5000-5100" (#415), as the saved entry's port and to. */
+function parsePorts(text: string): { port: number; to?: number } | null {
+  const parts = text.replace(/\s+/g, '').split('-');
+  if (parts.length > 2 || !parts.every((x) => /^\d{1,5}$/.test(x))) return null;
+  return parts.length === 1 ? { port: Number(parts[0]) } : { port: Number(parts[0]), to: Number(parts[1]) };
+}
+
+const protos = (p: ServiceProto) => (p === 'both' ? ['tcp', 'udp'] : [p]);
+const toEntry = (r: Row) => ({ ...parsePorts(r.port), protocol: r.protocol, name: r.name });
+const portText = (s: PortService) => (s.to === undefined ? String(s.port) : `${s.port}-${s.to}`);
+
 /** What's wrong with a row, if anything, so Save can say before the server does. */
 function rowError(r: Row, all: Row[]): string | null {
-  const port = Number(r.port);
-  if (!/^\d+$/.test(r.port) || port < 1 || port > 65535) return 'Port 1 to 65535';
+  const p = parsePorts(r.port);
+  if (!p || p.port < 1 || p.port > 65535) return 'Port 1 to 65535, or a range such as 5000-5100';
+  if (p.to !== undefined && (p.to <= p.port || p.to > 65535)) return 'The range must end above where it starts, up to 65535';
   if (!NAME_RE.test(r.name)) return 'Name: up to 32 letters, digits, spaces or . _ + / ( ) -';
-  const protos = (p: ServiceProto) => (p === 'both' ? ['tcp', 'udp'] : [p]);
-  const clash = all.some((o) => o !== r && Number(o.port) === port && protos(o.protocol).some((p) => protos(r.protocol).includes(p)));
-  return clash ? 'This port is listed twice' : null;
+  const shared = (o: Row) => protos(o.protocol).some((x) => protos(r.protocol).includes(x));
+  for (const o of all) {
+    if (o === r || !shared(o)) continue;
+    const q = parsePorts(o.port);
+    if (!q) continue;
+    if (p.to === undefined && q.to === undefined && q.port === p.port) return 'This port is listed twice';
+    // A single port inside a range names that port; two ranges can't share one.
+    if (p.to !== undefined && q.to !== undefined && q.port <= p.to && p.port <= q.to) return 'This range overlaps another';
+  }
+  return null;
 }
 
 export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean }) {
@@ -43,7 +62,7 @@ export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean 
 
   // The saved list until it's edited; Save and Undo go back to following it.
   const [draft, setRows] = useState<Row[] | null>(null);
-  const rows = draft ?? saved.map((s) => ({ port: String(s.port), protocol: s.protocol, name: s.name }));
+  const rows = draft ?? saved.map((s) => ({ port: portText(s), protocol: s.protocol, name: s.name }));
   const [showBuiltin, setShowBuiltin] = useState(false);
   const [filter, setFilter] = useState('');
 
@@ -56,13 +75,18 @@ export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean 
   });
 
   const errors = rows.map((r) => rowError(r, rows));
-  const dirty = JSON.stringify(rows.map((r) => ({ port: Number(r.port), protocol: r.protocol, name: r.name })))
-    !== JSON.stringify(saved.map((s) => ({ port: s.port, protocol: s.protocol, name: s.name })));
+  const dirty = JSON.stringify(rows.map(toEntry))
+    !== JSON.stringify(saved.map((s) => ({ port: s.port, ...(s.to === undefined ? {} : { to: s.to }), protocol: s.protocol, name: s.name })));
   const setRow = (i: number, patch: Partial<Row>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
-  const overridden = new Set(rows.flatMap((r) => (r.protocol === 'both' ? ['tcp', 'udp'] : [r.protocol]).map((p) => `${p}/${r.port}`)));
+  const overridden = new Set(rows.flatMap((r) => {
+    const p = parsePorts(r.port);
+    if (!p || p.port < 1 || (p.to ?? p.port) > 65535) return [];
+    const ports = Array.from({ length: Math.max(0, (p.to ?? p.port) - p.port + 1) }, (_, i) => p.port + i);
+    return protos(r.protocol).flatMap((x) => ports.map((port) => `${x}/${port}`));
+  }));
   const builtinShown = BUILTIN_SERVICES.filter((s) => !filter || String(s.port) === filter.trim() || s.name.toLowerCase().includes(filter.trim().toLowerCase()));
-  const isOverridden = (s: PortService) => (s.protocol === 'both' ? ['tcp', 'udp'] : [s.protocol]).every((p) => overridden.has(`${p}/${s.port}`));
+  const isOverridden = (s: PortService) => protos(s.protocol).every((p) => overridden.has(`${p}/${s.port}`));
 
   const err = save.error as { response?: { data?: { error?: string } } } | null;
 
@@ -109,7 +133,7 @@ export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean 
         <p className="text-xs text-gray-400 dark:text-slate-500 mb-4">
           The Application column names a line&apos;s destination port (or its source port, for a reply) from a built-in
           list based on /etc/services. Add a port here to name one it doesn&apos;t know, or list one it does to name it
-          your way. Names for ports Traffic counts as Other TCP or Other UDP name those applications too.
+          your way. A range such as 5000-5100 names every port in it, and a single port listed too keeps its own name. Names for ports Traffic counts as Other TCP or Other UDP name those applications too.
         </p>
 
         {rows.length > 0 && (
@@ -117,7 +141,7 @@ export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean 
             {rows.map((r, i) => (
               <div key={i}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <input className="input w-24 font-mono" inputMode="numeric" placeholder="Port" aria-label="Port"
+                  <input className="input w-32 font-mono" placeholder="Port or range" aria-label="Port or range"
                     value={r.port} disabled={!isAdmin} onChange={(e) => setRow(i, { port: e.target.value.trim() })} />
                   <select className="input w-24" aria-label="Protocol" value={r.protocol} disabled={!isAdmin}
                     onChange={(e) => setRow(i, { protocol: e.target.value as ServiceProto })}>
@@ -151,7 +175,7 @@ export default function FirewallLogSettingsCard({ isAdmin }: { isAdmin: boolean 
             <button type="button" className="btn-primary flex items-center gap-1.5"
               disabled={!dirty || errors.some(Boolean) || save.isPending}
               onClick={() => save.mutate({
-                firewall_log_services: rows.map((r) => ({ port: Number(r.port), protocol: r.protocol, name: r.name })),
+                firewall_log_services: rows.map(toEntry),
               })}>
               {save.isPending && <Loader2 className="w-4 h-4 animate-spin" />} Save
             </button>
