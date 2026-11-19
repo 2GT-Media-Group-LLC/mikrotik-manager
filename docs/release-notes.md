@@ -3,6 +3,14 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.68
+
+- **Less load from the Devices page and Dashboard.** Every device poll told an open Devices page
+  or Dashboard to fetch the whole device list again, which on a large fleet meant several times a
+  second. They now wait a second and fetch once for everything that changed in it. Also in
+  1.0.23. Thanks to eskyuu
+  ([#467](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/467)).
+
 ## 1.1.0-beta.67
 
 - **Add a device without checking it first.** **Force add without checking connectivity** in
@@ -1031,6 +1039,15 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.23
+
+Released on Thursday 19 November 2026.
+
+- **Less load from the Devices page and Dashboard.** Every device poll told an open Devices page
+  or Dashboard to fetch the whole device list again, which on a large fleet meant several times a
+  second. They now wait a second and fetch once for everything that changed in it. Thanks to
+  eskyuu ([#467](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/467)).
 
 ## 1.0.22
 
