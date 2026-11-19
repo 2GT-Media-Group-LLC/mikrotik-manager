@@ -18,6 +18,8 @@ import clsx from 'clsx';
 import { trafficApi, type TrafficApp } from '../services/api';
 import DestinationsList from '../components/traffic/DestinationsList';
 import DnsNamesList from '../components/traffic/DnsNamesList';
+import { useThemeStore } from '../store/themeStore';
+import { trafficFormat } from '../utils/trafficUnits';
 
 type Range = '1h' | '24h' | '7d' | '30d';
 const RANGES: Range[] = ['1h', '24h', '7d', '30d'];
@@ -259,6 +261,16 @@ export default function TrafficAnalyticsPage() {
   // A zoomed window with nothing in it still shows the page, so you can zoom back out.
   const hasData = series.length > 0 || topClients.length > 0 || apps.length > 0 || !!zoom;
   const { handlers: zoomHandlers, band: zoomBand } = useDragZoom(series, (from, to) => setZoom({ from, to }));
+  // Volume per point, or bits and packets per second (Settings → Appearance).
+  const tf = trafficFormat(useThemeStore((s) => s.trafficUnits), formatCount);
+  const chartSeries = tf.rate
+    ? series.map((p) => ({
+      ...p,
+      download: tf.bytes(p.download, p.seconds),
+      upload: tf.bytes(p.upload, p.seconds),
+      downloadPackets: tf.packets(p.downloadPackets ?? 0, p.seconds),
+    }))
+    : series;
   const zoomLabel = zoom ? windowLabel(zoom, formatDateTime, formatTime) : '';
   // Destinations and DNS names are kept by the hour, so they cover every hour the window touches.
   const hourly = zoom && !(onHour(zoom.from) && onHour(zoom.to))
@@ -394,7 +406,7 @@ export default function TrafficAnalyticsPage() {
             )}
             <div className="select-none cursor-crosshair">
             <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={series} {...zoomHandlers}>
+              <AreaChart data={chartSeries} {...zoomHandlers}>
                 <defs>
                   <linearGradient id="dl" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
@@ -407,10 +419,10 @@ export default function TrafficAnalyticsPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700" />
                 <XAxis dataKey="time" tickFormatter={timeFormatter(showDays, formatTime)} tick={{ fontSize: 11 }} stroke="currentColor" />
-                <YAxis tickFormatter={v => formatBytes(v)} tick={{ fontSize: 11 }} width={70} stroke="currentColor" />
+                <YAxis tickFormatter={v => tf.bytesLabel(v)} tick={{ fontSize: 11 }} width={70} stroke="currentColor" />
                 <Tooltip
                   labelFormatter={t => { try { return formatDateTime(parseISO(String(t)), { year: undefined }); } catch { return String(t); } }}
-                  formatter={(value, name) => [formatBytes(Number(value)), name === 'download' ? 'Download' : 'Upload']}
+                  formatter={(value, name) => [tf.bytesLabel(Number(value)), name === 'download' ? 'Download' : 'Upload']}
                   {...chartTooltip}
                 />
                 <Legend formatter={(v: string) => (v === 'download' ? 'Download' : 'Upload')} />
@@ -427,7 +439,7 @@ export default function TrafficAnalyticsPage() {
             <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-200 mb-4">Inbound Packets</h2>
             <div className="select-none cursor-crosshair">
             <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={series} {...zoomHandlers}>
+              <AreaChart data={chartSeries} {...zoomHandlers}>
                 <defs>
                   <linearGradient id="pktIn" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
@@ -436,10 +448,10 @@ export default function TrafficAnalyticsPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700" />
                 <XAxis dataKey="time" tickFormatter={timeFormatter(showDays, formatTime)} tick={{ fontSize: 11 }} stroke="currentColor" />
-                <YAxis tickFormatter={v => formatCount(v)} tick={{ fontSize: 11 }} width={55} stroke="currentColor" />
+                <YAxis tickFormatter={v => tf.packetsAxis(v)} tick={{ fontSize: 11 }} width={tf.rate ? 70 : 55} stroke="currentColor" />
                 <Tooltip
                   labelFormatter={t => { try { return formatDateTime(parseISO(String(t)), { year: undefined }); } catch { return String(t); } }}
-                  formatter={(value) => [`${formatCount(Number(value))} pkts`, 'Inbound']}
+                  formatter={(value) => [tf.packetsLabel(Number(value)), 'Inbound']}
                   {...chartTooltip}
                 />
                 <Area type="monotone" dataKey="downloadPackets" stroke="#10b981" fill="url(#pktIn)" strokeWidth={2} />

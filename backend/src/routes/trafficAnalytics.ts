@@ -11,7 +11,7 @@ import { reverseNames } from '../utils/reverseNames';
 import { namesForAddresses } from '../utils/addressNames';
 import { OTHER_REMOTE } from '../services/netflow/DestinationAggregator';
 import net from 'net';
-import { timeWindow, BAD_WINDOW, type TimeWindow } from '../utils/trafficWindow';
+import { timeWindow, pointSeconds, BAD_WINDOW, type TimeWindow } from '../utils/trafficWindow';
 
 const router = Router();
 router.use(requireAuth);
@@ -110,7 +110,9 @@ router.get('/timeseries', async (req, res) => {
     return res.status(503).json({ error: 'The metrics database could not be read, so this data is unavailable right now.' });
   }
 
-  res.json(Object.values(pivoted).sort((a, b) => a.time.localeCompare(b.time)));
+  // `seconds`: what each point covers, for showing it as a rate.
+  res.json(Object.values(pivoted).sort((a, b) => a.time.localeCompare(b.time))
+    .map((p) => ({ ...p, seconds: pointSeconds(p.time, w) })));
 });
 
 type ClientNames = { hostname: string | null; custom_name: string | null; vendor: string | null; ip_address: string | null };
@@ -342,7 +344,8 @@ router.get('/client/:mac', async (req, res) => {
   const apps = Array.from(byApp.entries()).map(([app, e]) => ({ app, bytes: e.bytes, packets: e.packets }));
 
   res.json({
-    series: Object.values(pivoted).sort((a, b) => a.time.localeCompare(b.time)),
+    series: Object.values(pivoted).sort((a, b) => a.time.localeCompare(b.time))
+      .map((p) => ({ ...p, seconds: pointSeconds(p.time, w) })),
     apps: apps.sort((a, b) => b.bytes - a.bytes),
   });
 });

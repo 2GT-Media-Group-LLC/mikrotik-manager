@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { accentPalette, accentTokens, channels, normalizeHex, STEPS, DEFAULT_CUSTOM, PALETTES, type AccentChoice } from '../theme/palette';
+import type { TrafficUnits } from '../utils/trafficUnits';
 
 type Theme = 'light' | 'dark';
 /** What the user chose; System follows the operating system, live (#329). */
@@ -18,6 +19,8 @@ interface ThemeState {
   customAccent: string;
   darkScheme: DarkScheme;
   portStyle: PortStyle;
+  /** Traffic charts as bytes and packets per point, or bits and packets per second. */
+  trafficUnits: TrafficUnits;
   setMode: (mode: ThemeMode) => void;
   /** Light or dark, explicitly. */
   setTheme: (theme: Theme) => void;
@@ -27,6 +30,7 @@ interface ThemeState {
   setCustomAccent: (hex: string) => void;
   setDarkScheme: (scheme: DarkScheme) => void;
   setPortStyle: (style: PortStyle) => void;
+  setTrafficUnits: (units: TrafficUnits) => void;
 }
 
 const darkQuery = (): MediaQueryList | null =>
@@ -64,6 +68,7 @@ export const useThemeStore = create<ThemeState>()(
         customAccent: DEFAULT_CUSTOM,
         darkScheme: 'slate',
         portStyle: 'ports',
+        trafficUnits: 'volume',
         setMode: (mode) => update({ mode, theme: resolve(mode) }),
         setTheme: (theme) => update({ mode: theme, theme }),
         toggleTheme: () => { const next = get().theme === 'light' ? 'dark' : 'light'; update({ mode: next, theme: next }); },
@@ -71,17 +76,18 @@ export const useThemeStore = create<ThemeState>()(
         setCustomAccent: (hex) => { const c = normalizeHex(hex); if (c) update({ accent: 'custom', customAccent: c }); },
         setDarkScheme: (darkScheme) => update({ darkScheme: darkScheme === 'midnight' ? 'midnight' : 'slate' }),
         setPortStyle: (portStyle) => set({ portStyle: portStyle === 'tiles' ? 'tiles' : 'ports' }),
+        setTrafficUnits: (trafficUnits) => set({ trafficUnits: trafficUnits === 'rate' ? 'rate' : 'volume' }),
       };
     },
     {
       name: 'mikrotik-theme',
       version: 1,
-      partialize: (s) => ({ mode: s.mode, accent: s.accent, customAccent: s.customAccent, darkScheme: s.darkScheme, portStyle: s.portStyle }),
+      partialize: (s) => ({ mode: s.mode, accent: s.accent, customAccent: s.customAccent, darkScheme: s.darkScheme, portStyle: s.portStyle, trafficUnits: s.trafficUnits }),
       // Before 1.1 only `theme` (light or dark) was kept.
       migrate: (old) => {
         const o = (old ?? {}) as { theme?: unknown };
-        return { mode: o.theme === 'dark' ? 'dark' : 'light', accent: 'blue', customAccent: DEFAULT_CUSTOM, darkScheme: 'slate', portStyle: 'ports' } as
-          Pick<ThemeState, 'mode' | 'accent' | 'customAccent' | 'darkScheme' | 'portStyle'>;
+        return { mode: o.theme === 'dark' ? 'dark' : 'light', accent: 'blue', customAccent: DEFAULT_CUSTOM, darkScheme: 'slate', portStyle: 'ports', trafficUnits: 'volume' } as
+          Pick<ThemeState, 'mode' | 'accent' | 'customAccent' | 'darkScheme' | 'portStyle' | 'trafficUnits'>;
       },
       // Whatever was stored, only known values reach the page.
       merge: (stored, current) => {
@@ -93,6 +99,7 @@ export const useThemeStore = create<ThemeState>()(
           customAccent: normalizeHex(s.customAccent) ?? DEFAULT_CUSTOM,
           darkScheme: s.darkScheme === 'midnight' ? 'midnight' : 'slate',
           portStyle: s.portStyle === 'tiles' ? 'tiles' : 'ports',
+          trafficUnits: s.trafficUnits === 'rate' ? 'rate' : 'volume',
         };
       },
       onRehydrateStorage: () => (state) => { if (state) applyTheme(state); },

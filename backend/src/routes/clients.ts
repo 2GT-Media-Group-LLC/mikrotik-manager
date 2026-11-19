@@ -476,11 +476,16 @@ router.get('/:mac/traffic', async (req, res) => {
   const txDeltas = counterDeltas(raw.filter(p => p.field === 'tx_bytes'));
   const rxDeltas = counterDeltas(raw.filter(p => p.field === 'rx_bytes'));
 
-  const allTimes = new Set([...txDeltas.keys(), ...rxDeltas.keys()]);
-  const points = [...allTimes].sort().map(time => ({
+  const times = [...new Set([...txDeltas.keys(), ...rxDeltas.keys()])].sort();
+  const windowSec = range === '7d' ? 1800 : 300;
+  const points = times.map((time, i) => ({
     time,
     tx_bytes: txDeltas.get(time) ?? 0,
     rx_bytes: rxDeltas.get(time) ?? 0,
+    // What the delta covers, for showing it as a rate: back to the point before
+    // (a gap with no sightings counts in full, as the counter kept running), or
+    // one window for the first. The newest is the window still filling up.
+    seconds: i === 0 ? windowSec : Math.max(1, (Date.parse(time) - Date.parse(times[i - 1])) / 1000),
   }));
 
   return res.json(points);
