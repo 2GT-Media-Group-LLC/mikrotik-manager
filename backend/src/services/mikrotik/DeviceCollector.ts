@@ -79,6 +79,7 @@ import { bytesSince, periodKey, shouldSend } from '../../utils/dataCap';
 import { parseDeviceLogTime } from '../../utils/deviceTime';
 import { BackupService } from '../BackupService';
 import { storeProxyConnections } from '../ProxyLogService';
+import { writeClientCounts } from '../clientCounts';
 
 /** RouterOS update commands reach out to MikroTik's servers and are slow by nature. */
 const UPDATE_CHECK_TIMEOUT_MS = 90_000;
@@ -1486,46 +1487,9 @@ export class DeviceCollector {
         .intField('wired_clients', Math.max(0, totalClients - Object.keys(wifiSignal).length))
         .timestamp(new Date());
       writeApi.writePoint(point);
-
-      // Write a global deduplicated metric so the dashboard graph shows the true
-      // unique client count across all devices (not a per-device sum that double-counts
-      // clients visible from multiple devices simultaneously).
-      const dedupedRows = await query<{ count: string }>(
-        `SELECT COUNT(DISTINCT mac_address) AS count FROM clients WHERE active = TRUE`
-      );
-      const globalTotal = parseInt(dedupedRows[0]?.count || '0', 10);
-      const globalPoint = new Point('client_counts')
-        .tag('device_id', '_global')
-        .tag('device_name', '_global')
-        .intField('total_clients', globalTotal)
-        .timestamp(new Date());
-      writeApi.writePoint(globalPoint);
-
-      // The same deduplicated count, but for this device's site (issue #130).
-      // Summing the per-device series instead would double-count a client seen
-      // by two access points -- which is the exact error the global series was
-      // introduced to avoid, so the site series has to be deduplicated too.
-      const siteRows = await query<{ site_id: number | null; count: string }>(
-        `SELECT d0.site_id,
-                (SELECT COUNT(DISTINCT c.mac_address)
-                   FROM clients c
-                   JOIN devices d ON d.id = c.device_id
-                  WHERE c.active = TRUE AND d.site_id = d0.site_id) AS count
-           FROM devices d0 WHERE d0.id = $1`,
-        [this.device.id]
-      );
-      const siteId = siteRows[0]?.site_id ?? null;
-      if (siteId != null) {
-        writeApi.writePoint(
-          new Point('client_counts')
-            .tag('device_id', `_site_${siteId}`)
-            .tag('device_name', `_site_${siteId}`)
-            .intField('total_clients', parseInt(siteRows[0]?.count || '0', 10))
-            .timestamp(new Date())
-        );
-      }
-
       await writeApi.flush().catch(() => {});
+      // The fleet and site totals, deduplicated across devices.
+      await writeClientCounts();
     } catch (err) {
       console.error(`[${this.device.name}] Failed to update clients:`, err);
     }
