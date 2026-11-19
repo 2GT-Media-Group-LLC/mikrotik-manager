@@ -7,6 +7,26 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.24
+
+Released on Thursday 19 November 2026. A security fix, reported by
+[@davidcoulson](https://github.com/davidcoulson); update as soon as you can.
+
+- **Replacing a device by its serial kept its saved SSH password at the new address**
+  ([GHSA-p885-qw7f-rgx2](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-p885-qw7f-rgx2)).
+  Adding a device whose serial a managed device already has can replace that device, at the
+  address given. It kept the device's saved SSH login, so an operator could point a device at a
+  host that answered with its serial and have the next backup log in there with that password.
+  As when a device is edited, the saved SSH login now stays only when the address is unchanged,
+  or for a fleet admin; otherwise the device has only the logins given with the add. Replacing a
+  device also needs operator or admin on its site, in single and bulk adds alike: a viewer role
+  there was enough.
+- **Top Talkers names on the Dashboard** stopped at 20 characters however much room the row had.
+  They use the row now, shortened only where they run out of it, with the whole name on hover.
+- **The Dashboard on a phone.** Its rows of cards kept two or three columns at any width, so on a
+  phone Top Talkers was a narrow strip and the fleet tiles were a few pixels each. They stack
+  now, and the layout from 1024 pixels up is as before.
+
 ## 1.0.23
 
 Released on Thursday 19 November 2026.
