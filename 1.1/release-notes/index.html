@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta71" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.71
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta70" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2277,6 +2288,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta71" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.71
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta70" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3058,6 +3080,38 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta71">1.1.0-beta.71<a class="headerlink" href="#110-beta71" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>DNS over HTTPS.</strong> <strong>Network Services → DNS</strong> takes a DoH server URL, such as
+  <code>https://cloudflare-dns.com/dns-query</code>, and the router sends its lookups there over HTTPS.
+  <strong>Verify the server's certificate</strong> says whether the router can check it with RouterOS's
+  built-in trusted roots, and the page warns when the router would have no way to look up the
+  DoH server's own name. See <a href="../network-services/#dns">DNS</a>. Thanks to Ron
+  (<a href="https://github.com/ronchan44">@ronchan44</a>) for
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/468">#468</a>.</li>
+<li><strong>EoIP, wireless and other interfaces into a bridge.</strong> Under a bridge's ports on the
+  <strong>Bridges</strong> tab, <strong>+ Add EoIP, wireless, VLAN…</strong> adds interfaces that aren't on the Ports
+  tab's faceplate: EoIP, VXLAN, VPLS, veth, VLAN, wifi and wlan. Click a port for <strong>Remove from
+  bridge</strong>. Routed interfaces such as WireGuard and GRE are refused with the reason. See
+  <a href="../devices/#bridges">Bridges</a>. Also from Ron, on
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/466">#466</a>.</li>
+<li><strong>Log what a zone rule accepts.</strong> A custom rule in a zone pair has a <strong>Log</strong> box, and a pair
+  that allows everything can <strong>Log some of it</strong>: the connections that match are logged (up to
+  20 a second) and show in Firewall Logs as accepted. See <a href="../devices/#zones">Zones</a>. From Ron
+  on <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369">#369</a>.</li>
+<li><strong>Firewall Logs shows rules in your own chains.</strong> RouterOS logs a rule in a jump chain under
+  that chain's name, and those lines were left off the page. They show now, with the chain's
+  name, and the zone columns and filters place them correctly.</li>
+<li><strong>Two zone rule fixes, found by the new fuzz tests.</strong> A custom rule set to <strong>Protocol #</strong> 6
+  or 17 with no ports or addresses was dropped on save as if blank; it's now kept as all of TCP
+  or UDP, as the form showed. A <strong>Protocol #</strong> 1 rule could be refused for an ICMP type left in
+  the hidden ICMP field; that field is now ignored for it. The form also reads spaces inside
+  an address the way the server does.</li>
+<li><strong>Fuzz testing.</strong> Code that reads outside input has property-based fuzz tests in every CI
+  run, and a weekly <strong>Fuzz</strong> workflow runs them at far greater length along with
+  coverage-guided fuzzing of the NetFlow decoder and the firewall log parser. See
+  <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/blob/dev/CONTRIBUTING.md">CONTRIBUTING.md</a>.</li>
+</ul>
 <h2 id="110-beta70">1.1.0-beta.70<a class="headerlink" href="#110-beta70" title="Permanent link">&para;</a></h2>
 <p>A security fix, also in 1.0.24, reported by <a href="https://github.com/davidcoulson">@davidcoulson</a>;
 update as soon as you can.</p>

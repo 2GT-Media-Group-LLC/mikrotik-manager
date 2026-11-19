@@ -1784,6 +1784,11 @@ structured events.</p>
 <li>input and output interface, or from and to zone on a zone-managed device</li>
 </ul>
 <p>IPv4 and IPv6 packet logs are supported.</p>
+<p>A rule in a chain of your own (a jump target) is logged under that chain's name rather than
+input, forward or output. Before 1.1.0-beta.71 those lines were left off this page; now they
+show with their own chain's name, and the zone columns work out whether the packet was to the
+router, from it, or passing through from its interfaces. A zone rule's <strong>Log</strong> writes lines like
+this (see <a href="../devices/#zones">Zones</a>).</p>
 <h2 id="grouped-and-raw">Grouped and raw<a class="headerlink" href="#grouped-and-raw" title="Permanent link">&para;</a></h2>
 <p>RouterOS logs every packet a logging rule matches, so one blocked client retrying, or a port
 scan, fills the page. The page opens <strong>Grouped</strong>, the way a Palo Alto or Check Point log reads:

@@ -2027,6 +2027,14 @@ time.</p>
 <li><strong>Upstream DNS servers</strong> are edited one entry at a time (#207): type an address and press
   Enter, or paste a list; × removes one. Only IP addresses are accepted. A device's own DNS
   servers, under its <strong>Config</strong> tab, work the same way.</li>
+<li><strong>DNS over HTTPS (DoH)</strong> (#468, 1.1): give the router a DoH server URL, such as
+  <code>https://cloudflare-dns.com/dns-query</code> or <code>https://dns.google/dns-query</code>, and it sends its
+  lookups there over HTTPS instead of to the upstream servers. Leave it empty for plain DNS.
+  The router still has to look up the DoH server's own name, so keep an upstream server (or a
+  static A record for that name); the page warns when there's neither. <strong>Verify the
+  server's certificate</strong> is recommended: recent RouterOS checks it against its built-in
+  trusted roots, and the page says when a router has none, in which case the server's CA
+  certificate has to be imported first or every lookup fails.</li>
 </ul>
 <h2 id="ntp">NTP<a class="headerlink" href="#ntp" title="Permanent link">&para;</a></h2>
 <p>Client and server configuration. Worth more attention than it usually gets: a device with the
