@@ -54,6 +54,14 @@ Test against lab equipment, never a network people depend on. A
   first. With Docker running, it also runs the database tests against a throwaway Postgres.
 - **Add or update tests.** The backend uses Jest and the frontend Vitest; `npm test` in either
   folder runs them.
+- **Code that reads input from outside** (a packet, a log line, a request body, a path) has
+  property-based fuzz tests, in files ending `.fuzz.test.ts`, using
+  [fast-check](https://fast-check.dev/). They generate a few hundred inputs per property in CI;
+  set `FUZZ_RUNS` for more. A failure prints a seed: `FUZZ_SEED=<seed> FUZZ_RUNS=1` with the same
+  test replays it. The weekly **Fuzz** workflow runs them with far more cases, plus
+  coverage-guided fuzzing of the NetFlow decoder and the firewall log parser with Jazzer.js
+  (`fuzz/`; build the backend, then `npm ci`, `npm run seed` and `npm run netflow` there). If
+  you change one of those parsers, a fuzz property for it is welcome.
 - **Update the docs.** The guides are the Markdown files in `docs/`, published as the
   [documentation site](https://2gt-media-group-llc.github.io/mikrotik-manager/latest/). Change them
   in the same pull request as the behaviour they describe. To check they build:

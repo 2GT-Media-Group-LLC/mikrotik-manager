@@ -1,0 +1,13 @@
+{
+  "name": "mikrotik-manager-fuzz",
+  "private": true,
+  "description": "Coverage-guided fuzzing of the backend's parsers with Jazzer.js. Run by the scheduled Fuzz workflow; not part of the app or its images.",
+  "scripts": {
+    "netflow": "jazzer netflow.fuzz.js --sync --includes backend/dist/services/netflow --corpus corpus/netflow -- -max_total_time=${FUZZ_SECONDS:-60} -rss_limit_mb=2048",
+    "firewall-log": "jazzer firewallLog.fuzz.js --sync --includes backend/dist/utils/firewallLogParser --corpus corpus/firewall-log -- -max_total_time=${FUZZ_SECONDS:-60} -rss_limit_mb=2048",
+    "seed": "node seed-corpus.js"
+  },
+  "dependencies": {
+    "@jazzer.js/core": "4.0.0"
+  }
+}
