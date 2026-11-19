@@ -24,6 +24,13 @@ export const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
+  // No JIT. The planner's cost estimate for the client-list queries (the
+  // correlated sighting ranking in utils/clientPorts) is in the hundreds of
+  // millions, so Postgres compiled ~166 functions on every run: 2.7 s of JIT
+  // for a query that executes in 0.1 s, and one open dashboard on a fleet of
+  // about a hundred devices kept every core busy. Nothing here runs long
+  // enough to earn it back.
+  options: '-c jit=off',
 });
 
 pool.on('error', (err) => {
