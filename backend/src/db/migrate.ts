@@ -106,7 +106,6 @@ CREATE TABLE IF NOT EXISTS clients (
   last_seen TIMESTAMPTZ,
   UNIQUE(device_id, mac_address)
 );
-CREATE INDEX IF NOT EXISTS idx_clients_active ON clients(active, last_seen DESC);
 CREATE INDEX IF NOT EXISTS idx_clients_mac ON clients(mac_address);
 
 -- Events and alerts
@@ -1775,6 +1774,16 @@ CREATE TABLE IF NOT EXISTS dhcp_pool_usage (
 -- A snapshot is only stored when the config changes, so an unchanged device's
 -- newest backup gets old while it's still current.
 ALTER TABLE devices ADD COLUMN IF NOT EXISTS config_checked_at TIMESTAMPTZ;
+
+-- Client rows are rewritten on every fast poll (last_seen, counters). With
+-- last_seen in idx_clients_active (active, last_seen) none of those updates
+-- could be HOT, so each one also wrote a new entry into every index on the
+-- table, and the table and its indexes bloated. Nothing needs that index: reads
+-- by device and MAC use the (device_id, mac_address) key, and the hourly prune
+-- of inactive clients reads the whole table either way. Room left on each page
+-- lets an update stay on its page, which a HOT update also needs.
+DROP INDEX IF EXISTS idx_clients_active;
+ALTER TABLE clients SET (fillfactor = 70);
 `;
 
 const DEFAULT_SETTINGS = [
