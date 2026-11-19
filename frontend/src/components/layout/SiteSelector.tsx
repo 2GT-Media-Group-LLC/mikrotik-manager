@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Building2, ChevronDown, Check, Plus, Pencil, Globe, X, FolderOpen, Search } from 'lucide-react';
 import clsx from 'clsx';
@@ -66,6 +66,18 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
+
+  // The list is as wide as its longest name (max-content), but some browsers
+  // leave the list's scrollbar out of that width, and the longest name then
+  // loses its end to an ellipsis. Widen it by what is still cut, once shown.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!open || creating || renaming || !panel) return;
+    panel.style.width = 'max-content';
+    const cut = Math.max(0, ...Array.from(panel.querySelectorAll<HTMLElement>('[data-row-name]'), (e) => e.scrollWidth - e.clientWidth));
+    if (cut > 0) panel.style.width = `${panel.offsetWidth + cut}px`;
+  }, [open, creating, renaming, filter, sites, groups]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -138,6 +150,13 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
   const q = filter.trim().toLowerCase();
   const shownGroups = groups.filter((g) => !q || g.name.toLowerCase().includes(q));
   const shownSites = sites.filter((s) => !q || s.name.toLowerCase().includes(q) || (s.group_name ?? '').toLowerCase().includes(q));
+  // Every row is a button ending in its count, and beside it the rename
+  // button's column (w-7), kept empty on rows without one for anyone who can
+  // rename sites. So the counts of groups, sites and the selected row line up,
+  // with only that column after them. The tick goes before the count.
+  const tick = (on: boolean) => on && <Check className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />;
+  const renameSpace = canWrite && <span className="w-7 flex-shrink-0" />;
+  const rowBtn = clsx('flex-1 flex items-center gap-2 pl-3 py-1.5 text-[12.5px] min-w-0', canWrite ? 'pr-1' : 'pr-3');
 
   return (
     <div ref={wrapRef} className="relative px-[14px] pt-3">
@@ -170,8 +189,16 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
 
       {open && (
         <div
-          className="absolute left-[14px] right-[14px] mt-1 z-50 rounded-lg shadow-lg overflow-hidden"
-          style={{ background: 'var(--surface)', border: '1px solid var(--line)', minWidth: 200 }}
+          ref={panelRef}
+          className={clsx('absolute left-[14px] mt-1 z-50 rounded-lg shadow-lg overflow-hidden', (creating || renaming) && 'right-[14px]')}
+          style={{
+            background: 'var(--surface)', border: '1px solid var(--line)', minWidth: 200,
+            // The list is as wide as its longest name, out over the page: held to
+            // the sidebar's width, most site names were cut to a few letters.
+            // Never narrower than the selector, never past the window. The form
+            // stays the selector's width (its note would stretch it).
+            ...(creating || renaming ? {} : { width: 'max-content', minWidth: 'max(200px, calc(100% - 28px))', maxWidth: 'calc(100vw - 32px)' }),
+          }}
         >
           {creating || renaming ? (
             <div className="p-3 space-y-2">
@@ -242,15 +269,18 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
               )}
               {sites.length > 1 && !q && (
                 <>
-                  <button
-                    onClick={openAllSites}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-[12.5px] hover:bg-black/5 dark:hover:bg-white/5"
-                    style={{ color: 'var(--ink)' }}
-                  >
-                    <Globe className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
-                    <span className="flex-1 text-left">{allLabel}</span>
-                    {currentSiteId == null && currentGroupId == null && <Check className="w-3.5 h-3.5 text-blue-500" />}
-                  </button>
+                  <div className="flex items-center hover:bg-black/5 dark:hover:bg-white/5">
+                    <button
+                      onClick={openAllSites}
+                      className={rowBtn}
+                      style={{ color: 'var(--ink)' }}
+                    >
+                      <Globe className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
+                      <span className="flex-1 text-left">{allLabel}</span>
+                      {tick(currentSiteId == null && currentGroupId == null)}
+                    </button>
+                    {renameSpace}
+                  </div>
                   <div className="my-1 h-px" style={{ background: 'var(--line)' }} />
                 </>
               )}
@@ -259,18 +289,20 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
                 <>
                   <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-4)' }}>Groups</div>
                   {shownGroups.map((g) => (
-                    <button
-                      key={`g${g.id}`}
-                      onClick={() => switchToGroup(g.id)}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[12.5px] min-w-0 hover:bg-black/5 dark:hover:bg-white/5"
-                      style={{ color: 'var(--ink)' }}
-                      title={`${g.site_ids.length} site${g.site_ids.length === 1 ? '' : 's'}`}
-                    >
-                      <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
-                      <span className="flex-1 text-left truncate">{g.name}</span>
-                      <span className="text-[10.5px] flex-shrink-0" style={{ color: 'var(--ink-4)' }}>{g.device_count}</span>
-                      {currentGroup?.id === g.id && <Check className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
-                    </button>
+                    <div key={`g${g.id}`} className="flex items-center hover:bg-black/5 dark:hover:bg-white/5">
+                      <button
+                        onClick={() => switchToGroup(g.id)}
+                        className={rowBtn}
+                        style={{ color: 'var(--ink)' }}
+                        title={`${g.name} · ${g.site_ids.length} site${g.site_ids.length === 1 ? '' : 's'}`}
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
+                        <span data-row-name className="flex-1 text-left truncate">{g.name}</span>
+                        {tick(currentGroup?.id === g.id)}
+                        <span className="text-[10.5px] flex-shrink-0" style={{ color: 'var(--ink-4)' }}>{g.device_count}</span>
+                      </button>
+                      {renameSpace}
+                    </div>
                   ))}
                   <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--ink-4)' }}>Sites</div>
                 </>
@@ -284,23 +316,24 @@ export default function SiteSelector({ isCollapsed, onNavigate }: Props) {
                 <div key={s.id} className="group flex items-center hover:bg-black/5 dark:hover:bg-white/5">
                   <button
                     onClick={() => switchTo(s.id)}
-                    className="flex-1 flex items-center gap-2 px-3 py-1.5 text-[12.5px] min-w-0"
+                    className={rowBtn}
                     style={{ color: 'var(--ink)' }}
+                    title={s.group_name ? `${s.name} · ${s.group_name}` : s.name}
                   >
                     <Building2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--ink-3)' }} />
-                    <span className="flex-1 text-left truncate">
+                    <span data-row-name className="flex-1 text-left truncate">
                       {s.name}
                       {s.group_name && <span className="text-[10.5px]" style={{ color: 'var(--ink-4)' }}> · {s.group_name}</span>}
                     </span>
+                    {tick(shown?.id === s.id)}
                     <span className="text-[10.5px] flex-shrink-0" style={{ color: 'var(--ink-4)' }}>
                       {s.device_count}
                     </span>
-                    {shown?.id === s.id && <Check className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
                   </button>
                   {canWrite && (
                     <button
                       onClick={() => { setRenaming(s); setName(s.name); setAddress(s.address ?? ''); setError(''); }}
-                      className="px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="w-7 flex-shrink-0 flex justify-center py-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
                       style={{ color: 'var(--ink-4)' }}
                       title={`Rename ${s.name}`}
                     >
