@@ -3,6 +3,16 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.67
+
+- **Add a device without checking it first.** **Force add without checking connectivity** in
+  Add Device saves a device straight away with an unknown status, for one that isn't reachable
+  yet. Its first poll connects (finding the API port when none was given) and checks its serial:
+  a duplicate of a device in the same site is removed if that device is online, or merged into it
+  if not. Until that first poll succeeds it isn't marked offline and can't be synced. See
+  [Adding devices](devices.md#adding-devices). Thanks to eskyuu
+  ([#441](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/441)).
+
 ## 1.1.0-beta.66
 
 - **A bridge's addresses from the Bridges tab.** **Edit** next to a bridge's addresses opens
