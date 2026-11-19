@@ -1819,6 +1819,12 @@ colour comes from the name:</p>
   with the hourly config check. A membership change made on the device shows here within the
   hour.</li>
 </ul>
+<p>When a device in the selected site or group runs zones, two filters appear next to the rule
+filters: <strong>From any zone</strong> and <strong>To any zone</strong>. Pick a zone in one to see only traffic from it,
+or in the other for traffic to it, or both for one direction, such as from WAN to LAN. <strong>Router</strong>
+is traffic from, or to, the router itself. The filters cover every zone-managed device in scope,
+so picking LAN brings in LAN on each of them; pick a device too for just one. Lines from devices
+without zones don't match a zone filter.</p>
 <h2 id="resolve-names">Resolve names<a class="headerlink" href="#resolve-names" title="Permanent link">&para;</a></h2>
 <p><strong>Resolve names</strong> shows names in place of addresses. Hover a name to see its address. A name
 comes from one of two places:</p>
@@ -1862,7 +1868,7 @@ that rule.</p>
 period selector changes that to the last hour, 7 days or 30 days (only lines
 still within the firewall log retention are there to find), and a link can
 open it with <code>?range=1h|24h|7d|30d</code>. Results can be filtered by device, action,
-protocol, or text such as an address, port, interface, or log prefix.</p>
+protocol, <a href="#zones">zone</a>, or text such as an address, port, interface, or log prefix.</p>
 <p><strong>All rules</strong> narrows the page to one rule's lines. It lists the log prefixes that logged in
 the period, each with its device and how many lines it wrote, busiest first; with a device
 picked, a tagged rule is named by its comment. The match is on the whole prefix, so
