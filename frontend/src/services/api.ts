@@ -2609,10 +2609,11 @@ export const networkServicesApi = {
 
   // ── DNS ───────────────────────────────────────────────────────────────────
   getDns: (deviceId: number) =>
-    api.get<{ settings: NS; statics: NS[] }>('/network-services/dns', { params: { deviceId } }),
+    api.get<{ settings: NS; statics: NS[]; dohBuiltinTrust?: boolean | null }>('/network-services/dns', { params: { deviceId } }),
   setDns: (deviceId: number, settings: {
     servers?: string; allow_remote_requests?: boolean;
     max_udp_packet_size?: string; cache_size?: string; cache_max_ttl?: string;
+    use_doh_server?: string; verify_doh_cert?: boolean;
   }) =>
     api.put<NS>('/network-services/dns', settings, { params: { deviceId } }),
   flushDns: (deviceId: number) =>

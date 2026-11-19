@@ -172,6 +172,16 @@ function RecordForm({ deviceId, existing, onClose }: RecordFormProps) {
   );
 }
 
+/** Why the DoH server URL can't be used, or null (empty turns DoH off). Mirrors the server's check. */
+function dohServerProblem(v: string): string | null {
+  if (!v) return null;
+  if (!/^https:\/\//i.test(v)) return 'Use an https:// URL, like https://cloudflare-dns.com/dns-query.';
+  if (/[\s,;"'\\]/.test(v)) return 'The URL can\u2019t contain spaces, commas, quotes or semicolons.';
+  if (v.length > 255) return 'The URL is too long.';
+  try { if (!new URL(v).hostname) return 'The URL needs a host name.'; } catch { return 'That isn\u2019t a valid URL.'; }
+  return null;
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function NetworkServicesDNSPage() {
@@ -185,6 +195,8 @@ export default function NetworkServicesDNSPage() {
   const [maxUdpSize, setMaxUdpSize] = useState('');
   const [cacheSize, setCacheSize] = useState('');
   const [cacheMaxTtl, setCacheMaxTtl] = useState('');
+  const [dohServer, setDohServer] = useState('');
+  const [verifyDoh, setVerifyDoh] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
 
   const [recordForm, setRecordForm] = useState<NS | null | 'new'>(null);
@@ -214,6 +226,8 @@ export default function NetworkServicesDNSPage() {
       setMaxUdpSize(dns.settings['max-udp-packet-size'] || '');
       setCacheSize(dns.settings['cache-size'] || '');
       setCacheMaxTtl(dns.settings['cache-max-ttl'] || '');
+      setDohServer(dns.settings['use-doh-server'] || '');
+      setVerifyDoh(dns.settings['verify-doh-cert'] === 'yes');
       setSettingsDirty(false);
     }
   }, [dns?.settings]);
@@ -230,9 +244,20 @@ export default function NetworkServicesDNSPage() {
     return (d['dns'] as unknown as { allow_remote: boolean } | null)?.allow_remote;
   });
 
+  const dohSupported = dns?.settings ? 'use-doh-server' in dns.settings : false;
+  const dohError = dohServerProblem(dohServer.trim());
+  // The router looks up the DoH server's name with its regular servers or a
+  // static record; with neither, DoH can't start.
+  const dohHost = (() => { try { return dohServer.trim() && !dohError ? new URL(dohServer.trim()).hostname : ''; } catch { return ''; } })();
+  const dohHostIsIp = isValidIPv4(dohHost) || isValidIPv6(dohHost.replace(/^\[|\]$/g, ''));
+  const dohNoBootstrap = !!dohHost && !dohHostIsIp && !serversInput.trim() && !dns?.settings['dynamic-servers']
+    && !(dns?.statics ?? []).some((r) => r['name'] === dohHost && r['disabled'] !== 'true');
+
   const saveSettingsRequest = () => networkServicesApi.setDns(deviceId, {
       servers: serversInput, allow_remote_requests: allowRemote,
       max_udp_packet_size: maxUdpSize, cache_size: cacheSize, cache_max_ttl: cacheMaxTtl,
+      // Only devices that report DoH get it sent (RouterOS 6.47+).
+      ...(dohSupported ? { use_doh_server: dohServer.trim(), verify_doh_cert: verifyDoh } : {}),
     });
   const saveSettings = useMutation({
     meta: { inlineError: true },
@@ -343,6 +368,38 @@ export default function NetworkServicesDNSPage() {
                 <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">Upstream resolver addresses, in the order they&apos;re tried.</p>
               </div>
 
+              {dohSupported && (
+                <div>
+                  <label htmlFor="doh-server" className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1">DNS over HTTPS (DoH) Server</label>
+                  <input id="doh-server" type="text" className={clsx('input w-full max-w-md', dohError && 'border-red-400 dark:border-red-500')}
+                    value={dohServer} onChange={e => { setDohServer(e.target.value); mark(); }}
+                    placeholder="https://cloudflare-dns.com/dns-query" disabled={!canWrite} spellCheck={false} />
+                  {dohError
+                    ? <p className="mt-1 text-xs text-red-500">{dohError}</p>
+                    : <p className="mt-1 text-xs text-gray-400 dark:text-slate-500">When set, the router sends its lookups to this server over HTTPS instead of the upstream servers. Leave empty for plain DNS.</p>}
+                  {dohNoBootstrap && (
+                    <p className="mt-1 flex items-start gap-1 text-xs text-amber-600 dark:text-amber-400">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                      The router needs to look up {dohHost} first: add an upstream server above, or a static A record for it below.
+                    </p>
+                  )}
+                  <label className="mt-2 flex items-start gap-2 text-sm text-gray-700 dark:text-slate-200">
+                    <input type="checkbox" className="mt-0.5" checked={verifyDoh} disabled={!canWrite}
+                      onChange={e => { setVerifyDoh(e.target.checked); mark(); }} />
+                    <span>
+                      Verify the server&apos;s certificate
+                      <span className="block text-xs text-gray-400 dark:text-slate-500">
+                        {dns.dohBuiltinTrust === true
+                          ? 'Recommended. This router checks it against RouterOS\u2019s built-in trusted root certificates.'
+                          : dns.dohBuiltinTrust === false
+                          ? 'This router has no built-in trusted roots for DNS: import the server\u2019s CA certificate first, or every lookup fails while this is on.'
+                          : 'Recommended. The router has to trust the server\u2019s certificate, through RouterOS\u2019s built-in roots or an imported CA.'}
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-slate-200 mb-1">Max UDP Packet Size</label>
@@ -381,16 +438,18 @@ export default function NetworkServicesDNSPage() {
 
               {canWrite && settingsDirty && (
                 <div className="flex items-center gap-3 pt-2">
-                  <button onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending}
+                  <button onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending || !!dohError}
                     className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors">
                     <Save className="w-3.5 h-3.5" />{saveSettings.isPending ? 'Saving…' : 'Save Changes'}
                   </button>
-                  <ReviewChangesButton request={saveSettingsRequest} onApply={() => saveSettings.mutate()} applyLabel="Save" disabled={saveSettings.isPending} />
+                  <ReviewChangesButton request={saveSettingsRequest} onApply={() => saveSettings.mutate()} applyLabel="Save" disabled={saveSettings.isPending || !!dohError} />
                   <button onClick={() => {
                     const s = dns.settings;
                     setServersInput(s['servers'] || ''); setAllowRemote(s['allow-remote-requests'] === 'yes');
                     setMaxUdpSize(s['max-udp-packet-size'] || ''); setCacheSize(s['cache-size'] || '');
-                    setCacheMaxTtl(s['cache-max-ttl'] || ''); setSettingsDirty(false);
+                    setCacheMaxTtl(s['cache-max-ttl'] || '');
+                    setDohServer(s['use-doh-server'] || ''); setVerifyDoh(s['verify-doh-cert'] === 'yes');
+                    setSettingsDirty(false);
                   }} className="text-sm text-gray-500 hover:text-gray-700">Discard</button>
                   {saveSettings.isError && <span className="text-xs text-red-500">{apiErrorMessage(saveSettings.error)}</span>}
                 </div>

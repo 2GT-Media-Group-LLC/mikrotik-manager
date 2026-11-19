@@ -7142,9 +7142,14 @@ export class DeviceCollector {
     max_udp_packet_size?: string;
     cache_size?: string;
     cache_max_ttl?: string;
+    use_doh_server?: string;
+    verify_doh_cert?: boolean;
   }): Promise<void> {
     const params: Record<string, string> = {};
     if (settings.servers !== undefined) params['servers'] = settings.servers;
+    // DNS over HTTPS (#468): an empty URL turns it off.
+    if (settings.use_doh_server !== undefined) params['use-doh-server'] = settings.use_doh_server;
+    if (settings.verify_doh_cert !== undefined) params['verify-doh-cert'] = settings.verify_doh_cert ? 'yes' : 'no';
     if (settings.allow_remote_requests !== undefined) {
       params['allow-remote-requests'] = settings.allow_remote_requests ? 'yes' : 'no';
     }
@@ -7152,6 +7157,23 @@ export class DeviceCollector {
     if (settings.cache_size) params['cache-size'] = settings.cache_size;
     if (settings.cache_max_ttl) params['cache-max-ttl'] = settings.cache_max_ttl;
     await this.client.execute('/ip/dns/set', params);
+  }
+
+  /**
+   * Whether DNS checks DoH certificates against RouterOS's built-in trusted
+   * roots (#468): yes when /certificate/settings has a builtin-trust-store
+   * that isn't off and DNS is among its current defaults. False on versions
+   * without one, which need the server's CA imported; null when unreadable.
+   */
+  async dnsUsesBuiltinTrust(): Promise<boolean | null> {
+    const rows = await this.client.execute('/certificate/settings/print', {}).catch(() => null);
+    if (!rows) return null;
+    const row = rows[0] ?? {};
+    const store = row['builtin-trust-store'];
+    if (store === undefined) return false;
+    if (store === 'none') return false;
+    if (store === 'all') return true;
+    return (row['current-defaults'] ?? '').split(',').map((v) => v.trim()).includes('dns');
   }
 
   async getDnsStaticEntries(): Promise<Record<string, string>[]> {

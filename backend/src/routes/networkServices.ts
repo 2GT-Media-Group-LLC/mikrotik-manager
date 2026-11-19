@@ -8,6 +8,7 @@ import { readManagementTunnel, tunnelWriteRule, type ManagementTunnel, type Tunn
 import { requireAuth, requireWrite } from '../middleware/auth';
 import { maskSecretsForReadOnly } from '../utils/redactSecrets';
 import { siteScopeDevices } from '../utils/siteScope';
+import { dohServerError } from '../utils/dnsDoh';
 import { poolState } from '../utils/dhcpPools';
 import { activeSite, writableScope } from '../middleware/site';
 import { liveForDevices } from '../services/liveCache';
@@ -340,13 +341,15 @@ router.delete('/dhcp/static-lease/:id', requireWrite, async (req, res) => {
 router.get('/dns', async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
   await withDevice(deviceId, res, async (collector) => {
-    const [settings, statics] = await Promise.allSettled([
+    const [settings, statics, builtinTrust] = await Promise.allSettled([
       collector.getDnsSettings(),
       collector.getDnsStaticEntries(),
+      collector.dnsUsesBuiltinTrust(),
     ]);
     res.json({
       settings: settings.status === 'fulfilled' ? settings.value : {},
       statics: statics.status === 'fulfilled' ? statics.value : [],
+      dohBuiltinTrust: builtinTrust.status === 'fulfilled' ? builtinTrust.value : null,
     });
   });
 });
@@ -354,6 +357,14 @@ router.get('/dns', async (req, res) => {
 // PUT /api/network-services/dns?deviceId=X
 router.put('/dns', requireWrite, async (req, res) => {
   const deviceId = deviceIdParam(req, res); if (!deviceId) return;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  if (body.use_doh_server !== undefined) {
+    const err = dohServerError(body.use_doh_server);
+    if (err) return res.status(400).json({ error: err });
+  }
+  if (body.verify_doh_cert !== undefined && typeof body.verify_doh_cert !== 'boolean') {
+    return res.status(400).json({ error: 'verify_doh_cert must be true or false.' });
+  }
   await withDevice(deviceId, res, async (collector) => {
     await collector.setDnsSettings(req.body);
     const updated = await collector.getDnsSettings();

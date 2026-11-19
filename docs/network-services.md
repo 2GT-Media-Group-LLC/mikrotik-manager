@@ -51,6 +51,14 @@ The resolver configuration on each device, plus static entries.
 - **Upstream DNS servers** are edited one entry at a time (#207): type an address and press
   Enter, or paste a list; × removes one. Only IP addresses are accepted. A device's own DNS
   servers, under its **Config** tab, work the same way.
+- **DNS over HTTPS (DoH)** (#468, 1.1): give the router a DoH server URL, such as
+  `https://cloudflare-dns.com/dns-query` or `https://dns.google/dns-query`, and it sends its
+  lookups there over HTTPS instead of to the upstream servers. Leave it empty for plain DNS.
+  The router still has to look up the DoH server's own name, so keep an upstream server (or a
+  static A record for that name); the page warns when there's neither. **Verify the
+  server's certificate** is recommended: recent RouterOS checks it against its built-in
+  trusted roots, and the page says when a router has none, in which case the server's CA
+  certificate has to be imported first or every lookup fails.
 
 ## NTP
 
