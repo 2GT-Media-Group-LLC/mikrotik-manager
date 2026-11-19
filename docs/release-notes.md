@@ -3,6 +3,31 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.70
+
+A security fix, also in 1.0.24, reported by [@davidcoulson](https://github.com/davidcoulson);
+update as soon as you can.
+
+- **Replacing a device by its serial kept its saved SSH password at the new address**
+  ([GHSA-p885-qw7f-rgx2](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-p885-qw7f-rgx2)).
+  An operator could point a device at a host that answered with its serial and have the next
+  backup log in there with that password. As when a device is edited, the saved SSH login now
+  stays only when the address and route are unchanged, or for a fleet admin. Replacing a device
+  also needs operator or admin on its site, in single and bulk adds alike.
+- **Your firewall or modem on top of the map.** Where the network meets the outside through
+  something the manager doesn't manage, add it as a node (Internet, ISP modem, Firewall or
+  another vendor's router) and the map hangs everything below it, through the unmanaged
+  switches too. A device only goes under one it has a link to: CDP heard through an unmanaged
+  switch had put devices under switches they aren't cabled to, and a router off an access
+  switch on top. Every detailed card is now the same width, so a device sits centred over the
+  ones below it. See [Layout](topology.md#layout).
+- **Top down or left to right.** **Display → Layout** draws the map growing down (the default)
+  or to the right. **Arrange** lays the cards out again and keeps the sides links attach at;
+  **Reset layout** still forgets both.
+- **Top Talkers names on the Dashboard** use the row's width instead of stopping at 20
+  characters, and **the Dashboard on a phone** stacks its cards instead of squeezing them side
+  by side. Also in 1.0.24.
+
 ## 1.1.0-beta.69
 
 - **Filter Firewall Logs by zone.** With zones on a device in the selected site or group,
@@ -1047,6 +1072,26 @@ tested on real fleets.
 1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
+
+## 1.0.24
+
+Released on Thursday 19 November 2026. A security fix, reported by
+[@davidcoulson](https://github.com/davidcoulson); update as soon as you can.
+
+- **Replacing a device by its serial kept its saved SSH password at the new address**
+  ([GHSA-p885-qw7f-rgx2](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-p885-qw7f-rgx2)).
+  Adding a device whose serial a managed device already has can replace that device, at the
+  address given. It kept the device's saved SSH login, so an operator could point a device at a
+  host that answered with its serial and have the next backup log in there with that password.
+  As when a device is edited, the saved SSH login now stays only when the address is unchanged,
+  or for a fleet admin; otherwise the device has only the logins given with the add. Replacing a
+  device also needs operator or admin on its site, in single and bulk adds alike: a viewer role
+  there was enough.
+- **Top Talkers names on the Dashboard** stopped at 20 characters however much room the row had.
+  They use the row now, shortened only where they run out of it, with the whole name on hover.
+- **The Dashboard on a phone.** Its rows of cards kept two or three columns at any width, so on a
+  phone Top Talkers was a narrow strip and the fleet tiles were a few pixels each. They stack
+  now, and the layout from 1024 pixels up is as before.
 
 ## 1.0.23
 
