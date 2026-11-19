@@ -167,4 +167,38 @@ describe('zone formatters are reused', () => {
       expect(parseDeviceLogTime('2026-09-03 08:37:38', clock, NOW)!.toISOString()).toBe('2026-09-03T15:37:38.000Z');
     }
   });
+
+  // Offsets are cached per quarter hour of UTC. Every minute across each 2026
+  // transition, in zones that switch on the hour, the half hour and at :45,
+  // must convert exactly as Intl does it uncached.
+  it('agrees with Intl minute by minute across daylight-saving changes', () => {
+    const fmts = new Map<string, Intl.DateTimeFormat>();
+    const intlOffset = (ms: number, zone: string) => {
+      if (!fmts.has(zone)) fmts.set(zone, new Intl.DateTimeFormat('en-US', {
+        timeZone: zone, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }));
+      const p = Object.fromEntries(fmts.get(zone)!.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+      return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - ms;
+    };
+    const zones = ['America/St_Johns', 'Australia/Adelaide', 'Australia/Lord_Howe', 'Pacific/Chatham', 'Europe/Berlin'];
+    let changes = 0;
+    for (const zone of zones) {
+      // Walk the year a day at a time to find where the offset changes.
+      for (let day = Date.UTC(2026, 0, 1); day < Date.UTC(2027, 0, 1); day += 86_400_000) {
+        if (intlOffset(day, zone) === intlOffset(day + 86_400_000, zone)) continue;
+        changes++;
+        for (let ms = day; ms <= day + 86_400_000; ms += 60_000) {
+          const off = intlOffset(ms, zone);
+          const local = new Date(ms + off);
+          const got = wallClockToUtc(local.getUTCFullYear(), local.getUTCMonth() + 1, local.getUTCDate(),
+            local.getUTCHours(), local.getUTCMinutes(), local.getUTCSeconds(), zone).getTime();
+          // A wall clock repeated by the fall-back hour may name either instant;
+          // whichever it names must show that same wall clock.
+          expect(got + intlOffset(got, zone)).toBe(ms + off);
+        }
+      }
+    }
+    expect(changes).toBe(zones.length * 2); // each zone springs forward and falls back once
+  });
 });
