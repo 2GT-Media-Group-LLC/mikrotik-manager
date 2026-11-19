@@ -2062,6 +2062,19 @@ A neighbour reached only over a tunnel, such as a WireGuard peer at another site
 its router rather than under it. Links hidden or drawn by hand count as you left them: a device
 whose way up was hidden goes under the link you can see. Before 1.1 the spanning-tree root was
 on top, which often put a switch above the router.</p>
+<p>Where your network meets the outside is often something the manager doesn't manage: a firewall
+or router from another vendor, behind unmanaged switches. Add it as <a href="#your-own-nodes">your own node</a>
+(<strong>Internet / WAN</strong>, <strong>ISP modem / ONT</strong>, <strong>Firewall</strong> or <strong>Router (other vendor)</strong>) and connect
+it, and it becomes the top of its part of the map, with everything hanging below it along the
+links, through the unmanaged switches too. A neighbour discovery found that you've marked as one
+of those types counts the same. Without one, the manager can only see as far up as the first
+unmanaged switch, so the top is its best guess. A device's way up only counts when there's a link
+on the map between the two: CDP and MNDP can be heard through an unmanaged switch, which made
+devices look as if they went up to a switch they aren't cabled to.</p>
+<p><strong>Display → Layout</strong> lays the map out <strong>Top down</strong> (the default) or <strong>Left to right</strong>, the same
+tree turned on its side. It applies to cards you haven't moved; <strong>Arrange</strong> lays out the rest.
+The choice is remembered in your browser. Every detailed card is the same width, so a device
+sits centred over the ones below it.</p>
 <p>Siblings stay in one row as long as they fit
 within a sensible width. A wider family wraps onto a few <strong>even rows</strong>, like text, rather than
 running thousands of pixels across, and each switch keeps its own devices under it. A group of
@@ -2083,8 +2096,10 @@ a node), and it's shared: everyone sees the same drawing. Viewers can move cards
 but their changes aren't saved.</p>
 <p>Once arranged, the map holds still. A new link, a new node or a refresh doesn't move anything,
 and the view isn't refitted. A new device, or a client list you open, appears next to what it
-connects to. <strong>Reset layout</strong> forgets the arrangement of everything in view and lays it out
-automatically again.</p>
+connects to. <strong>Arrange</strong> lays the cards in view out automatically again, each under its uplink,
+and keeps the sides you chose for links to attach at. <strong>Reset layout</strong> forgets both: where
+cards were moved to and which sides links attach at. Either one changes the shared drawing, for
+everyone.</p>
 <p>Any link, discovered or drawn, can be given a colour from its menu, to pick out trunks, say
 (#260); <strong>Default</strong> goes back to the colour its kind gives it. A link that goes down or is
 blocked by spanning tree turns red whatever its colour, and gets its colour back once it's healthy
@@ -2152,8 +2167,9 @@ says</strong> undoes that. Discovery keeps finding it as before; only how it's s
 map: the ISP modem or ONT, the internet, a router or firewall from another vendor, an unmanaged
 switch, a server, a NAS, a printer, a camera or NVR, a phone system, a computer. Give it a name,
 a type and optionally an address and notes; click it later to edit or delete it.</p>
-<p>Connect it with <strong>Connect Mode</strong>. A modem or internet node connected to the top device of the
-map is drawn above it. Nodes belong to the site they were added in.</p>
+<p>Connect it with <strong>Connect Mode</strong>. An internet, modem, firewall or other-vendor router node is
+the top of its part of the map, with everything else below it (see <a href="#layout">Layout</a>). Nodes
+belong to the site they were added in.</p>
 <h2 id="links-drawn-by-hand">Links drawn by hand<a class="headerlink" href="#links-drawn-by-hand" title="Permanent link">&para;</a></h2>
 <p>Discovery can't see everything: an unmanaged switch in the middle of a run, or a cable to
 equipment from another vendor. Turn on <strong>Connect Mode</strong> and drag from any blue handle to another

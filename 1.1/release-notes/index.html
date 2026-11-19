@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta70" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.70
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta69" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2266,6 +2277,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta70" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.70
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta69" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3036,6 +3058,30 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta70">1.1.0-beta.70<a class="headerlink" href="#110-beta70" title="Permanent link">&para;</a></h2>
+<p>A security fix, also in 1.0.24, reported by <a href="https://github.com/davidcoulson">@davidcoulson</a>;
+update as soon as you can.</p>
+<ul>
+<li><strong>Replacing a device by its serial kept its saved SSH password at the new address</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-p885-qw7f-rgx2">GHSA-p885-qw7f-rgx2</a>).
+  An operator could point a device at a host that answered with its serial and have the next
+  backup log in there with that password. As when a device is edited, the saved SSH login now
+  stays only when the address and route are unchanged, or for a fleet admin. Replacing a device
+  also needs operator or admin on its site, in single and bulk adds alike.</li>
+<li><strong>Your firewall or modem on top of the map.</strong> Where the network meets the outside through
+  something the manager doesn't manage, add it as a node (Internet, ISP modem, Firewall or
+  another vendor's router) and the map hangs everything below it, through the unmanaged
+  switches too. A device only goes under one it has a link to: CDP heard through an unmanaged
+  switch had put devices under switches they aren't cabled to, and a router off an access
+  switch on top. Every detailed card is now the same width, so a device sits centred over the
+  ones below it. See <a href="../topology/#layout">Layout</a>.</li>
+<li><strong>Top down or left to right.</strong> <strong>Display → Layout</strong> draws the map growing down (the default)
+  or to the right. <strong>Arrange</strong> lays the cards out again and keeps the sides links attach at;
+  <strong>Reset layout</strong> still forgets both.</li>
+<li><strong>Top Talkers names on the Dashboard</strong> use the row's width instead of stopping at 20
+  characters, and <strong>the Dashboard on a phone</strong> stacks its cards instead of squeezing them side
+  by side. Also in 1.0.24.</li>
+</ul>
 <h2 id="110-beta69">1.1.0-beta.69<a class="headerlink" href="#110-beta69" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Filter Firewall Logs by zone.</strong> With zones on a device in the selected site or group,
@@ -4041,6 +4087,25 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1024">1.0.24<a class="headerlink" href="#1024" title="Permanent link">&para;</a></h2>
+<p>Released on Thursday 19 November 2026. A security fix, reported by
+<a href="https://github.com/davidcoulson">@davidcoulson</a>; update as soon as you can.</p>
+<ul>
+<li><strong>Replacing a device by its serial kept its saved SSH password at the new address</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-p885-qw7f-rgx2">GHSA-p885-qw7f-rgx2</a>).
+  Adding a device whose serial a managed device already has can replace that device, at the
+  address given. It kept the device's saved SSH login, so an operator could point a device at a
+  host that answered with its serial and have the next backup log in there with that password.
+  As when a device is edited, the saved SSH login now stays only when the address is unchanged,
+  or for a fleet admin; otherwise the device has only the logins given with the add. Replacing a
+  device also needs operator or admin on its site, in single and bulk adds alike: a viewer role
+  there was enough.</li>
+<li><strong>Top Talkers names on the Dashboard</strong> stopped at 20 characters however much room the row had.
+  They use the row now, shortened only where they run out of it, with the whole name on hover.</li>
+<li><strong>The Dashboard on a phone.</strong> Its rows of cards kept two or three columns at any width, so on a
+  phone Top Talkers was a narrow strip and the fleet tiles were a few pixels each. They stack
+  now, and the layout from 1024 pixels up is as before.</li>
+</ul>
 <h2 id="1023">1.0.23<a class="headerlink" href="#1023" title="Permanent link">&para;</a></h2>
 <p>Released on Thursday 19 November 2026.</p>
 <ul>
