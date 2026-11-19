@@ -11,6 +11,7 @@ import { query, queryOne } from '../config/database';
 import { dropSessions, pooledSessionCount } from './mikrotik/sessionPool';
 import { readLoad, type LoadReading } from './processLoad';
 import { DeviceCollector, DeviceRow } from './mikrotik/DeviceCollector';
+import { writeClientCounts } from './clientCounts';
 import { Server as SocketServer } from 'socket.io';
 import { getWriteApi } from '../config/influxdb';
 import { Point } from '@influxdata/influxdb-client';
@@ -1922,19 +1923,9 @@ export class PollerService {
             .intField('wired_clients', 0)
             .timestamp(new Date())
         );
-        // Recompute global deduplicated count after marking this device's clients inactive.
-        const dedupedRows = await query<{ count: string }>(
-          `SELECT COUNT(DISTINCT mac_address) AS count FROM clients WHERE active = TRUE`
-        );
-        const globalTotal = parseInt(dedupedRows[0]?.count || '0', 10);
-        writeApi.writePoint(
-          new Point('client_counts')
-            .tag('device_id', '_global')
-            .tag('device_name', '_global')
-            .intField('total_clients', globalTotal)
-            .timestamp(new Date())
-        );
         await writeApi.flush().catch(() => {});
+        // The fleet and site totals, now without this device's clients.
+        await writeClientCounts();
       }
     }
     void this.emitForDevice('device:status', { deviceId, status: 'offline', message }, deviceId);
