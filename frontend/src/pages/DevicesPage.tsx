@@ -1,5 +1,5 @@
 import { useDateTimeFormat } from '../hooks/useDateTimeFormat';
-import { useEffect, useMemo, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react';
 import { usesApiTls } from '../utils/apiTls';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -112,6 +112,7 @@ export default function DevicesPage() {
   const { formatDateTime, formatTime } = useDateTimeFormat();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const deviceRefreshTimer = useRef<number | null>(null);
   const canWrite = useCanWrite();
   // Hidden and resized columns, remembered in this browser (#283).
   const [colPrefs, setColPrefs] = useState<ColumnPrefs>(loadColumnPrefs);
@@ -211,12 +212,20 @@ export default function DevicesPage() {
     queryFn: () => tagsApi.list().then((r) => r.data),
   });
 
-  // The 30s refetchInterval above eventually catches a background poll's
-  // effect on a device (e.g. a name that follows the router's identity again
-  // after "Use the router's identity"), but a live event means it shows up
-  // immediately instead of leaving that update to the next tick.
+  useEffect(() => () => {
+    if (deviceRefreshTimer.current !== null) window.clearTimeout(deviceRefreshTimer.current);
+  }, []);
+
+  // Polls emit one event per device. Coalesce bursts so a large or busy fleet
+  // cannot make the full device list refetch for every event.
   useSocket({
-    'device:updated': () => queryClient.invalidateQueries({ queryKey: ['devices'] }),
+    'device:updated': () => {
+      if (deviceRefreshTimer.current !== null) return;
+      deviceRefreshTimer.current = window.setTimeout(() => {
+        deviceRefreshTimer.current = null;
+        void queryClient.invalidateQueries({ queryKey: ['devices'] });
+      }, 1_000);
+    },
   });
 
   const syncMutation = useMutation({

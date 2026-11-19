@@ -1369,6 +1369,7 @@ function loadSeverities(): Set<string> {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const deviceRefreshTimer = useRef<number | null>(null);
 
   const [dashView, setDashView] = useState<'summary' | 'operations'>(() =>
     (localStorage.getItem('dashboard:view') as 'summary' | 'operations') ?? 'summary'
@@ -1449,10 +1450,18 @@ export default function DashboardPage() {
     refetchInterval: 30_000,
   });
 
+  useEffect(() => () => {
+    if (deviceRefreshTimer.current !== null) window.clearTimeout(deviceRefreshTimer.current);
+  }, []);
+
   useSocket({
     'device:updated': () => {
-      queryClient.invalidateQueries({ queryKey: ['metrics-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      if (deviceRefreshTimer.current !== null) return;
+      deviceRefreshTimer.current = window.setTimeout(() => {
+        deviceRefreshTimer.current = null;
+        void queryClient.invalidateQueries({ queryKey: ['metrics-summary'] });
+        void queryClient.invalidateQueries({ queryKey: ['devices'] });
+      }, 1_000);
     },
     'clients:updated': () => {
       queryClient.invalidateQueries({ queryKey: ['top-clients'] });
@@ -1620,4 +1629,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
