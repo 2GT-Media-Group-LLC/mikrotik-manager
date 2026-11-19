@@ -4141,6 +4141,15 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1025">1.0.25<a class="headerlink" href="#1025" title="Permanent link">&para;</a></h2>
+<p>Released on Thursday 19 November 2026.</p>
+<ul>
+<li><strong>Firewall Logs shows rules in your own chains.</strong> RouterOS logs a rule in a chain of your own
+  (a jump target, such as <code>LAN-to-WAN</code>) under that chain's name rather than input, forward or
+  output, and Firewall Logs left those lines off the page. They show now, with the chain's
+  name, and the <strong>Action</strong> filter reads them from their log prefix as it does any other line.
+  Also in 1.1.0-beta.71.</li>
+</ul>
 <h2 id="1024">1.0.24<a class="headerlink" href="#1024" title="Permanent link">&para;</a></h2>
 <p>Released on Thursday 19 November 2026. A security fix, reported by
 <a href="https://github.com/davidcoulson">@davidcoulson</a>; update as soon as you can.</p>
