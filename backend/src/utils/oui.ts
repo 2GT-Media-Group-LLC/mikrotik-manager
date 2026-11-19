@@ -48,6 +48,9 @@ export function initOuiDatabase(allowDownload = true): Promise<void> {
   return initPromise;
 }
 
+/** Whether the vendor list is loaded; until then lookupVendor answers '' for everything. */
+export const ouiLoaded = (): boolean => db !== null;
+
 export function lookupVendor(mac: string): string {
   if (!db) return '';
   const oui = mac.replace(/[:\-.]/g, '').substring(0, 6).toUpperCase();
