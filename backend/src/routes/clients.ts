@@ -247,7 +247,11 @@ router.get('/', async (req: Request, res: Response) => {
     ${orderBy}
     LIMIT $${idx++} OFFSET $${idx}
   `;
-  const clients = await query(sql, [...filterParams, parseInt(String(limit), 10), parseInt(String(offset), 10)]);
+  // limit=0 asks for the total alone (the Dashboard's wireless client count).
+  // The page of rows and the VLAN choices are two more deduplications of every
+  // sighting, for nothing.
+  const countOnly = parseInt(String(limit), 10) === 0;
+  const clients = countOnly ? [] : await query(sql, [...filterParams, parseInt(String(limit), 10), parseInt(String(offset), 10)]);
 
   const countResult = await query<{ total: string }>(
     `WITH ${INFRA_PORTS_CTE}
@@ -265,7 +269,7 @@ router.get('/', async (req: Request, res: Response) => {
   // Every VLAN among the clients in view, not just this page's, so the filter
   // offers all of them (outside review U14). The VLAN filter itself isn't
   // applied, or choosing one would hide the others.
-  const vlanRows = await query<{ vlan_id: number }>(
+  const vlanRows = countOnly ? [] : await query<{ vlan_id: number }>(
     `WITH ${INFRA_PORTS_CTE}
      SELECT DISTINCT deduped.vlan_id FROM (
        SELECT DISTINCT ON (c.mac_address) c.vlan_id, ${CLIENT_MAC_COLUMNS}

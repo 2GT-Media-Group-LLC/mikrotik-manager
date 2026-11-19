@@ -1335,7 +1335,8 @@ export default function DashboardPage() {
 
   const { data: wirelessClientsData } = useQuery({
     queryKey: ['wireless-clients-active'],
-    queryFn: () => clientsApi.list({ active: true, client_type: 'wireless', limit: 1 }).then(r => r.data),
+    // limit 0: the total alone, without a page of rows or the VLAN list.
+    queryFn: () => clientsApi.list({ active: true, client_type: 'wireless', limit: 0 }).then(r => r.data),
     refetchInterval: 30_000,
   });
 
