@@ -1562,6 +1562,9 @@ structured events.</p>
 <li>input and output interface</li>
 </ul>
 <p>IPv4 and IPv6 packet logs are supported.</p>
+<p>A rule in a chain of your own (a jump target) is logged under that chain's name rather than
+input, forward or output. Before 1.0.25 those lines were left off this page; now they show
+with their own chain's name.</p>
 <h2 id="where-the-events-come-from">Where the events come from<a class="headerlink" href="#where-the-events-come-from" title="Permanent link">&para;</a></h2>
 <p>Firewall logs are collected from the normal RouterOS log stream. A firewall
 rule therefore produces entries on this page only when logging is enabled for
