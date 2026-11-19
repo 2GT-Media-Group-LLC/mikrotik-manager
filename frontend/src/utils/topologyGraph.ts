@@ -8,7 +8,7 @@ import type {
   TopologyDevice, TopologyLink, ExternalTopologyNode, TopologyNode, HandLink, HandLinkEnd, TopologyClient,
 } from '../types';
 import { resolveStpRoot, type BridgeInfo, type RootVerdict } from './stpRoot';
-import { layoutForest } from './topologyLayout';
+import { layoutForest, DEFAULT_LAYOUT, type LayoutOptions } from './topologyLayout';
 import { portKind, linkKind, type PortKind } from './topologyPorts';
 import { wayUpParents, pickTops, deviceTier, type WayUp } from './topologyTiers';
 
@@ -59,7 +59,11 @@ export interface GraphInput {
   hidden?: Set<string>;
   /** A name and type someone gave a neighbour discovery found, by its id (#260). */
   neighbourOverrides?: Record<string, { name: string | null; kind: string | null }>;
+  /** Which way the automatic layout grows: down from the top (the default), or right from the left. */
+  direction?: LayoutDirection;
 }
+
+export type LayoutDirection = 'down' | 'right';
 
 export type GraphNodeKind = 'device' | 'external' | 'manual' | 'clientGroup' | 'client';
 
@@ -116,6 +120,15 @@ export interface GraphOutput {
 export const SLOT_W = 240;
 export const ROW_H = 150;
 
+/**
+ * Left to right, a row of the tree is a column and its slots run down: a
+ * column is a card's width and room for the port labels on the links between,
+ * a slot a card's height.
+ */
+export const LR_COL_W = 340;
+export const LR_SLOT_H = 150;
+const LR_LAYOUT: LayoutOptions = { ...DEFAULT_LAYOUT, maxRow: 12, leafRow: 8, shelfGap: 0.3, aspect: 0.5, slotToRow: LR_SLOT_H / LR_COL_W };
+
 export const nodeId = {
   device: (id: number) => String(id),
   manual: (id: number) => `node-${id}`,
@@ -140,6 +153,14 @@ export function endFor(id: string, name?: string): HandLinkEnd | null {
 
 /** Node kinds that sit above the network rather than in it. */
 const UPSTREAM_KINDS = new Set(['modem', 'cloud']);
+
+/**
+ * Hand-added kinds that are where a network meets the outside, best first. One
+ * in a part of the map is its top: the devices' ways up stop at the unmanaged
+ * switches the manager can't read, so without it the map had to guess, and put
+ * a router hanging off an access switch on top.
+ */
+const EDGE_KINDS = ['cloud', 'modem', 'firewall', 'router'];
 
 /** The undrawn root over two or more devices that share the top row. */
 const VIRTUAL_TOP = '__top-';
@@ -403,12 +424,13 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     || degree(b) - degree(a)
     || String(deviceById.get(a)?.name ?? a).localeCompare(String(deviceById.get(b)?.name ?? b));
   const upParent = input.waysUp?.length
-    ? wayUpParents(input.waysUp, farEnd, (id) => adj.has(id), before)
+    ? wayUpParents(input.waysUp, farEnd, (id) => adj.has(id), before, (a, b) => adj.get(a)?.has(b) ?? false)
     : null;
   const parentOfNode = (id: string) => upParent?.get(id) ?? stpParent.get(id);
   const externalIds = new Set(externalNodes.map((e) => e.id));
   const isExternal = (id: string) => externalIds.has(id);
 
+  const overrideKind = new Map(Object.entries(input.neighbourOverrides ?? {}).map(([id, o]) => [id, o.kind ?? undefined]));
   /** Routers on top of their part of the map, for the "Gateway" chip. */
   const gateways = new Set<string>();
   const trees = components.filter((c) => c.length > 1).map((comp, ci) => {
@@ -416,10 +438,32 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
     // pickRoot also marks the spanning-tree root and its note, so it runs either way.
     const stpTop = pickRoot(comp);
     const compParent = new Map([...(upParent ?? [])].filter(([k, v]) => inComp.has(k) && inComp.has(v)));
-    const deviceTops = upParent ? pickTops(comp.filter((id) => deviceIds.has(id)), compParent, tierOf, before) : [];
+    // Where someone added the Internet, their modem, firewall or a router the
+    // manager doesn't manage, that's the top, and everything hangs below it.
+    // A neighbour discovery found, told what it really is (#260), counts too.
+    const edgeRank = (id: string) => EDGE_KINDS.indexOf(manualById.get(id)?.kind ?? overrideKind.get(id) ?? '');
+    const edge = comp.filter((id) => edgeRank(id) >= 0).sort((a, b) => edgeRank(a) - edgeRank(b) || a.localeCompare(b))[0];
+    const deviceTops = !edge && upParent ? pickTops(comp.filter((id) => deviceIds.has(id)), compParent, tierOf, before) : [];
     for (const t of deviceTops) if (tierOf(t) === 0) gateways.add(t);
     // A modem or "the internet" drawn by hand goes above the device it feeds.
-    const tops = deviceTops.map((t) => [...(adj.get(t) || [])].find((n) => UPSTREAM_KINDS.has(manualById.get(n)?.kind ?? '')) ?? t);
+    const tops = edge ? [edge] : deviceTops.map((t) => [...(adj.get(t) || [])].find((n) => UPSTREAM_KINDS.has(manualById.get(n)?.kind ?? '')) ?? t);
+    // Under an edge, a managed device's way up only counts toward it: one that
+    // leads away from the top (two switches each naming the other) would keep
+    // a device waiting for a parent that only it reaches.
+    const hops = new Map<string, number>();
+    if (edge) {
+      const q = [edge];
+      hops.set(edge, 0);
+      while (q.length) {
+        const cur = q.shift()!;
+        for (const n of adj.get(cur) || []) if (inComp.has(n) && !hops.has(n)) { hops.set(n, hops.get(cur)! + 1); q.push(n); }
+      }
+    }
+    const upOf = (id: string) => {
+      const up = parentOfNode(id);
+      if (!edge || !up || isExternal(up)) return up;
+      return (hops.get(up) ?? Infinity) < (hops.get(id) ?? Infinity) ? up : undefined;
+    };
     // Two or more tops (a pair of gateway routers) share the top row, under a
     // root that isn't drawn.
     const root = tops.length > 1 ? `${VIRTUAL_TOP}${ci}` : tops[0] ?? stpTop;
@@ -434,7 +478,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
       const cur = queue.shift()!;
       for (const n of adj.get(cur) || []) {
         if (!inComp.has(n) || placed.has(n)) continue;
-        const real = parentOfNode(n);
+        const real = upOf(n);
         if (real && real !== cur && inComp.has(real) && !placed.has(real)) {
           // An unmanaged switch a device goes up through, that only the device
           // below it hears: drawn between the two, not hanging under the device.
@@ -487,8 +531,14 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
       }
     }
   }
-  const laid = layoutForest(trees, loose, undefined, undefined,
-    (id) => (id.startsWith(VIRTUAL_TOP) ? { w: 0, h: 0 } : labelledChips.has(id) ? { w: 1, h: 0.5 } : clientIds.has(id) ? { w: 0.75, h: 0.6 } : { w: 1, h: 1 }));
+  // Sizes are in slots (across) and rows (down the tree). Left to right a chip
+  // or client is a short slot but a full card's width along the tree.
+  const lr = input.direction === 'right';
+  const laid = layoutForest(trees, loose, lr ? LR_LAYOUT : undefined, undefined,
+    (id) => (id.startsWith(VIRTUAL_TOP) ? { w: 0, h: 0 }
+      : labelledChips.has(id) ? (lr ? { w: 0.4, h: 0.75 } : { w: 1, h: 0.5 })
+        : clientIds.has(id) ? (lr ? { w: 0.45, h: 0.75 } : { w: 0.75, h: 0.6 })
+          : { w: 1, h: 1 }));
   for (const [peer, beside] of tunnelPeers) {
     const at = laid.positions.get(beside);
     if (!at) continue;
@@ -505,7 +555,7 @@ export function buildTopologyGraph(input: GraphInput): GraphOutput {
   // Automatic positions, in pixels.
   const auto = (id: string) => {
     const p = laid.positions.get(id) ?? { x: 0, y: 0 };
-    return { x: p.x * SLOT_W, y: p.y * ROW_H };
+    return lr ? { x: p.y * LR_COL_W, y: p.x * LR_SLOT_H } : { x: p.x * SLOT_W, y: p.y * ROW_H };
   };
   // Where someone arranged the map by hand, that wins. A node with no saved
   // place but a saved parent goes where the layout would put it relative to

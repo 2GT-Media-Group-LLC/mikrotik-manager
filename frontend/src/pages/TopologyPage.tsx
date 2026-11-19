@@ -17,14 +17,14 @@ import {
   ConnectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw, Crosshair, Building2, Download, Monitor } from 'lucide-react';
+import { RefreshCw, GitBranch, Link2, Link2Off, AlertCircle, Plus, Users, ChevronUp, RotateCcw, Crosshair, Building2, Download, Monitor, Workflow } from 'lucide-react';
 import { topologyApi, sitesApi, devicesApi } from '../services/api';
 import { useSiteStore } from '../store/siteStore';
 import { nodesWithinHops } from '../utils/topologyFocus';
 import type { TopologyDevice, TopologyNode, HandLinkEnd } from '../types';
 import clsx from 'clsx';
 import { useThemeStore } from '../store/themeStore';
-import { buildTopologyGraph, endFor, type GraphEdge, type StpUpstream } from '../utils/topologyGraph';
+import { buildTopologyGraph, endFor, type GraphEdge, type LayoutDirection, type StpUpstream } from '../utils/topologyGraph';
 import type { BridgeInfo } from '../utils/stpRoot';
 import { spreadCurveEnds, type Rect, type Side } from '../utils/topologyGeometry';
 import { downloadTopology, exportFileName, type ExportFormat } from '../utils/topologyExport';
@@ -46,6 +46,7 @@ const BY_VLAN_KEY = 'topology.clientsByVlan';
 const LINKS_KEY = 'topology.links';
 const CARDS_KEY = 'topology.cards';
 const PORTS_KEY = 'topology.ports';
+const DIRECTION_KEY = 'topology.direction';
 /**
  * Past this many devices across several sites, the all-sites view asks for a
  * site first rather than draw everything at once (#305).
@@ -147,6 +148,18 @@ export default function TopologyPage() {
   const [exportError, setExportError] = useState('');
   /** Set by Reset layout: the next placement uses the automatic positions, then refits. */
   const resetting = useRef(false);
+  // Which way the automatic layout grows, remembered in this browser. Changing
+  // it lays out again every card not arranged by hand.
+  const [direction, setDirection] = useState<LayoutDirection>(() => {
+    try { return localStorage.getItem(DIRECTION_KEY) === 'right' ? 'right' : 'down'; } catch { return 'down'; }
+  });
+  const chooseDirection = (value: string) => {
+    const next: LayoutDirection = value === 'right' ? 'right' : 'down';
+    if (next === direction) return;
+    resetting.current = true;
+    setDirection(next);
+    try { localStorage.setItem(DIRECTION_KEY, next); } catch { /* private mode */ }
+  };
   /** Client cards moved by hand; others follow their chip and aren't saved. */
   const movedClients = useRef(new Set<string>());
 
@@ -230,8 +243,9 @@ export default function TopologyPage() {
       saved: data.layout?.positions ?? {},
       hidden: new Set((data.hiddenLinks ?? []).map((h) => h.key)),
       neighbourOverrides: data.neighbourOverrides ?? {},
+      direction,
     });
-  }, [data, showClients, expanded, byVlan]);
+  }, [data, showClients, expanded, byVlan, direction]);
 
   // The device's view keeps what's within `hops` of it (#305).
   const view = useMemo(() => {
@@ -340,6 +354,16 @@ export default function TopologyPage() {
     setAnchorEdits((a) => ({ ...a, [edgeId]: { sourceHandle: source, targetHandle: target } }));
     void topologyApi.saveLayout({ anchors: { [edgeId]: source || target ? { sourceHandle: source, targetHandle: target } : null } });
   }, []);
+
+  // Arrange: the cards only. The sides links were told to attach at, and their
+  // colours, stay; Reset layout forgets those too.
+  const arrangeCards = useCallback(async () => {
+    if (!window.confirm('Arrange the map automatically? Where cards were moved to is forgotten for everything in view, for everyone. The sides links attach to are kept.')) return;
+    await topologyApi.resetLayout(nodesRef.current.map((n) => n.id), []);
+    movedClients.current.clear();
+    resetting.current = true;
+    invalidate();
+  }, [invalidate]);
 
   const resetLayout = useCallback(async () => {
     if (!window.confirm('Lay the map out automatically again? Where cards were moved to, and which sides links attach to, is forgotten for everything in view.')) return;
@@ -492,7 +516,8 @@ export default function TopologyPage() {
               <ChevronUp className="w-3.5 h-3.5" />Collapse clients
             </button>
           )}
-          <DisplaySettings compact={compact} curved={curved} ports={ports} onCards={chooseCards} onLinks={chooseLinks} onPorts={choosePorts} />
+          <DisplaySettings compact={compact} curved={curved} ports={ports} direction={direction}
+            onCards={chooseCards} onLinks={chooseLinks} onPorts={choosePorts} onDirection={chooseDirection} />
           <div className="relative">
             <button className="btn-secondary flex items-center gap-2" onClick={() => setExportOpen((v) => !v)} disabled={exporting || !hasData}
               title="Save the whole map, as it's shown now, as an image">
@@ -537,8 +562,12 @@ export default function TopologyPage() {
               <RefreshCw className={clsx('w-4 h-4', discoverMutation.isPending && 'animate-spin')} />
               Discover
             </button>
+            <button onClick={arrangeCards} className="text-sm text-gray-500 hover:text-gray-800 dark:text-slate-400 dark:hover:text-white flex items-center gap-1"
+              title="Lay the cards out automatically again, each under its uplink. The sides links attach to are kept">
+              <Workflow className="w-3.5 h-3.5" />Arrange
+            </button>
             <button onClick={resetLayout} className="text-sm text-gray-500 hover:text-gray-800 dark:text-slate-400 dark:hover:text-white flex items-center gap-1"
-              title="Forget where things were moved to and lay the map out automatically again">
+              title="Forget where things were moved to and which sides links attach to, and lay the map out automatically again">
               <RotateCcw className="w-3.5 h-3.5" />Reset layout
             </button>
           </>}

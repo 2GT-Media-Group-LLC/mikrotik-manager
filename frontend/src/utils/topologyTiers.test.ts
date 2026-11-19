@@ -19,6 +19,14 @@ describe('wayUpParents (#367)', () => {
     expect(p.size).toBe(0);
   });
 
+  it('drops a way up to a device it has no link to (heard over CDP through an unmanaged switch)', () => {
+    const linked = (a: string, b: string) => [a, b].sort().join() === '1,2';
+    const p = wayUpParents(
+      [{ deviceId: 2, upstreamDeviceId: 1, viaLinkId: 10 }, { deviceId: 3, upstreamDeviceId: 1, viaLinkId: 11 }],
+      new Map(), () => true, byName, linked);
+    expect([...p]).toEqual([['2', '1']]);
+  });
+
   it('breaks a loop at the one that goes first', () => {
     // Two switches with no root port, each choosing the other; a third under one.
     const p = wayUpParents([

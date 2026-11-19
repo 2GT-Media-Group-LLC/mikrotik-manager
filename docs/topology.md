@@ -170,6 +170,21 @@ its router rather than under it. Links hidden or drawn by hand count as you left
 whose way up was hidden goes under the link you can see. Before 1.1 the spanning-tree root was
 on top, which often put a switch above the router.
 
+Where your network meets the outside is often something the manager doesn't manage: a firewall
+or router from another vendor, behind unmanaged switches. Add it as [your own node](#your-own-nodes)
+(**Internet / WAN**, **ISP modem / ONT**, **Firewall** or **Router (other vendor)**) and connect
+it, and it becomes the top of its part of the map, with everything hanging below it along the
+links, through the unmanaged switches too. A neighbour discovery found that you've marked as one
+of those types counts the same. Without one, the manager can only see as far up as the first
+unmanaged switch, so the top is its best guess. A device's way up only counts when there's a link
+on the map between the two: CDP and MNDP can be heard through an unmanaged switch, which made
+devices look as if they went up to a switch they aren't cabled to.
+
+**Display → Layout** lays the map out **Top down** (the default) or **Left to right**, the same
+tree turned on its side. It applies to cards you haven't moved; **Arrange** lays out the rest.
+The choice is remembered in your browser. Every detailed card is the same width, so a device
+sits centred over the ones below it.
+
 Siblings stay in one row as long as they fit
 within a sensible width. A wider family wraps onto a few **even rows**, like text, rather than
 running thousands of pixels across, and each switch keeps its own devices under it. A group of
@@ -197,8 +212,10 @@ but their changes aren't saved.
 
 Once arranged, the map holds still. A new link, a new node or a refresh doesn't move anything,
 and the view isn't refitted. A new device, or a client list you open, appears next to what it
-connects to. **Reset layout** forgets the arrangement of everything in view and lays it out
-automatically again.
+connects to. **Arrange** lays the cards in view out automatically again, each under its uplink,
+and keeps the sides you chose for links to attach at. **Reset layout** forgets both: where
+cards were moved to and which sides links attach at. Either one changes the shared drawing, for
+everyone.
 
 Any link, discovered or drawn, can be given a colour from its menu, to pick out trunks, say
 (#260); **Default** goes back to the colour its kind gives it. A link that goes down or is
@@ -281,8 +298,9 @@ map: the ISP modem or ONT, the internet, a router or firewall from another vendo
 switch, a server, a NAS, a printer, a camera or NVR, a phone system, a computer. Give it a name,
 a type and optionally an address and notes; click it later to edit or delete it.
 
-Connect it with **Connect Mode**. A modem or internet node connected to the top device of the
-map is drawn above it. Nodes belong to the site they were added in.
+Connect it with **Connect Mode**. An internet, modem, firewall or other-vendor router node is
+the top of its part of the map, with everything else below it (see [Layout](#layout)). Nodes
+belong to the site they were added in.
 
 ## Links drawn by hand
 

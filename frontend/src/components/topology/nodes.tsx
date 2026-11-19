@@ -180,9 +180,12 @@ function DeviceNode({ data }: { data: Record<string, unknown> }) {
       </div>
     );
   }
+  // One width for every full card (device, neighbour, added by hand): the
+  // layout places cards by slot, so a parent only sits centred over its
+  // children when the cards are all as wide.
   return (
     <div
-      className={clsx('card px-3 py-2 min-w-[148px] max-w-[200px] text-xs shadow-md select-none', device.orphan && 'opacity-60')}
+      className={clsx('card px-3 py-2 w-[200px] text-xs shadow-md select-none', device.orphan && 'opacity-60')}
       style={{
         borderColor: device.isRootBridge ? '#f59e0b' : statusColor[device.status] ?? '#94a3b8',
         borderWidth: device.isRootBridge ? 2 : 1,
@@ -222,7 +225,7 @@ function ExternalNode({ data }: { data: Record<string, unknown> }) {
     );
   }
   return (
-    <div className="px-3 py-2 min-w-[130px] max-w-[200px] text-xs rounded-lg bg-gray-100 dark:bg-slate-700/60 shadow-sm select-none" style={{ border: '1.5px dashed #94a3b8' }}>
+    <div className="px-3 py-2 w-[200px] text-xs rounded-lg bg-gray-100 dark:bg-slate-700/60 shadow-sm select-none" style={{ border: '1.5px dashed #94a3b8' }}>
       <Handles connectable={!!node.connectMode} />
       <div className="flex items-start gap-1.5 mb-1">
         <span className="text-base leading-none text-gray-400">◌</span>
@@ -249,7 +252,7 @@ function ManualNode({ data }: { data: Record<string, unknown> }) {
     );
   }
   return (
-    <div className={clsx('px-3 py-2 min-w-[140px] max-w-[200px] text-xs rounded-lg bg-white dark:bg-slate-800 shadow-sm select-none cursor-pointer', node.orphan && 'opacity-70')}
+    <div className={clsx('px-3 py-2 w-[200px] text-xs rounded-lg bg-white dark:bg-slate-800 shadow-sm select-none cursor-pointer', node.orphan && 'opacity-70')}
       style={{ border: '1.5px dashed #8b5cf6' }} title="Added by hand. Click to edit">
       <Handles connectable={!!node.connectMode} />
       <div className="flex items-start gap-1.5 mb-1">

@@ -30,9 +30,9 @@ function Segmented({ label, help, value, choices, onChange }: {
  * How the map is drawn, in one popup rather than a row of selects in the
  * header. Kept in this browser only.
  */
-export default function DisplaySettings({ compact, curved, ports, onCards, onLinks, onPorts }: {
-  compact: boolean; curved: boolean; ports: string;
-  onCards: (v: string) => void; onLinks: (v: string) => void; onPorts: (v: string) => void;
+export default function DisplaySettings({ compact, curved, ports, direction, onCards, onLinks, onPorts, onDirection }: {
+  compact: boolean; curved: boolean; ports: string; direction: string;
+  onCards: (v: string) => void; onLinks: (v: string) => void; onPorts: (v: string) => void; onDirection: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -56,6 +56,9 @@ export default function DisplaySettings({ compact, curved, ports, onCards, onLin
       {open && (
         <div className="absolute right-0 mt-1 z-20 w-80 rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg p-4 space-y-4"
           role="dialog" aria-label="Display settings">
+          <Segmented label="Layout" value={direction} onChange={onDirection}
+            choices={[{ value: 'down', label: 'Top down' }, { value: 'right', label: 'Left to right' }]}
+            help="Which way the map grows from the top of the network when it's laid out automatically. Cards you've moved stay where you put them; Arrange lays them out again." />
           <Segmented label="Cards" value={compact ? 'compact' : 'detailed'} onChange={onCards}
             choices={[{ value: 'detailed', label: 'Detailed' }, { value: 'compact', label: 'Compact' }]}
             help="Compact shows icons with the name and address under them. The rest shows when you hover." />

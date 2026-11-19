@@ -32,13 +32,19 @@ export function wayUpParents(
   onMap: (id: string) => boolean,
   /** Negative when `a` should be above `b`. */
   before: (a: string, b: string) => number,
+  /**
+   * Whether a link is drawn between the two. A way up that isn't one is
+   * dropped: CDP and MNDP cross an unmanaged switch, so a device can "go up"
+   * to a switch it isn't cabled to, and the map hung it there.
+   */
+  linked: (a: string, b: string) => boolean = () => true,
 ): Map<string, string> {
   const parent = new Map<string, string>();
   for (const w of waysUp) {
     const id = String(w.deviceId);
     const up = w.upstreamDeviceId != null ? String(w.upstreamDeviceId)
       : w.viaLinkId != null ? farEnd.get(w.viaLinkId) : undefined;
-    if (up && up !== id && onMap(id) && onMap(up)) parent.set(id, up);
+    if (up && up !== id && onMap(id) && onMap(up) && linked(id, up)) parent.set(id, up);
   }
   // Break loops: walk up from each node; meeting the walk's own path again is a loop.
   const done = new Set<string>();
