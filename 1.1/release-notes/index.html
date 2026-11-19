@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta72" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.72
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta71" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2288,6 +2299,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta72" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.72
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta71" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3080,6 +3102,20 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta72">1.1.0-beta.72<a class="headerlink" href="#110-beta72" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Performance on large fleets</strong>, from <a href="https://github.com/JohnDepon">@JohnDepon</a>: the
+  changes in 1.0.26 below (no JIT for the app's queries, pages that refresh on their own
+  timers, client counts every 15 seconds, no repeated vendor lookups, cheaper log times, and
+  a clients table that stays small), plus the wider site list. 1.1 already stored a device's
+  clients in batches.</li>
+<li><strong>Traffic graphs as rates.</strong> <strong>Settings → General → Appearance → Traffic graphs</strong> shows the
+  Traffic page and a client's usage and app charts as bits and packets per second (Mbps,
+  Kpps) instead of bytes and packets per point, the way links are rated. The newest point is
+  divided by the time it has covered so far, so the chart doesn't dip at the end. Also from
+  JohnDepon (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/479">#479</a>). See
+  <a href="../configuration/#appearance">Configuration</a>.</li>
+</ul>
 <h2 id="110-beta71">1.1.0-beta.71<a class="headerlink" href="#110-beta71" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>DNS over HTTPS.</strong> <strong>Network Services → DNS</strong> takes a DoH server URL, such as
@@ -4141,6 +4177,39 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1026">1.0.26<a class="headerlink" href="#1026" title="Permanent link">&para;</a></h2>
+<p>Released on Thursday 19 November 2026. Performance on large fleets, all from
+<a href="https://github.com/JohnDepon">@JohnDepon</a>, who measured MikroTik Manager polling 126 devices
+and fixed what held it back, one cause at a time. On that install the database went from
+about 365% CPU to 13%, and polls stopped timing out and marking healthy devices offline.</p>
+<ul>
+<li><strong>The Clients list and counts no longer spend seconds compiling.</strong> Postgres compiled every
+  client query (JIT) for about 2.7 s before running it in 0.1 s. It's off for the app's
+  connections (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/471">#471</a>).</li>
+<li><strong>Pages refresh on their own timers, not on every device poll.</strong> The Dashboard, Clients,
+  Events and Firewall Logs refetched their heaviest queries each time any device was polled,
+  several times a second on a big fleet. They refresh every 30 to 60 seconds, as before
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/473">#473</a>), and the
+  Dashboard's wireless count asks for the total alone
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/478">#478</a>).</li>
+<li><strong>Less work per poll:</strong> the fleet and site client totals are counted once every 15 seconds
+  in one query (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/474">#474</a>); a
+  device's clients are stored in one statement
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/475">#475</a>); a client whose
+  MAC has no known vendor isn't looked up again every poll
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/476">#476</a>); and log times
+  are read with far fewer time zone lookups
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/472">#472</a>).</li>
+<li><strong>The clients table stays small.</strong> An index nothing needed made every client update write
+  to every index and leave dead rows behind. It's dropped, and the table leaves room on each
+  page so updates stay in place
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/477">#477</a>). This runs once
+  when the backend starts after the update and takes well under a second.</li>
+<li><strong>The site list is as wide as its longest name</strong>, so long site names aren't cut to a few
+  letters, with the device counts lined up and the full name on hover
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/480">#480</a>).</li>
+</ul>
+<p>Also in 1.1.0-beta.72.</p>
 <h2 id="1025">1.0.25<a class="headerlink" href="#1025" title="Permanent link">&para;</a></h2>
 <p>Released on Thursday 19 November 2026.</p>
 <ul>
