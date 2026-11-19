@@ -1441,6 +1441,8 @@ export interface FirewallEvent {
   action: 'accept' | 'drop' | 'reject' | 'fasttrack' | 'unknown';
   prefix: string;
   chain: 'input' | 'forward' | 'output';
+  /** The chain RouterOS logged it under, when it's a chain of the user's own (#369). */
+  ruleChain?: string;
 
   inInterface?: string;
   outInterface?: string;
@@ -2100,6 +2102,8 @@ export type ZoneAction = 'deny' | 'allow' | 'services';
 /** `icmp` is a type or type:code for ICMP; `number` an IP protocol number for "other" (#369). */
 export interface ZoneCustomService {
   protocol: 'tcp' | 'udp' | 'any' | 'icmp' | 'other'; ports: string; icmp?: string; number?: string; src?: string; dst?: string;
+  /** Log the connections it accepts (#369). */
+  log?: boolean;
 }
 export interface ZonePolicy { action: ZoneAction; services: string[]; custom: ZoneCustomService[] }
 export interface ZoneConfig {

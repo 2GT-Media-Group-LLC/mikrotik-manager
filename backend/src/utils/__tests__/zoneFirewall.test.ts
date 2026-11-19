@@ -2,7 +2,7 @@ import {
   parseZoneInput, compileZones, planApply, planMembers, zoneEligibility, zoneDrift, unzoned, signature, pairChain,
   addressError, ROUTER, type ZoneConfig, type ZonePolicy,
   endpointError, isHostname, zoneHosts, planHostLists, hostList, ZONE_HOST_COMMENT,
-  DROP_LOG_LIMIT, zoneRulesOutdated,
+  DROP_LOG_LIMIT, ACCEPT_LOG_LIMIT, zoneRulesOutdated,
 } from '../zoneFirewall';
 import { evaluateInputChain, type MgmtConnection } from '../../services/changeGuard/firewallPath';
 import { analyzeChange, type PlannedChange } from '../../services/changeGuard/analyzeChange';
@@ -91,6 +91,67 @@ describe('custom rules with addresses (#369 follow-up)', () => {
     expect(err({ protocol: 'tcp', ports: '', dst: '10.0.0.0/33' })).toMatch(/prefix length/);
     expect(err({ protocol: 'tcp', ports: '', src: '10.0.0.9-10.0.0.1' })).toMatch(/backwards/);
     expect(addressError('10.0.0.0/8')).toBeNull();
+  });
+});
+
+describe('logging what a custom rule accepts (Ron, #369)', () => {
+  const pair = (custom: unknown[]) => body({ policies: { ...POLICIES, 'WAN>LAN': { action: 'services', services: [], custom } as ZonePolicy } });
+
+  it('puts a rate-limited log rule with the same matchers just before the accept', () => {
+    const { input, errors } = parseZoneInput(pair([
+      { protocol: 'tcp', ports: '443', src: '203.0.113.7', dst: '192.168.88.10', log: true },
+      { protocol: 'udp', ports: '53' },
+    ]), live);
+    expect(errors).toEqual({});
+    expect(input!.config.policies['WAN>LAN'].custom).toEqual([
+      expect.objectContaining({ log: true }), expect.not.objectContaining({ log: expect.anything() }),
+    ]);
+    const chain = compileZones(input!.config, ctx).filter((r) => r.params.chain === pairChain('WAN', 'LAN'));
+    expect(chain.map((r) => r.params.action)).toEqual(['log', 'accept', 'accept', 'return']);
+    const [log, accept] = chain;
+    const { action: _a, limit, 'log-prefix': prefix, comment: _c, ...logMatch } = log.params;
+    const { action: _b, comment: _d, ...acceptMatch } = accept.params;
+    expect(logMatch).toEqual(acceptMatch);
+    expect(limit).toBe(ACCEPT_LOG_LIMIT);
+    // "accept" in the prefix is what Firewall Logs reads as the action.
+    expect(prefix).toBe('zone accept');
+    expect(log.description).toBe('WAN to LAN: TCP 443 from 203.0.113.7 to 192.168.88.10, logged');
+  });
+
+  it('leaves a rule without Log exactly as before, and tags the log rule on apply', () => {
+    const plain = compileZones(parseZoneInput(pair([{ protocol: 'tcp', ports: '443' }]), live).input!.config, ctx);
+    const logged = compileZones(parseZoneInput(pair([{ protocol: 'tcp', ports: '443', log: true }]), live).input!.config, ctx);
+    expect(logged.filter((r) => r.params.action !== 'log').map((r) => r.params)).toEqual(plain.map((r) => r.params));
+    const plan = planApply([], logged);
+    const added = plan.add.find((a) => a.params.action === 'log')!;
+    expect(added.params['log-prefix']).toMatch(/^zone accept mtm#[0-9a-z]{4}$/);
+    // As RouterOS prints it back: no drift.
+    const printed = plan.add.map((a, i) => ({ '.id': `*${i + 1}`, ...a.params, invalid: 'false', dynamic: 'false', bytes: '0', packets: '0' }));
+    expect(zoneDrift(printed, logged)).toBeNull();
+  });
+});
+
+describe('logging some of a pair that allows everything (Ron, #369)', () => {
+  it('writes only log rules before the accept, and keeps only rows that log', () => {
+    const { input, errors } = parseZoneInput(body({ policies: { ...POLICIES, 'LAN>WAN': { action: 'allow', services: [], custom: [
+      { protocol: 'tcp', ports: '25', dst: 'smtp.office365.com', log: true },
+      { protocol: 'tcp', ports: '80' },
+    ] } as ZonePolicy } }), live);
+    expect(errors).toEqual({});
+    expect(input!.config.policies['LAN>WAN'].custom).toEqual([{ protocol: 'tcp', ports: '25', dst: 'smtp.office365.com', log: true }]);
+    const chain = compileZones(input!.config, ctx).filter((r) => r.params.chain === pairChain('LAN', 'WAN'));
+    expect(chain.map((r) => r.params)).toEqual([
+      expect.objectContaining({ action: 'log', protocol: 'tcp', 'dst-port': '25', 'dst-address-list': hostList('smtp.office365.com'), 'log-prefix': 'zone accept' }),
+      expect.objectContaining({ action: 'accept', comment: 'mtm zone: LAN to WAN: everything' }),
+      expect.objectContaining({ action: 'return' }),
+    ]);
+    expect(zoneHosts(input!.config)).toEqual(['smtp.office365.com']);
+  });
+
+  it('writes an allow-everything pair exactly as before when nothing logs', () => {
+    const before = compileZones(parseZoneInput(body(), live).input!.config, ctx);
+    const chain = before.filter((r) => r.params.chain === pairChain('LAN', 'WAN'));
+    expect(chain.map((r) => r.params.action)).toEqual(['accept', 'return']);
   });
 });
 

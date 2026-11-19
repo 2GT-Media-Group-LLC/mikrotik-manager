@@ -153,3 +153,19 @@ describe('zone presets (#330)', () => {
     }
   });
 });
+
+describe('logging accepted traffic (Ron, #369)', () => {
+  const draft = { config: { zones: ['LAN', 'WAN'], intra: {}, policies: {}, fasttrack: true, logDrops: true }, members: { LAN: [], WAN: [] } };
+
+  it('lets an allow-everything pair log some of it, with no services needed', () => {
+    const d = setPolicy(draft, pairKey('LAN', 'WAN'), { action: 'allow', services: [], custom: [{ protocol: 'tcp', ports: '25', log: true }] });
+    expect(draftErrors(d)).toEqual({});
+    expect(policySummary(d.config.policies['LAN>WAN'], {})).toBe('Allow all, 1 logged');
+    expect(customLabel({ protocol: 'tcp', ports: '25', log: true })).toBe('TCP 25 (logged)');
+  });
+
+  it('still checks a logging row', () => {
+    const d = setPolicy(draft, pairKey('LAN', 'WAN'), { action: 'allow', services: [], custom: [{ protocol: 'tcp', ports: '', log: true }] });
+    expect(draftErrors(d)['pair:LAN>WAN']).toMatch(/port, or an address/);
+  });
+});

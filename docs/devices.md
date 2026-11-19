@@ -601,6 +601,20 @@ matched. The manager keeps one list per name, called `mtm-zone-<name>`, holding 
 commented `mtm zone host`, and removes it once no rule uses the name. If the router can't
 resolve a name, rules using it match nothing.
 
+Tick **Log** on a custom rule to log the connections it accepts (from
+[@ronchan44](https://github.com/ronchan44)'s #369). The manager puts an `action=log` rule with
+the same protocol, ports and addresses just before the accept, with the log prefix
+`zone accept`, so [Firewall Logs](firewall-events.md) shows them as accepted. Established
+traffic is accepted before the pair's rules, so each new connection is logged once, not every
+packet. Logging stops at 20 a second (bursts of 40) to spare the router; past that the
+connections are still accepted, just not logged.
+
+A pair set to **Allow everything** can log some of what it lets through: **+ Log some of it**
+adds a row of ports, protocol and addresses whose connections are logged the same way, while
+everything is still allowed (LAN to WAN logging mail to `smtp.office365.com`, say). The matrix
+cell reads **Allow all, 1 logged**. Switching a pair from **Only these** to **Allow
+everything** keeps only its rules that log.
+
 Traffic between interfaces of the same zone is allowed unless you turn it off for that zone.
 
 ### Turning zones on

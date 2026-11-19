@@ -409,13 +409,14 @@ function PolicyEditor({ from, to, policy, options, editable, error, onChange, on
         {([['deny', 'Deny'], ['allow', `Allow everything to ${target}`], ['services', 'Only these services']] as const).map(([a, label]) => (
           <label key={a} className="flex items-center gap-1.5">
             <input type="radio" disabled={!editable} checked={p.action === a}
-              onChange={() => set(a === 'services' ? { action: a, services: p.services.length ? p.services : ['ping'] } : { action: a })} />
+              onChange={() => set(a === 'services' ? { action: a, services: p.services.length ? p.services : ['ping'] }
+                // Allowing everything keeps only rules that log (#369).
+                : a === 'allow' ? { action: a, custom: p.custom.filter((c) => c.log) } : { action: a })} />
             {label}
           </label>
         ))}
       </div>
       {p.action === 'services' && (
-        <>
           <div className="flex flex-wrap gap-1.5">
             {options.map((o) => {
               const on = p.services.includes(o.key);
@@ -429,7 +430,12 @@ function PolicyEditor({ from, to, policy, options, editable, error, onChange, on
               );
             })}
           </div>
+      )}
+      {p.action !== 'deny' && (
           <div className="space-y-1">
+            {p.action === 'allow' && p.custom.length > 0 && (
+              <p className="text-[11px] text-gray-500 dark:text-slate-400">Everything is allowed; connections matching these are also logged.</p>
+            )}
             {p.custom.map((c, i) => {
               const bad = customError(c);
               const edit = (patch: Partial<typeof c>) => set({ custom: p.custom.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
@@ -469,17 +475,26 @@ function PolicyEditor({ from, to, policy, options, editable, error, onChange, on
                     <input className="input text-xs py-1 w-36 font-mono" disabled={!editable} value={c.dst ?? ''}
                       title="An address, a subnet, a range, or a hostname such as smtp.office365.com"
                       placeholder="anywhere" aria-label="Destination address" onChange={(e) => edit({ dst: e.target.value })} />
+                    {p.action === 'services' && (
+                      <label className="flex items-center gap-1 text-[11px] text-gray-600 dark:text-slate-300"
+                        title="Log each connection this rule accepts (up to 20 a second), shown as accepted in Firewall Logs">
+                        <input type="checkbox" disabled={!editable} checked={!!c.log} onChange={(e) => edit({ log: e.target.checked || undefined })} />
+                        Log
+                      </label>
+                    )}
                     {editable && <button className="text-gray-400 hover:text-red-500" aria-label="Remove this rule" onClick={() => set({ custom: p.custom.filter((_, j) => j !== i) })}><X className="w-3.5 h-3.5" /></button>}
                   </div>
                   {bad && <p className="text-[11px] text-red-600 dark:text-red-400">{bad}</p>}
                 </div>
               );
             })}
-            {editable && p.custom.length < 10 && (
+            {editable && p.custom.length < 10 && (p.action === 'allow' ? (
+              <button className="text-[11px] text-blue-600 hover:underline" title="Log the connections from this zone that match, up to 20 a second, shown as accepted in Firewall Logs"
+                onClick={() => set({ custom: [...p.custom, { protocol: 'tcp', ports: '', log: true }] })}>+ Log some of it (ports, protocols, addresses)</button>
+            ) : (
               <button className="text-[11px] text-blue-600 hover:underline" onClick={() => set({ custom: [...p.custom, { protocol: 'tcp', ports: '' }] })}>+ Custom rule (ports, protocols, addresses)</button>
-            )}
+            ))}
           </div>
-        </>
       )}
       {error && <p className="text-[11px] text-red-600 dark:text-red-400">{error}</p>}
     </div>

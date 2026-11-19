@@ -41,6 +41,12 @@ export interface CustomService {
   number?: string;
   src?: string;
   dst?: string;
+  /**
+   * Log the connections this rule accepts (#369): a rate-limited log rule
+   * with the same matchers goes just before the accept, prefixed
+   * "zone accept", so Firewall Logs shows them as accepted.
+   */
+  log?: boolean;
 }
 
 /**
@@ -351,13 +357,17 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
         custom.push({
           protocol, ports, ...(icmp ? { icmp } : {}), ...(number ? { number: String(Number(number)) } : {}),
           ...(src ? { src } : {}), ...(dst ? { dst } : {}),
+          ...(r.log === true ? { log: true } : {}),
         });
       }
       if (custom.length > 10) errors[`pair:${key}`] = 'Up to 10 custom rules per pair.';
       if (action === 'services' && !services.length && !custom.length && !errors[`pair:${key}`]) {
         errors[`pair:${key}`] = `Pick at least one service from ${from} to ${toLabel(to)}, or deny it.`;
       }
-      policies[key] = action === 'allow' ? { action, services: [], custom: [] } : { action, services, custom };
+      // Allowing everything keeps only rules that log (#369): they pick out
+      // what to log, not what to let through.
+      const logged = custom.filter((cs) => cs.log);
+      policies[key] = action === 'allow' ? { action, services: [], custom: logged } : { action, services, custom };
     }
   }
 
@@ -396,14 +406,54 @@ export interface CompiledRule {
   description: string;
 }
 
+/**
+ * A custom rule's accept, with its log rule first when it logs (#369). In a
+ * pair that allows everything only the log rule is written (`accept` false):
+ * the pair's own accept follows.
+ */
+function customRules(cs: CustomService, chain: string, label: string, accept: boolean): CompiledRule[] {
+  const rules: CompiledRule[] = [];
+  // A protocol and ports alone write the same rule and comment as before
+  // addresses existed, so a saved setup doesn't show as drifted.
+  const text = customText(cs);
+  const protocol = customProtocol(cs);
+  const match: Ros = {
+    ...(protocol ? { protocol } : {}),
+    ...(cs.ports ? { 'dst-port': cs.ports } : {}),
+    ...(cs.icmp ? { 'icmp-options': cs.icmp } : {}),
+    ...(cs.src ? (isHostname(cs.src) ? { 'src-address-list': hostList(cs.src) } : { 'src-address': cs.src }) : {}),
+    ...(cs.dst ? (isHostname(cs.dst) ? { 'dst-address-list': hostList(cs.dst) } : { 'dst-address': cs.dst }) : {}),
+  };
+  const shown = `${label}: ${text.replace(/^(tcp|udp|any|icmp|ospf|gre|vrrp)\b/, (m) => m.toUpperCase())}`;
+  // Only new connections reach a pair's chain (established ones are
+  // accepted first), so this logs each accepted connection once, up to
+  // ACCEPT_LOG_LIMIT a second. action=log carries on to the accept after it.
+  if (cs.log) {
+    rules.push({
+      params: { chain, action: 'log', ...match, limit: ACCEPT_LOG_LIMIT, 'log-prefix': 'zone accept', comment: COMMENT(`${label}: log ${text}`) },
+      hidden: false, description: `${shown}, logged`,
+    });
+  }
+  if (accept) {
+    rules.push({
+      params: { chain, action: 'accept', ...match, comment: COMMENT(`${label}: ${text}`) },
+      hidden: false, description: shown,
+    });
+  }
+  return rules;
+}
+
 function serviceRules(key: string, p: ZonePolicy, to: string, ctx: ZoneContext): CompiledRule[] {
   const chain = pairChain(key.split('>')[0], to);
   const label = key.replace('>', ' to ').replace(ROUTER, 'router');
+  const out: CompiledRule[] = [];
   if (p.action === 'allow') {
-    return [{ params: { chain, action: 'accept', comment: COMMENT(`${label}: everything`) }, hidden: false, description: `${label}: everything` }];
+    // Rules that log some of it go first, then everything is accepted (#369).
+    for (const cs of p.custom) if (cs.log) out.push(...customRules(cs, chain, label, false));
+    out.push({ params: { chain, action: 'accept', comment: COMMENT(`${label}: everything`) }, hidden: false, description: `${label}: everything` });
+    return out;
   }
   const catalog = to === ROUTER ? ROUTER_SERVICES : FORWARD_SERVICES;
-  const out: CompiledRule[] = [];
   for (const s of p.services) {
     const def = catalog[s];
     if (!def) continue;
@@ -413,24 +463,7 @@ function serviceRules(key: string, p: ZonePolicy, to: string, ctx: ZoneContext):
       out.push({ params, hidden: false, description: `${label}: ${def.label}${def.rules.length > 1 ? ` (${r.protocol})` : ''}` });
     }
   }
-  for (const cs of p.custom) {
-    // A protocol and ports alone write the same rule and comment as before
-    // addresses existed, so a saved setup doesn't show as drifted.
-    const text = customText(cs);
-    const protocol = customProtocol(cs);
-    out.push({
-      params: {
-        chain, action: 'accept',
-        ...(protocol ? { protocol } : {}),
-        ...(cs.ports ? { 'dst-port': cs.ports } : {}),
-        ...(cs.icmp ? { 'icmp-options': cs.icmp } : {}),
-        ...(cs.src ? (isHostname(cs.src) ? { 'src-address-list': hostList(cs.src) } : { 'src-address': cs.src }) : {}),
-        ...(cs.dst ? (isHostname(cs.dst) ? { 'dst-address-list': hostList(cs.dst) } : { 'dst-address': cs.dst }) : {}),
-        comment: COMMENT(`${label}: ${text}`),
-      },
-      hidden: false, description: `${label}: ${text.replace(/^(tcp|udp|any|icmp|ospf|gre|vrrp)\b/, (m) => m.toUpperCase())}`,
-    });
-  }
+  for (const cs of p.custom) out.push(...customRules(cs, chain, label, true));
   return out;
 }
 
@@ -439,6 +472,12 @@ function serviceRules(key: string, p: ZonePolicy, to: string, ctx: ZoneContext):
  * Written the way RouterOS prints it back, so the rule compares equal.
  */
 export const DROP_LOG_LIMIT = '5,10';
+/**
+ * Logged accepts per second, then a burst (#369): new connections a custom
+ * rule accepts. Past it they're still accepted, just not logged. RouterOS
+ * 7.25 prints it back as set.
+ */
+export const ACCEPT_LOG_LIMIT = '20,40';
 
 /** The whole IPv4 filter table for a zone config, in order. */
 export function compileZones(config: ZoneConfig, ctx: ZoneContext): CompiledRule[] {
@@ -575,7 +614,7 @@ export function planApply(current: Ros[], desired: CompiledRule[]): ApplyPlan {
     if (keptFor[j] >= 0) continue;
     const next = keptFor.slice(j + 1).find((i) => i >= 0);
     let params = desired[j].params;
-    if (yes(params.log)) {
+    if (yes(params.log) || params.action === 'log') {
       const t = newTag(taken); taken.add(t);
       params = { ...params, 'log-prefix': withTag(params['log-prefix'], t) };
     }
