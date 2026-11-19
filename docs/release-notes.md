@@ -7,6 +7,15 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.25
+
+Released on Thursday 19 November 2026.
+
+- **Firewall Logs shows rules in your own chains.** RouterOS logs a rule in a chain of your own
+  (a jump target, such as `LAN-to-WAN`) under that chain's name rather than input, forward or
+  output, and Firewall Logs left those lines off the page. They show now, with the chain's
+  name, and the **Action** filter reads them from their log prefix as it does any other line.
+
 ## 1.0.24
 
 Released on Thursday 19 November 2026. A security fix, reported by
