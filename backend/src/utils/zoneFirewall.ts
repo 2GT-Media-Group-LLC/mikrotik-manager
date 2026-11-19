@@ -333,19 +333,23 @@ export function parseZoneInput(body: unknown, live: ZoneLive): { input: ZoneInpu
         const clean = (v: unknown) => String(v ?? '').replace(/\s+/g, '');
         let protocol: CustomService['protocol'] = r.protocol === 'udp' || r.protocol === 'any' || r.protocol === 'icmp'
           || r.protocol === 'other' ? r.protocol : 'tcp';
+        // What was asked for: "Protocol # 17" is all of UDP, not a blank UDP row.
+        const chosenOther = protocol === 'other';
         let number = protocol === 'other' ? clean(r.number) : '';
         // A number RouterOS has its own choice for is that choice.
         const asNamed = ({ '1': 'icmp', '6': 'tcp', '17': 'udp' } as const)[String(Number(number)) as '1' | '6' | '17'];
         if (number && asNamed) { protocol = asNamed; number = ''; }
         const ports = protocol === 'tcp' || protocol === 'udp' ? clean(r.ports) : '';
-        const icmp = protocol === 'icmp' ? clean(r.icmp) : '';
+        // "Protocol # 1" is every ICMP type: an ICMP type left over from
+        // before the protocol was changed isn't part of it.
+        const icmp = protocol === 'icmp' && !chosenOther ? clean(r.icmp) : '';
         // A hostname is kept in lower case: the list is named after it.
         const endpoint = (v: unknown) => { const e = clean(v); return isHostname(e) ? e.toLowerCase() : e; };
         const src = endpoint(r.src);
         const dst = endpoint(r.dst);
         // An empty row is left out, as before. ICMP and a protocol number say
         // enough on their own.
-        if (!clean(r.ports) && !src && !dst && protocol !== 'icmp' && protocol !== 'other') continue;
+        if (!clean(r.ports) && !src && !dst && protocol !== 'icmp' && !chosenOther) continue;
         const e = (clean(r.ports) && (protocol === 'any' || (protocol === 'other' && !asNamed)) ? 'Ports need TCP or UDP.' : null)
           ?? (protocol === 'other' && !(/^\d{1,3}$/.test(number) && Number(number) >= 1 && Number(number) <= 255)
             ? `${number ? `"${number}" isn't` : 'Enter'} an IP protocol number, 1 to 255 (89 is OSPF).` : null)

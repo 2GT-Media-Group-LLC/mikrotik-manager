@@ -182,6 +182,21 @@ describe('ICMP and protocol numbers in custom rules (#369)', () => {
     expect(rules.every((r) => r.params['dst-port'] === undefined)).toBe(true);
   });
 
+  it('keeps "Protocol # 17" on its own as all of UDP, as the form does (found by fuzzing)', () => {
+    const { input, errors } = parseZoneInput(body({ policies: { 'WAN>LAN': { action: 'services', services: [], custom: [{ protocol: 'other', ports: '', number: '17' }] } as ZonePolicy } }), live);
+    expect(errors).toEqual({});
+    expect(input!.config.policies['WAN>LAN'].custom).toEqual([{ protocol: 'udp', ports: '' }]);
+    const rule = compileZones(input!.config, ctx).find((r) => r.params.chain === pairChain('WAN', 'LAN') && r.params.action === 'accept');
+    expect(rule?.params).toEqual(expect.objectContaining({ protocol: 'udp' }));
+    expect(rule?.params['dst-port']).toBeUndefined();
+  });
+
+  it('reads "Protocol # 1" as every ICMP type, whatever ICMP type was typed before (found by fuzzing)', () => {
+    const { input, errors } = parseZoneInput(body({ policies: { 'WAN>LAN': { action: 'services', services: [], custom: [{ protocol: 'other', ports: '', number: '1', icmp: '256' }] } as ZonePolicy } }), live);
+    expect(errors).toEqual({});
+    expect(input!.config.policies['WAN>LAN'].custom).toEqual([{ protocol: 'icmp', ports: '' }]);
+  });
+
   it('takes 1, 6 and 17 as ICMP, TCP and UDP', () => {
     const rules = compiled([{ protocol: 'other', ports: '', number: '6', dst: '10.0.0.1' }, { protocol: 'other', ports: '53', number: '17' }]);
     expect(rules[0].params).toEqual(expect.objectContaining({ protocol: 'tcp', comment: 'mtm zone: WAN to router: tcp to 10.0.0.1' }));

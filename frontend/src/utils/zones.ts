@@ -82,15 +82,16 @@ export const protocolName = (n: string): string | null => PROTOCOL_NAMES[Number(
  */
 export function customError(c: ZoneCustomService): string | null {
   const ports = c.ports.replace(/\s+/g, '');
-  const src = (c.src ?? '').trim();
-  const dst = (c.dst ?? '').trim();
+  // As the server reads them: every space dropped, not only the ends.
+  const src = (c.src ?? '').replace(/\s+/g, '');
+  const dst = (c.dst ?? '').replace(/\s+/g, '');
   const addresses = (src ? endpointError(src) : null) ?? (dst ? endpointError(dst) : null);
   if (c.protocol === 'icmp') {
-    const icmp = (c.icmp ?? '').trim();
+    const icmp = (c.icmp ?? '').replace(/\s+/g, '');
     return (icmp ? icmpError(icmp) : null) ?? addresses;
   }
   if (c.protocol === 'other') {
-    const n = (c.number ?? '').trim();
+    const n = (c.number ?? '').replace(/\s+/g, '');
     if (!n) return 'Enter an IP protocol number, such as 89 for OSPF.';
     if (!/^\d{1,3}$/.test(n) || Number(n) < 1 || Number(n) > 255) return 'An IP protocol number is 1 to 255.';
     return addresses;

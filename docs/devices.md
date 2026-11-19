@@ -592,7 +592,8 @@ A custom rule can also be **ICMP**, with an optional type (`8` for echo request)
 (`3:4`); left empty it allows every ICMP type. Or it can be any other IP protocol by number under
 **Protocol #**: `89` for OSPF, `47` for GRE, `112` for VRRP. RouterOS shows a protocol it has a name
 for by that name, so the rule appears on the device as `protocol=ospf`. Neither takes ports, and
-both can take addresses.
+both can take addresses. **Protocol #** 1, 6 or 17 is saved as ICMP, TCP or UDP; on its own it
+allows all of that protocol.
 
 A source or destination can also be a **hostname**, such as `smtp.office365.com`. The router looks
 it up with its own DNS (**IP > DNS**) and keeps an address list of every address it resolves to,
