@@ -8,7 +8,7 @@ import { CLOCK_CHANGE_SQL } from '../utils/clockLogLines';
 import { parseFirewallLog } from '../utils/firewallLogParser';
 import { tagOf } from '../utils/ruleTags';
 import { firewallHideSql, firewallPacketLogSql, firewallPrefixSql, parseHiddenRules } from '../utils/firewallEventSql';
-import { withNames, withZones } from '../services/firewallLogEnrich';
+import { withNames, withZones, zoneFilterSql, zoneMapsInScope, zoneNames } from '../services/firewallLogEnrich';
 
 /** Most events the list's total counts; past it the page shows "N+". */
 export const EVENTS_COUNT_CAP = 100_000;
@@ -61,6 +61,8 @@ const DEFAULT_FIREWALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 const FIREWALL_MAX_LIMIT = 200;
 /** Longest log prefix taken as a filter; RouterOS prefixes are short. */
 const FIREWALL_PREFIX_MAX = 128;
+/** Longest zone name the zone filters take (#415). */
+const FIREWALL_ZONE_MAX = 64;
 
 const FIREWALL_ACTION_REGEX = {
   fasttrack: String.raw`\m(fasttrack|fast-track)\M`,
@@ -194,7 +196,15 @@ router.get('/firewall', async (req, res) => {
   const prefixRaw = singleQueryValue(req.query.prefix);
   const limitRaw = singleQueryValue(req.query.limit);
   const offsetRaw = singleQueryValue(req.query.offset);
+  // From Zone and To Zone (#415): lines from, or to, one zone.
+  const fromZoneRaw = singleQueryValue(req.query.fromZone);
+  const toZoneRaw = singleQueryValue(req.query.toZone);
 
+  for (const z of [fromZoneRaw, toZoneRaw]) {
+    if (z === null || (z !== undefined && z.length > FIREWALL_ZONE_MAX)) {
+      return res.status(400).json({ error: 'Invalid zone' });
+    }
+  }
   if (prefixRaw === null || (prefixRaw !== undefined && prefixRaw.length > FIREWALL_PREFIX_MAX)) {
     return res.status(400).json({ error: 'Invalid prefix' });
   }
@@ -371,6 +381,18 @@ router.get('/firewall', async (req, res) => {
     );
   }
 
+  // Zones aren't in the line: each zone-managed device's interface map says
+  // which interfaces a zone is, so the filter is those (device, interface)
+  // pairs, and the paging and total stay right (#415).
+  const fromZone = fromZoneRaw?.trim();
+  const toZone = toZoneRaw?.trim();
+  if (fromZone || toZone) {
+    const maps = await zoneMapsInScope(deviceId ?? undefined, siteScopeByNullableDevice(activeSite(req), 'z.device_id'));
+    const p = (v: unknown) => { params.push(v); return `$${idx++}`; };
+    if (fromZone) filters.push(zoneFilterSql('from', fromZone, maps, p));
+    if (toZone) filters.push(zoneFilterSql('to', toZone, maps, p));
+  }
+
   const where = filters.join(' AND ');
   // ?names=1 (#415): hostnames and reverse DNS in place of addresses.
   const names = singleQueryValue(req.query.names) === '1';
@@ -486,8 +508,11 @@ router.get('/firewall/rules', async (req, res) => {
       LIMIT 200`,
     params,
   );
+  // The zone filters' choices (#415): the zones on the zone-managed devices in scope.
+  const zones = zoneNames(await zoneMapsInScope(deviceId ?? undefined, siteScopeByNullableDevice(activeSite(req), 'z.device_id')));
 
   res.json({
+    zones,
     rules: rows.map((r) => ({
       deviceId: r.device_id,
       deviceName: r.device_name,

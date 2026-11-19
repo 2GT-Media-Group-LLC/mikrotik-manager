@@ -1526,6 +1526,9 @@ export const eventsApi = {
     prefix?: string;
     /** Every rule but these, each `<deviceId>|<prefix>`. */
     hide?: string[];
+    /** Lines from, or to, one zone on zone-managed devices (#415). */
+    fromZone?: string;
+    toZone?: string;
     limit?: number;
     offset?: number;
     names?: 1;
@@ -1545,14 +1548,21 @@ export const eventsApi = {
     prefix?: string;
     /** Every rule but these, each `<deviceId>|<prefix>`. */
     hide?: string[];
+    /** Lines from, or to, one zone on zone-managed devices (#415). */
+    fromZone?: string;
+    toZone?: string;
     limit?: number;
     offset?: number;
     names?: 1;
   }) =>
     api.get<{ groups: FirewallGroup[]; total: number; scanLimit: number }>('/events/firewall', { params: { ...params, view: 'grouped' }, paramsSerializer: REPEAT_PARAMS }),
-  /** The rules (log prefixes) that logged in the window, per device: the rule filter's choices. */
+  /**
+   * The rules (log prefixes) that logged in the window, per device: the rule
+   * filter's choices. With them, the zones on the zone-managed devices in
+   * scope, Router first (#415): the zone filters' choices, empty without zones.
+   */
   firewallRules: (params: { deviceId?: number; since?: string }) =>
-    api.get<{ rules: FirewallRuleOption[] }>('/events/firewall/rules', { params }),
+    api.get<{ rules: FirewallRuleOption[]; zones: string[] }>('/events/firewall/rules', { params }),
   clearFirewall: (deviceId?: number) =>
     api.delete<{ message: string; deleted: number }>('/events/firewall', {
       params: deviceId ? { deviceId } : {},

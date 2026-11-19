@@ -137,6 +137,9 @@ export default function FirewallEventsPage() {
   const [protocol, setProtocol] = useState('');
   // One rule's lines, by its whole log prefix (on the selected device).
   const [rule, setRule] = useState(() => urlParams.get('rule') ?? '');
+  // Lines from, or to, one zone (#415).
+  const [fromZone, setFromZone] = useState('');
+  const [toZone, setToZone] = useState('');
   // Every rule but these (the internet scans, say); kept in this browser.
   const [hidden, setHiddenState] = useState(readHidden);
   const setHidden = (v: string[]) => { setHiddenState(v); setPage(0); writePref(HIDE_KEY, JSON.stringify(v)); };
@@ -177,7 +180,7 @@ export default function FirewallEventsPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: [
       'firewall-events',
-      { search: debouncedSearch, deviceId, action, protocol, rule, hidden, range, page, view, names },
+      { search: debouncedSearch, deviceId, action, protocol, rule, hidden, fromZone, toZone, range, page, view, names },
     ],
     queryFn: async (): Promise<{ events: FirewallEvent[]; groups: FirewallGroup[]; total: number; scanLimit?: number }> => {
       const params = {
@@ -190,6 +193,8 @@ export default function FirewallEventsPage() {
         protocol: protocol || undefined,
         prefix: rule || undefined,
         hide: hidden.length ? hidden : undefined,
+        fromZone: fromZone || undefined,
+        toZone: toZone || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
         names: names ? (1 as const) : undefined,
@@ -204,8 +209,9 @@ export default function FirewallEventsPage() {
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   });
-  // The rule filter's choices: what logged in the period, per device.
-  const { data: ruleOptions = [] } = useQuery({
+  // The rule filter's choices: what logged in the period, per device. The
+  // zones of the zone-managed devices in scope come with them (#415).
+  const { data: ruleData } = useQuery({
     queryKey: ['firewall-rules', { deviceId, range }],
     queryFn: () =>
       eventsApi
@@ -213,12 +219,15 @@ export default function FirewallEventsPage() {
           deviceId: deviceId ? Number(deviceId) : undefined,
           since: new Date(Date.now() - RANGES[range].ms).toISOString(),
         })
-        .then((r) => r.data.rules),
+        .then((r) => r.data),
     // Counted over the whole period, which on 30 days is every line kept:
     // the list of rules changes slowly, so it's read every five minutes.
     staleTime: RULES_REFRESH_MS,
     refetchInterval: RULES_REFRESH_MS,
   });
+  const ruleOptions = ruleData?.rules ?? [];
+  // Empty without zone-managed devices in scope, and the filters stay hidden.
+  const zoneChoices = ruleData?.zones ?? [];
   // With one device picked, its rules' comments name the choices.
   const { data: deviceRules = [] } = useQuery({
     queryKey: ['firewall', Number(deviceId)],
@@ -470,6 +479,31 @@ export default function FirewallEventsPage() {
           deviceId={deviceId}
           deviceName={(id) => devices.find((d) => d.id === id)?.name}
         />
+
+        {/* From Zone and To Zone (#415), once a device in scope runs zones.
+            A zone picked earlier stays a choice, so it can be cleared. */}
+        {(zoneChoices.length > 0 || fromZone || toZone) && ([
+          ['From', fromZone, setFromZone, 'Lines from one zone: Router is traffic from the router itself'],
+          ['To', toZone, setToZone, 'Lines to one zone: Router is traffic to the router itself'],
+        ] as const).map(([side, value, set, title]) => (
+          <select
+            key={side}
+            className="input w-full sm:w-40"
+            aria-label={`${side} zone`}
+            title={title}
+            value={value}
+            onChange={(e) => {
+              set(e.target.value);
+              setPage(0);
+            }}
+          >
+            <option value="">{side} any zone</option>
+            {value && !zoneChoices.includes(value) && <option value={value}>{value}</option>}
+            {zoneChoices.map((z) => (
+              <option key={z} value={z}>{side} {z}</option>
+            ))}
+          </select>
+        ))}
 
         <select
           className="input w-full sm:w-40"

@@ -52,6 +52,13 @@ colour comes from the name:
   with the hourly config check. A membership change made on the device shows here within the
   hour.
 
+When a device in the selected site or group runs zones, two filters appear next to the rule
+filters: **From any zone** and **To any zone**. Pick a zone in one to see only traffic from it,
+or in the other for traffic to it, or both for one direction, such as from WAN to LAN. **Router**
+is traffic from, or to, the router itself. The filters cover every zone-managed device in scope,
+so picking LAN brings in LAN on each of them; pick a device too for just one. Lines from devices
+without zones don't match a zone filter.
+
 ## Resolve names
 
 **Resolve names** shows names in place of addresses. Hover a name to see its address. A name
@@ -103,7 +110,7 @@ By default, the page requests firewall events from the last 24 hours. The
 period selector changes that to the last hour, 7 days or 30 days (only lines
 still within the firewall log retention are there to find), and a link can
 open it with `?range=1h|24h|7d|30d`. Results can be filtered by device, action,
-protocol, or text such as an address, port, interface, or log prefix.
+protocol, [zone](#zones), or text such as an address, port, interface, or log prefix.
 
 **All rules** narrows the page to one rule's lines. It lists the log prefixes that logged in
 the period, each with its device and how many lines it wrote, busiest first; with a device

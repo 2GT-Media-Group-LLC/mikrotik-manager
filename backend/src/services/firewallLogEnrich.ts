@@ -47,6 +47,54 @@ export async function zoneMaps(deviceIds: (number | null)[]): Promise<Map<number
   return new Map(rows.map((r) => [r.device_id, r.interface_zones ?? {}]));
 }
 
+/**
+ * The zone-managed devices' interface maps, as the zone filters see them:
+ * one device, or every device the site scope allows (`scopeSql` is a
+ * predicate on `z.device_id`).
+ */
+export async function zoneMapsInScope(deviceId: number | undefined, scopeSql: string | null): Promise<Map<number, Record<string, string>>> {
+  const filters = ['z.enabled'];
+  const params: unknown[] = [];
+  if (deviceId !== undefined) { params.push(deviceId); filters.push(`z.device_id = $${params.length}`); }
+  if (scopeSql) filters.push(scopeSql);
+  const rows = await query<{ device_id: number; interface_zones: Record<string, string> | null }>(
+    `SELECT z.device_id, z.interface_zones FROM firewall_zone_configs z WHERE ${filters.join(' AND ')}`, params);
+  return new Map(rows.map((r) => [r.device_id, r.interface_zones ?? {}]));
+}
+
+/** The zone filters' choices (#415): Router, then every zone an interface is in, A to Z. */
+export function zoneNames(maps: Map<number, Record<string, string>>): string[] {
+  if (!maps.size) return [];
+  const zones = new Set<string>();
+  for (const map of maps.values()) for (const z of Object.values(map)) if (typeof z === 'string' && z && z !== ROUTER_ZONE) zones.add(z);
+  return [ROUTER_ZONE, ...[...zones].sort((a, b) => a.localeCompare(b))];
+}
+
+/**
+ * SQL for "this line came from (or went to) zone `zone`" (#415), the way
+ * zonesOf() reads a line: by the in (or out) interface on a zone-managed
+ * device, and Router for traffic from (or to) the router itself. `p` adds a
+ * parameter and returns its placeholder.
+ */
+export function zoneFilterSql(side: 'from' | 'to', zone: string, maps: Map<number, Record<string, string>>,
+  p: (v: unknown) => string, alias = 'e'): string {
+  const own = side === 'from' ? 'output' : 'input';
+  const chain = `substring(${alias}.message from '(input|forward|output):')`;
+  const iface = `substring(${alias}.message from '[[:space:]]${side === 'from' ? 'in' : 'out'}:([^[:space:],]+)')`;
+  const pairs: string[] = [];
+  for (const [deviceId, map] of maps) {
+    for (const [name, z] of Object.entries(map)) if (z === zone) pairs.push(`${deviceId}|${name}`);
+  }
+  const parts: string[] = [];
+  if (pairs.length) {
+    parts.push(`(${chain} IS DISTINCT FROM '${own}' AND (${alias}.device_id::text || '|' || ${iface}) = ANY(${p(pairs)}::text[]))`);
+  }
+  if (zone === ROUTER_ZONE && maps.size) {
+    parts.push(`(${chain} = '${own}' AND ${alias}.device_id = ANY(${p([...maps.keys()])}::int[]))`);
+  }
+  return parts.length ? `(${parts.join(' OR ')})` : 'FALSE';
+}
+
 export async function withZones<T extends LogLine>(lines: T[]): Promise<(T & ZoneFields)[]> {
   const maps = await zoneMaps(lines.map((l) => l.deviceId));
   if (!maps.size) return lines;

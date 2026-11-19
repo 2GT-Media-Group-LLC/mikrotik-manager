@@ -1,12 +1,49 @@
 jest.mock('../../config/database');
 
 import { query } from '../../config/database';
-import { ROUTER_ZONE, clearNameCache, withNames, withZones, zonesOf } from '../firewallLogEnrich';
+import { ROUTER_ZONE, clearNameCache, withNames, withZones, zoneFilterSql, zoneNames, zonesOf } from '../firewallLogEnrich';
 import { interfaceZones } from '../../utils/zoneFirewall';
 
 const mockQuery = query as jest.MockedFunction<typeof query>;
 
 beforeEach(() => { mockQuery.mockReset(); clearNameCache(); });
+
+describe('zone filters (#415)', () => {
+  const maps = new Map<number, Record<string, string>>([
+    [1, { bridge: 'LAN', ether1: 'WAN' }],
+    [2, { ether2: 'LAN', ether5: 'GUEST' }],
+  ]);
+  const placeholders = () => {
+    const params: unknown[] = [];
+    return { params, p: (v: unknown) => { params.push(v); return `$${params.length}`; } };
+  };
+
+  it('offers Router first, then each zone once, A to Z', () => {
+    expect(zoneNames(maps)).toEqual([ROUTER_ZONE, 'GUEST', 'LAN', 'WAN']);
+    expect(zoneNames(new Map())).toEqual([]);
+  });
+
+  it('turns a zone into its interfaces on each device', () => {
+    const { params, p } = placeholders();
+    const sql = zoneFilterSql('from', 'LAN', maps, p);
+    expect(params).toEqual([['1|bridge', '2|ether2']]);
+    expect(sql).toContain('in:([^[:space:],]+)');
+    expect(sql).toContain("IS DISTINCT FROM 'output'");
+  });
+
+  it("reads Router as the router's own traffic on a zone-managed device", () => {
+    const { params, p } = placeholders();
+    const sql = zoneFilterSql('to', ROUTER_ZONE, maps, p);
+    expect(sql).toContain("= 'input'");
+    expect(params).toEqual([[1, 2]]);
+  });
+
+  it('matches nothing for a zone no interface is in', () => {
+    const { params, p } = placeholders();
+    expect(zoneFilterSql('to', 'DMZ', maps, p)).toBe('FALSE');
+    expect(params).toEqual([]);
+  });
+});
 
 describe('interfaceZones (#415)', () => {
   it('maps each member to its zone, skipping disabled members and non-zone lists', () => {
