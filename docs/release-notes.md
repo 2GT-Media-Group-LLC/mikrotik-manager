@@ -7,6 +7,39 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.26
+
+Released on Thursday 19 November 2026. Performance on large fleets, all from
+[@JohnDepon](https://github.com/JohnDepon), who measured MikroTik Manager polling 126 devices
+and fixed what held it back, one cause at a time. On that install the database went from
+about 365% CPU to 13%, and polls stopped timing out and marking healthy devices offline.
+
+- **The Clients list and counts no longer spend seconds compiling.** Postgres compiled every
+  client query (JIT) for about 2.7 s before running it in 0.1 s. It's off for the app's
+  connections ([#471](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/471)).
+- **Pages refresh on their own timers, not on every device poll.** The Dashboard, Clients,
+  Events and Firewall Logs refetched their heaviest queries each time any device was polled,
+  several times a second on a big fleet. They refresh every 30 to 60 seconds, as before
+  ([#473](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/473)), and the
+  Dashboard's wireless count asks for the total alone
+  ([#478](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/478)).
+- **Less work per poll:** the fleet and site client totals are counted once every 15 seconds
+  in one query ([#474](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/474)); a
+  device's clients are stored in one statement
+  ([#475](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/475)); a client whose
+  MAC has no known vendor isn't looked up again every poll
+  ([#476](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/476)); and log times
+  are read with far fewer time zone lookups
+  ([#472](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/472)).
+- **The clients table stays small.** An index nothing needed made every client update write
+  to every index and leave dead rows behind. It's dropped, and the table leaves room on each
+  page so updates stay in place
+  ([#477](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/477)). This runs once
+  when the backend starts after the update and takes well under a second.
+- **The site list is as wide as its longest name**, so long site names aren't cut to a few
+  letters, with the device counts lined up and the full name on hover
+  ([#480](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/480)).
+
 ## 1.0.25
 
 Released on Thursday 19 November 2026.
