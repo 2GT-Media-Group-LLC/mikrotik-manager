@@ -114,6 +114,28 @@ suite('force-added serial reconciliation (PostgreSQL)', () => {
     await expect(resolve(candidate, 'AB12')).resolves.toEqual({ action: 'removed', deviceId: existing.id, disabled: false });
   });
 
+  it('keeps an online device and its clients online after one missed poll', async () => {
+    const device = await addDevice({ name: 'online', status: 'online' });
+    await db.query(
+      "INSERT INTO clients (device_id, mac_address, active) VALUES ($1, '02:00:00:00:00:01', TRUE)", [device.id],
+    );
+    await db.query("UPDATE app_settings SET value = '2'::jsonb WHERE key = 'offline_after_failed_polls'");
+    const { PollerService } = await import('../PollerService');
+    const poller = Object.assign(Object.create(PollerService.prototype) as {
+      recordDeviceFailure(id: number, message: string): Promise<void>;
+    }, {
+      getDevice: async (id: number) => (await db.query<DeviceRow>('SELECT * FROM devices WHERE id = $1', [id]))[0],
+    });
+
+    await poller.recordDeviceFailure(device.id, 'connection failed');
+
+    expect(await db.query('SELECT status, poll_failures FROM devices WHERE id = $1', [device.id]))
+      .toEqual([{ status: 'online', poll_failures: 1 }]);
+    expect(await db.query('SELECT active FROM clients WHERE device_id = $1', [device.id]))
+      .toEqual([{ active: true }]);
+    expect(await db.query('SELECT id FROM device_availability WHERE device_id = $1', [device.id])).toHaveLength(0);
+  });
+
   it('merges connection settings and tags into an offline record without losing history', async () => {
     const existing = await addDevice({ name: 'existing', serial: 'AB12', status: 'offline' });
     const candidate = await addDevice({ name: 'candidate', candidate: true });

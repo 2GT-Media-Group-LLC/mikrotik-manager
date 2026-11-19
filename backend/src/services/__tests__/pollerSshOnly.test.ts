@@ -19,7 +19,9 @@ import { checkApi, recordApiCheck, resolveUnspecifiedApiPort } from '../apiCheck
 import { promoteToApi, readSshInfo, refreshOverSsh } from '../sshOnly';
 import { resolveUnknownDeviceSerial } from '../unknownDeviceSerial';
 import { DeviceCollector, type DeviceRow } from '../mikrotik/DeviceCollector';
-import { query } from '../../config/database';
+import { query, queryOne } from '../../config/database';
+import { getWriteApi } from '../../config/influxdb';
+import { InfluxDB } from '@influxdata/influxdb-client';
 
 type TestPoller = {
   processPollJob(data: { deviceId: number; type: 'full' | 'fast' | 'sshcheck' }): Promise<void>;
@@ -30,6 +32,7 @@ type TestPoller = {
   scheduleDeviceSync: jest.Mock;
   emitForDevice: jest.Mock;
   getAppSettings: jest.Mock;
+  announceOffline: jest.Mock;
   recordDeviceFailure(deviceId: number, message: string): Promise<void>;
   recordPollOutcome(deviceId: number, kind: string, durationMs: number, error: string | null): Promise<void>;
 };
@@ -54,6 +57,7 @@ describe('SSH-only polling', () => {
       scheduleDeviceSync: jest.fn().mockResolvedValue(undefined),
       emitForDevice: jest.fn().mockResolvedValue(undefined),
       getAppSettings: jest.fn().mockResolvedValue({}),
+      announceOffline: jest.fn().mockResolvedValue(undefined),
       phases: new Map(),
     });
     jest.mocked(readSshInfo).mockResolvedValue({
@@ -64,6 +68,7 @@ describe('SSH-only polling', () => {
     });
     jest.mocked(resolveUnknownDeviceSerial).mockResolvedValue({ action: 'continue' });
     jest.mocked(query).mockResolvedValue([]);
+    jest.mocked(queryOne).mockResolvedValue({ value: 2 });
   });
 
   it('uses SSH first for an unverified SSH-only device, without probing the API', async () => {
@@ -93,11 +98,48 @@ describe('SSH-only polling', () => {
 
   it('records failure for a non-pending unknown device', async () => {
     poller.getDevice.mockResolvedValue({ ...device, force_add_pending: false });
+    jest.mocked(query).mockResolvedValueOnce([{ poll_failures: 1 }]);
     await poller.recordDeviceFailure(45, 'SSH unavailable');
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining("status = 'offline'"), [45],
     );
     expect(query).toHaveBeenCalledWith(expect.stringContaining('NOT force_add_pending'), [45]);
+  });
+
+  it('keeps an online device online after one missed poll', async () => {
+    poller.getDevice.mockResolvedValue({ ...device, status: 'online', force_add_pending: false });
+    jest.mocked(query).mockResolvedValueOnce([{ poll_failures: 1 }]);
+    await poller.recordDeviceFailure(45, 'SSH unavailable');
+    expect(jest.mocked(query).mock.calls.some(([sql]) => sql.includes("status = 'offline'"))).toBe(false);
+    expect(poller.announceOffline).not.toHaveBeenCalled();
+    expect(poller.emitForDevice).not.toHaveBeenCalled();
+  });
+
+  it('marks a device offline and performs outage cleanup at the failure threshold', async () => {
+    const online = { ...device, status: 'online', force_add_pending: false };
+    poller.getDevice.mockResolvedValue(online);
+    jest.mocked(query).mockResolvedValueOnce([{ poll_failures: 2 }]).mockResolvedValueOnce([{ id: 45 }]);
+    const writeApi = new InfluxDB({ url: 'http://127.0.0.1:8086', token: '' }).getWriteApi('test', 'test');
+    jest.spyOn(writeApi, 'writePoint').mockImplementation(() => {});
+    jest.spyOn(writeApi, 'flush').mockResolvedValue(undefined);
+    jest.mocked(getWriteApi).mockReturnValue(writeApi);
+    await poller.recordDeviceFailure(45, 'SSH unavailable');
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("status = 'offline'"), [45]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('NOT force_add_pending'), [45]);
+    expect(poller.announceOffline).toHaveBeenCalledWith(45, online, 'online', 'SSH unavailable');
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO device_availability'), [45]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('UPDATE clients SET active = FALSE'), [45]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM topology_links'), [45]);
+  });
+
+  it('does not announce an offline transition rejected by the pending or disabled guard', async () => {
+    poller.getDevice.mockResolvedValue({ ...device, status: 'online', force_add_pending: false });
+    jest.mocked(query).mockResolvedValueOnce([{ poll_failures: 2 }]).mockResolvedValueOnce([]);
+    await poller.recordDeviceFailure(45, 'SSH unavailable');
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('NOT force_add_pending'), [45]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("status <> 'disabled'"), [45]);
+    expect(poller.announceOffline).not.toHaveBeenCalled();
+    expect(poller.emitForDevice).not.toHaveBeenCalled();
   });
 
   it('retries the API and promotes the device on a later poll', async () => {

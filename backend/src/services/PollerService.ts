@@ -1865,11 +1865,6 @@ export class PollerService {
     // The failed attempt and its error are already recorded in device_poll_stats.
     if (!device || device.force_add_pending || device.status === 'disabled') return;
     const prevStatus = device.status;
-    const updated = await query(
-      `UPDATE devices SET status = 'offline', updated_at = NOW()
-       WHERE id = $1 AND NOT force_add_pending AND status <> 'disabled' RETURNING id`, [deviceId],
-    );
-    if (!updated.length) return;
 
     // Count the failure, then decide. An online device stays online until
     // offline_after_failed_polls polls in a row have failed: one failure is
@@ -1889,7 +1884,11 @@ export class PollerService {
       return;
     }
 
-    await query(`UPDATE devices SET status = 'offline', updated_at = NOW() WHERE id = $1`, [deviceId]);
+    const updated = await query(
+      `UPDATE devices SET status = 'offline', updated_at = NOW()
+       WHERE id = $1 AND NOT force_add_pending AND status <> 'disabled' RETURNING id`, [deviceId],
+    );
+    if (!updated.length) return;
     await this.announceOffline(deviceId, device, prevStatus, message);
 
     // Once, when it goes offline. Clearing its clients and links (and
