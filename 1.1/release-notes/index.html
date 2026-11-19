@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta68" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.68
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta67" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2244,6 +2255,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta68" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.68
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta67" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2992,6 +3014,14 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta68">1.1.0-beta.68<a class="headerlink" href="#110-beta68" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Less load from the Devices page and Dashboard.</strong> Every device poll told an open Devices page
+  or Dashboard to fetch the whole device list again, which on a large fleet meant several times a
+  second. They now wait a second and fetch once for everything that changed in it. Also in
+  1.0.23. Thanks to eskyuu
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/467">#467</a>).</li>
+</ul>
 <h2 id="110-beta67">1.1.0-beta.67<a class="headerlink" href="#110-beta67" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Add a device without checking it first.</strong> <strong>Force add without checking connectivity</strong> in
@@ -3981,6 +4011,14 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1023">1.0.23<a class="headerlink" href="#1023" title="Permanent link">&para;</a></h2>
+<p>Released on Thursday 19 November 2026.</p>
+<ul>
+<li><strong>Less load from the Devices page and Dashboard.</strong> Every device poll told an open Devices page
+  or Dashboard to fetch the whole device list again, which on a large fleet meant several times a
+  second. They now wait a second and fetch once for everything that changed in it. Thanks to
+  eskyuu (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/467">#467</a>).</li>
+</ul>
 <h2 id="1022">1.0.22<a class="headerlink" href="#1022" title="Permanent link">&para;</a></h2>
 <p>Released on Wednesday 18 November 2026.</p>
 <ul>
