@@ -18,6 +18,17 @@ export function roleAtLeast(role: string | null | undefined, min: Role): boolean
   return (RANK[role ?? ''] ?? -1) >= RANK[min];
 }
 
+/**
+ * The sites a site-scoped account may change devices in: operator or admin
+ * there, not viewer. Null for a fleet-wide account (no site roles). Adding a
+ * device took every site the account had any role in, so a viewer on a site
+ * could replace its devices by serial (GHSA-p885-qw7f-rgx2).
+ */
+export function writableSiteIds(siteRoles: Record<number, string> | null | undefined): number[] | null {
+  if (!siteRoles) return null;
+  return Object.entries(siteRoles).filter(([, r]) => roleAtLeast(r, 'operator')).map(([id]) => Number(id));
+}
+
 /** Largest value of a Postgres integer id. */
 const MAX_ID = 2_147_483_647;
 

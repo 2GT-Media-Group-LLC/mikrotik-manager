@@ -457,6 +457,51 @@ describe('createDeviceFromBody (jump hosts)', () => {
     expect(sqlRan(/UPDATE devices SET/)).toBeUndefined();
   });
 
+  describe('the saved SSH login on a replace by serial (GHSA-p885-qw7f-rgx2)', () => {
+    const update = () => sqlRan(/UPDATE devices SET/)!;
+
+    it("doesn't keep it when an operator points the device at another address", async () => {
+      existing = { id: 33, name: 'core', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 5, jump_host_id: 4 } as typeof existing;
+      const result = await createDeviceFromBody({ ...base, force_replace_existing_by_serial: true }, null,
+        { siteId: 5, requestingUserRole: 'operator', allowedSites: [5] });
+      expect(result.ok).toBe(true);
+      const [sql, params] = update() as [string, unknown[]];
+      expect(sql).toMatch(/ssh_username=\$8,/);
+      expect(sql).toMatch(/ssh_password_encrypted=\$9,/);
+      expect(params[7]).toBeNull();
+      expect(params[8]).toBeNull();
+    });
+
+    it('keeps it when the device is re-added at the address and route it was saved for', async () => {
+      existing = { id: 33, name: 'core', ip_address: '10.20.0.5', serial_number: 'SER1', site_id: 5, jump_host_id: 4 } as typeof existing;
+      await createDeviceFromBody({ ...base, force_replace_existing_by_serial: true }, null,
+        { siteId: 5, requestingUserRole: 'operator', allowedSites: [5] });
+      expect(update()[0]).toMatch(/ssh_password_encrypted=COALESCE\(\$9,ssh_password_encrypted\)/);
+    });
+
+    it('drops it when only the route changes', async () => {
+      existing = { id: 33, name: 'core', ip_address: '10.20.0.5', serial_number: 'SER1', site_id: 5, jump_host_id: null } as typeof existing;
+      await createDeviceFromBody({ ...base, force_replace_existing_by_serial: true }, null,
+        { siteId: 5, requestingUserRole: 'operator', allowedSites: [5] });
+      expect(update()[0]).toMatch(/ssh_password_encrypted=\$9,/);
+    });
+
+    it('lets a fleet admin keep it, as editing a device does', async () => {
+      existing = { id: 33, name: 'core', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 5, jump_host_id: 4 } as typeof existing;
+      await createDeviceFromBody({ ...base, force_replace_existing_by_serial: true }, null, { siteId: 5, requestingUserRole: 'admin' });
+      expect(update()[0]).toMatch(/ssh_password_encrypted=COALESCE\(\$9,ssh_password_encrypted\)/);
+    });
+
+    it("won't replace a device in a site the account can only view", async () => {
+      existing = { id: 33, name: 'core', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 9, jump_host_id: null } as typeof existing;
+      // writableSiteIds leaves a viewer site out of allowedSites.
+      const result = await createDeviceFromBody({ ...base, force_replace_existing_by_serial: true }, null,
+        { siteId: 5, requestingUserRole: 'operator', allowedSites: [5] });
+      expect(result).toMatchObject({ ok: false, status: 409, body: { code: 'duplicate_serial_elsewhere' } });
+      expect(sqlRan(/UPDATE devices SET/)).toBeUndefined();
+    });
+  });
+
   it('merges with a fleet-wide jump host, and moves the device onto it', async () => {
     existing = { id: 33, name: 'core-9', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 9 };
     const result = await createDeviceFromBody({ ...base, jump_host_id: 8, force_replace_existing_by_serial: true }, null, { siteId: 5 });

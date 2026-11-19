@@ -5,7 +5,7 @@ import { checkApi, recordApiCheck } from '../services/apiCheck';
 import { describeSshFailure } from '../utils/sshOnly';
 import net from 'net';
 import { Router, Request, Response } from 'express';
-import { deviceSiteAccess, deviceIdParam, devicesDenied, roleOnDevice, roleAtLeast, strictId } from '../utils/siteAccess';
+import { deviceSiteAccess, deviceIdParam, devicesDenied, roleOnDevice, roleAtLeast, strictId, writableSiteIds } from '../utils/siteAccess';
 import { bulkUpdateCredentials } from '../services/bulkCredentials';
 import { deviceSettings } from '../services/pollSettings';
 import { validateOverrides } from '../utils/pollOverrides';
@@ -401,7 +401,7 @@ router.post('/', requireWrite, async (req, res) => {
     requestingUserRole: isSiteScoped(req.user) ? 'operator' : req.user?.role,
     presetCaller: presetCaller(req.user),
     siteId: target.siteId,
-    allowedSites: req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null,
+    allowedSites: writableSiteIds(req.user?.siteRoles),
   });
   return res.status(result.status).json(result.body);
 });
@@ -484,7 +484,7 @@ router.post('/bulk-add/jobs', requireWrite, async (req, res) => {
   );
   await redis.set(`device-bulk-add:${jobId}:results`, '[]', 'EX', BULK_ADD_META_TTL_SEC);
   await enqueueBulkAddJob(jobId, items as CreateDeviceInput[], bulkTarget.siteId, isSiteScoped(req.user) ? 'operator' : req.user!.role,
-    req.user?.siteRoles ? Object.keys(req.user.siteRoles).map(Number) : null, presetCaller(req.user));
+    writableSiteIds(req.user?.siteRoles), presetCaller(req.user));
   return res.status(202).json({ job_id: jobId, total: items.length });
 });
 
