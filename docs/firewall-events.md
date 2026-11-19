@@ -14,6 +14,10 @@ Each row can show:
 
 IPv4 and IPv6 packet logs are supported.
 
+A rule in a chain of your own (a jump target) is logged under that chain's name rather than
+input, forward or output. Before 1.0.25 those lines were left off this page; now they show
+with their own chain's name.
+
 ## Where the events come from
 
 Firewall logs are collected from the normal RouterOS log stream. A firewall

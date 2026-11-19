@@ -1207,6 +1207,8 @@ export interface FirewallEvent {
   action: 'accept' | 'drop' | 'reject' | 'fasttrack' | 'unknown';
   prefix: string;
   chain: 'input' | 'forward' | 'output';
+  /** The chain RouterOS logged it under, when it's a chain of the user's own. */
+  ruleChain?: string;
 
   inInterface?: string;
   outInterface?: string;

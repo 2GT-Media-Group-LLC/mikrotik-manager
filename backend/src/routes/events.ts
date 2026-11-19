@@ -220,6 +220,9 @@ router.get('/firewall', async (req: Request, res: Response) => {
     NULLIF(split_part(e.message, ' input:', 1), e.message),
     NULLIF(split_part(e.message, ' forward:', 1), e.message),
     NULLIF(split_part(e.message, ' output:', 1), e.message),
+    -- A rule in a chain of its own (a jump target) logs under that chain's
+    -- name; only those lines get this far.
+    substring(e.message from '^(.*)[[:space:]][^[:space:]]+: in:'),
     ''
   )`;
 

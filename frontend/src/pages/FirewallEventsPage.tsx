@@ -298,7 +298,7 @@ export default function FirewallEventsPage() {
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
-                      {event.chain}
+                      {event.ruleChain ?? event.chain}
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap">

@@ -13,7 +13,7 @@ export function firewallPacketLogSql(
 
   return `COALESCE((
     'firewall' = ANY(string_to_array(${p}topic, ','))
-    AND ${p}message ~* '(input|forward|output):'
+    AND ${p}message ~ '[^[:space:]]+: in:'
     AND ${p}message ~* '(^|[[:space:],])proto[[:space:]]+'
     AND ${p}message LIKE '%->%'
   ), FALSE)`;
