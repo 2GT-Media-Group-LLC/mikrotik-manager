@@ -523,8 +523,9 @@ function SummaryView(props: Record<string, any>) {
                       {String(i + 1).padStart(2, '0')}
                     </span>
                     <div className="min-w-0">
-                      <div className="mono text-[11.5px] truncate mb-[3px]" style={{ color: 'var(--ink)' }}>
-                        {label.length > 20 ? label.slice(0, 20) + '…' : label}
+                      {/* Cut only where the row runs out of room, not at a fixed length. */}
+                      <div className="mono text-[11.5px] truncate mb-[3px]" style={{ color: 'var(--ink)' }} title={label}>
+                        {label}
                       </div>
                       <div className="rounded-full overflow-hidden" style={{ height: 3, background: 'var(--surface-3)' }}>
                         <div className="h-full rounded-full" style={{ width: `${(c.total_bytes / maxB) * 100}%`, background: 'var(--accent)' }} />
