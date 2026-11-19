@@ -40,6 +40,24 @@ given. The plain API sends the login unencrypted on every poll, so a device that
 8728 is listed on the [Security page](security.md#encrypted-management-api-ssl), where it
 can be switched over. Choosing 8728 for a public address still shows a warning.
 
+**Force add without checking connectivity** saves the device with unknown status without
+connecting. If no API port was specified in the form, address, or credential preset, it
+stores port `0` until a poll can connect: the poll tries API-SSL first, then the plain API
+when API-SSL is unavailable, and saves the working port. An explicit API-SSL choice uses
+its corresponding standard port instead. A specified port is kept as given. If **The API
+isn't enabled on this device yet** is also ticked, the first poll uses SSH instead; later
+polls retry the API as described below.
+
+On the first successful connection, a **force-added** device's serial is checked before it is
+collected. Failed polls leave it unknown and pending until it connects; polling statistics retain the
+failure details. Manual sync and API checks are available after that first poll succeeds.
+If it matches one device in the same site, the new record is removed when the
+existing device is online. Otherwise the new connection settings are merged into the existing
+record, preserving its history and combining tags; the new record is removed. A disabled
+existing device stays disabled. Matches in another site, multiple matches, or conflicting
+identity pins disable the new device and record an event for an administrator instead. If
+the device does not report a serial, no duplicate can be identified this way.
+
 When you enter a port, an **API-SSL (encrypted)** box appears under it. It is ticked for 8729
 and clear for any other port. Tick it when api-ssl runs on another port: a port forwarded
 through NAT to reach several devices behind one address, say, or a network where 8729 is
@@ -53,11 +71,12 @@ Many fleets start with the RouterOS API services (`api`, `api-ssl`) turned off. 
 isn't enabled on this device yet** in Add Device, or put `yes` in the `ssh_only` column of a
 [CSV import](#importing-from-csv) (#174).
 
-The manager tries the API briefly first, and if it answers, the device is added normally. If
+Unless force add is selected, the manager tries the API briefly first, and if it answers, the device is added normally. If
 it doesn't, the manager logs in over SSH instead. That reads the device's identity, model,
 RouterOS version and serial number (the serial still catches duplicates), and pins its SSH host
 key. The same login is used for SSH now and tried on the API later. A credential preset works
 too: its SSH login is used, or its API login when it has no SSH one.
+With force add, neither connection is checked until the first poll, which uses SSH.
 
 The device is listed as **SSH ONLY** in the API column. Until the API is on:
 

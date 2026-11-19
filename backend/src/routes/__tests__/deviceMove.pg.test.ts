@@ -125,6 +125,38 @@ suite('moving a device keeps its saved passwords at the old address (GHSA-63v6-w
     return row.p ? crypto.decrypt(row.p) : null;
   };
 
+  it.each(['dev', 'sshOnly'])('does not manually sync a pending force-added %s device', async (key) => {
+    currentUser = operator();
+    await db.query("UPDATE devices SET status = 'unknown', force_add_pending = TRUE WHERE id = $1", [id[key]]);
+    const res = await request(app).post(`/api/devices/${id[key]}/sync`).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/first successful poll/);
+    expect(apiLogins).toEqual([]);
+    expect(sshLogins).toEqual([]);
+    expect((await db.query<{ force_add_pending: boolean }>(
+      'SELECT force_add_pending FROM devices WHERE id = $1', [id[key]],
+    ))[0].force_add_pending).toBe(true);
+  });
+
+  it('does not check the API before a pending SSH-only device has been polled', async () => {
+    currentUser = operator();
+    await db.query("UPDATE devices SET status = 'unknown', force_add_pending = TRUE WHERE id = $1", [id.sshOnly]);
+    const res = await request(app).post(`/api/devices/${id.sshOnly}/check-api`).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/first SSH poll/);
+    expect(apiLogins).toEqual([]);
+    expect(sshLogins).toEqual([]);
+  });
+
+  it('still reports an API-managed device as such while it is pending', async () => {
+    currentUser = operator();
+    await db.query("UPDATE devices SET status = 'unknown', force_add_pending = TRUE WHERE id = $1", [id.dev]);
+    const res = await request(app).post(`/api/devices/${id.dev}/check-api`).send({});
+    expect(res.status).toBe(200);
+    expect(res.body.api).toBe(true);
+    expect(apiLogins).toEqual([]);
+  });
+
   it('an operator must enter a password to move a device', async () => {
     currentUser = operator();
     const res = await request(app).put(`/api/devices/${id.dev}`).send({ ip_address: '10.0.0.66' });

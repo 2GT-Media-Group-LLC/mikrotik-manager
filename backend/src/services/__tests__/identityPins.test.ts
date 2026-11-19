@@ -37,6 +37,12 @@ describe('verifyDeviceIdentity', () => {
     expect(mockQuery.mock.calls[1][1]).toEqual([7, 'api-tls', FP_A]);
   });
 
+  it('includes an unspecified API port when checking an API-SSL certificate', async () => {
+    lookupReturns([]);
+    await verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A, null);
+    expect(sqlCalls()[0]).toContain('IN (0, 8728)');
+  });
+
   it('accepts the pinned identity', async () => {
     lookupReturns([{ device_id: 7, name: 'sw', fingerprint: FP_A, seen_fingerprint: null }]);
     await expect(verifyDeviceIdentity('api-tls', '10.0.0.1', 8729, FP_A, null)).resolves.toBeUndefined();
