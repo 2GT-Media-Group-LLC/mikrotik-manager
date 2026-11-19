@@ -51,8 +51,8 @@ function zoneFormatter(timeZone: string): Intl.DateTimeFormat {
   return fmt;
 }
 
-/** Wall-clock fields of an instant in a named zone. Throws for an unknown zone. */
-function wallClockIn(instant: Date, timeZone: string): WallClock {
+/** Wall-clock fields of an instant in a named zone, from Intl. Throws for an unknown zone. */
+function formatWallClock(instant: Date, timeZone: string): WallClock {
   const parts = Object.fromEntries(
     zoneFormatter(timeZone).formatToParts(instant).map((p) => [p.type, p.value])
   );
@@ -63,10 +63,39 @@ function wallClockIn(instant: Date, timeZone: string): WallClock {
   };
 }
 
-/** Offset of a zone, in milliseconds, at a given instant. */
+/**
+ * Zone offsets, one per zone per quarter hour of UTC. Even with the formatter
+ * reused, formatToParts three times for every line of every device's log
+ * buffer, every minute, was most of the backend's CPU (bufferMark parses the
+ * whole buffer each poll). Zones change offset only on quarter-hour UTC
+ * boundaries (Adelaide and Newfoundland switch on the half hour), so one
+ * answer holds for its whole quarter hour. Bounded like the formatters.
+ */
+const QUARTER_HOUR_MS = 15 * 60_000;
+const offsets = new Map<string, number>();
+const MAX_OFFSETS = 20_000;
+
+/** Offset of a zone, in milliseconds, at a given instant. Throws for an unknown zone. */
 function offsetMsAt(utcMs: number, timeZone: string): number {
-  const w = wallClockIn(new Date(utcMs), timeZone);
-  return Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s) - utcMs;
+  const key = `${timeZone}|${Math.floor(utcMs / QUARTER_HOUR_MS)}`;
+  let off = offsets.get(key);
+  if (off === undefined) {
+    const sec = Math.floor(utcMs / 1000) * 1000; // Intl answers in whole seconds
+    const w = formatWallClock(new Date(sec), timeZone);
+    off = Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s) - sec;
+    if (offsets.size >= MAX_OFFSETS) offsets.clear();
+    offsets.set(key, off);
+  }
+  return off;
+}
+
+/** Wall-clock fields of an instant in a named zone. Throws for an unknown zone. */
+function wallClockIn(instant: Date, timeZone: string): WallClock {
+  const t = new Date(instant.getTime() + offsetMsAt(instant.getTime(), timeZone));
+  return {
+    y: t.getUTCFullYear(), mo: t.getUTCMonth() + 1, d: t.getUTCDate(),
+    h: t.getUTCHours(), mi: t.getUTCMinutes(), s: t.getUTCSeconds(),
+  };
 }
 
 /**
