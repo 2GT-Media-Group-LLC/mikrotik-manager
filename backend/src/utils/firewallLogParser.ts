@@ -8,7 +8,15 @@ export type FirewallAction =
 export interface FirewallLogEvent {
   action: FirewallAction;
   prefix: string;
+  /**
+   * The built-in chain the packet was in. A rule in a chain of its own (a
+   * jump target such as a zone pair's "LAN-to-WAN") is logged under that
+   * chain's name, so the built-in one is read from the interfaces then:
+   * no out-interface is input, no in-interface is output.
+   */
   chain: 'input' | 'forward' | 'output';
+  /** The chain RouterOS printed, when it isn't input, forward or output (#369). */
+  ruleChain?: string;
   inInterface?: string;
   outInterface?: string;
   connectionState?: string;
@@ -74,13 +82,15 @@ function parseEndpoint(value: string): ParsedEndpoint | null {
 }
 
 export function parseFirewallLog(message: string): FirewallLogEvent | null {
+  // "<prefix> <chain>: in:… out:…, …": the chain is the word before ": in:",
+  // whatever it's called (#369).
   const header = message.match(
-    /^(.*?)\s*\b(input|forward|output):\s*(.+)$/i
+    /^(?:(.*?)\s+)?([^\s:]+):\s+(in:.+)$/i
   );
   if (!header) return null;
 
-  const prefix = header[1].trim();
-  const chain = header[2].toLowerCase() as FirewallLogEvent['chain'];
+  const prefix = (header[1] ?? '').trim();
+  const printed = header[2];
   const body = header[3];
 
   const protocolMatch = body.match(
@@ -116,10 +126,18 @@ export function parseFirewallLog(message: string): FirewallLogEvent | null {
   )?.[1];
   const length = body.match(/\blen\s+(\d+)/i)?.[1];
 
+  const base = printed.toLowerCase();
+  const builtIn = base === 'input' || base === 'forward' || base === 'output';
+  const chain: FirewallLogEvent['chain'] = builtIn ? base
+    : /\bout:\(unknown \d+\)/i.test(body) ? 'input'
+      : /\bin:\(unknown \d+\)/i.test(body) ? 'output'
+        : 'forward';
+
   return {
     action: inferAction(prefix),
     prefix,
     chain,
+    ...(builtIn ? {} : { ruleChain: printed }),
     inInterface,
     outInterface,
     connectionState,

@@ -2,6 +2,7 @@
 // came from and went to, and, when asked, names instead of addresses.
 import { Resolver } from 'dns/promises';
 import { query } from '../config/database';
+import { firewallBaseChainSql } from '../utils/firewallEventSql';
 import { namesForAddresses } from '../utils/addressNames';
 
 /** The zone column for traffic to or from the router itself. */
@@ -79,7 +80,7 @@ export function zoneNames(maps: Map<number, Record<string, string>>): string[] {
 export function zoneFilterSql(side: 'from' | 'to', zone: string, maps: Map<number, Record<string, string>>,
   p: (v: unknown) => string, alias = 'e'): string {
   const own = side === 'from' ? 'output' : 'input';
-  const chain = `substring(${alias}.message from '(input|forward|output):')`;
+  const chain = firewallBaseChainSql(alias);
   const iface = `substring(${alias}.message from '[[:space:]]${side === 'from' ? 'in' : 'out'}:([^[:space:],]+)')`;
   const pairs: string[] = [];
   for (const [deviceId, map] of maps) {

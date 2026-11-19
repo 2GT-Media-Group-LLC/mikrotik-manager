@@ -107,4 +107,19 @@ describe('parseFirewallLog', () => {
     expect(e?.outInterface).toBeUndefined();
     expect(e?.prefix).toBe('zone drop in mtm#0khn');
   });
+
+  it('reads a line from a chain of the user\'s own, such as a zone pair\'s (#369)', () => {
+    const fwd = parseFirewallLog('zone accept mtm#w4yr LAN-to-WAN: in:bridge out:ether1, connection-state:new src-mac 02:00:00:00:00:01, proto TCP (SYN), 192.168.88.10:51234->1.1.1.1:443, len 60');
+    expect(fwd).toEqual(expect.objectContaining({ action: 'accept', prefix: 'zone accept mtm#w4yr', chain: 'forward', ruleChain: 'LAN-to-WAN', inInterface: 'bridge', outInterface: 'ether1', dstPort: 443 }));
+    // As RouterOS 7.25 printed it, from a jump target off output.
+    const out = parseFirewallLog('mtmchaintest mtm-test-out: in:(unknown 0) out:ether1, connection-state:established proto TCP (ACK,FIN), 10.0.2.15:48244->198.35.26.224:443, len 40');
+    expect(out).toEqual(expect.objectContaining({ prefix: 'mtmchaintest', chain: 'output', ruleChain: 'mtm-test-out' }));
+    const input = parseFirewallLog('WAN-to-router: in:ether1 out:(unknown 0), proto ICMP (type 8, code 0), 203.0.113.10->192.0.2.1, len 84');
+    expect(input).toEqual(expect.objectContaining({ prefix: '', chain: 'input', ruleChain: 'WAN-to-router' }));
+    // The built-in chains carry no ruleChain, and a prefix with a colon still reads.
+    const plain = parseFirewallLog('FW: forward: in:bridge out:ether1, proto UDP, 10.0.0.1:1->10.0.0.2:2, len 30');
+    expect(plain?.prefix).toBe('FW:');
+    expect(plain?.chain).toBe('forward');
+    expect(plain && 'ruleChain' in plain).toBe(false);
+  });
 });

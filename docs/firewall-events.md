@@ -14,6 +14,12 @@ Each row can show:
 
 IPv4 and IPv6 packet logs are supported.
 
+A rule in a chain of your own (a jump target) is logged under that chain's name rather than
+input, forward or output. Before 1.1.0-beta.71 those lines were left off this page; now they
+show with their own chain's name, and the zone columns work out whether the packet was to the
+router, from it, or passing through from its interfaces. A zone rule's **Log** writes lines like
+this (see [Zones](devices.md#zones)).
+
 ## Grouped and raw
 
 RouterOS logs every packet a logging rule matches, so one blocked client retrying, or a port

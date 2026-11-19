@@ -63,6 +63,9 @@ suite('Firewall Logs zone filters (#415)', () => {
     routerToWan: ['r1', 'router out mtm#e5f6 output: in:(unknown 0) out:ether1, connection-state:new proto UDP, 192.0.2.1:123->198.51.100.8:123, len 76'],
     // Its name starts like a zone's interface but isn't in a zone.
     guestToWan: ['r1', 'guest mtm#g7h8 forward: in:bridge-guest out:ether1, connection-state:new src-mac 00:11:22:33:44:58, proto UDP, 192.168.70.5:5353->198.51.100.9:53, len 60'],
+    // Logged by a custom rule's log rule, in the pair's own chain (#369).
+    lanToWanLogged: ['r1', 'zone accept mtm#w4yr LAN-to-WAN: in:bridge out:ether1, connection-state:new src-mac 00:11:22:33:44:61, proto TCP (SYN), 192.168.62.22:50003->1.1.1.1:443, len 60'],
+    wanToRouterLogged: ['r1', 'zone accept mtm#x9y8 WAN-to-router: in:ether1 out:(unknown 0), connection-state:new src-mac 00:11:22:33:44:62, proto ICMP (type 8, code 0), 203.0.113.10->192.0.2.1, len 84'],
     // A router without zones: the same interface names, no zones.
     plainLanToWan: ['r2', 'fwd forward: in:bridge out:ether1, connection-state:new src-mac 00:11:22:33:44:59, proto TCP (SYN), 192.168.88.10:50001->198.51.100.7:443, len 60'],
     // Another site's router.
@@ -126,23 +129,23 @@ suite('Firewall Logs zone filters (#415)', () => {
   };
 
   it('filters by the zone a line came from, on every zone-managed device', async () => {
-    expect(await raw('fromZone=LAN')).toEqual(['lanToRouter', 'lanToWan', 'siteBLanToGuest']);
-    expect(await raw('fromZone=WAN')).toEqual(['wanToLan']);
+    expect(await raw('fromZone=LAN')).toEqual(['lanToRouter', 'lanToWan', 'lanToWanLogged', 'siteBLanToGuest']);
+    expect(await raw('fromZone=WAN')).toEqual(['wanToLan', 'wanToRouterLogged']);
   });
 
   it('filters by the zone a line went to', async () => {
     // bridge-guest is in no zone, but it went out ether1, which is WAN.
-    expect(await raw('toZone=WAN')).toEqual(['guestToWan', 'lanToWan', 'routerToWan']);
+    expect(await raw('toZone=WAN')).toEqual(['guestToWan', 'lanToWan', 'lanToWanLogged', 'routerToWan']);
     expect(await raw('toZone=GUEST')).toEqual(['siteBLanToGuest']);
   });
 
   it('reads the router itself as the Router zone', async () => {
-    expect(await raw('toZone=Router')).toEqual(['lanToRouter']);
+    expect(await raw('toZone=Router')).toEqual(['lanToRouter', 'wanToRouterLogged']);
     expect(await raw('fromZone=Router')).toEqual(['routerToWan']);
   });
 
   it('takes both at once, one direction', async () => {
-    expect(await raw('fromZone=LAN&toZone=WAN')).toEqual(['lanToWan']);
+    expect(await raw('fromZone=LAN&toZone=WAN')).toEqual(['lanToWan', 'lanToWanLogged']);
     expect(await raw('fromZone=WAN&toZone=LAN')).toEqual(['wanToLan']);
   });
 
@@ -154,16 +157,16 @@ suite('Firewall Logs zone filters (#415)', () => {
   });
 
   it('works with one device picked, and in the grouped view', async () => {
-    expect(await raw(`fromZone=LAN&deviceId=${id.r1}`)).toEqual(['lanToRouter', 'lanToWan']);
+    expect(await raw(`fromZone=LAN&deviceId=${id.r1}`)).toEqual(['lanToRouter', 'lanToWan', 'lanToWanLogged']);
     const res = await request(app).get('/api/events/firewall?view=grouped&fromZone=LAN');
     expect(res.status).toBe(200);
-    expect(res.body.total).toBe(3);
+    expect(res.body.total).toBe(4);
     expect((res.body.groups as { fromZone: string }[]).every((g) => g.fromZone === 'LAN')).toBe(true);
   });
 
   it('keeps to the account\'s sites, for the lines and for the zone choices', async () => {
     currentUser = { userId: 3, username: 'a-viewer', role: 'viewer', siteRoles: { [id.A]: 'viewer' } };
-    expect(await raw('fromZone=LAN')).toEqual(['lanToRouter', 'lanToWan']);
+    expect(await raw('fromZone=LAN')).toEqual(['lanToRouter', 'lanToWan', 'lanToWanLogged']);
     const rules = await request(app).get('/api/events/firewall/rules');
     expect(rules.status).toBe(200);
     expect(rules.body.zones).toEqual(['Router', 'LAN', 'VPN', 'WAN']);
@@ -173,6 +176,23 @@ suite('Firewall Logs zone filters (#415)', () => {
     expect(all.body.zones).toEqual(['Router', 'GUEST', 'LAN', 'VPN', 'WAN']);
     const none = await request(app).get(`/api/events/firewall/rules?deviceId=${id.r2}`);
     expect(none.body.zones).toEqual([]);
+  });
+
+  it('shows lines logged in a chain of their own, as accepted, with their rule (#369)', async () => {
+    expect(await raw('action=accept')).toEqual(['lanToWan', 'lanToWanLogged', 'wanToRouterLogged']);
+    const res = await request(app).get(`/api/events/firewall?deviceId=${id.r1}&action=accept`);
+    const logged = (res.body.events as { rawMessage: string; chain: string; ruleChain?: string; prefix: string; fromZone?: string; toZone?: string }[])
+      .filter((e) => byMessage.get(e.rawMessage)?.endsWith('Logged'))
+      .map((e) => ({ chain: e.chain, ruleChain: e.ruleChain, prefix: e.prefix, from: e.fromZone, to: e.toZone }))
+      .sort((a, b) => a.prefix.localeCompare(b.prefix));
+    expect(logged).toEqual([
+      { chain: 'forward', ruleChain: 'LAN-to-WAN', prefix: 'zone accept mtm#w4yr', from: 'LAN', to: 'WAN' },
+      { chain: 'input', ruleChain: 'WAN-to-router', prefix: 'zone accept mtm#x9y8', from: 'WAN', to: 'Router' },
+    ]);
+    const rules = await request(app).get(`/api/events/firewall/rules?deviceId=${id.r1}`);
+    expect((rules.body.rules as { prefix: string }[]).map((r) => r.prefix)).toEqual(expect.arrayContaining(['zone accept mtm#w4yr', 'zone accept mtm#x9y8']));
+    const grouped = await request(app).get(`/api/events/firewall?view=grouped&deviceId=${id.r1}&prefix=${encodeURIComponent('zone accept mtm#w4yr')}`);
+    expect(grouped.body.total).toBe(1);
   });
 
   it('refuses an over-long zone', async () => {

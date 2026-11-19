@@ -594,7 +594,7 @@ export default function FirewallEventsPage() {
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-700 dark:text-slate-300 whitespace-nowrap">{serviceFor(services, g.protocol, g.dstPort) ?? '—'}</td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
                       {/* Zones say where traffic went; the chain only repeats it (#415). */}
-                      {(!g.zoned || !tagOf(g.prefix)) && g.chain}
+                      {(!g.zoned || !tagOf(g.prefix)) && (g.ruleChain ?? g.chain)}
                       <RuleChip prefix={g.prefix} deviceId={g.deviceId} />
                     </td>
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400 whitespace-nowrap"><ZoneCell zoned={g.zoned} zone={g.fromZone} iface={g.inInterface} router={g.chain === 'output'} /></td>
@@ -673,7 +673,7 @@ export default function FirewallEventsPage() {
                     </td>
 
                     <td className="px-4 py-2.5 text-xs font-mono text-gray-500 dark:text-slate-400">
-                      {(!event.zoned || !tagOf(event.prefix)) && event.chain}
+                      {(!event.zoned || !tagOf(event.prefix)) && (event.ruleChain ?? event.chain)}
                       <RuleChip prefix={event.prefix} deviceId={event.deviceId} />
                     </td>
 

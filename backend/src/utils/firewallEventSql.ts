@@ -13,7 +13,7 @@ export function firewallPacketLogSql(
 
   return `COALESCE((
     'firewall' = ANY(string_to_array(${p}topic, ','))
-    AND ${p}message ~* '(input|forward|output):'
+    AND ${p}message ~ '[^[:space:]]+: in:'
     AND ${p}message ~* '(^|[[:space:],])proto[[:space:]]+'
     AND ${p}message LIKE '%->%'
   ), FALSE)`;
@@ -22,7 +22,8 @@ export function firewallPacketLogSql(
 /**
  * SQL expression for the log prefix of a firewall packet log line: the text
  * before the chain, trimmed (empty when the rule logs without one). RouterOS
- * writes `<prefix> <chain>: …`.
+ * writes `<prefix> <chain>: in:…`, the chain being input, forward, output or
+ * the name of a chain of the user's own.
  */
 export function firewallPrefixSql(
   alias: FirewallSqlAlias = ''
@@ -33,6 +34,9 @@ export function firewallPrefixSql(
     NULLIF(split_part(${p}message, ' input:', 1), ${p}message),
     NULLIF(split_part(${p}message, ' forward:', 1), ${p}message),
     NULLIF(split_part(${p}message, ' output:', 1), ${p}message),
+    -- A rule in a chain of its own (a jump target) logs under that chain's
+    -- name (#369); only those lines get this far.
+    substring(${p}message from '^(.*)[[:space:]][^[:space:]]+: in:'),
     ''
   ))`;
 }
@@ -87,4 +91,21 @@ export function firewallHideSql(
     SELECT 1 FROM unnest($${devicesParam}::int[], $${prefixesParam}::text[]) AS h(device_id, prefix)
      WHERE h.device_id = ${p}device_id AND h.prefix = ${firewallPrefixSql(alias)}
   )`;
+}
+
+/**
+ * SQL for a firewall log line's built-in chain: input, forward or output. A
+ * rule in a chain of its own logs under that chain's name (#369), so the
+ * built-in one is read from the interfaces: no out-interface is input, no
+ * in-interface is output. Mirrors parseFirewallLog.
+ */
+export function firewallBaseChainSql(alias = ''): string {
+  const p = alias ? `${alias}.` : '';
+  return `(CASE
+    WHEN ${p}message ~ '(^|[[:space:]])input: in:' THEN 'input'
+    WHEN ${p}message ~ '(^|[[:space:]])forward: in:' THEN 'forward'
+    WHEN ${p}message ~ '(^|[[:space:]])output: in:' THEN 'output'
+    WHEN ${p}message ~ ' out:[(]unknown [0-9]+[)]' THEN 'input'
+    WHEN ${p}message ~ ': in:[(]unknown [0-9]+[)]' THEN 'output'
+    ELSE 'forward' END)`;
 }

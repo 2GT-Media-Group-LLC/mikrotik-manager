@@ -126,8 +126,9 @@ async function groupedFirewall(
   const params = [...baseParams];
   let idx = firstIdx;
   const p = (v: unknown) => { params.push(v); return `$${idx++}`; };
-  const prefixRe = p('^(.*?) (input|forward|output):');
-  const chainRe = p('(input|forward|output):');
+  // Any chain, a jump target's included (#369): the word before ": in:".
+  const prefixRe = p('^(.*)[[:space:]][^[:space:]]+: in:');
+  const chainRe = p('([^[:space:]]+): in:');
   const inRe = p(' in:([^ ,]+)');
   const outRe = p(' out:([(]unknown 0[)]|[^ ,]+)');
   const protoRe = p('proto ([A-Za-z0-9-]+)');
