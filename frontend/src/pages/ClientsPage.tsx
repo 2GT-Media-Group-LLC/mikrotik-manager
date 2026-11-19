@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import LoadError from '../components/common/LoadError';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -13,7 +13,6 @@ import { RSSI_ZONES } from '../utils/wifiChannels';
 import { clientsApi, devicesApi } from '../services/api';
 import type { Client } from '../types';
 import { useCanWrite } from '../hooks/useCanWrite';
-import { useSocket } from '../hooks/useSocket';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
 import { FilterBar, FilterSearch, FilterSelect, FilterSegment, FilterDivider } from '../components/common/FilterBar';
@@ -281,13 +280,10 @@ export default function ClientsPage() {
   const [sortCol, setSortCol] = useState<string>('last_seen');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [refreshInterval, setRefreshInterval] = useState<number | null>(readStoredInterval);
-  const refreshIntervalRef = useRef(refreshInterval);
-  useEffect(() => { refreshIntervalRef.current = refreshInterval; }, [refreshInterval]);
   const [pageSize, setPageSize] = useState(readStoredPageSize);
 
   const handleIntervalChange = (val: number | null) => {
     setRefreshInterval(val);
-    refreshIntervalRef.current = val;
     localStorage.setItem(STORAGE_KEY, String(val));
   };
 
@@ -368,14 +364,6 @@ export default function ClientsPage() {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
       setPurgeResult(r.data.message);
       setTimeout(() => setPurgeResult(''), 5000);
-    },
-  });
-
-  useSocket({
-    'clients:updated': () => {
-      if (refreshIntervalRef.current !== null) {
-        queryClient.invalidateQueries({ queryKey: ['clients'] });
-      }
     },
   });
 

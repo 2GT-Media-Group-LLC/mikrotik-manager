@@ -14,7 +14,6 @@ import { devicesApi, eventsApi, settingsApi } from '../services/api';
 import type { FirewallEvent, FirewallGroup, FirewallRuleOption } from '../services/api';
 import HideRulesPicker, { HIDE_MAX, ruleKey } from '../components/firewall/HideRulesPicker';
 import DevicePicker from '../components/common/DevicePicker';
-import { useSocket } from '../hooks/useSocket';
 import { useCanWrite } from '../hooks/useCanWrite';
 import FirewallMonitoringModal from '../components/firewall/FirewallMonitoringModal';
 
@@ -276,11 +275,6 @@ export default function FirewallEventsPage() {
       queryClient.invalidateQueries({ queryKey: ['event-topics'] });
       setPage(0);
     },
-  });
-
-  useSocket({
-    'events:updated': () =>
-      queryClient.invalidateQueries({ queryKey: ['firewall-events'] }),
   });
 
   const events = data?.events ?? [];
