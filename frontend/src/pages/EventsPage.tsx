@@ -4,7 +4,6 @@ import { useSearchParams } from 'react-router-dom';
 import { Bell, Search, Trash2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { eventsApi, devicesApi } from '../services/api';
 import { useCanWrite } from '../hooks/useCanWrite';
-import { useSocket } from '../hooks/useSocket';
 import { format } from 'date-fns';
 import type { EventSeverity } from '../types';
 import clsx from 'clsx';
@@ -97,10 +96,6 @@ export default function EventsPage() {
   const clearMutation = useMutation({
     mutationFn: () => eventsApi.clear(deviceId ? parseInt(deviceId) : undefined),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['events'] }); setPage(0); },
-  });
-
-  useSocket({
-    'events:updated': () => queryClient.invalidateQueries({ queryKey: ['events'] }),
   });
 
   const events = eventsData?.events ?? [];

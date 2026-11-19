@@ -1360,22 +1360,18 @@ export default function DashboardPage() {
     if (deviceRefreshTimer.current !== null) window.clearTimeout(deviceRefreshTimer.current);
   }, []);
 
+  // Only the cheap device list follows live updates. Every poll of every device
+  // sends clients:updated and events:updated, and refetching the summary, top
+  // clients and client list on each one kept the database busy without pause on
+  // a large fleet; those refresh on their own interval above, the poll cadence.
   useSocket({
     'device:updated': () => {
       if (deviceRefreshTimer.current !== null) return;
       deviceRefreshTimer.current = window.setTimeout(() => {
         deviceRefreshTimer.current = null;
-        void queryClient.invalidateQueries({ queryKey: ['metrics-summary'] });
         void queryClient.invalidateQueries({ queryKey: ['devices'] });
       }, 1_000);
     },
-    'clients:updated': () => {
-      queryClient.invalidateQueries({ queryKey: ['top-clients'] });
-      queryClient.invalidateQueries({ queryKey: ['metrics-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['wireless-clients-active'] });
-    },
-    'events:updated': () => queryClient.invalidateQueries({ queryKey: ['events-recent'] }),
-    'device:status': () => queryClient.invalidateQueries({ queryKey: ['metrics-summary'] }),
   });
 
   const devicesWithRosUpdates = devices.filter(
