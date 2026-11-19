@@ -419,7 +419,7 @@ export default function TrafficAnalyticsPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700" />
                 <XAxis dataKey="time" tickFormatter={timeFormatter(showDays, formatTime)} tick={{ fontSize: 11 }} stroke="currentColor" />
-                <YAxis tickFormatter={v => tf.bytesLabel(v)} tick={{ fontSize: 11 }} width={70} stroke="currentColor" />
+                <YAxis tickFormatter={v => tf.bytesLabel(v)} tick={{ fontSize: 11 }} width={tf.rate ? 84 : 70} stroke="currentColor" />
                 <Tooltip
                   labelFormatter={t => { try { return formatDateTime(parseISO(String(t)), { year: undefined }); } catch { return String(t); } }}
                   formatter={(value, name) => [tf.bytesLabel(Number(value)), name === 'download' ? 'Download' : 'Upload']}
@@ -448,7 +448,7 @@ export default function TrafficAnalyticsPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700" />
                 <XAxis dataKey="time" tickFormatter={timeFormatter(showDays, formatTime)} tick={{ fontSize: 11 }} stroke="currentColor" />
-                <YAxis tickFormatter={v => tf.packetsAxis(v)} tick={{ fontSize: 11 }} width={tf.rate ? 70 : 55} stroke="currentColor" />
+                <YAxis tickFormatter={v => tf.packetsAxis(v)} tick={{ fontSize: 11 }} width={tf.rate ? 84 : 55} stroke="currentColor" />
                 <Tooltip
                   labelFormatter={t => { try { return formatDateTime(parseISO(String(t)), { year: undefined }); } catch { return String(t); } }}
                   formatter={(value) => [tf.packetsLabel(Number(value)), 'Inbound']}
