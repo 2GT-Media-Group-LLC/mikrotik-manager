@@ -495,13 +495,21 @@ describe('legacy CAPsMAN (#250)', () => {
     expect((query as jest.Mock).mock.calls.some(([sql]) => String(sql).includes('DELETE FROM capsman_radios'))).toBe(false);
   });
 
+  /** The client rows of the one batched upsert, each as [deviceId, mac, hostname, ...]. */
+  const clientInserts = (): [unknown, unknown[]][] => {
+    const all = (query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO clients'));
+    expect(all).toHaveLength(1);
+    const [deviceId, ...cols] = all[0][1] as [unknown, ...unknown[][]];
+    return cols[0].map((_, i) => ['', [deviceId, ...cols.map((c) => c[i])]]);
+  };
+
   it("lists the controller's clients, named by their registration comment", async () => {
     const { collector, calls } = on({
       '/interface/wifi/print': [], '/caps-man/registration-table/print': legacyFixture.registrations,
     }, { capsman_flavor: 'legacy' } as Partial<DeviceRow>);
     await collector.updateClients();
     expect(calls.find((c) => c.cmd === '/caps-man/registration-table/print')?.params).toEqual({ stats: '' });
-    const inserts = (query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO clients'));
+    const inserts = clientInserts();
     const iphone = inserts.find(([, params]) => params[1] === '38:9c:b2:3d:9b:19');
     expect(iphone).toBeDefined();
     expect(iphone![1][2]).toBe("Matt's iPhone 15");      // hostname
@@ -514,8 +522,7 @@ describe('legacy CAPsMAN (#250)', () => {
       '/interface/wifi/print': [], '/caps-man/registration-table/print': legacyFixture.registrationsStats,
     }, { capsman_flavor: 'legacy' } as Partial<DeviceRow>);
     await collector.updateClients();
-    const inserts = (query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO clients'));
-    const fireTv = inserts.find(([, params]) => params[1] === '9c:c8:e9:53:ba:f0')![1];
+    const fireTv = clientInserts().find(([, params]) => params[1] === '9c:c8:e9:53:ba:f0')![1];
     expect(fireTv[2]).toBe('BonusRoom FireTV Stick 4k Max');
     expect(fireTv[3]).toBe('110.87.22.10');               // last-ip: the CHR isn't the DHCP server
     expect(fireTv[6]).toBe(150684303);                    // tx: what the AP sent the streaming stick
@@ -523,6 +530,27 @@ describe('legacy CAPsMAN (#250)', () => {
     expect(fireTv[8]).toBe(-70);
     expect(fireTv[10]).toBe(130_000_000);                 // tx rate "130Mbps-20MHz/2S" (#252)
     expect(fireTv[11]).toBe(1_000_000);                   // rx rate "1Mbps"
+  });
+
+  it('when the batch fails, stores the rows one by one and keeps the rest online (P2-20)', async () => {
+    const { collector } = on({
+      '/interface/wifi/print': [], '/caps-man/registration-table/print': legacyFixture.registrationsStats,
+    }, { capsman_flavor: 'legacy' } as Partial<DeviceRow>);
+    const bad = '9c:c8:e9:53:ba:f0';
+    (query as jest.Mock).mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes('INSERT INTO clients') && ((params[1] as string[]).length > 1 || (params[1] as string[])[0] === bad)) {
+        throw new Error('invalid input syntax');
+      }
+      return [];
+    });
+    await collector.updateClients();
+    const inserts = (query as jest.Mock).mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO clients'));
+    const macs = inserts.slice(1).map(([, p]) => (p as string[][])[1][0]);
+    expect(macs).toContain(bad);
+    expect(macs.length).toBeGreaterThan(1);
+    // The rows that were stored are this poll's sightings; only the bad one isn't.
+    const gone = (query as jest.Mock).mock.calls.find(([sql]) => String(sql).includes('UPDATE clients SET active = FALSE'));
+    expect(gone![1][1]).toEqual(macs.filter((m) => m !== bad));
   });
 });
 

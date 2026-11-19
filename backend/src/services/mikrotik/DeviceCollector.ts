@@ -238,6 +238,40 @@ export interface NewLogEvent { id: number; event_time: Date; severity: string; m
 /** Longest log message kept; RouterOS's own are a few hundred characters at most. */
 const MAX_LOG_MESSAGE = 4096;
 
+/** mac, hostname, ip, interface, vlan, tx, rx, signal, type, tx rate, rx rate. */
+type ClientRow = [string, string | null, string | null, string | null, number | null, number, number,
+  number | null, string, number | null, number | null];
+
+/** Upsert one device's client sightings in a single statement, a column per array. */
+function upsertClients(deviceId: number, rows: ClientRow[]): Promise<unknown> {
+  return query(
+    `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes, signal_strength, client_type, tx_rate_bps, rx_rate_bps, active, last_seen, first_seen)
+     SELECT $1::int, u.*, TRUE, NOW(), NOW()
+       FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::int[], $7::bigint[], $8::bigint[],
+                   $9::int[], $10::text[], $11::bigint[], $12::bigint[])
+            AS u(mac, hostname, ip, iface, vlan, tx, rx, signal, kind, tx_rate, rx_rate)
+     ON CONFLICT (device_id, mac_address) DO UPDATE SET
+       hostname=COALESCE(EXCLUDED.hostname, clients.hostname),
+       ip_address=COALESCE(NULLIF(EXCLUDED.ip_address,''), clients.ip_address),
+       interface_name=COALESCE(EXCLUDED.interface_name, clients.interface_name),
+       -- The VLAN of this sighting, not one kept from an earlier
+       -- sighting on another port: a client seen by ARP on vrrp20
+       -- kept VLAN 98 from the bridge (#363). Kept only when the
+       -- port isn't known either.
+       vlan_id=CASE WHEN EXCLUDED.interface_name IS NULL THEN clients.vlan_id ELSE EXCLUDED.vlan_id END,
+       tx_bytes=EXCLUDED.tx_bytes,
+       rx_bytes=EXCLUDED.rx_bytes,
+       signal_strength=EXCLUDED.signal_strength,
+       client_type=EXCLUDED.client_type,
+       tx_rate_bps=EXCLUDED.tx_rate_bps,
+       rx_rate_bps=EXCLUDED.rx_rate_bps,
+       active=TRUE,
+       last_seen=NOW(),
+       first_seen=COALESCE(clients.first_seen, NOW())`,
+    [deviceId, ...rows[0].map((_, col) => rows.map((r) => r[col]))]
+  );
+}
+
 export class DeviceCollector {
   private client: RouterOSClient;
 
@@ -1381,8 +1415,7 @@ export class DeviceCollector {
         ...Object.keys(bridgeHostMap),
       ]);
 
-      let totalClients = 0;
-      const seenMacs: string[] = [];
+      const rows: ClientRow[] = [];
       for (const mac of allMacs) {
         if (!normalizeMac(mac)) continue; // not a MAC address; nothing to key a client on
         const isWireless = mac in wifiSignal;
@@ -1390,53 +1423,41 @@ export class DeviceCollector {
         const interfaceName = isWireless
           ? (wifiInterface[mac] || entry?.port || null)
           : (entry?.port || arpInterfaces[mac] || null);
-        const vlanId = entry?.vid ?? null;
+        rows.push([
+          mac,
+          fit(dhcpHostnames[mac] || regComments[mac] || null, 255),
+          fit(dhcpIPs[mac] || arpIPs[mac] || wifiLastIp[mac] || null, 45),
+          fit(interfaceName, 50),
+          entry?.vid ?? null,
+          wifiTx[mac] || 0,
+          wifiRx[mac] || 0,
+          isWireless && !noSignal.has(mac) ? wifiSignal[mac] : null,
+          isWireless ? 'wireless' : 'wired',
+          isWireless ? wifiTxRate[mac] ?? null : null,
+          isWireless ? wifiRxRate[mac] ?? null : null,
+        ]);
+      }
 
-        // One bad row costs only itself (P2-20): it used to end the loop and
-        // leave every client after it stale.
+      // Every sighting in one statement. One INSERT per client was thousands of
+      // round trips per fast poll on a router with a big ARP table.
+      const seenMacs: string[] = [];
+      if (rows.length) {
         try {
-          await query(
-            `INSERT INTO clients (device_id, mac_address, hostname, ip_address, interface_name, vlan_id, tx_bytes, rx_bytes, signal_strength, client_type, tx_rate_bps, rx_rate_bps, active, last_seen, first_seen)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,NOW(),NOW())
-             ON CONFLICT (device_id, mac_address) DO UPDATE SET
-               hostname=COALESCE($3, clients.hostname),
-               ip_address=COALESCE(NULLIF($4,''), clients.ip_address),
-               interface_name=COALESCE($5, clients.interface_name),
-               -- The VLAN of this sighting, not one kept from an earlier
-               -- sighting on another port: a client seen by ARP on vrrp20
-               -- kept VLAN 98 from the bridge (#363). Kept only when the
-               -- port isn't known either.
-               vlan_id=CASE WHEN $5::varchar IS NULL THEN clients.vlan_id ELSE $6::integer END,
-               tx_bytes=$7,
-               rx_bytes=$8,
-               signal_strength=$9,
-               client_type=$10,
-               tx_rate_bps=$11,
-               rx_rate_bps=$12,
-               active=TRUE,
-               last_seen=NOW(),
-               first_seen=COALESCE(clients.first_seen, NOW())`,
-            [
-              this.device.id,
-              mac,
-              fit(dhcpHostnames[mac] || regComments[mac] || null, 255),
-              fit(dhcpIPs[mac] || arpIPs[mac] || wifiLastIp[mac] || null, 45),
-              fit(interfaceName, 50),
-              vlanId,
-              wifiTx[mac] || 0,
-              wifiRx[mac] || 0,
-              isWireless && !noSignal.has(mac) ? wifiSignal[mac] : null,
-              isWireless ? 'wireless' : 'wired',
-              isWireless ? wifiTxRate[mac] ?? null : null,
-              isWireless ? wifiRxRate[mac] ?? null : null,
-            ]
-          );
-          seenMacs.push(mac);
-          totalClients++;
-        } catch (err) {
-          console.error(`[${this.device.name}] Skipped client ${mac}:`, (err as Error).message);
+          await upsertClients(this.device.id, rows);
+          seenMacs.push(...rows.map((r) => r[0]));
+        } catch {
+          // One bad row costs only itself (P2-20): retry them one by one.
+          for (const r of rows) {
+            try {
+              await upsertClients(this.device.id, [r]);
+              seenMacs.push(r[0]);
+            } catch (err) {
+              console.error(`[${this.device.name}] Skipped client ${r[0]}:`, (err as Error).message);
+            }
+          }
         }
       }
+      const totalClients = seenMacs.length;
 
       // Clients this device no longer sees go inactive, but only when every
       // read succeeded; after a failed read their absence means nothing (P2-21).
