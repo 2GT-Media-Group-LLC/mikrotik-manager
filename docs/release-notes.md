@@ -7,6 +7,15 @@ tested on real fleets.
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.
 
+## 1.0.23
+
+Released on Thursday 19 November 2026.
+
+- **Less load from the Devices page and Dashboard.** Every device poll told an open Devices page
+  or Dashboard to fetch the whole device list again, which on a large fleet meant several times a
+  second. They now wait a second and fetch once for everything that changed in it. Thanks to
+  eskyuu ([#467](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/pull/467)).
+
 ## 1.0.22
 
 Released on Wednesday 18 November 2026.
