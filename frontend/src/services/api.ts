@@ -1302,7 +1302,8 @@ export interface ClientPathHop {
 }
 
 export interface PresencePoint { time: string; online: number; }
-export interface TrafficPoint2 { time: string; tx_bytes: number; rx_bytes: number; }
+/** `seconds`: what the point covers, for showing it as a rate. */
+export interface TrafficPoint2 { time: string; tx_bytes: number; rx_bytes: number; seconds?: number }
 export interface SignalPoint { time: string; signal_strength: number; }
 
 export interface RoamEvent {
@@ -2706,7 +2707,8 @@ export interface NetflowDeviceState {
 
 // ─── Traffic Analytics (NetFlow) ──────────────────────────────────────────────
 
-export interface ClientTrafficPoint { time: string; upload: number; download: number; uploadPackets?: number; downloadPackets?: number }
+/** `seconds`: what the point covers, for showing it as a rate. */
+export interface ClientTrafficPoint { time: string; upload: number; download: number; uploadPackets?: number; downloadPackets?: number; seconds?: number }
 export interface TrafficTopClient {
   mac: string;
   upload_bytes: number;

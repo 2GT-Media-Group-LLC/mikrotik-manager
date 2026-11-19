@@ -26,6 +26,8 @@ import { formatRatePair } from '../utils/wifiRate';
 import ClientAddressLists from '../components/clients/ClientAddressLists';
 import { disconnectClient } from '../utils/disconnectClient';
 import { chartTooltip, inDeclaredOrder, pieTooltip } from '../components/common/chartTooltip';
+import { useThemeStore } from '../store/themeStore';
+import { trafficFormat } from '../utils/trafficUnits';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -687,10 +689,12 @@ function TrafficCard({ mac }: { mac: string }) {
     { value: '7d', label: '7d' },
   ] as const;
 
+  // Volume per point, or bits per second (Settings → Appearance).
+  const tf = trafficFormat(useThemeStore((s) => s.trafficUnits), String);
   const chartData = points.map(p => ({
     time: p.time,
-    Upload: p.tx_bytes,
-    Download: p.rx_bytes,
+    Upload: tf.bytes(p.tx_bytes, p.seconds),
+    Download: tf.bytes(p.rx_bytes, p.seconds),
     label: range === '7d' ? formatDateTime(parseISO(p.time), { year: undefined }) : formatTime(parseISO(p.time)),
   }));
 
@@ -736,13 +740,13 @@ function TrafficCard({ mac }: { mac: string }) {
               interval="preserveStartEnd"
             />
             <YAxis
-              tickFormatter={(v) => formatBytes(v)}
+              tickFormatter={(v) => tf.bytesLabel(v)}
               tick={{ fontSize: 10 }}
-              width={60}
+              width={tf.rate ? 70 : 60}
             />
             <Tooltip
               {...chartTooltip}
-              formatter={(value, name) => [formatBytes(Number(value)), name]}
+              formatter={(value, name) => [tf.bytesLabel(Number(value)), name]}
             />
             <Legend wrapperStyle={{ fontSize: '11px' }} itemSorter={inDeclaredOrder(['Upload', 'Download'])} />
             <Area
@@ -797,6 +801,8 @@ function AppTrafficCard({ mac }: { mac: string }) {
   const [hadData, setHadData] = useState(false);
   if (!hadData && (series.length > 0 || apps.length > 0)) setHadData(true);
   const [showDestinations, setShowDestinations] = useState<'where' | 'names' | null>(null);
+  // Volume per point, or bits per second (Settings → Appearance).
+  const tf = trafficFormat(useThemeStore((s) => s.trafficUnits), String);
   if (!isLoading && series.length === 0 && apps.length === 0 && !hadData) return null;
 
   const ranges = [
@@ -807,8 +813,8 @@ function AppTrafficCard({ mac }: { mac: string }) {
 
   const chartData = series.map(p => ({
     time: p.time,
-    Upload: p.upload,
-    Download: p.download,
+    Upload: tf.bytes(p.upload, p.seconds),
+    Download: tf.bytes(p.download, p.seconds),
     label: range === '7d' ? formatDateTime(parseISO(p.time), { year: undefined }) : formatTime(parseISO(p.time)),
   }));
 
@@ -859,13 +865,13 @@ function AppTrafficCard({ mac }: { mac: string }) {
                   interval="preserveStartEnd"
                 />
                 <YAxis
-                  tickFormatter={(v) => formatBytes(v)}
+                  tickFormatter={(v) => tf.bytesLabel(v)}
                   tick={{ fontSize: 10 }}
-                  width={60}
+                  width={tf.rate ? 70 : 60}
                 />
                 <Tooltip
                   {...chartTooltip}
-                  formatter={(value, name) => [formatBytes(Number(value)), name]}
+                  formatter={(value, name) => [tf.bytesLabel(Number(value)), name]}
                 />
                 <Legend wrapperStyle={{ fontSize: '11px' }} />
                 <Area type="monotone" dataKey="Download" stroke="#3b82f6" fill="#3b82f620" strokeWidth={1.5} dot={false} />

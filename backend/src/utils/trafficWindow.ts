@@ -67,3 +67,20 @@ export function timeWindow(query: Record<string, unknown>, now = Date.now()): Ti
 }
 
 export const BAD_WINDOW = 'Pick a window between a minute and 31 days long, with from before to.';
+
+/**
+ * The seconds a chart point covers, so its bytes and packets can be shown as a
+ * rate (bits and packets per second). A point is its aggregation window, which
+ * ends at the point's time, cut short where the view begins and where it ends:
+ * the newest point of a preset view is the window still filling up, and
+ * dividing it by the whole window would draw a dip at the end of every chart.
+ */
+export function pointSeconds(time: string, w: TimeWindow, now = Date.now()): number {
+  const t = Date.parse(time);
+  const every = parseInt(w.every, 10) * (w.every.endsWith('h') ? 3_600_000 : 60_000);
+  // Flux's range: a preset runs from exactly now minus its length (`start` is
+  // on the hour, for the hourly tables); a picked window from its start.
+  const viewStart = w.hours != null ? now - w.hours * 3_600_000 : w.start.getTime();
+  const windowStart = t % every === 0 ? t - every : t - (t % every);
+  return Math.max(1, (t - Math.max(viewStart, windowStart)) / 1000);
+}
