@@ -29,7 +29,7 @@ import { fit, normalizeMac } from '../../utils/fit';
 import { rosDurationSeconds } from '../../utils/rosDuration';
 import { guestSsidTag, legacyAuthTypes, legacyProfileName, legacyProfileParams } from './legacySecurity';
 import { decrypt } from '../../utils/crypto';
-import { lookupVendor } from '../../utils/oui';
+import { lookupVendor, ouiLoaded } from '../../utils/oui';
 import { buildServerArpMap } from '../../utils/serverArp';
 import { aggregateBridgeVlans, portVlanMembership, expandVlanIds, rosList } from '../../utils/vlan';
 import {
@@ -1888,11 +1888,16 @@ export class DeviceCollector {
 
   private async lookupMissingVendors(): Promise<void> {
     try {
-      // Include vendor='' entries: those were set by the old API-based lookup
-      // when it was rate-limited and never actually resolved.
+      // Not loaded yet: every answer would be '', stored as "not in the list".
+      if (!ouiLoaded()) return;
+      // Only clients never looked up. '' is "looked up, not in the list" (a
+      // randomised MAC, mostly): selecting those too rewrote every one of them
+      // on every fast poll, for ever. Startup clears '' once (index.ts), so a
+      // newer list still gets its turn.
       const rows = await query<{ mac_address: string }>(
         `SELECT mac_address FROM clients
-         WHERE device_id = $1 AND (vendor IS NULL OR vendor = '') AND active = TRUE`,
+         WHERE device_id = $1 AND vendor IS NULL AND active = TRUE
+         LIMIT 200`,
         [this.device.id]
       );
       for (const row of rows) {
