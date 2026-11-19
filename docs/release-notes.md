@@ -3,6 +3,14 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.69
+
+- **Filter Firewall Logs by zone.** With zones on a device in the selected site or group,
+  **From any zone** and **To any zone** narrow the page to traffic from one zone, to one, or one
+  direction such as WAN to LAN. **Router** is traffic from or to the router itself. See
+  [Zones](firewall-events.md#zones). Thanks to Ron
+  ([#415](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/415)).
+
 ## 1.1.0-beta.68
 
 - **Less load from the Devices page and Dashboard.** Every device poll told an open Devices page
