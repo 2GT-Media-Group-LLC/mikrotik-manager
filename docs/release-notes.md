@@ -3,6 +3,38 @@
 1.1 is in beta on the `dev` branch and the `:beta` images
 ([release channels](configuration.md#release-channels)). For stable, stay on 1.0 below.
 
+## 1.1.0-beta.71
+
+- **DNS over HTTPS.** **Network Services → DNS** takes a DoH server URL, such as
+  `https://cloudflare-dns.com/dns-query`, and the router sends its lookups there over HTTPS.
+  **Verify the server's certificate** says whether the router can check it with RouterOS's
+  built-in trusted roots, and the page warns when the router would have no way to look up the
+  DoH server's own name. See [DNS](network-services.md#dns). Thanks to Ron
+  ([@ronchan44](https://github.com/ronchan44)) for
+  [#468](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/468).
+- **EoIP, wireless and other interfaces into a bridge.** Under a bridge's ports on the
+  **Bridges** tab, **+ Add EoIP, wireless, VLAN…** adds interfaces that aren't on the Ports
+  tab's faceplate: EoIP, VXLAN, VPLS, veth, VLAN, wifi and wlan. Click a port for **Remove from
+  bridge**. Routed interfaces such as WireGuard and GRE are refused with the reason. See
+  [Bridges](devices.md#bridges). Also from Ron, on
+  [#466](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/466).
+- **Log what a zone rule accepts.** A custom rule in a zone pair has a **Log** box, and a pair
+  that allows everything can **Log some of it**: the connections that match are logged (up to
+  20 a second) and show in Firewall Logs as accepted. See [Zones](devices.md#zones). From Ron
+  on [#369](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues/369).
+- **Firewall Logs shows rules in your own chains.** RouterOS logs a rule in a jump chain under
+  that chain's name, and those lines were left off the page. They show now, with the chain's
+  name, and the zone columns and filters place them correctly.
+- **Two zone rule fixes, found by the new fuzz tests.** A custom rule set to **Protocol #** 6
+  or 17 with no ports or addresses was dropped on save as if blank; it's now kept as all of TCP
+  or UDP, as the form showed. A **Protocol #** 1 rule could be refused for an ICMP type left in
+  the hidden ICMP field; that field is now ignored for it. The form also reads spaces inside
+  an address the way the server does.
+- **Fuzz testing.** Code that reads outside input has property-based fuzz tests in every CI
+  run, and a weekly **Fuzz** workflow runs them at far greater length along with
+  coverage-guided fuzzing of the NetFlow decoder and the firewall log parser. See
+  [CONTRIBUTING.md](https://github.com/2GT-Media-Group-LLC/mikrotik-manager/blob/dev/CONTRIBUTING.md).
+
 ## 1.1.0-beta.70
 
 A security fix, also in 1.0.24, reported by [@davidcoulson](https://github.com/davidcoulson);
