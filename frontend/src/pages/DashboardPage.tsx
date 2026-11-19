@@ -412,7 +412,8 @@ function SummaryView(props: Record<string, any>) {
       />
 
       {/* Main grid: clients chart + devices list */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1.6fr 1fr' }}>
+      {/* Side by side from lg up; stacked on a phone, where both squeezed. */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1.6fr_1fr]">
         {/* Clients chart: grows to the height of the Devices card beside it */}
         <div className="card flex flex-col" style={{ padding: '16px 18px' }}>
           <div className="flex items-baseline justify-between mb-3">
@@ -532,7 +533,7 @@ function SummaryView(props: Record<string, any>) {
       <ProxyUsageCard />
 
       {/* Second row: Mix + Top talkers + Activity */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1.2fr 1fr' }}>
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1fr_1.2fr_1fr]">
         {/* Device mix */}
         <div className="card" style={{ padding: '16px 18px' }}>
           <div className="text-[13px] font-semibold mb-3" style={{ color: 'var(--ink)' }}>Mix</div>
@@ -1247,7 +1248,9 @@ function OperationsView({
         </div>
         {/* One tile per device stops at two rows; past that, the tiles needing
             attention and a link to the rest (#303). */}
-        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min((devices as Device[]).length, 5)}, minmax(0, 1fr))` }}>
+        {/* Up to five across from lg up; two on a phone or tablet. */}
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:[grid-template-columns:var(--fleet-cols)]"
+          style={{ '--fleet-cols': `repeat(${Math.min((devices as Device[]).length, 5)}, minmax(0, 1fr))` } as React.CSSProperties}>
           {fleetTiles.map((d) => {
             const hasAlert = d.firmware_update_available || d.routerboard_upgrade_available;
             return (
