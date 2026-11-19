@@ -363,6 +363,14 @@ async function createDevice(
 
       const encryptedPass = encrypt(api_password);
       const encryptedSshPass = sshPassToStore ? encrypt(sshPassToStore) : null;
+      // The saved SSH login stays only where it was saved for, as when a device
+      // is edited (GHSA-63v6-w7qf-349f): replacing a device by its serial at
+      // another address kept it, so an operator
+      // could point a device at a host that answered with its serial and have
+      // the next backup log in there with its SSH password
+      // (GHSA-p885-qw7f-rgx2). Fleet admins may keep it, as they may there.
+      const moved = existingBySerial.ip_address !== address;
+      const keepSavedSsh = !moved || ctx?.requestingUserRole === 'admin';
       await query(
         `UPDATE devices SET
            name=COALESCE($1,name),
@@ -372,8 +380,8 @@ async function createDevice(
            api_username=$5,
            api_password_encrypted=$6,
            ssh_port=COALESCE($7,ssh_port),
-           ssh_username=COALESCE($8,ssh_username),
-           ssh_password_encrypted=COALESCE($9,ssh_password_encrypted),
+           ssh_username=${keepSavedSsh ? 'COALESCE($8,ssh_username)' : '$8'},
+           ssh_password_encrypted=${keepSavedSsh ? 'COALESCE($9,ssh_password_encrypted)' : '$9'},
            device_type=COALESCE($10,device_type),
            notes=COALESCE($11,notes),
            ssh_only=$13,
@@ -388,7 +396,7 @@ async function createDevice(
           api_username,
           encryptedPass,
           sshPortGiven,
-          sshUserToStore,
+          sshUserToStore || null,
           encryptedSshPass,
           device_type,
           notes || null,

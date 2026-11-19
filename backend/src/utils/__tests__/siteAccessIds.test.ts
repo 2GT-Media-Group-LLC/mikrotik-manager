@@ -2,7 +2,7 @@
 jest.mock('../../config/database', () => ({ query: jest.fn(async () => []), queryOne: jest.fn() }));
 
 import type { Request } from 'express';
-import { strictId, strictIdList, deviceIdQuery, deviceIdParam, devicesDenied } from '../siteAccess';
+import { strictId, strictIdList, deviceIdQuery, deviceIdParam, devicesDenied, writableSiteIds } from '../siteAccess';
 
 const req = (over: Partial<Request> & { path?: string } = {}) =>
   ({ query: {}, body: undefined, url: over.path ?? '/', originalUrl: over.path ?? '/', ...over }) as unknown as Request;
@@ -51,5 +51,15 @@ describe('devicesDenied', () => {
   it('denies malformed entries instead of dropping them', async () => {
     const user = { userId: 1, username: 'u', role: 'operator', siteRoles: { 1: 'operator' } };
     expect(await devicesDenied(user as never, ['0x14'], 'operator')).toEqual(['0x14']);
+  });
+});
+
+describe('writableSiteIds (GHSA-p885-qw7f-rgx2)', () => {
+  it('takes the sites an account is operator or admin in, not viewer', () => {
+    expect(writableSiteIds({ 1: 'viewer', 2: 'operator', 3: 'admin' })).toEqual([2, 3]);
+  });
+  it('is null for a fleet-wide account, and empty for a viewer everywhere', () => {
+    expect(writableSiteIds(undefined)).toBeNull();
+    expect(writableSiteIds({ 4: 'viewer' })).toEqual([]);
   });
 });

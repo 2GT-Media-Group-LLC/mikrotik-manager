@@ -215,3 +215,57 @@ describe('loadCredentialPreset (admin-only presets)', () => {
     await expect(loadCredentialPreset(5, {})).resolves.toMatchObject({ api_username: 'admin' });
   });
 });
+
+describe('createDeviceFromBody: the saved SSH login on a replace by serial (GHSA-p885-qw7f-rgx2)', () => {
+  let existing: { id: number; name: string; ip_address: string; serial_number: string; site_id: number | null } | null;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    existing = null;
+    (RouterOSClient as unknown as jest.Mock).mockImplementation(() => ({
+      connect: jest.fn().mockResolvedValue(undefined),
+      disconnect: jest.fn(),
+      execute: jest.fn((path: string) => Promise.resolve(path === '/system/routerboard/print' ? [{ 'serial-number': 'SER1' }] : [])),
+    }));
+    (queryOne as jest.Mock).mockImplementation(async (sql: string) => {
+      if (/FROM devices\s+WHERE serial_number/.test(sql)) return existing;
+      if (/FROM devices WHERE id/.test(sql)) return { id: 33, name: 'core' };
+      return null;
+    });
+    (query as jest.Mock).mockResolvedValue([{ id: 33 }]);
+  });
+  afterEach(() => { (queryOne as jest.Mock).mockReset(); (query as jest.Mock).mockReset(); });
+
+  const base = { name: 'r', ip_address: '10.20.0.5', api_username: 'admin', api_password: 'secret', api_port: 8728, force_replace_existing_by_serial: true };
+  const update = () => (query as jest.Mock).mock.calls.find(([sql]: [string]) => /UPDATE devices SET/.test(sql)) as [string, unknown[]] | undefined;
+
+  it("doesn't keep it when an operator points the device at another address", async () => {
+    existing = { id: 33, name: 'core', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 5 };
+    const result = await createDeviceFromBody(base, null, { siteId: 5, requestingUserRole: 'operator', allowedSites: [5] });
+    expect(result.ok).toBe(true);
+    const [sql, params] = update()!;
+    expect(sql).toMatch(/ssh_username=\$8,/);
+    expect(sql).toMatch(/ssh_password_encrypted=\$9,/);
+    expect(params[7]).toBeNull();
+    expect(params[8]).toBeNull();
+  });
+
+  it('keeps it when the device is re-added at the address it was saved for', async () => {
+    existing = { id: 33, name: 'core', ip_address: '10.20.0.5', serial_number: 'SER1', site_id: 5 };
+    await createDeviceFromBody(base, null, { siteId: 5, requestingUserRole: 'operator', allowedSites: [5] });
+    expect(update()![0]).toMatch(/ssh_password_encrypted=COALESCE\(\$9,ssh_password_encrypted\)/);
+  });
+
+  it('lets a fleet admin keep it, as editing a device does', async () => {
+    existing = { id: 33, name: 'core', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 5 };
+    await createDeviceFromBody(base, null, { siteId: 5, requestingUserRole: 'admin' });
+    expect(update()![0]).toMatch(/ssh_password_encrypted=COALESCE\(\$9,ssh_password_encrypted\)/);
+  });
+
+  it("won't replace a device in a site the account can only view", async () => {
+    existing = { id: 33, name: 'core', ip_address: '10.9.0.1', serial_number: 'SER1', site_id: 9 };
+    const result = await createDeviceFromBody(base, null, { siteId: 5, requestingUserRole: 'operator', allowedSites: [5] });
+    expect(result).toMatchObject({ ok: false, status: 409, body: { code: 'duplicate_serial_elsewhere' } });
+    expect(update()).toBeUndefined();
+  });
+});
