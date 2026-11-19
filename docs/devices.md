@@ -929,6 +929,16 @@ has a small chip icon; hover a port for its PVID and spanning tree role.
   [@ronchan44](https://github.com/ronchan44)'s #466). A DHCP server on the bridge isn't changed
   with it: after moving a bridge to a new subnet, update its DHCP network, gateway and pool on
   **Network Services**, **DHCP**.
+- **+ Add EoIP, wireless, VLAN…** under a bridge's ports adds an interface that isn't on the
+  **Ports** tab's faceplate: EoIP, VXLAN, VPLS, veth, VLAN, wifi or wlan interfaces (from
+  [@ronchan44](https://github.com/ronchan44)'s #466). One already in another bridge moves
+  from it. A wifi interface CAPsMAN added to a bridge by itself is listed but can't be chosen.
+  An interface with an address of its own asks first, because the address stops working once
+  it's a bridge port, and then runs with auto-revert. Routed interfaces (WireGuard, GRE, IPIP,
+  PPP and the like) carry IP rather than Ethernet frames, so RouterOS can't bridge them and
+  the manager says so.
+- Click a port, then **Remove from bridge** to take it out. This works for any static port,
+  Ethernet and SFP included.
 - The bin deletes a bridge with no ports, addresses or VLAN entries.
 
 Everything runs through [Change Guard](change-guard.md). Renaming the bridge the manager

@@ -18,6 +18,25 @@ const isTrue = (v: string | undefined): boolean => v === 'true' || v === 'yes';
 /** Names the manager creates bridges with: short, and safe in every RouterOS context. */
 export const BRIDGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
 
+/**
+ * Interface types that carry IP, not Ethernet frames: RouterOS won't put them in
+ * a bridge. EoIP, VXLAN, VPLS, veth, VLAN and wireless interfaces are layer 2
+ * and can be bridge ports (#466).
+ */
+const ROUTED_ONLY = /^(wg|loopback|lte|(ppp|pppoe|pptp|l2tp|sstp)-(in|out|client|server)|gre-tunnel|gre6-tunnel|ipip-tunnel|ipipv6-tunnel|6to4-tunnel)$/;
+
+const ROUTED_NAMES: Record<string, string> = {
+  wg: 'WireGuard', loopback: 'loopback', lte: 'LTE', 'gre-tunnel': 'GRE', 'gre6-tunnel': 'GRE over IPv6',
+  'ipip-tunnel': 'IPIP', 'ipipv6-tunnel': 'IPIP over IPv6', '6to4-tunnel': '6to4',
+};
+/** "a WireGuard interface", "a PPPoE client", for the refusal. */
+function routedName(type: string): string {
+  const ppp = /^(ppp|pppoe|pptp|l2tp|sstp)-(in|out|client|server)$/.exec(type);
+  if (ppp) return `a ${ppp[1].toUpperCase()} ${ppp[2] === 'in' || ppp[2] === 'server' ? 'server' : 'client'} connection`;
+  const name = ROUTED_NAMES[type] ?? type;
+  return `${/^[aeiou]/i.test(name) && !/^LTE/.test(name) ? 'an' : 'a'} ${name} interface`;
+}
+
 export interface BridgePortOp {
   action: 'set' | 'add' | 'remove';
   port: string;
@@ -74,6 +93,9 @@ export function planBridgePortMove(input: {
     const iface = ifaceByName.get(port);
     if (!iface) return { ok: false, error: `There is no interface called ${port} on this device.` };
     if (iface['type'] === 'bridge') return { ok: false, error: `${port} is a bridge. Bridges can't be put inside other bridges here.` };
+    if (ROUTED_ONLY.test(iface['type'] ?? '')) {
+      return { ok: false, error: `${port} is ${routedName(iface['type'] ?? '')}, which carries IP rather than Ethernet frames, so it can't be a bridge port. EoIP, VXLAN, VPLS and wireless interfaces can.` };
+    }
     if (port === target) return { ok: false, error: `${port} can't be put inside itself.` };
     if (isTrue(iface['slave']) && !input.bridgePorts.some((r) => r['interface'] === port)) {
       return { ok: false, error: `${port} is a member of a bond. Move the bond instead.` };

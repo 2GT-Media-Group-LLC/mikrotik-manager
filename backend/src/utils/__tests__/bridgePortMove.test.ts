@@ -8,6 +8,10 @@ const interfaces: RosRow[] = [
   { name: 'ether3', type: 'ether' },
   { name: 'ether4', type: 'ether', slave: 'true' },
   { name: 'wifi1', type: 'wifi' },
+  { name: 'wifi2', type: 'wifi' },
+  { name: 'eoip-site2', type: 'eoip' },
+  { name: 'wg0', type: 'wg' },
+  { name: 'gre1', type: 'gre-tunnel' },
 ];
 const bridgePorts: RosRow[] = [
   { '.id': '*1', interface: 'ether2', bridge: 'bridge', dynamic: 'false' },
@@ -56,6 +60,14 @@ describe('planBridgePortMove', () => {
     expect(err({ target: 'guest', createTarget: true })).toMatch(/already an interface/);
     expect(err({ target: 'bad name!', createTarget: true })).toMatch(/Bridge names/);
     expect(err({ ports: ['ether2'], target: 'bridge' })).toMatch(/Already in bridge/);
+  });
+
+  it('bridges EoIP and wireless interfaces, not routed ones (#466)', () => {
+    const r = planBridgePortMove({ ...base, ports: ['eoip-site2', 'wifi2'], target: 'guest' });
+    expect(r.ok && r.plan.ops).toEqual([{ action: 'add', port: 'eoip-site2' }, { action: 'add', port: 'wifi2' }]);
+    const refused = (port: string) => { const r = planBridgePortMove({ ...base, ports: [port], target: 'guest' }); return r.ok ? null : r.error; };
+    expect(refused('wg0')).toBe('wg0 is a WireGuard interface, which carries IP rather than Ethernet frames, so it can\'t be a bridge port. EoIP, VXLAN, VPLS and wireless interfaces can.');
+    expect(refused('gre1')).toMatch(/^gre1 is a GRE interface/);
   });
 
   it('skips ports already there when others move', () => {

@@ -64,6 +64,13 @@ const portChanges = (p: BridgePortView, f: PortForm) => {
   return d;
 };
 
+/**
+ * Layer 2 interfaces that aren't on the Ports tab's faceplate, so they're added
+ * to a bridge here (#466): EoIP, VXLAN, VPLS, veth, VLAN and wireless.
+ */
+const OTHER_L2 = /^(eoip|vxlan|vpls|veth|vlan|wifi|wlan|l2tp-ether)/;
+const ON_FACEPLATE = /^(ether|sfp|combo|bridge|bond)/i;
+
 const EDGE_CHOICES = [
   { value: 'auto', label: 'Auto (edge until a BPDU arrives)' },
   { value: 'yes', label: 'Yes (end device: forward at once)' },
@@ -76,7 +83,8 @@ const EDGE_CHOICES = [
  * Every bridge on the device (#284): its settings, ports (hardware-switched or
  * on the CPU), VLAN entries and addresses. Create, rename, change spanning
  * tree, turn VLAN filtering on or off, disable and delete, all through Change
- * Guard. Ports join or leave bridges on the Ports tab.
+ * Guard. Ethernet and SFP ports join or leave bridges on the Ports tab; other
+ * layer 2 interfaces (EoIP, wireless...) are added here (#466).
  */
 export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
   deviceId: number; deviceName?: string; onGoToPorts?: (bridgeName: string) => void;
@@ -94,6 +102,16 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
   const [portEdit, setPortEdit] = useState<{ bridgeId: string; port: BridgePortView; form: PortForm } | null>(null);
   // The bridge whose addresses are open for editing (#466).
   const [addrFor, setAddrFor] = useState<string | null>(null);
+  // A move refused because the interface has an address, awaiting a yes (#466).
+  const [addrConfirm, setAddrConfirm] = useState<{ port: string; bridge: string; text: string } | null>(null);
+  const { data: allIfaces = [] } = useQuery({
+    queryKey: ['interfaces', deviceId],
+    queryFn: () => devicesApi.getInterfaces(deviceId).then((r) => r.data),
+    enabled: canWrite,
+  });
+  const otherL2 = allIfaces
+    .filter((i) => OTHER_L2.test(i.type ?? '') && !ON_FACEPLATE.test(i.type ?? ''))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['bridges', deviceId] });
@@ -156,7 +174,24 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
     onSuccess: done,
     onError: (e, v) => failed(() => remove.mutate({ ...v, confirm: true }))(e),
   });
-  const busy = add.isPending || update.isPending || filtering.isPending || remove.isPending || portUpdate.isPending;
+  const move = useMutation({
+    mutationFn: (v: { port: string; bridge: string | null; confirm_addresses?: boolean; confirm_lockout?: boolean }) =>
+      devicesApi.moveBridgePorts(deviceId, { ports: [v.port], bridge: v.bridge, confirm_addresses: v.confirm_addresses, confirm_lockout: v.confirm_lockout }),
+    onSuccess: (r) => {
+      setAddrConfirm(null); setPortEdit(null);
+      done({ data: { message: r.data.message, guard: r.data.guard as GuardResult | undefined } });
+      void qc.invalidateQueries({ queryKey: ['interfaces', deviceId] });
+    },
+    onError: (e, v) => {
+      const data = (e as { response?: { status?: number; data?: { code?: string; error?: string } } })?.response;
+      if (data?.status === 409 && data.data?.code === 'ports_have_addresses' && v.bridge) {
+        setAddrConfirm({ port: v.port, bridge: v.bridge, text: data.data.error ?? '' });
+        return;
+      }
+      failed(() => move.mutate({ ...v, confirm_lockout: true }))(e);
+    },
+  });
+  const busy = move.isPending || add.isPending || update.isPending || filtering.isPending || remove.isPending || portUpdate.isPending;
 
   if (isLoading) return <div className="text-center py-8 text-gray-400">Loading…</div>;
   if (loadError) return <div className="card p-6 text-sm text-red-500">{errText(loadError)}</div>;
@@ -369,6 +404,40 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                     })}
                   </div>
                 )}
+                {canWrite && !b.dynamic && (() => {
+                  const memberOf = (name: string) => bridges.find((x) => x.ports.some((p) => p.name === name));
+                  const choices = otherL2.filter((i) => !b.ports.some((p) => p.name === i.name));
+                  if (choices.length === 0) return null;
+                  return (
+                    <div className="mt-2">
+                    <select className="input text-xs py-1 max-w-[16rem]" value="" disabled={busy} aria-label={`Add an interface to ${b.name}`}
+                      onChange={(ev) => { const v = ev.target.value; if (!v) return; setNote(null); setAddrConfirm(null); move.mutate({ port: v, bridge: b.name }); }}>
+                      <option value="">+ Add EoIP, wireless, VLAN…</option>
+                      {choices.map((i) => {
+                        const other = memberOf(i.name);
+                        const dyn = other?.ports.find((p) => p.name === i.name)?.dynamic;
+                        return (
+                          <option key={i.name} value={i.name} disabled={!!dyn}>
+                            {i.name} ({i.type}){other ? (dyn ? ` · added to ${other.name} automatically` : ` · moves from ${other.name}`) : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    </div>
+                  );
+                })()}
+                {addrConfirm?.bridge === b.name && (
+                  <div className="mt-2 p-2 rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 text-xs text-amber-800 dark:text-amber-300 space-y-1.5">
+                    <p>{addrConfirm.text}</p>
+                    <div className="flex gap-2">
+                      <button type="button" className="btn-primary text-xs py-1" disabled={busy}
+                        onClick={() => move.mutate({ port: addrConfirm.port, bridge: addrConfirm.bridge, confirm_addresses: true })}>
+                        Add it anyway (with auto-revert)
+                      </button>
+                      <button type="button" className="btn-secondary text-xs py-1" onClick={() => setAddrConfirm(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-slate-400 mb-1 flex items-center gap-2">
@@ -508,6 +577,11 @@ export default function BridgesTab({ deviceId, deviceName, onGoToPorts }: {
                       {portUpdate.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Save
                     </button>
                     <button onClick={() => setPortEdit(null)} disabled={portUpdate.isPending} className="btn-secondary text-sm"><X className="w-3.5 h-3.5 inline mr-1" />Cancel</button>
+                    <button onClick={() => { setNote(null); move.mutate({ port: pe.port.name, bridge: null }); }} disabled={busy}
+                      title={`Take ${pe.port.name} out of ${b.name}`}
+                      className="ml-auto btn-secondary text-sm text-red-600 dark:text-red-400 flex items-center gap-1.5">
+                      {move.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Remove from bridge
+                    </button>
                   </div>
                 </div>
               );
