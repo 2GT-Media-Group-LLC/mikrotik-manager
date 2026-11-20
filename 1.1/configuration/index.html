@@ -2325,7 +2325,7 @@ session ends straight away when:</p>
 connections are checked again every minute and closed when their session has ended, and a
 terminal re-checks the account before it opens a shell. Before 0.24.46 a session kept its
 original role and access for its full 24 hours, whatever happened to the account.</p>
-<p>An admin who resets their <em>own</em> password from <strong>Settings → Users</strong> is signed out and
+<p>An admin who resets their <em>own</em> password from <strong>Settings → Users &amp; Roles</strong> is signed out and
 signs in again with the new one. API tokens are separate and unaffected: revoke those
 under <strong>Settings → Automation → API Tokens</strong>.</p>
 <h2 id="secret-management-self-healing">Secret management (self-healing)<a class="headerlink" href="#secret-management-self-healing" title="Permanent link">&para;</a></h2>
@@ -2425,12 +2425,12 @@ if you'd rather back up by hand.</p>
 <tr>
 <td>Config snapshots</td>
 <td><code>config_snapshot_enabled</code>, <code>config_snapshot_interval_min</code>, <code>config_snapshot_retention</code></td>
-<td>Settings → Config History</td>
+<td>Settings → General</td>
 </tr>
 <tr>
 <td>NetFlow</td>
 <td>collector address and port, version, retention, top-N clients</td>
-<td>Settings → NetFlow</td>
+<td>Network Services → NetFlow</td>
 </tr>
 <tr>
 <td>Alerting</td>
@@ -2701,7 +2701,7 @@ newest two. Once all is well you can remove them:
 <td><strong>Beta</strong></td>
 <td><code>dev</code></td>
 <td><code>:beta</code></td>
-<td>The next minor version as betas (1.1.0-beta.1, ...), with new features as they land</td>
+<td>The next minor version as betas (1.1.0-beta.1, ...), with new features as they land, then its release candidates (1.1.0-rc.1, ...)</td>
 </tr>
 </tbody>
 </table>
@@ -2717,8 +2717,8 @@ New features are built on <code>dev</code> and reach stable in the next minor re
 once stable has caught up with the version you were on, because the database is migrated
 forwards, not back; until then, stay on beta or restore a platform backup taken on stable.</p>
 <p>The update notice in the app follows your channel: a stable install is told about stable
-releases, a beta install about the next beta. A specific version can be pinned with its image
-tag (<code>MTM_TAG=1.0.0</code>).</p>
+releases, a beta or release candidate install about the next one on <code>dev</code>. A specific version
+can be pinned with its image tag (<code>MTM_TAG=1.0.0</code>, or <code>MTM_TAG=1.1.0-rc.1</code>).</p>
 <p>From 0.24.51 each image carries an SBOM and build provenance, and is signed with
 <a href="https://docs.sigstore.dev/">cosign</a> by the workflow that built it. To check an image before
 running it:</p>

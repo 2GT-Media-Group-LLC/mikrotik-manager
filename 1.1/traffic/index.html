@@ -1726,7 +1726,7 @@ the upgrade that added them, so for a while a 24-hour view holds only the hours 
 then says when recording began, so the gap doesn't read as missing traffic.</p>
 <h3 id="names-looked-up-adguard-home-and-pi-hole">Names looked up (AdGuard Home and Pi-hole)<a class="headerlink" href="#names-looked-up-adguard-home-and-pi-hole" title="Permanent link">&para;</a></h3>
 <p>NetFlow carries addresses, not names. Add the servers that answer a site's DNS under
-<strong>Settings → DNS Query Log</strong> (fleet admins): AdGuard Home or Pi-hole (version 6 or later), with
+<strong>Settings → DNS Query Log</strong> (fleet admins; fleet operators see it read-only): AdGuard Home or Pi-hole (version 6 or later), with
 the site whose clients use it, its web address and login. Add every one of them: two resolvers
 sharing the load each see their own part of the lookups, and the counts add up. <strong>Test</strong> checks
 the address and login first. MikroTik Manager then reads each query log every minute and keeps

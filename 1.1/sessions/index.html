@@ -1691,7 +1691,7 @@ MikroTik Manager first. Then, on <strong>Network Services → NetFlow</strong>, 
 router you want recorded. Nothing changes on the router; MikroTik Manager just keeps more of
 what the router already sends. Operators and admins can turn it on in their sites.</p>
 <p>A busy router can make many sessions a second, so it starts off. Sessions are kept for <strong>3
-days</strong> (<code>retention_sessions_days</code>, under <strong>Settings → Data Retention</strong>).</p>
+days</strong> (<code>retention_sessions_days</code>, under <strong>Settings → General → Data Retention</strong>).</p>
 <h2 id="how-a-session-is-put-together">How a session is put together<a class="headerlink" href="#how-a-session-is-put-together" title="Permanent link">&para;</a></h2>
 <p>RouterOS sends each direction of a connection as its own flow record. A long connection also
 gets a new pair every active timeout, which MikroTik Manager sets to one minute. Sessions pairs

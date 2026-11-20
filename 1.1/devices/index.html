@@ -3093,57 +3093,70 @@ history, uptime figures and reports keep every outage. <strong>Snooze</strong> i
 <td>The bridge VLAN table, copying VLANs between switches, and VLAN interfaces (<code>/interface vlan</code>) with their parent and addresses, which you can add, edit and remove</td>
 </tr>
 <tr>
-<td><strong>Radios</strong></td>
-<td>Wireless interfaces, SSIDs, channels, connected clients</td>
-</tr>
-<tr>
-<td><strong>Firewall</strong></td>
-<td>Filter and NAT rules and address lists, for IPv4 and IPv6 (the <strong>IPv4</strong> / <strong>IPv6</strong> switch at the top), with reordering and counters, and <a href="#quick-firewall-rules">Quick rules</a>. IPv6 NAT needs RouterOS 7</td>
+<td><strong>802.1X</strong></td>
+<td>Port authentication on switches and routers, with RADIUS from User Manager or your own server. See <a href="#8021x">802.1X</a></td>
 </tr>
 <tr>
 <td><strong>Routing</strong></td>
 <td>IPv4 routes, IPv6 routes (read-only), routing rules, OSPF, BGP, routing tables and filters</td>
 </tr>
 <tr>
-<td><strong>Queues</strong></td>
-<td>Traffic shaping</td>
-</tr>
-<tr>
-<td><strong>Connections</strong></td>
-<td>The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing)</td>
-</tr>
-<tr>
-<td><strong>Graphs</strong></td>
-<td>History for this device, one range for every chart (1h to 30d), with a hover cursor shared across them. See <a href="#device-graphs">Device graphs</a></td>
-</tr>
-<tr>
-<td><strong>Hardware</strong></td>
-<td>Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages as lines, with a light band up to the highest reading in each 5 minutes, so a short burst to 100% doesn't hide in the average (#402). Memory's band only shows where the peak is more than two points above the average</td>
-</tr>
-<tr>
-<td><strong>LTE</strong></td>
-<td>Signal, carrier, bands and the data cap — see <a href="../cellular/">Cellular</a></td>
+<td><strong>Firewall</strong></td>
+<td>Filter and NAT rules and address lists, for IPv4 and IPv6 (the <strong>IPv4</strong> / <strong>IPv6</strong> switch at the top), with reordering and counters, and <a href="#quick-firewall-rules">Quick rules</a>. IPv6 NAT needs RouterOS 7</td>
 </tr>
 <tr>
 <td><strong>Security</strong></td>
 <td>Baseline hardening checks and the posture score</td>
 </tr>
 <tr>
+<td><strong>Bandwidth</strong></td>
+<td>Queues (traffic shaping) and FastTrack. See <a href="#bandwidth-queues-and-fasttrack">Bandwidth queues and FastTrack</a></td>
+</tr>
+<tr>
+<td><strong>Connections</strong></td>
+<td>The live connection tracking table: the total, and the first 200, 500 or 2,000 connections, filtered by protocol on the router. A busy router isn't asked for its whole table, and refreshing is on request unless you turn on auto-refresh (#300). Every column sorts, ports included (before 0.71.0, RouterOS 7.24's ports were missing)</td>
+</tr>
+<tr>
 <td><strong>Config</strong></td>
 <td>System settings, certificates, SSH keys, clock</td>
+</tr>
+<tr>
+<td><strong>Firmware</strong></td>
+<td>Check for and install RouterOS and RouterBOOT updates for this device, with a link to the fleet <a href="../firmware/">Firmware</a> page</td>
 </tr>
 <tr>
 <td><strong>Config History</strong></td>
 <td>Snapshots of <code>/export</code>, diffs, and rollback (<a href="../backups/#restoring">what rollback can do</a>)</td>
 </tr>
 <tr>
+<td><strong>Hardware</strong></td>
+<td>Health sensors, PoE, SFP module detail, and CPU and memory history: 5-minute averages as lines, with a light band up to the highest reading in each 5 minutes, so a short burst to 100% doesn't hide in the average (#402). Memory's band only shows where the peak is more than two points above the average</td>
+</tr>
+<tr>
+<td><strong>Graphs</strong></td>
+<td>History for this device, one range for every chart (1h to 30d), with a hover cursor shared across them. See <a href="#device-graphs">Device graphs</a></td>
+</tr>
+<tr>
+<td><strong>Radios</strong></td>
+<td>Wireless interfaces, SSIDs, channels, connected clients</td>
+</tr>
+<tr>
+<td><strong>Antenna Aligner</strong></td>
+<td>Live signal while you aim a point-to-point link. See <a href="../antenna-aligner/">Antenna aligner</a></td>
+</tr>
+<tr>
+<td><strong>LTE</strong></td>
+<td>Signal, carrier, bands and the data cap — see <a href="../cellular/">Cellular</a></td>
+</tr>
+<tr>
 <td><strong>Tools</strong></td>
-<td>Ping, traceroute, IP scan, Wake-on-LAN, packet capture, bandwidth test</td>
+<td>Ping, traceroute, IP scan, Torch, Wake-on-LAN, packet capture, bandwidth test</td>
 </tr>
 </tbody>
 </table>
 <p>Tabs appear only where they apply: a switch has no Radios tab, a device without a modem has no
-LTE tab.</p>
+LTE tab, an access point has no 802.1X tab, and Antenna Aligner shows only on Wireless System
+devices managed over the API.</p>
 <h3 id="editing-settings">Editing settings<a class="headerlink" href="#editing-settings" title="Permanent link">&para;</a></h3>
 <p>A save changes only what you changed. The Config tab, radio settings and SSIDs send just the
 fields you edited, so renaming a device no longer resets its clock to the time the form was

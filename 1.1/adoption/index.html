@@ -1827,9 +1827,9 @@ is left exactly as reachable as it was — still adoptable, not stranded.</p>
 answering on <code>192.168.88.1</code> would collide.</p>
 <h2 id="the-borrowed-device">The borrowed device<a class="headerlink" href="#the-borrowed-device" title="Permanent link">&para;</a></h2>
 <p>It gets one temporary IP address, and that is all. It is removed on every path out of the
-operation, including failures and refusals. Anything temporary is tagged, and
-<strong>Devices → Discover → Clean up</strong> sweeps for leftovers should the process ever be killed
-mid-flight.</p>
+operation, including failures and refusals. Anything temporary is tagged, so leftovers can be
+swept should the process ever be killed mid-flight: an operator or admin with fleet-wide access
+can call <code>POST /api/adoption/cleanup</code> (there is no button for it yet).</p>
 <h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
 <p>The password is sent over plain HTTP. Factory units ship with HTTPS <strong>disabled</strong>, so there is
 no encrypted path to a device in that state. It travels only between the borrowed neighbour and

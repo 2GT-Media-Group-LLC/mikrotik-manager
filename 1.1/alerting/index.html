@@ -1851,6 +1851,9 @@
 
 <h1 id="alerting">Alerting<a class="headerlink" href="#alerting" title="Permanent link">&para;</a></h1>
 <p><a href="../">← Documentation index</a></p>
+<p>Alert rules, channels, outbound webhooks and scheduled reports are under <strong>Settings → Alerting</strong>
+and <strong>Settings → Automation</strong>. Changing them needs a fleet admin; fleet operators see them
+read-only (before 1.1, operators could change them too).</p>
 <h2 id="alert-rules">Alert rules<a class="headerlink" href="#alert-rules" title="Permanent link">&para;</a></h2>
 <p>Each rule can be enabled independently, with its own threshold where applicable and a
 cooldown that prevents a flapping device from flooding your channels.</p>
@@ -2036,7 +2039,7 @@ dashboard.</p>
 <code>cert_expiry</code> rule decides the rest: its <strong>threshold</strong> is the warning window in days
 (14 by default) and its <strong>cooldown</strong> how often you are told about the same certificate
 (daily by default).</p>
-<p>It is <strong>off by default</strong> — turn it on in Settings → Alerts.</p>
+<p>It is <strong>off by default</strong> — turn it on in <strong>Settings → Alerting</strong>.</p>
 <p>Every certificate is tracked separately, so a device with an expiring CA and an expiring
 client certificate raises two alerts rather than one. A certificate authority is named as
 such, because its expiry invalidates everything it signed rather than one connection.</p>
@@ -2110,7 +2113,7 @@ server log line begins <code>[Certs]</code>.</p>
 </div>
 <h2 id="delivery-channels">Delivery channels<a class="headerlink" href="#delivery-channels" title="Permanent link">&para;</a></h2>
 <p>Email, Slack, Discord, Telegram, <strong>ntfy</strong> and <strong>Gotify</strong>. Channels are configured under
-<strong>Settings → Alerts → Channels</strong>; secrets are masked on read and preserved when you save
+<strong>Settings → Alerting → Alert Channels</strong>; secrets are masked on read and preserved when you save
 a channel without retyping them. They are stored encrypted with the same key as device
 passwords (SMTP password, bot and app tokens, Slack and Discord webhook URLs), and decrypted
 only to send. Channels saved before 0.24.50 are encrypted at the next start.</p>

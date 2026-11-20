@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#mikrotik-manager-11-beta" class="md-skip">
+        <a href="#mikrotik-manager-11-release-candidate" class="md-skip">
           Skip to content
         </a>
       
@@ -347,6 +347,78 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#whats-new-in-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's new in 1.1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What&#39;s new in 1.1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changes-you-may-notice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes you may notice
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upgrading-from-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from 1.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thank-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thank you
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#110-rc1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.1
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#110-beta75" class="md-nav__link">
@@ -2332,6 +2404,78 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#whats-new-in-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's new in 1.1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What&#39;s new in 1.1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changes-you-may-notice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes you may notice
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upgrading-from-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from 1.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thank-you" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thank you
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#110-rc1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-rc.1
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta75" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3165,9 +3309,282 @@
   
 
 
-<h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
-<p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
-(<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h1 id="mikrotik-manager-11-release-candidate">MikroTik Manager 1.1 (release candidate)<a class="headerlink" href="#mikrotik-manager-11-release-candidate" title="Permanent link">&para;</a></h1>
+<p>1.1 is in release candidates on the <code>dev</code> branch and the <code>:beta</code> images
+(<a href="../configuration/#release-channels">release channels</a>): its features are complete, and only
+fixes go in from here. For stable, stay on 1.0 below.</p>
+<h2 id="whats-new-in-11">What's new in 1.1<a class="headerlink" href="#whats-new-in-11" title="Permanent link">&para;</a></h2>
+<p>Everything 1.1 adds beyond the latest 1.0.x, for anyone coming from 1.0. Fixes aren't listed
+here; the beta entries below have every change, release by release.</p>
+<h3 id="new">New<a class="headerlink" href="#new" title="Permanent link">&para;</a></h3>
+<p><strong>Firewall zones</strong> (<a href="../devices/#zones">Zones</a>)</p>
+<ul>
+<li>Group a router's interfaces into zones and set what may pass between each pair, in a matrix;
+  the manager writes and keeps the RouterOS rules, under Change Guard with <strong>Review changes</strong>.</li>
+<li>Presets to start from: home or small office, an office with a guest network, a management
+  network, or servers in a DMZ.</li>
+<li>Custom rules in a zone pair can name ports, addresses, hostnames, ICMP of one type, or any IP
+  protocol by number. NAT rules can name the WAN interface.</li>
+<li><strong>Log drops</strong> per zone, capped at 5 a second so logging can't overload a small router, and
+  <strong>Log</strong> on a rule (or <strong>Log some of it</strong> on an allow-all pair) for what a zone accepts.</li>
+<li>Zones can limit what the manager itself reaches on the router to the API, API-SSL and SSH
+  ports.</li>
+<li>With zones on, the Firewall tab reads as zones; the chains and jumps behind them are under
+  <strong>Show RouterOS rules</strong>.</li>
+<li>Zones work on routers without FastTrack offload.</li>
+</ul>
+<p><strong>Firewall</strong> (<a href="../devices/#quick-firewall-rules">Devices</a>)</p>
+<ul>
+<li><strong>Quick rules</strong>: common protections in one step, including
+  <a href="../devices/#brute-force-protection">brute-force protection</a>, which bans an address after
+  repeated failed logins and shows bans across the fleet on the Security page. Management access
+  adds the manager's own address.</li>
+<li>The IPv6 firewall can be edited like IPv4: filter rules, NAT (RouterOS 7) and address lists,
+  with reordering, counters and <strong>Review changes</strong>.</li>
+<li>A rule that logs gets a short tag in its log prefix, so Firewall Logs can say which rule logged
+  a line; rules that would read the same show their tags.</li>
+<li>Known RouterOS CVEs count in a device's hardening score.</li>
+</ul>
+<p><strong>Firewall Logs and Sessions</strong>, now under <strong>Security</strong> (<a href="../firewall-events/">Firewall logs</a>,
+<a href="../sessions/">Sessions</a>)</p>
+<ul>
+<li>Firewall Logs opens grouped: one line per device, rule, interfaces, protocol and port, with
+  counts. <strong>Raw</strong> shows every line.</li>
+<li>It reads in zones, with zones as coloured badges, and filters <strong>From any zone</strong> and <strong>To any
+  zone</strong>.</li>
+<li>A period (1 hour to 30 days), an <strong>All rules</strong> filter for one rule's lines, and <strong>Hide rules</strong>
+  for everything but the rules you pick.</li>
+<li>An <strong>Application</strong> column naming the service behind each port, with row colours for DHCP and
+  multicast. Port names, ranges and colours are set under <strong>Settings → Firewall Logs</strong>.</li>
+<li><strong>Resolve names</strong> shows client hostnames and reverse DNS in place of addresses.</li>
+<li>The Firewall tab can show only the rules that log.</li>
+<li><strong>Sessions</strong>: one row per connection from NetFlow, with the client, server, NAT, bytes each way
+  and how it ended.</li>
+<li>Routers behind NAT are told apart in NetFlow, so their flows aren't lumped together.</li>
+</ul>
+<p><strong>Traffic</strong> (<a href="../traffic/">Traffic analytics</a>)</p>
+<ul>
+<li>Click an application to see the clients behind it, each with its share, and <strong>Where it goes</strong>:
+  its destinations and Top Destinations.</li>
+<li>Names behind addresses, from the DNS query logs of AdGuard Home or Pi-hole
+  (<strong>Settings → DNS Query Log</strong>), including AdGuard Home as a Home Assistant add-on.</li>
+<li>Port names from Settings → Firewall Logs name Traffic's applications too.</li>
+<li>Drag across a chart to zoom the whole page into that window.</li>
+<li>Graphs as rates (bits and packets per second) rather than totals, under <strong>Settings → General →
+  Appearance</strong>.</li>
+<li>A new layout: Top Talkers beside Traffic by Application, with Top Destinations below.</li>
+</ul>
+<p><strong>Network services</strong> (<a href="../network-services/">Network services</a>)</p>
+<ul>
+<li><strong>Tunnels &amp; PPP</strong>: the state of every IPsec peer, PPPoE server and client, PPP session, and
+  EoIP, GRE and IPIP tunnel, problems first, with a <strong>Tunnel down</strong> alert. <strong>PPP Users and
+  Sessions</strong> reads a router live: disconnect a session, and turn a PPP user or a PPPoE server off
+  or on.</li>
+<li><strong>Netinstall</strong> from a router running RouterOS's netinstall package: install the package,
+  entries that name the device to install, the package cache, and starting an install.</li>
+<li><strong>MLAG</strong>: each pair's state and role, the peer link, settings that differ between peers, and
+  heartbeat and host-sync storms from the logs, with an <strong>MLAG degraded</strong> alert.</li>
+<li><strong>Routing rules</strong> on a device's Routing tab, in order, with what each one looks up.</li>
+<li><strong>DNS over HTTPS</strong> on Network Services → DNS.</li>
+<li><strong>WireGuard</strong>: a peer's client <code>.conf</code> and QR code, and <strong>Add Peer</strong> can generate the client's
+  key pair.</li>
+<li>DHCP, DNS, NTP and PPP open on the device when a site has only one.</li>
+<li><strong>Reverse proxy</strong> rules on routers, with Let's Encrypt certificates for public hostnames, on a
+  new tab of <strong>Operations → Certificates</strong> (<a href="../certificates/#reverse-proxy">Device certificates</a>).</li>
+</ul>
+<p><strong>Switching, VLANs and bridges</strong> (<a href="../devices/#bridges">Devices</a>)</p>
+<ul>
+<li>VLAN interfaces can be added, edited and removed from the VLANs tab, with addresses, and a
+  change to the one the manager reaches the device through is predicted as a lockout.</li>
+<li><strong>Q-in-Q</strong> (a bridge's VLAN tag type, and a port's tag stacking) and <strong>MVRP</strong>, on bridges,
+  bridge VLANs (forbidden ports) and VLAN interfaces.</li>
+<li>A bridge's addresses can be edited from the Bridges tab, and EoIP, wireless, VLAN and other
+  interfaces not on the faceplate can be added to a bridge.</li>
+<li>Spanning tree you can set: a <strong>Spanning Tree</strong> card on the topology page for every tree in
+  view, and each bridge port's priority, path cost, edge, point-to-point, BPDU guard and
+  restricted role and TCN.</li>
+<li>A bridge's MTU can be set, and a port's MTU form says the most its hardware takes.</li>
+<li><strong>802.1X</strong> on switches and routers: ports that authenticate clients, with RADIUS from User
+  Manager or your own server (<a href="../devices/#8021x">802.1X</a>, <a href="../user-manager/#8021x-with-user-manager">User Manager</a>).</li>
+<li>Drawn ports on the faceplate (RJ45 jacks, SFP cages, QSFP), sized to the device with its model
+  name, virtual interfaces in a box of their own, and ports per row remembered per device.</li>
+<li>Config Health finds access ports left tagged in other VLANs.</li>
+</ul>
+<p><strong>Device pages</strong> (<a href="../devices/#device-tabs">Device tabs</a>)</p>
+<ul>
+<li>A <strong>Graphs</strong> tab: history for every chart over one range (1 hour to 30 days), with a shared
+  hover cursor, interfaces, connections, NAT, firewall drops and per-core CPU
+  (<a href="../devices/#device-graphs">Device graphs</a>).</li>
+<li><strong>Peaks and drops</strong>: CPU and memory peaks as a band above the 5-minute average, and dropped
+  packets counted.</li>
+<li>A <strong>Firmware</strong> tab for the RouterOS and RouterBOOT check and install.</li>
+<li><strong>Torch</strong> in Tools: who is talking on an interface right now, flow by flow, narrowed by
+  address, port and protocol.</li>
+<li>An <strong>SMS inbox</strong> on the LTE tab, and the data-cap rule can delete the carrier's replies to its
+  reset SMS (<a href="../cellular/">Cellular</a>).</li>
+<li>A <strong>Wireless Systems</strong> device type for outdoor PTP, PtMP and CPE radios, with an <strong>Antenna
+  Aligner</strong> tab: live signal from one or both ends of a link and an optional tone
+  (<a href="../antenna-aligner/">Antenna aligner</a>).</li>
+<li>Backups over the API when SSH is off, on RouterOS 7.13 and later
+  (<a href="../backups/#devices-with-ssh-off">Backups</a>).</li>
+<li><strong>Force add without checking connectivity</strong> in Add Device, for a device that isn't reachable
+  yet.</li>
+<li>The <strong>Configuration changed</strong> alert says what changed, as a diff.</li>
+</ul>
+<p><strong>Wireless and CAPsMAN</strong> (<a href="../capsman/#set-up-capsman">CAPsMAN</a>)</p>
+<ul>
+<li><strong>Set up CAPsMAN</strong> on the Wireless page: a controller and its access points, on both bands or
+  one, with a 5 GHz SSID of its own if you want one, on wifi and legacy CAPsMAN.</li>
+<li>A controller with radios of its own shows as <strong>Controller and AP</strong>.</li>
+<li>AP Radio TX Retries remembers the band you picked.</li>
+</ul>
+<p><strong>Topology</strong> (<a href="../topology/">Topology</a>)</p>
+<ul>
+<li>Curved links leaving the bottom of one card and entering the top of the next, with <strong>Links</strong> to
+  switch back to straight lines.</li>
+<li>A tiered layout with the gateway on top, then core, access and APs, drawn top-down or
+  left-to-right, and <strong>Arrange</strong> to lay the cards out again.</li>
+<li>A <strong>Compact</strong> view of icons with a role chip (Gateway, CAPsMAN, CAP, STP root).</li>
+<li>Port labels on links, short port names, bonds shown at both ends, and parallel links over
+  VLAN, VRRP or bond interfaces merged into one with a <strong>+N</strong>.</li>
+<li>Links heard over tunnels drawn dotted; links from OSPF neighbours, for routers reached only
+  over tunnels.</li>
+<li>Hosts that send LLDP without a name collapse into one <strong>N hosts</strong> chip.</li>
+<li>Your own firewall, ISP modem or other gateway as a node on top of the map.</li>
+<li><strong>Export</strong> the whole map as PNG or SVG.</li>
+<li><strong>Display</strong> holds the Cards, Links, Layout and Port labels choices in one place.</li>
+</ul>
+<p><strong>Clients and sites</strong> (<a href="../clients/">Clients</a>, <a href="../sites/">Sites</a>)</p>
+<ul>
+<li>Client columns can be hidden and resized.</li>
+<li>Clients leaves out the manager's own network devices, and switches, routers and access points
+  it doesn't manage.</li>
+<li><strong>Connection Path</strong> goes from a client's device all the way to the top of the site.</li>
+<li>A site can be placed on the map by latitude and longitude, and has its own map zoom, used
+  wherever its devices show; the sites map opens on the default site.</li>
+</ul>
+<p><strong>Dashboard</strong></p>
+<ul>
+<li>A readable <strong>Capacity &amp; health</strong> card: busiest devices first, shared name prefixes shown once,
+  24-hour CPU graphs, and each metric opens its device graph.</li>
+</ul>
+<p><strong>Operations and the manager itself</strong></p>
+<ul>
+<li><a href="../jump-hosts/">Jump hosts</a>: reach devices through an SSH connection to another router, with
+  RouterOS's reason when forwarding is off.</li>
+<li><strong>Scheduled bulk commands</strong>, once or repeating (<a href="../commands/#schedules">Bulk commands</a>).</li>
+<li><strong>A template from a device</strong>: start a command template from a device's configuration
+  (<a href="../commands/#a-template-from-a-device">Templates</a>).</li>
+<li><strong>AI connections</strong>: read-only fleet review for AI tools over MCP or OpenAPI, with a token or
+  your identity provider (<a href="../ai-connections/">AI connections</a>).</li>
+<li><strong>Let's Encrypt</strong> certificates for the manager (<a href="../configuration/#lets-encrypt-acme">Let's Encrypt</a>).</li>
+<li><strong>12- or 24-hour time</strong>, as a fleet default and per account
+  (<a href="../configuration/#time-display">Time display</a>).</li>
+<li><strong>Appearance</strong>: a System theme that follows your computer, seven accent colours or your own,
+  and Midnight dark surfaces (<a href="../configuration/#appearance">Appearance</a>).</li>
+<li>Source builds behind a network proxy (<code>HTTPS_PROXY</code>).</li>
+<li>Settings tabs can be linked to and stay put on reload.</li>
+<li>User Manager is in the sidebar only where a device runs it.</li>
+</ul>
+<p><strong>Scale and reliability</strong> (<a href="../scaling/">Polling and scaling</a>)</p>
+<ul>
+<li>Polls no longer stall on large networks: clients are written in batches.</li>
+<li>A device is marked offline only after a number of missed polls in a row (<strong>Missed polls
+  before offline</strong>, 2 by default); when most of a site goes quiet at once there's one alert for
+  the site; and a reboot the manager sent, a rollout step or a maintenance window doesn't alert.</li>
+<li>Device Logs and Firewall events open quickly on large log tables.</li>
+<li>New major versions underneath: Express 5, BullMQ, openid-client 6, recharts 3, zustand 5 and
+  TypeScript 6, and property-based fuzz tests on code that reads outside input.</li>
+</ul>
+<h3 id="changes-you-may-notice">Changes you may notice<a class="headerlink" href="#changes-you-may-notice" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Who sees Settings.</strong> Admins change everything. Fleet operators see every Settings tab
+  read-only (SSH Keys apart) and can no longer change alerting, webhooks, report schedules or
+  clear the poll queue; write API tokens, which act as an operator, lose them too. Viewers and
+  accounts limited to particular sites see only their own account
+  (<a href="../configuration/#who-sees-settings">Who sees Settings</a>).</li>
+<li><strong>Netinstall and scheduled commands need an admin.</strong> Netinstall changes need an admin for the
+  router's site, and a scheduled bulk command runs only while the account that made it is still
+  an admin (<a href="../network-services/#netinstall">Netinstall</a>, <a href="../commands/">Bulk commands</a>).</li>
+<li><strong>Menu</strong>: Firewall Logs and Sessions moved under <strong>Security</strong>.</li>
+<li><strong>Zones fold their rules away.</strong> With zones on, a device's Firewall tab reads as zones; the
+  chains and jumps that carry them out are behind <strong>Show RouterOS rules</strong>.</li>
+</ul>
+<h3 id="upgrading-from-10">Upgrading from 1.0<a class="headerlink" href="#upgrading-from-10" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Update to the latest 1.0.x first if you can, then take a <a href="../platform-backup/">platform backup</a>
+   (<strong>Settings → Backup &amp; Restore</strong>).</li>
+<li>Get the 1.1 compose file as well as the images, and keep your <code>.env</code>
+   (<a href="../configuration/#updating-and-image-versions">Updating and image versions</a>). A 1.0 compose
+   file with 1.1 images also starts, so an update half done isn't stuck.</li>
+<li>Start it. Database migrations run on their own. PostgreSQL and Redis restart once, because
+   1.1's compose file pins newer builds of their images (still PostgreSQL 15 and Redis 7).</li>
+</ol>
+<p>Going back to 1.0 means restoring that platform backup: migrations only go forwards.</p>
+<p>Every security fix made during 1.1 also shipped on 1.0.x, so an up-to-date 1.0 install already
+has them (<a href="#mikrotik-manager-10">1.0 release notes</a>).</p>
+<h3 id="thank-you">Thank you<a class="headerlink" href="#thank-you" title="Permanent link">&para;</a></h3>
+<p>1.1 is mostly features people asked for. Thank you to everyone who suggested one, tested a
+beta, sent a fix or reported a problem:</p>
+<ul>
+<li><a href="https://github.com/ronchan44">@ronchan44</a> (Ron): firewall zones and everything around them
+  (custom rules with addresses, hostnames and protocols, logging per zone and per rule, which rule
+  logged a line, presets), the Firewall Logs redesign and Sessions, Tunnels &amp; PPP and Netinstall,
+  the reverse proxy with Let's Encrypt, scheduled bulk commands, 802.1X with User Manager,
+  placing sites on the map and their zoom, routing rules, backups without SSH, drawn ports, Torch,
+  the CAPsMAN quick set, NAT rules naming the WAN, dashboard metrics that open their graph, Q-in-Q
+  and MVRP, zooming into Traffic, the only device chosen for you, bridge addresses and interfaces
+  from the Bridges tab, DNS over HTTPS, AP Radio TX Retries, and testing nearly every beta.</li>
+<li><a href="https://github.com/azizfayziev">@azizfayziev</a> (aziz): Traffic from an application to its
+  clients, destinations and names; the more readable topology map, with its tiered layout,
+  compact view, port labels and export; the Capacity &amp; health card; MLAG monitoring and its peer
+  link; the Graphs tab with peaks and drops; Clients leaving out network devices and the
+  Connection Path; and code for Firewall Logs' period, <strong>All rules</strong> and <strong>Hide rules</strong> filters
+  and for fewer false offline alerts.</li>
+<li><a href="https://github.com/eskyuu">@eskyuu</a> (Steven Wilton): Let's Encrypt for the manager, source
+  builds behind a proxy, adding a device without checking it first, fewer refreshes from busy
+  pages, the RouterBOOT restart check, and Config Health's check of VLAN interfaces as bridge
+  ports.</li>
+<li><a href="https://github.com/KevinGinger">@KevinGinger</a>: jump hosts, and RouterOS's reason when one
+  can't forward.</li>
+<li><a href="https://github.com/jenserling">@jenserling</a>: 12- or 24-hour time, and Wireless Systems with
+  the antenna aligner.</li>
+<li><a href="https://github.com/JohnDepon">@JohnDepon</a>: traffic graphs as rates, and performance on large
+  fleets.</li>
+<li><a href="https://github.com/davidcoulson">@davidcoulson</a>: the Firmware tab, and security reports.</li>
+<li><a href="https://github.com/Bigben83">@Bigben83</a>: the read-only MCP connector that AI connections grew
+  from.</li>
+<li><a href="https://github.com/cybr4nx">@cybr4nx</a>: Quick firewall rules and zone presets, and resizable
+  client columns.</li>
+<li><a href="https://github.com/Lithiuhm">@Lithiuhm</a>: WireGuard client configs and QR codes.</li>
+<li><a href="https://github.com/thanhtrung5763">@thanhtrung5763</a>: log tables that open quickly.</li>
+<li><a href="https://github.com/pimlie">@pimlie</a>: topology links from OSPF, and security reports.</li>
+<li><a href="https://github.com/dlemery">@dlemery</a>: editing the IPv6 firewall.</li>
+<li><a href="https://github.com/rvanderwouw">@rvanderwouw</a>: VLAN interfaces on the VLANs tab.</li>
+<li><a href="https://github.com/kraken-XIV">@kraken-XIV</a>: the System theme and accent colours.</li>
+<li><a href="https://github.com/simonkrebsd3">@simonkrebsd3</a>: brute-force protection.</li>
+<li><a href="https://github.com/kamils777">@kamils777</a>: the Configuration changed alert's diff.</li>
+<li><a href="https://github.com/HectorUrrea24">@HectorUrrea24</a> (Hector): PPP users and sessions.</li>
+<li><a href="https://github.com/Toryius">@Toryius</a> (Manuel): a template from a device.</li>
+<li><a href="https://github.com/trackersoft">@trackersoft</a> (Stanley): the SMS inbox and deleting the
+  carrier's replies, and readable chart labels.</li>
+<li><a href="https://github.com/schmitt330">@schmitt330</a>: device tools on RouterOS 6.</li>
+<li><a href="https://github.com/orshih6">@orshih6</a>: a security report on the release workflow.</li>
+</ul>
+<h2 id="110-rc1">1.1.0-rc.1<a class="headerlink" href="#110-rc1" title="Permanent link">&para;</a></h2>
+<p>The first release candidate for 1.1. Nothing new goes in from here, only fixes: please run it as
+you would a stable release and <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/issues">open an issue</a>
+for anything that's wrong. What 1.1 adds is <a href="#whats-new-in-11">above</a>. Since beta.75:</p>
+<ul>
+<li><strong>An RC install is told about the next RC.</strong> The update notice compared release candidates with
+  stable, as it did for 1.0's, so a 1.1 RC wouldn't have heard about rc.2. RCs now compare with
+  <code>dev</code>, and their images get a version tag (<code>:1.1.0-rc.1</code>) as betas do
+  (<a href="../configuration/#release-channels">Release channels</a>).</li>
+<li><strong>The docs, checked against 1.1</strong>: the device tabs as they are now (802.1X, Bandwidth, Firmware,
+  Antenna Aligner, and Torch in Tools), Settings paths that had drifted, who can change alerting,
+  DNS query logs and platform backups, and the adoption sweep, which has no button: it's
+  <code>POST /api/adoption/cleanup</code>.</li>
+</ul>
 <h2 id="110-beta75">1.1.0-beta.75<a class="headerlink" href="#110-beta75" title="Permanent link">&para;</a></h2>
 <p>The fixes in 1.0.29 below, two of them security fixes, and more hardening from the 1.1
 security review.</p>
@@ -4777,7 +5194,7 @@ PPPoE, EoIP and Netinstall views, resizable client list columns, a read-only MCP
 AI-assisted reviews, and major dependency upgrades. Issues labelled
 <a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/labels/post-stable">post-stable</a> are
 the running list.</p>
-<h2 id="thank-you">Thank you<a class="headerlink" href="#thank-you" title="Permanent link">&para;</a></h2>
+<h2 id="thank-you_1">Thank you<a class="headerlink" href="#thank-you_1" title="Permanent link">&para;</a></h2>
 <p>To everyone who reported a bug, asked for a feature, tested a build or sent a pull request.
 Code contributors: @davidcoulson, @thanhtrung5763, @tomk1s and @denis-ev. Security reports:
 @otuva and Artur Chlebicki. And the many people whose reports and ideas shaped it, among them

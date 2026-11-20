@@ -1923,7 +1923,7 @@ Tools</strong>, add an OpenAPI connection with the OpenAPI server address
 Bearer and paste an AI connection token. With <strong>MCP</strong>: add an MCP (Streamable HTTP)
 connection with the MCP server address and the token as a Bearer key.</p>
 <p>If the manager still has its self-signed certificate, Open WebUI refuses it. Either
-put a trusted certificate on the manager (<strong>Settings → TLS Certificate</strong>), or give
+put a trusted certificate on the manager (<strong>Settings → Certificate</strong>), or give
 Open WebUI the manager's certificate: mount it into the container and set
 <code>AIOHTTP_CLIENT_SESSION_TOOL_SERVER_SSL</code> to its path. That setting covers both its
 OpenAPI and MCP connections.</p>
