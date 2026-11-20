@@ -349,6 +349,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta74" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.74
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta73" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2310,6 +2321,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#110-beta74" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1.0-beta.74
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#110-beta73" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3124,6 +3146,20 @@
 <h1 id="mikrotik-manager-11-beta">MikroTik Manager 1.1 (beta)<a class="headerlink" href="#mikrotik-manager-11-beta" title="Permanent link">&para;</a></h1>
 <p>1.1 is in beta on the <code>dev</code> branch and the <code>:beta</code> images
 (<a href="../configuration/#release-channels">release channels</a>). For stable, stay on 1.0 below.</p>
+<h2 id="110-beta74">1.1.0-beta.74<a class="headerlink" href="#110-beta74" title="Permanent link">&para;</a></h2>
+<p>A security fix, also in 1.0.28, and tighter roles, both from the 1.1 security review.</p>
+<ul>
+<li><strong>Accounts limited to some sites saw, and could rearrange, other sites' parts of the map</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-97cq-mgp7-9p5f">GHSA-97cq-mgp7-9p5f</a>): the fix in 1.0.28 below.</li>
+<li><strong>Settings by role.</strong> Admins change settings. Fleet operators now see every Settings tab,
+  read-only, apart from SSH Keys. They can no longer change alerting rules and channels,
+  webhooks or report schedules, or clear the poll queue: those are admin-only now, for write
+  API tokens too, since they act as an operator. Viewers, and accounts limited to particular
+  sites, see only their own account in Settings: time format and password.</li>
+<li><strong>Netinstall changes need an admin.</strong> An install wipes whatever netboots on that network,
+  so installing or removing the package, entries, the cache and starting an install need an
+  admin for the router's site. Operators and viewers see the page read-only.</li>
+</ul>
 <h2 id="110-beta73">1.1.0-beta.73<a class="headerlink" href="#110-beta73" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>AP Radio TX Retries says why it's empty under legacy CAPsMAN</strong>: the fix in 1.0.27 below,
@@ -4204,6 +4240,19 @@ tested on real fleets.</p>
 <p>1.0 is the first stable release: a version to run in production, where updates on the 1.0.x
 line only fix things. It's the result of more than 130 beta releases since April 2026, many of them
 shaped by people running MikroTik Manager on their own fleets.</p>
+<h2 id="1028">1.0.28<a class="headerlink" href="#1028" title="Permanent link">&para;</a></h2>
+<p>Released on Friday 20 November 2026. A security fix; update soon if you use per-site roles.</p>
+<ul>
+<li><strong>Accounts limited to some sites saw, and could rearrange, other sites' parts of the map</strong>
+  (<a href="https://github.com/2GT-Media-Group-LLC/mikrotik-manager/security/advisories/GHSA-97cq-mgp7-9p5f">GHSA-97cq-mgp7-9p5f</a>). The discovered-devices list showed neighbours
+  heard anywhere in the fleet, with their addresses and the names of devices managed in other
+  sites, and the topology map sent every site's hidden links, positions and link colours. An
+  operator in one site could also move, recolour, hide or show links on another site's map. A
+  site-limited account now sees only what its own sites' devices heard and its own part of the
+  saved map, and changes it only where it's an operator or admin. No device logins or settings
+  were exposed. Found in the 1.1 security review.</li>
+</ul>
+<p>Also in 1.1.0-beta.74.</p>
 <h2 id="1027">1.0.27<a class="headerlink" href="#1027" title="Permanent link">&para;</a></h2>
 <p>Released on Thursday 19 November 2026.</p>
 <ul>

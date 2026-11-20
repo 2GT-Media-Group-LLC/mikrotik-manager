@@ -565,6 +565,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Settings stored in the database">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#who-sees-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who sees Settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1921,6 +1938,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Settings stored in the database">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#who-sees-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who sees Settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2405,6 +2439,15 @@ if you'd rather back up by hand.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="who-sees-settings">Who sees Settings<a class="headerlink" href="#who-sees-settings" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Admins</strong> (fleet-wide) see and change everything.</li>
+<li><strong>Operators</strong> (fleet-wide) see every setting, read-only, apart from the SSH Keys tool.
+  This includes alerting, webhooks and report schedules, which operators could change before
+  1.1. Secrets stay masked.</li>
+<li><strong>Viewers</strong>, and any account limited to particular sites, see only their own account:
+  time format and password.</li>
+</ul>
 <h2 id="network-exposure">Network exposure<a class="headerlink" href="#network-exposure" title="Permanent link">&para;</a></h2>
 <p>The manager holds the admin credentials for every device it manages, so keep it off the
 internet: reach it over your LAN or a VPN.</p>

@@ -2253,6 +2253,9 @@ MikroTik's netinstall package (#310), instead of from a PC with the Netinstall t
 needs RouterOS 7.24 or later, and isn't made for SMIPS devices. The device being installed must be
 on the same layer 2 segment as that router, and etherboot to it. <strong>An install reformats that
 device</strong>: what's kept depends on the entry (below).</p>
+<p>Because of that, every change here (installing or removing the package, entries, the cache,
+starting an install) needs an admin for the router's site: a fleet admin, or a site admin there.
+Operators and viewers see the page read-only.</p>
 <p>The page lists the devices in view in three groups:</p>
 <ul>
 <li><strong>Netinstall servers</strong>: devices with the package installed. Each one is read live: its entries,
