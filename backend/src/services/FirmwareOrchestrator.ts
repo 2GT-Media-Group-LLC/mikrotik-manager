@@ -21,6 +21,7 @@ import { matchLocalUpdate, packageFileName, packageRoom } from '../utils/firmwar
 import { runSshCommand, looksLikeFailure, type SshExecDevice } from './sshExec';
 import { withSafeApply, type GuardDevice } from './changeGuard/ChangeGuard';
 import { fillSecrets, maskSecrets } from './commandSecrets';
+import { logSafe } from '../utils/logSafe';
 
 const REBOOT_GRACE_MS = 25_000;      // let the device actually go down
 /**
@@ -928,7 +929,7 @@ export class FirmwareOrchestrator {
             await probe.reboot();
           } catch (e) {
             retryError = (e as Error).message;
-            console.warn(`[Firmware] ${device.name}: RouterBOOT reboot retry failed: ${retryError}`);
+            console.warn('[Firmware] %s: RouterBOOT reboot retry failed: %s', logSafe(device.name), logSafe(retryError));
           }
         }
       } catch {
