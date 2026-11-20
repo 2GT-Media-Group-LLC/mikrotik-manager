@@ -87,8 +87,8 @@ jobs:
 
       # Aliased to "latest" so links stay stable while older series remain
       # readable at their own URLs.
-      # main (the stable line) moves "latest"; dev publishes its beta series
-      # under its own number only, so a beta install's in-app docs links work
+      # main (the stable line) moves "latest"; dev publishes its beta and RC
+      # series under its own number only, so a beta install's in-app docs links work
       # while stable readers keep landing on stable docs.
       - name: Deploy
         env:
@@ -99,12 +99,15 @@ jobs:
               "${{ steps.v.outputs.series }}" latest \
               --title "${{ steps.v.outputs.series }} (${{ steps.v.outputs.full }})"
             mike set-default --push latest
-          elif echo "${{ steps.v.outputs.full }}" | grep -q beta; then
+          elif echo "${{ steps.v.outputs.full }}" | grep -q -- '-'; then
+            # A prerelease: betas, then release candidates.
+            KIND=beta
+            echo "${{ steps.v.outputs.full }}" | grep -q -- '-rc' && KIND=RC
             mike deploy --push \
               "${{ steps.v.outputs.series }}" \
-              --title "${{ steps.v.outputs.series }} beta (${{ steps.v.outputs.full }})"
+              --title "${{ steps.v.outputs.series }} $KIND (${{ steps.v.outputs.full }})"
           else
             # dev still on the stable version (right after a release): its docs
             # are main's, and publishing them would race main's for the series.
-            echo "dev is on ${{ steps.v.outputs.full }}, not a beta: main publishes these docs."
+            echo "dev is on ${{ steps.v.outputs.full }}, not a prerelease: main publishes these docs."
           fi
