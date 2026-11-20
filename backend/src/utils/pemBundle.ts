@@ -8,19 +8,33 @@ import * as crypto from 'crypto';
  * reloading. Now every block must be a certificate that parses, nothing else
  * may be in the field, and what is written is rebuilt from the parsed blocks.
  */
-const BLOCK = /-----BEGIN ([A-Z0-9 ]+)-----\r?\n([\s\S]*?)\r?\n?-----END \1-----/g;
-
 export interface PemBlock { label: string; pem: string }
 
-/** Every PEM block, or an error naming what else was found. */
+const OUTSIDE = 'There is text outside the PEM blocks';
+
+/**
+ * Every PEM block, or an error naming what else was found. Read with indexOf
+ * rather than one regex with a back-reference, which backtracked: quadratic on
+ * a field of BEGIN lines with no END (CodeQL js/polynomial-redos).
+ */
 export function pemBlocks(text: string): PemBlock[] {
   const blocks: PemBlock[] = [];
-  let rest = text;
-  for (const m of text.matchAll(BLOCK)) {
-    blocks.push({ label: m[1], pem: m[0].replace(/\r\n/g, '\n') });
-    rest = rest.replace(m[0], '');
+  let pos = 0;
+  for (;;) {
+    const begin = text.indexOf('-----BEGIN ', pos);
+    if (begin < 0) { if (text.slice(pos).trim() !== '') throw new Error(OUTSIDE); break; }
+    if (text.slice(pos, begin).trim() !== '') throw new Error(OUTSIDE);
+    const labelEnd = text.indexOf('-----', begin + 11);
+    const label = labelEnd < 0 ? '' : text.slice(begin + 11, labelEnd);
+    const afterHeader = labelEnd + 5;
+    const newline = text.startsWith('\r\n', afterHeader) ? 2 : text.startsWith('\n', afterHeader) ? 1 : 0;
+    if (!/^[A-Z0-9 ]+$/.test(label) || !newline) throw new Error(OUTSIDE);
+    const endMarker = `-----END ${label}-----`;
+    const end = text.indexOf(endMarker, afterHeader + newline);
+    if (end < 0) throw new Error(OUTSIDE);
+    pos = end + endMarker.length;
+    blocks.push({ label, pem: text.slice(begin, pos).replace(/\r\n/g, '\n') });
   }
-  if (rest.trim() !== '') throw new Error('There is text outside the PEM blocks');
   return blocks;
 }
 

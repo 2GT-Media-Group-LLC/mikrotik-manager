@@ -31,7 +31,10 @@ interface Parsed {
 
 /** `7.25beta3 (stable)` -> { parts: [7,25], preRank: 2, preNum: 3 } */
 export function parseRosVersion(raw: string | null | undefined): Parsed | null {
-  const text = (raw || '').trim().replace(/\s*\(.*\)\s*$/, '');
+  // A real version is a dozen characters or so. The cap keeps the channel
+  // strip below linear-enough on whatever a device sends (CodeQL
+  // js/polynomial-redos: 200k characters took 19 s).
+  const text = (raw || '').slice(0, 64).trim().replace(/\s*\(.*\)\s*$/, '');
   if (!text) return null;
 
   const m = /^(\d+(?:\.\d+)*)(?:[-_.]?(alpha|beta|rc)\.?(\d+)?)?/i.exec(text);
